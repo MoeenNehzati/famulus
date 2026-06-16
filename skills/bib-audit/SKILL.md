@@ -90,7 +90,7 @@ Output is JSON. Read `parse_errors` first (file-level failures), then `entries[*
 Install via `pip install bibtex-updater`. Run:
 
 ```
-bibtex-check <file.bib> --report report.json --non-generative --mailto <your-email>
+bibtex-check <file.bib> --report report.json --non-generative --mailto <your-email> --verbose
 ```
 
 - `--non-generative` disables LLM calls; use it for reproducibility and policy compliance.
