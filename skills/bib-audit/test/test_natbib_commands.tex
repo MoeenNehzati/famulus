@@ -1,0 +1,57 @@
+\documentclass{article}
+\usepackage{natbib}
+\begin{document}
+
+% --- Basic \cite (already tested) ---
+See \cite{lecun1989b} for the original work.
+
+% --- \citep (parenthetical) ---
+Backpropagation was applied to vision \citep{lecun1989b}.
+
+% --- \citet (textual) ---
+\citet{lecun1989b} demonstrated backpropagation on handwritten digits.
+
+% --- \citealt (no parentheses) ---
+This was shown by \citealt{lecun1989b} in 1989.
+
+% --- \citealp (no parentheses, comma) ---
+The approach of \citealp{lecun1989b} is foundational.
+
+% --- \citeauthor (author only) ---
+\citeauthor{lecun1989b} pioneered convolutional networks.
+
+% --- \citeyear (year only) ---
+The method dates back to \citeyear{lecun1989b}.
+
+% --- Optional post-note: \citep[p.~10]{key} ---
+See \citep[p.~10]{lecun1989b} for details.
+
+% --- Optional pre- and post-note: \citep[see][p.~10]{key} ---
+\citep[see][p.~10]{lecun1989b} for the derivation.
+
+% --- Multi-key, no options ---
+Both papers \citep{lecun1989,lecun1989b} are relevant.
+
+% --- Multi-key with duplicate (dedup case) ---
+\citep{lecun1989b,lecun1989} should become \citep{lecun1989}.
+
+% --- Multi-key including unaffected entry ---
+\citep{lecun1989b,hochreiter1997} — one affected, one not.
+
+% --- Multi-key with optional args ---
+\citep[see][]{lecun1989b,hochreiter1997} — optional args survive.
+
+% --- Preprint cases ---
+Transformers \citep{vaswani2017preprint} changed NLP.
+\citet{vaswani2017preprint} introduced the attention mechanism.
+See \citep[Sec.~3]{vaswani2017preprint} for the architecture.
+\citep{vaswani2017preprint,vaswani2017} — dedup to \citep{vaswani2017}.
+\citep{hochreiter1997,vaswani2017preprint} — one affected, one not.
+
+% --- Unaffected citations: must not change ---
+LSTMs \citep{hochreiter1997} remain important.
+The original paper is \citet{lecun1989}.
+
+\bibliographystyle{plainnat}
+\bibliography{test_modification}
+\end{document}

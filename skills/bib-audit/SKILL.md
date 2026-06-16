@@ -15,6 +15,8 @@ Ready-to-use test fixtures live in `~/.claude/skills/bib-audit/test/`:
 - `test_biblatex.bib` — biblatex+Biber path: exact duplicate pair, preprint/journal version pair, missing fields, bad DOI, formatting inconsistencies
 - `test_natbib.bib` — BibTeX+natbib path: exact duplicate pair, year conflict, missing author, page-dash issues, mixed field casing
 - `test_modification.bib` + `test_modification.tex` — modification layer: deletion, merge, `.tex` citation rewrite, deduplication edge cases
+- `test_natbib_commands.tex` — all natbib citation command variants with optional args, multi-key, deduplication
+- `test_multifile_main.tex` + `test_multifile_section.tex` — multi-file citation rewrite
 
 ## Invocation
 
@@ -172,7 +174,7 @@ bibtex-update <file.bib> [--dedupe] [--fill-fields] -o updated.bib --report chan
 - deduplicate keys within `\cite{…}` commands;
 - verify citation consistency after changes.
 
-Only rewrite citation commands, not arbitrary text. Examples for `y → x`:
+Rewrites apply to any citation command of the form `\CMDNAME[...]{keys}` — including all natbib variants (`\citep`, `\citet`, `\citealt`, `\citealp`, `\citeauthor`, `\citeyear`) — not only `\cite`. Optional arguments `[post]` and `[pre][post]` are preserved unchanged. Examples for `y → x`:
 
 ```latex
 \cite{y}        →  \cite{x}

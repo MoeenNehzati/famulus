@@ -1,0 +1,14 @@
+\documentclass{article}
+\usepackage{natbib}
+\begin{document}
+
+% Main paper — cites both keys
+The model from \citet{lecun1989b} inspired later work.
+See \citep{vaswani2017preprint} for the attention mechanism.
+\citep{lecun1989,lecun1989b} are both foundational.
+
+\input{test_multifile_section}
+
+\bibliographystyle{plainnat}
+\bibliography{test_modification}
+\end{document}
