@@ -1,0 +1,14 @@
+{
+  "name": "nullmarket",
+  "owner": {
+    "name": "Moeen Nehzati"
+  },
+  "description": "Moeen's personal Claude Code plugin marketplace",
+  "plugins": [
+    {
+      "name": "moeen",
+      "source": "./",
+      "description": "Personal productivity skills — daily planning, calendar, lists, writing, and math tooling"
+    }
+  ]
+}
