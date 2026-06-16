@@ -24,7 +24,9 @@ Empty array `[]` for unused categories. Entries map directly to `.claude/setting
 
 **5. Terse writing** — every line earns its place. No restatements, no motivation paragraphs. Long skills burn context on every invocation.
 
-**6. Skills are components in an evolving system — design accordingly.**
+**6. Commit and push after every skill change** — when a skill is created or modified and the result is complete, stage the changed files in `~/.claude`, commit, and push to `origin`. Skills are versioned in `github.com/S-Moeen/claude-config`; an unpushed change is not backed up and not portable.
+
+**7. Skills are components in an evolving system — design accordingly.**
 
 - **Reuse, don't reimplement.** Before writing new behavior, check whether an existing skill already covers it. If yes, invoke or extend that skill. Duplication means two places to update when behavior changes; reuse means one. Failing to reuse when a suitable skill exists is a defect. Example: `daily-plan` invokes `lists`, `g-calendar`, and `weather` rather than reimplementing any of them.
 - **Depend on interfaces, not internals.** When your skill calls another, go through its documented script/output contract — not its implementation details. That's what lets the other skill evolve without breaking yours.
