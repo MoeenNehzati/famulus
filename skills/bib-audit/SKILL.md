@@ -22,9 +22,19 @@ Ready-to-use test fixtures live in `~/.claude/skills/bib-audit/test/`:
 
 Ask for:
 1. The `.bib` file (required).
-2. **LaTeX backend** (required): biblatex+Biber, or BibTeX+natbib? This determines Step 1.
-3. Accompanying `.tex` project files (optional; enables project-aware citation rewrites).
-4. House style preferences (optional).
+2. Accompanying `.tex` project files (optional; enables backend inference and project-aware citation rewrites).
+3. House style preferences (optional).
+
+**Backend inference** — when `.tex` files are provided, scan the preamble and infer the backend before proceeding:
+
+| Signal (in preamble) | Backend |
+|---|---|
+| `\usepackage{biblatex}` or `\usepackage[...]{biblatex}` | biblatex + Biber |
+| `\addbibresource{...}` (without explicit `\usepackage{biblatex}`) | biblatex + Biber |
+| `\usepackage{natbib}` | BibTeX + natbib |
+| `\bibliographystyle{...}` + no natbib/biblatex package | BibTeX (plain) |
+
+If multiple `.tex` files are provided, check the root/main file first. If signals conflict or are absent, ask the user. If no `.tex` files are provided, ask the user for the backend directly.
 
 ## Global rules
 
