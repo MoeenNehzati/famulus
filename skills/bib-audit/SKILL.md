@@ -209,6 +209,17 @@ Default audit report structure:
 
 Per-issue: entry key, issue type, severity, explanation, suggested action, evidence source, action class (automatic / approval-required / manual).
 
+**Suggested actions** — always conclude the report with a numbered list of concrete next steps, ordered by priority (errors and conflicts first, then duplicates, then style). Each item should be actionable in one step and specify the entry key(s) involved. Example:
+
+```
+## Suggested Actions
+1. Fix missing `journal` field in smith2020 [ERROR — manual]
+2. Resolve DOI conflict in jones2019: API reports doi:10.1234/x, file has doi:10.9999/y [CONFLICT — manual]
+3. Merge chen2021 → chen2022 (preprint superseded by journal article) [approval required]
+4. Upgrade nguyen2020 to published version via bibtex-update [approval required]
+5. Apply safe formatting fixes (whitespace, page-range dashes) across all entries [batch-approvable]
+```
+
 After transformations: cleaned `.bib`, diff, change log, key-renaming map (if keys changed), merge map (if entries merged), modified `.tex` files (if project-aware).
 
 ### Minimal example
