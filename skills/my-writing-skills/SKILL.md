@@ -3,13 +3,13 @@ name: my-writing-skills
 description: Use when creating or editing a personal skill in ~/.claude/skills/
 ---
 
-**REQUIRED:** Invoke `superpowers:writing-skills` and read it fully before proceeding. All upstream rules apply. The conventions below are added on top.
-
 ## Personal Conventions
 
 **1. Skill categories** — declare `Category: <name>` near the top of `SKILL.md`. Valid values: `~/.claude/skills/references/skill-categories.md`. Omit only if no existing category fits.
 
-**2. `my-X` naming** — a personal override of upstream skill `X` is named `my-X`.
+**2. `my-X` naming and structure** — a personal override of upstream skill `X` is named `my-X`. Every `my-X` skill must follow this layout:
+- Personal overrides and additions at the top (what's different or added).
+- Then a **REQUIRED — NON-NEGOTIABLE** instruction to invoke the original `X` skill at the bottom. The original skill's rules apply in full; the personal section adds on top.
 
 **3. `permissions.json`** — every skill ships one alongside `SKILL.md`:
 ```json
@@ -31,3 +31,7 @@ Empty array `[]` for unused categories. Entries map directly to `.claude/setting
 - **Reuse, don't reimplement.** Before writing new behavior, check whether an existing skill already covers it. If yes, invoke or extend that skill. Duplication means two places to update when behavior changes; reuse means one. Failing to reuse when a suitable skill exists is a defect. Example: `daily-plan` invokes `lists`, `g-calendar`, and `weather` rather than reimplementing any of them.
 - **Depend on interfaces, not internals.** When your skill calls another, go through its documented script/output contract — not its implementation details. That's what lets the other skill evolve without breaking yours.
 - **Make your own interface explicit.** State what inputs your skill expects and what outputs it produces, so future skills can depend on you cleanly. If your skill runs a script, document the invocation pattern and output format in `SKILL.md`.
+
+---
+
+**REQUIRED — NON-NEGOTIABLE:** Invoke `superpowers:writing-skills` and read it fully before proceeding. All upstream rules apply; the conventions above are added on top.
