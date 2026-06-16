@@ -51,13 +51,17 @@ Wait for the user's full response before doing anything else.
 ## 4. Add unplanned completed work to the plan
 
 For each item the user did that wasn't on the plan, use the `daily-plan`
-skill to append it to the `## Actions` section as a completed entry:
+skill to append an `## Unplanned Actions` section at the end of the plan
+(if it doesn't already exist), then add each item as a numbered completed
+entry:
 
-```
-- [x] <description>
+```markdown
+## Unplanned Actions
+1. [x] <description>
+2. [x] <description>
 ```
 
-No rationale annotation needed.
+If the section already exists, append to it (continuing the numbering).
 
 ## 5. Mark planned completions
 

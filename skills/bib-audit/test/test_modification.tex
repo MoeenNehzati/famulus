@@ -1,0 +1,25 @@
+\documentclass{article}
+\usepackage{natbib}
+\begin{document}
+
+% Single citation to duplicate key — should become \cite{lecun1989} after deletion
+The seminal zip-code paper \cite{lecun1989b} introduced backpropagation for vision.
+
+% Both duplicate keys in one command — should deduplicate to \cite{lecun1989}
+See also \cite{lecun1989,lecun1989b} for the original work.
+
+% Single citation to preprint — should become \cite{vaswani2017}
+Transformers were introduced in \cite{vaswani2017preprint}.
+
+% Both preprint and published in one command — should deduplicate to \cite{vaswani2017}
+The attention mechanism \cite{vaswani2017preprint,vaswani2017} is now ubiquitous.
+
+% Unaffected citation — should remain unchanged
+LSTMs \cite{hochreiter1997} remain widely used.
+
+% Another unaffected citation to the canonical key — should remain unchanged
+The LeCun paper \cite{lecun1989} is foundational.
+
+\bibliographystyle{plainnat}
+\bibliography{test_modification}
+\end{document}

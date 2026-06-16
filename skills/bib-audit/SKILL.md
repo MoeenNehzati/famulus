@@ -9,12 +9,20 @@ Category: document-oriented
 
 Conservative bibliography auditor. Default behavior: produce a structured report. Apply transformations only on explicit user approval.
 
+## Test files
+
+Ready-to-use test fixtures live in `~/.claude/skills/bib-audit/test/`:
+- `test_biblatex.bib` — biblatex+Biber path: exact duplicate pair, preprint/journal version pair, missing fields, bad DOI, formatting inconsistencies
+- `test_natbib.bib` — BibTeX+natbib path: exact duplicate pair, year conflict, missing author, page-dash issues, mixed field casing
+- `test_modification.bib` + `test_modification.tex` — modification layer: deletion, merge, `.tex` citation rewrite, deduplication edge cases
+
 ## Invocation
 
 Ask for:
 1. The `.bib` file (required).
-2. Accompanying `.tex` project files (optional; enables project-aware citation rewrites).
-3. House style preferences (optional).
+2. **LaTeX backend** (required): biblatex+Biber, or BibTeX+natbib? This determines Step 1.
+3. Accompanying `.tex` project files (optional; enables project-aware citation rewrites).
+4. House style preferences (optional).
 
 ## Global rules
 
@@ -29,35 +37,39 @@ Ask for:
 
 ## Workflow
 
-### Step 1 — Local validity and formatting (Biber)
+### Step 1 — Local validity and formatting
 
-Run Biber in tool/validation mode:
+#### biblatex + Biber
 
 ```
 biber --tool --validate-datamodel <file.bib>
 ```
 
-This writes two output files alongside the input:
-- `<basename>_bibertool.bib` — Biber-normalized version of the `.bib` (used in step 1b)
-- `<basename>.blg` — log file with all warnings and errors
+Produces `<basename>_bibertool.bib` (normalized output) and `<basename>.blg` (log). Parse the `.blg` log; map `ERROR`/`WARN`/`INFO` prefixes directly to the audit classification.
 
-Parse the `.blg` log. Map Biber's severity prefixes to the audit classification:
-- `ERROR` → `ERROR`
-- `WARN` → `WARNING`
-- `INFO` → `INFO`
+**1a.** Report all log entries: duplicate keys, missing required fields (biblatex spec), malformed entries, unknown fields, malformed author/DOI/year/page fields.
 
-**1a. Syntactic correctness.** Classify issues as:
-- `ERROR` — malformed or compilation-breaking (unbalanced braces, duplicate keys, missing required fields, unparseable entries).
-- `WARNING` — parseable but suspicious (invalid year, malformed DOI/URL/arXiv/eprint, malformed author list, invalid page range).
-- `INFO` — harmless or stylistic.
+**1b.** Diff original `.bib` against `<basename>_bibertool.bib`. Report differences in field ordering, field-name casing, indentation, page-range dashes, title capitalization, author/journal/publisher formatting, DOI/URL/arXiv formatting, citation-key style. Infer dominant style from the file; do not impose a universal one.
 
-Cover: malformed entries, unbalanced braces, invalid entry types, missing/malformed citation keys, duplicate keys, duplicate fields, malformed author lists, invalid year fields, malformed DOI/URL/arXiv/eprint/volume/page fields, missing required fields, Biber warnings about ignored or unknown fields.
+---
 
-**1b. Style consistency.** Diff the original `.bib` against `<basename>_bibertool.bib`. Report differences in: field ordering, field-name casing, indentation/spacing, title casing and protected capitalization, author/journal/conference/publisher formatting, DOI/URL/arXiv/page-range formatting, working-paper/preprint/forthcoming treatment, optional-field inclusion, citation-key style.
+#### BibTeX + natbib
 
-Infer the file's dominant style; do not impose a universal style unless the user provides one. Biber-normalized output is a proposal, not an automatic replacement.
+Do not run `biber --tool` — it uses biblatex field names (`journaltitle`, `date`) and will spuriously flag valid BibTeX fields (`journal`, `year`).
 
-**Optional — citation-key standardization.** Offer four choices: (1) preserve existing keys, (2) report inconsistencies only, (3) standardize `.bib` only, (4) standardize `.bib` and update `.tex`. Warn if no `.tex` files are provided.
+```
+python3 ~/.claude/skills/bib-audit/scripts/bib-validate-bibtex.py <file.bib>
+```
+
+Output is JSON. Read `parse_errors` first (file-level failures), then `entries[*].issues`. Each issue has `level` (ERROR/WARNING/INFO), `field`, and `message`.
+
+**1a.** Report all ERRORs and WARNINGs. Required fields are checked against the BibTeX spec (e.g. `@article` needs `author`, `title`, `journal`, `year` — not `journaltitle`/`date`).
+
+**1b.** No normalized reference output is available. Read the file directly and report style inconsistencies: field-name casing (BibTeX convention: lowercase), field ordering within entries, indentation and spacing, page-range dashes, title brace-protection, citation-key style.
+
+---
+
+**Optional — citation-key standardization** (both backends)**:** Offer four choices: (1) preserve existing keys, (2) report inconsistencies only, (3) standardize `.bib` only, (4) standardize `.bib` and update `.tex`. Warn if no `.tex` files are provided.
 
 ---
 
@@ -74,21 +86,7 @@ bibtex-check <file.bib> --report report.json --non-generative --mailto <your-ema
 - `--skip-books`, `--skip-working-papers` skip entry types that rarely resolve externally.
 - If the tool fails or times out on an entry, mark it `UNVERIFIED` and continue; note which entries could not be checked.
 
-**JSON report structure** (`--report report.json`):
-
-Top-level keys: `summary` (aggregate counts, `verified_rate`, `problematic_count`, `timestamp`) and `entries` (one object per entry).
-
-Per-entry fields to read:
-
-| Field | Meaning |
-|---|---|
-| `key` | Citation key |
-| `status` | Verdict string (see table below) |
-| `confidence` | Numerical confidence, 0–1 |
-| `field_comparisons` | Per-field: `entry_value`, `api_value`, `similarity_score`, `matches` |
-| `best_match.doi` | Resolved external DOI (use for Step 2→3 cross-reference) |
-| `api_sources_queried` | Which sources were tried |
-| `errors` | Any errors during lookup |
+Per-entry: read `status` (see mapping below), `field_comparisons` (has `entry_value`/`api_value`/`similarity_score`/`matches` per field), and `best_match.doi` (for Step 3 cross-reference). Top-level `summary` has aggregate counts.
 
 Map `status` to audit classification:
 
@@ -98,7 +96,8 @@ Map `status` to audit classification:
 | `partial_match` | PROBABLE MATCH |
 | `not_found`, `unconfirmed`, `preprint_only` | UNVERIFIED |
 | `title_mismatch`, `author_mismatch`, `year_mismatch`, `venue_mismatch`, `arxiv_id_mismatch`, `doi_mismatch`, `hallucinated` | CONFLICT |
-| `published_version_exists` | UNVERIFIED — flag for Step 3 (a published version was found; use `bibtex-update` to upgrade) |
+| `doi_not_found` | CONFLICT — DOI is present but does not resolve; likely fabricated or mistyped |
+| `published_version_exists` | UNVERIFIED — flag for Step 3 (a published version was found; use `bibtex-update` to upgrade). Note: bibtex-check may instead return `verified` for a preprint that resolves via arXiv even when a published version exists — the similarity script may catch such version pairs that this status misses. |
 | `api_error` | UNVERIFIED — note that lookup failed |
 
 Do not treat UNVERIFIED as fake. Books, unpublished manuscripts, lecture notes, older works, and private drafts may be real even when no external match is found.
@@ -113,14 +112,11 @@ Run the similarity script to get a ranked candidate list:
 python3 ~/.claude/skills/bib-audit/scripts/bib-similarity.py <file.bib> [--threshold 0.3]
 ```
 
-The script compares every pair of entries and outputs JSON. For each pair it reports:
-- `score` (0–1) and `confidence` (`EXACT` / `HIGH` / `MEDIUM` / `LOW`)
-- per-field signal scores: `doi`/`eprint`/`isbn` (identifier match), `title` (token Jaccard), `author` (last-name Jaccard), `year`, `venue`
-- `EXACT` means a shared DOI, eprint, or ISBN was found — treat these as definite duplicates regardless of other fields
+Output JSON: each pair has `score` (0–1), `confidence` (EXACT/HIGH/MEDIUM/LOW), and per-field signals (`doi`/`eprint`/`isbn` identifier match, `title`/`author`/`year`/`venue` soft scores). `EXACT` = shared identifier; treat as definite duplicate. Threshold 0.3 is loose by design — use the list as a checklist, not a verdict.
 
-The threshold is intentionally loose (default 0.3) to avoid missing candidates. **Known limitation:** the script only checks `doi`, `eprint`, `arxivid`, and `isbn` fields for identifier matches. ArXiv IDs embedded in `howpublished`, `note`, or `url` as free text are also extracted and compared (see script), but entries that store the arXiv ID only in unstructured text fields may still be missed — prefer the `eprint` field for arXiv identifiers. Use the candidate list as a checklist, not a classification.
+Known limitation: arXiv IDs in `howpublished`/`note`/`url` free text are extracted as a fallback, but prefer `eprint` field for reliable identifier matching.
 
-After running the script, also cross-check with Step 2 results: collect `best_match.doi` from each entry's JSON object. If two entries share the same non-empty `best_match.doi`, treat that pair as `EXACT` in Step 3 regardless of what the script reported — this catches cases where the same DOI is present but formatted differently in the two `.bib` entries. Also flag any entry with status `published_version_exists` as a version-pair candidate for Step 3.
+Cross-check with Step 2: if two entries share the same `best_match.doi`, treat them as EXACT regardless of what the script reported. Skip entries with status `not_found` or `unconfirmed` when doing this cross-check — their `best_match.doi` may be a spurious near-hit, not a confirmed match. Flag any entry with `published_version_exists` status as a version-pair candidate.
 
 For each candidate pair (or group), determine the relationship:
 - **exact duplicate** — identical or near-identical entries, same work, no meaningful difference
@@ -130,16 +126,7 @@ For each candidate pair (or group), determine the relationship:
 
 For each duplicate/version group, report: grouped entries, relationship type, proposed canonical entry, proposed action, evidence (script score + signals, identifier match, bibtex-check cross-reference).
 
-Default canonical preference:
-```
-journal article
-> conference/proceedings version
-> accepted/forthcoming with final metadata
-> latest preprint or working paper
-> older draft or manuscript
-```
-
-Preserve non-canonical versions when they differ in content, appendix material, author list, or title, when the version relationship is uncertain, or when there is a plausible reason to cite them separately.
+Default canonical preference: journal article > conference/proceedings > accepted/forthcoming with final metadata > latest preprint > older draft. Preserve non-canonical versions when content, author list, or title differ, or when there is a plausible reason to cite them separately.
 
 **Optional — merge or delete entries.** If merging `y → x`: keep `x`, delete `y`, record the merge, update `.tex` citations, deduplicate citation commands. If deleting without replacement and `.tex` files exist: check for citations and ask what to do. If no `.tex` files were provided, warn the user explicitly that the deletion or key change may silently break citations in any accompanying `.tex` files. Do not infer a merge target destructively from incomplete information.
 
@@ -157,7 +144,7 @@ Invoke only when the user approves specific transformations. Never for audit-onl
 - apply consistent field ordering;
 - remove empty fields.
 
-Safe transformations may be approved in bulk ("apply all safe fixes") and produce a single combined diff/change log. Even so, always show the diff before writing.
+Safe transformations may be approved in bulk; produce a single combined diff before writing.
 
 **Review-required transformations** (each requires individual approval):
 - change titles, authors, years, venues;
@@ -167,21 +154,17 @@ Safe transformations may be approved in bulk ("apply all safe fixes") and produc
 - change citation keys;
 - aggressive house-style rewrites.
 
-**`bibtex-update` for preprint upgrades and deduplication:**
+**`bibtex-update`** for preprint upgrades and deduplication. Always preview first (`--dry-run` requires `-o` even in preview mode). Review these side effects before approving — flag each to the user:
+- Author names may be reformatted from Last-First to First-Last.
+- `eprint` fields may be silently dropped.
+- Titles may gain trailing punctuation or changed capitalisation from the API.
+- Top-of-file comment blocks are stripped from the output.
+- New page ranges introduced by upgrades may use single hyphens rather than en-dashes.
+- **Do not run `--dedupe` on a file that contains both exact duplicates and version pairs without careful preview.** The combination can produce hybrid entries with contradictory fields (e.g. `@article` with simultaneous `journal`, `booktitle`, and `howpublished`). Run deduplication only after resolving version pairs separately, or review the output entry-by-entry before writing.
 ```
-# Preview changes without writing
-bibtex-update <file.bib> --dry-run --verbose
-
-# Replace preprints with published versions
-bibtex-update <file.bib> -o updated.bib
-
-# Merge duplicates by DOI or normalized title+authors
-bibtex-update <file.bib> --dedupe -o deduped.bib
-
-# Fill missing required/recommended fields from external APIs
-bibtex-update <file.bib> --fill-fields -o filled.bib
+bibtex-update <file.bib> --dry-run --verbose -o /tmp/preview.bib
+bibtex-update <file.bib> [--dedupe] [--fill-fields] -o updated.bib --report changes.jsonl
 ```
-Always run `--dry-run` first and show the diff to the user before applying. Use `--report report.jsonl` to produce a change log.
 
 **Project-aware transformations** (only when `.tex` files provided):
 - update citation keys in `.tex` files;
@@ -212,9 +195,9 @@ Default audit report structure:
 
 **Summary section contents:** total entries parsed; ERROR / WARNING / INFO counts from Step 1; verification counts from Step 2 (VERIFIED N/total, CONFLICT N, UNVERIFIED N, api_error N); duplicate candidate pairs by confidence (EXACT N, HIGH N, MEDIUM N, LOW N); count of entries with `published_version_exists`.
 
-Per-issue fields: entry key, issue type, severity, explanation, suggested action, evidence source, confidence (if available), action class (automatic / approval-required / manual).
+Per-issue: entry key, issue type, severity, explanation, suggested action, evidence source, action class (automatic / approval-required / manual).
 
-When transformations are applied, also produce: cleaned `.bib` file, change log, diff or patch, key-renaming map (if keys changed), merge map (if entries merged), modified `.tex` files (if project-aware transformations performed).
+After transformations: cleaned `.bib`, diff, change log, key-renaming map (if keys changed), merge map (if entries merged), modified `.tex` files (if project-aware).
 
 ### Minimal example
 

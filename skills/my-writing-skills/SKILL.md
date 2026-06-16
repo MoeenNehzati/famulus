@@ -29,7 +29,7 @@ Empty array `[]` for unused categories. Entries map directly to `.claude/setting
 **7. Skills are components in an evolving system — design accordingly.**
 
 - **Reuse, don't reimplement.** Before writing new behavior, check whether an existing skill already covers it. If yes, invoke or extend that skill. Duplication means two places to update when behavior changes; reuse means one. Failing to reuse when a suitable skill exists is a defect. Example: `daily-plan` invokes `lists`, `g-calendar`, and `weather` rather than reimplementing any of them.
-- **Depend on interfaces, not internals.** When your skill calls another, go through its documented script/output contract — not its implementation details. That's what lets the other skill evolve without breaking yours.
+- **Depend on interfaces, not internals — invoke the skill, never its scripts.** Each skill's scripts are private to that skill. When your skill needs behavior another skill provides, invoke that skill and let it run its own scripts. Directly calling another skill's scripts bypasses its logic and couples to its internals. Reuse maximally, but only through skill invocation.
 - **Make your own interface explicit.** State what inputs your skill expects and what outputs it produces, so future skills can depend on you cleanly. If your skill runs a script, document the invocation pattern and output format in `SKILL.md`.
 
 ---
