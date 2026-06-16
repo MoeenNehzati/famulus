@@ -1,0 +1,7 @@
+{
+  "bash": [
+    "Bash(latexmk:*)",
+    "Bash(rg:*)"
+  ],
+  "network": []
+}

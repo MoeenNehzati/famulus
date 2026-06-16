@@ -1,0 +1,30 @@
+# Ephemeral runtime data
+history.jsonl
+sessions/
+session-env/
+cache/
+paste-cache/
+shell-snapshots/
+file-history/
+backups/
+downloads/
+tasks/
+projects/
+ide/
+mcp-needs-auth-cache.json
+
+# Local/machine-specific settings
+settings.local.json
+settings.json
+
+# Credentials and runtime state
+.credentials.json
+.last-cleanup
+.last-update-result.json
+
+# Upstream plugin cache (not owned by us)
+plugins/
+
+# Python bytecode in skills/
+skills/**/__pycache__/
+skills/**/*.pyc

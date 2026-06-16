@@ -1,0 +1,187 @@
+---
+name: math-dependency-graph
+description: |
+  Extract a mathematical dependency graph from a LaTeX math document, with standing assumptions,
+  definitions, lemmas, propositions, theorems, corollaries, notation blocks, and direct dependency edges.
+
+  Use when:
+  - the user wants the structure of a math document represented as assumptions-to-results dependencies
+  - the user wants a canonical JSON artifact first and an interactive HTML graph second
+  - the task is to identify standing assumptions, including ambient assumptions imposed by notation or scope phrases
+  - each dependency link should explain how the prerequisite is used
+
+  Do not use when:
+  - the main goal is proof validation rather than structural dependency extraction
+  - the user wants a literature map rather than a document-internal dependency graph
+
+  Success criteria:
+  - produce a JSON file that is the source of truth for entities and direct dependencies
+  - have the model construct that JSON by understanding the mathematical structure of the document
+  - represent only direct dependencies, not inherited transitive closure
+  - attach short descriptions and evidence to dependency links
+  - render a standalone HTML graph from the JSON with type-specific shapes, colors, hover details, and interactive filtering
+---
+
+When this skill is used, begin with:
+
+Skill: math-dependency-graph
+
+Category: document-oriented
+Category: mathematical-analysis
+
+## 1. Goal
+
+Build a direct-dependency graph for a mathematical document.
+
+The canonical artifact is JSON.
+The HTML graph is a visualization of that JSON and must not invent structure.
+The model is responsible for building the JSON.
+Python is responsible for rendering and view-layer interaction only.
+
+The JSON must be presentation-ready.
+Do not rely on the renderer to repair malformed math, infer math mode, or normalize prose.
+
+## 2. Dependency semantics
+
+Record only direct dependencies.
+
+If entity `X` depends on entity `Y`, and `Y` depends on standing assumption `A`,
+do not also connect `A` directly to `X` unless `X` independently uses `A`
+in its own statement, proof, or ambient notation.
+
+Each dependency edge must include:
+- the prerequisite id
+- a short description of how it is used
+- a use type
+- a confidence level
+- a short evidence string
+
+All string fields intended for display must already be valid MathJax-compatible text.
+If a symbol such as `\in`, `\Rightarrow`, `\Omega`, or `\Pi_i` should render as math, put it in math mode in the JSON.
+
+## 3. What counts as an entity
+
+Prefer these entity types:
+- `standing-assumption`
+- `local-assumption`
+- `definition`
+- `notation`
+- `lemma`
+- `proposition`
+- `theorem`
+- `corollary`
+- `remark`
+
+Only include `remark` if it carries mathematical content used later.
+
+Standing assumptions may come from:
+- explicit assumption environments
+- ambient scope phrases such as `Throughout`, `Fix ... throughout`, `In this section we assume`
+- notation that imposes mathematical conditions in a reusable way
+
+## 4. Output
+
+Start with:
+
+- `Mode: Explore`
+- `Skill: math-dependency-graph`
+
+Then report briefly:
+- where the JSON was written
+- where the HTML was written
+- main extraction gaps or ambiguous edges
+
+## 5. Workflow
+
+1. Read the document and identify theorem-like environments and ambient assumption paragraphs.
+2. Construct the canonical JSON directly by understanding the mathematical structure.
+3. Add only direct dependencies with descriptions and evidence.
+4. Write or propose that JSON first.
+5. Use the renderer script only after the JSON exists.
+6. Flag uncertain or heuristic edges explicitly.
+
+## 6. Canonical fields
+
+Use `type`, not `kind`.
+
+For entities, prefer fields such as:
+- `id`
+- `type`
+- `label`
+- `title`
+- `short_description`
+- `location`
+- `scope`
+- `origin`
+- `depends_on`
+
+For dependencies, prefer fields such as:
+- `id`
+- `use_type`
+- `description`
+- `confidence`
+- `evidence`
+
+Prefer the model to justify difficult edges from mathematical content, not from string matching.
+If the document is ambiguous, keep the JSON conservative and mark uncertainty explicitly.
+
+If the document uses local TeX macros, include them explicitly under:
+
+- `document.mathjax_macros`
+
+For example:
+
+```json
+{
+  "document": {
+    "mathjax_macros": {
+      "R": "\\mathbb{R}",
+      "G": "\\mathcal{G}"
+    }
+  }
+}
+```
+
+Do not emit bare local macros unless they are declared there.
+Do not emit malformed TeX such as ambiguous subscripts or superscripts.
+
+## 7. Rendering rules
+
+The HTML graph should:
+- use different node shapes for different entity types
+- color-code entity types
+- encode dependency confidence through edge style
+- use a layered left-to-right layout for distinct implications
+- place same-result vertical variants such as attached corollaries directly below their parent when appropriate
+- show extra details on hover
+- show fuller metadata in a side panel on click
+- support hiding entity categories from the legend without breaking visible causality
+- support temporarily removing individual nodes from the graph without breaking visible causality
+- support ancestor-focused viewing for a selected node
+- persist viewer state locally when feasible
+
+The current renderer uses `elkjs` in the browser for layout and routing.
+The renderer may optionally apply graph-theoretic transitive reduction to the rendered view for readability, but this does not change the JSON source of truth.
+
+Do not treat inferred notation-imposed assumptions as fully verified facts.
+Mark them as inferred or unclear when appropriate.
+
+## 8. Tool split
+
+The model should do:
+- entity identification
+- standing-assumption identification
+- direct dependency judgment
+- link descriptions
+- confidence assignment
+- production of valid display-ready strings
+- declaration of any required MathJax macros
+
+The Python renderer should do only:
+- load canonical JSON
+- validate basic structure
+- optionally apply graph-theoretic transitive reduction for readability
+- render the interactive HTML graph
+- manage visualization-only state such as filters, local hiding, focus modes, and persistence
+
+Do not delegate semantic graph extraction to the renderer script.

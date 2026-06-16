@@ -1,0 +1,9 @@
+# Editor / OS
+.DS_Store
+*.swp
+
+# Editor / assistant settings (local, not part of the project)
+.claude/
+.vscode/
+*.code-workspace
+CLAUDE.md

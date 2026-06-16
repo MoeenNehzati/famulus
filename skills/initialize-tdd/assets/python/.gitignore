@@ -1,0 +1,16 @@
+# Environments
+.venv/
+.env
+.testenv
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+logs/**/*.log
+!logs/.gitkeep

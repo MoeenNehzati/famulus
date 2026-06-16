@@ -1,0 +1,9 @@
+{
+  "bash": [
+    "Bash(biber:*)",
+    "Bash(bibtex-check:*)",
+    "Bash(bibtex-update:*)",
+    "Bash(/home/moeen/.claude/skills/bib-audit/scripts/bib-similarity.py:*)"
+  ],
+  "network": []
+}
