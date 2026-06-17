@@ -1,19 +1,19 @@
 ---
 name: email-triage
-description: Use when asked to triage email, process the inbox, or surface action items from recent emails. Scans the last 24 hours across both accounts and syncs with the todo list and calendar.
+description: Use when asked to triage email, process the inbox, or surface action items from recent emails. Scans the last 24 hours across both accounts and syncs with the todo list and potential-actions list.
 ---
 
 # Email Triage
 
 Category: automation
 
-Scans emails received in the last 24 hours on both accounts. Extracts action items (bills to pay, replies owed, events to add to calendar). Adds to the todo or potential-actions list only if no equivalent item already exists.
+Scans emails received in the last 24 hours on both accounts. Extracts action items and routes them to the right list. Never adds events to the calendar automatically — the user decides.
 
-**Sub-skills to invoke:** `email` (reading/sending), `lists` (todo management), `g-calendar` (calendar). Never call their scripts directly — invoke the skill.
+**Sub-skills to invoke:** `email` (reading/sending), `lists` (list management). Never call their scripts directly — invoke the skill.
 
 **Two destination lists:**
-- `todo` — personal, directed actions: bills to pay, replies owed, follow-up commitments
-- `potential-actions` — mass invites, optional opportunities: CFPs, summer schools, workshops, open applications, optional signups
+- `todo` — directed, personal actions: bills to pay, replies owed, explicit follow-up commitments
+- `potential-actions` — anything the user may or may not act on: events, seminars, CFPs, summer schools, workshops, fellowship applications, optional signups
 
 ---
 
@@ -51,52 +51,49 @@ Note FLAGS per row: `*` = unread · `R` = replied · blank = read, not replied.
 himalaya message read -a <account> <ID>
 ```
 
-Batch up to 10 reads in parallel. For each email, identify:
+Batch up to 10 reads in parallel. Classify each email:
 
 | Category | Destination | Signal |
 |----------|-------------|--------|
 | **Bill / invoice** | `todo` | Amount due, due date, or payment link visible |
-| **Reply needed** | `todo` | Sent by a real person, asks a question or expects a response, FLAGS has no `R` |
-| **Follow-up commitment** | `todo` | You made an explicit commitment in a prior reply (e.g. "I'll send you X in July") |
-| **Event reminder** | calendar | Specific event with date/time you're already committed to; email is a reminder |
-| **Opportunity / invite** | `potential-actions` | Mass invite, CFP, open application, optional workshop or summer school, signup form |
+| **Reply needed** | `todo` | Real person, asks a question or expects a response, FLAGS has no `R` |
+| **Follow-up commitment** | `todo` | Explicit promise made in a prior reply (e.g. "I'll send you X in July") |
+| **Event / seminar** | `potential-actions` | Email about a specific event with date and time |
+| **Opportunity / invite** | `potential-actions` | CFP, fellowship, workshop, optional signup, mass invite |
 | **No action** | — | Everything else |
 
 For **reply needed**: skip if the sender is the user themselves, if it's a mass CC, or if purely informational with no implied response needed.
 
 ---
 
-## Step 4 — Handle event reminders via `g-calendar` skill
+## Step 4 — Read both destination lists via `lists` skill
 
-For each "event reminder" email: extract event title, date, time. Invoke the `g-calendar` skill to search for it and add it if not found. Adding it to the calendar IS the action — do not also add a todo.
-
----
-
-## Step 5 — Read both destination lists via `lists` skill
-
-Invoke the `lists` skill to read:
-- `todo`
-- `potential-actions`
+Invoke the `lists` skill to read `todo` and `potential-actions`.
 
 ---
 
-## Step 6 — Add action items, deduplicating
+## Step 5 — Add action items, deduplicating
 
-**Format:**
-- Bill: `Pay [Sender] – [amount/description]` → `todo`
+Every item must be a **concrete imperative sentence** — a specific thing to do, not a vague note.
+
+**Format by category:**
+- Bill: `Pay [Sender] – $[amount] due [date]` → `todo`
 - Reply: `Reply to [Name] re: [subject]` → `todo`
-- Follow-up: `[imperative phrase] – [timeframe if known]` → `todo`
-- Opportunity: short description of what it is and when → `potential-actions`
+- Follow-up: `[action verb] [target] – [timeframe]` → `todo`
+- Event: `Attend [event name] – [date, time, location]` → `potential-actions`
+- CFP / application: `Submit to [name] by [deadline]` or `Apply to [name] by [deadline]` → `potential-actions`
+- Optional signup: `Sign up for [name] – [date or deadline]` → `potential-actions`
 
-**Dedup:** before adding to either list, scan that list for a case-insensitive substring match on sender + topic. If a similar item already exists (checked or unchecked), skip. Use the `lists` skill to add new items.
+If deadline or date is unknown, omit rather than guess.
+
+**Dedup:** before adding to either list, scan for a case-insensitive substring match on the key noun (sender name, event name, program name). If a match exists (checked or unchecked), skip. Use the `lists` skill to add new items.
 
 ---
 
-## Step 7 — Report
+## Step 6 — Report
 
 Summarize concisely:
 - N emails scanned across both accounts
-- Items added to `todo`
-- Items added to `potential-actions`
-- Events added to calendar
-- Items skipped (already listed / already on calendar / no action)
+- Items added to `todo` (list them)
+- Items added to `potential-actions` (list them)
+- Items skipped (already listed / no action / promotional)
