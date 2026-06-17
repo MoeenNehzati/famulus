@@ -7,7 +7,11 @@ description: Use when reading, listing, searching, or sending email for the user
 
 Category: automation
 
-Two Gmail accounts: **nyu** (`sn3379@nyu.edu`) and **personal** (`smnehzati@gmail.com`, default).
+Two Gmail accounts: **nyu** (`sn3379@nyu.edu`) and **personal** (`smnehzati@gmail.com`).
+
+**Default account by context:**
+- `nyu` — anything academic: research, professors, coursework, NYU/university contacts, conference emails
+- `personal` — everything else: personal correspondence, shopping, services, non-academic contacts
 
 ## Reading — himalaya (IMAP only)
 
