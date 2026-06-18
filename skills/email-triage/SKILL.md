@@ -41,7 +41,7 @@ himalaya envelope list -a personal after <cutoff>
 
 Note FLAGS per row: `*` = unread · `R` = replied · blank = read, not replied.
 
-**Skip immediately** (don't read body): marketing/promotional senders, mailing lists, GitHub notifications, automated system alerts with no human sender.
+**Skip immediately** (don't read body) when the subject alone makes it unambiguous: sales/discount offers, newsletter digests, GitHub notifications, delivery confirmations, social media digests, referral bonuses. For financial senders (banks, SoFi, Spotify, utilities): read the subject — skip if promotional, read the body if it could be a statement, payment due, or alert.
 
 ---
 
