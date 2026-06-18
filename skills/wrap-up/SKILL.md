@@ -36,7 +36,8 @@ reference them by number.
 Send a single message asking all of the following:
 
 1. **Completions**: Which of the incomplete actions (listed by number) were
-   actually completed today? ("all", "none", or numbers/descriptions.)
+   actually completed today? ("all", "none", numbers/descriptions, or partial —
+   e.g. "action 2: finished the tests but not the docs".)
 2. **Unplanned work**: Did you do anything else today that wasn't on the plan?
    (These will be added to the plan as completed items.)
 3. **Calendar notes**: Any notes, outcomes, or follow-ups from calendar events
@@ -71,6 +72,23 @@ For each planned action the user says was completed:
 2. Use the `lists` skill to check off the matching todo item — fuzzy-match
    the action text (before `—`) against unchecked `- [ ]` items on the todo
    list. If no confident match is found, say so rather than guessing wrong.
+
+### Partial completions
+
+If the user says part X of an action was done and part Y remains, instead of
+marking the action done or leaving it untouched:
+
+1. Use `daily-plan` to replace the action's line with the original parent line
+   (kept as `- [ ]`, since it isn't fully done) followed by two indented
+   sub-items:
+   ```markdown
+   - [ ] <original action text>
+     - [x] <completed part X>
+     - [ ] <remaining part Y>
+   ```
+2. Use the `lists` skill to apply the same split to the matching todo item:
+   replace the single `- [ ] <action>` entry with the parent plus sub-items,
+   mirroring the structure above.
 
 ## 6. Add new list items
 
