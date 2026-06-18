@@ -72,6 +72,12 @@ indentation per level. Every item carries a creation date in
   the text *after* the `(MM/DD/YY) ` prefix — the date itself is not part
   of the matchable text.
 
+**`potential-actions` extended states** (this list only):
+- `- [+] (MM/DD/YY) text` = accepted — item has been promoted to `todo`
+- `- [-] (MM/DD/YY) text` = rejected — kept for reference, excluded from suggestions
+
+These states are set by triage workflows (see §5), never by check/uncheck operations (§3.5).
+
 ## 3. Operations
 
 ### 3.1 List all lists
@@ -182,3 +188,17 @@ EOF
   list whose name plausibly matches the topic (e.g. "groceries" for "add
   milk"), use it. If there are multiple plausible matches or none, ask the
   user which list (offering to create a new one if none match).
+
+## 5. potential-actions ↔ todo dependency
+
+`potential-actions` is a staging list; `todo` holds committed actions.
+
+**Item lifecycle:**
+- Items start as `[ ]` (unreviewed).
+- **Accepted** (`[+]`): mark `[+]` in `potential-actions` AND add the item to `todo` as `- [ ] (MM/DD/YY) <text>` (today's date). Both writes happen together in one pass.
+- **Rejected** (`[-]`): mark `[-]` in `potential-actions`. Nothing added to `todo`.
+- Items are never deleted from `potential-actions` — the `[+]`/`[-]` state is the audit trail.
+
+**Dedup rule:** never add to `potential-actions` if a match already exists in any state (`[ ]`, `[+]`, or `[-]`). A previously rejected item is not re-added on future triage runs.
+
+**Filtering:** only `[ ]` items are surfaced in suggestions (daily plan, triage prompts).

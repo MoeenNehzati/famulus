@@ -217,7 +217,9 @@ potential-actions list is non-empty.
 
 If the `potential-actions` list is empty or does not exist, skip this step.
 
-Otherwise, display each item and ask what to do with it:
+**Only show items in `[ ]` state** — exclude `[+]` (already accepted) and `[-]` (already rejected). If no unreviewed items remain, skip this step.
+
+Display each unreviewed item and ask what to do with it:
 
 ```
 **Potential actions — what should I do with each?**
@@ -226,36 +228,65 @@ Otherwise, display each item and ask what to do with it:
 2. <item text>
 ...
 
-Options per item: add to todo | add to today's actions | remove | keep
+Options per item: accept (→ todo) | accept + today | reject | skip
 ```
+
+- **accept**: mark `[+]` in `potential-actions`, add to `todo`
+- **accept + today**: mark `[+]` in `potential-actions`, add to `todo`, add to today's plan actions
+- **reject**: mark `[-]` in `potential-actions` (stays for reference, not shown again)
+- **skip**: leave as `[ ]` (will appear next time)
 
 Wait for the user's response, then in a single pass:
 
-1. **Build an updated potential-actions list**: remove items the user chose to
-   promote (add to todo / add to today's actions) or remove. Items marked
-   "keep" stay. Write the updated list:
+1. **Update `potential-actions` in-place**: change `[ ]` → `[+]` for accepted items, `[ ]` → `[-]` for rejected items. Skipped items remain `[ ]`. Write:
    ```bash
    /home/moeen/.claude/skills/lists/scripts/lists.sh write potential-actions
    ```
 
-2. **Build an updated todo list**: prepend each promoted item as
-   `- [ ] (MM/DD/YY) <text>` (today's date). Write it:
+2. **Update `todo`**: prepend each accepted item as `- [ ] (MM/DD/YY) <text>` (today's date). Write:
    ```bash
    /home/moeen/.claude/skills/lists/scripts/lists.sh write todo
    ```
 
-3. **If any items go to today's actions**: read the current plan, append each
-   as a new numbered item in the `## Actions` (or `## Actions (suggestions)`)
-   section, then write the plan back:
+3. **If any items were accept+today**: read the current plan, append each as a new numbered item in the `## Actions` (or `## Actions (suggestions)`) section, then write the plan back:
    ```bash
    /home/moeen/.claude/skills/daily-plan/scripts/plans.sh read <key>
    # ... edit the Actions section ...
    /home/moeen/.claude/skills/daily-plan/scripts/plans.sh write <key>
    ```
 
-4. Confirm all changes to the user (what was added where, what was removed).
+4. Confirm all changes to the user (accepted/rejected/skipped counts, what was added to todo).
 
-## 10. Handling user decisions on actions
+## 10. Deadline nudge
+
+After the plan is shown and triage is complete, scan all **unchecked** `todo` items (from the list read in step 3) for items with no deadline indicator. An item lacks a deadline if its text contains none of: a specific date, a month name, a year, "this week", "this month", "this summer", "this year", "next week", "next month", "today", "tomorrow", "by", "due", "before", "until", "early", "end of", or any other relative time expression.
+
+If any such items exist, show them and ask for deadlines:
+
+```
+**These todo items have no deadline — specify one for each, or skip:**
+
+1. <item text>
+2. <item text>
+...
+```
+
+Wait for the user's response. For each item the user assigns a deadline to:
+
+1. Read the current `todo` list:
+   ```bash
+   /home/moeen/.claude/skills/lists/scripts/lists.sh read todo
+   ```
+2. Find the matching item (fuzzy match on text after stripping the `(MM/DD/YY)` prefix).
+3. Append the deadline phrase to the item's text (e.g. `gather medical records` → `gather medical records by end of July`).
+4. Write the updated list back:
+   ```bash
+   /home/moeen/.claude/skills/lists/scripts/lists.sh write todo
+   ```
+
+Confirm which items were updated. Items the user skips remain unchanged.
+
+## 11. Handling user decisions on actions
 
 When the user responds with which actions they're keeping:
 
@@ -273,7 +304,7 @@ When the user responds with which actions they're keeping:
    ```
 4. Show the user the updated plan.
 
-## 11. Handling action checkmarks
+## 12. Handling action checkmarks
 
 When the user marks one or more actions as done (e.g., "mark 1 as done",
 "check off 2 and 3", "done with 4"):

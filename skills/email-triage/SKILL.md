@@ -86,7 +86,7 @@ Every item must be a **concrete imperative sentence** — a specific thing to do
 
 If deadline or date is unknown, omit rather than guess.
 
-**Dedup:** before adding to either list, scan for a case-insensitive substring match on the key noun (sender name, event name, program name). If a match exists (checked or unchecked), skip. Use the `lists` skill to add new items.
+**Dedup:** before adding to `potential-actions`, scan for a case-insensitive substring match on the key noun (sender name, event name, program name). If a match exists in any state (`[ ]`, `[+]`, or `[-]`), skip — the item has already been triaged. Use the `lists` skill to add new items.
 
 ---
 
