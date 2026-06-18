@@ -24,7 +24,7 @@ Empty array `[]` for unused categories. Entries map directly to `.claude/setting
 
 **5. Terse writing** — every line earns its place. No restatements, no motivation paragraphs. Long skills burn context on every invocation.
 
-**6. Commit and push after every skill change** — when a skill is created or modified and the result is complete, stage the changed files in `~/.claude`, commit, and push to `origin`. Skills are versioned in `github.com/S-Moeen/claude-config`; an unpushed change is not backed up and not portable.
+**6. Commit and push after every skill change** — when a skill is created or modified and the result is complete, **show the user the diff and ask for confirmation before committing**. Once confirmed, stage the changed files in `~/.claude`, commit, and push to `origin`. Skills are versioned in `github.com/S-Moeen/claude-config`; an unpushed change is not backed up and not portable.
 
 **7. Skills are components in an evolving system — design accordingly.**
 
