@@ -89,6 +89,19 @@ Examples:
   (spans *all* calendars) -> one call:
   `gcal.sh agenda --all-calendars --from <ISO-with-offset> --days 7`
 
+## 2a. Which calendar to use for `create`
+
+Before creating an event, run `gcal.sh calendars` to see available calendars,
+then match the event content against calendar names:
+
+- Pick the calendar whose name best fits the event type (e.g. "Medical" for
+  doctor visits, "Work" for meetings, "Classes" for coursework).
+- If the match is clear, use it without asking.
+- If 2+ calendars could plausibly fit, or none fit obviously, ask the user
+  before creating.
+- Never silently default to `primary` for an event that clearly belongs
+  elsewhere.
+
 ## 3. QC after writes
 
 Every `create`/`update`/`delete` ends with a read-back verification - this is
