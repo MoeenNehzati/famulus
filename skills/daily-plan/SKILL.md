@@ -65,10 +65,11 @@ file lives at `GDrive:plans/<key>.md`, managed by the `plans.sh` script.
 
 ## 3. Gather inputs (all in parallel)
 
-Run all four of these simultaneously:
+Run all five of these simultaneously:
 
 ```bash
 /home/moeen/.claude/skills/lists/scripts/lists.sh read todo
+/home/moeen/.claude/skills/lists/scripts/lists.sh read potential-actions
 /home/moeen/.claude/skills/g-calendar/scripts/gcal.sh agenda --all-calendars
 /home/moeen/.claude/skills/g-calendar/scripts/gcal.sh agenda --all-calendars --days 7
 /home/moeen/.claude/skills/weather/scripts/weather.sh
@@ -209,7 +210,52 @@ Then read and display it:
 Add a brief note that the Actions section is a suggestion — the user can tell
 you which items they're keeping and you'll update the file.
 
-## 9. Handling user decisions on actions
+Then proceed immediately to step 9 (potential actions triage) if the
+potential-actions list is non-empty.
+
+## 9. Potential actions triage
+
+If the `potential-actions` list is empty or does not exist, skip this step.
+
+Otherwise, display each item and ask what to do with it:
+
+```
+**Potential actions — what should I do with each?**
+
+1. <item text>
+2. <item text>
+...
+
+Options per item: add to todo | add to today's actions | remove | keep
+```
+
+Wait for the user's response, then in a single pass:
+
+1. **Build an updated potential-actions list**: remove items the user chose to
+   promote (add to todo / add to today's actions) or remove. Items marked
+   "keep" stay. Write the updated list:
+   ```bash
+   /home/moeen/.claude/skills/lists/scripts/lists.sh write potential-actions
+   ```
+
+2. **Build an updated todo list**: prepend each promoted item as
+   `- [ ] (MM/DD/YY) <text>` (today's date). Write it:
+   ```bash
+   /home/moeen/.claude/skills/lists/scripts/lists.sh write todo
+   ```
+
+3. **If any items go to today's actions**: read the current plan, append each
+   as a new numbered item in the `## Actions` (or `## Actions (suggestions)`)
+   section, then write the plan back:
+   ```bash
+   /home/moeen/.claude/skills/daily-plan/scripts/plans.sh read <key>
+   # ... edit the Actions section ...
+   /home/moeen/.claude/skills/daily-plan/scripts/plans.sh write <key>
+   ```
+
+4. Confirm all changes to the user (what was added where, what was removed).
+
+## 10. Handling user decisions on actions
 
 When the user responds with which actions they're keeping:
 
@@ -227,7 +273,7 @@ When the user responds with which actions they're keeping:
    ```
 4. Show the user the updated plan.
 
-## 10. Handling action checkmarks
+## 11. Handling action checkmarks
 
 When the user marks one or more actions as done (e.g., "mark 1 as done",
 "check off 2 and 3", "done with 4"):
