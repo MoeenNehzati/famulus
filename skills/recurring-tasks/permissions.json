@@ -1,4 +1,12 @@
 {
-  "bash": [],
+  "bash": [
+    "Bash(~/.claude/skills/recurring-tasks/scripts/sync-crontab.py:*)",
+    "Bash(~/.claude/skills/recurring-tasks/scripts/enable-job.py:*)",
+    "Bash(~/.claude/skills/recurring-tasks/scripts/disable-job.py:*)",
+    "Bash(~/.claude/skills/recurring-tasks/scripts/test-job.py:*)",
+    "Bash(~/.claude/skills/recurring-tasks/scripts/view-logs.sh:*)",
+    "Bash(crontab:*)",
+    "Bash(journalctl:*)"
+  ],
   "network": []
 }
