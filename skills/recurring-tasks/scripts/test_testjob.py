@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Tests for the crontab injection/removal logic in test-job.py."""
-import tempfile, os
 from pathlib import Path
 
 # Import the helpers directly — test-job.py exposes inject_test_block / remove_test_block
