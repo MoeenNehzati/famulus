@@ -69,8 +69,10 @@ Manages Claude-related recurring cron jobs. `jobs.yaml` (in this skill directory
 ### View logs
 
 ```bash
-~/.claude/skills/recurring-tasks/scripts/view-logs.sh <name>
+~/.claude/skills/recurring-tasks/scripts/view-logs.sh <name> [lines]
 ```
+
+Follows the log in real time (Ctrl-C to stop). Default: 50 lines.
 
 ### Test a job
 
@@ -92,7 +94,7 @@ Multi-turn reasoning loop — do not script this:
 
 1. Read `logs/<name>/run.log` (last 50 lines):
    ```bash
-   ~/.claude/skills/recurring-tasks/scripts/view-logs.sh <name> 50
+   tail -n 50 ~/.claude/skills/recurring-tasks/logs/<name>/run.log
    ```
 2. Check cron's system log:
    ```bash
