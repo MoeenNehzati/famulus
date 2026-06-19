@@ -19,7 +19,7 @@ END   = "# --- claude-recurring END ---"
 
 def load_jobs(jobs_path: Path) -> list:
     with open(jobs_path) as f:
-        return yaml.safe_load(f).get("jobs", [])
+        return (yaml.safe_load(f) or {}).get("jobs", [])
 
 def cron_line(job: dict) -> str:
     log = LOG_DIR / job["name"] / "run.log"
@@ -33,6 +33,11 @@ def splice(lines: list[str], block: list[str]) -> list[str]:
     try:
         i = next(n for n, l in enumerate(lines) if l.rstrip() == BEGIN)
         j = next(n for n, l in enumerate(lines) if l.rstrip() == END)
+        if i >= j:
+            raise ValueError(
+                f"Crontab sentinel order is corrupted: END (line {j+1}) appears before or at BEGIN (line {i+1}). "
+                "Edit your crontab manually to fix the sentinel order."
+            )
         return lines[:i] + block + lines[j + 1:]
     except StopIteration:
         sep = [""] if lines and lines[-1].strip() else []

@@ -78,10 +78,39 @@ def test_idempotent():
     assert result1.strip() == result2.strip()
     print("PASS: idempotent")
 
+def test_inverted_sentinels_raises():
+    import subprocess as sp
+    bad_crontab = f"MAILTO=\"\"\n{END}\nsome entry\n{BEGIN}\n"
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as jf:
+        jf.write(JOBS_ONE_ENABLED)
+        jobs_path = jf.name
+    with tempfile.NamedTemporaryFile("w", suffix=".crontab", delete=False) as cf:
+        cf.write(bad_crontab)
+        cron_path = cf.name
+    try:
+        r = sp.run(
+            ["python3", str(SCRIPT), "--crontab-file", cron_path, "--jobs-file", jobs_path],
+            capture_output=True, text=True
+        )
+        assert r.returncode != 0, "Expected non-zero exit for inverted sentinels"
+        assert "sentinel" in r.stderr.lower() or "corrupt" in r.stderr.lower() or "order" in r.stderr.lower()
+        print("PASS: inverted sentinels raises error")
+    finally:
+        os.unlink(jobs_path)
+        os.unlink(cron_path)
+
+def test_empty_jobs_yaml():
+    result = run("", "")
+    assert BEGIN in result
+    assert END in result
+    print("PASS: empty jobs.yaml produces empty block")
+
 if __name__ == "__main__":
     test_appends_block_to_empty_crontab()
     test_preserves_content_before_and_after()
     test_replaces_existing_block()
     test_disabled_job_omitted()
     test_idempotent()
+    test_inverted_sentinels_raises()
+    test_empty_jobs_yaml()
     print("\nAll tests passed.")
