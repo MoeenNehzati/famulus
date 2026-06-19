@@ -111,7 +111,7 @@ def main():
     print("\n── Cron system log (test window) ──")
     print(syslog or "(nothing found)")
 
-    launched   = job["command"].split()[-1] in syslog or ("CMD" in syslog and bool(syslog.strip()))
+    launched   = job["command"].split()[-1] in syslog
     has_output = bool(log_lines_after)
 
     if launched and has_output:
