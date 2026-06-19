@@ -32,6 +32,8 @@ Empty array `[]` for unused categories. Entries map directly to `.claude/setting
 - **Depend on interfaces, not internals — invoke the skill, never its scripts.** Each skill's scripts are private to that skill. When your skill needs behavior another skill provides, invoke that skill and let it run its own scripts. Directly calling another skill's scripts bypasses its logic and couples to its internals. Reuse maximally, but only through skill invocation.
 - **Make your own interface explicit.** State what inputs your skill expects and what outputs it produces, so future skills can depend on you cleanly. If your skill runs a script, document the invocation pattern and output format in `SKILL.md`.
 
+**9. State data lives under the skill's directory** — any persistent state a skill writes (logs, cache, data files, watermarks, etc.) must be stored under `~/.claude/skills/<skill-name>/`, not under system directories (`/tmp`, `/var`, `~/.config`, etc.) or anywhere outside the skills tree.
+
 **8. No code in SKILL.md — scripts only** — skill files must not contain executable code logic. Any logic (shell commands, Python, etc.) belongs in a dedicated file under `scripts/`. The `SKILL.md` only documents how to invoke the script and how to interpret its output. This minimizes permission prompts: scripts under `~/.claude/skills/*/scripts/` are pre-approved, whereas inline Bash in a skill body triggers approval on every run.
 
 ---

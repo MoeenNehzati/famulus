@@ -1,13 +1,13 @@
 ---
 name: email-triage
-description: Use when asked to triage email, process the inbox, or surface action items from recent emails. Scans the last 24 hours across both accounts and syncs with the todo list and potential-actions list.
+description: Use when asked to triage email, process the inbox, or surface action items from recent emails. Reads emails since the last triage run (watermark) and syncs with the todo list and potential-actions list.
 ---
 
 # Email Triage
 
 Category: automation
 
-Scans emails received in the last 24 hours on both accounts. Extracts action items and routes them to the right list. Never adds events to the calendar automatically — the user decides.
+Scans emails received since the last triage run. Extracts action items and routes them to the right list. Never adds events to the calendar automatically — the user decides.
 
 **Sub-skills to invoke:** `email` (reading/sending), `lists` (list management). Never call their scripts directly — invoke the skill.
 
@@ -19,14 +19,17 @@ Scans emails received in the last 24 hours on both accounts. Extracts action ite
 
 ## Step 1 — Compute the date window
 
-Use Python (not `date -d` — known DST bug). Default window is 24 hours; adjust N if user specifies a different range.
-
-```python
-from datetime import date, timedelta
-N = 1  # days back; change to 7 for a week window, etc.
-cutoff = date.today() - timedelta(days=N + 1)  # +1 because himalaya's `after` is strictly after
-print(cutoff.isoformat())
+```bash
+~/.claude/skills/email-triage/scripts/get-cutoff.py
 ```
+
+If output is `NO_WATERMARK`: ask the user "No previous triage found — how far back should I go? (e.g. 1 day, 3 days, 1 week)". Then re-run with their answer in days:
+
+```bash
+~/.claude/skills/email-triage/scripts/get-cutoff.py --days N
+```
+
+Use the printed date as `<cutoff>` in Step 2.
 
 ---
 
@@ -97,3 +100,15 @@ Summarize concisely:
 - Items added to `todo` (list them)
 - Items added to `potential-actions` (list them)
 - Items skipped (already listed / no action / promotional)
+
+---
+
+## Step 7 — Update watermark
+
+After a successful run:
+
+```bash
+~/.claude/skills/email-triage/scripts/update-watermark.py
+```
+
+Skip this step if the run failed or was aborted mid-way.
