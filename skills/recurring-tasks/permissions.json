@@ -6,7 +6,9 @@
     "Bash(~/.claude/skills/recurring-tasks/scripts/test-job.py:*)",
     "Bash(~/.claude/skills/recurring-tasks/scripts/view-logs.sh:*)",
     "Bash(crontab:*)",
-    "Bash(journalctl:*)"
+    "Bash(journalctl:*)",
+    "Bash(grep:*)",
+    "Bash(tail:*)"
   ],
   "network": []
 }
