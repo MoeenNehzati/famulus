@@ -80,6 +80,7 @@ Run all five of these simultaneously:
 - The second `agenda --days 7` call gives a 7-day window → used for the
   **Upcoming Events** section (filter to all-day events only, starting
   tomorrow).
+- To target a different date (e.g. planning for tomorrow), use `--from YYYY-MM-DD --to YYYY-MM-DD` on both calls; `--days N` extends the range from `--from`.
 - If `todo` is empty or doesn't exist, set the Actions section to a single
   line: `(nothing on the todo list)` and skip steps 5-6.
 

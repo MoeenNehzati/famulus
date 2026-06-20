@@ -1,18 +1,21 @@
 jobs:
   - name: email-triage
     description: "Triage new emails into todo and potential-actions lists"
-    # PATH: cron's default PATH is /usr/bin:/bin — it omits ~/.local/bin where
-    #   both `claude` and `himalaya` are installed. Without this, both commands
-    #   fail with "command not found" even though they work in a normal shell.
+    # PATH: systemd user units do not inherit the interactive shell's PATH, so
+    #   ~/.local/bin (where both `claude` and `himalaya` live) must be set
+    #   explicitly. Without this, both commands fail with "command not found".
     #
-    # DBUS_SESSION_BUS_ADDRESS: cron runs without a user login session, so there
-    #   is no D-Bus session bus. himalaya uses `secret-tool` to fetch IMAP
-    #   passwords from the GNOME keyring, and secret-tool connects over D-Bus.
-    #   Without this variable, secret-tool tries to autolaunch D-Bus, which
-    #   fails because there is no X11 DISPLAY. The systemd user session keeps a
-    #   persistent D-Bus socket at /run/user/1000/bus regardless of whether a
-    #   graphical session is running, so pointing to it makes the keyring
-    #   accessible from cron. UID 1000 is hardcoded; adjust if user changes.
+    # DBUS_SESSION_BUS_ADDRESS: the systemd user session provides a persistent
+    #   D-Bus socket at /run/user/<UID>/bus. himalaya uses `secret-tool` to
+    #   fetch IMAP passwords from the GNOME keyring over D-Bus; pointing to
+    #   the socket ensures this works from non-interactive service contexts.
+    #   UID 1000 is hardcoded; adjust if user changes.
     command: "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PATH=/home/moeen/.local/bin:$PATH /home/moeen/.local/bin/claude -p \"/email-triage\""
+    schedule: "0 * * * *"
+    enabled: true
+
+  - name: daily-plan
+    description: "Generate or show today's daily plan, including potential-actions triage"
+    command: "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PATH=/home/moeen/.local/bin:$PATH /home/moeen/.local/bin/claude -p \"/daily-plan\""
     schedule: "0 * * * *"
     enabled: true
