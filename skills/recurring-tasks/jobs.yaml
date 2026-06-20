@@ -1,6 +1,18 @@
 jobs:
   - name: email-triage
     description: "Triage new emails into todo and potential-actions lists"
-    command: "/home/moeen/.local/bin/claude -p \"/email-triage\""
+    # PATH: cron's default PATH is /usr/bin:/bin — it omits ~/.local/bin where
+    #   both `claude` and `himalaya` are installed. Without this, both commands
+    #   fail with "command not found" even though they work in a normal shell.
+    #
+    # DBUS_SESSION_BUS_ADDRESS: cron runs without a user login session, so there
+    #   is no D-Bus session bus. himalaya uses `secret-tool` to fetch IMAP
+    #   passwords from the GNOME keyring, and secret-tool connects over D-Bus.
+    #   Without this variable, secret-tool tries to autolaunch D-Bus, which
+    #   fails because there is no X11 DISPLAY. The systemd user session keeps a
+    #   persistent D-Bus socket at /run/user/1000/bus regardless of whether a
+    #   graphical session is running, so pointing to it makes the keyring
+    #   accessible from cron. UID 1000 is hardcoded; adjust if user changes.
+    command: "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PATH=/home/moeen/.local/bin:$PATH /home/moeen/.local/bin/claude -p \"/email-triage\""
     schedule: "0 * * * *"
     enabled: true

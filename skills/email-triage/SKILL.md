@@ -9,6 +9,8 @@ Category: automation
 
 Scans emails received since the last triage run. Extracts action items and routes them to the right list. Never adds events to the calendar automatically — the user decides.
 
+**IMPORTANT: Never ask the user for a lookback period or watermark date. The date always comes from `get-cutoff.py`. If that script emits a warning or fails, report it to the user — but do not ask them to supply a date instead.**
+
 **Sub-skills to invoke:** `email` (reading/sending), `lists` (list management). Never call their scripts directly — invoke the skill.
 
 **Two destination lists:**
@@ -17,30 +19,16 @@ Scans emails received since the last triage run. Extracts action items and route
 
 ---
 
-## Step 1 — Compute the date window
+## Step 1 — Fetch new envelopes (run in parallel)
 
 ```bash
-~/.claude/skills/email-triage/scripts/get-cutoff.py
+~/.claude/skills/email-triage/scripts/fetch-envelopes.py -a nyu
+~/.claude/skills/email-triage/scripts/fetch-envelopes.py -a personal
 ```
 
-If output is `NO_WATERMARK`: ask the user "No previous triage found — how far back should I go? (e.g. 1 day, 3 days, 1 week)". Then re-run with their answer in days:
+The script handles all date/time filtering internally — it reads the watermark datetime, calls himalaya, and returns only emails received since the last run. **Do not call himalaya directly for envelope listing.**
 
-```bash
-~/.claude/skills/email-triage/scripts/get-cutoff.py --days N
-```
-
-Use the printed date as `<cutoff>` in Step 2.
-
----
-
-## Step 2 — Fetch recent envelopes (run in parallel)
-
-himalaya uses its own query language (not raw IMAP). `after <YYYY-MM-DD>` is **strictly after** that date, so use `cutoff` from Step 1.
-
-```bash
-himalaya envelope list -a nyu     after <cutoff>
-himalaya envelope list -a personal after <cutoff>
-```
+If either script prints `(no new emails for …)`, skip that account in later steps. If stderr contains a `WARNING:` line, include it in the Step 6 report.
 
 Note FLAGS per row: `*` = unread · `R` = replied · blank = read, not replied.
 

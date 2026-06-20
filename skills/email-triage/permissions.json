@@ -1,5 +1,6 @@
 {
   "bash": [
+    "Bash(~/.claude/skills/email-triage/scripts/fetch-envelopes.py:*)",
     "Bash(~/.claude/skills/email-triage/scripts/get-cutoff.py:*)",
     "Bash(~/.claude/skills/email-triage/scripts/update-watermark.py:*)"
   ],

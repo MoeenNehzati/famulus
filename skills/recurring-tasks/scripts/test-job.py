@@ -55,7 +55,7 @@ def load_job(name: str, jobs_path: Path) -> dict:
 def check_syslog(fire_at: datetime, command: str) -> str:
     """Return cron syslog lines that fired around the test time."""
     since_str = (fire_at - timedelta(seconds=30)).strftime("%Y-%m-%d %H:%M:%S")
-    until_str = (fire_at + timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M:%S")
+    until_str = (fire_at + timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
     r = subprocess.run(
         ["journalctl", "-u", "cron", "--since", since_str, "--until", until_str, "--no-pager"],
         capture_output=True, text=True
@@ -86,18 +86,22 @@ def main():
     time_spec = f"{fire_at.minute} {fire_at.hour}"
 
     original = read_crontab()  # capture before injection for C2 fallback
+    log_size_before = log_path.stat().st_size if log_path.exists() else 0
     print(f"Scheduling test run at {fire_at.strftime('%H:%M')} …")
     injected = inject_test_block(original, time_spec, job["command"], str(log_path))
     write_crontab(injected)
 
-    print("Waiting 90 seconds …")
-    log_lines_after = []
+    print("Waiting 5 minutes for job to complete …")
+    log_lines_all = []
     syslog = ""
+    new_output = False
     try:
-        time.sleep(90)
+        time.sleep(300)
 
         log_content = log_path.read_text() if log_path.exists() else ""
-        log_lines_after = [l for l in log_content.splitlines() if l]
+        log_lines_all = [l for l in log_content.splitlines() if l]
+        log_size_after = log_path.stat().st_size if log_path.exists() else 0
+        new_output = log_size_after > log_size_before
         syslog = check_syslog(fire_at, job["command"])
 
     finally:
@@ -107,14 +111,14 @@ def main():
 
     # Report
     print("\n── Run log (last 20 lines) ──")
-    print("\n".join(log_lines_after[-20:]) or "(empty)")
+    print("\n".join(log_lines_all[-20:]) or "(empty)")
     print("\n── Cron system log (test window) ──")
     print(syslog or "(nothing found)")
 
-    launched   = job["command"].split()[-1] in syslog
-    has_output = bool(log_lines_after)
+    launched_syslog = job["command"].split()[-1] in syslog
+    launched = launched_syslog or new_output
 
-    if launched and has_output:
+    if launched and new_output:
         print("\n✓ PASS — cron launched the job and it produced output.")
     elif not launched:
         print("\n✗ FAIL — no evidence cron launched the job (check PATH, command, syslog).")
