@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """One-time OAuth2 setup for the g-calendar skill.
 
-Runs the "installed app" loopback flow against a Google Cloud OAuth client
-(Desktop app type) and writes the resulting refresh token to
-~/.config/g-calendar/credentials.json (mode 600). gcal.sh uses that file to
-mint short-lived access tokens on each call.
+Two files live at ~/.config/g-calendar/ (both mode 600, never git-tracked):
+  client.json      — original Google Cloud Console OAuth client JSON
+                     (client_id + client_secret). Kept permanently; never
+                     overwritten by this script. Source of truth for re-auth.
+  credentials.json — working credentials written by this script
+                     (client_id + client_secret + refresh_token). Overwritten
+                     on every run. Used by gcal.sh to mint access tokens.
 
 Usage:
+    setup_oauth.py                              # reads ~/.config/g-calendar/client.json
+    setup_oauth.py --from-json /path/to/client_secret_*.json
     setup_oauth.py --client-id ID --client-secret SECRET [--port 8765]
-    setup_oauth.py --from-json /path/to/client_secret_*.json [--port 8765]
-
-The --from-json form reads client_id/client_secret directly from a Google
-Cloud Console "Desktop app" OAuth client JSON download (the file's
-"installed" section), without ever printing them.
 
 Re-running this is safe (e.g. if the refresh token is later revoked or
 expires because the OAuth consent screen is in "Testing" status).
@@ -29,6 +29,7 @@ import webbrowser
 SCOPE = "https://www.googleapis.com/auth/calendar"
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
+CLIENT_PATH = os.path.expanduser("~/.config/g-calendar/client.json")
 CREDS_PATH = os.path.expanduser("~/.config/g-calendar/credentials.json")
 
 
@@ -39,9 +40,18 @@ def main():
     )
     parser.add_argument("--client-id")
     parser.add_argument("--client-secret")
-    parser.add_argument("--from-json", help="path to a downloaded OAuth client JSON file")
+    parser.add_argument("--from-json", help=f"path to OAuth client JSON (default: {CLIENT_PATH})")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
+
+    if not args.from_json and not (args.client_id and args.client_secret):
+        if os.path.exists(CLIENT_PATH):
+            args.from_json = CLIENT_PATH
+        else:
+            parser.error(
+                f"no client credentials found: place the Google client JSON at "
+                f"{CLIENT_PATH}, or pass --from-json / --client-id + --client-secret"
+            )
 
     if args.from_json:
         with open(args.from_json) as f:

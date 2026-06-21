@@ -152,50 +152,74 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 - If the OAuth consent screen is "Testing", the refresh token expires after 7
   days - `gcal.sh` fails with `invalid_grant`; see section 6 to fix.
 
-## 6. First-time / repeat setup
+## 6. Private config files
 
-Credentials live in `~/.config/g-calendar/credentials.json` (client_id,
-client_secret, refresh_token), mode 600. If that file is missing, or
-`gcal.sh` reports `invalid_grant`, (re)do this:
+Two files live at `~/.config/g-calendar/` (both `chmod 600`, outside git):
 
-1. In an existing Google Cloud project (console.cloud.google.com), signed in
-   as smnehzati@gmail.com:
-   - **Enable the API**: APIs & Services -> Library -> "Google Calendar API"
-     -> Enable (skip if already enabled).
-   - **OAuth consent screen**: User type External. Add scope
-     `https://www.googleapis.com/auth/calendar`. Check **Publishing status**:
-     - "Testing" -> refresh tokens expire after 7 days. Try "Publish App" to
-       move to "In production": for an unverified app with this sensitive
-       scope, Google may still allow publishing for a small number of users
-       without full verification. During consent you'll see "Google hasn't
-       verified this app" - click Advanced -> "Go to <app name> (unsafe)".
-       Expected for a personal single-user app.
-     - If publishing is blocked or undesired, staying in "Testing" works
-       too - add smnehzati@gmail.com as a test user, and just re-run setup
-       whenever the refresh token expires.
-   - **Credentials**: Create Credentials -> OAuth client ID. Either:
-     - Application type **Desktop app** (Google auto-allows any
-       `http://localhost:<port>` redirect for these), or
-     - Application type **Web application** with an explicit Authorized
-       redirect URI of `http://localhost:8765` (must match `setup_oauth.py`'s
-       `--port`, default 8765, exactly - no trailing slash).
-     Note the Client ID and Client Secret.
+| File | Contents | Written by |
+|------|----------|------------|
+| `client.json` | Google Cloud Console OAuth client JSON (`client_id` + `client_secret`) | You (one-time copy from download) |
+| `credentials.json` | Working credentials (`client_id` + `client_secret` + `refresh_token`) | `setup_oauth.py` — **overwrites on every run** |
 
-2. Run the setup script (opens a browser for sign-in/consent):
-   ```bash
-   scripts/setup_oauth.py --client-id 'YOUR_CLIENT_ID' --client-secret 'YOUR_CLIENT_SECRET'
-   # or, from the downloaded OAuth client JSON (avoids pasting the secret):
-   scripts/setup_oauth.py --from-json /path/to/client_secret_*.json
-   ```
-   This writes `~/.config/g-calendar/credentials.json`. Once it succeeds, the
-   downloaded JSON file is redundant - safe to delete.
+`client.json` is the permanent source of truth. `credentials.json` is
+regenerated whenever the refresh token expires. Never pass `credentials.json`
+as `--from-json` input to `setup_oauth.py` — it uses a flat format that the
+script cannot read as input.
 
-3. Verify:
-   ```bash
-   scripts/gcal.sh calendars
-   scripts/gcal.sh agenda
-   ```
+`~/.config/<skill>/` is the convention for private per-skill data: it is
+outside any git repo and never committed.
 
-Re-running `setup_oauth.py` is always safe. If Google omits `refresh_token`
-from the response (because access was already granted without revoking),
-revoke prior access at https://myaccount.google.com/permissions and retry.
+## 7. First-time / repeat setup
+
+If `gcal.sh` reports `invalid_grant` or `invalid_client`, (re)do this:
+
+### First time only: create the Google OAuth client
+
+In an existing Google Cloud project (console.cloud.google.com), signed in
+as smnehzati@gmail.com:
+- **Enable the API**: APIs & Services -> Library -> "Google Calendar API"
+  -> Enable (skip if already enabled).
+- **OAuth consent screen**: User type External. Add scope
+  `https://www.googleapis.com/auth/calendar`. Check **Publishing status**:
+  - "Testing" -> refresh tokens expire after 7 days. Try "Publish App" to
+    move to "In production": for an unverified app with this sensitive
+    scope, Google may still allow publishing for a small number of users
+    without full verification. During consent you'll see "Google hasn't
+    verified this app" - click Advanced -> "Go to <app name> (unsafe)".
+    Expected for a personal single-user app.
+  - If publishing is blocked or undesired, staying in "Testing" works
+    too - add smnehzati@gmail.com as a test user, and just re-run setup
+    whenever the refresh token expires.
+- **Credentials**: Create Credentials -> OAuth client ID.
+  - Application type **Desktop app** (Google auto-allows any
+    `http://localhost:<port>` redirect for these), or
+  - Application type **Web application** with an explicit Authorized
+    redirect URI of `http://localhost:8765` (must match `setup_oauth.py`'s
+    `--port`, default 8765, exactly — no trailing slash).
+- Download the client JSON and save it as `~/.config/g-calendar/client.json`
+  (mode 600). Keep this file — it is needed for every future re-auth.
+
+### Every time: run setup to (re)generate credentials.json
+
+```bash
+python ~/.claude/skills/g-calendar/scripts/setup_oauth.py
+```
+
+No arguments needed — it reads `~/.config/g-calendar/client.json`
+automatically and writes `~/.config/g-calendar/credentials.json`.
+
+To use a different client JSON explicitly:
+```bash
+python ~/.claude/skills/g-calendar/scripts/setup_oauth.py --from-json /path/to/other.json
+```
+
+### Verify
+
+```bash
+~/.claude/skills/g-calendar/scripts/gcal.sh calendars
+~/.claude/skills/g-calendar/scripts/gcal.sh agenda
+```
+
+If Google omits `refresh_token` from the response (because access was already
+granted without revoking), revoke prior access at
+https://myaccount.google.com/permissions and retry.
