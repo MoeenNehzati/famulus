@@ -18,7 +18,7 @@ Category: automation
 ## 0. Overview
 
 This skill produces a daily plan file saved to Google Drive under `plans/`,
-then outputs it to the user. The plan has four sections:
+then outputs it to the user. The plan has five sections:
 
 - **Calendar** — today's timed events and free time
 - **The Day** — 2-sentence weather summary and outfit/commute note
@@ -26,6 +26,8 @@ then outputs it to the user. The plan has four sections:
 - **Actions** — a ranked shortlist of todo items, initially marked as
   *suggestions*; once the user decides, it becomes *decisions* (with unchosen
   items removed)
+- **Triage** — unreviewed potential-actions, written into the file so the user
+  can decide at their own pace (no interactive back-and-forth required)
 
 The skill is invoked in one of two modes:
 
@@ -189,12 +191,25 @@ Free time: ~<free_hours>h (10h budget - <busy>h meetings - <commute>h commute)
 1. [ ] <item text> — <one-line reason: urgency + time estimate + fit>
 2. [ ] <item text> — <one-line reason>
 ...
+→ Tell me which items you're keeping and I'll finalize the plan.
+
+## Triage
+← omit this section entirely if no unreviewed potential-actions exist →
+
+Review each potential action (accept / accept+today / reject / skip):
+1. <item text>
+2. <item text>
+...
+→ Reply with your decisions and I'll update todo and the plan.
 ```
 
 Rules:
 - `## Actions (suggestions)` marks this as the initial suggestion state.
 - One-line reasons should be concrete: e.g. `"due today, ~30 min, do first"`.
 - If `free_hours ≈ 0`: `"Today looks fully booked — no free time for todo items."`
+- The `## Triage` section lists only unreviewed (`[ ]`) items from
+  `potential-actions` — exclude `[+]` (accepted) and `[-]` (rejected).
+- If no unreviewed items exist, omit `## Triage` entirely.
 
 Then write the file:
 
@@ -208,11 +223,7 @@ Then read and display it:
 /home/moeen/.claude/skills/daily-plan/scripts/plans.sh read <key>
 ```
 
-Add a brief note that the Actions section is a suggestion — the user can tell
-you which items they're keeping and you'll update the file.
-
-Then proceed immediately to step 9 (potential actions triage) if the
-potential-actions list is non-empty.
+No further prompting needed — the file itself tells the user what to respond to.
 
 ## 9. Potential actions triage
 
