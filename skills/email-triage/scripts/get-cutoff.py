@@ -22,7 +22,7 @@ if "--days" in sys.argv:
     print(cutoff.isoformat())
 elif os.path.exists(WATERMARK):
     with open(WATERMARK) as f:
-        watermark_date = date.fromisoformat(f.read().strip())
+        watermark_date = date.fromisoformat(f.read().strip()[:10])
     cutoff = watermark_date - timedelta(days=1)
     print(cutoff.isoformat())
 else:
