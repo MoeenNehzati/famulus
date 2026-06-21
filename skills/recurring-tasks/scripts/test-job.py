@@ -2,47 +2,19 @@
 """
 Usage: test-job.py <job-name>
 
-Schedules the named job to run 1 minute from now via a temporary cron block,
-waits ~90 seconds, checks logs and cron system log, removes the temp block,
-and reports pass/fail.
+Starts the named job immediately via 'systemctl --user start --wait',
+checks log output and journal, and reports pass/fail.
 """
 import sys, subprocess, time, yaml
-from datetime import datetime, timedelta
 from pathlib import Path
 from argparse import ArgumentParser
 
-SKILL_DIR  = Path(__file__).parent.parent
+SKILL_DIR    = Path(__file__).parent.parent
 DEFAULT_JOBS = SKILL_DIR / "jobs.yaml"
-LOG_DIR    = SKILL_DIR / "logs"
-TEST_BEGIN = "# --- claude-recurring TEST BEGIN (temporary) ---"
-TEST_END   = "# --- claude-recurring TEST END ---"
+LOG_DIR      = SKILL_DIR / "logs"
+PREFIX       = "claude-"
+TIMEOUT_SEC  = 360
 
-# ── helpers exposed for testing ──────────────────────────────────────────────
-
-def inject_test_block(crontab: str, time_spec: str, command: str, log: str) -> str:
-    """Insert a TEST block at the end of crontab text. Replaces any existing TEST block."""
-    lines = remove_test_block(crontab).rstrip("\n").splitlines()
-    block = [TEST_BEGIN, f"{time_spec} * * * {command} >> {log} 2>&1", TEST_END]
-    return "\n".join(lines + [""] + block) + "\n"
-
-def remove_test_block(crontab: str) -> str:
-    """Remove TEST block from crontab text, returning the rest unchanged."""
-    lines = crontab.splitlines(keepends=True)
-    try:
-        i = next(n for n, l in enumerate(lines) if l.rstrip() == TEST_BEGIN)
-        j = next(n for n, l in enumerate(lines) if l.rstrip() == TEST_END)
-        return "".join(lines[:i] + lines[j + 1:])
-    except StopIteration:
-        return crontab
-
-# ── live crontab helpers ──────────────────────────────────────────────────────
-
-def read_crontab() -> str:
-    r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
-    return r.stdout if r.returncode == 0 else ""
-
-def write_crontab(text: str):
-    subprocess.run(["crontab", "-"], input=text, text=True, check=True)
 
 def load_job(name: str, jobs_path: Path) -> dict:
     jobs = yaml.safe_load(jobs_path.read_text()).get("jobs", [])
@@ -52,78 +24,75 @@ def load_job(name: str, jobs_path: Path) -> dict:
         sys.exit(1)
     return matches[0]
 
-def check_syslog(fire_at: datetime, command: str) -> str:
-    """Return cron syslog lines that fired around the test time."""
-    since_str = (fire_at - timedelta(seconds=30)).strftime("%Y-%m-%d %H:%M:%S")
-    until_str = (fire_at + timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
-    r = subprocess.run(
-        ["journalctl", "-u", "cron", "--since", since_str, "--until", until_str, "--no-pager"],
-        capture_output=True, text=True
-    )
-    if r.returncode == 0 and r.stdout:
-        return r.stdout
-    # Fallback: grep syslog for lines around the test time
-    r2 = subprocess.run(["grep", "-a", "CRON", "/var/log/syslog"],
-                        capture_output=True, text=True)
-    # Filter to lines near fire_at (match HH:MM from fire_at)
-    fire_minute = fire_at.strftime("%H:%M")
-    matching = [l for l in r2.stdout.splitlines()
-                if fire_minute in l and ("CMD" in l or command.split()[-1] in l)]
-    return "\n".join(matching)
 
-def main():
+def main() -> None:
     p = ArgumentParser()
     p.add_argument("name")
     p.add_argument("--jobs-file", default=str(DEFAULT_JOBS))
     args = p.parse_args()
 
-    job       = load_job(args.name, Path(args.jobs_file))
-    log_path  = LOG_DIR / args.name / "run.log"
+    load_job(args.name, Path(args.jobs_file))  # validates job exists in yaml
+    log_path = LOG_DIR / args.name / "run.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    now       = datetime.now()
-    fire_at   = now + timedelta(minutes=1)
-    time_spec = f"{fire_at.minute} {fire_at.hour}"
+    service = f"{PREFIX}{args.name}.service"
 
-    original = read_crontab()  # capture before injection for C2 fallback
+    r = subprocess.run(
+        ["systemctl", "--user", "cat", service],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        print(
+            f"Error: service unit '{service}' not found. Run sync-units.py first.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     log_size_before = log_path.stat().st_size if log_path.exists() else 0
-    print(f"Scheduling test run at {fire_at.strftime('%H:%M')} …")
-    injected = inject_test_block(original, time_spec, job["command"], str(log_path))
-    write_crontab(injected)
+    print(f"Starting '{service}' (timeout {TIMEOUT_SEC}s) …")
 
-    print("Waiting 5 minutes for job to complete …")
-    log_lines_all = []
-    syslog = ""
-    new_output = False
+    start = time.time()
     try:
-        time.sleep(300)
+        result = subprocess.run(
+            ["systemctl", "--user", "start", "--wait", service],
+            timeout=TIMEOUT_SEC,
+            capture_output=True,
+            text=True,
+        )
+        elapsed = time.time() - start
+        print(f"Service exited after {elapsed:.1f}s (exit code {result.returncode})")
+    except subprocess.TimeoutExpired:
+        print(f"\n✗ FAIL — service did not complete within {TIMEOUT_SEC}s.")
+        subprocess.run(["systemctl", "--user", "stop", service], capture_output=True)
+        sys.exit(1)
 
-        log_content = log_path.read_text() if log_path.exists() else ""
-        log_lines_all = [l for l in log_content.splitlines() if l]
-        log_size_after = log_path.stat().st_size if log_path.exists() else 0
-        new_output = log_size_after > log_size_before
-        syslog = check_syslog(fire_at, job["command"])
+    log_size_after = log_path.stat().st_size if log_path.exists() else 0
+    new_output = log_size_after > log_size_before
 
-    finally:
-        current2 = read_crontab()
-        write_crontab(remove_test_block(current2 if current2 else original))
-        print("Test block removed.")
+    journal = subprocess.run(
+        ["journalctl", "--user", "-u", service, "--since", "-10min", "--no-pager"],
+        capture_output=True, text=True,
+    )
 
-    # Report
     print("\n── Run log (last 20 lines) ──")
-    print("\n".join(log_lines_all[-20:]) or "(empty)")
-    print("\n── Cron system log (test window) ──")
-    print(syslog or "(nothing found)")
-
-    launched_syslog = job["command"].split()[-1] in syslog
-    launched = launched_syslog or new_output
-
-    if launched and new_output:
-        print("\n✓ PASS — cron launched the job and it produced output.")
-    elif not launched:
-        print("\n✗ FAIL — no evidence cron launched the job (check PATH, command, syslog).")
+    if log_path.exists():
+        lines = log_path.read_text().splitlines()
+        print("\n".join(lines[-20:]) or "(empty)")
     else:
-        print("\n✗ FAIL — cron launched the job but it produced no log output.")
+        print("(no log file)")
+
+    print("\n── Journal (last 10 min) ──")
+    print(journal.stdout or "(nothing found)")
+
+    if result.returncode == 0 and new_output:
+        print("\n✓ PASS — service succeeded and produced log output.")
+    elif result.returncode != 0:
+        print(f"\n✗ FAIL — service exited with code {result.returncode}.")
+        sys.exit(1)
+    else:
+        print("\n✗ FAIL — service succeeded but produced no log output.")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

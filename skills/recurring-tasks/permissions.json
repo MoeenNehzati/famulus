@@ -1,11 +1,13 @@
 {
   "bash": [
-    "Bash(~/.claude/skills/recurring-tasks/scripts/sync-crontab.py:*)",
+    "Bash(~/.claude/skills/recurring-tasks/scripts/setup.sh:*)",
+    "Bash(~/.claude/skills/recurring-tasks/scripts/sync-units.py:*)",
     "Bash(~/.claude/skills/recurring-tasks/scripts/enable-job.py:*)",
     "Bash(~/.claude/skills/recurring-tasks/scripts/disable-job.py:*)",
     "Bash(~/.claude/skills/recurring-tasks/scripts/test-job.py:*)",
     "Bash(~/.claude/skills/recurring-tasks/scripts/view-logs.sh:*)",
-    "Bash(crontab:*)",
+    "Bash(~/.claude/skills/recurring-tasks/scripts/status.sh:*)",
+    "Bash(systemctl:*)",
     "Bash(journalctl:*)",
     "Bash(grep:*)",
     "Bash(tail:*)"

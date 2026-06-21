@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Usage: disable-job.py <name> [--jobs-file PATH] [--no-sync]
-Sets enabled: false for the named job in jobs.yaml, then syncs crontab.
+Sets enabled: false for the named job in jobs.yaml, then syncs systemd units.
 """
 import subprocess, sys
 from pathlib import Path
@@ -11,7 +11,7 @@ from _job_utils import set_enabled
 
 SKILL_DIR    = Path(__file__).parent.parent
 DEFAULT_JOBS = SKILL_DIR / "jobs.yaml"
-SYNC         = Path(__file__).parent / "sync-crontab.py"
+SYNC         = Path(__file__).parent / "sync-units.py"
 
 def main():
     p = ArgumentParser()

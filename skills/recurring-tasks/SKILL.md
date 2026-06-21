@@ -1,22 +1,43 @@
 ---
 name: recurring-tasks
-description: Use when setting up, enabling, disabling, testing, viewing logs, or debugging Claude-related recurring cron jobs.
+description: Use when setting up, enabling, disabling, testing, viewing logs, or debugging Claude-related recurring tasks managed as systemd user timers.
 ---
 
 # Recurring Tasks
 
 Category: automation
 
-Manages Claude-related recurring cron jobs. `jobs.yaml` (in this skill directory) is the source of truth. The skill owns a single marked block in the user's crontab and never modifies anything outside it. Logs live at `~/.claude/skills/recurring-tasks/logs/<name>/run.log`.
+Manages Claude-related recurring tasks as **systemd user timers**. `jobs.yaml` (in this skill directory) is the source of truth. Each enabled job gets a pair of unit files in `~/.config/systemd/user/` and a runner script in `scripts/runners/`. Logs live at `~/.claude/skills/recurring-tasks/logs/<name>/run.log`.
+
+Timers use `Persistent=true`, so missed fires (machine asleep or off at scheduled time) run immediately on the next wake or boot.
 
 **Design principle:** Job-specific artifacts and success indicators are never stored in `jobs.yaml` — they are always inferred at runtime from the job's `description` and `command`. Do not add artifact paths, check lists, or state file references to `jobs.yaml`.
 
-**Crontab block format** (the skill owns this block and nothing outside it):
+**Schedule format:** Standard 5-field cron expressions (`M H dom month dow`). `dom` and `month` must be `*`. `sync-units.py` converts them to systemd `OnCalendar=` format. Supported: exact values, `*` wildcards, `*/N` step syntax, single digit day-of-week (0=Sun … 6=Sat).
+
+**Generated files per job:**
 ```
-# --- claude-recurring BEGIN (managed by recurring-tasks skill — do not edit manually) ---
-<schedule> <command> >> ~/.claude/skills/recurring-tasks/logs/<name>/run.log 2>&1
-# --- claude-recurring END ---
+~/.config/systemd/user/
+  claude-<name>.service    # runs the job via the runner script
+  claude-<name>.timer      # fires on schedule, Persistent=true
+
+scripts/runners/
+  <name>.sh                # wrapper: job command + log redirect
 ```
+
+---
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/setup.sh` | Verify prerequisites, sync units from `jobs.yaml`, list active timers |
+| `scripts/sync-units.py` | Write/update/remove systemd unit files to match `jobs.yaml` |
+| `scripts/enable-job.py <name>` | Set `enabled: true` in `jobs.yaml` and sync |
+| `scripts/disable-job.py <name>` | Set `enabled: false` in `jobs.yaml` and sync |
+| `scripts/test-job.py <name>` | Run a job immediately and report pass/fail |
+| `scripts/view-logs.sh <name> [lines]` | Tail the run log (live, Ctrl-C to stop; default 50 lines) |
+| `scripts/status.sh [name]` | List all timers; with job name, also shows service status and journal |
 
 ---
 
@@ -24,85 +45,44 @@ Manages Claude-related recurring cron jobs. `jobs.yaml` (in this skill directory
 
 ### Setup
 
-1. Verify `claude` is reachable at its full path:
-   ```bash
-   /home/moeen/.local/bin/claude --version
-   ```
-2. Verify PyYAML is available:
-   ```bash
-   python3 -c "import yaml; print('ok')"
-   ```
-   If missing: `pip install pyyaml` or `sudo apt install python3-yaml`
-3. Create log directories for all jobs in `jobs.yaml`:
-   ```bash
-   python3 -c "
-   import yaml
-   from pathlib import Path
-   skill = Path('~/.claude/skills/recurring-tasks').expanduser()
-   jobs = yaml.safe_load((skill / 'jobs.yaml').read_text()).get('jobs', [])
-   for j in jobs:
-       (skill / 'logs' / j['name']).mkdir(parents=True, exist_ok=True)
-       print(f'Created logs/{j[\"name\"]}/')
-   "
-   ```
-4. Sync crontab:
-   ```bash
-   ~/.claude/skills/recurring-tasks/scripts/sync-crontab.py
-   ```
-5. Show the user the resulting cron block for confirmation:
-   ```bash
-   crontab -l | grep -A 20 "claude-recurring BEGIN"
-   ```
+Run `scripts/setup.sh`.
 
-### Enable a job
+On first run after migrating from a cron-based install, add `--migrate-cron` to also remove the old crontab block:
 
-```bash
-~/.claude/skills/recurring-tasks/scripts/enable-job.py <name>
+```
+scripts/setup.sh --migrate-cron
 ```
 
-### Disable a job
+### Enable / disable a job
 
-```bash
-~/.claude/skills/recurring-tasks/scripts/disable-job.py <name>
+```
+scripts/enable-job.py <name>
+scripts/disable-job.py <name>
 ```
 
 ### View logs
 
-```bash
-~/.claude/skills/recurring-tasks/scripts/view-logs.sh <name> [lines]
 ```
-
-Follows the log in real time (Ctrl-C to stop). Default: 50 lines.
+scripts/view-logs.sh <name>
+```
 
 ### Test a job
 
-```bash
-~/.claude/skills/recurring-tasks/scripts/test-job.py <name>
+```
+scripts/test-job.py <name>
 ```
 
-The script schedules the job 1 minute from now using a temporary cron block, waits 90 seconds, checks the job's log and cron system log (`journalctl -u cron`), removes the temp block, and reports pass/fail. The temp block uses these markers — distinct from the managed block:
-```
-# --- claude-recurring TEST BEGIN (temporary) ---
-MM HH * * * <command> >> <logfile> 2>&1
-# --- claude-recurring TEST END ---
-```
-The TEST block is always removed regardless of outcome.
+Starts the service immediately, waits up to 6 minutes for it to complete, then checks the run log and journal and reports pass/fail.
 
 ### Debug a job
 
 Multi-turn reasoning loop — do not script this:
 
-1. Read `logs/<name>/run.log` (last 50 lines):
-   ```bash
-   tail -n 50 ~/.claude/skills/recurring-tasks/logs/<name>/run.log
-   ```
-2. Check cron's system log:
-   ```bash
-   journalctl -u cron --since "2 hours ago" --no-pager
-   ```
-3. Infer relevant state and artifacts from the job's `description` and `command` in `jobs.yaml`; inspect them. Do not rely on any hardcoded knowledge of what the job does — derive it from these fields only.
-4. Summarize findings. State clearly: did cron launch the job? Did the job error? What is the most likely cause?
+1. Check recent log output: `scripts/view-logs.sh <name>`
+2. Check timer, service, and journal: `scripts/status.sh <name>`
+3. Infer relevant state and artifacts from the job's `description` and `command` in `jobs.yaml`. Do not rely on hardcoded knowledge of what the job does — derive it from these fields only.
+4. Summarize findings. State clearly: did systemd launch the job? Did the job error? What is the most likely cause?
 5. Propose a specific fix. Wait for user approval.
-6. If approved: apply the fix.
-7. Run **Test** (see above).
+6. If approved: apply the fix, then re-sync if unit files changed (`scripts/sync-units.py`).
+7. Run `scripts/test-job.py <name>`.
 8. If test passes → done. If not → return to step 1.
