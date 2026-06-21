@@ -17,6 +17,10 @@ mcp-needs-auth-cache.json
 settings.local.json
 settings.json
 
+# Skill runtime state
+skills/email-triage/last_run
+skills/email-triage/triage.log
+
 # Credentials and runtime state
 .credentials.json
 .last-cleanup
