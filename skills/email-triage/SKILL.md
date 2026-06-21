@@ -13,6 +13,13 @@ Scans emails received since the last triage run. Extracts action items and route
 
 **Sub-skills to invoke:** `email` (reading/sending), `lists` (list management). Never call their scripts directly — invoke the skill.
 
+**Decision logging:** After every classification, call:
+```bash
+~/.claude/skills/email-triage/scripts/log-decision.sh <account> <id> "<from>" "<subject>" <DECISION> "<reason>"
+```
+`DECISION` values: `SKIP` (subject-only skip) · `NO_ACTION` (body read, nothing to do) · `TODO` (added to todo) · `POTENTIAL` (added to potential-actions) · `DEDUP` (already exists in destination)  
+`reason` = one sentence explaining the classification. Log: `~/.claude/skills/email-triage/triage.log`
+
 **Two destination lists:**
 - `todo` — directed, personal actions: bills to pay, replies owed, explicit follow-up commitments
 - `potential-actions` — anything the user may or may not act on: events, seminars, CFPs, summer schools, workshops, fellowship applications, optional signups
@@ -32,7 +39,7 @@ If either script prints `(no new emails for …)`, skip that account in later st
 
 Note FLAGS per row: `*` = unread · `R` = replied · blank = read, not replied.
 
-**Skip immediately** (don't read body) when the subject alone makes it unambiguous: sales/discount offers, newsletter digests, GitHub notifications, delivery confirmations, social media digests, referral bonuses. For financial senders (banks, SoFi, Spotify, utilities): read the subject — skip if promotional, read the body if it could be a statement, payment due, or alert.
+**Skip immediately** (don't read body) when the subject alone makes it unambiguous: sales/discount offers, newsletter digests, GitHub notifications, delivery confirmations, social media digests, referral bonuses. For financial senders (banks, SoFi, Spotify, utilities): read the subject — skip if promotional, read the body if it could be a statement, payment due, or alert. **Log each skip with `SKIP` and one sentence why.**
 
 ---
 
@@ -54,6 +61,8 @@ Batch up to 10 reads in parallel. Classify each email:
 | **No action** | — | Everything else |
 
 For **reply needed**: skip if the sender is the user themselves, if it's a mass CC, or if purely informational with no implied response needed.
+
+**Log every email read at this step** — one `log-decision.sh` call per email with its classification (`NO_ACTION`, `TODO`, `POTENTIAL`) and one sentence why. Log `NO_ACTION` even when nothing is added.
 
 ---
 
@@ -77,7 +86,7 @@ Every item must be a **concrete imperative sentence** — a specific thing to do
 
 If deadline or date is unknown, omit rather than guess.
 
-**Dedup:** before adding to `potential-actions`, scan for a case-insensitive substring match on the key noun (sender name, event name, program name). If a match exists in any state (`[ ]`, `[+]`, or `[-]`), skip — the item has already been triaged. Use the `lists` skill to add new items.
+**Dedup:** before adding to `potential-actions`, scan for a case-insensitive substring match on the key noun (sender name, event name, program name). If a match exists in any state (`[ ]`, `[+]`, or `[-]`), skip — the item has already been triaged. Log with `DEDUP` and note the matched item. Use the `lists` skill to add new items.
 
 ---
 
@@ -91,12 +100,13 @@ Summarize concisely:
 
 ---
 
-## Step 7 — Update watermark
+## Step 7 — Update watermark and prune log
 
 After a successful run:
 
 ```bash
 ~/.claude/skills/email-triage/scripts/update-watermark.py
+python3 ~/.claude/skills/email-triage/scripts/prune-log.py
 ```
 
-Skip this step if the run failed or was aborted mid-way.
+Skip both if the run failed or was aborted mid-way. `prune-log.py` drops entries older than 30 days and prints a one-line summary.
