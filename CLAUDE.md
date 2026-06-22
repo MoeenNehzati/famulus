@@ -205,10 +205,10 @@ that.
 
 ## Skill categories and document-profile blocks
 
-- `~/.claude/skills/references/skill-categories.md` is the canonical list of
+- `references/skill-categories.md` is the canonical list of
   local skill categories and how to declare them (`Category: <name>` near the
   top of a SKILL.md body; multiple lines if a skill spans categories).
-- `~/.claude/skills/references/document-profile-schema.md` is the canonical
+- `references/document-profile-schema.md` is the canonical
   schema for top-of-document profile comments.
 - When applying a skill marked `Category: document-oriented` to a `.tex` file,
   first check whether a suitable top-of-document profile comment exists; if

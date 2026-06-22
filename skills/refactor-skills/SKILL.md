@@ -30,4 +30,4 @@ Follow convention 6: show diff, confirm with user, commit and push.
 
 ---
 
-@/home/moeen/.claude/skills/references/skill-guidelines.md
+@./../../references/skill-guidelines.md

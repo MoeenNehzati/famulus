@@ -2,7 +2,7 @@
 
 **A skill is a software module.** The standards below are its module spec — the same engineering discipline that applies to any well-designed module applies here: declared interfaces, enforced abstraction boundaries, single responsibility, explicit state contracts, and dependency hygiene. These are not stylistic preferences; they are structural requirements.
 
-**1. Skill categories** — declare `Category: <name>` near the top of `SKILL.md`. Valid values: `~/.claude/skills/references/skill-categories.md`. Omit only if no existing category fits.
+**1. Skill categories** — declare `Category: <name>` near the top of `SKILL.md`. Valid values: top-level `references/skill-categories.md`. Omit only if no existing category fits.
 
 **2. `my-X` naming and structure** — a personal override of upstream skill `X` is named `my-X`. Every `my-X` skill must follow this layout:
 - Personal overrides and additions at the top (what's different or added).

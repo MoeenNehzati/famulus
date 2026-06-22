@@ -39,7 +39,7 @@ Focus on:
 - whether the ordering of sections, results, and technical material serves the reader
 - whether the document fits its length constraint, whether measured in pages, words, slides, or time
 
-Read `../references/document-profile-schema.md` when document-profile fields or normalization rules matter.
+Read `../../references/document-profile-schema.md` when document-profile fields or normalization rules matter.
 Use that file as the canonical source for:
 - profile fields
 - field meanings

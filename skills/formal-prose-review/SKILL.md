@@ -52,7 +52,7 @@ Preserve:
 
 If a language change would alter the mathematical content, do not make it silently.
 
-If the document includes a top-of-document comment block or other explicit profile information, read `../references/document-profile-schema.md` and compare the block to the shared schema.
+If the document includes a top-of-document comment block or other explicit profile information, read `../../references/document-profile-schema.md` and compare the block to the shared schema.
 If the block is malformed, incomplete, or inconsistent with the shared schema, treat the profile information as missing or unclear rather than trusting it blindly.
 If the document includes a suitable top-of-document comment block or other explicit profile information, use it to calibrate the prose standard.
 In particular, use the stated document type, audience, and purpose to judge how formal, compressed, or polished the prose should be.

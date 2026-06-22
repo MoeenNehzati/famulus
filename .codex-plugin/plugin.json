@@ -1,0 +1,39 @@
+{
+  "name": "moeen",
+  "version": "0.1.0",
+  "description": "Personal productivity, writing, math, and automation skills",
+  "author": {
+    "name": "Moeen Nehzati",
+    "url": "https://github.com/MoeenNehzati"
+  },
+  "homepage": "https://github.com/MoeenNehzati/claude-config",
+  "repository": "https://github.com/MoeenNehzati/claude-config",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "writing",
+    "math",
+    "latex",
+    "productivity",
+    "automation"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Moeen",
+    "shortDescription": "Personal writing, math, and productivity skills",
+    "longDescription": "Personal skill library for technical writing, mathematical review, LaTeX workflows, planning, lists, calendar, email, weather, and local automation.",
+    "developerName": "Moeen Nehzati",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/MoeenNehzati/claude-config",
+    "defaultPrompt": [
+      "Use my personal skills for this task.",
+      "Review this technical document.",
+      "Help plan my day."
+    ]
+  }
+}

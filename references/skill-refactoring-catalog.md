@@ -34,7 +34,7 @@ Add a brief section to SKILL.md stating: what inputs the skill expects (if any),
 **Risk:** Low.
 
 ### Extract Reference
-Identify content that is repeated across multiple skills or that is reference material (tables, guidelines, schemas). Move it to `references/<name>.md`. Replace inline content with `@/home/moeen/.claude/skills/references/<name>.md`.
+Identify content that is repeated across multiple skills or that is reference material (tables, guidelines, schemas). Move it to top-level `references/<name>.md`. Replace inline content with a relative reference such as `@./../../references/<name>.md` from a skill directory.
 **Preserve:** Content must be identical before and after — only the location changes.
 **Verify:** Invoke the skill and confirm the reference content is loaded (visible in system-reminder Read call).
 **Risk:** Low, but test the `@` include.

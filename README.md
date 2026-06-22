@@ -1,19 +1,49 @@
-# Claude Config
+# Moeen Skills Config
 
-My personal [Claude Code](https://claude.ai/code) setup — working conventions, skills, and configuration.
+Personal skill library and agent configuration for Claude Code and Codex.
 
-## Superpowers
+The repository follows the same broad design as Superpowers: keep one canonical
+`skills/` tree and expose it through thin platform-specific plugin manifests.
+There is no Claude-to-Codex skill-body conversion step.
 
-Several skills in this repo extend or override skills from the [superpowers-marketplace](https://github.com/obra/superpowers-marketplace) plugin. Install it before using this config:
+## Layout
+
+```text
+skills/                 # canonical skill source, one directory per skill
+references/             # shared support docs used by multiple skills
+.claude-plugin/         # Claude plugin metadata
+.codex-plugin/          # Codex plugin metadata
+CLAUDE.md               # shared repo instructions
+AGENTS.md -> CLAUDE.md  # symlink for agents that read AGENTS.md
+tests/                  # install/visibility checks
+```
+
+Each skill lives at `skills/<name>/SKILL.md` and may include local
+`scripts/`, `references/`, `assets/`, tests, and `permissions.json`.
+`permissions.json` is repo metadata for expected runtime needs; it is kept with
+the skill and copied by plugin installation, but it is not a Codex permission
+grant.
+
+Shared reference material that is not itself a skill lives in top-level
+`references/`. This keeps `skills/` compatible with Codex plugin validation,
+which treats every immediate child of `skills/` as a skill directory.
+
+## Shared Instructions
+
+`AGENTS.md` is a tracked symlink to `CLAUDE.md`:
 
 ```bash
-claude plugin marketplace add obra/superpowers-marketplace
-claude plugin install superpowers@superpowers-marketplace
+AGENTS.md -> CLAUDE.md
 ```
+
+This keeps Claude-facing and Codex-facing repository instructions mechanically
+identical. On Unix-like systems Git tracks the symlink directly. On systems
+without symlink support, Git may check out `AGENTS.md` as a text file containing
+`CLAUDE.md`.
 
 ## Skills
 
-Skills are on-demand instruction sets loaded when invoked. They live in `skills/` and cover:
+Skills are on-demand instruction sets loaded when invoked. They cover:
 
 **Personal assistant & automation**
 - `daily-plan` — generate a daily plan from calendar, todos, and weather
@@ -24,62 +54,156 @@ Skills are on-demand instruction sets loaded when invoked. They live in `skills/
 
 **Writing & documents**
 - `formal-prose-review` — polish grammar, tone, and clarity in technical prose
-- `technical-flow-review` — review structure, flow, and readability of a document
+- `technical-flow-review` — review structure, flow, and readability
 - `notation-review` — audit and unify mathematical notation
 - `proof-audit` — audit a proof for soundness, coherence, and redundancy
-- `tool-applicability` — check whether a mathematical tool applies in a given setting
-- `math-dependency-graph` — extract a dependency graph from a LaTeX math document
-- `make-tex-docstring` — add a top-of-document profile comment to a TeX file
+- `tool-applicability` — check whether a mathematical tool applies
+- `math-dependency-graph` — extract a dependency graph from a LaTeX document
+- `make-tex-docstring` — propose a top-of-document profile comment
 - `latex-workshop` — compile LaTeX matching VS Code LaTeX Workshop settings
 - `bib-audit` — audit a `.bib` file for syntax, style, and duplicate issues
 
 **Meta**
 - `my-writing-skills` — personal conventions for writing and maintaining skills
-- `initialize-tdd` — scaffold a new project with a staged TDD workflow
+- `refactor-skills` — audit/refactor skills against local conventions
+- `initialize-tdd` — scaffold a staged TDD project
 
-## Installing the plugin
+## Codex
 
-### Via marketplace (recommended)
+Codex uses `.codex-plugin/plugin.json`, which points directly at:
 
-Add the `nullmarket` marketplace and install the `moeen` plugin:
-
+```json
+"skills": "./skills/"
 ```
+
+Installed skills are namespaced by plugin name, for example:
+
+```text
+moeen:proof-audit
+moeen:latex-workshop
+moeen:technical-flow-review
+```
+
+No generated Codex copy is committed. Platform-specific Codex behavior belongs
+in `.codex-plugin/plugin.json`, optional Codex hooks, or skill-local
+`agents/openai.yaml` files if added later.
+
+### Codex Local Install Test
+
+Run:
+
+```bash
+tests/test_codex_install.sh
+```
+
+The test creates an isolated temporary `CODEX_HOME`, a temporary local
+marketplace, and an empty work directory. It first confirms that this repo's
+skills are not visible before installation. It then installs the plugin and
+checks that every `skills/*/SKILL.md` is installed and explicitly invokable as
+`moeen:<skill>`.
+
+The test uses `codex debug prompt-input`; it does not call a model.
+
+## Claude
+
+Claude uses `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
+
+### Via Marketplace
+
+Add the marketplace and install the plugin:
+
+```bash
 /plugin marketplace add MoeenNehzati/claude-config
 /plugin install moeen@nullmarket
 ```
 
-Skills are namespaced under `/moeen:` (e.g. `/moeen:daily-plan`, `/moeen:wrap-up`).
+Skills are namespaced under `/moeen:` when installed as a plugin, for example:
 
-To get updates after a new push:
-
+```text
+/moeen:daily-plan
+/moeen:wrap-up
 ```
+
+To update after a push:
+
+```bash
 /plugin marketplace update
 /plugin update moeen@nullmarket
 ```
 
-### Via direct load (no install)
+### Via Direct Load
 
-Clone anywhere and load for a single session:
+Clone anywhere and load for one Claude session:
 
 ```bash
 git clone git@github.com:MoeenNehzati/claude-config.git ~/moeen-claude
 claude --plugin-dir ~/moeen-claude
 ```
 
-Or pull updates and reload without restarting:
+Or update the clone and reload plugins:
 
 ```bash
-cd ~/moeen-claude && git pull
+cd ~/moeen-claude
+git pull
 # then inside Claude:
 /reload-plugins
 ```
 
-### As a full setup (clone to ~/.claude)
+### As Full `~/.claude`
 
-Replaces your `~/.claude` entirely — use only on a fresh machine or if you want to adopt this config as your own base:
+Use this only on a fresh machine or when intentionally replacing the full
+Claude config:
 
 ```bash
 git clone git@github.com:MoeenNehzati/claude-config.git ~/.claude
 ```
 
-Skills load without namespacing (e.g. `/daily-plan`, `/wrap-up`) since they're in your personal skills directory. Then install the superpowers plugin (see above) and configure any credentials needed by individual skills (e.g. `g-calendar/scripts/setup_oauth.py`).
+In this layout, skills load without plugin namespacing.
+
+### Claude Install Test
+
+`tests/test_claude_install.sh` is currently a placeholder because local Claude
+subscription access is unavailable. It documents the intended coverage:
+
+- load this repository as a Claude plugin in an isolated environment
+- verify every `skills/*/SKILL.md` entry is visible
+- verify shared references are packaged and path-resolvable
+
+## Superpowers Dependency
+
+Several skills extend or expect skills from the
+[superpowers-marketplace](https://github.com/obra/superpowers-marketplace)
+plugin. Install it for Claude before relying on those overrides:
+
+```bash
+claude plugin marketplace add obra/superpowers-marketplace
+claude plugin install superpowers@superpowers-marketplace
+```
+
+For Codex, install the corresponding Superpowers plugin/marketplace if you want
+skills such as `my-writing-skills` to invoke their upstream Superpowers
+counterparts.
+
+## Development Checks
+
+Validate the Codex plugin manifest:
+
+```bash
+python3 /home/moeen/Documents/PhD/research/research-mic/AI/skills/.system/plugin-creator/scripts/validate_plugin.py .
+```
+
+Run the Codex isolated install test:
+
+```bash
+tests/test_codex_install.sh
+```
+
+Check shell syntax for install tests:
+
+```bash
+bash -n tests/test_codex_install.sh
+bash -n tests/test_claude_install.sh
+```
+
+After a coherent skill or plugin change, review the diff and commit so the
+cross-LLM configuration remains reproducible.
