@@ -88,30 +88,42 @@ Then report briefly:
 2. Construct the canonical JSON directly by understanding the mathematical structure.
 3. Add only direct dependencies with descriptions and evidence.
 4. Write or propose that JSON first.
-5. Use the renderer script only after the JSON exists.
+5. Once the JSON is written, invoke the renderer:
+   ```
+   python ~/.claude/skills/math-dependency-graph/scripts/build_math_dependency_graph.py <source.json>
+   ```
+   Output defaults to `_build/<name>.html` next to the JSON. Use `--html-out <path>` to override.
 6. Flag uncertain or heuristic edges explicitly.
 
 ## 6. Canonical fields
 
 Use `type`, not `kind`.
 
-For entities, prefer fields such as:
-- `id`
-- `type`
-- `label`
-- `title`
-- `short_description`
-- `location`
-- `scope`
-- `origin`
-- `depends_on`
+For entities, use these fields:
 
-For dependencies, prefer fields such as:
-- `id`
-- `use_type`
-- `description`
-- `confidence`
-- `evidence`
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique identifier for the entity. |
+| `type` | string | Entity type: `definition`, `lemma`, `theorem`, etc. |
+| `ref` | string | Document-assigned number as it appears in the paper, e.g. `4.2` or `A.3`. Empty if unnumbered. |
+| `short_title` | string | Short identifier for display in the cell, e.g. `Barbalat`. No type prefix. |
+| `title` | string | Full descriptive name shown in the side panel. |
+| `description` | string | One-sentence mathematical summary. MathJax-compatible. |
+| `defined` | string | Where the entity is introduced, e.g. `Section 4, Assumption 4.1`. |
+| `active_in` | string | Region of the document where the entity is in force, e.g. `Section 4–5`. |
+| `source` | string | `explicit` if stated in the paper, `inferred` if introduced by the model. |
+| `depends_on` | array | Direct dependency edges. |
+| `position` | int | Ordering position within the document. Layout-only, not displayed. |
+
+For dependencies, use these fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Id of the prerequisite entity. |
+| `use_type` | string | How the prerequisite is used: `ambient`, `applies`, `uses`, `invokes`, etc. |
+| `description` | string | Short description of how the prerequisite is used in this context. |
+| `confidence` | string | `Verified`, `Likely`, or `Speculative`. |
+| `evidence` | string | Short quote or pointer from the proof or statement. |
 
 Prefer the model to justify difficult edges from mathematical content, not from string matching.
 If the document is ambiguous, keep the JSON conservative and mark uncertainty explicitly.

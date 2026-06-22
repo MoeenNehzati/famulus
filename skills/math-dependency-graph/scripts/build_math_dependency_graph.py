@@ -64,7 +64,7 @@ def validate_document(doc: dict) -> None:
     for idx, entity in enumerate(doc["entities"], start=1):
         if not isinstance(entity, dict):
             raise SystemExit(f"Entity {idx} must be an object.")
-        for key in ("id", "type", "label", "within_document_number", "within_document_pos", "depends_on"):
+        for key in ("id", "type", "short_title", "ref", "position", "depends_on"):
             if key not in entity:
                 raise SystemExit(f"Entity {idx} is missing required key '{key}'.")
         if entity["id"] in seen_ids:
@@ -126,8 +126,8 @@ def reduce_transitive_edges(doc: dict) -> tuple[dict, list[dict]]:
                     {
                         "source": source_id,
                         "target": target_id,
-                        "source_label": entity_map[source_id]["label"],
-                        "target_label": entity["label"],
+                        "source_label": entity_map[source_id]["short_title"],
+                        "target_label": entity["short_title"],
                         "dependency": dep,
                     }
                 )
@@ -492,10 +492,10 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       docData.entities
         .slice()
         .sort((a, b) => {{
-          const aPos = a.within_document_pos || 0;
-          const bPos = b.within_document_pos || 0;
+          const aPos = a.position || 0;
+          const bPos = b.position || 0;
           if (aPos !== bPos) return aPos - bPos;
-          return a.label.localeCompare(b.label);
+          return a.short_title.localeCompare(b.short_title);
         }})
         .map((entity, idx) => [entity.id, idx])
     );
@@ -699,7 +699,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     function renderRemovedNodes() {{
       const removedEntities = docData.entities
         .filter(entity => hiddenNodes.has(entity.id))
-        .sort((a, b) => (a.within_document_pos || 0) - (b.within_document_pos || 0) || a.label.localeCompare(b.label));
+        .sort((a, b) => (a.position || 0) - (b.position || 0) || a.short_title.localeCompare(b.short_title));
       removedNodesEl.innerHTML = "";
       if (removedEntities.length === 0) {{
         removedNodesEl.textContent = "None";
@@ -709,8 +709,8 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         const item = document.createElement("div");
         item.className = "removed-item";
         item.innerHTML = `
-          <div><strong>${{escapeHtml(entity.label)}}</strong></div>
-          <div class="removed-item-number">${{escapeHtml(entity.within_document_number || "")}}</div>
+          <div><strong>${{escapeHtml(entity.short_title)}}</strong></div>
+          <div class="removed-item-number">${{escapeHtml(entity.ref || "")}}</div>
         `;
         item.addEventListener("dblclick", () => {{
           hiddenNodes.delete(entity.id);
@@ -750,24 +750,23 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     }}
 
     function formatEntity(entity) {{
-      const shortDescription = escapeHtml(entity.short_description || "");
+      const description = escapeHtml(entity.description || "");
       const deps = (entity.depends_on || []).map(dep => {{
         const other = entityMap.get(dep.id);
-        const name = other ? other.label : dep.id;
-        return `<li><strong>${{escapeHtml(name)}}</strong> <code>${{escapeHtml(dep.use_type || "")}}</code><br>${{escapeHtml(dep.description || "")}}<br><span class="small">${{escapeHtml(dep.confidence || "")}} | ${{escapeHtml(dep.evidence || "")}}</span></li>`;
+        const name = other ? other.short_title : dep.id;
+        const confidence = dep.confidence ? ` (confidence: ${{escapeHtml(dep.confidence)}})` : "";
+        return `<li><strong>${{escapeHtml(name)}}</strong> <code>${{escapeHtml(dep.use_type || "")}}</code><br>${{escapeHtml(dep.description || "")}}${{confidence ? `<br><span class="small">${{escapeHtml(dep.evidence || "")}}${{confidence}}</span>` : ""}}</li>`;
       }}).join("");
-      const locRaw = entity.location || "";
-      const locText = typeof locRaw === "string" ? locRaw : (locRaw.line_start ? `${{locRaw.file || ""}} lines ${{locRaw.line_start}}-${{locRaw.line_end || locRaw.line_start}}` : (locRaw.file || ""));
+      const locText = entity.defined || "";
       return `
-        <h2>${{escapeHtml(entity.label)}}</h2>
-        <div><strong>Within document:</strong> ${{escapeHtml(entity.within_document_number || "")}}</div>
-        <div><strong>Line:</strong> ${{escapeHtml(String(entity.within_document_pos || ""))}}</div>
+        <h2>${{escapeHtml(entity.short_title)}}</h2>
+        <div><strong>Ref:</strong> ${{escapeHtml(entity.ref || "—")}}</div>
         <div><strong>Type:</strong> <code>${{escapeHtml(entity.type)}}</code></div>
-        <div><strong>Title:</strong> ${{escapeHtml(entity.title || "None")}}</div>
-        <div><strong>Scope:</strong> ${{escapeHtml(entity.scope || "unknown")}}</div>
-        <div><strong>Origin:</strong> ${{escapeHtml(entity.origin || "n/a")}}</div>
-        <div><strong>Location:</strong> ${{escapeHtml(locText)}}</div>
-        <p>${{shortDescription}}</p>
+        <div><strong>Title:</strong> ${{escapeHtml(entity.title || "—")}}</div>
+        <div><strong>Active in:</strong> ${{escapeHtml(entity.active_in || "—")}}</div>
+        <div><strong>Source:</strong> ${{escapeHtml(entity.source || "—")}}</div>
+        <div><strong>Defined:</strong> ${{escapeHtml(locText || "—")}}</div>
+        <p>${{description}}</p>
         <h3>Direct dependencies</h3>
         <ul>${{deps || "<li>None</li>"}}</ul>
       `;
@@ -775,24 +774,24 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 
     function tooltipText(entity) {{
       return `
-        <strong>${{escapeHtml(entity.label)}}</strong><br>
-        ${{escapeHtml(entity.within_document_number || "")}}<br>
-        line ${{escapeHtml(String(entity.within_document_pos || ""))}}<br>
+        <strong>${{escapeHtml(entity.short_title)}}</strong><br>
+        ${{escapeHtml(entity.ref || "")}}<br>
         ${{escapeHtml(entity.type)}}<br>
-        ${{escapeHtml(entity.short_description || "")}}
+        ${{escapeHtml(entity.description || "")}}
       `;
     }}
 
     function edgeTooltipText(edge) {{
       const source = entityMap.get(edge.source);
       const target = entityMap.get(edge.target);
-      const sourceLabel = source ? source.label : edge.source;
-      const targetLabel = target ? target.label : edge.target;
+      const sourceLabel = source ? source.short_title : edge.source;
+      const targetLabel = target ? target.short_title : edge.target;
+      const confidence = edge.confidence ? ` (confidence: ${{escapeHtml(edge.confidence)}})` : "";
       return `
         <strong>${{escapeHtml(sourceLabel)}} → ${{escapeHtml(targetLabel)}}</strong><br>
         <code>${{escapeHtml(edge.use_type || "")}}</code><br>
         ${{escapeHtml(edge.description || "")}}<br>
-        <span class="small">${{escapeHtml(edge.confidence || "")}} | ${{escapeHtml(edge.evidence || "")}}</span>
+        <span class="small">${{escapeHtml(edge.evidence || "")}}${{confidence}}</span>
       `;
     }}
 
@@ -804,7 +803,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     }}
 
     function bridgeEdge(sourceId, targetId, hiddenPath, seedEdge) {{
-      const hiddenLabels = hiddenPath.map(id => entityMap.get(id)?.label || id);
+      const hiddenLabels = hiddenPath.map(id => entityMap.get(id)?.short_title || id);
       return {{
         source: sourceId,
         target: targetId,
@@ -1060,7 +1059,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       foreignObject.setAttribute("height", h);
       const body = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
       body.setAttribute("class", "node-fo-body");
-      body.innerHTML = `<div class="node-label">${{escapeHtml(entity.label)}}</div><div class="node-subtitle">${{escapeHtml(entity.type)}}</div>`;
+      body.innerHTML = `<div class="node-label">${{escapeHtml(entity.short_title)}}</div><div class="node-subtitle">${{escapeHtml(entity.type + (entity.ref ? " " + entity.ref : ""))}}</div>`;
       foreignObject.appendChild(body);
       group.appendChild(foreignObject);
       return group;
@@ -1310,7 +1309,12 @@ def main() -> None:
         doc, removed_edges = reduce_transitive_edges(doc)
         reduction_note = f"Graph-theoretic transitive reduction enabled: removed {len(removed_edges)} redundant edges from the rendered view."
 
-    html_path = Path(args.html_out).resolve() if args.html_out else source_path.with_suffix(".html")
+    if args.html_out:
+        html_path = Path(args.html_out).resolve()
+    else:
+        build_dir = source_path.parent / "_build"
+        build_dir.mkdir(exist_ok=True)
+        html_path = build_dir / source_path.with_suffix(".html").name
     html_path.write_text(build_html_with_elk(doc, reduction_note=reduction_note), encoding="utf-8")
 
     print(
