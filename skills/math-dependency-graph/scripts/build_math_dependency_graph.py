@@ -756,8 +756,8 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         const name = other ? other.label : dep.id;
         return `<li><strong>${{escapeHtml(name)}}</strong> <code>${{escapeHtml(dep.use_type || "")}}</code><br>${{escapeHtml(dep.description || "")}}<br><span class="small">${{escapeHtml(dep.confidence || "")}} | ${{escapeHtml(dep.evidence || "")}}</span></li>`;
       }}).join("");
-      const loc = entity.location || {{}};
-      const locText = loc.line_start ? `lines ${{loc.line_start}}-${{loc.line_end || loc.line_start}}` : "";
+      const locRaw = entity.location || "";
+      const locText = typeof locRaw === "string" ? locRaw : (locRaw.line_start ? `${{locRaw.file || ""}} lines ${{locRaw.line_start}}-${{locRaw.line_end || locRaw.line_start}}` : (locRaw.file || ""));
       return `
         <h2>${{escapeHtml(entity.label)}}</h2>
         <div><strong>Within document:</strong> ${{escapeHtml(entity.within_document_number || "")}}</div>
@@ -766,7 +766,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         <div><strong>Title:</strong> ${{escapeHtml(entity.title || "None")}}</div>
         <div><strong>Scope:</strong> ${{escapeHtml(entity.scope || "unknown")}}</div>
         <div><strong>Origin:</strong> ${{escapeHtml(entity.origin || "n/a")}}</div>
-        <div><strong>Location:</strong> ${{escapeHtml(loc.file || "")}} ${{escapeHtml(locText)}}</div>
+        <div><strong>Location:</strong> ${{escapeHtml(locText)}}</div>
         <p>${{shortDescription}}</p>
         <h3>Direct dependencies</h3>
         <ul>${{deps || "<li>None</li>"}}</ul>
