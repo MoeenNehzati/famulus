@@ -41,6 +41,41 @@ identical. On Unix-like systems Git tracks the symlink directly. On systems
 without symlink support, Git may check out `AGENTS.md` as a text file containing
 `CLAUDE.md`.
 
+## Systemwide Local Setup
+
+On this machine, the canonical checkout lives at:
+
+```text
+/home/moeen/Documents/AI
+```
+
+Claude and Codex are wired to this checkout with symlinks, so both tools use the
+same skill files.
+
+Claude symlinks the shared directories directly:
+
+```text
+~/.claude/skills     -> /home/moeen/Documents/AI/skills
+~/.claude/references -> /home/moeen/Documents/AI/references
+~/.claude/agents     -> /home/moeen/Documents/AI/agents
+~/.claude/CLAUDE.md  -> /home/moeen/Documents/AI/CLAUDE.md
+```
+
+Codex keeps its existing home and system skills, then symlinks each personal
+skill into `~/.codex/skills/` individually. This preserves Codex-managed
+directories such as `~/.codex/skills/.system`.
+
+```text
+~/.codex/skills/<skill> -> /home/moeen/Documents/AI/skills/<skill>
+~/.codex/references     -> /home/moeen/Documents/AI/references
+~/.codex/agents         -> /home/moeen/Documents/AI/agents
+~/.codex/AGENTS.md      -> /home/moeen/Documents/AI/AGENTS.md
+```
+
+With this direct user-level setup, Codex skills are invoked by bare skill name
+such as `$proof-audit`. When installed through the Codex plugin manifest instead,
+the same skills are namespaced as `moeen:proof-audit`.
+
 ## Skills
 
 Skills are on-demand instruction sets loaded when invoked. They cover:
