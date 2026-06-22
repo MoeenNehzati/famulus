@@ -62,23 +62,39 @@ Claude symlinks the shared directories directly:
 ~/.claude/CLAUDE.md  -> /home/moeen/Documents/AI/CLAUDE.md
 ```
 
+Codex reads user-level skills from `~/.agents/skills`. Link that directory to
+the canonical checkout:
+
+```text
+~/.agents/skills -> /home/moeen/Documents/AI/skills
+```
+
+Create or repair the link with:
+
+```bash
+mkdir -p ~/.agents
+ln -sfn /home/moeen/Documents/AI/skills ~/.agents/skills
+```
+
 Codex must keep `~/.codex` itself as a real directory. Do not make
 `~/.codex` a symlink to this repository or to another writable tree: Codex's
 Linux sandbox may reject read-only mounts that cross a writable symlink at the
 home-directory boundary.
 
 Inside that real `~/.codex` directory, keep Codex-managed state directly in
-place. Link only the shared files and personal skill directories back to the
-canonical checkout as needed.
-
-The intended invariant is:
+place. Link only shared non-skill support files back to the canonical checkout
+as needed:
 
 ```text
-~/.codex/skills/<skill> -> /home/moeen/Documents/AI/skills/<skill>
 ~/.codex/references     -> /home/moeen/Documents/AI/references
 ~/.codex/agents         -> /home/moeen/Documents/AI/agents
 ~/.codex/AGENTS.md      -> /home/moeen/Documents/AI/AGENTS.md
 ```
+
+Do not rely on `~/.codex/skills` for personal skills. Some Codex surfaces may
+see it, but `~/.agents/skills` is the documented user-level skill location and
+keeps the CLI and IDE extension aligned. After changing skill links, restart
+Codex or open a new Codex panel/thread if the skills do not appear.
 
 With this direct user-level setup, Codex skills are invoked by bare skill name
 such as `$proof-audit`. When installed through the Codex plugin manifest instead,
