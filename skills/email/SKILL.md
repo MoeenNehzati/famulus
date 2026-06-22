@@ -62,6 +62,28 @@ EOF
 
 **Accounts:** `--from nyu` or `--from personal`.
 
+## Replying to a thread
+
+Himalaya's formatted output omits `Message-ID`. Use `email-get-message-id.sh` to fetch it, then pass it to `email-send.sh`:
+
+```bash
+# 1. Get the Message-ID of the message being replied to
+MSG_ID=$(scripts/email-get-message-id.sh -a nyu --folder "[Gmail]/All Mail" <envelope-id>)
+
+# 2. Send the threaded reply
+cat <<'BODY' | scripts/email-send.sh \
+  --from nyu \
+  --to sender@example.com \
+  --subject "Re: Original Subject" \
+  --in-reply-to "$MSG_ID"
+Reply body here.
+BODY
+```
+
+- `--in-reply-to <message-id>` — sets `In-Reply-To`; `References` defaults to the same value
+- `--references <refs>` — override `References` explicitly (deep threads with multiple ancestors)
+- Subject should be `Re: <original subject>` to match the thread in Gmail
+
 Passwords come from GNOME keyring via `secret-tool`. Keys:
 - `secret-tool lookup account nyu service himalaya-smtp`
 - `secret-tool lookup account personal service himalaya-smtp`
