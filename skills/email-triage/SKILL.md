@@ -41,6 +41,8 @@ Note FLAGS per row: `*` = unread · `R` = replied · blank = read, not replied.
 
 **Skip immediately** (don't read body) when the subject alone makes it unambiguous: sales/discount offers, newsletter digests, GitHub notifications, delivery confirmations, social media digests, referral bonuses. For financial senders (banks, SoFi, Spotify, utilities): read the subject — skip if promotional, read the body if it could be a statement, payment due, or alert. **Log each skip with `SKIP` and one sentence why.**
 
+**Never skip** if the subject suggests a message is waiting on a portal ("you have a message", "new message", "someone replied") — a human sent it; classify as Type 3 in Step 3.
+
 ---
 
 ## Step 3 — Read email bodies in batches
@@ -49,18 +51,24 @@ Note FLAGS per row: `*` = unread · `R` = replied · blank = read, not replied.
 himalaya message read -a <account> <ID>
 ```
 
-Batch up to 10 reads in parallel. Classify each email:
+Batch up to 10 reads in parallel. Classify each email by sender type and targeting:
 
-| Category | Destination | Signal |
-|----------|-------------|--------|
-| **Bill / invoice** | `todo` | Amount due, due date, or payment link visible |
-| **Reply needed** | `todo` | Real person, asks a question or expects a response, FLAGS has no `R` |
-| **Follow-up commitment** | `todo` | Explicit promise made in a prior reply (e.g. "I'll send you X in July") |
-| **Event / seminar** | `potential-actions` | Email about a specific event with date and time |
-| **Opportunity / invite** | `potential-actions` | CFP, fellowship, workshop, optional signup, mass invite |
-| **No action** | — | Everything else |
+**Type 1 — Person → you** (individual sender, addressed to you or a small group)  
+**Type 2 — Person → mass** (individual sender, sent to a list, newsletter, or broadcast)  
+**Type 3 — Institution proxying a person** (portal message, ticket reply, secure message alert — a human initiated contact, even if unnamed)  
+**Type 4 — Institution as itself** (automated report, statement, summary, marketing — no specific human is communicating through this)
 
-For **reply needed**: skip if the sender is the user themselves, if it's a mass CC, or if purely informational with no implied response needed.
+**Routing:**
+- **Types 1 & 3** always surface:
+  - Reply expected (no `R` flag, asks a question or expects a response) → `todo`
+  - Informational → `potential-actions` if there's something to act on, otherwise `NO_ACTION`
+- **Type 2** — treat like Type 4
+- **Type 4** — route by new-information criterion:
+  - Bill / payment due → `todo`
+  - New event or opportunity → `potential-actions`
+  - Record of past activity or information you already have → `NO_ACTION`
+
+**Follow-up commitments** (any type): if a prior reply contains an explicit promise (e.g. "I'll send you X in July"), add to `todo` regardless of type.
 
 **Log every email read at this step** — one `log-decision.sh` call per email with its classification (`NO_ACTION`, `TODO`, `POTENTIAL`) and one sentence why. Log `NO_ACTION` even when nothing is added.
 
@@ -80,6 +88,7 @@ Every item must be a **concrete imperative sentence** — a specific thing to do
 - Bill: `Pay [Sender] – $[amount] due [date]` → `todo`
 - Reply: `Reply to [Name] re: [subject]` → `todo`
 - Follow-up: `[action verb] [target] – [timeframe]` → `todo`
+- Portal / institution message (Type 3, informational): `Check message on [portal/system]` → `potential-actions`
 - Event: `Attend [event name] – [date, time, location]` → `potential-actions`
 - CFP / application: `Submit to [name] by [deadline]` or `Apply to [name] by [deadline]` → `potential-actions`
 - Optional signup: `Sign up for [name] – [date or deadline]` → `potential-actions`
