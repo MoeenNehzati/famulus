@@ -65,8 +65,6 @@ Prefer these entity types:
 - `corollary`
 - `remark`
 
-Only include `remark` if it carries mathematical content used later.
-
 Standing assumptions may come from:
 - explicit assumption environments
 - ambient scope phrases such as `Throughout`, `Fix ... throughout`, `In this section we assume`
