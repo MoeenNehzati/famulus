@@ -2,6 +2,9 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+python3 "$repo_root/tests/test_skill_metadata.py"
+python3 "$repo_root/tests/test_platform_neutral_content.py"
+
 plugin_name="$(
   python3 - "$repo_root/.codex-plugin/plugin.json" <<'PY'
 import json

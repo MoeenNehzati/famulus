@@ -19,13 +19,13 @@ Category: automation
 
 `scripts/weather.sh` geolocates the current IP (via ip-api.com, no key) and
 fetches today's hourly forecast from Open-Meteo (no key) for that location,
-printing combined JSON to stdout. Claude then interprets that JSON into a
+printing combined JSON to stdout. The agent then interprets that JSON into a
 day-planning summary. Read-only — makes no changes to anything.
 
 ## 1. Run the script
 
 ```bash
-/home/moeen/.claude/skills/weather/scripts/weather.sh [--date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--location "place name"]
+scripts/weather.sh [--date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--location "place name"]
 ```
 
 All flags are optional:

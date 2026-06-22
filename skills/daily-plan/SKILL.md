@@ -52,7 +52,7 @@ file lives at `GDrive:plans/<key>.md`, managed by the `plans.sh` script.
 ## 2. Check whether today's plan already exists
 
 ```bash
-/home/moeen/.claude/skills/daily-plan/scripts/plans.sh exists <key>
+scripts/plans.sh exists <key>
 ```
 
 - Exit 0 → plan exists.
@@ -70,11 +70,11 @@ file lives at `GDrive:plans/<key>.md`, managed by the `plans.sh` script.
 Run all five of these simultaneously:
 
 ```bash
-/home/moeen/.claude/skills/lists/scripts/lists.sh read todo
-/home/moeen/.claude/skills/lists/scripts/lists.sh read potential-actions
-/home/moeen/.claude/skills/g-calendar/scripts/gcal.sh agenda --all-calendars
-/home/moeen/.claude/skills/g-calendar/scripts/gcal.sh agenda --all-calendars --days 7
-/home/moeen/.claude/skills/weather/scripts/weather.sh
+../lists/scripts/lists.sh read todo
+../lists/scripts/lists.sh read potential-actions
+../g-calendar/scripts/gcal.sh agenda --all-calendars
+../g-calendar/scripts/gcal.sh agenda --all-calendars --days 7
+../weather/scripts/weather.sh
 ```
 
 - The first `agenda` call (no `--days`) gives today's timed events → used for
@@ -214,13 +214,13 @@ Rules:
 Then write the file:
 
 ```bash
-/home/moeen/.claude/skills/daily-plan/scripts/plans.sh write <key>
+scripts/plans.sh write <key>
 ```
 
 Then read and display it:
 
 ```bash
-/home/moeen/.claude/skills/daily-plan/scripts/plans.sh read <key>
+scripts/plans.sh read <key>
 ```
 
 No further prompting needed — the file itself tells the user what to respond to.
@@ -252,19 +252,19 @@ Wait for the user's response, then in a single pass:
 
 1. **Update `potential-actions` in-place**: change `[ ]` → `[+]` for accepted items, `[ ]` → `[-]` for rejected items. Skipped items remain `[ ]`. Write:
    ```bash
-   /home/moeen/.claude/skills/lists/scripts/lists.sh write potential-actions
+   ../lists/scripts/lists.sh write potential-actions
    ```
 
 2. **Update `todo`**: prepend each accepted item as `- [ ] (MM/DD/YY) <text>` (today's date). Write:
    ```bash
-   /home/moeen/.claude/skills/lists/scripts/lists.sh write todo
+   ../lists/scripts/lists.sh write todo
    ```
 
 3. **If any items were accept+today**: read the current plan, append each as a new numbered item in the `## Actions` (or `## Actions (suggestions)`) section, then write the plan back:
    ```bash
-   /home/moeen/.claude/skills/daily-plan/scripts/plans.sh read <key>
+   scripts/plans.sh read <key>
    # ... edit the Actions section ...
-   /home/moeen/.claude/skills/daily-plan/scripts/plans.sh write <key>
+   scripts/plans.sh write <key>
    ```
 
 4. Confirm all changes to the user (accepted/rejected/skipped counts, what was added to todo).
@@ -287,13 +287,13 @@ Wait for the user's response. For each item the user assigns a deadline to:
 
 1. Read the current `todo` list:
    ```bash
-   /home/moeen/.claude/skills/lists/scripts/lists.sh read todo
+   ../lists/scripts/lists.sh read todo
    ```
 2. Find the matching item (fuzzy match on text after stripping the `(MM/DD/YY)` prefix).
 3. Append the deadline phrase to the item's text (e.g. `gather medical records` → `gather medical records by end of July`).
 4. Write the updated list back:
    ```bash
-   /home/moeen/.claude/skills/lists/scripts/lists.sh write todo
+   ../lists/scripts/lists.sh write todo
    ```
 
 Confirm which items were updated. Items the user skips remain unchanged.
@@ -304,7 +304,7 @@ When the user responds with which actions they're keeping:
 
 1. Read the current plan:
    ```bash
-   /home/moeen/.claude/skills/daily-plan/scripts/plans.sh read <key>
+   scripts/plans.sh read <key>
    ```
 2. Edit the Actions section:
    - Remove items the user is not keeping.
@@ -312,7 +312,7 @@ When the user responds with which actions they're keeping:
    - Change `## Actions (suggestions)` → `## Actions`.
 3. Write the updated plan back:
    ```bash
-   /home/moeen/.claude/skills/daily-plan/scripts/plans.sh write <key>
+   scripts/plans.sh write <key>
    ```
 4. Show the user the updated plan.
 
@@ -323,18 +323,18 @@ When the user marks one or more actions as done (e.g., "mark 1 as done",
 
 1. Read the current plan:
    ```bash
-   /home/moeen/.claude/skills/daily-plan/scripts/plans.sh read <key>
+   scripts/plans.sh read <key>
    ```
 2. In the plan, change `[ ]` → `[x]` for each marked action.
 3. Write the updated plan back:
    ```bash
-   /home/moeen/.claude/skills/daily-plan/scripts/plans.sh write <key>
+   scripts/plans.sh write <key>
    ```
 4. For each marked action, find the matching item in the todo list and check
    it off:
    - Read the todo list:
      ```bash
-     /home/moeen/.claude/skills/lists/scripts/lists.sh read todo
+     ../lists/scripts/lists.sh read todo
      ```
    - The action text in the plan (before the `—` separator) is often a
      shortened or lightly reworded version of the original todo item. Use
@@ -342,7 +342,7 @@ When the user marks one or more actions as done (e.g., "mark 1 as done",
    - Change `- [ ]` → `- [x]` for the matched item.
    - Write the updated list back:
      ```bash
-     /home/moeen/.claude/skills/lists/scripts/lists.sh write todo
+     ../lists/scripts/lists.sh write todo
      ```
 5. Confirm to the user which todo item(s) were checked off. If no confident
    match is found for an action, say so rather than guessing wrong.

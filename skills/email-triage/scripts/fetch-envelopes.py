@@ -20,7 +20,7 @@ import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-WATERMARK = Path("~/.claude/skills/email-triage/last_run").expanduser()
+WATERMARK = Path("last_run").expanduser()
 
 
 def load_cutoff():

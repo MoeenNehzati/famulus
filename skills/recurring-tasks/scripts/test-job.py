@@ -12,7 +12,7 @@ from argparse import ArgumentParser
 SKILL_DIR    = Path(__file__).parent.parent
 DEFAULT_JOBS = SKILL_DIR / "jobs.yaml"
 LOG_DIR      = SKILL_DIR / "logs"
-PREFIX       = "claude-"
+PREFIX       = "ai-"
 TIMEOUT_SEC  = 360
 
 

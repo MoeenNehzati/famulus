@@ -16,9 +16,9 @@ DEFAULT_JOBS     = SKILL_DIR / "jobs.yaml"
 LOG_DIR          = SKILL_DIR / "logs"
 RUNNER_DIR       = SKILL_DIR / "scripts" / "runners"
 DEFAULT_UNIT_DIR = Path.home() / ".config/systemd/user"
-PREFIX           = "claude-"
-CRON_BEGIN = "# --- claude-recurring BEGIN (managed by recurring-tasks skill — do not edit manually) ---"
-CRON_END   = "# --- claude-recurring END ---"
+PREFIX           = "ai-"
+CRON_BEGIN = "# --- ai-recurring BEGIN (managed by recurring-tasks skill - do not edit manually) ---"
+CRON_END   = "# --- ai-recurring END ---"
 
 
 def cron_to_systemd_calendar(cron: str) -> str:
@@ -63,7 +63,8 @@ def cron_to_systemd_calendar(cron: str) -> str:
 def write_runner(job: dict, log: Path, runner_dir: Path) -> Path:
     runner_dir.mkdir(parents=True, exist_ok=True)
     path = runner_dir / f"{job['name']}.sh"
-    path.write_text(f"#!/bin/bash\n{job['command']} >> {log} 2>&1\n")
+    command = job["command"].replace("{skill_dir}", str(SKILL_DIR))
+    path.write_text(f"#!/bin/bash\n{command} >> {log} 2>&1\n")
     path.chmod(0o755)
     return path
 
@@ -71,7 +72,7 @@ def write_runner(job: dict, log: Path, runner_dir: Path) -> Path:
 def service_content(description: str, runner: Path) -> str:
     return (
         "[Unit]\n"
-        f"Description=Claude recurring job: {description}\n"
+        f"Description=AI recurring job: {description}\n"
         "\n"
         "[Service]\n"
         "Type=oneshot\n"
@@ -82,7 +83,7 @@ def service_content(description: str, runner: Path) -> str:
 def timer_content(description: str, calendar: str, service_name: str) -> str:
     return (
         "[Unit]\n"
-        f"Description=Timer for Claude recurring job: {description}\n"
+        f"Description=Timer for AI recurring job: {description}\n"
         "\n"
         "[Timer]\n"
         f"OnCalendar={calendar}\n"
@@ -159,7 +160,7 @@ def remove_cron_block() -> None:
         subprocess.run(["crontab", "-"], input=new, text=True, check=True)
         print("Removed old crontab block.")
     except StopIteration:
-        print("No claude-recurring crontab block found; nothing to migrate.")
+        print("No ai-recurring crontab block found; nothing to migrate.")
 
 
 def main() -> None:
@@ -168,7 +169,7 @@ def main() -> None:
                    help="Override unit dir (testing; skips systemctl)")
     p.add_argument("--jobs-file", default=str(DEFAULT_JOBS))
     p.add_argument("--migrate-cron", action="store_true",
-                   help="Remove old claude-recurring crontab block before syncing")
+                   help="Remove old ai-recurring crontab block before syncing")
     args = p.parse_args()
 
     if args.migrate_cron:

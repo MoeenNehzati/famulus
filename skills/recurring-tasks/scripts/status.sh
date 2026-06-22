@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Show status of all Claude recurring task timers and, optionally, detailed
+# Show status of all recurring task timers and, optionally, detailed
 # debug info for a single job.
 #
 # Usage: status.sh [job-name]
-#   No argument: list all claude-* timers.
+#   No argument: list all ai-* timers.
 #   With job-name: also show service status and recent journal entries.
 set -euo pipefail
 
-PREFIX="claude-"
+PREFIX="ai-"
 
 echo "── Timers ──"
 systemctl --user list-timers "${PREFIX}*"

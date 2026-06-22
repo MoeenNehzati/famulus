@@ -13,15 +13,15 @@ import os
 import sys
 from datetime import date, timedelta
 
-WATERMARK = os.path.expanduser("~/.claude/skills/email-triage/last_run")
+WATERMARK = os.path.expanduser("last_run")
 
 if "--days" in sys.argv:
     idx = sys.argv.index("--days")
     n = int(sys.argv[idx + 1])
     cutoff = date.today() - timedelta(days=n + 1)
     print(cutoff.isoformat())
-elif os.path.exists(WATERMARK):
-    with open(WATERMARK) as f:
+elif WATERMARK.exists():
+    with WATERMARK.open() as f:
         watermark_date = date.fromisoformat(f.read().strip()[:10])
     cutoff = watermark_date - timedelta(days=1)
     print(cutoff.isoformat())

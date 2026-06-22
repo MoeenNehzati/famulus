@@ -1,7 +1,6 @@
 {
   "bash": [
-    "Bash(git:*)",
-    "Bash(claude:*)"
+    "Bash(git:*)"
   ],
   "network": []
 }

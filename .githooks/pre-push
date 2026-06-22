@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+python3 "$repo_root/tests/test_skill_metadata.py"
+python3 "$repo_root/tests/test_platform_neutral_content.py"

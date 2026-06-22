@@ -1,10 +1,10 @@
 {
   "bash": [
-    "Bash(~/.claude/skills/email-triage/scripts/fetch-envelopes.py:*)",
-    "Bash(~/.claude/skills/email-triage/scripts/get-cutoff.py:*)",
-    "Bash(~/.claude/skills/email-triage/scripts/update-watermark.py:*)",
-    "Bash(~/.claude/skills/email-triage/scripts/log-decision.sh:*)",
-    "Bash(python3 ~/.claude/skills/email-triage/scripts/prune-log.py:*)"
+    "Bash(scripts/fetch-envelopes.py:*)",
+    "Bash(scripts/get-cutoff.py:*)",
+    "Bash(scripts/update-watermark.py:*)",
+    "Bash(scripts/log-decision.sh:*)",
+    "Bash(python3 scripts/prune-log.py:*)"
   ],
   "network": []
 }

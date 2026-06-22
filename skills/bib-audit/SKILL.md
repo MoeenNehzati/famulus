@@ -11,7 +11,7 @@ Conservative bibliography auditor. Default behavior: produce a structured report
 
 ## Test files
 
-Ready-to-use test fixtures live in `~/.claude/skills/bib-audit/test/`:
+Ready-to-use test fixtures live in `test/`:
 - `test_biblatex.bib` — biblatex+Biber path: exact duplicate pair, preprint/journal version pair, missing fields, bad DOI, formatting inconsistencies
 - `test_natbib.bib` — BibTeX+natbib path: exact duplicate pair, year conflict, missing author, page-dash issues, mixed field casing
 - `test_modification.bib` + `test_modification.tex` — modification layer: deletion, merge, `.tex` citation rewrite, deduplication edge cases
@@ -70,7 +70,7 @@ Produces `<basename>_bibertool.bib` (normalized output) and `<basename>.blg` (lo
 Do not run `biber --tool` — it uses biblatex field names (`journaltitle`, `date`) and will spuriously flag valid BibTeX fields (`journal`, `year`).
 
 ```
-python3 ~/.claude/skills/bib-audit/scripts/bib-validate-bibtex.py <file.bib>
+python3 scripts/bib-validate-bibtex.py <file.bib>
 ```
 
 Output is JSON. Read `parse_errors` first (file-level failures), then `entries[*].issues`. Each issue has `level` (ERROR/WARNING/INFO), `field`, and `message`.
@@ -121,7 +121,7 @@ Do not treat UNVERIFIED as fake. Books, unpublished manuscripts, lecture notes, 
 Run the similarity script to get a ranked candidate list:
 
 ```
-python3 ~/.claude/skills/bib-audit/scripts/bib-similarity.py <file.bib> [--threshold 0.3]
+python3 scripts/bib-similarity.py <file.bib> [--threshold 0.3]
 ```
 
 Output JSON: each pair has `score` (0–1), `confidence` (EXACT/HIGH/MEDIUM/LOW), and per-field signals (`doi`/`eprint`/`isbn` identifier match, `title`/`author`/`year`/`venue` soft scores). `EXACT` = shared identifier; treat as definite duplicate. Threshold 0.3 is loose by design — use the list as a checklist, not a verdict.

@@ -1,6 +1,6 @@
 {
   "bash": [
-    "Bash(/home/moeen/.claude/skills/weather/scripts/weather.sh:*)"
+    "Bash(scripts/weather.sh:*)"
   ],
   "network": []
 }

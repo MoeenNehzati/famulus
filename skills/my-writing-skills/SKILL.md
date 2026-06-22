@@ -1,6 +1,6 @@
 ---
 name: my-writing-skills
-description: Use when creating or editing a personal skill in ~/.claude/skills/
+description: Use when creating or editing a personal skill in the shared skills directory
 ---
 
 @./../../references/skill-guidelines.md

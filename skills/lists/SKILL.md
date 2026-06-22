@@ -18,15 +18,15 @@ Category: automation
 
 Every operation goes through exactly one script, with two subcommands. Use
 **only** these two invocation patterns — nothing else
-(`/home/moeen/.claude/skills/lists/scripts/lists.sh`, no `cd`, no other
+(`scripts/lists.sh`, no `cd`, no other
 arguments or flags):
 
-- **Read**: `/home/moeen/.claude/skills/lists/scripts/lists.sh read [name]`
+- **Read**: `scripts/lists.sh read [name]`
   - No `name`: prints the names of all lists (one `<name>.md` per line, may
     be empty if none exist).
   - With `name`: prints that list's full contents (empty output if the list
     doesn't exist).
-- **Write**: `/home/moeen/.claude/skills/lists/scripts/lists.sh write <name>`
+- **Write**: `scripts/lists.sh write <name>`
   with the new full file content piped via stdin (heredoc).
   - Non-empty stdin: overwrites `<name>.md` with that content (creates the
     file/directory if needed).
@@ -83,13 +83,13 @@ These states are set by triage workflows (see §5), never by check/uncheck opera
 ### 3.1 List all lists
 
 ```bash
-/home/moeen/.claude/skills/lists/scripts/lists.sh read
+scripts/lists.sh read
 ```
 
 ### 3.2 Show / read a list
 
 ```bash
-/home/moeen/.claude/skills/lists/scripts/lists.sh read <name>
+scripts/lists.sh read <name>
 ```
 
 Present the contents to the user (render as a checklist). If output is
@@ -101,7 +101,7 @@ report that and offer to create it (by adding the first item, see 3.4).
 Confirm with the user first (destructive), then:
 
 ```bash
-/home/moeen/.claude/skills/lists/scripts/lists.sh write <name> <<'EOF'
+scripts/lists.sh write <name> <<'EOF'
 EOF
 ```
 
@@ -133,7 +133,7 @@ EOF
 4. Write back:
 
 ```bash
-/home/moeen/.claude/skills/lists/scripts/lists.sh write <name> <<'EOF'
+scripts/lists.sh write <name> <<'EOF'
 <full new file content>
 EOF
 ```

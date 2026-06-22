@@ -1,9 +1,9 @@
 # User Preferences
 
 ## Default assistant project
-Running `assistant` in a terminal (alias defined in ~/.bashrc) cd's into
-~/Documents/assistant and launches `claude` there. That directory is a general
-personal assistant workspace (see its CLAUDE.md for details).
+Running `assistant` in a terminal (alias defined in ~/.bashrc) starts the
+default agent in `~/Documents/assistant`. That directory is a general personal
+assistant workspace (see its local agent instructions for details).
 
 # Working Conventions
 
@@ -186,14 +186,14 @@ levels without saying so:
   asked to change them.
 
 **Code / implementation tasks:** when asked to implement, fix, or change
-something, follow Claude Code's normal workflow — make the edits, using the
+something, follow the active agent's normal workflow — make the edits, using the
 permission-prompt system as the safety net. No extra confirmation step beyond
 that.
 
 ## Command execution preferences
 
-- Strongly prefer commands that are already pre-approved (see `.claude/settings.local.json` and global `~/.claude/settings.json`) over ones that require an approval prompt. When multiple ways to accomplish a task exist, pick the pre-approved one.
-- Skill scripts under `~/.claude/skills/*/scripts/` are pre-approved to run directly. Call them directly with no pipes/redirection — piping into `jq`, `grep`, etc. breaks the permission-prefix match and triggers an unnecessary approval prompt. Parse the script's full output yourself.
+- Strongly prefer commands that are already pre-approved by the active agent's permission settings over ones that require an approval prompt. When multiple ways to accomplish a task exist, pick the pre-approved one.
+- Skill scripts under the installed skills directory are intended to run directly. Call them directly with no pipes/redirection when permission matching is prefix-based; piping into `jq`, `grep`, etc. can break the permission-prefix match and trigger an unnecessary approval prompt. Parse the script's full output yourself.
 
 ## Version-control workflow
 

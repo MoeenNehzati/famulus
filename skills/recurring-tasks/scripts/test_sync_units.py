@@ -105,15 +105,15 @@ def test_writes_service_and_timer_for_enabled_job():
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
         files = [f.name for f in Path(d).iterdir() if f.is_file()]
-        assert "claude-test-job.service" in files, f"Missing service, got: {files}"
-        assert "claude-test-job.timer"   in files, f"Missing timer, got: {files}"
+        assert "ai-test-job.service" in files, f"Missing service, got: {files}"
+        assert "ai-test-job.timer"   in files, f"Missing timer, got: {files}"
         print("PASS: writes service and timer for enabled job")
 
 
 def test_timer_has_persistent_true():
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
-        content = (Path(d) / "claude-test-job.timer").read_text()
+        content = (Path(d) / "ai-test-job.timer").read_text()
         assert "Persistent=true" in content
         print("PASS: timer has Persistent=true")
 
@@ -121,7 +121,7 @@ def test_timer_has_persistent_true():
 def test_timer_has_correct_oncalendar():
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
-        content = (Path(d) / "claude-test-job.timer").read_text()
+        content = (Path(d) / "ai-test-job.timer").read_text()
         assert "OnCalendar=*-*-* *:00:00" in content
         print("PASS: timer has correct OnCalendar")
 
@@ -129,7 +129,7 @@ def test_timer_has_correct_oncalendar():
 def test_disabled_job_produces_no_unit_files():
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_DISABLED, d)
-        files = [f for f in Path(d).glob("claude-*.service")] + [f for f in Path(d).glob("claude-*.timer")]
+        files = [f for f in Path(d).glob("ai-*.service")] + [f for f in Path(d).glob("ai-*.timer")]
         assert len(files) == 0, f"Expected no units, got: {[f.name for f in files]}"
         print("PASS: disabled job produces no unit files")
 
@@ -137,9 +137,9 @@ def test_disabled_job_produces_no_unit_files():
 def test_two_enabled_jobs_each_get_units():
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_TWO_ENABLED, d)
-        timers = {f.stem for f in Path(d).glob("claude-*.timer")}
-        assert "claude-job-a" in timers
-        assert "claude-job-b" in timers
+        timers = {f.stem for f in Path(d).glob("ai-*.timer")}
+        assert "ai-job-a" in timers
+        assert "ai-job-b" in timers
         print("PASS: two enabled jobs each get unit files")
 
 
@@ -156,7 +156,7 @@ def test_runner_script_written_with_command():
 def test_service_references_runner():
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
-        content = (Path(d) / "claude-test-job.service").read_text()
+        content = (Path(d) / "ai-test-job.service").read_text()
         assert "ExecStart=/bin/bash" in content
         assert "test-job.sh" in content
         print("PASS: service ExecStart references runner script")
@@ -165,10 +165,10 @@ def test_service_references_runner():
 def test_orphaned_units_removed_when_job_disabled():
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
-        assert (Path(d) / "claude-test-job.timer").exists()
+        assert (Path(d) / "ai-test-job.timer").exists()
         _run_sync(JOBS_ONE_DISABLED, d)
-        assert not (Path(d) / "claude-test-job.timer").exists()
-        assert not (Path(d) / "claude-test-job.service").exists()
+        assert not (Path(d) / "ai-test-job.timer").exists()
+        assert not (Path(d) / "ai-test-job.service").exists()
         assert not (Path(d) / "runners" / "test-job.sh").exists()
         print("PASS: orphaned units removed when job disabled")
 
@@ -176,9 +176,9 @@ def test_orphaned_units_removed_when_job_disabled():
 def test_idempotent():
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
-        c1 = (Path(d) / "claude-test-job.timer").read_text()
+        c1 = (Path(d) / "ai-test-job.timer").read_text()
         _run_sync(JOBS_ONE_ENABLED, d)
-        c2 = (Path(d) / "claude-test-job.timer").read_text()
+        c2 = (Path(d) / "ai-test-job.timer").read_text()
         assert c1 == c2
         print("PASS: idempotent")
 

@@ -17,10 +17,10 @@ Category: automation
 ## 0. Read this first
 
 - **Only invoke `gcal.sh`.** Every Bash call must be exactly
-  `/home/moeen/.claude/skills/g-calendar/scripts/gcal.sh <command> [options]`
+  `scripts/gcal.sh <command> [options]`
   - the entire command, nothing else on the line. No `cd`, `python3`, `date`,
   variable assignments, `&&`/`;`/pipes/loops. This is the only allow-listed
-  pattern (`Bash(/home/moeen/.claude/skills/g-calendar/scripts/gcal.sh:*)`);
+  pattern (`Bash(scripts/gcal.sh:*)`);
   anything else triggers a permission prompt. For N operations, issue N
   separate calls, one `gcal.sh` invocation each.
 - **Minimize invocations, then parallelize what's left.** Each call is a slow
@@ -202,7 +202,7 @@ as smnehzati@gmail.com:
 ### Every time: run setup to (re)generate credentials.json
 
 ```bash
-python ~/.claude/skills/g-calendar/scripts/setup_oauth.py
+python scripts/setup_oauth.py
 ```
 
 No arguments needed — it reads `~/.config/g-calendar/client.json`
@@ -210,14 +210,14 @@ automatically and writes `~/.config/g-calendar/credentials.json`.
 
 To use a different client JSON explicitly:
 ```bash
-python ~/.claude/skills/g-calendar/scripts/setup_oauth.py --from-json /path/to/other.json
+python scripts/setup_oauth.py --from-json /path/to/other.json
 ```
 
 ### Verify
 
 ```bash
-~/.claude/skills/g-calendar/scripts/gcal.sh calendars
-~/.claude/skills/g-calendar/scripts/gcal.sh agenda
+scripts/gcal.sh calendars
+scripts/gcal.sh agenda
 ```
 
 If Google omits `refresh_token` from the response (because access was already

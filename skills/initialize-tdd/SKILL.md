@@ -49,12 +49,12 @@ If either input is missing, ask the user before proceeding.
    If `language != python`: skip this step, but still do your best for the
    requested language — e.g. add a sensible `.gitignore` for that language's
    build artifacts/dependency dirs if you know them, and adapt the
-   "Project conventions" section of CLAUDE.md (config files, dependency
+   "Project conventions" section of the generated agent instruction file (config files, dependency
    manifest, env setup) to that language's idioms where obvious.
 
    Regardless, surface a clear warning to the user: this skill is designed
    for Python (full scaffold with venv, logger, config, starter tests); for
-   `<language>` it only did a best-effort generic scaffold (CLAUDE.md,
+   `<language>` it only did a best-effort generic scaffold (agent instructions,
    README, .gitignore, git init, superpowers) — logger/config modules and a
    starter test suite were not created.
 
@@ -67,11 +67,11 @@ If either input is missing, ask the user before proceeding.
    - `git init` in the project directory.
 
 6. **Install superpowers skills**
-   - Check `claude plugin marketplace list` (or equivalent) for
-     `superpowers-marketplace`. If absent, run:
-     `claude plugin marketplace add obra/superpowers-marketplace`.
-   - Check installed plugins for `superpowers`. If absent, run:
-     `claude plugin install superpowers@superpowers-marketplace`.
+   - Use the active agent's plugin manager, if available, to check whether
+     `superpowers-marketplace` and the `superpowers` plugin are already
+     installed.
+   - If either is absent, install it using that agent's documented plugin
+     marketplace commands.
    - These are user-level/global, so skip entirely if already present from a
      prior project.
 

@@ -1,9 +1,9 @@
 {
   "bash": [
-    "Bash(/home/moeen/.claude/skills/daily-plan/scripts/plans.sh:*)",
-    "Bash(/home/moeen/.claude/skills/lists/scripts/lists.sh:*)",
-    "Bash(/home/moeen/.claude/skills/g-calendar/scripts/gcal.sh:*)",
-    "Bash(/home/moeen/.claude/skills/weather/scripts/weather.sh:*)",
+    "Bash(scripts/plans.sh:*)",
+    "Bash(../lists/scripts/lists.sh:*)",
+    "Bash(../g-calendar/scripts/gcal.sh:*)",
+    "Bash(../weather/scripts/weather.sh:*)",
     "Bash(date:*)"
   ],
   "network": []

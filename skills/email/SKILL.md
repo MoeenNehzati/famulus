@@ -39,17 +39,17 @@ Gmail folder names: `INBOX`, `[Gmail]/Sent Mail`, `[Gmail]/Drafts`, `[Gmail]/Tra
 
 **Never use `himalaya message send` or `himalaya template send` — both are broken** (v1.2.0 bugs; see below).
 
-Use `~/.claude/skills/email/scripts/email-send.sh`. Body comes from stdin.
+Use `scripts/email-send.sh`. Body comes from stdin.
 
 ```bash
 # Plain text
-echo "Hi there." | ~/.claude/skills/email/scripts/email-send.sh \
+echo "Hi there." | scripts/email-send.sh \
   --from nyu \
   --to recipient@example.com \
   --subject "Hello"
 
 # Multiple recipients + attachments (path:DisplayName — DisplayName optional)
-cat <<'EOF' | ~/.claude/skills/email/scripts/email-send.sh \
+cat <<'EOF' | scripts/email-send.sh \
   --from nyu \
   --to alice@example.com \
   --to bob@example.com \

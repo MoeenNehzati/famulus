@@ -15,10 +15,10 @@ Scans emails received since the last triage run. Extracts action items and route
 
 **Decision logging:** After every classification, call:
 ```bash
-~/.claude/skills/email-triage/scripts/log-decision.sh <account> <id> "<from>" "<subject>" <DECISION> "<reason>"
+scripts/log-decision.sh <account> <id> "<from>" "<subject>" <DECISION> "<reason>"
 ```
 `DECISION` values: `SKIP` (subject-only skip) · `NO_ACTION` (body read, nothing to do) · `TODO` (added to todo) · `POTENTIAL` (added to potential-actions) · `DEDUP` (already exists in destination)  
-`reason` = one sentence explaining the classification. Log: `~/.claude/skills/email-triage/triage.log`
+`reason` = one sentence explaining the classification. Log: `triage.log`
 
 **Two destination lists:**
 - `todo` — directed, personal actions: bills to pay, replies owed, explicit follow-up commitments
@@ -29,8 +29,8 @@ Scans emails received since the last triage run. Extracts action items and route
 ## Step 1 — Fetch new envelopes (run in parallel)
 
 ```bash
-~/.claude/skills/email-triage/scripts/fetch-envelopes.py -a nyu
-~/.claude/skills/email-triage/scripts/fetch-envelopes.py -a personal
+scripts/fetch-envelopes.py -a nyu
+scripts/fetch-envelopes.py -a personal
 ```
 
 The script handles all date/time filtering internally — it reads the watermark datetime, calls himalaya, and returns only emails received since the last run. **Do not call himalaya directly for envelope listing.**
@@ -105,8 +105,8 @@ Summarize concisely:
 After a successful run:
 
 ```bash
-~/.claude/skills/email-triage/scripts/update-watermark.py
-python3 ~/.claude/skills/email-triage/scripts/prune-log.py
+scripts/update-watermark.py
+python3 scripts/prune-log.py
 ```
 
 Skip both if the run failed or was aborted mid-way. `prune-log.py` drops entries older than 30 days and prints a one-line summary.

@@ -1,25 +1,18 @@
 ---
 name: math-dependency-graph
 description: |
-  Extract a mathematical dependency graph from a LaTeX math document, with standing assumptions,
-  definitions, lemmas, propositions, theorems, corollaries, notation blocks, and direct dependency edges.
+  Extract a direct mathematical dependency graph from a LaTeX math document, including standing assumptions, definitions, lemmas, propositions, theorems, corollaries, notation blocks, and dependency edges with evidence.
 
-  Use when:
-  - the user wants the structure of a math document represented as assumptions-to-results dependencies
-  - the user wants a canonical JSON artifact first and an interactive HTML graph second
-  - the task is to identify standing assumptions, including ambient assumptions imposed by notation or scope phrases
-  - each dependency link should explain how the prerequisite is used
+  Use when the user wants document-internal assumptions-to-results structure, a canonical JSON artifact, or an interactive HTML graph of direct dependencies.
 
-  Do not use when:
-  - the main goal is proof validation rather than structural dependency extraction
-  - the user wants a literature map rather than a document-internal dependency graph
+  Do not use when the main goal is proof validation, notation cleanup, prose review, or a literature map.
 
   Success criteria:
-  - produce a JSON file that is the source of truth for entities and direct dependencies
-  - have the model construct that JSON by understanding the mathematical structure of the document
+  - produce JSON as the source of truth for entities and direct dependencies
   - represent only direct dependencies, not inherited transitive closure
+  - identify ambient assumptions from notation or scope phrases
   - attach short descriptions and evidence to dependency links
-  - render a standalone HTML graph from the JSON with type-specific shapes, colors, hover details, and interactive filtering
+  - render a standalone HTML graph from the JSON
 ---
 
 When this skill is used, begin with:

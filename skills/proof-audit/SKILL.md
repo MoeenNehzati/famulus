@@ -1,25 +1,18 @@
 ---
 name: proof-audit
 description: |
-  Audit a mathematical proof, argument, lemma, proposition, or theorem statement for rigor, coherence, and redundancy.
+  Audit a mathematical proof, proof sketch, argument, lemma, proposition, or theorem statement for soundness, coherence, redundancy, hidden assumptions, invalid theorem use, quantifier or domain mistakes, corner cases, and missing hypotheses.
 
-  Use when:
-  - the user asks to check, verify, audit, or validate a proof or proof sketch
-  - the task is to find hidden assumptions, invalid theorem use, quantifier or domain mistakes, corner cases, missing hypotheses, or whether a claimed result follows from stated assumptions
-  - the user wants diagnosis before rewriting or repair
-  - the user wants to know whether a proof is coherent, relevant to its conclusion, or needlessly overcomplicated
+  Use when the user asks to check, verify, audit, validate, stress-test, or debug a proof or claimed mathematical implication; wants diagnosis before rewriting; or asks whether an argument actually proves its stated conclusion.
 
-  Do not use when:
-  - the user mainly wants brainstorming, LaTeX polishing, notation cleanup, a theorem or proof block written from scratch, or code, computation, or experiments instead of proof verification
+  Do not use when the main task is brainstorming, notation cleanup, prose polishing, writing a proof from scratch, computation, code, or LaTeX formatting.
 
   Success criteria:
-  - identify the soundness, coherence, and redundancy status of the argument
-  - decompose the proof and distinguish component-level from assembly-level issues
-  - check standing assumptions and earlier local results before invoking external theorems
-  - isolate the first real gap or main blocking issue
-  - after checking soundness, run separate passes for coherence and redundancy
-  - flag unused branches, repeated claims, irrelevant detours, over-strong intermediate claims, or heavier-than-needed methods when they are clearly present
-  - suggest a candidate repair direction without fully rewriting unless asked, and give a counterexample when feasible
+  - separate soundness, coherence, and redundancy
+  - check standing assumptions and earlier local results before external theorems
+  - isolate the first real gap or main blocker
+  - flag unused branches, irrelevant detours, repeated claims, over-strong methods, or heavier-than-needed machinery
+  - suggest a repair direction without rewriting unless asked
 ---
 
 When this skill is used, begin with:

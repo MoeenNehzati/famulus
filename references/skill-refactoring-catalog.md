@@ -45,7 +45,7 @@ Move any executable logic from SKILL.md into a new file under `scripts/`. Update
 **Risk:** Medium — logic moves, easy to introduce a subtle change.
 
 ### Relocate State
-Move persistent data files from wrong locations (e.g. `/tmp`, `~/.config`) to `~/.claude/skills/<name>/`. Update any scripts that write or read those paths.
+Move persistent data files from wrong locations (e.g. `/tmp`, `~/.config`) to the skill's own directory. Update any scripts that write or read those paths.
 **Preserve:** Data format and content. Update all read/write paths atomically.
 **Risk:** Medium — path changes can break scripts silently.
 

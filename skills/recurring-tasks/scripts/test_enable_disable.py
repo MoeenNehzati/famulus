@@ -8,7 +8,7 @@ JOBS_YAML = """\
 jobs:
   - name: email-triage
     description: "Triage new emails into todo and potential-actions lists"
-    command: "/home/moeen/.local/bin/claude -p \\"/email-triage\\""
+    command: "{skill_dir}/scripts/run-skill.sh email-triage"
     schedule: "0 * * * *"
     enabled: true
 """

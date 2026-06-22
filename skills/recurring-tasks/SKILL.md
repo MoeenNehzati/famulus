@@ -1,13 +1,13 @@
 ---
 name: recurring-tasks
-description: Use when setting up, enabling, disabling, testing, viewing logs, or debugging Claude-related recurring tasks managed as systemd user timers.
+description: Use when setting up, enabling, disabling, testing, viewing logs, or debugging recurring tasks managed as systemd user timers.
 ---
 
 # Recurring Tasks
 
 Category: automation
 
-Manages Claude-related recurring tasks as **systemd user timers**. `jobs.yaml` (in this skill directory) is the source of truth. Each enabled job gets a pair of unit files in `~/.config/systemd/user/` and a runner script in `scripts/runners/`. Logs live at `~/.claude/skills/recurring-tasks/logs/<name>/run.log`.
+Manages recurring tasks as **systemd user timers**. `jobs.yaml` (in this skill directory) is the source of truth. Each enabled job gets a pair of unit files in `~/.config/systemd/user/` and a runner script in `scripts/runners/`. Logs live at `logs/<name>/run.log`.
 
 Timers use `Persistent=true`, so missed fires (machine asleep or off at scheduled time) run immediately on the next wake or boot.
 
@@ -18,8 +18,8 @@ Timers use `Persistent=true`, so missed fires (machine asleep or off at schedule
 **Generated files per job:**
 ```
 ~/.config/systemd/user/
-  claude-<name>.service    # runs the job via the runner script
-  claude-<name>.timer      # fires on schedule, Persistent=true
+  ai-<name>.service    # runs the job via the runner script
+  ai-<name>.timer      # fires on schedule, Persistent=true
 
 scripts/runners/
   <name>.sh                # wrapper: job command + log redirect

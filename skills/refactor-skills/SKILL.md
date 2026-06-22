@@ -1,6 +1,6 @@
 ---
 name: refactor-skills
-description: Use when auditing or refactoring an existing skill in ~/.claude/skills/ for convention compliance or structural improvement
+description: Use when auditing or refactoring an existing skill for convention compliance or structural improvement
 ---
 
 **Skills are software modules. Refactoring a skill follows standard software refactoring discipline** — the same principles Fowler describes for code apply directly: behavior preservation is non-negotiable, moves are small and verified one at a time, and the safety net (characterization) comes before the first change.

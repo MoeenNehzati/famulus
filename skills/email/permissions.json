@@ -1,4 +1,4 @@
 {
-  "bash": ["Bash(/home/moeen/.claude/skills/email/scripts/email-send.sh:*)"],
+  "bash": ["Bash(scripts/email-send.sh:*)"],
   "network": []
 }

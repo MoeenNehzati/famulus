@@ -1,7 +1,7 @@
 {
   "bash": [
-    "Bash(/home/moeen/.claude/skills/g-calendar/scripts/gcal.sh:*)",
-    "Bash(/home/moeen/.claude/skills/g-calendar/scripts/setup_oauth.py:*)"
+    "Bash(scripts/gcal.sh:*)",
+    "Bash(scripts/setup_oauth.py:*)"
   ],
   "network": []
 }

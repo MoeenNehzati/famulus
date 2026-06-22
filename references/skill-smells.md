@@ -44,12 +44,12 @@ Visible symptoms that signal a skill needs refactoring. Each smell maps to one o
 **Moves:** Declare/fix Category.
 
 ## State in wrong location
-**Signal:** Skill writes persistent data (logs, cache, watermarks) to `/tmp`, `~/.config`, or anywhere outside `~/.claude/skills/<name>/`.
+**Signal:** Skill writes persistent data (logs, cache, watermarks) to `/tmp`, `~/.config`, or anywhere outside the skill's own directory.
 **Analog:** Feature Envy / wrong module.
 **Moves:** Relocate State.
 
 ## Credentials in skill directory
-**Signal:** Passwords, tokens, or API keys are stored under `~/.claude/skills/<name>/` and may be committed to git.
+**Signal:** Passwords, tokens, or API keys are stored under the skill's own directory and may be committed to git.
 **Moves:** Relocate Credentials.
 
 ## Monolithic script
@@ -68,6 +68,6 @@ Visible symptoms that signal a skill needs refactoring. Each smell maps to one o
 **Moves:** Inline Thin Skill.
 
 ## Leaky internals
-**Signal:** SKILL.md references another skill's scripts directly (e.g. `~/.claude/skills/lists/scripts/lists.sh`) instead of invoking the skill.
+**Signal:** SKILL.md references another skill's scripts directly (e.g. `../lists/scripts/lists.sh`) instead of invoking the skill.
 **Analog:** Inappropriate Intimacy.
 **Moves:** Depend on Interface (replace script call with skill invocation).

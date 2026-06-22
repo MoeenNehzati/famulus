@@ -16,6 +16,7 @@ references/             # shared support docs used by multiple skills
 CLAUDE.md               # shared repo instructions
 AGENTS.md -> CLAUDE.md  # symlink for agents that read AGENTS.md
 tests/                  # install/visibility checks
+.githooks/              # local Git hooks for mechanical checks
 ```
 
 Each skill lives at `skills/<name>/SKILL.md` and may include local
@@ -61,9 +62,16 @@ Claude symlinks the shared directories directly:
 ~/.claude/CLAUDE.md  -> /home/moeen/Documents/AI/CLAUDE.md
 ```
 
-Codex keeps its existing home and system skills, then symlinks each personal
-skill into `~/.codex/skills/` individually. This preserves Codex-managed
-directories such as `~/.codex/skills/.system`.
+Codex must keep `~/.codex` itself as a real directory. Do not make
+`~/.codex` a symlink to this repository or to another writable tree: Codex's
+Linux sandbox may reject read-only mounts that cross a writable symlink at the
+home-directory boundary.
+
+Inside that real `~/.codex` directory, keep Codex-managed state directly in
+place. Link only the shared files and personal skill directories back to the
+canonical checkout as needed.
+
+The intended invariant is:
 
 ```text
 ~/.codex/skills/<skill> -> /home/moeen/Documents/AI/skills/<skill>
@@ -138,6 +146,26 @@ checks that every `skills/*/SKILL.md` is installed and explicitly invokable as
 `moeen:<skill>`.
 
 The test uses `codex debug prompt-input`; it does not call a model.
+
+### Metadata Guard
+
+Codex rejects skill descriptions longer than 1024 characters. Enforce that
+before install or push with:
+
+```bash
+tests/test_skill_metadata.py
+```
+
+The Codex install test runs this metadata check first.
+
+To make Git block pushes that would reintroduce invalid skill metadata, enable
+the tracked hook path once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The tracked `.githooks/pre-push` hook runs `tests/test_skill_metadata.py`.
 
 ## Claude
 
@@ -224,7 +252,7 @@ counterparts.
 Validate the Codex plugin manifest:
 
 ```bash
-python3 /home/moeen/Documents/PhD/research/research-mic/AI/skills/.system/plugin-creator/scripts/validate_plugin.py .
+python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
 ```
 
 Run the Codex isolated install test:
