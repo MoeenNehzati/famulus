@@ -65,6 +65,7 @@ Batch up to 10 reads in parallel. Classify each email by sender type and targeti
 - **Type 2** — treat like Type 4
 - **Type 4** — route by new-information criterion:
   - Bill / payment due → `todo`
+  - Payment received (someone sent you money) → `potential-actions` (you may have a corresponding debt to mark off)
   - New event or opportunity → `potential-actions`
   - Record of past activity or information you already have → `NO_ACTION`
 
@@ -89,6 +90,7 @@ Every item must be a **concrete imperative sentence** — a specific thing to do
 - Reply: `Reply to [Name] re: [subject]` → `todo`
 - Follow-up: `[action verb] [target] – [timeframe]` → `todo`
 - Portal / institution message (Type 3, informational): `Check message on [portal/system]` → `potential-actions`
+- Payment received: `Review: [Name] paid you $[amount]` → `potential-actions`
 - Event: `Attend [event name] – [date, time, location]` → `potential-actions`
 - CFP / application: `Submit to [name] by [deadline]` or `Apply to [name] by [deadline]` → `potential-actions`
 - Optional signup: `Sign up for [name] – [date or deadline]` → `potential-actions`
