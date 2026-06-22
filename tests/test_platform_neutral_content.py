@@ -20,6 +20,9 @@ EXCLUDED_PARTS = {
     ".claude-plugin",
     ".codex-plugin",
 }
+EXCLUDED_PATHS = {
+    Path("skills/install-assistant-tools"),
+}
 FORBIDDEN = re.compile(r"(\.claude|\.codex|Claude|Codex|claude|codex)")
 
 
@@ -34,6 +37,9 @@ def iter_files(path: Path):
             continue
         rel_parts = child.relative_to(REPO_ROOT).parts
         if any(part in EXCLUDED_PARTS for part in rel_parts):
+            continue
+        rel_path = child.relative_to(REPO_ROOT)
+        if any(rel_path == excluded or excluded in rel_path.parents for excluded in EXCLUDED_PATHS):
             continue
         yield child
 

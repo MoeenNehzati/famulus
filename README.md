@@ -10,6 +10,7 @@ There is no Claude-to-Codex skill-body conversion step.
 
 ```text
 skills/                 # canonical skill source, one directory per skill
+profiles/               # optional Codex profile files, one file per profile
 references/             # shared support docs used by multiple skills
 .claude-plugin/         # Claude plugin metadata
 .codex-plugin/          # Codex plugin metadata
@@ -89,6 +90,23 @@ as needed:
 ~/.codex/references     -> /home/moeen/Documents/AI/references
 ~/.codex/agents         -> /home/moeen/Documents/AI/agents
 ~/.codex/AGENTS.md      -> /home/moeen/Documents/AI/AGENTS.md
+```
+
+Codex profile files are loaded only when they live directly under
+`$CODEX_HOME` as `<profile-name>.config.toml`. This repository keeps canonical
+profile sources under `profiles/`; to use them in Codex, copy or symlink them
+into the root of `~/.codex`:
+
+```text
+~/.codex/assistant.config.toml -> /home/moeen/Documents/AI/profiles/assistant.config.toml
+```
+
+Create or repair links for all repo-owned profiles with:
+
+```bash
+for f in /home/moeen/Documents/AI/profiles/*.config.toml; do
+  ln -sfn "$f" ~/.codex/"$(basename "$f")"
+done
 ```
 
 Do not rely on `~/.codex/skills` for personal skills. Some Codex surfaces may

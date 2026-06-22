@@ -1,0 +1,4 @@
+interface:
+  display_name: "Install Assistant Tools"
+  short_description: "Install or update assistant and tw helpers"
+  default_prompt: "Use $install-assistant-tools to install or update assistant and tw on this machine."
