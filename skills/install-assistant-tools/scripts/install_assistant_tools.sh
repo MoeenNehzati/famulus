@@ -7,15 +7,14 @@ Usage:
   install_assistant_tools.sh [options]
 
 Installs or updates:
-  - assistant shell function
-  - tw/tmux-workspace tmux helper
-  - PATH entry for the helper bin directory
+  - assistant script (symlinked from skill bin/)
+  - tw/tmux-workspace script (symlinked from skill bin/)
+  - Codex profile symlinks (profiles/*.config.toml -> codex home)
+  - PATH entry in the user (and optionally system) shell rc
 
 Options:
   --home DIR             Home directory to install into (default: $HOME)
-  --assistant-dir DIR    Directory used by assistant before launching tools
-                         (default: $HOME/Documents/assistant)
-  --bin-dir DIR          Directory for tmux-workspace and tw
+  --bin-dir DIR          Directory for installed symlinks
                          (default: $HOME/Documents/scripts/bin)
   --shell-rc FILE        Shell rc file to update (default: $HOME/.bashrc)
   --system-shell-rc FILE System bash rc file to update when writable
@@ -29,24 +28,22 @@ EOF
 }
 
 home_dir="${HOME:-}"
-assistant_dir=""
 bin_dir=""
 shell_rc=""
 system_shell_rc="/etc/bash.bashrc"
 codex_home=""
 update_system_shell_rc=1
 dry_run=0
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+skill_dir="$(cd "$script_dir/.." && pwd)"
+source_bin_dir="$skill_dir/bin"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --home)
       home_dir="${2:?--home requires a directory}"
-      shift 2
-      ;;
-    --assistant-dir)
-      assistant_dir="${2:?--assistant-dir requires a directory}"
       shift 2
       ;;
     --bin-dir)
@@ -91,12 +88,9 @@ if [ -z "$home_dir" ]; then
   exit 2
 fi
 
-assistant_dir="${assistant_dir:-$home_dir/Documents/assistant}"
 bin_dir="${bin_dir:-$home_dir/Documents/scripts/bin}"
 shell_rc="${shell_rc:-$home_dir/.bashrc}"
 codex_home="${codex_home:-${CODEX_HOME:-$home_dir/.codex}}"
-workspace_script="$bin_dir/tmux-workspace"
-tw_link="$bin_dir/tw"
 profiles_dir="$repo_root/profiles"
 
 assistant_block_begin="# >>> assistant-tools >>>"
@@ -106,21 +100,57 @@ log() {
   printf '%s\n' "$*"
 }
 
-write_file() {
-  local path="$1"
-  local mode="$2"
-  local tmp
+install_bin_scripts() {
+  mkdir -p "$bin_dir"
 
+  for script in assistant tmux-workspace; do
+    local src="$source_bin_dir/$script"
+    local dst="$bin_dir/$script"
+    if [ ! -f "$src" ]; then
+      log "Warning: source script not found: $src"
+      continue
+    fi
+    if (( dry_run )); then
+      log "Would link $dst -> $src"
+    else
+      ln -sfn "$src" "$dst"
+    fi
+  done
+
+  # tw is an alias for tmux-workspace
+  local tw_link="$bin_dir/tw"
+  local tw_target="$source_bin_dir/tmux-workspace"
   if (( dry_run )); then
-    log "Would write $path"
+    log "Would link $tw_link -> $tw_target"
+  else
+    ln -sfn "$tw_target" "$tw_link"
+  fi
+}
+
+install_profile_links() {
+  local profile
+  local linked_any=0
+
+  if [ ! -d "$profiles_dir" ]; then
+    log "Warning: profiles directory is missing: $profiles_dir"
     return 0
   fi
 
-  mkdir -p "$(dirname "$path")"
-  tmp="$(mktemp "${path}.tmp.XXXXXX")"
-  cat > "$tmp"
-  chmod "$mode" "$tmp"
-  mv "$tmp" "$path"
+  mkdir -p "$codex_home"
+
+  for profile in "$profiles_dir"/*.config.toml; do
+    [ -e "$profile" ] || continue
+    linked_any=1
+    if (( dry_run )); then
+      log "Would link $codex_home/$(basename "$profile") -> $profile"
+    else
+      ln -sfn "$profile" "$codex_home/$(basename "$profile")"
+    fi
+  done
+
+  if (( linked_any == 0 )); then
+    log "Warning: no profile files found in $profiles_dir"
+  fi
 }
 
 ensure_rc_block() {
@@ -139,31 +169,14 @@ ensure_rc_block() {
 
   awk -v begin="$assistant_block_begin" -v end="$assistant_block_end" '
     $0 == begin { skip = 1; next }
-    $0 == end { skip = 0; next }
-    skip != 1 { print }
+    $0 == end   { skip = 0; next }
+    skip != 1   { print }
   ' "$rc_file" > "$tmp"
 
   cat >> "$tmp" <<EOF
 
 $assistant_block_begin
 export PATH="$bin_dir:\$PATH"
-
-assistant() {
-  local use_codex=0
-
-  if [[ "\${1:-}" == "-c" || "\${1:-}" == "--codex" ]]; then
-    use_codex=1
-    shift
-  fi
-
-  cd "$assistant_dir" || return
-
-  if (( use_codex )); then
-    codex --profile assistant "\$@"
-  else
-    claude --agent assistant "\$@"
-  fi
-}
 $assistant_block_end
 EOF
 
@@ -197,210 +210,33 @@ maybe_ensure_system_rc_block() {
   ensure_rc_block "$rc_file" "system"
 }
 
-install_tmux_workspace() {
-  write_file "$workspace_script" 0755 <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-prog="$(basename "$0")"
-
-usage() {
-  cat <<EOUSAGE
-Usage:
-  $prog [-c|--codex] [template] [session-name] [dir] [-- tmux-global-args...]
-
-Default template:
-  llm
-
-Templates:
-  llm       assistant on left, two terminals on right
-  shell     simple 2x2 shell workspace
-  raw       pass directly to tmux
-
-Examples:
-  $prog -c
-  $prog -c paper
-  $prog paper
-  $prog paper ~/projects/paper
-  $prog -- -L codex
-  $prog paper -- -L codex
-
-  $prog llm paper
-  $prog shell scratch
-  $prog raw -- list-sessions
-  $prog raw -- attach -t paper
-EOUSAGE
-}
-
-known_templates=("llm" "shell" "raw")
-
-is_template() {
-  local x="${1:-}"
-  for t in "${known_templates[@]}"; do
-    if [ "$x" = "$t" ]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
-positional=()
-tmux_args=()
-assistant_command=(assistant)
-session_suffix=""
-
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    -c|--codex)
-      assistant_command=(assistant -c)
-      session_suffix="-codex"
-      shift
-      ;;
-    --)
-      shift
-      tmux_args=("$@")
-      break
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      positional+=("$1")
-      shift
-      ;;
-  esac
-done
-
-tmux_do() {
-  command tmux "${tmux_args[@]}" "$@"
-}
-
-if [ "${#positional[@]}" -gt 0 ] && is_template "${positional[0]}"; then
-  template="${positional[0]}"
-  positional=("${positional[@]:1}")
-else
-  template="llm"
-fi
-
-if [ "$template" = "raw" ]; then
-  if [ "${#positional[@]}" -eq 0 ]; then
-    tmux_do
-  else
-    tmux_do "${positional[@]}"
-  fi
-  exit 0
-fi
-
-if [ "$template" != "llm" ]; then
-  session_suffix=""
-fi
-
-name="${positional[0]:-$(basename "$PWD")}"
-dir="${positional[1]:-$PWD}"
-
-dir="$(realpath "$dir")"
-
-safe_name="$(printf '%s' "$name" | tr -cs 'A-Za-z0-9_.-' '-')"
-safe_name="${safe_name%-}"
-safe_name="${safe_name:-session}"
-session="${safe_name}${session_suffix}"
-
-attach_or_switch() {
-  if [ -n "${TMUX:-}" ]; then
-    tmux_do switch-client -t "$session"
-  else
-    tmux_do attach-session -t "$session"
-  fi
-}
-
-if tmux_do has-session -t "$session" 2>/dev/null; then
-  attach_or_switch
-  exit 0
-fi
-
-case "$template" in
-  llm)
-    p_assistant="$(tmux_do new-session -d -P -F "#{pane_id}" -s "$session" -n assistant -c "$dir")"
-    p_term1="$(tmux_do split-window -h -p 45 -P -F "#{pane_id}" -t "$p_assistant" -c "$dir")"
-    p_term2="$(tmux_do split-window -v -p 50 -P -F "#{pane_id}" -t "$p_term1" -c "$dir")"
-
-    tmux_do send-keys -t "$p_assistant" "${assistant_command[*]}" C-m
-    tmux_do send-keys -t "$p_term1" "pwd" C-m
-    tmux_do send-keys -t "$p_term2" "git status" C-m
-
-    tmux_do select-pane -t "$p_assistant" -T "assistant"
-    tmux_do select-pane -t "$p_term1" -T "terminal-1"
-    tmux_do select-pane -t "$p_term2" -T "terminal-2"
-
-    tmux_do new-window -t "$session:" -n scratch -c "$dir"
-    tmux_do send-keys -t "$session:scratch" "pwd" C-m
-
-    tmux_do new-window -t "$session:" -n logs -c "$dir"
-    tmux_do send-keys -t "$session:logs" "echo 'Use this window for logs, tests, servers, watchers, etc.'" C-m
-
-    tmux_do select-window -t "$session:assistant"
-    tmux_do select-pane -t "$p_assistant"
-    ;;
-
-  shell)
-    p1="$(tmux_do new-session -d -P -F "#{pane_id}" -s "$session" -n main -c "$dir")"
-    p2="$(tmux_do split-window -h -p 50 -P -F "#{pane_id}" -t "$p1" -c "$dir")"
-    p3="$(tmux_do split-window -v -p 50 -P -F "#{pane_id}" -t "$p1" -c "$dir")"
-    p4="$(tmux_do split-window -v -p 50 -P -F "#{pane_id}" -t "$p2" -c "$dir")"
-
-    tmux_do select-pane -t "$p1" -T "main"
-    tmux_do select-pane -t "$p2" -T "shell"
-    tmux_do select-pane -t "$p3" -T "scratch"
-    tmux_do select-pane -t "$p4" -T "logs"
-    tmux_do select-pane -t "$p1"
-    ;;
-
-  *)
-    echo "Unknown template: $template"
-    echo
-    usage
-    exit 1
-    ;;
-esac
-
-attach_or_switch
-EOF
-}
-
-install_tw_link() {
+verify_install() {
   if (( dry_run )); then
-    log "Would link $tw_link -> $workspace_script"
     return 0
   fi
 
-  mkdir -p "$bin_dir"
-  ln -sfn "$workspace_script" "$tw_link"
-}
+  log ""
+  log "Verifying installation..."
+  local ok=1
 
-install_profile_links() {
-  local profile
-  local linked_any=0
-
-  if [ ! -d "$profiles_dir" ]; then
-    log "Warning: profiles directory is missing: $profiles_dir"
-    return 0
-  fi
-
-  mkdir -p "$codex_home"
-
-  for profile in "$profiles_dir"/*.config.toml; do
-    [ -e "$profile" ] || continue
-    linked_any=1
-
-    if (( dry_run )); then
-      log "Would link $codex_home/$(basename "$profile") -> $profile"
+  for cmd in assistant tw; do
+    local dst="$bin_dir/$cmd"
+    if [ ! -x "$dst" ]; then
+      log "  FAIL: $dst is not executable"
+      ok=0
+      continue
+    fi
+    if "$dst" --help >/dev/null 2>&1; then
+      log "  OK:   $dst --help"
     else
-      ln -sfn "$profile" "$codex_home/$(basename "$profile")"
+      log "  FAIL: $dst --help exited non-zero"
+      ok=0
     fi
   done
 
-  if (( linked_any == 0 )); then
-    log "Warning: no profile files found in $profiles_dir"
+  if (( ok == 0 )); then
+    log "Warning: one or more verification checks failed."
+    return 1
   fi
 }
 
@@ -430,23 +266,25 @@ install_ai_agent_env() {
   fi
 }
 
-install_tmux_workspace
-install_tw_link
+install_bin_scripts
 install_profile_links
 install_ai_agent_env
 ensure_rc_block "$shell_rc" "user"
 maybe_ensure_system_rc_block "$system_shell_rc"
+verify_install
 
 warn_missing_command tmux
 warn_missing_command codex
 warn_missing_command claude
 
+log ""
 log "Installed assistant tools."
-log "User shell rc: $shell_rc"
+log "  Bin dir:        $bin_dir"
+log "  Source bin:     $source_bin_dir"
+log "  Codex home:     $codex_home"
+log "  User shell rc:  $shell_rc"
 if (( update_system_shell_rc )); then
-  log "System shell rc: $system_shell_rc"
+  log "  System rc:      $system_shell_rc"
 fi
-log "Bin dir: $bin_dir"
-log "Assistant dir: $assistant_dir"
-log "Codex home: $codex_home"
-log "Run 'source \"$shell_rc\"' or open a new shell before using assistant/tw."
+log ""
+log "Run 'source \"$shell_rc\"' or open a new shell to apply PATH changes."

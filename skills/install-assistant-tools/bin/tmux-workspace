@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+set -euo pipefail
+prog="$(basename "$0")"
+
+usage() {
+  cat <<EOUSAGE
+Usage:
+  $prog [-c|--codex] [template] [session-name] [dir] [-- tmux-global-args...]
+
+Default template:
+  llm
+
+Templates:
+  llm       assistant on left, two terminals on right
+  shell     simple 2x2 shell workspace
+  raw       pass directly to tmux
+
+Examples:
+  $prog -c
+  $prog -c paper
+  $prog paper
+  $prog paper ~/projects/paper
+  $prog -- -L codex
+  $prog paper -- -L codex
+
+  $prog llm paper
+  $prog shell scratch
+  $prog raw -- list-sessions
+  $prog raw -- attach -t paper
+EOUSAGE
+}
+
+known_templates=("llm" "shell" "raw")
+
+is_template() {
+  local x="${1:-}"
+  for t in "${known_templates[@]}"; do
+    if [ "$x" = "$t" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+positional=()
+tmux_args=()
+assistant_command=(assistant)
+session_suffix=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -c|--codex)
+      assistant_command=(assistant -c)
+      session_suffix="-codex"
+      shift
+      ;;
+    --)
+      shift
+      tmux_args=("$@")
+      break
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      positional+=("$1")
+      shift
+      ;;
+  esac
+done
+
+tmux_do() {
+  command tmux "${tmux_args[@]}" "$@"
+}
+
+if [ "${#positional[@]}" -gt 0 ] && is_template "${positional[0]}"; then
+  template="${positional[0]}"
+  positional=("${positional[@]:1}")
+else
+  template="llm"
+fi
+
+if [ "$template" = "raw" ]; then
+  if [ "${#positional[@]}" -eq 0 ]; then
+    tmux_do
+  else
+    tmux_do "${positional[@]}"
+  fi
+  exit 0
+fi
+
+if [ "$template" != "llm" ]; then
+  session_suffix=""
+fi
+
+name="${positional[0]:-$(basename "$PWD")}"
+dir="${positional[1]:-$PWD}"
+
+dir="$(realpath "$dir")"
+
+safe_name="$(printf '%s' "$name" | tr -cs 'A-Za-z0-9_.-' '-')"
+safe_name="${safe_name%-}"
+safe_name="${safe_name:-session}"
+session="${safe_name}${session_suffix}"
+
+attach_or_switch() {
+  if [ -n "${TMUX:-}" ]; then
+    tmux_do switch-client -t "$session"
+  else
+    tmux_do attach-session -t "$session"
+  fi
+}
+
+if tmux_do has-session -t "$session" 2>/dev/null; then
+  attach_or_switch
+  exit 0
+fi
+
+case "$template" in
+  llm)
+    p_assistant="$(tmux_do new-session -d -P -F "#{pane_id}" -s "$session" -n assistant -c "$dir")"
+    p_term1="$(tmux_do split-window -h -p 45 -P -F "#{pane_id}" -t "$p_assistant" -c "$dir")"
+    p_term2="$(tmux_do split-window -v -p 50 -P -F "#{pane_id}" -t "$p_term1" -c "$dir")"
+
+    tmux_do send-keys -t "$p_assistant" "${assistant_command[*]}" C-m
+    tmux_do send-keys -t "$p_term1" "pwd" C-m
+    tmux_do send-keys -t "$p_term2" "git status" C-m
+
+    tmux_do select-pane -t "$p_assistant" -T "assistant"
+    tmux_do select-pane -t "$p_term1" -T "terminal-1"
+    tmux_do select-pane -t "$p_term2" -T "terminal-2"
+
+    tmux_do new-window -t "$session:" -n scratch -c "$dir"
+    tmux_do send-keys -t "$session:scratch" "pwd" C-m
+
+    tmux_do new-window -t "$session:" -n logs -c "$dir"
+    tmux_do send-keys -t "$session:logs" "echo 'Use this window for logs, tests, servers, watchers, etc.'" C-m
+
+    tmux_do select-window -t "$session:assistant"
+    tmux_do select-pane -t "$p_assistant"
+    ;;
+
+  shell)
+    p1="$(tmux_do new-session -d -P -F "#{pane_id}" -s "$session" -n main -c "$dir")"
+    p2="$(tmux_do split-window -h -p 50 -P -F "#{pane_id}" -t "$p1" -c "$dir")"
+    p3="$(tmux_do split-window -v -p 50 -P -F "#{pane_id}" -t "$p1" -c "$dir")"
+    p4="$(tmux_do split-window -v -p 50 -P -F "#{pane_id}" -t "$p2" -c "$dir")"
+
+    tmux_do select-pane -t "$p1" -T "main"
+    tmux_do select-pane -t "$p2" -T "shell"
+    tmux_do select-pane -t "$p3" -T "scratch"
+    tmux_do select-pane -t "$p4" -T "logs"
+    tmux_do select-pane -t "$p1"
+    ;;
+
+  *)
+    echo "Unknown template: $template"
+    echo
+    usage
+    exit 1
+    ;;
+esac
+
+attach_or_switch

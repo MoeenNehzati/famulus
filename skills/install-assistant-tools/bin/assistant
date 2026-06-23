@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: assistant [-c|--codex] [-h|--help] [args...]
+
+Launch the Claude assistant agent from the assistant project directory.
+
+  -c, --codex   Use Codex (codex --profile assistant) instead of Claude
+  -h, --help    Show this help
+
+The working directory is \$ASSISTANT_DIR or \$HOME/Documents/assistant.
+EOF
+}
+
+use_codex=0
+case "${1:-}" in
+  -c|--codex)  use_codex=1; shift ;;
+  -h|--help)   usage; exit 0 ;;
+esac
+
+cd "${ASSISTANT_DIR:-$HOME/Documents/assistant}" || exit 1
+
+if (( use_codex )); then
+  exec codex --profile assistant "$@"
+else
+  exec claude --agent assistant "$@"
+fi
