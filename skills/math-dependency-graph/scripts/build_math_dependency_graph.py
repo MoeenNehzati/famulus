@@ -5,6 +5,24 @@ This script does not infer mathematical structure from LaTeX. The JSON input is
 the semantic source of truth and is expected to be authored by the model under
 the accompanying ``SKILL.md`` contract.
 
+UI design philosophy
+--------------------
+The viewer is split into two zones:
+
+**Canvas toolbar** (top-left, always visible even when the panel is collapsed)
+    Holds primary actions that a user needs at any moment regardless of context:
+    - Ancestor focus cycle (off → dim → hide non-ancestors)
+    - Delete selected node (remove it from the visible graph)
+    - Redraw all (reset manual positions and rerun the automatic ELK layout)
+
+    Rule: if a user might want to invoke it while staring at the graph, it
+    belongs in the toolbar, not the panel.
+
+**Side panel** (collapsible)
+    Holds contextual information that is useful but not always needed:
+    legend, entity details on click, raw JSON, removed-node list, cheatsheet.
+    The panel can be fully collapsed without losing access to any action.
+
 Current active path:
 - ``build_html_with_elk(...)`` generates a standalone HTML viewer that uses
   ``elkjs`` in the browser for layered layout and edge routing.
@@ -193,7 +211,6 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     for idx, edge in enumerate(edges, start=1):
         edge_payload.append({"edge_id": f"edge_{idx}", **edge})
 
-    payload = html.escape(json.dumps(doc, indent=2))
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -229,8 +246,62 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     .layout.panel-collapsed {{
       grid-template-columns: 1fr 44px;
     }}
+    .canvas-area {{
+      position: relative;
+      min-height: 100vh;
+    }}
+    .canvas-toolbar {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 10px;
+      border: 1px solid #d5d8dc;
+      border-radius: 8px;
+      background: rgba(249, 247, 241, 0.93);
+      backdrop-filter: blur(6px);
+      flex-wrap: wrap;
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 5;
+    }}
+    .toolbar-btn {{
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border: 1px solid #aeb6bf;
+      border-radius: 999px;
+      background: #f8f9f9;
+      color: #17202a;
+      cursor: pointer;
+      font-size: 0.88rem;
+      font-family: inherit;
+      transition: background 0.1s, border-color 0.1s;
+      white-space: nowrap;
+    }}
+    .toolbar-btn:hover:not(:disabled) {{
+      background: #eef3f7;
+      border-color: #7f8c8d;
+    }}
+    .toolbar-btn.active {{
+      background: #e8f1fb;
+      border-color: #6a8fb7;
+    }}
+    .toolbar-btn:disabled {{
+      opacity: 0.4;
+      cursor: default;
+    }}
+    .toolbar-sep {{
+      width: 1px;
+      height: 22px;
+      background: #d5d8dc;
+      margin: 0 2px;
+    }}
     .canvas-wrap {{
       overflow: auto;
+      position: absolute;
+      inset: 0;
       padding: 24px;
     }}
     .panel {{
@@ -240,10 +311,12 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       padding: 20px;
       box-sizing: border-box;
       position: relative;
-      overflow: hidden;
+      overflow-y: auto;
+      max-height: 100vh;
     }}
     .layout.panel-collapsed .panel {{
       padding: 20px 10px 20px 8px;
+      overflow: hidden;
     }}
     .panel-toggle {{
       position: absolute;
@@ -282,10 +355,62 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       font-size: 1.35rem;
       margin: 0 0 0.75rem;
     }}
+    h2.section-heading {{
+      font-size: 1.05rem;
+      margin: 0 0 0.4rem;
+      color: #2c3e50;
+    }}
+    .sidebar-section {{
+      position: relative;
+      padding-left: 18px;
+      margin-bottom: 0.9rem;
+      border-radius: 6px;
+    }}
+    .sidebar-section.drag-over {{
+      background: rgba(106, 143, 183, 0.13);
+      outline: 2px dashed #6a8fb7;
+    }}
+    .sidebar-section.dragging {{
+      opacity: 0.45;
+    }}
+    .drag-handle {{
+      position: absolute;
+      left: 1px;
+      top: 3px;
+      color: #bdc3c7;
+      cursor: grab;
+      font-size: 13px;
+      user-select: none;
+      line-height: 1.2;
+      padding: 2px 0;
+    }}
+    .drag-handle:hover {{
+      color: #7f8c8d;
+    }}
+    .drag-handle:active {{
+      cursor: grabbing;
+    }}
+    details > summary {{
+      cursor: pointer;
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: #34495e;
+      user-select: none;
+      padding: 2px 0 4px;
+      list-style: none;
+    }}
+    details > summary::before {{
+      content: "▶ ";
+      font-size: 0.7rem;
+      color: #7f8c8d;
+    }}
+    details[open] > summary::before {{
+      content: "▼ ";
+    }}
     .legend {{
       display: grid;
       gap: 8px;
-      margin-bottom: 1rem;
+      margin-bottom: 0.4rem;
       font-size: 0.95rem;
     }}
     .legend-row {{
@@ -309,11 +434,27 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     }}
     .graph-node {{
       cursor: pointer;
-      transition: filter 0.12s ease, transform 0.12s ease, opacity 0.12s ease;
+      transition: filter 0.12s ease, opacity 0.12s ease;
     }}
     .graph-node.hovered {{
-      filter: brightness(1.18) saturate(1.08) drop-shadow(0 10px 22px rgba(0,0,0,0.26));
-      transform: translateY(-2px) scale(1.02);
+      filter: brightness(1.18) saturate(1.08) drop-shadow(0 6px 18px rgba(0,0,0,0.28));
+    }}
+    .graph-node.selected {{
+      filter: brightness(1.18) saturate(1.1)
+              drop-shadow(0 6px 18px rgba(0,0,0,0.28))
+              drop-shadow(0 0 0px 0px transparent)
+              drop-shadow(0 0 6px rgba(255,255,255,0.95))
+              drop-shadow(0 0 14px rgba(41,128,185,0.85));
+    }}
+    .graph-node.selected.hovered {{
+      filter: brightness(1.22) saturate(1.15)
+              drop-shadow(0 6px 20px rgba(0,0,0,0.32))
+              drop-shadow(0 0 6px rgba(255,255,255,0.95))
+              drop-shadow(0 0 16px rgba(41,128,185,0.9));
+    }}
+    .graph-node.dragging-node {{
+      cursor: grabbing;
+      filter: drop-shadow(0 8px 18px rgba(0,0,0,0.3));
     }}
     .node-label {{
       display: block;
@@ -359,7 +500,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     .removed-list {{
       display: grid;
       gap: 6px;
-      margin-top: 0.5rem;
+      margin-top: 0.4rem;
     }}
     .removed-item {{
       border: 1px solid #d5d8dc;
@@ -375,20 +516,34 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       font-size: 0.8rem;
       color: #566573;
     }}
-    .focus-toggle {{
-      display: inline-block;
-      margin: 0.5rem 0 0.9rem;
-      padding: 6px 10px;
-      border: 1px solid #aeb6bf;
-      border-radius: 999px;
-      background: #f8f9f9;
-      color: #17202a;
-      cursor: pointer;
-      font-size: 0.9rem;
+    .details-header {{
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
     }}
-    .focus-toggle.active {{
-      background: #e8f1fb;
-      border-color: #6a8fb7;
+    .details-header h2 {{
+      margin: 0 0 0.35rem;
+      font-size: 1.1rem;
+    }}
+    .deselect-btn {{
+      background: none;
+      border: 1px solid #bdc3c7;
+      border-radius: 999px;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 12px;
+      color: #7f8c8d;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }}
+    .deselect-btn:hover {{
+      background: #f2f3f4;
+      color: #17202a;
     }}
     code {{
       font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
@@ -402,6 +557,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       border-radius: 8px;
       max-height: 240px;
       overflow: auto;
+      font-size: 0.8rem;
     }}
     svg {{
       overflow: visible;
@@ -427,39 +583,72 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 <body>
   <div id="tooltip"></div>
   <div class="layout" id="layout">
-    <div class="canvas-wrap">
-      <div id="elk-status" class="elk-status">Rendering graph layout...</div>
-      <svg id="graph-svg" width="1200" height="800" viewBox="0 0 1200 800">
-        <defs>
-          <marker id="arrow" markerWidth="6" markerHeight="5" refX="5.4" refY="2.5" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L6,2.5 L0,5 z" fill="context-stroke"></path>
-          </marker>
-        </defs>
-        <g id="edge-layer"></g>
-        <g id="node-layer"></g>
-      </svg>
+    <div class="canvas-area">
+      <div class="canvas-toolbar" id="canvas-toolbar">
+        <button id="focus-toggle" class="toolbar-btn" type="button">Highlight ancestors</button>
+        <button id="delete-node-btn" class="toolbar-btn" type="button" disabled title="Hide the selected node (double-click a node to hide it directly)">Delete node</button>
+        <div class="toolbar-sep"></div>
+        <button id="redraw-btn" class="toolbar-btn" type="button" title="Reset manual positions and rerun automatic layout (r)">Redraw all</button>
+        <div class="toolbar-sep"></div>
+        <button id="clear-btn" class="toolbar-btn" type="button" title="Reset all: restore hidden nodes, clear selection and manual positions (c)">Clear all</button>
+      </div>
+      <div class="canvas-wrap" id="canvas-wrap">
+        <div id="elk-status" class="elk-status">Rendering graph layout...</div>
+        <svg id="graph-svg" width="1200" height="800" viewBox="0 0 1200 800">
+          <defs>
+            <marker id="arrow" markerWidth="6" markerHeight="5" refX="5.4" refY="2.5" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L6,2.5 L0,5 z" fill="context-stroke"></path>
+            </marker>
+          </defs>
+          <g id="edge-layer"></g>
+          <g id="node-layer"></g>
+        </svg>
+      </div>
     </div>
     <aside class="panel">
       <button class="panel-toggle" id="panel-toggle" type="button" aria-expanded="true" aria-controls="panel-content" title="Collapse side panel">⟩</button>
       <div class="collapsed-label">Panel</div>
       <div class="panel-content" id="panel-content">
         <h1>Math dependency graph</h1>
-        <div class="small" style="margin-top: 0.35rem;">Cheat sheet:</div>
-        <div class="small" style="margin-top: 0.25rem;">Hover or click a node or edge to inspect more information.</div>
-        <div class="small" style="margin-top: 0.25rem;">Click a sign in the legend to hide or restore that category of nodes.</div>
-        <div class="small" style="margin-top: 0.25rem;">Double-click a visible node to hide it. Double-click it again in the removed-nodes pane below to restore it.</div>
-        <div class="small" style="margin-top: 0.25rem;">Click a node to select it, then use the <code>Highlight ancestors</code> button or press <code>h</code> to toggle ancestor focus.</div>
-        <div class="small" style="margin-top: 0.25rem;">Dashed edges mean the dependency is inferred rather than stated explicitly.</div>
-        <div class="small" style="margin: 0.5rem 0 0;">This HTML renders the canonical JSON inferred from the document.</div>
-        {f'<div class="small" style="margin-top: 0.35rem;">{html.escape(reduction_note)}</div>' if reduction_note else ''}
-        <div class="small" style="margin: 0.35rem 0 0.8rem;">Dependencies run left-to-right.</div>
-        <div class="legend" id="legend"></div>
-        <div id="details" class="small">Select a node or edge to inspect its metadata.</div>
-        <button id="focus-toggle" class="focus-toggle" type="button">Highlight ancestors</button>
-        <h2>Raw JSON</h2>
-        <pre><code>{payload}</code></pre>
-        <h2>Removed nodes</h2>
-        <div id="removed-nodes" class="removed-list small">None</div>
+
+        <div class="sidebar-section" draggable="true" data-section-id="cheatsheet">
+          <div class="drag-handle" title="Drag to reorder">⠿</div>
+          <details id="cheatsheet-details">
+            <summary>How to use</summary>
+            <div class="small" style="margin-top:0.4rem;"><strong>Double-click</strong> a node to hide it; double-click again in the <em>Removed nodes</em> list to restore it.</div>
+            <div class="small" style="margin-top:0.25rem;"><strong>Toolbar</strong> (top-left, always visible): <em>Highlight ancestors</em> cycles focus (off → dim → hide); <em>Delete node</em> removes the selected node; <em>Redraw all</em> resets layout.</div>
+            <div class="small" style="margin-top:0.25rem;">Hover a node or edge to preview metadata. Click to pin details here.</div>
+            <div class="small" style="margin-top:0.25rem;">Click a type in the legend to hide or show that category. Causality is preserved via bridge edges.</div>
+            <div class="small" style="margin-top:0.25rem;"><kbd>h</kbd> cycles ancestor focus (off → dim → hide). <kbd>Esc</kbd> or ✕ deselects. <kbd>r</kbd> redraws. <kbd>c</kbd> clears everything.</div>
+            <div class="small" style="margin-top:0.25rem;">Drag a node to reposition it. Drag the ⠿ handle on each section to reorder this panel.</div>
+            <div class="small" style="margin-top:0.25rem;"><strong>Edge styles:</strong> solid = Verified; long-dashed = Likely; short-dashed = Speculative. <strong>Node borders:</strong> solid = explicit; dashed = model-introduced.</div>
+            {f'<div class="small" style="margin-top:0.35rem;">{html.escape(reduction_note)}</div>' if reduction_note else ''}
+          </details>
+        </div>
+
+        <div class="sidebar-section" draggable="true" data-section-id="legend">
+          <div class="drag-handle" title="Drag to reorder">⠿</div>
+          <h2 class="section-heading">Legend</h2>
+          <div class="legend" id="legend"></div>
+        </div>
+
+        <div class="sidebar-section" draggable="true" data-section-id="details">
+          <div class="drag-handle" title="Drag to reorder">⠿</div>
+          <div id="details" class="small">Select a node or edge to inspect its metadata.</div>
+        </div>
+
+        <div class="sidebar-section" draggable="true" data-section-id="removed-nodes">
+          <div class="drag-handle" title="Drag to reorder">⠿</div>
+          <h2 class="section-heading">Removed nodes</h2>
+          <div id="removed-nodes" class="removed-list small">None</div>
+        </div>
+
+        <div class="sidebar-section" draggable="true" data-section-id="raw-json">
+          <div class="drag-handle" title="Drag to reorder">⠿</div>
+          <h2 class="section-heading" id="raw-json-title">Raw JSON</h2>
+          <pre><code id="raw-json-code"></code></pre>
+        </div>
+
       </div>
     </aside>
   </div>
@@ -469,9 +658,11 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     const edgePalette = {json.dumps(EDGE_PALETTE, indent=2)};
     const edgeData = {json.dumps(edge_payload, indent=2)};
     const renderTypeOverrides = {json.dumps(render_type_overrides, indent=2)};
+
+    // DOM refs
     const layoutEl = document.getElementById("layout");
     const panelToggle = document.getElementById("panel-toggle");
-    const svg = document.getElementById("graph-svg");
+    const svgEl = document.getElementById("graph-svg");
     const edgeLayer = document.getElementById("edge-layer");
     const nodeLayer = document.getElementById("node-layer");
     const tooltip = document.getElementById("tooltip");
@@ -479,15 +670,21 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     const legend = document.getElementById("legend");
     const removedNodesEl = document.getElementById("removed-nodes");
     const focusToggle = document.getElementById("focus-toggle");
+    const deleteNodeBtn = document.getElementById("delete-node-btn");
     const elkStatus = document.getElementById("elk-status");
-    const entityMap = new Map(docData.entities.map(entity => [entity.id, entity]));
+    const rawJsonCodeEl = document.getElementById("raw-json-code");
+    const panelContent = document.getElementById("panel-content");
+
+    // Core state
+    const entityMap = new Map(docData.entities.map(e => [e.id, e]));
     const outgoing = new Map();
     const incoming = new Map();
     const hiddenTypes = new Set();
     const hiddenNodes = new Set();
-    const nodeTypes = new Map(docData.entities.map(entity => [entity.id, entity.type]));
+    const nodeTypes = new Map(docData.entities.map(e => [e.id, e.type]));
     let selectedNodeId = null;
-    let ancestorFocusEnabled = false;
+    let ancestorFocusMode = 0; // 0=off, 1=dim non-ancestors, 2=hide non-ancestors
+    const ancestorHiddenByFocus = new Set(); // nodes temporarily hidden in mode 2
     const nodeColorIndex = new Map(
       docData.entities
         .slice()
@@ -497,19 +694,38 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           if (aPos !== bPos) return aPos - bPos;
           return a.short_title.localeCompare(b.short_title);
         }})
-        .map((entity, idx) => [entity.id, idx])
+        .map((e, idx) => [e.id, idx])
     );
+
+    // Manual node positions (overrides ELK layout after drag)
+    const manualPositions = new Map();
+    // ELK-computed positions from last full render
+    let lastNodePositions = new Map();
+    // Track whether full layout has run at least once
+    let hasFullLayout = false;
+
+    // Drag state for nodes
+    let draggingNodeId = null;
+    let nodeDragMoved = false;
+    let dragStartClientX = 0;
+    let dragStartClientY = 0;
+    let dragStartOffsetX = 0;
+    let dragStartOffsetY = 0;
+    const DRAG_THRESHOLD = 5;
+
+    let renderVersion = 0;
+    let lastRenderedEdges = [];
+    let elk = null;
+    const viewerStateKey = `math-dependency-graph::${{docData.document?.source_file || docData.document?.title || "document"}}`;
+
     edgeData.forEach(edge => {{
       if (!outgoing.has(edge.source)) outgoing.set(edge.source, []);
       outgoing.get(edge.source).push(edge);
       if (!incoming.has(edge.target)) incoming.set(edge.target, []);
       incoming.get(edge.target).push(edge);
     }});
-    let renderVersion = 0;
-    let lastRenderedEdges = [];
-    let lastNodePositions = new Map();
-    let elk = null;
-    const viewerStateKey = `math-dependency-graph::${{docData.document?.source_file || docData.document?.title || "document"}}`;
+
+    // ── State persistence ────────────────────────────────────────────────────
 
     function saveViewerState() {{
       try {{
@@ -517,13 +733,12 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           hiddenTypes: Array.from(hiddenTypes),
           hiddenNodes: Array.from(hiddenNodes),
           selectedNodeId,
-          ancestorFocusEnabled,
-          panelCollapsed: layoutEl.classList.contains("panel-collapsed")
+          ancestorFocusMode,
+          panelCollapsed: layoutEl.classList.contains("panel-collapsed"),
+          manualPositions: Array.from(manualPositions.entries())
         }};
         window.localStorage.setItem(viewerStateKey, JSON.stringify(payload));
-      }} catch (error) {{
-        // Ignore storage failures.
-      }}
+      }} catch (e) {{}}
     }}
 
     function restoreViewerState() {{
@@ -531,23 +746,42 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         const raw = window.localStorage.getItem(viewerStateKey);
         if (!raw) return;
         const payload = JSON.parse(raw);
-        (payload.hiddenTypes || []).forEach(type => {{
-          if (typeStyles[type]) hiddenTypes.add(type);
-        }});
-        (payload.hiddenNodes || []).forEach(nodeId => {{
-          if (entityMap.has(nodeId)) hiddenNodes.add(nodeId);
-        }});
+        (payload.hiddenTypes || []).forEach(t => {{ if (typeStyles[t]) hiddenTypes.add(t); }});
+        (payload.hiddenNodes || []).forEach(id => {{ if (entityMap.has(id)) hiddenNodes.add(id); }});
         if (payload.selectedNodeId && entityMap.has(payload.selectedNodeId)) {{
           selectedNodeId = payload.selectedNodeId;
         }}
-        ancestorFocusEnabled = !!payload.ancestorFocusEnabled;
-        if (payload.panelCollapsed) {{
-          layoutEl.classList.add("panel-collapsed");
-        }}
-      }} catch (error) {{
-        // Ignore malformed saved state.
-      }}
+        // Support both old boolean and new numeric format
+        ancestorFocusMode = typeof payload.ancestorFocusMode === "number"
+          ? payload.ancestorFocusMode
+          : (payload.ancestorFocusEnabled ? 1 : 0);
+        if (payload.panelCollapsed) layoutEl.classList.add("panel-collapsed");
+        (payload.manualPositions || []).forEach(([id, pos]) => {{
+          if (entityMap.has(id)) manualPositions.set(id, pos);
+        }});
+      }} catch (e) {{}}
     }}
+
+    function saveSidebarOrder() {{
+      try {{
+        const order = Array.from(panelContent.querySelectorAll(".sidebar-section")).map(el => el.dataset.sectionId);
+        window.localStorage.setItem(viewerStateKey + "::sidebar", JSON.stringify(order));
+      }} catch (e) {{}}
+    }}
+
+    function restoreSidebarOrder() {{
+      try {{
+        const raw = window.localStorage.getItem(viewerStateKey + "::sidebar");
+        if (!raw) return;
+        const order = JSON.parse(raw);
+        order.forEach(sectionId => {{
+          const el = panelContent.querySelector(`[data-section-id="${{sectionId}}"]`);
+          if (el) panelContent.appendChild(el);
+        }});
+      }} catch (e) {{}}
+    }}
+
+    // ── Panel toggle ─────────────────────────────────────────────────────────
 
     function syncPanelToggle() {{
       const collapsed = layoutEl.classList.contains("panel-collapsed");
@@ -555,14 +789,13 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       panelToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
       panelToggle.setAttribute("title", collapsed ? "Expand side panel" : "Collapse side panel");
     }}
-
     panelToggle.addEventListener("click", () => {{
       layoutEl.classList.toggle("panel-collapsed");
       syncPanelToggle();
       saveViewerState();
     }});
-    restoreViewerState();
-    syncPanelToggle();
+
+    // ── Utilities ────────────────────────────────────────────────────────────
 
     function escapeHtml(text) {{
       return String(text)
@@ -581,6 +814,60 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       return document.createElementNS("http://www.w3.org/2000/svg", name);
     }}
 
+    // Effective node position accounting for manual drag offset
+    function getEffectivePos(nodeId) {{
+      return manualPositions.get(nodeId) || lastNodePositions.get(nodeId) || null;
+    }}
+
+    // Simple straight-line path between two node bounding boxes (for bridges/dragged edges)
+    // Clip a straight line to node boundaries using proper rect intersection.
+    // Returns an SVG path string that starts just outside srcPos and ends just
+    // outside dstPos, so arrowheads sit at the target boundary and are not
+    // hidden under node shapes.
+    function simpleEdgePath(srcPos, dstPos) {{
+      const sx = srcPos.x + srcPos.width / 2;
+      const sy = srcPos.y + srcPos.height / 2;
+      const tx = dstPos.x + dstPos.width / 2;
+      const ty = dstPos.y + dstPos.height / 2;
+      const dx = tx - sx;
+      const dy = ty - sy;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1) return `M ${{sx}} ${{sy}}`;
+      const ndx = dx / dist;
+      const ndy = dy / dist;
+
+      // Distance from source center to source boundary along (ndx, ndy)
+      let ts = Infinity;
+      if (Math.abs(ndx) > 1e-6) ts = Math.min(ts, (srcPos.width  / 2) / Math.abs(ndx));
+      if (Math.abs(ndy) > 1e-6) ts = Math.min(ts, (srcPos.height / 2) / Math.abs(ndy));
+      const p0x = sx + ndx * (ts + 4);
+      const p0y = sy + ndy * (ts + 4);
+
+      // Distance from target center to target boundary along (-ndx, -ndy)
+      let tt = Infinity;
+      if (Math.abs(ndx) > 1e-6) tt = Math.min(tt, (dstPos.width  / 2) / Math.abs(ndx));
+      if (Math.abs(ndy) > 1e-6) tt = Math.min(tt, (dstPos.height / 2) / Math.abs(ndy));
+      const p1x = tx - ndx * (tt + 5);
+      const p1y = ty - ndy * (tt + 5);
+
+      return `M ${{p0x}} ${{p0y}} L ${{p1x}} ${{p1y}}`;
+    }}
+
+    // Redraw all edges incident to a node (including bridges) to follow drag.
+    function updateEdgesForNode(nodeId) {{
+      document.querySelectorAll(`.edge-path[data-source-node-id="${{nodeId}}"], .edge-path[data-target-node-id="${{nodeId}}"]`).forEach(pathEl => {{
+        const srcId = pathEl.dataset.sourceNodeId;
+        const dstId = pathEl.dataset.targetNodeId;
+        const srcPos = getEffectivePos(srcId);
+        const dstPos = getEffectivePos(dstId);
+        if (srcPos && dstPos) {{
+          pathEl.setAttribute("d", simpleEdgePath(srcPos, dstPos));
+        }}
+      }});
+    }}
+
+    // ── Legend ───────────────────────────────────────────────────────────────
+
     function createLegendIcon(type, style) {{
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       svg.setAttribute("viewBox", "0 0 24 20");
@@ -595,78 +882,59 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       }}
       if (shape === "ellipse") {{
         const el = createSvgElement("ellipse");
-        el.setAttribute("cx", "12");
-        el.setAttribute("cy", "10");
-        el.setAttribute("rx", "10");
-        el.setAttribute("ry", "7");
-        add(el);
-        return svg;
+        el.setAttribute("cx", "12"); el.setAttribute("cy", "10");
+        el.setAttribute("rx", "10"); el.setAttribute("ry", "7");
+        add(el); return svg;
       }}
       if (shape === "circle") {{
         const el = createSvgElement("circle");
-        el.setAttribute("cx", "12");
-        el.setAttribute("cy", "10");
-        el.setAttribute("r", "7");
-        add(el);
-        return svg;
+        el.setAttribute("cx", "12"); el.setAttribute("cy", "10"); el.setAttribute("r", "7");
+        add(el); return svg;
       }}
       if (shape === "diamond") {{
         const el = createSvgElement("polygon");
         el.setAttribute("points", "12,2 22,10 12,18 2,10");
-        add(el);
-        return svg;
+        add(el); return svg;
       }}
       if (shape === "hexagon") {{
         const el = createSvgElement("polygon");
         el.setAttribute("points", "6,2 18,2 22,10 18,18 6,18 2,10");
-        add(el);
-        return svg;
+        add(el); return svg;
       }}
       if (shape === "parallelogram") {{
         const el = createSvgElement("polygon");
         el.setAttribute("points", "6,2 22,2 18,18 2,18");
-        add(el);
-        return svg;
+        add(el); return svg;
       }}
       if (shape === "roundrect") {{
         const el = createSvgElement("rect");
-        el.setAttribute("x", "2");
-        el.setAttribute("y", "2");
-        el.setAttribute("width", "20");
-        el.setAttribute("height", "16");
-        el.setAttribute("rx", "5");
-        el.setAttribute("ry", "5");
-        add(el);
-        return svg;
+        el.setAttribute("x", "2"); el.setAttribute("y", "2");
+        el.setAttribute("width", "20"); el.setAttribute("height", "16");
+        el.setAttribute("rx", "5"); el.setAttribute("ry", "5");
+        add(el); return svg;
       }}
       if (shape === "double-rect") {{
         const outer = createSvgElement("rect");
-        outer.setAttribute("x", "2");
-        outer.setAttribute("y", "2");
-        outer.setAttribute("width", "20");
-        outer.setAttribute("height", "16");
+        outer.setAttribute("x", "2"); outer.setAttribute("y", "2");
+        outer.setAttribute("width", "20"); outer.setAttribute("height", "16");
         add(outer);
         const inner = createSvgElement("rect");
-        inner.setAttribute("x", "4.5");
-        inner.setAttribute("y", "4.5");
-        inner.setAttribute("width", "15");
-        inner.setAttribute("height", "11");
-        inner.setAttribute("fill", "none");
-        inner.setAttribute("stroke", stroke);
+        inner.setAttribute("x", "4.5"); inner.setAttribute("y", "4.5");
+        inner.setAttribute("width", "15"); inner.setAttribute("height", "11");
+        inner.setAttribute("fill", "none"); inner.setAttribute("stroke", stroke);
         inner.setAttribute("stroke-width", "1.4");
-        svg.appendChild(inner);
-        return svg;
+        svg.appendChild(inner); return svg;
       }}
       const el = createSvgElement("rect");
-      el.setAttribute("x", "2");
-      el.setAttribute("y", "2");
-      el.setAttribute("width", "20");
-      el.setAttribute("height", "16");
-      add(el);
-      return svg;
+      el.setAttribute("x", "2"); el.setAttribute("y", "2");
+      el.setAttribute("width", "20"); el.setAttribute("height", "16");
+      add(el); return svg;
     }}
 
+    // Only build legend rows for types actually present in the document
+    const presentTypes = new Set(docData.entities.map(e => e.type));
     Object.entries(typeStyles).forEach(([type, style]) => {{
+      if (!presentTypes.has(type)) return;
       const row = document.createElement("div");
       row.className = "legend-row";
       row.dataset.type = type;
@@ -683,28 +951,52 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           row.classList.add("inactive");
         }}
         saveViewerState();
-        updateVisibility();
+        updateVisibilityFast();
       }});
-      if (hiddenTypes.has(type)) {{
-        row.classList.add("inactive");
-      }}
+      if (hiddenTypes.has(type)) row.classList.add("inactive");
       legend.appendChild(row);
     }});
+
+    // ── Visibility helpers ───────────────────────────────────────────────────
 
     function isHiddenNode(nodeId) {{
       const type = nodeTypes.get(nodeId);
       return hiddenTypes.has(type) || hiddenNodes.has(nodeId);
     }}
 
+    // ── Removed nodes list ───────────────────────────────────────────────────
+
     function renderRemovedNodes() {{
       const removedEntities = docData.entities
-        .filter(entity => hiddenNodes.has(entity.id))
+        .filter(e => hiddenNodes.has(e.id))
         .sort((a, b) => (a.position || 0) - (b.position || 0) || a.short_title.localeCompare(b.short_title));
       removedNodesEl.innerHTML = "";
-      if (removedEntities.length === 0) {{
-        removedNodesEl.textContent = "None";
-        return;
+
+      const hasFocusHidden = ancestorHiddenByFocus.size > 0;
+      const hasRemoved = removedEntities.length > 0;
+
+      if (!hasFocusHidden && !hasRemoved) {{ removedNodesEl.textContent = "None"; return; }}
+
+      // Ancestor-focus group (mode 2): one collapsed item for all focus-hidden nodes
+      if (hasFocusHidden) {{
+        const count = ancestorHiddenByFocus.size;
+        const focusEntity = selectedNodeId ? entityMap.get(selectedNodeId) : null;
+        const focusLabel = focusEntity ? focusEntity.short_title : "selection";
+        const groupItem = document.createElement("div");
+        groupItem.className = "removed-item";
+        groupItem.innerHTML = `
+          <div><strong>Non-ancestors of ${{escapeHtml(focusLabel)}}</strong></div>
+          <div class="removed-item-number">${{count}} node${{count !== 1 ? "s" : ""}} hidden — click to restore all</div>
+        `;
+        groupItem.addEventListener("click", () => {{
+          ancestorFocusMode = 0;
+          saveViewerState();
+          applyAncestorFocus();
+        }});
+        removedNodesEl.appendChild(groupItem);
       }}
+
+      // Individually double-click-hidden nodes
       removedEntities.forEach(entity => {{
         const item = document.createElement("div");
         item.className = "removed-item";
@@ -715,16 +1007,17 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         item.addEventListener("dblclick", () => {{
           hiddenNodes.delete(entity.id);
           saveViewerState();
-          updateVisibility();
+          updateVisibilityFast();
         }});
         item.addEventListener("click", () => {{
-          details.innerHTML = formatEntity(entity);
-          typesetElement(details);
+          showEntityDetails(entity);
         }});
         removedNodesEl.appendChild(item);
       }});
       typesetElement(removedNodesEl);
     }}
+
+    // ── Ancestor focus ───────────────────────────────────────────────────────
 
     function collectAncestors(nodeId) {{
       const keep = new Set();
@@ -733,21 +1026,77 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         const current = stack.pop();
         if (!current || keep.has(current)) continue;
         keep.add(current);
-        for (const edge of incoming.get(current) || []) {{
-          stack.push(edge.source);
-        }}
+        for (const edge of incoming.get(current) || []) stack.push(edge.source);
       }}
       return keep;
     }}
 
-    function syncFocusToggle() {{
+    function syncToolbar() {{
       const hasSelection = !!selectedNodeId && !isHiddenNode(selectedNodeId);
+      // Focus toggle
       focusToggle.disabled = !hasSelection;
-      focusToggle.classList.toggle("active", hasSelection && ancestorFocusEnabled);
-      focusToggle.textContent = hasSelection && ancestorFocusEnabled ? "Show full graph" : "Highlight ancestors";
-      focusToggle.style.opacity = hasSelection ? "1" : "0.5";
-      focusToggle.style.cursor = hasSelection ? "pointer" : "default";
+      if (!hasSelection || ancestorFocusMode === 0) {{
+        focusToggle.textContent = "Highlight ancestors";
+        focusToggle.classList.remove("active");
+      }} else if (ancestorFocusMode === 1) {{
+        focusToggle.textContent = "Hide non-ancestors";
+        focusToggle.classList.add("active");
+      }} else {{
+        focusToggle.textContent = "Show full graph";
+        focusToggle.classList.add("active");
+      }}
+      // Delete node
+      deleteNodeBtn.disabled = !hasSelection;
     }}
+
+    // Keep syncFocusToggle as an alias so existing callsites still work
+    function syncFocusToggle() {{ syncToolbar(); }}
+
+    function applyAncestorFocus() {{
+      syncFocusToggle();
+      ancestorHiddenByFocus.clear();
+      const active = ancestorFocusMode > 0 && selectedNodeId && !isHiddenNode(selectedNodeId);
+      const keep = active ? collectAncestors(selectedNodeId) : null;
+
+      document.querySelectorAll(".graph-node").forEach(nodeEl => {{
+        const nodeId = nodeEl.dataset.nodeId;
+        if (active && !keep.has(nodeId)) {{
+          if (ancestorFocusMode === 1) {{
+            nodeEl.style.opacity = "0.18";
+            nodeEl.style.display = "";
+          }} else {{
+            nodeEl.style.display = "none";
+            ancestorHiddenByFocus.add(nodeId);
+          }}
+        }} else {{
+          nodeEl.style.opacity = "1";
+          nodeEl.style.display = isHiddenNode(nodeId) ? "none" : "";
+        }}
+      }});
+
+      document.querySelectorAll(".edge-path").forEach(pathEl => {{
+        const src = pathEl.dataset.sourceNodeId;
+        const dst = pathEl.dataset.targetNodeId;
+        const endpointHidden = isHiddenNode(src) || isHiddenNode(dst);
+        if (endpointHidden) {{
+          pathEl.style.display = "none";
+          pathEl.style.opacity = "";
+        }} else if (active && ancestorFocusMode === 2 && (ancestorHiddenByFocus.has(src) || ancestorHiddenByFocus.has(dst))) {{
+          pathEl.style.display = "none";
+          pathEl.style.opacity = "";
+        }} else if (active && ancestorFocusMode === 1 && (!keep.has(src) || !keep.has(dst))) {{
+          pathEl.style.opacity = "0.08";
+          pathEl.style.display = "";
+        }} else {{
+          pathEl.style.opacity = "0.96";
+          pathEl.style.display = "";
+        }}
+      }});
+
+      renderRemovedNodes();
+    }}
+
+    // ── Entity/edge display ──────────────────────────────────────────────────
 
     function formatEntity(entity) {{
       const description = escapeHtml(entity.description || "");
@@ -757,19 +1106,47 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         const confidence = dep.confidence ? ` (confidence: ${{escapeHtml(dep.confidence)}})` : "";
         return `<li><strong>${{escapeHtml(name)}}</strong> <code>${{escapeHtml(dep.use_type || "")}}</code><br>${{escapeHtml(dep.description || "")}}${{confidence ? `<br><span class="small">${{escapeHtml(dep.evidence || "")}}${{confidence}}</span>` : ""}}</li>`;
       }}).join("");
-      const locText = entity.defined || "";
       return `
-        <h2>${{escapeHtml(entity.short_title)}}</h2>
+        <div class="details-header">
+          <h2>${{escapeHtml(entity.short_title)}}</h2>
+          <button class="deselect-btn" type="button" title="Deselect (Esc)">✕</button>
+        </div>
         <div><strong>Ref:</strong> ${{escapeHtml(entity.ref || "—")}}</div>
         <div><strong>Type:</strong> <code>${{escapeHtml(entity.type)}}</code></div>
         <div><strong>Title:</strong> ${{escapeHtml(entity.title || "—")}}</div>
         <div><strong>Active in:</strong> ${{escapeHtml(entity.active_in || "—")}}</div>
         <div><strong>Source:</strong> ${{escapeHtml(entity.source || "—")}}</div>
-        <div><strong>Defined:</strong> ${{escapeHtml(locText || "—")}}</div>
+        <div><strong>Defined:</strong> ${{escapeHtml(entity.defined || "—")}}</div>
         <p>${{description}}</p>
         <h3>Direct dependencies</h3>
         <ul>${{deps || "<li>None</li>"}}</ul>
       `;
+    }}
+
+    function markSelectedNode(nodeId) {{
+      nodeLayer.querySelectorAll(".graph-node.selected").forEach(el => el.classList.remove("selected"));
+      if (nodeId) {{
+        const nodeEl = nodeLayer.querySelector(`[data-node-id="${{nodeId}}"]`);
+        if (nodeEl) nodeEl.classList.add("selected");
+      }}
+      syncToolbar();
+    }}
+
+    function showEntityDetails(entity) {{
+      details.innerHTML = formatEntity(entity);
+      details.querySelector(".deselect-btn")?.addEventListener("click", deselect);
+      typesetElement(details);
+      rawJsonCodeEl.textContent = JSON.stringify(entity, null, 2);
+    }}
+
+    function deselect() {{
+      selectedNodeId = null;
+      ancestorFocusMode = 0;
+      markSelectedNode(null);
+      details.innerHTML = "Select a node or edge to inspect its metadata.";
+      rawJsonCodeEl.textContent = JSON.stringify(docData, null, 2);
+      saveViewerState();
+      applyAncestorFocus();
     }}
 
     function tooltipText(entity) {{
@@ -795,10 +1172,12 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       `;
     }}
 
+    // ── Bridge edge helpers ──────────────────────────────────────────────────
+
     function confidenceRank(value) {{
-      if (value === "explicit") return 3;
-      if (value === "inferred") return 2;
-      if (value === "unclear") return 1;
+      if (value === "Verified") return 3;
+      if (value === "Likely") return 2;
+      if (value === "Speculative") return 1;
       return 0;
     }}
 
@@ -808,9 +1187,9 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         source: sourceId,
         target: targetId,
         use_type: "hidden-bridge",
-        description: `Preserves causal reachability across hidden nodes: ${{hiddenLabels.join(" -> ")}}.`,
-        confidence: seedEdge?.confidence || "inferred",
-        evidence: `Bridge path through hidden categories: ${{hiddenLabels.join(" -> ")}}`,
+        description: `Preserves causal reachability across hidden nodes: ${{hiddenLabels.join(" → ")}}.`,
+        confidence: seedEdge?.confidence || "Likely",
+        evidence: `Bridge path: ${{hiddenLabels.join(" → ")}}`,
         bridge: true
       }};
     }}
@@ -820,15 +1199,10 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       function addRendered(edge) {{
         const key = `${{edge.source}}->${{edge.target}}`;
         const existing = rendered.get(key);
-        if (!existing) {{
-          rendered.set(key, edge);
-          return;
-        }}
+        if (!existing) {{ rendered.set(key, edge); return; }}
         const existingScore = (existing.bridge ? 0 : 10) + confidenceRank(existing.confidence);
         const newScore = (edge.bridge ? 0 : 10) + confidenceRank(edge.confidence);
-        if (newScore > existingScore) {{
-          rendered.set(key, edge);
-        }}
+        if (newScore > existingScore) rendered.set(key, edge);
       }}
       function traverse(sourceId, currentId, seedEdge, hiddenPath, seenHidden) {{
         if (currentId === sourceId) return;
@@ -864,14 +1238,13 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 
     function nodeStyle(entity) {{
       if (entity.type === "corollary" && renderTypeOverrides[entity.id] && renderTypeOverrides[entity.id] !== "corollary") {{
-        return {{
-          shape: typeStyles[renderTypeOverrides[entity.id]].shape,
-          color: typeStyles.corollary.color
-        }};
+        return {{ shape: typeStyles[renderTypeOverrides[entity.id]].shape, color: typeStyles.corollary.color }};
       }}
       const style = typeStyles[entity.type] || {{ shape: "rect", color: "#566573" }};
       return {{ shape: style.shape, color: style.color }};
     }}
+
+    // ── ELK layout ───────────────────────────────────────────────────────────
 
     function ensureElk() {{
       if (elk) return elk;
@@ -882,9 +1255,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 
     async function computeLayout(visibleEntities, visibleEdges) {{
       const elkInstance = ensureElk();
-      if (!elkInstance) {{
-        throw new Error("ELK failed to load. This renderer needs the elkjs browser bundle.");
-      }}
+      if (!elkInstance) throw new Error("ELK failed to load.");
       const graph = {{
         id: "root",
         layoutOptions: {{
@@ -899,16 +1270,8 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           "elk.layered.spacing.edgeNodeBetweenLayers": "40",
           "elk.padding": "[left=40,top=40,right=40,bottom=40]"
         }},
-        children: visibleEntities.map(entity => ({{
-          id: entity.id,
-          width: 210,
-          height: 68
-        }})),
-        edges: visibleEdges.map((edge, idx) => ({{
-          id: `elk_edge_${{idx}}`,
-          sources: [edge.source],
-          targets: [edge.target]
-        }}))
+        children: visibleEntities.map(e => ({{ id: e.id, width: 210, height: 68 }})),
+        edges: visibleEdges.map((edge, idx) => ({{ id: `elk_edge_${{idx}}`, sources: [edge.source], targets: [edge.target] }}))
       }};
       return elkInstance.layout(graph);
     }}
@@ -921,32 +1284,19 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       if (!points.length) return "";
       if (points.length < 3) {{
         let d = `M ${{points[0].x}} ${{points[0].y}}`;
-        for (let i = 1; i < points.length; i += 1) {{
-          d += ` L ${{points[i].x}} ${{points[i].y}}`;
-        }}
+        for (let i = 1; i < points.length; i++) d += ` L ${{points[i].x}} ${{points[i].y}}`;
         return d;
       }}
-
       let d = `M ${{points[0].x}} ${{points[0].y}}`;
-      for (let i = 1; i < points.length - 1; i += 1) {{
-        const prev = points[i - 1];
-        const curr = points[i];
-        const next = points[i + 1];
-        const inDx = curr.x - prev.x;
-        const inDy = curr.y - prev.y;
-        const outDx = next.x - curr.x;
-        const outDy = next.y - curr.y;
-        const inLen = Math.hypot(inDx, inDy);
-        const outLen = Math.hypot(outDx, outDy);
-        if (inLen < 1e-6 || outLen < 1e-6) {{
-          d += ` L ${{curr.x}} ${{curr.y}}`;
-          continue;
-        }}
+      for (let i = 1; i < points.length - 1; i++) {{
+        const prev = points[i - 1], curr = points[i], next = points[i + 1];
+        const inDx = curr.x - prev.x, inDy = curr.y - prev.y;
+        const outDx = next.x - curr.x, outDy = next.y - curr.y;
+        const inLen = Math.hypot(inDx, inDy), outLen = Math.hypot(outDx, outDy);
+        if (inLen < 1e-6 || outLen < 1e-6) {{ d += ` L ${{curr.x}} ${{curr.y}}`; continue; }}
         const r = Math.min(radius, inLen / 2, outLen / 2);
-        const p1x = curr.x - (inDx / inLen) * r;
-        const p1y = curr.y - (inDy / inLen) * r;
-        const p2x = curr.x + (outDx / outLen) * r;
-        const p2y = curr.y + (outDy / outLen) * r;
+        const p1x = curr.x - (inDx / inLen) * r, p1y = curr.y - (inDy / inLen) * r;
+        const p2x = curr.x + (outDx / outLen) * r, p2y = curr.y + (outDy / outLen) * r;
         d += ` L ${{p1x}} ${{p1y}} Q ${{curr.x}} ${{curr.y}} ${{p2x}} ${{p2y}}`;
       }}
       const last = points[points.length - 1];
@@ -959,30 +1309,22 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       if (points.length < 2) return points;
       const targetPos = lastNodePositions.get(edge.target);
       if (!targetPos) return points;
-      const mergedEnd = {{
-        x: targetPos.x,
-        y: targetPos.y + targetPos.height / 2
-      }};
-      const mergedEntry = {{
-        x: targetPos.x - 30,
-        y: mergedEnd.y
-      }};
-      const updated = points.map(point => ({{ x: point.x, y: point.y }}));
-      if (updated.length === 2) {{
-        return [updated[0], mergedEntry, mergedEnd];
-      }}
+      const mergedEnd = {{ x: targetPos.x, y: targetPos.y + targetPos.height / 2 }};
+      const mergedEntry = {{ x: targetPos.x - 30, y: mergedEnd.y }};
+      const updated = points.map(p => ({{ x: p.x, y: p.y }}));
+      if (updated.length === 2) return [updated[0], mergedEntry, mergedEnd];
       updated[updated.length - 2] = mergedEntry;
       updated[updated.length - 1] = mergedEnd;
       return updated;
     }}
 
+    // ── Node rendering ───────────────────────────────────────────────────────
+
     function renderNode(entity, position) {{
       const style = nodeStyle(entity);
-      const x = position.x;
-      const y = position.y;
-      const w = 210;
-      const h = 68;
+      const x = position.x, y = position.y, w = 210, h = 68;
       const stroke = "#1f2933";
+      const isInferred = entity.source === "inferred";
       const group = createSvgElement("g");
       group.setAttribute("class", "graph-node");
       group.dataset.nodeId = entity.id;
@@ -990,73 +1332,59 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       let shapeEl = null;
       if (style.shape === "ellipse") {{
         shapeEl = createSvgElement("ellipse");
-        shapeEl.setAttribute("cx", x + w / 2);
-        shapeEl.setAttribute("cy", y + h / 2);
-        shapeEl.setAttribute("rx", w / 2);
-        shapeEl.setAttribute("ry", h / 2);
+        shapeEl.setAttribute("cx", x + w / 2); shapeEl.setAttribute("cy", y + h / 2);
+        shapeEl.setAttribute("rx", w / 2); shapeEl.setAttribute("ry", h / 2);
       }} else if (style.shape === "circle") {{
         shapeEl = createSvgElement("circle");
-        shapeEl.setAttribute("cx", x + w / 2);
-        shapeEl.setAttribute("cy", y + h / 2);
+        shapeEl.setAttribute("cx", x + w / 2); shapeEl.setAttribute("cy", y + h / 2);
         shapeEl.setAttribute("r", Math.min(w, h) / 2);
       }} else if (style.shape === "diamond") {{
         shapeEl = createSvgElement("polygon");
         shapeEl.setAttribute("points", `${{x + w / 2}},${{y}} ${{x + w}},${{y + h / 2}} ${{x + w / 2}},${{y + h}} ${{x}},${{y + h / 2}}`);
       }} else if (style.shape === "hexagon") {{
-        shapeEl = createSvgElement("polygon");
         const inset = 26;
+        shapeEl = createSvgElement("polygon");
         shapeEl.setAttribute("points", `${{x + inset}},${{y}} ${{x + w - inset}},${{y}} ${{x + w}},${{y + h / 2}} ${{x + w - inset}},${{y + h}} ${{x + inset}},${{y + h}} ${{x}},${{y + h / 2}}`);
       }} else if (style.shape === "parallelogram") {{
-        shapeEl = createSvgElement("polygon");
         const skew = 20;
+        shapeEl = createSvgElement("polygon");
         shapeEl.setAttribute("points", `${{x + skew}},${{y}} ${{x + w}},${{y}} ${{x + w - skew}},${{y + h}} ${{x}},${{y + h}}`);
       }} else if (style.shape === "roundrect") {{
         shapeEl = createSvgElement("rect");
-        shapeEl.setAttribute("x", x);
-        shapeEl.setAttribute("y", y);
-        shapeEl.setAttribute("width", w);
-        shapeEl.setAttribute("height", h);
-        shapeEl.setAttribute("rx", 18);
-        shapeEl.setAttribute("ry", 18);
+        shapeEl.setAttribute("x", x); shapeEl.setAttribute("y", y);
+        shapeEl.setAttribute("width", w); shapeEl.setAttribute("height", h);
+        shapeEl.setAttribute("rx", 18); shapeEl.setAttribute("ry", 18);
       }} else if (style.shape === "double-rect") {{
         const outer = createSvgElement("rect");
-        outer.setAttribute("x", x);
-        outer.setAttribute("y", y);
-        outer.setAttribute("width", w);
-        outer.setAttribute("height", h);
-        outer.setAttribute("fill", style.color);
-        outer.setAttribute("stroke", stroke);
+        outer.setAttribute("x", x); outer.setAttribute("y", y);
+        outer.setAttribute("width", w); outer.setAttribute("height", h);
+        outer.setAttribute("fill", style.color); outer.setAttribute("stroke", stroke);
         outer.setAttribute("stroke-width", "2");
+        if (isInferred) outer.setAttribute("stroke-dasharray", "6 3");
         group.appendChild(outer);
         const inner = createSvgElement("rect");
-        inner.setAttribute("x", x + 6);
-        inner.setAttribute("y", y + 6);
-        inner.setAttribute("width", w - 12);
-        inner.setAttribute("height", h - 12);
-        inner.setAttribute("fill", "none");
-        inner.setAttribute("stroke", stroke);
+        inner.setAttribute("x", x + 6); inner.setAttribute("y", y + 6);
+        inner.setAttribute("width", w - 12); inner.setAttribute("height", h - 12);
+        inner.setAttribute("fill", "none"); inner.setAttribute("stroke", stroke);
         inner.setAttribute("stroke-width", "2");
         group.appendChild(inner);
       }} else {{
         shapeEl = createSvgElement("rect");
-        shapeEl.setAttribute("x", x);
-        shapeEl.setAttribute("y", y);
-        shapeEl.setAttribute("width", w);
-        shapeEl.setAttribute("height", h);
+        shapeEl.setAttribute("x", x); shapeEl.setAttribute("y", y);
+        shapeEl.setAttribute("width", w); shapeEl.setAttribute("height", h);
       }}
 
       if (shapeEl) {{
         shapeEl.setAttribute("fill", style.color);
         shapeEl.setAttribute("stroke", stroke);
         shapeEl.setAttribute("stroke-width", "2");
+        if (isInferred) shapeEl.setAttribute("stroke-dasharray", "6 3");
         group.appendChild(shapeEl);
       }}
 
       const foreignObject = createSvgElement("foreignObject");
-      foreignObject.setAttribute("x", x);
-      foreignObject.setAttribute("y", y);
-      foreignObject.setAttribute("width", w);
-      foreignObject.setAttribute("height", h);
+      foreignObject.setAttribute("x", x); foreignObject.setAttribute("y", y);
+      foreignObject.setAttribute("width", w); foreignObject.setAttribute("height", h);
       const body = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
       body.setAttribute("class", "node-fo-body");
       body.innerHTML = `<div class="node-label">${{escapeHtml(entity.short_title)}}</div><div class="node-subtitle">${{escapeHtml(entity.type + (entity.ref ? " " + entity.ref : ""))}}</div>`;
@@ -1065,14 +1393,12 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       return group;
     }}
 
+    // ── Edge emphasis ────────────────────────────────────────────────────────
+
     function emphasizeEdge(pathEl, strokeColor = null) {{
       if (!pathEl) return;
-      if (pathEl.parentNode === edgeLayer) {{
-        edgeLayer.appendChild(pathEl);
-      }}
-      if (strokeColor) {{
-        pathEl.style.stroke = strokeColor;
-      }}
+      if (pathEl.parentNode === edgeLayer) edgeLayer.appendChild(pathEl);
+      if (strokeColor) pathEl.style.stroke = strokeColor;
       pathEl.style.strokeWidth = "3";
       pathEl.style.opacity = "0.98";
       pathEl.style.filter = "drop-shadow(0 0 1px rgba(17, 24, 39, 0.18))";
@@ -1088,16 +1414,13 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 
     function setIncomingEdgeHighlight(nodeId, active) {{
       document.querySelectorAll(`[data-target-node-id="${{nodeId}}"]`).forEach(pathEl => {{
-        if (active) {{
-          emphasizeEdge(pathEl);
-        }} else {{
-          clearEdgeEmphasis(pathEl);
-        }}
+        if (active) emphasizeEdge(pathEl);
+        else clearEdgeEmphasis(pathEl);
       }});
-      if (!active) {{
-        applyAncestorFocus();
-      }}
+      if (!active) applyAncestorFocus();
     }}
+
+    // ── Event binding for edges/nodes ────────────────────────────────────────
 
     function bindEdgeHover(pathEl, edge) {{
       const baseColor = edgeColorForTarget(edge.target);
@@ -1121,6 +1444,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 
     function bindNodeInteractions(nodeEl, entity) {{
       nodeEl.addEventListener("mouseenter", event => {{
+        if (draggingNodeId) return;
         tooltip.innerHTML = tooltipText(entity);
         tooltip.style.display = "block";
         typesetElement(tooltip);
@@ -1137,53 +1461,52 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         setIncomingEdgeHighlight(entity.id, false);
       }});
       nodeEl.addEventListener("click", () => {{
+        if (nodeDragMoved) return; // suppress click after drag
+        if (selectedNodeId === entity.id) {{ deselect(); return; }} // click again to deselect
         selectedNodeId = entity.id;
-        details.innerHTML = formatEntity(entity);
-        typesetElement(details);
+        markSelectedNode(entity.id);
+        showEntityDetails(entity);
         saveViewerState();
         applyAncestorFocus();
       }});
       nodeEl.addEventListener("dblclick", event => {{
         event.preventDefault();
-        if (selectedNodeId === entity.id) {{
-          ancestorFocusEnabled = false;
-        }}
+        if (selectedNodeId === entity.id) ancestorFocusMode = 0;
         hiddenNodes.add(entity.id);
         saveViewerState();
-        updateVisibility();
+        updateVisibilityFast();
+      }});
+      // Node drag (mousedown)
+      nodeEl.addEventListener("mousedown", event => {{
+        if (event.button !== 0) return;
+        draggingNodeId = entity.id;
+        nodeDragMoved = false;
+        dragStartClientX = event.clientX;
+        dragStartClientY = event.clientY;
+        const cur = manualPositions.get(entity.id);
+        const orig = lastNodePositions.get(entity.id) || {{x: 0, y: 0}};
+        dragStartOffsetX = cur ? cur.x - orig.x : 0;
+        dragStartOffsetY = cur ? cur.y - orig.y : 0;
+        nodeEl.classList.add("dragging-node");
+        event.stopPropagation();
       }});
     }}
 
-    function applyAncestorFocus() {{
-      syncFocusToggle();
-      const active = ancestorFocusEnabled && selectedNodeId && !isHiddenNode(selectedNodeId);
-      const keep = active ? collectAncestors(selectedNodeId) : null;
-      document.querySelectorAll(".graph-node").forEach(nodeEl => {{
-        const nodeId = nodeEl.dataset.nodeId;
-        nodeEl.style.opacity = active && !keep.has(nodeId) ? "0.18" : "1";
-      }});
-      document.querySelectorAll(".edge-path").forEach(pathEl => {{
-        const src = pathEl.dataset.sourceNodeId;
-        const dst = pathEl.dataset.targetNodeId;
-        pathEl.style.opacity = active && (!keep.has(src) || !keep.has(dst)) ? "0.08" : "0.96";
-      }});
-    }}
+    // ── Full ELK-based layout/render ─────────────────────────────────────────
 
-    async function updateVisibility() {{
+    async function updateVisibilityFull() {{
       renderRemovedNodes();
       edgeLayer.innerHTML = "";
       nodeLayer.innerHTML = "";
       lastRenderedEdges = [];
-      lastNodePositions = new Map();
-      const visibleEntities = docData.entities.filter(entity => !isHiddenNode(entity.id));
-      const visibleEdges = computeVisibleEdges().filter(edge => !isHiddenNode(edge.source) && !isHiddenNode(edge.target));
+      const visibleEntities = docData.entities.filter(e => !isHiddenNode(e.id));
+      const visibleEdges = computeVisibleEdges().filter(e => !isHiddenNode(e.source) && !isHiddenNode(e.target));
       const currentVersion = ++renderVersion;
 
       if (visibleEntities.length === 0) {{
         elkStatus.textContent = "No visible nodes.";
-        svg.setAttribute("width", "800");
-        svg.setAttribute("height", "200");
-        svg.setAttribute("viewBox", "0 0 800 200");
+        svgEl.setAttribute("width", "800"); svgEl.setAttribute("height", "200");
+        svgEl.setAttribute("viewBox", "0 0 800 200");
         return;
       }}
 
@@ -1193,7 +1516,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         if (currentVersion !== renderVersion) return;
         elkStatus.textContent = "";
 
-        const nodeLookup = new Map((graph.children || []).map(node => [node.id, node]));
+        const nodeLookup = new Map((graph.children || []).map(n => [n.id, n]));
         visibleEntities.forEach(entity => {{
           const positioned = nodeLookup.get(entity.id);
           if (positioned) {{
@@ -1205,18 +1528,19 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
             }});
           }}
         }});
+        hasFullLayout = true;
 
         const graphWidth = Math.max(900, (graph.width || 0) + 80);
         const graphHeight = Math.max(500, (graph.height || 0) + 80);
-        svg.setAttribute("width", String(graphWidth));
-        svg.setAttribute("height", String(graphHeight));
-        svg.setAttribute("viewBox", `0 0 ${{graphWidth}} ${{graphHeight}}`);
-        const targetCounts = new Map();
-        visibleEdges.forEach(edge => {{
-          targetCounts.set(edge.target, (targetCounts.get(edge.target) || 0) + 1);
-        }});
+        svgEl.setAttribute("width", String(graphWidth));
+        svgEl.setAttribute("height", String(graphHeight));
+        svgEl.setAttribute("viewBox", `0 0 ${{graphWidth}} ${{graphHeight}}`);
 
-        (graph.edges || []).forEach((elkEdge, idx) => {{
+        const targetCounts = new Map();
+        visibleEdges.forEach(edge => targetCounts.set(edge.target, (targetCounts.get(edge.target) || 0) + 1));
+
+        (graph.edges || []).forEach((elkEdge) => {{
+          const idx = parseInt(elkEdge.id.replace("elk_edge_", ""), 10);
           const meta = visibleEdges[idx];
           const section = (elkEdge.sections || [])[0];
           if (!section || !meta) return;
@@ -1226,15 +1550,12 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           path.setAttribute("d", roundedPathForPoints(points));
           path.setAttribute("stroke", edgeColorForTarget(meta.target));
           path.setAttribute("marker-end", "url(#arrow)");
-          if (meta.confidence === "inferred") {{
-            path.setAttribute("stroke-dasharray", "8 5");
-          }} else if (meta.confidence === "unclear") {{
-            path.setAttribute("stroke-dasharray", "3 5");
-          }} else if (meta.bridge) {{
-            path.setAttribute("stroke-dasharray", "6 4");
-          }}
+          if (meta.confidence === "Likely") path.setAttribute("stroke-dasharray", "8 5");
+          else if (meta.confidence === "Speculative") path.setAttribute("stroke-dasharray", "3 5");
+          else if (meta.bridge) path.setAttribute("stroke-dasharray", "6 4");
           path.dataset.targetNodeId = meta.target;
           path.dataset.sourceNodeId = meta.source;
+          path.dataset.bridge = meta.bridge ? "true" : "false";
           edgeLayer.appendChild(path);
           bindEdgeHover(path, meta);
           lastRenderedEdges.push(meta);
@@ -1244,40 +1565,244 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           const positioned = lastNodePositions.get(entity.id);
           if (!positioned) return;
           const nodeEl = renderNode(entity, positioned);
+          // Restore manual position as transform offset
+          const manual = manualPositions.get(entity.id);
+          if (manual) {{
+            const dx = manual.x - positioned.x;
+            const dy = manual.y - positioned.y;
+            if (dx !== 0 || dy !== 0) nodeEl.setAttribute("transform", `translate(${{dx}},${{dy}})`);
+          }}
           bindNodeInteractions(nodeEl, entity);
           nodeLayer.appendChild(nodeEl);
         }});
 
         applyAncestorFocus();
         typesetElement(nodeLayer);
+
+        // Restore selection highlight and details
+        if (selectedNodeId && entityMap.has(selectedNodeId)) {{
+          markSelectedNode(selectedNodeId);
+          showEntityDetails(entityMap.get(selectedNodeId));
+        }} else {{
+          syncToolbar();
+          rawJsonCodeEl.textContent = JSON.stringify(docData, null, 2);
+        }}
       }} catch (error) {{
         elkStatus.textContent = `ELK layout failed: ${{error.message || error}}`;
       }}
     }}
 
+    // ── Fast visibility toggle (no ELK re-run) ───────────────────────────────
+
+    function updateVisibilityFast() {{
+      if (!hasFullLayout) {{ updateVisibilityFull(); return; }}
+      renderRemovedNodes();
+
+      // Toggle node elements
+      nodeLayer.querySelectorAll(".graph-node").forEach(nodeEl => {{
+        const nodeId = nodeEl.dataset.nodeId;
+        nodeEl.style.display = isHiddenNode(nodeId) ? "none" : "";
+      }});
+
+      // Toggle non-bridge edge elements
+      edgeLayer.querySelectorAll(".edge-path[data-bridge='false']").forEach(pathEl => {{
+        const src = pathEl.dataset.sourceNodeId;
+        const dst = pathEl.dataset.targetNodeId;
+        pathEl.style.display = (!isHiddenNode(src) && !isHiddenNode(dst)) ? "" : "none";
+      }});
+
+      // Remove all bridge edges; recompute them as straight lines
+      edgeLayer.querySelectorAll(".edge-path[data-bridge='true']").forEach(el => el.remove());
+
+      const visibleEdges = computeVisibleEdges();
+      visibleEdges.forEach(edge => {{
+        if (!edge.bridge) return;
+        const srcPos = getEffectivePos(edge.source);
+        const dstPos = getEffectivePos(edge.target);
+        if (!srcPos || !dstPos) return;
+        const path = createSvgElement("path");
+        path.setAttribute("class", "edge-path");
+        path.setAttribute("d", simpleEdgePath(srcPos, dstPos));
+        path.setAttribute("stroke", edgeColorForTarget(edge.target));
+        path.setAttribute("stroke-dasharray", "6 4");
+        path.setAttribute("marker-end", "url(#arrow)");
+        path.dataset.targetNodeId = edge.target;
+        path.dataset.sourceNodeId = edge.source;
+        path.dataset.bridge = "true";
+        edgeLayer.appendChild(path);
+        bindEdgeHover(path, edge);
+      }});
+
+      applyAncestorFocus();
+    }}
+
+    // ── Node dragging (SVG mouse events) ─────────────────────────────────────
+
+    document.addEventListener("mousemove", event => {{
+      if (draggingNodeId === null) return;
+      const clientDx = event.clientX - dragStartClientX;
+      const clientDy = event.clientY - dragStartClientY;
+      if (!nodeDragMoved && Math.hypot(clientDx, clientDy) < DRAG_THRESHOLD) return;
+      nodeDragMoved = true;
+      tooltip.style.display = "none";
+
+      // Convert client delta to SVG coordinate delta
+      const rect = svgEl.getBoundingClientRect();
+      const viewBox = svgEl.viewBox.baseVal;
+      const scaleX = viewBox.width / rect.width;
+      const scaleY = viewBox.height / rect.height;
+      const svgDx = clientDx * scaleX;
+      const svgDy = clientDy * scaleY;
+
+      const offsetX = dragStartOffsetX + svgDx;
+      const offsetY = dragStartOffsetY + svgDy;
+
+      const nodeEl = nodeLayer.querySelector(`[data-node-id="${{draggingNodeId}}"]`);
+      if (nodeEl) nodeEl.setAttribute("transform", `translate(${{offsetX}},${{offsetY}})`);
+
+      const origPos = lastNodePositions.get(draggingNodeId);
+      if (origPos) {{
+        manualPositions.set(draggingNodeId, {{
+          x: origPos.x + offsetX,
+          y: origPos.y + offsetY,
+          width: origPos.width,
+          height: origPos.height
+        }});
+      }}
+
+      updateEdgesForNode(draggingNodeId);
+    }});
+
+    document.addEventListener("mouseup", event => {{
+      if (draggingNodeId !== null) {{
+        const nodeEl = nodeLayer.querySelector(`[data-node-id="${{draggingNodeId}}"]`);
+        if (nodeEl) nodeEl.classList.remove("dragging-node");
+        if (nodeDragMoved) saveViewerState();
+        draggingNodeId = null;
+        // Keep nodeDragMoved true briefly to suppress the click event
+        setTimeout(() => {{ nodeDragMoved = false; }}, 0);
+      }}
+    }});
+
+    // ── Toolbar button handlers ───────────────────────────────────────────────
+
+    deleteNodeBtn.addEventListener("click", () => {{
+      if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
+      const nodeId = selectedNodeId;
+      ancestorFocusMode = 0;
+      hiddenNodes.add(nodeId);
+      deselect(); // clears selectedNodeId and markSelectedNode
+      saveViewerState();
+      updateVisibilityFast();
+    }});
+
+    document.getElementById("redraw-btn").addEventListener("click", () => {{
+      manualPositions.clear();
+      nodeLayer.querySelectorAll(".graph-node").forEach(el => el.removeAttribute("transform"));
+      updateVisibilityFull();
+      saveViewerState();
+    }});
+
+    function clearAll() {{
+      hiddenNodes.clear();
+      hiddenTypes.clear();
+      selectedNodeId = null;
+      ancestorFocusMode = 0;
+      ancestorHiddenByFocus.clear();
+      manualPositions.clear();
+      // Reset legend buttons to visible
+      document.querySelectorAll(".legend-btn").forEach(btn => btn.classList.remove("hidden-type"));
+      localStorage.removeItem(viewerStateKey);
+      updateVisibilityFull();
+    }}
+
+    document.getElementById("clear-btn").addEventListener("click", clearAll);
+
+    // ── Sidebar drag-to-reorder ───────────────────────────────────────────────
+
+    let dragSrcSection = null;
+    panelContent.addEventListener("dragstart", event => {{
+      const handle = event.target.closest(".drag-handle");
+      if (!handle) {{ event.preventDefault(); return; }}
+      const section = handle.closest(".sidebar-section");
+      if (!section) {{ event.preventDefault(); return; }}
+      dragSrcSection = section;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", section.dataset.sectionId);
+      section.classList.add("dragging");
+    }});
+    panelContent.addEventListener("dragend", () => {{
+      panelContent.querySelectorAll(".sidebar-section.dragging").forEach(el => el.classList.remove("dragging"));
+      panelContent.querySelectorAll(".sidebar-section.drag-over").forEach(el => el.classList.remove("drag-over"));
+      dragSrcSection = null;
+      saveSidebarOrder();
+    }});
+    panelContent.addEventListener("dragover", event => {{
+      event.preventDefault();
+      const target = event.target.closest(".sidebar-section");
+      if (!target || target === dragSrcSection) return;
+      panelContent.querySelectorAll(".sidebar-section.drag-over").forEach(el => el.classList.remove("drag-over"));
+      target.classList.add("drag-over");
+      event.dataTransfer.dropEffect = "move";
+    }});
+    panelContent.addEventListener("drop", event => {{
+      event.preventDefault();
+      const target = event.target.closest(".sidebar-section");
+      if (!target || target === dragSrcSection || !dragSrcSection) return;
+      panelContent.insertBefore(dragSrcSection, target);
+      panelContent.querySelectorAll(".sidebar-section.drag-over").forEach(el => el.classList.remove("drag-over"));
+    }});
+
+    // ── Other event listeners ────────────────────────────────────────────────
+
     focusToggle.addEventListener("click", () => {{
       if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
-      ancestorFocusEnabled = !ancestorFocusEnabled;
+      ancestorFocusMode = (ancestorFocusMode + 1) % 3;
       saveViewerState();
       applyAncestorFocus();
     }});
 
     document.addEventListener("keydown", event => {{
-      if (event.key.toLowerCase() !== "h") return;
-      if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
       const tag = document.activeElement?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea") return;
-      event.preventDefault();
-      ancestorFocusEnabled = !ancestorFocusEnabled;
-      saveViewerState();
-      applyAncestorFocus();
+      if (event.key === "Escape") {{
+        event.preventDefault();
+        deselect();
+        return;
+      }}
+      if (event.key.toLowerCase() === "h") {{
+        if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
+        event.preventDefault();
+        ancestorFocusMode = (ancestorFocusMode + 1) % 3;
+        saveViewerState();
+        applyAncestorFocus();
+        return;
+      }}
+      if (event.key.toLowerCase() === "r") {{
+        event.preventDefault();
+        manualPositions.clear();
+        nodeLayer.querySelectorAll(".graph-node").forEach(el => el.removeAttribute("transform"));
+        updateVisibilityFull();
+        saveViewerState();
+        return;
+      }}
+      if (event.key.toLowerCase() === "c") {{
+        event.preventDefault();
+        clearAll();
+      }}
     }});
+
+    // ── Initialization ────────────────────────────────────────────────────────
+
+    restoreViewerState();
+    syncPanelToggle();
+    restoreSidebarOrder();
 
     window.addEventListener("load", () => {{
       if (window.MathJax && window.MathJax.typesetPromise) {{
         window.MathJax.typesetPromise().catch(() => {{}});
       }}
-      updateVisibility();
+      updateVisibilityFull();
     }});
   </script>
 </body>

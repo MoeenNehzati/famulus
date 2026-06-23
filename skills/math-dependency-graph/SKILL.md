@@ -188,3 +188,76 @@ The Python renderer should do only:
 - manage visualization-only state such as filters, local hiding, focus modes, and persistence
 
 Do not delegate semantic graph extraction to the renderer script.
+
+## 9. Field-to-HTML rendering map
+
+Use this table to verify that the JSON is correct and to debug rendering issues.
+Each row shows a JSON field and exactly where its value appears in the HTML.
+
+### Node cell (the colored shape in the graph)
+
+| JSON field | Rendered as |
+|---|---|
+| `short_title` | Large bold white text, top line of the cell |
+| `type` + `ref` | Small subtitle, bottom line of the cell (e.g. `theorem 5.1`) |
+| `type` | Determines node shape and fill color (see shape table below) |
+
+### Hover tooltip (shown while the mouse is over a node)
+
+| JSON field | Rendered as |
+|---|---|
+| `short_title` | Bold first line |
+| `ref` | Second line (empty string if `""`) |
+| `type` | Third line |
+| `description` | Fourth line |
+
+### Side panel on click (right-hand panel when a node is selected)
+
+| JSON field | Rendered as |
+|---|---|
+| `short_title` | `<h2>` heading |
+| `ref` | **Ref:** row (shows `—` if empty) |
+| `type` | **Type:** row in `<code>` |
+| `title` | **Title:** row (shows `—` if empty) |
+| `active_in` | **Active in:** row (shows `—` if empty) |
+| `source` | **Source:** row (shows `—` if empty) |
+| `defined` | **Defined:** row (shows `—` if empty) |
+| `description` | Paragraph body below the metadata rows |
+
+### Dependency list (in the side panel, under "Direct dependencies")
+
+Each entry in `depends_on` renders as one `<li>`:
+
+| `depends_on` field | Rendered as |
+|---|---|
+| `id` | Looked up → target's `short_title` shown in bold |
+| `use_type` | `<code>` label after the name |
+| `description` | Text on the second line |
+| `evidence` | Small grey text, with confidence in parentheses |
+| `confidence` | Appended as `(confidence: …)` in small grey text |
+
+### Edge visual encoding
+
+| `depends_on.confidence` | Edge style |
+|---|---|
+| `"Verified"` | Solid line |
+| `"Likely"` | Long-dashed (`8 5`) |
+| `"Speculative"` | Short-dashed (`3 5`) |
+| *(bridge, auto-generated)* | Medium-dashed (`6 4`) |
+
+Edge color is assigned by `position` order, cycling through a fixed 6-color palette.
+Lower `position` values get earlier colors.
+
+### Node shapes by `type`
+
+| `type` | Shape |
+|---|---|
+| `standing-assumption` | Hexagon |
+| `local-assumption` | Diamond |
+| `definition` | Rounded rectangle |
+| `notation` | Parallelogram |
+| `lemma` | Ellipse |
+| `proposition` | Rectangle |
+| `theorem` | Double rectangle |
+| `corollary` | Circle |
+| `remark` | Rectangle |
