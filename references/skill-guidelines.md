@@ -35,7 +35,7 @@ Empty array `[]` for unused categories. Entries map to the active agent's permis
 
 ```yaml
 ---
-name: maker
+name: pdf-to-markdown
 description: Convert PDF to Markdown using the maker CLI
 tools:
   - maker
