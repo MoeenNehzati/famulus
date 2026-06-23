@@ -202,6 +202,12 @@ that.
   test suite, a completed feature — note that it may be time to commit/push.
 - Don't create commits, amend, or push unless explicitly asked. When approved,
   help with staging, commit messages, and exact steps.
+- At the start of each session, run `git symbolic-ref HEAD` in: the repo
+  containing the skills directory, and the current working directory's repo (if
+  any). If either is detached, check out the default branch before doing
+  anything else.
+- Before committing to any repo, verify `git symbolic-ref HEAD` succeeds. If
+  it fails, the repo is in detached HEAD — check out a named branch first.
 
 ## Skill categories and document-profile blocks
 

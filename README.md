@@ -199,6 +199,7 @@ the tracked hook path once per clone:
 git config core.hooksPath .githooks
 ```
 
+The tracked `.githooks/pre-commit` hook blocks commits in detached HEAD state.
 The tracked `.githooks/pre-push` hook runs `tests/test_skill_metadata.py`.
 
 ## Claude
