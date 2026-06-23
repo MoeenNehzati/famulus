@@ -135,7 +135,15 @@ EOF
    empty content; the list will be created by the write below.
 2. Get today's date: `date +%m/%d/%y` (already allowlisted separately from
    this skill's two commands). Use its output as `<date>` below.
-3. Compose the new content:
+3. Check for a deadline:
+   - If the user already specified a due date or due phrase (for example,
+     `by tomorrow`, `by Friday`, `this week`, `this summer`, or an explicit
+     date), preserve that phrase in the item text.
+   - If the user did not specify any deadline, ask for one and wait for the
+     user's answer before composing or writing the item.
+   - If the user explicitly says there is no deadline, append the item without
+     adding a due phrase.
+4. Compose the new content:
    - **Plain add** ("add X"): append a new line `- [ ] (<date>) X` at the
      end of the content (after a trailing newline if the content is
      non-empty).
@@ -157,7 +165,7 @@ EOF
      asking — announce which section you chose (e.g. "Added under
      Research → Writing"). The user can override with "add X under
      Area > Action".
-4. Write back:
+5. Write back:
 
 ```bash
 scripts/lists.sh write <name> <<'EOF'
@@ -165,7 +173,7 @@ scripts/lists.sh write <name> <<'EOF'
 EOF
 ```
 
-5. Confirm to the user what was added and where (mention the date if
+6. Confirm to the user what was added and where (mention the date if
    useful, e.g. "added with today's date, 06/13/26").
 
 ### 3.5 Check / uncheck an item
@@ -183,7 +191,7 @@ EOF
    - 1 match: toggle that line's checkbox: `[ ]` -> `[x]` for "check"
      requests, `[x]` -> `[ ]` for "uncheck" requests. Leave children's
      checkboxes unchanged.
-3. Write the full content back via `write` (same pattern as 3.4 step 3). If
+3. Write the full content back via `write` (same pattern as 3.4 step 5). If
    this was the list's only item and checking/unchecking doesn't remove it,
    the content is still non-empty, so the list is not deleted.
 4. Confirm to the user which item was checked/unchecked.
@@ -206,7 +214,7 @@ EOF
      lines that will be removed and ask the user to confirm before
      proceeding.
 4. Remove the matched line and (if confirmed) its descendants from the
-   content. Write the result back via `write` (same pattern as 3.4 step 3).
+   content. Write the result back via `write` (same pattern as 3.4 step 5).
    If the resulting content is empty, this deletes the list file (per
    section 0) — mention that to the user if it happens.
 5. Confirm to the user what was removed.
