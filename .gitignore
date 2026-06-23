@@ -21,6 +21,10 @@ settings.json
 skills/email-triage/last_run
 skills/email-triage/triage.log
 
+# recurring-tasks: generated at setup time, not source-controlled
+skills/recurring-tasks/scripts/runners/
+skills/recurring-tasks/logs/
+
 # Credentials and runtime state
 .credentials.json
 .last-cleanup

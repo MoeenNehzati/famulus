@@ -411,9 +411,29 @@ warn_missing_command() {
   fi
 }
 
+install_ai_agent_env() {
+  local env_dir="$home_dir/.config/environment.d"
+  local env_file="$env_dir/20-ai-agent.conf"
+  local invoke_script="$home_dir/.claude/skills/recurring-tasks/scripts/invoke-agent.sh"
+
+  if (( dry_run )); then
+    log "Would write $env_file"
+    return 0
+  fi
+
+  mkdir -p "$env_dir"
+  printf 'AI_AGENT_COMMAND_TEMPLATE=%s {skill}\n' "$invoke_script" > "$env_file"
+
+  # Also apply to the current systemd user session if systemctl is available
+  if command -v systemctl >/dev/null 2>&1 && systemctl --user is-active default.target >/dev/null 2>&1; then
+    systemctl --user set-environment "AI_AGENT_COMMAND_TEMPLATE=$invoke_script {skill}" 2>/dev/null || true
+  fi
+}
+
 install_tmux_workspace
 install_tw_link
 install_profile_links
+install_ai_agent_env
 ensure_rc_block "$shell_rc" "user"
 maybe_ensure_system_rc_block "$system_shell_rc"
 

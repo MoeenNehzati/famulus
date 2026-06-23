@@ -29,6 +29,9 @@ The script installs or updates:
   the Codex home so `codex --profile <name>` can load it.
 - A PATH entry for the helper bin directory.
 - A managed block in the user shell rc and, when writable, the system bash rc.
+- `~/.config/environment.d/20-ai-agent.conf` — sets `AI_AGENT_COMMAND_TEMPLATE`
+  for the systemd user environment, required by the `recurring-tasks` skill so
+  automated jobs (email-triage, daily-plan, etc.) know how to invoke Claude.
 
 Default targets:
 

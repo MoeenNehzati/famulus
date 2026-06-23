@@ -1,0 +1,78 @@
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "14px"}}}%%
+flowchart TD
+
+  %% ── Setup ───────────────────────────────────────────────────────
+  subgraph SETUP ["Setup (run once per machine)"]
+    direction TB
+    JY[("jobs.yaml\nsource of truth")]
+    SH["scripts/setup.sh"]
+    SU["scripts/sync-units.py"]
+    ENVC["~/.config/environment.d/\n20-ai-agent.conf\nsets AI_AGENT_COMMAND_TEMPLATE"]
+    IAT["install-assistant-tools skill\n(separate — sets env var)"]
+
+    SH -->|calls| SU
+    SH -->|installs healthcheck| CRON_ENTRY["crontab: 0 */4 * * *\nhealthcheck.sh"]
+    SU -->|reads| JY
+    IAT -->|writes| ENVC
+  end
+
+  %% ── Generated artifacts ─────────────────────────────────────────
+  subgraph ARTIFACTS ["Generated per job"]
+    direction TB
+    TIMER["~/.config/systemd/user/\nai-NAME.timer\nOnCalendar + Persistent=true"]
+    SVC["~/.config/systemd/user/\nai-NAME.service"]
+    RUNNER["scripts/runners/NAME.sh\nsets PATH, DBUS env\ncalls run-skill.sh"]
+  end
+
+  SU -->|creates| TIMER
+  SU -->|creates| SVC
+  SU -->|creates| RUNNER
+
+  %% ── Job execution ───────────────────────────────────────────────
+  subgraph EXEC ["Job execution (per scheduled fire)"]
+    direction TB
+    RSH["scripts/run-skill.sh NAME\nreads AI_AGENT_COMMAND_TEMPLATE\nsubstitutes {skill} → NAME"]
+    IA["scripts/invoke-agent.sh NAME\ncd ~/Documents/assistant\nclaude --agent assistant\n  --permission-mode bypassPermissions\n  -p /NAME"]
+    CLAUDE["Claude CLI\nruns /NAME skill\nnon-interactively"]
+    JOBLOG["logs/NAME/run.log\n(stdout + stderr)"]
+  end
+
+  TIMER -->|fires on schedule| SVC
+  SVC -->|ExecStart| RUNNER
+  RUNNER -->|calls| RSH
+  ENVC -.->|"env var read at runtime"| RSH
+  RSH -->|exec| IA
+  IA -->|invokes| CLAUDE
+  CLAUDE -->|output appended to| JOBLOG
+
+  %% ── Healthcheck ─────────────────────────────────────────────────
+  subgraph HC ["Healthcheck (cron, every 4 hours — independent of systemd)"]
+    direction TB
+    HCS["scripts/healthcheck.sh"]
+
+    subgraph PRE ["Pre-flight checks"]
+      direction LR
+      C1["systemd user manager\nreachable?"]
+      C2["AI_AGENT_COMMAND_TEMPLATE\nset in systemd env?"]
+      C3["invoke-agent.sh\nexists + executable?"]
+    end
+
+    subgraph PER ["Per enabled job"]
+      direction LR
+      C4["unit files exist?"]
+      C5["timer active?"]
+      C6["last Result = success?"]
+      C7["log fresh?\n(mtime < 2× interval)"]
+    end
+
+    HCLOG["logs/healthcheck/run.log\n(every run, pass and fail)"]
+    NOTIF["notify-send\n-u critical\ndesktop alert"]
+  end
+
+  CRON_ENTRY -->|triggers| HCS
+  HCS --> PRE
+  HCS --> PER
+  HCS -->|always| HCLOG
+  PRE -->|any fail| NOTIF
+  PER -->|any fail| NOTIF
+  NOTIF --> HCLOG
