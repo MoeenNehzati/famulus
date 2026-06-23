@@ -123,6 +123,10 @@ if tmux_do has-session -t "$session" 2>/dev/null; then
   exit 0
 fi
 
+# Apply global options (idempotent — safe to run on each new session).
+tmux_do set-option -g status on
+tmux_do set-option -g status-right '#{?client_prefix,#[bg=red fg=white] PREFIX ,}#{?window_zoomed_flag,#[bg=yellow fg=black] ZOOM ,} %H:%M'
+
 case "$template" in
   llm)
     p_assistant="$(tmux_do new-session -d -P -F "#{pane_id}" -s "$session" -n assistant -c "$dir")"
