@@ -1,7 +1,7 @@
 {
   "bash": [
-    "Bash(/home/moeen/.claude/skills/pdf-to-markdown/scripts/fetch-arxiv-source.sh:*)",
-    "Bash(/home/moeen/.claude/skills/pdf-to-markdown/scripts/check-marker-models.sh:*)",
+    "Bash(scripts/fetch-arxiv-source.sh:*)",
+    "Bash(scripts/check-marker-models.sh:*)",
     "Bash(marker_single:*)"
   ],
   "network": ["WebSearch", "WebFetch(https://arxiv.org/*)"]

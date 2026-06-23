@@ -56,12 +56,12 @@ Always specify `--output_dir` — the default buries output in the anaconda site
 marker_single paper.pdf \
   --output_dir ./output \
   --disable_image_extraction \
-  --llm_service marker.services.claude.ClaudeService \
   --use_llm \
   --redo_inline_math \
   --highres_image_dpi 300
 ```
-Requires `ANTHROPIC_API_KEY` in the environment or `--claude_api_key`. Uses Claude API (pay-per-token, separate from Claude Code subscription).
+Requires a configured Marker LLM backend. Uses the selected provider API
+(pay-per-token where applicable).
 
 **Other useful flags:**
 - `--page_range 0,5-10` — convert specific pages only
