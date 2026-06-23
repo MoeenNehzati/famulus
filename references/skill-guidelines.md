@@ -29,7 +29,20 @@ Empty array `[]` for unused categories. Entries map to the active agent's permis
 - **Depend on interfaces, not internals — invoke the skill, never its scripts.** Each skill's scripts are private to that skill. When your skill needs behavior another skill provides, invoke that skill and let it run its own scripts. Directly calling another skill's scripts bypasses its logic and couples to its internals. Reuse maximally, but only through skill invocation.
 - **Make your own interface explicit.** State what inputs your skill expects and what outputs it produces, so future skills can depend on you cleanly. If your skill runs a script, document the invocation pattern and output format in `SKILL.md`.
 
-**8. No code in SKILL.md — scripts only** — skill files must not contain executable code logic. Any logic (shell commands, Python, etc.) belongs in a dedicated file under `scripts/`. `SKILL.md` specifies only *when* to call a script, *how* to invoke it, and how to interpret its output. The script file itself carries everything else: what it does, how it works, and its full interface (arguments, flags, exit codes, output format). This minimizes permission prompts: scripts under each skill's `scripts/` directory can be pre-approved, whereas inline Bash in a skill body triggers approval on every run.
+**8. No code in SKILL.md — scripts only, with one exception** — skill files must not contain executable code logic. Any logic (shell commands, Python, etc.) belongs in a dedicated file under `scripts/`. `SKILL.md` specifies only *when* to call a script, *how* to invoke it, and how to interpret its output. The script file itself carries everything else: what it does, how it works, and its full interface (arguments, flags, exit codes, output format). This minimizes permission prompts: scripts under each skill's `scripts/` directory can be pre-approved, whereas inline Bash in a skill body triggers approval on every run.
+
+**Exception — declared tools:** when a skill's purpose is to provide an interface to a specific external tool, that tool may be declared in the frontmatter and its commands may appear directly in `SKILL.md`. Declare it with a `tools:` field:
+
+```yaml
+---
+name: maker
+description: Convert PDF to Markdown using the maker CLI
+tools:
+  - maker
+---
+```
+
+What **may** appear inline for a declared tool: installation instructions, flags and options, invocation patterns, output format and interpretation. What **may not** appear inline even with a declaration: orchestration logic, data processing, multi-step control flow built on top of the tool — those still belong in `scripts/`. The corresponding permission entry still goes in `permissions.json` (e.g. `"Bash(maker:*)"`). A tool not listed under `tools:` is not covered by this exception, regardless of whether it appears in the description.
 
 **9. State data lives under the skill's directory** — any persistent state a skill writes (logs, cache, data files, watermarks, etc.) must be stored under the skill's own directory, not under system directories (`/tmp`, `/var`, `~/.config`, etc.) or anywhere outside the skills tree.
 
