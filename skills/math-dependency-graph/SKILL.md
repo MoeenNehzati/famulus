@@ -90,7 +90,7 @@ Then report briefly:
 4. Write or propose that JSON first.
 5. Once the JSON is written, invoke the renderer:
    ```
-   python ~/.claude/skills/math-dependency-graph/scripts/build_math_dependency_graph.py <source.json>
+   python scripts/build_math_dependency_graph.py <source.json>
    ```
    Output defaults to `_build/<name>.html` next to the JSON. Use `--html-out <path>` to override.
 6. Flag uncertain or heuristic edges explicitly.
