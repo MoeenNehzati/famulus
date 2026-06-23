@@ -8,7 +8,7 @@ description: Use when setting up, enabling, disabling, testing, viewing logs, or
 Category: automation
 
 Manages AI-driven recurring jobs as **systemd user timers**. `jobs.yaml` is the
-source of truth. Each enabled job invokes a Claude skill non-interactively on a
+source of truth. Each enabled job invokes a skill non-interactively via assistant on a
 cron-like schedule.
 
 A separate **cron-based healthcheck** (`scripts/healthcheck.sh`) runs every 4
@@ -40,10 +40,8 @@ jobs.yaml
        └─ scripts/run-skill.sh <name>
             └─ reads $AI_AGENT_COMMAND_TEMPLATE from systemd user environment
                  └─ scripts/invoke-agent.sh <name>
-                      └─ claude --agent assistant
-                                --permission-mode bypassPermissions
-                                -p "/<name>"
-                         (runs from ~/Documents/assistant)
+                      └─ assistant --permission-mode bypassPermissions
+                                   -p "/<name>"
                          output → logs/<name>/run.log
 ```
 
@@ -81,10 +79,7 @@ It is set persistently in `~/.config/environment.d/20-ai-agent.conf` by
 `install-assistant-tools`, or restore manually:
 
 ```bash
-echo "AI_AGENT_COMMAND_TEMPLATE=$HOME/.claude/skills/recurring-tasks/scripts/invoke-agent.sh {skill}" \
-  > ~/.config/environment.d/20-ai-agent.conf
-systemctl --user set-environment \
-  "AI_AGENT_COMMAND_TEMPLATE=$HOME/.claude/skills/recurring-tasks/scripts/invoke-agent.sh {skill}"
+bash skills/install-assistant-tools/scripts/install_assistant_tools.sh
 ```
 
 ---
@@ -121,7 +116,7 @@ logs/healthcheck/
 | `scripts/setup.sh` | **Run on first install or after any change.** Syncs unit files from `jobs.yaml`, installs healthcheck cron entry, lists active timers. |
 | `scripts/sync-units.py` | Writes/updates/removes systemd unit files and runner scripts to match `jobs.yaml`. Called by `setup.sh`. |
 | `scripts/run-skill.sh <name>` | Reads `$AI_AGENT_COMMAND_TEMPLATE`, substitutes `{skill}` → `<name>`, executes via `bash -lc`. Called by every runner. |
-| `scripts/invoke-agent.sh <name>` | Default agent invoker: `cd ~/Documents/assistant && claude --agent assistant --permission-mode bypassPermissions -p "/<name>"`. This is what `AI_AGENT_COMMAND_TEMPLATE` points to. |
+| `scripts/invoke-agent.sh <name>` | Default agent invoker: calls `assistant --permission-mode bypassPermissions -p "/<name>"`. This is what `AI_AGENT_COMMAND_TEMPLATE` points to. |
 | `scripts/healthcheck.sh` | Cron-based monitor. Checks all enabled jobs; sends desktop notification on any failure. Logs every run to `logs/healthcheck/run.log`. |
 | `scripts/enable-job.py <name>` | Sets `enabled: true` in `jobs.yaml` and syncs. |
 | `scripts/disable-job.py <name>` | Sets `enabled: false` in `jobs.yaml` and syncs. |

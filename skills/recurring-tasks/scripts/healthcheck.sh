@@ -128,7 +128,7 @@ log "Pre-flight: checking AI_AGENT_COMMAND_TEMPLATE in systemd env..."
 if systemctl --user show-environment 2>/dev/null | grep -q "^AI_AGENT_COMMAND_TEMPLATE="; then
   log "  OK: AI_AGENT_COMMAND_TEMPLATE is set"
 else
-  record_problem "AI_AGENT_COMMAND_TEMPLATE is not set in systemd user environment — all AI jobs will fail to invoke Claude (re-run install-assistant-tools or set it via: systemctl --user set-environment AI_AGENT_COMMAND_TEMPLATE=...)"
+  record_problem "AI_AGENT_COMMAND_TEMPLATE is not set in systemd user environment — all AI jobs will fail to invoke the assistant (re-run install-assistant-tools or set it via: systemctl --user set-environment AI_AGENT_COMMAND_TEMPLATE=...)"
 fi
 
 # 3. invoke-agent.sh exists and is executable

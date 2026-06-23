@@ -10,7 +10,7 @@ Installs or updates:
   - assistant script (symlinked from skill bin/)
   - tw/tmux-workspace script (symlinked from skill bin/)
   - Codex profile symlinks (profiles/*.config.toml -> codex home)
-  - PATH entry in the user (and optionally system) shell rc
+  - PATH entry and ASSISTANT_DEFAULT in the user (and optionally system) shell rc
 
 Options:
   --home DIR             Home directory to install into (default: $HOME)
@@ -21,6 +21,8 @@ Options:
                          (default: /etc/bash.bashrc)
   --codex-home DIR       Codex state/config directory for profile symlinks
                          (default: $CODEX_HOME or $HOME/.codex)
+  --default-llm claude|codex
+                         Default backend for assistant (prompted if omitted)
   --no-system-shell-rc   Do not update the system bash rc file
   --dry-run              Print planned actions without writing files
   -h, --help             Show this help
@@ -32,6 +34,7 @@ bin_dir=""
 shell_rc=""
 system_shell_rc="/etc/bash.bashrc"
 codex_home=""
+default_llm=""
 update_system_shell_rc=1
 dry_run=0
 
@@ -61,6 +64,14 @@ while [ "$#" -gt 0 ]; do
       ;;
     --codex-home)
       codex_home="${2:?--codex-home requires a directory}"
+      shift 2
+      ;;
+    --default-llm)
+      default_llm="${2:?--default-llm requires claude or codex}"
+      case "$default_llm" in
+        claude|codex) ;;
+        *) echo "--default-llm must be 'claude' or 'codex'" >&2; exit 2 ;;
+      esac
       shift 2
       ;;
     --no-system-shell-rc)
@@ -98,6 +109,29 @@ assistant_block_end="# <<< assistant-tools <<<"
 
 log() {
   printf '%s\n' "$*"
+}
+
+resolve_default_llm() {
+  if [ -n "$default_llm" ]; then
+    return 0
+  fi
+  if (( dry_run )); then
+    default_llm="claude"
+    log "(dry-run) Would prompt for default LLM; using 'claude' as placeholder"
+    return 0
+  fi
+  if [ -t 0 ]; then
+    printf 'Default assistant backend [claude/codex] (default: claude): '
+    local reply
+    read -r reply
+    case "${reply:-claude}" in
+      claude|codex) default_llm="${reply:-claude}" ;;
+      *) echo "Invalid choice '$reply'; defaulting to claude." >&2; default_llm="claude" ;;
+    esac
+  else
+    default_llm="claude"
+    log "Non-interactive mode: defaulting to 'claude'. Use --default-llm to override."
+  fi
 }
 
 install_bin_scripts() {
@@ -177,6 +211,7 @@ ensure_rc_block() {
 
 $assistant_block_begin
 export PATH="$bin_dir:\$PATH"
+export ASSISTANT_DEFAULT=$default_llm
 $assistant_block_end
 EOF
 
@@ -266,6 +301,7 @@ install_ai_agent_env() {
   fi
 }
 
+resolve_default_llm
 install_bin_scripts
 install_profile_links
 install_ai_agent_env
@@ -282,6 +318,7 @@ log "Installed assistant tools."
 log "  Bin dir:        $bin_dir"
 log "  Source bin:     $source_bin_dir"
 log "  Codex home:     $codex_home"
+log "  Default LLM:    $default_llm"
 log "  User shell rc:  $shell_rc"
 if (( update_system_shell_rc )); then
   log "  System rc:      $system_shell_rc"

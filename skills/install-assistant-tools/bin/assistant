@@ -3,27 +3,32 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: assistant [-c|--codex] [-h|--help] [args...]
+Usage: assistant [--claude|--codex] [-h|--help] [args...]
 
-Launch the Claude assistant agent from the assistant project directory.
+Launch the assistant from the assistant project directory.
 
-  -c, --codex   Use Codex (codex --profile assistant) instead of Claude
+  --claude      Use Claude (claude --agent assistant)
+  --codex       Use Codex (codex --profile assistant)
   -h, --help    Show this help
 
+The default backend is \$ASSISTANT_DEFAULT (set by the installer).
+Falls back to claude if \$ASSISTANT_DEFAULT is unset.
 The working directory is \$ASSISTANT_DIR or \$HOME/Documents/assistant.
 EOF
 }
 
-use_codex=0
+backend="${ASSISTANT_DEFAULT:-claude}"
+
 case "${1:-}" in
-  -c|--codex)  use_codex=1; shift ;;
-  -h|--help)   usage; exit 0 ;;
+  --claude)  backend=claude; shift ;;
+  --codex)   backend=codex;  shift ;;
+  -h|--help) usage; exit 0 ;;
 esac
 
 cd "${ASSISTANT_DIR:-$HOME/Documents/assistant}" || exit 1
 
-if (( use_codex )); then
-  exec codex --profile assistant "$@"
-else
-  exec claude --agent assistant "$@"
-fi
+case "$backend" in
+  claude) exec claude --agent assistant "$@" ;;
+  codex)  exec codex --profile assistant "$@" ;;
+  *)      echo "assistant: unknown backend '$backend' — set ASSISTANT_DEFAULT to claude or codex" >&2; exit 1 ;;
+esac

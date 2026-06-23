@@ -32,8 +32,8 @@ flowchart TD
   subgraph EXEC ["Job execution (per scheduled fire)"]
     direction TB
     RSH["scripts/run-skill.sh NAME\nreads AI_AGENT_COMMAND_TEMPLATE\nsubstitutes {skill} → NAME"]
-    IA["scripts/invoke-agent.sh NAME\ncd ~/Documents/assistant\nclaude --agent assistant\n  --permission-mode bypassPermissions\n  -p /NAME"]
-    CLAUDE["Claude CLI\nruns /NAME skill\nnon-interactively"]
+    IA["scripts/invoke-agent.sh NAME\nassistant --permission-mode bypassPermissions\n  -p /NAME"]
+    CLAUDE["assistant\nruns /NAME skill\nnon-interactively"]
     JOBLOG["logs/NAME/run.log\n(stdout + stderr)"]
   end
 

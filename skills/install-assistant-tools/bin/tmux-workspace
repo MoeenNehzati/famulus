@@ -5,7 +5,7 @@ prog="$(basename "$0")"
 usage() {
   cat <<EOUSAGE
 Usage:
-  $prog [-c|--codex] [template] [session-name] [dir] [-- tmux-global-args...]
+  $prog [--claude|--codex] [template] [session-name] [dir] [-- tmux-global-args...]
 
 Default template:
   llm
@@ -16,12 +16,13 @@ Templates:
   raw       pass directly to tmux
 
 Examples:
-  $prog -c
-  $prog -c paper
+  $prog
+  $prog --codex
+  $prog --codex paper
   $prog paper
   $prog paper ~/projects/paper
-  $prog -- -L codex
-  $prog paper -- -L codex
+  $prog -- -L myserver
+  $prog paper -- -L myserver
 
   $prog llm paper
   $prog shell scratch
@@ -49,9 +50,14 @@ session_suffix=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    -c|--codex)
-      assistant_command=(assistant -c)
+    --codex)
+      assistant_command=(assistant --codex)
       session_suffix="-codex"
+      shift
+      ;;
+    --claude)
+      assistant_command=(assistant --claude)
+      session_suffix="-claude"
       shift
       ;;
     --)
