@@ -127,6 +127,15 @@ fi
 tmux_do set-option -g status on
 tmux_do set-option -g status-right '#{?client_prefix,#[bg=red fg=white] PREFIX ,}#{?window_zoomed_flag,#[bg=yellow fg=black] ZOOM ,} %H:%M'
 
+# Resolve path to companion scripts (works through symlinks).
+_tw_bin="$(dirname "$(readlink -f "$0")")"
+
+# prefix+e — scratch popup (empty shell, stateless)
+tmux_do bind-key e display-popup -E -w 80% -h 50% -x C -y C
+
+# prefix+@ — raw join: pull last active window into current as h-split
+tmux_do bind-key '@' join-pane -s '!' -h
+
 case "$template" in
   llm)
     p_assistant="$(tmux_do new-session -d -P -F "#{pane_id}" -s "$session" -n assistant -c "$dir")"
@@ -145,7 +154,7 @@ case "$template" in
     tmux_do send-keys -t "$session:scratch" "pwd" C-m
 
     tmux_do new-window -t "$session:" -n logs -c "$dir"
-    tmux_do send-keys -t "$session:logs" "echo 'Use this window for logs, tests, servers, watchers, etc.'" C-m
+    tmux_do send-keys -t "$session:logs" "btop" C-m
 
     tmux_do select-window -t "$session:assistant"
     tmux_do select-pane -t "$p_assistant"
