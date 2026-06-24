@@ -7,13 +7,24 @@ set -euo pipefail
 
 op="${1:-}"
 name="${2:-}"
+remote_root="${LISTS_REMOTE_ROOT:-GDrive:assistant/lists}"
+timeout_seconds="${LISTS_RCLONE_TIMEOUT_SECONDS:-45}"
+
+run_rclone() {
+  timeout "${timeout_seconds}s" rclone "$@"
+}
+
+remote_path() {
+  local list_name="$1"
+  printf '%s/%s.md' "$remote_root" "$list_name"
+}
 
 case "$op" in
   read)
     if [ -z "$name" ]; then
-      rclone lsf "GDrive:assistant/lists/" --include "*.md" 2>/dev/null || true
+      run_rclone lsf "${remote_root}/" --include "*.md"
     else
-      rclone cat "GDrive:assistant/lists/${name}.md" 2>/dev/null || true
+      run_rclone cat "$(remote_path "$name")"
     fi
     ;;
   write)
@@ -23,9 +34,9 @@ case "$op" in
     fi
     content="$(cat)"
     if [ -z "$content" ]; then
-      rclone deletefile "GDrive:assistant/lists/${name}.md" 2>/dev/null || true
+      run_rclone deletefile "$(remote_path "$name")"
     else
-      printf '%s\n' "$content" | rclone rcat "GDrive:assistant/lists/${name}.md"
+      printf '%s\n' "$content" | run_rclone rcat "$(remote_path "$name")"
     fi
     ;;
   *)

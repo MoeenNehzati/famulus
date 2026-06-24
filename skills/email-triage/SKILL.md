@@ -83,17 +83,20 @@ Invoke the `lists` skill to read `todo` and `potential-actions`.
 
 ## Step 5 — Add action items, deduplicating
 
-Every item must be a **concrete imperative sentence** — a specific thing to do, not a vague note.
+Every item sent to the `lists` skill must be concrete enough for the `lists`
+skill to infer title, optional description, and optional deadline. Do not
+manually format list storage lines here; pass the freeform action content and
+destination list to the `lists` skill.
 
 **Format by category:**
-- Bill: `Pay [Sender] – $[amount] due [date]` → `todo`
+- Bill: `Pay [Sender]; amount/context $[amount]; deadline [date]` → `todo`
 - Reply: `Reply to [Name] re: [subject]` → `todo`
-- Follow-up: `[action verb] [target] – [timeframe]` → `todo`
+- Follow-up: `[action verb] [target]; deadline [timeframe]` → `todo`
 - Portal / institution message (Type 3, informational): `Check message on [portal/system]` → `potential-actions`
 - Payment received: `Review: [Name] paid you $[amount]` → `potential-actions`
-- Event: `Attend [event name] – [date, time, location]` → `potential-actions`
-- CFP / application: `Submit to [name] by [deadline]` or `Apply to [name] by [deadline]` → `potential-actions`
-- Optional signup: `Sign up for [name] – [date or deadline]` → `potential-actions`
+- Event: `Attend [event name]; [date/time/location]` → `potential-actions`
+- CFP / application: `Submit to [name]; deadline [deadline]` or `Apply to [name]; deadline [deadline]` → `potential-actions`
+- Optional signup: `Sign up for [name]; deadline/date [date or deadline]` → `potential-actions`
 
 If deadline or date is unknown, omit rather than guess.
 

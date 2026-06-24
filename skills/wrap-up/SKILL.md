@@ -87,8 +87,9 @@ marking the action done or leaving it untouched:
      - [ ] <remaining part Y>
    ```
 2. Use the `lists` skill to apply the same split to the matching todo item:
-   replace the single `- [ ] <action>` entry with the parent plus sub-items,
-   mirroring the structure above.
+   identify the matching todo item and ask `lists` to split it into the parent
+   plus completed and remaining sub-items. The `lists` skill owns preservation
+   of item metadata and representation details.
 
 ## 6. Add new list items
 

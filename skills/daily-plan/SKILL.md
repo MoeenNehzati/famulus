@@ -155,11 +155,13 @@ If there are no all-day events in the next 7 days, write:
 
 ## 7. Estimate and rank todo items
 
-For every unchecked item on the todo list (top-level and nested), infer from
-the item text and creation date `(MM/DD/YY)`:
+For every unchecked item returned by the `lists` skill from `todo` (top-level
+and nested), use the list item's parsed title, description, deadline, and
+creation date:
 
-- **Urgency**: explicit deadline → rises sharply as it approaches/passes;
-  "this week" → moderate; "this summer"/no deadline → low background.
+- **Urgency**: the parsed deadline is authoritative and rises sharply as it
+  approaches/passes; "this week" → moderate; "this summer"/no deadline → low
+  background.
   "by end of today" / "today" → treat as highest urgency (same as overdue).
 - **Time estimate**: rough duration in minutes/hours.
 - **Time-of-day requirement** (optional): only set if the task text implies it.
@@ -196,8 +198,8 @@ Free time: ~<free_hours>h (10h budget - <busy>h meetings - <commute>h commute)
 (none this week)   ← only if no all-day events in next 7 days
 
 ## Actions (suggestions)
-1. [ ] <item text> — <one-line reason: urgency + time estimate + fit>
-2. [ ] <item text> — <one-line reason>
+1. [ ] <item title> — <one-line reason: urgency + time estimate + fit>
+2. [ ] <item title> — <one-line reason>
 ...
 → Tell me which items you're keeping and I'll finalize the plan.
 
@@ -205,8 +207,8 @@ Free time: ~<free_hours>h (10h budget - <busy>h meetings - <commute>h commute)
 ← omit this section entirely if no unreviewed potential-actions exist →
 
 Review each potential action (accept / accept+today / reject / skip):
-1. <item text>
-2. <item text>
+1. <item title>
+2. <item title>
 ...
 → Reply with your decisions and I'll update todo and the plan.
 ```
@@ -256,17 +258,15 @@ Options per item: accept (→ todo) | accept + today | reject | skip
 - **reject**: mark `[-]` in `potential-actions` (stays for reference, not shown again)
 - **skip**: leave as `[ ]` (will appear next time)
 
-Wait for the user's response, then in a single pass:
+Wait for the user's response, then in a single pass through the `lists` skill:
 
-1. **Update `potential-actions` in-place**: change `[ ]` → `[+]` for accepted items, `[ ]` → `[-]` for rejected items. Skipped items remain `[ ]`. Write:
-   ```bash
-   ../lists/scripts/lists.sh write potential-actions
-   ```
+1. **Update `potential-actions` in-place**: ask `lists` to mark accepted
+   items as accepted, rejected items as rejected, and leave skipped items
+   unreviewed.
 
-2. **Update `todo`**: prepend each accepted item as `- [ ] (MM/DD/YY) <text>` (today's date). Write:
-   ```bash
-   ../lists/scripts/lists.sh write todo
-   ```
+2. **Update `todo`**: ask the `lists` skill to accept each item into `todo`,
+   preserving the item's parsed title, description, and deadline, with today's
+   date as the todo creation date.
 
 3. **If any items were accept+today**: read the current plan, append each as a new numbered item in the `## Actions` (or `## Actions (suggestions)`) section, then write the plan back:
    ```bash
@@ -279,7 +279,8 @@ Wait for the user's response, then in a single pass:
 
 ## 10. Deadline nudge
 
-After the plan is shown and triage is complete, scan all **unchecked** `todo` items (from the list read in step 3) for items with no deadline indicator. An item lacks a deadline if its text contains none of: a specific date, a month name, a year, "this week", "this month", "this summer", "this year", "next week", "next month", "today", "tomorrow", "by", "due", "before", "until", "early", "end of", or any other relative time expression.
+After the plan is shown and triage is complete, scan all **unchecked** `todo`
+items from the `lists` skill for items whose parsed deadline is empty.
 
 If any such items exist, show them and ask for deadlines:
 
@@ -291,18 +292,9 @@ If any such items exist, show them and ask for deadlines:
 ...
 ```
 
-Wait for the user's response. For each item the user assigns a deadline to:
-
-1. Read the current `todo` list:
-   ```bash
-   ../lists/scripts/lists.sh read todo
-   ```
-2. Find the matching item (fuzzy match on text after stripping the `(MM/DD/YY)` prefix).
-3. Append the deadline phrase to the item's text (e.g. `gather medical records` → `gather medical records by end of July`).
-4. Write the updated list back:
-   ```bash
-   ../lists/scripts/lists.sh write todo
-   ```
+Wait for the user's response. For each item the user assigns a deadline to,
+ask the `lists` skill to find the matching todo item and set that item's
+deadline. The `lists` skill owns matching and representation details.
 
 Confirm which items were updated. Items the user skips remain unchanged.
 
@@ -339,19 +331,10 @@ When the user marks one or more actions as done (e.g., "mark 1 as done",
    scripts/plans.sh write <key>
    ```
 4. For each marked action, find the matching item in the todo list and check
-   it off:
-   - Read the todo list:
-     ```bash
-     ../lists/scripts/lists.sh read todo
-     ```
-   - The action text in the plan (before the `—` separator) is often a
-     shortened or lightly reworded version of the original todo item. Use
-     judgment to identify the best match among unchecked items (`- [ ]`).
-   - Change `- [ ]` → `- [x]` for the matched item.
-   - Write the updated list back:
-     ```bash
-     ../lists/scripts/lists.sh write todo
-     ```
+   it off by asking the `lists` skill to match the plan action text to an
+   unchecked todo item and mark it checked. The action text in the plan
+   (before the `—` separator) may be shortened or lightly reworded, so if
+   `lists` cannot find a confident match, report that rather than guessing.
 5. Confirm to the user which todo item(s) were checked off. If no confident
    match is found for an action, say so rather than guessing wrong.
 

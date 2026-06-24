@@ -3,9 +3,9 @@ name: lists
 description: |
   Manage personal text-based lists (groceries, todos, etc.) stored as
   Markdown checklist files on Google Drive under lists/, accessed via
-  rclone. Use when the user asks to show, create, or delete a list, or to
-  add, check off, uncheck, or remove an item (optionally nested under
-  another item) on a list.
+  Google Drive through the skill-owned `lists.sh` script. Use when the user
+  asks to show, create, or delete a list, or to add, check off, uncheck, or
+  remove an item (optionally nested under another item) on a list.
 ---
 
 When this skill is used, begin with:
@@ -26,6 +26,9 @@ arguments or flags):
     be empty if none exist).
   - With `name`: prints that list's full contents (empty output if the list
     doesn't exist).
+  - Any non-zero exit, timeout, or stderr from the script means the list state
+    is unknown. Stop and report the read failure; do not infer that the list is
+    empty and do not write.
 - **Write**: `scripts/lists.sh write <name>`
   with the new full file content piped via stdin (heredoc).
   - Non-empty stdin: overwrites `<name>.md` with that content (creates the
@@ -35,12 +38,15 @@ arguments or flags):
     the file rather than leave an empty one).
 
 For every operation below: do a `read` first to get current content, compute
-the new content, then `write` it back. Never use raw `rclone` commands.
+the new content, then `write` it back. If the read fails or times out, stop
+without writing. Never use raw `rclone` commands, including for diagnosis;
+rerun the skill-owned script and report its visible error instead.
 
 ## 1. Storage model
 
-- Each list is `<name>.md` under `GDrive:lists/` (managed entirely by the
-  script above).
+- Each list is `<name>.md` under `GDrive:assistant/lists/` by default
+  (managed entirely by the script above). The script also supports
+  `LISTS_REMOTE_ROOT` for tests or nonstandard installs.
 - List names: derive from the user's wording, lowercase, spaces replaced
   with hyphens (e.g. "grocery list" -> `grocery` or `groceries` — match
   against existing list names from `read` with no argument before picking a
@@ -59,19 +65,22 @@ indentation per level. Every item carries a creation date in
 
 ```
 - [ ] (06/13/26) Plan trip
+  deadline: this month
   - [ ] (06/13/26) Book flight
+    deadline: by Friday
   - [ ] (06/10/26) Book hotel
 - [ ] (06/13/26) Buy groceries
 - [x] (06/12/26) Pay rent
 ```
 
-- `- [ ] (MM/DD/YY) text` = unchecked item, created on that date
-- `- [x] (MM/DD/YY) text` = checked item, created on that date
+- `- [ ] (MM/DD/YY) title` = unchecked item, created on that date
+- `- [x] (MM/DD/YY) title` = checked item, created on that date
 - The date is set once when the item is added and never changes
   (checking/unchecking doesn't update it).
 - For matching an item by its text (in 3.5/3.6 and "under Y" in 3.4), use
-  the text *after* the `(MM/DD/YY) ` prefix — the date itself is not part
-  of the matchable text.
+  the title text *after* the `(MM/DD/YY) ` prefix, plus any continuation
+  lines belonging to that item. The date itself is not part of the matchable
+  text.
 
 **File header line (optional):** A list file may begin with a header line
 (not a task item) declaring its name and accepted checkbox states:
@@ -90,11 +99,35 @@ unchecked, or removed. When present, they form a two-level hierarchy:
 - Level 1 (area):   `- Title`
 - Level 2 (action): `  - Title`
 
-Task items begin at level 3: `    - [state] (MM/DD/YY) text`, and may nest
-arbitrarily deeper using the same format.
+Task items begin at level 3: `    - [state] (MM/DD/YY) title`, and may nest
+arbitrarily deeper using the same task-line format.
+
+**Item continuation lines:** A task item may have optional continuation lines
+immediately beneath it:
+
+```markdown
+    - [ ] (06/24/26) Reply to Diego
+      Follow up on the appendix draft and ask whether the two-page prevalence version is enough.
+      deadline: by Friday
+```
+
+- The task title is the text on the checkbox line after `(MM/DD/YY) `.
+- Freeform description lines are optional. Omit them entirely if there is no
+  description.
+- `deadline: <deadline phrase or date>` is optional. Omit it if there is no
+  deadline.
+- Continuation lines are indented two spaces more than the task line they
+  describe. For a level-3 task, use 6 spaces; for a level-4 nested task, use 8
+  spaces; in general, task indentation plus 2 spaces.
+- If both description and deadline are present, put description lines first and
+  the `deadline:` line last.
+- A nested task is still a checkbox line (`- [state] ...`) at its own
+  indentation level, not a description line.
 
 For fuzzy matching (§3.5, §3.6), plain title lines are skipped — they have
-no checkbox text to match.
+no checkbox text to match. For task items, match against the title and optional
+continuation lines, but preserve continuation lines unchanged unless the user
+explicitly asks to edit them.
 
 ## 3. Operations
 
@@ -130,23 +163,37 @@ EOF
 
 ### 3.4 Add an item
 
-1. `read <name>` to get current content. Empty output + name not in 3.1's
+1. `read <name>` to get current content. If the read fails, stop. Empty output + name not in 3.1's
    listing means the list doesn't exist yet — that's fine, proceed with
    empty content; the list will be created by the write below.
 2. Get today's date: `date +%m/%d/%y` (already allowlisted separately from
    this skill's two commands). Use its output as `<date>` below.
-3. Check for a deadline:
+3. Parse the user's freeform item text into:
+   - **title**: short imperative task label for the checkbox line.
+   - **description**: optional longer context, rationale, source details, or
+     progress-report material. Omit when the freeform item has no useful extra
+     context beyond the title and deadline.
+   - **deadline**: optional due phrase/date, event date/time, or timeframe.
+     Write this as a `deadline:` continuation line.
+4. Check for a deadline:
    - If the user already specified a due date or due phrase (for example,
      `by tomorrow`, `by Friday`, `this week`, `this summer`, or an explicit
-     date), preserve that phrase in the item text.
+     date), write it as an indented `deadline:` continuation line, not as
+     part of the task title.
    - If the user did not specify any deadline, ask for one and wait for the
-     user's answer before composing or writing the item.
-   - If the user explicitly says there is no deadline, append the item without
-     adding a due phrase.
-4. Compose the new content:
-   - **Plain add** ("add X"): append a new line `- [ ] (<date>) X` at the
-     end of the content (after a trailing newline if the content is
-     non-empty).
+     user's answer before composing or writing the item. If the answer adds
+     context beyond a deadline, fold that context into the description.
+   - If the user explicitly says there is no deadline, omit the `deadline:`
+     line.
+5. Compose the new content:
+   - **Plain add** ("add X"): append a new item at the end of the content
+     (after a trailing newline if the content is non-empty):
+     ```markdown
+     - [ ] (<date>) <title>
+       <optional freeform description>
+       deadline: <optional deadline>
+     ```
+     Omit the description and/or `deadline:` lines when absent.
    - **Nested add** ("add X under Y"): fuzzy-match Y (case-insensitive
      substring match against Y's text, ignoring any `(MM/DD/YY) ` prefix)
      against existing lines.
@@ -154,18 +201,19 @@ EOF
        current list contents, do not write.
      - 2+ matches: show the matching lines (with their text) and ask the
        user which one they mean. Wait for their answer before proceeding.
-     - 1 match: insert a new line `  - [ ] (<date>) X` (Y's indentation + 2
-       spaces) immediately after Y's last existing child line, or
+     - 1 match: insert the new task line at Y's indentation + 2 spaces,
+       followed by any continuation lines at Y's indentation + 4 spaces.
+       Insert it immediately after Y's last existing child line, or
        immediately after Y itself if it has no children. A "child" of Y is
        a contiguous run of following lines whose indentation is strictly
        greater than Y's.
    - **Structured add** (for lists with area×action title lines, when no
      explicit "under Y" is given): infer the best-fit area×action section
-     from the item text and context. Make a placement decision without
-     asking — announce which section you chose (e.g. "Added under
-     Research → Writing"). The user can override with "add X under
+     from the item title, description, deadline, and context. Make a placement
+     decision without asking — announce which section you chose (e.g. "Added
+     under Research → Writing"). The user can override with "add X under
      Area > Action".
-5. Write back:
+6. Write back:
 
 ```bash
 scripts/lists.sh write <name> <<'EOF'
@@ -173,16 +221,17 @@ scripts/lists.sh write <name> <<'EOF'
 EOF
 ```
 
-6. Confirm to the user what was added and where (mention the date if
+7. Confirm to the user what was added and where (mention the date if
    useful, e.g. "added with today's date, 06/13/26").
 
 ### 3.5 Check / uncheck an item
 
-1. `read <name>`. If the list doesn't exist (empty output, not in 3.1's
+1. `read <name>`. If the read fails, stop. If the list doesn't exist (empty output, not in 3.1's
    listing), report not-found.
 2. Fuzzy-match the target text (case-insensitive substring) against the
    item text of each line — the text after `- [ ] ` / `- [x] ` and after
-   stripping any `(MM/DD/YY) ` prefix.
+   stripping any `(MM/DD/YY) ` prefix. Also consider optional description and
+   `deadline:` continuation lines belonging to that item.
    Plain title lines (no checkbox) are excluded from matching.
    - 0 matches: report "couldn't find '<text>' on this list", show the
      current list contents, do not write.
@@ -198,11 +247,12 @@ EOF
 
 ### 3.6 Remove an item
 
-1. `read <name>`. If the list doesn't exist (empty output, not in 3.1's
+1. `read <name>`. If the read fails, stop. If the list doesn't exist (empty output, not in 3.1's
    listing), report not-found.
 2. Fuzzy-match the target text (case-insensitive substring) against item
-   text (after stripping any `(MM/DD/YY) ` prefix, same as 3.5), same rules
-   as 3.5 (0 matches -> report and stop; 2+ matches -> ask which one).
+   text (after stripping any `(MM/DD/YY) ` prefix and including optional
+   continuation lines, same as 3.5), same rules as 3.5 (0 matches -> report
+   and stop; 2+ matches -> ask which one).
    Plain title lines (no checkbox) are excluded from matching.
 3. On a single match: identify the matched line and all of its descendant
    lines (contiguous following lines with strictly greater indentation —
@@ -236,7 +286,8 @@ EOF
 - Items start as `[ ]` (unreviewed).
 - **Accepted** (`[+]`): mark `[+]` in `potential-actions` AND add the item
   to `todo` under the inferred best-fit area×action section (same placement
-  logic as §3.4), as `- [ ] (MM/DD/YY) <text>` (today's date). Both writes
+  logic as §3.4), preserving its title, optional description, and optional
+  `deadline:` line. Use today's date as the todo creation date. Both writes
   happen together in one pass.
 - **Rejected** (`[-]`): mark `[-]` in `potential-actions`. Nothing added to `todo`.
 - Items are never deleted from `potential-actions` — the `[+]`/`[-]` state is the audit trail.

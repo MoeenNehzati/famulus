@@ -6,7 +6,7 @@ do not rename, reorder, or remove them.
 **Fixed:** all area names (Research, Personal, Dev), all action names listed
 under each area.
 **Variable** (shown as `<placeholder>`): list name, state declarations,
-task text, dates.
+task titles, item descriptions, deadlines, dates.
 
 Note: action sets differ per area (Personal has Shop; others do not).
 
