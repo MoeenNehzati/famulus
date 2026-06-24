@@ -24,9 +24,10 @@ trap cleanup EXIT
 
 marketplace_root="$tmp_root/marketplace"
 codex_home="$tmp_root/codex-home"
+tmp_home="$tmp_root/home"
 workdir="$tmp_root/work"
 
-mkdir -p "$marketplace_root/.agents/plugins" "$marketplace_root/plugins" "$codex_home" "$workdir"
+mkdir -p "$marketplace_root/.agents/plugins" "$marketplace_root/plugins" "$codex_home" "$tmp_home" "$workdir"
 ln -s "$repo_root" "$marketplace_root/plugins/$plugin_name"
 
 python3 - "$marketplace_root/.agents/plugins/marketplace.json" "$plugin_name" "$marketplace_name" <<'PY'
@@ -72,7 +73,7 @@ PY
 baseline_prompt_json="$tmp_root/baseline-prompt-input.json"
 (
   cd "$workdir"
-  CODEX_HOME="$codex_home" codex debug prompt-input "List available skills." >"$baseline_prompt_json"
+  HOME="$tmp_home" CODEX_HOME="$codex_home" codex debug prompt-input "List available skills." >"$baseline_prompt_json"
 )
 
 python3 - "$expected_json" "$baseline_prompt_json" "$plugin_name" <<'PY'
@@ -99,9 +100,9 @@ if leaked:
     raise SystemExit(1)
 PY
 
-CODEX_HOME="$codex_home" codex plugin marketplace add "$marketplace_root" --json >/dev/null
+HOME="$tmp_home" CODEX_HOME="$codex_home" codex plugin marketplace add "$marketplace_root" --json >/dev/null
 install_json="$tmp_root/install.json"
-CODEX_HOME="$codex_home" codex plugin add "$plugin_name@$marketplace_name" --json >"$install_json"
+HOME="$tmp_home" CODEX_HOME="$codex_home" codex plugin add "$plugin_name@$marketplace_name" --json >"$install_json"
 
 installed_path="$(
   python3 - "$install_json" <<'PY'
@@ -141,7 +142,7 @@ while IFS= read -r skill_name; do
   prompt_json="$tmp_root/prompt-${skill_name}.json"
   (
     cd "$workdir"
-    CODEX_HOME="$codex_home" codex debug prompt-input "Use \$$plugin_name:$skill_name." >"$prompt_json"
+    HOME="$tmp_home" CODEX_HOME="$codex_home" codex debug prompt-input "Use \$$plugin_name:$skill_name." >"$prompt_json"
   )
   python3 - "$prompt_json" "$plugin_name" "$skill_name" <<'PY'
 import json

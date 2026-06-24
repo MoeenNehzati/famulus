@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 hook_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -10,6 +10,11 @@ if ! git symbolic-ref HEAD >/dev/null 2>&1; then
     exit 1
 fi
 
-"${hook_dir}/git/check-not-detached"
-"${hook_dir}/skill/check-names"
-"${hook_dir}/skill/check-dependencies"
+failed=0
+"${hook_dir}/git/check-not-detached" || failed=1
+"${hook_dir}/skill/check-names" || failed=1
+"${hook_dir}/skill/check-dependencies" || failed=1
+"${hook_dir}/skill/check-metadata" || failed=1
+"${hook_dir}/skill/check-platform-neutral" || failed=1
+"${hook_dir}/skill/check-install" || failed=1
+exit $failed

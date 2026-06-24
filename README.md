@@ -202,7 +202,6 @@ git config core.hooksPath .githooks
 The tracked `.githooks/pre-commit` hook blocks commits in detached HEAD state
 and dispatches to categorized Git and skill checks under `.githooks/git/` and
 `.githooks/skill/`.
-The tracked `.githooks/pre-push` hook runs `tests/test_skill_metadata.py`.
 
 ## Claude
 

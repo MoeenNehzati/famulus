@@ -222,20 +222,18 @@ install_profile_links() {
 }
 
 install_git_hooks() {
-  local hook
+  if [ ! -d "$hooks_dir" ]; then
+    echo "Missing git hooks directory: $hooks_dir" >&2
+    exit 1
+  fi
 
-  for hook in pre-commit git/check-not-detached skill/check-names skill/check-dependencies pre-push; do
-    local hook_path="$hooks_dir/$hook"
-    if [ ! -f "$hook_path" ]; then
-      echo "Missing git hook script: $hook_path" >&2
-      exit 1
-    fi
+  while IFS= read -r -d '' hook_path; do
     if (( dry_run )); then
       log "Would chmod +x $hook_path"
     else
       chmod +x "$hook_path"
     fi
-  done
+  done < <(find "$hooks_dir" -type f -print0)
 
   if (( dry_run )); then
     log "Would set git -C $repo_root config core.hooksPath .githooks"

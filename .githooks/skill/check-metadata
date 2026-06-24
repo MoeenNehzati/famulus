@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Platform constraint (Codex): every SKILL.md must have valid YAML frontmatter, a `description`
+# field, and that description must not exceed 1024 characters (Codex's hard limit).
+set -uo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+python3 "$repo_root/tests/test_skill_metadata.py"

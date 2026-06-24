@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Guideline §1 — skill identity: directory name must be lower-case dash-separated with at least
+# two words; SKILL.md must exist; frontmatter `name:` must match the directory name exactly.
 set -euo pipefail
 
 errors=()
