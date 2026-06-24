@@ -1,0 +1,128 @@
+Math dependency graph viewer refactor plan
+
+Goal
+
+Make the viewer maintainable without changing behavior. The current renderer is
+functionally useful, but too much CSS, HTML, JavaScript, state management, and
+routing logic lives inside one generated string. The refactor should create
+clear internal boundaries first; avoid changing interaction semantics during
+the restructuring pass.
+
+Non-goals
+
+- Do not redesign the graph UI.
+- Do not change JSON semantics or dependency extraction semantics.
+- Do not replace ELK or introduce a build pipeline unless a later pass chooses
+  to do so deliberately.
+- Do not tune colors, shadows, routing aesthetics, or reset behavior during the
+  structural pass.
+
+Suggested sequence
+
+1. Split the generated viewer template into named Python constants/functions.
+
+   Use coarse sections first:
+   - `VIEWER_CSS`
+   - `VIEWER_HTML_SHELL`
+   - `VIEWER_BOOTSTRAP_JS`
+   - `VIEWER_STATE_JS`
+   - `VIEWER_RENDER_JS`
+   - `VIEWER_INTERACTION_JS`
+   - `VIEWER_ROUTING_JS`
+
+   Keep these in the same script initially. This avoids packaging changes while
+   making each block reviewable.
+
+2. Add a state-model comment near the JavaScript state declarations.
+
+   The contract should distinguish:
+   - selected node: side-panel/delete target
+   - focus node: ancestor-focus anchor
+   - hidden nodes: individually removed nodes
+   - hidden types: legend/category filters
+   - manual positions: user layout edits
+   - focus-hidden nodes: derived/transient nodes hidden by ancestor mode
+
+   Future changes should preserve these boundaries.
+
+3. Name reset operations by user intent.
+
+   Prefer small wrappers over option flags at call sites:
+   - `resetViewOnly()`
+   - `resetEverything()`
+
+   Internally they may call a shared helper, but UI handlers should read as the
+   behavior the user gets.
+
+4. Name routing modes by what they actually do.
+
+   Keep three concepts separate:
+   - ELK paths from the automatic layout
+   - live drag paths for responsive movement
+   - manual dogleg paths for post-drop local reroute
+
+   Avoid names like "optimal" unless ELK or another global router is actually
+   used with the relevant constraints.
+
+5. Centralize interaction timing.
+
+   Click-vs-double-click delays currently matter for both node deletion and
+   reset. Put constants such as `CLICK_DELAY_MS` near the state declarations and
+   reuse them. This makes the double-click policy explicit.
+
+6. Move visual-language assumptions into CSS comments.
+
+   Record the design contract in the CSS:
+   - hover and selection use the same visual scale
+   - hover is stronger and temporary
+   - selection is weaker and persistent
+   - the selection ring is an explicit persistent marker
+   - text contrast should remain subtle
+
+   This is more useful than comments near Python code because future tuning
+   will happen in CSS.
+
+7. Make browser smoke testing a first-class best-effort test.
+
+   Keep the current approach of stubbing ELK and MathJax locally so tests do not
+   require network access. If headless Chrome is unavailable or crashes in a
+   restricted environment, skip with a clear reason. The smoke test should
+   continue to cover:
+   - category reset vs full reset
+   - selected node vs focus node separation
+   - delete not clearing ancestor focus unless deleting the focus node
+   - drag/drop rerouting only incident edges
+
+8. Add focused unit tests for pure helpers where possible.
+
+   The routing helpers are embedded JavaScript, so they are hard to unit test
+   directly from Python. After template splitting, consider exposing tiny test
+   hooks in the smoke fixture rather than adding more string assertions.
+
+9. Preserve generated-output compatibility.
+
+   After each refactor step, render the existing paper graph and compare basic
+   invariants:
+   - same entity count
+   - macro file still merged
+   - `BFn` still appears as a MathJax macro
+   - generated HTML opens without relying on local development assets
+
+Review checklist
+
+- The renderer still produces a standalone HTML file.
+- No new runtime network dependencies are introduced beyond the existing CDN
+  scripts in normal generated output.
+- Local class/package macro extraction still works.
+- Manual positions survive reload/full render without edge desynchronization.
+- Reset semantics remain distinct.
+- Selection/hover remain visually related.
+- Tests include both extractor coverage and best-effort browser interaction
+  coverage.
+
+Likely follow-up after refactor
+
+If the viewer keeps growing, move static CSS and JavaScript into separate files
+under the skill directory and have the renderer inline them into the standalone
+HTML at build time. Do this only after the internal sections are stable; jumping
+to separate assets first will make behavior-preserving review harder.

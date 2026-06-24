@@ -1,0 +1,32 @@
+Math dependency graph viewer lessons
+
+Treat the viewer as an interactive editing surface, not just a static graph
+render. Keep semantic graph data, visual state, and user layout state separate.
+Most regressions came from using one state variable or one reset path for
+multiple user intentions.
+
+Selection and hover should use the same visual language. Hover is temporary
+strong emphasis; selection is persistent weaker emphasis plus an explicit
+marker. Avoid one-off effects that do not belong to that scale.
+
+Preserve the user's mental map. Dragging one cell should only affect that
+cell's incident edges; broader rerouting or relayout feels like the graph
+changed under the user.
+
+Manual node positions are first-class state. Any full render, reload, filter
+change, reset, or edge redraw must account for them before deciding where edges
+belong.
+
+Do not trust native browser affordances for important controls. Disabled
+buttons do not reliably expose hover help, so tooltips need enabled wrappers or
+custom UI.
+
+Macro support should follow the TeX source graph, including local classes and
+packages, rather than hardcoding paper-specific command names.
+
+Tests need to cover behavior, not only generated strings. String tests are
+useful for template regressions, but interaction bugs need browser-level smoke
+coverage where the environment supports it.
+
+The next refactor should be structural, not behavioral: name the viewer's
+template sections, document the state model, and keep routing modes explicit.
