@@ -4,24 +4,34 @@
 set -euo pipefail
 
 _tw_main() {
-    # Find a pane titled "tw-monitor" in the current window
+    # Require btop
+    if ! command -v btop >/dev/null 2>&1; then
+        tmux display-message "tw: btop not found"
+        exit 0
+    fi
+
+    # Find a monitor pane in the current window (tagged via @tw_role user variable,
+    # not pane_title — btop may overwrite the title via OSC escape sequences).
     local monitor_pane
-    monitor_pane=$(tmux list-panes -F "#{pane_id}|#{pane_title}" \
-                   | awk -F'|' '$2 == "tw-monitor" {print $1}')
+    monitor_pane=$(tmux list-panes -F "#{pane_id} #{@tw_role}" \
+                   | awk '$2 == "monitor" {print $1}')
 
     if [ -n "$monitor_pane" ]; then
-        # Panel is visible — remove it
+        # Pane is visible — remove it
         tmux kill-pane -t "$monitor_pane"
     else
-        # Panel is not visible — add slim btop on the right
+        # Pane is not visible — add slim btop on the right
+        local original_pane
+        original_pane=$(tmux display-message -p "#{pane_id}")
+
         local new_pane
-        if ! new_pane=$(tmux split-window -h -l 25% -P -F "#{pane_id}" "btop" 2>&1); then
-            tmux display-message "tw: terminal too narrow for monitor panel"
+        if ! new_pane=$(tmux split-window -h -l 25% -P -F "#{pane_id}" "btop" 2>/dev/null); then
+            tmux display-message "tw: terminal too narrow for monitor pane"
             exit 0
         fi
-        tmux select-pane -t "$new_pane" -T "tw-monitor"
+        tmux set-option -p -t "$new_pane" @tw_role "monitor"
         # Return focus to the pane that was active before the split
-        tmux select-pane -l
+        tmux select-pane -t "$original_pane"
     fi
 }
 
