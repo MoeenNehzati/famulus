@@ -1,0 +1,24 @@
+{
+  "document": {
+    "title": "Macro Fixture",
+    "source_entrypoint": "main.tex",
+    "mathjax_macros": {
+      "ev": "\\operatorname{eval}"
+    }
+  },
+  "entities": [
+    {
+      "id": "root",
+      "type": "definition",
+      "ref": "",
+      "short_title": "$\\ev$ and $\\QTC$",
+      "title": "Macro-rendering fixture",
+      "description": "Uses $\\OuterMacro{A}{B}$, $\\MidMacro$, and $\\R$.",
+      "defined": "Fixture",
+      "active_in": "Fixture",
+      "source": "explicit",
+      "depends_on": [],
+      "position": 1
+    }
+  ]
+}

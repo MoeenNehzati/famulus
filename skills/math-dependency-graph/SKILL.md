@@ -88,12 +88,21 @@ Then report briefly:
 2. Construct the canonical JSON directly by understanding the mathematical structure.
 3. Add only direct dependencies with descriptions and evidence.
 4. Write or propose that JSON first.
-5. Once the JSON is written, invoke the renderer:
+5. If the document uses local TeX macros, give the active TeX entrypoint to the
+   macro extractor:
    ```
-   python scripts/build_math_dependency_graph.py <source.json>
+   python scripts/extract_mathjax_macros.py <entrypoint.tex>
+   ```
+   This writes `_build/<entrypoint>-mathjax-macros.json` by default. The
+   extractor recursively follows `\input`/`\include`, scans macro definitions
+   throughout the reachable TeX source, and writes the transitive closure needed
+   by MathJax.
+6. Once the JSON is written, invoke the renderer:
+   ```
+   python scripts/build_math_dependency_graph.py <source.json> --tex-entry <entrypoint.tex>
    ```
    Output defaults to `_build/<name>.html` next to the JSON. Use `--html-out <path>` to override.
-6. Flag uncertain or heuristic edges explicitly.
+7. Flag uncertain or heuristic edges explicitly.
 
 ## 6. Canonical fields
 
@@ -128,7 +137,25 @@ For dependencies, use these fields:
 Prefer the model to justify difficult edges from mathematical content, not from string matching.
 If the document is ambiguous, keep the JSON conservative and mark uncertainty explicitly.
 
-If the document uses local TeX macros, include them explicitly under:
+If the document uses local TeX macros, set the active entrypoint under:
+
+- `document.source_entrypoint`
+
+For example:
+
+```json
+{
+  "document": {
+    "source_entrypoint": "or.tex"
+  }
+}
+```
+
+The renderer will use `_build/<entrypoint>-mathjax-macros.json` by default when
+`document.source_entrypoint` is present. If the file is missing and the
+entrypoint can be resolved, it regenerates the macro file from the TeX source.
+
+If any extracted macro is not MathJax-compatible, override it explicitly under:
 
 - `document.mathjax_macros`
 
@@ -147,6 +174,8 @@ For example:
 
 Do not emit bare local macros unless they are declared there.
 Do not emit malformed TeX such as ambiguous subscripts or superscripts.
+Graph-local `document.mathjax_macros` overrides extracted macros, so use it for
+manual corrections.
 
 ## 7. Rendering rules
 
@@ -183,6 +212,7 @@ The model should do:
 The Python renderer should do only:
 - load canonical JSON
 - validate basic structure
+- merge extracted MathJax macros from `_build/<entrypoint>-mathjax-macros.json`
 - optionally apply graph-theoretic transitive reduction for readability
 - render the interactive HTML graph
 - manage visualization-only state such as filters, local hiding, focus modes, and persistence

@@ -37,6 +37,13 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict
 
+try:
+    from extract_mathjax_macros import default_output_path, extract_macros, write_macros
+except ImportError:  # pragma: no cover - only relevant when imported unusually
+    default_output_path = None
+    extract_macros = None
+    write_macros = None
+
 
 TYPE_STYLES = {
     "standing-assumption": {"shape": "hexagon", "color": "#c0392b"},
@@ -99,6 +106,72 @@ def validate_document(doc: dict) -> None:
                 raise SystemExit(f"Dependency entry on '{entity['id']}' is missing 'id'.")
             if dep["id"] not in seen_ids:
                 raise SystemExit(f"Dependency '{dep['id']}' referenced by '{entity['id']}' is not defined.")
+
+
+def merge_mathjax_macros(doc: dict, macro_file: Path | None) -> int:
+    """Merge extracted MathJax macros into ``doc``.
+
+    Macros already present in the graph JSON take precedence because they may
+    be hand-normalized for MathJax compatibility.
+    """
+    if macro_file is None:
+        return 0
+    if not macro_file.exists():
+        raise SystemExit(f"Macro file not found: {macro_file}")
+    file_macros = json.loads(macro_file.read_text(encoding="utf-8"))
+    if not isinstance(file_macros, dict):
+        raise SystemExit(f"Macro file must contain a JSON object: {macro_file}")
+    document_meta = doc.setdefault("document", {})
+    json_macros = document_meta.get("mathjax_macros", {})
+    if json_macros and not isinstance(json_macros, dict):
+        raise SystemExit("'document.mathjax_macros' must be an object when present.")
+    document_meta["mathjax_macros"] = {**file_macros, **json_macros}
+    return len(file_macros)
+
+
+def resolve_entrypoint(entrypoint_text: str, source_path: Path) -> Path:
+    """Resolve an entrypoint from CLI/JSON relative to useful roots."""
+    entrypoint = Path(entrypoint_text)
+    candidates = []
+    if entrypoint.is_absolute():
+        candidates.append(entrypoint)
+    else:
+        candidates.extend(
+            [
+                Path.cwd() / entrypoint,
+                source_path.parent / entrypoint,
+                source_path.parent.parent / entrypoint,
+            ]
+        )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+    return candidates[0].resolve()
+
+
+def prepare_macro_file(args: argparse.Namespace, source_path: Path, doc: dict) -> Path | None:
+    """Find or create the macro file to merge for this render."""
+    if args.macro_file:
+        return Path(args.macro_file).resolve()
+
+    entrypoint_text = args.tex_entry or doc.get("document", {}).get("source_entrypoint")
+    if not entrypoint_text:
+        return None
+
+    entrypoint = resolve_entrypoint(entrypoint_text, source_path)
+    if not entrypoint.exists():
+        if args.tex_entry:
+            raise SystemExit(f"TeX entrypoint not found: {entrypoint}")
+        return None
+
+    if default_output_path is None or extract_macros is None or write_macros is None:
+        raise SystemExit("Macro extraction helper is unavailable.")
+
+    macro_path = default_output_path(entrypoint)
+    if args.refresh_macros or args.tex_entry or not macro_path.exists():
+        macros = extract_macros(entrypoint)
+        write_macros(macros, macro_path)
+    return macro_path
 
 def reduce_transitive_edges(doc: dict) -> tuple[dict, list[dict]]:
     """Apply graph-theoretic transitive reduction to the rendered view only.
@@ -280,6 +353,33 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       transition: background 0.1s, border-color 0.1s;
       white-space: nowrap;
     }}
+    .toolbar-tip {{
+      position: relative;
+      display: inline-flex;
+    }}
+    .toolbar-tip::after {{
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 50%;
+      top: calc(100% + 8px);
+      transform: translateX(-50%);
+      width: max-content;
+      max-width: 260px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: rgba(17, 24, 39, 0.94);
+      color: #f9fafb;
+      font-size: 0.78rem;
+      line-height: 1.25;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.18);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.08s ease;
+      z-index: 20;
+    }}
+    .toolbar-tip:hover::after {{
+      opacity: 1;
+    }}
     .toolbar-btn:hover:not(:disabled) {{
       background: #eef3f7;
       border-color: #7f8c8d;
@@ -440,21 +540,33 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       filter: brightness(1.18) saturate(1.08) drop-shadow(0 6px 18px rgba(0,0,0,0.28));
     }}
     .graph-node.selected {{
-      filter: brightness(1.18) saturate(1.1)
-              drop-shadow(0 6px 18px rgba(0,0,0,0.28))
-              drop-shadow(0 0 0px 0px transparent)
-              drop-shadow(0 0 6px rgba(255,255,255,0.95))
-              drop-shadow(0 0 14px rgba(41,128,185,0.85));
+      filter: brightness(1.08) saturate(1.04) drop-shadow(0 5px 14px rgba(0,0,0,0.24));
     }}
     .graph-node.selected.hovered {{
-      filter: brightness(1.22) saturate(1.15)
-              drop-shadow(0 6px 20px rgba(0,0,0,0.32))
-              drop-shadow(0 0 6px rgba(255,255,255,0.95))
-              drop-shadow(0 0 16px rgba(41,128,185,0.9));
+      filter: brightness(1.18) saturate(1.08) drop-shadow(0 6px 18px rgba(0,0,0,0.28));
     }}
     .graph-node.dragging-node {{
       cursor: grabbing;
       filter: drop-shadow(0 8px 18px rgba(0,0,0,0.3));
+    }}
+    .selection-ring {{
+      fill: none;
+      stroke: #f8fbff;
+      stroke-width: 6;
+      stroke-linejoin: round;
+      stroke-linecap: round;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.12s ease;
+      filter:
+        drop-shadow(0 6px 14px rgba(0,0,0,0.42))
+        drop-shadow(0 1px 3px rgba(0,0,0,0.36));
+    }}
+    .graph-node.selected .selection-ring {{
+      opacity: 1;
+    }}
+    .graph-node.selected .node-shape {{
+      filter: brightness(1.18) saturate(1.06);
     }}
     .node-label {{
       display: block;
@@ -462,6 +574,9 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       font-size: 12px;
       font-weight: 700;
       color: #fff;
+      text-shadow:
+        0 1px 1px rgba(17, 24, 39, 0.74),
+        0 0 2px rgba(17, 24, 39, 0.72);
       line-height: 1.1;
       padding: 0 8px;
       box-sizing: border-box;
@@ -471,6 +586,9 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       text-align: center;
       font-size: 11px;
       color: rgba(255,255,255,0.92);
+      text-shadow:
+        0 1px 1px rgba(17, 24, 39, 0.62),
+        0 0 2px rgba(17, 24, 39, 0.62);
       line-height: 1.1;
       padding: 0 8px;
       box-sizing: border-box;
@@ -585,12 +703,20 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
   <div class="layout" id="layout">
     <div class="canvas-area">
       <div class="canvas-toolbar" id="canvas-toolbar">
-        <button id="focus-toggle" class="toolbar-btn" type="button">Highlight ancestors</button>
-        <button id="delete-node-btn" class="toolbar-btn" type="button" disabled title="Hide the selected node (double-click a node to hide it directly)">Delete node</button>
+        <span class="toolbar-tip" data-tooltip="Cycle ancestor focus for the selected node: highlight, hide, then show the full graph.">
+          <button id="focus-toggle" class="toolbar-btn" type="button" aria-label="Cycle ancestor focus">Highlight ancestors</button>
+        </span>
+        <span class="toolbar-tip" data-tooltip="Hide the selected node from the visible graph. Double-click a node to hide it directly.">
+          <button id="delete-node-btn" class="toolbar-btn" type="button" disabled aria-label="Hide selected node">Delete node</button>
+        </span>
         <div class="toolbar-sep"></div>
-        <button id="redraw-btn" class="toolbar-btn" type="button" title="Reset manual positions and rerun automatic layout (r)">Redraw all</button>
+        <span class="toolbar-tip" data-tooltip="Reset manual node positions and rerun the automatic layout. Shortcut: r.">
+          <button id="redraw-btn" class="toolbar-btn" type="button" aria-label="Redraw graph layout">Redraw all</button>
+        </span>
         <div class="toolbar-sep"></div>
-        <button id="clear-btn" class="toolbar-btn" type="button" title="Reset all: restore hidden nodes, clear selection and manual positions (c)">Clear all</button>
+        <span class="toolbar-tip" data-tooltip="Click: restore individually hidden and focus-hidden nodes while keeping hidden legend categories. Double-click: reset everything, including legend categories. Shortcut: c.">
+          <button id="reset-btn" class="toolbar-btn" type="button" aria-label="Reset graph state">Reset</button>
+        </span>
       </div>
       <div class="canvas-wrap" id="canvas-wrap">
         <div id="elk-status" class="elk-status">Rendering graph layout...</div>
@@ -683,6 +809,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     const hiddenNodes = new Set();
     const nodeTypes = new Map(docData.entities.map(e => [e.id, e.type]));
     let selectedNodeId = null;
+    let focusNodeId = null;
     let ancestorFocusMode = 0; // 0=off, 1=dim non-ancestors, 2=hide non-ancestors
     const ancestorHiddenByFocus = new Set(); // nodes temporarily hidden in mode 2
     const nodeColorIndex = new Map(
@@ -707,6 +834,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     // Drag state for nodes
     let draggingNodeId = null;
     let nodeDragMoved = false;
+    let nodeClickTimer = null;
     let dragStartClientX = 0;
     let dragStartClientY = 0;
     let dragStartOffsetX = 0;
@@ -733,6 +861,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           hiddenTypes: Array.from(hiddenTypes),
           hiddenNodes: Array.from(hiddenNodes),
           selectedNodeId,
+          focusNodeId,
           ancestorFocusMode,
           panelCollapsed: layoutEl.classList.contains("panel-collapsed"),
           manualPositions: Array.from(manualPositions.entries())
@@ -750,6 +879,9 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         (payload.hiddenNodes || []).forEach(id => {{ if (entityMap.has(id)) hiddenNodes.add(id); }});
         if (payload.selectedNodeId && entityMap.has(payload.selectedNodeId)) {{
           selectedNodeId = payload.selectedNodeId;
+        }}
+        if (payload.focusNodeId && entityMap.has(payload.focusNodeId)) {{
+          focusNodeId = payload.focusNodeId;
         }}
         // Support both old boolean and new numeric format
         ancestorFocusMode = typeof payload.ancestorFocusMode === "number"
@@ -819,7 +951,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       return manualPositions.get(nodeId) || lastNodePositions.get(nodeId) || null;
     }}
 
-    // Simple straight-line path between two node bounding boxes (for bridges/dragged edges)
+    // Simple straight-line path between two node bounding boxes during live drag.
     // Clip a straight line to node boundaries using proper rect intersection.
     // Returns an SVG path string that starts just outside srcPos and ends just
     // outside dstPos, so arrowheads sit at the target boundary and are not
@@ -853,9 +985,73 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       return `M ${{p0x}} ${{p0y}} L ${{p1x}} ${{p1y}}`;
     }}
 
+    function manualDoglegPath(srcPos, dstPos, routeIndex = 0, routeCount = 1) {{
+      const sx = srcPos.x + srcPos.width / 2;
+      const sy = srcPos.y + srcPos.height / 2;
+      const tx = dstPos.x + dstPos.width / 2;
+      const ty = dstPos.y + dstPos.height / 2;
+      const dx = tx - sx;
+      const dy = ty - sy;
+      const routeOffset = (routeIndex - (routeCount - 1) / 2) * 12;
+
+      if (Math.abs(dx) >= Math.abs(dy)) {{
+        const sourceOnRight = dx >= 0;
+        const startX = sourceOnRight ? srcPos.x + srcPos.width + 4 : srcPos.x - 4;
+        const startY = sy + routeOffset;
+        const endX = sourceOnRight ? dstPos.x - 5 : dstPos.x + dstPos.width + 5;
+        const endY = ty + routeOffset;
+        const midX = (startX + endX) / 2;
+        return roundedPathForPoints([
+          {{x: startX, y: startY}},
+          {{x: midX, y: startY}},
+          {{x: midX, y: endY}},
+          {{x: endX, y: endY}}
+        ]);
+      }}
+
+      const sourceBelow = dy >= 0;
+      const startX = sx + routeOffset;
+      const startY = sourceBelow ? srcPos.y + srcPos.height + 4 : srcPos.y - 4;
+      const endX = tx + routeOffset;
+      const endY = sourceBelow ? dstPos.y - 5 : dstPos.y + dstPos.height + 5;
+      const midY = (startY + endY) / 2;
+      return roundedPathForPoints([
+        {{x: startX, y: startY}},
+        {{x: startX, y: midY}},
+        {{x: endX, y: midY}},
+        {{x: endX, y: endY}}
+      ]);
+    }}
+
+    function incidentEdgePaths(nodeId) {{
+      return Array.from(document.querySelectorAll(`.edge-path[data-source-node-id="${{nodeId}}"], .edge-path[data-target-node-id="${{nodeId}}"]`))
+        .filter(pathEl => pathEl.style.display !== "none");
+    }}
+
+    function rerouteIncidentEdgesFromCurrentPositions(nodeId) {{
+      const visiblePaths = incidentEdgePaths(nodeId);
+      const routeCounts = new Map();
+      visiblePaths.forEach(pathEl => {{
+        const key = `${{pathEl.dataset.sourceNodeId}}->${{pathEl.dataset.targetNodeId}}`;
+        routeCounts.set(key, (routeCounts.get(key) || 0) + 1);
+      }});
+      const routeSeen = new Map();
+      visiblePaths.forEach(pathEl => {{
+        const srcId = pathEl.dataset.sourceNodeId;
+        const dstId = pathEl.dataset.targetNodeId;
+        const srcPos = getEffectivePos(srcId);
+        const dstPos = getEffectivePos(dstId);
+        if (!srcPos || !dstPos) return;
+        const key = `${{srcId}}->${{dstId}}`;
+        const routeIndex = routeSeen.get(key) || 0;
+        routeSeen.set(key, routeIndex + 1);
+        pathEl.setAttribute("d", manualDoglegPath(srcPos, dstPos, routeIndex, routeCounts.get(key) || 1));
+      }});
+    }}
+
     // Redraw all edges incident to a node (including bridges) to follow drag.
     function updateEdgesForNode(nodeId) {{
-      document.querySelectorAll(`.edge-path[data-source-node-id="${{nodeId}}"], .edge-path[data-target-node-id="${{nodeId}}"]`).forEach(pathEl => {{
+      incidentEdgePaths(nodeId).forEach(pathEl => {{
         const srcId = pathEl.dataset.sourceNodeId;
         const dstId = pathEl.dataset.targetNodeId;
         const srcPos = getEffectivePos(srcId);
@@ -980,7 +1176,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       // Ancestor-focus group (mode 2): one collapsed item for all focus-hidden nodes
       if (hasFocusHidden) {{
         const count = ancestorHiddenByFocus.size;
-        const focusEntity = selectedNodeId ? entityMap.get(selectedNodeId) : null;
+        const focusEntity = focusNodeId ? entityMap.get(focusNodeId) : null;
         const focusLabel = focusEntity ? focusEntity.short_title : "selection";
         const groupItem = document.createElement("div");
         groupItem.className = "removed-item";
@@ -990,6 +1186,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         `;
         groupItem.addEventListener("click", () => {{
           ancestorFocusMode = 0;
+          focusNodeId = null;
           saveViewerState();
           applyAncestorFocus();
         }});
@@ -1033,9 +1230,10 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 
     function syncToolbar() {{
       const hasSelection = !!selectedNodeId && !isHiddenNode(selectedNodeId);
+      const hasFocus = !!focusNodeId && !isHiddenNode(focusNodeId);
       // Focus toggle
-      focusToggle.disabled = !hasSelection;
-      if (!hasSelection || ancestorFocusMode === 0) {{
+      focusToggle.disabled = !hasSelection && !hasFocus;
+      if ((!hasSelection && !hasFocus) || ancestorFocusMode === 0) {{
         focusToggle.textContent = "Highlight ancestors";
         focusToggle.classList.remove("active");
       }} else if (ancestorFocusMode === 1) {{
@@ -1055,8 +1253,8 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     function applyAncestorFocus() {{
       syncFocusToggle();
       ancestorHiddenByFocus.clear();
-      const active = ancestorFocusMode > 0 && selectedNodeId && !isHiddenNode(selectedNodeId);
-      const keep = active ? collectAncestors(selectedNodeId) : null;
+      const active = ancestorFocusMode > 0 && focusNodeId && !isHiddenNode(focusNodeId);
+      const keep = active ? collectAncestors(focusNodeId) : null;
 
       document.querySelectorAll(".graph-node").forEach(nodeEl => {{
         const nodeId = nodeEl.dataset.nodeId;
@@ -1141,12 +1339,20 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 
     function deselect() {{
       selectedNodeId = null;
+      focusNodeId = null;
       ancestorFocusMode = 0;
       markSelectedNode(null);
       details.innerHTML = "Select a node or edge to inspect its metadata.";
       rawJsonCodeEl.textContent = JSON.stringify(docData, null, 2);
       saveViewerState();
       applyAncestorFocus();
+    }}
+
+    function clearSelectionDetails() {{
+      selectedNodeId = null;
+      markSelectedNode(null);
+      details.innerHTML = "Select a node or edge to inspect its metadata.";
+      rawJsonCodeEl.textContent = JSON.stringify(docData, null, 2);
     }}
 
     function tooltipText(entity) {{
@@ -1330,34 +1536,42 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       group.dataset.nodeId = entity.id;
 
       let shapeEl = null;
+      let selectionRing = null;
       if (style.shape === "ellipse") {{
         shapeEl = createSvgElement("ellipse");
         shapeEl.setAttribute("cx", x + w / 2); shapeEl.setAttribute("cy", y + h / 2);
         shapeEl.setAttribute("rx", w / 2); shapeEl.setAttribute("ry", h / 2);
+        selectionRing = shapeEl.cloneNode(false);
       }} else if (style.shape === "circle") {{
         shapeEl = createSvgElement("circle");
         shapeEl.setAttribute("cx", x + w / 2); shapeEl.setAttribute("cy", y + h / 2);
         shapeEl.setAttribute("r", Math.min(w, h) / 2);
+        selectionRing = shapeEl.cloneNode(false);
       }} else if (style.shape === "diamond") {{
         shapeEl = createSvgElement("polygon");
         shapeEl.setAttribute("points", `${{x + w / 2}},${{y}} ${{x + w}},${{y + h / 2}} ${{x + w / 2}},${{y + h}} ${{x}},${{y + h / 2}}`);
+        selectionRing = shapeEl.cloneNode(false);
       }} else if (style.shape === "hexagon") {{
         const inset = 26;
         shapeEl = createSvgElement("polygon");
         shapeEl.setAttribute("points", `${{x + inset}},${{y}} ${{x + w - inset}},${{y}} ${{x + w}},${{y + h / 2}} ${{x + w - inset}},${{y + h}} ${{x + inset}},${{y + h}} ${{x}},${{y + h / 2}}`);
+        selectionRing = shapeEl.cloneNode(false);
       }} else if (style.shape === "parallelogram") {{
         const skew = 20;
         shapeEl = createSvgElement("polygon");
         shapeEl.setAttribute("points", `${{x + skew}},${{y}} ${{x + w}},${{y}} ${{x + w - skew}},${{y + h}} ${{x}},${{y + h}}`);
+        selectionRing = shapeEl.cloneNode(false);
       }} else if (style.shape === "roundrect") {{
         shapeEl = createSvgElement("rect");
         shapeEl.setAttribute("x", x); shapeEl.setAttribute("y", y);
         shapeEl.setAttribute("width", w); shapeEl.setAttribute("height", h);
         shapeEl.setAttribute("rx", 18); shapeEl.setAttribute("ry", 18);
+        selectionRing = shapeEl.cloneNode(false);
       }} else if (style.shape === "double-rect") {{
         const outer = createSvgElement("rect");
         outer.setAttribute("x", x); outer.setAttribute("y", y);
         outer.setAttribute("width", w); outer.setAttribute("height", h);
+        outer.setAttribute("class", "node-shape");
         outer.setAttribute("fill", style.color); outer.setAttribute("stroke", stroke);
         outer.setAttribute("stroke-width", "2");
         if (isInferred) outer.setAttribute("stroke-dasharray", "6 3");
@@ -1368,18 +1582,26 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         inner.setAttribute("fill", "none"); inner.setAttribute("stroke", stroke);
         inner.setAttribute("stroke-width", "2");
         group.appendChild(inner);
+        selectionRing = outer.cloneNode(false);
       }} else {{
         shapeEl = createSvgElement("rect");
         shapeEl.setAttribute("x", x); shapeEl.setAttribute("y", y);
         shapeEl.setAttribute("width", w); shapeEl.setAttribute("height", h);
+        selectionRing = shapeEl.cloneNode(false);
       }}
 
       if (shapeEl) {{
+        shapeEl.setAttribute("class", "node-shape");
         shapeEl.setAttribute("fill", style.color);
         shapeEl.setAttribute("stroke", stroke);
         shapeEl.setAttribute("stroke-width", "2");
         if (isInferred) shapeEl.setAttribute("stroke-dasharray", "6 3");
         group.appendChild(shapeEl);
+      }}
+
+      if (selectionRing) {{
+        selectionRing.setAttribute("class", "selection-ring");
+        group.appendChild(selectionRing);
       }}
 
       const foreignObject = createSvgElement("foreignObject");
@@ -1462,17 +1684,31 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       }});
       nodeEl.addEventListener("click", () => {{
         if (nodeDragMoved) return; // suppress click after drag
-        if (selectedNodeId === entity.id) {{ deselect(); return; }} // click again to deselect
-        selectedNodeId = entity.id;
-        markSelectedNode(entity.id);
-        showEntityDetails(entity);
-        saveViewerState();
-        applyAncestorFocus();
+        if (nodeClickTimer) clearTimeout(nodeClickTimer);
+        nodeClickTimer = setTimeout(() => {{
+          nodeClickTimer = null;
+          if (selectedNodeId === entity.id) {{ deselect(); return; }} // click again to deselect
+          selectedNodeId = entity.id;
+          markSelectedNode(entity.id);
+          showEntityDetails(entity);
+          saveViewerState();
+          applyAncestorFocus();
+        }}, 180);
       }});
       nodeEl.addEventListener("dblclick", event => {{
         event.preventDefault();
-        if (selectedNodeId === entity.id) ancestorFocusMode = 0;
+        if (nodeClickTimer) {{
+          clearTimeout(nodeClickTimer);
+          nodeClickTimer = null;
+        }}
         hiddenNodes.add(entity.id);
+        if (selectedNodeId === entity.id) {{
+          clearSelectionDetails();
+        }}
+        if (focusNodeId === entity.id) {{
+          focusNodeId = null;
+          if (ancestorFocusMode > 0) ancestorFocusMode = 0;
+        }}
         saveViewerState();
         updateVisibilityFast();
       }});
@@ -1576,6 +1812,10 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           nodeLayer.appendChild(nodeEl);
         }});
 
+        manualPositions.forEach((_, nodeId) => {{
+          if (!isHiddenNode(nodeId)) rerouteIncidentEdgesFromCurrentPositions(nodeId);
+        }});
+
         applyAncestorFocus();
         typesetElement(nodeLayer);
 
@@ -1611,7 +1851,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         pathEl.style.display = (!isHiddenNode(src) && !isHiddenNode(dst)) ? "" : "none";
       }});
 
-      // Remove all bridge edges; recompute them as straight lines
+      // Remove all bridge edges; recompute them from current node positions.
       edgeLayer.querySelectorAll(".edge-path[data-bridge='true']").forEach(el => el.remove());
 
       const visibleEdges = computeVisibleEdges();
@@ -1622,7 +1862,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         if (!srcPos || !dstPos) return;
         const path = createSvgElement("path");
         path.setAttribute("class", "edge-path");
-        path.setAttribute("d", simpleEdgePath(srcPos, dstPos));
+        path.setAttribute("d", manualDoglegPath(srcPos, dstPos));
         path.setAttribute("stroke", edgeColorForTarget(edge.target));
         path.setAttribute("stroke-dasharray", "6 4");
         path.setAttribute("marker-end", "url(#arrow)");
@@ -1675,9 +1915,13 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 
     document.addEventListener("mouseup", event => {{
       if (draggingNodeId !== null) {{
+        const droppedNodeId = draggingNodeId;
         const nodeEl = nodeLayer.querySelector(`[data-node-id="${{draggingNodeId}}"]`);
         if (nodeEl) nodeEl.classList.remove("dragging-node");
-        if (nodeDragMoved) saveViewerState();
+        if (nodeDragMoved) {{
+          rerouteIncidentEdgesFromCurrentPositions(droppedNodeId);
+          saveViewerState();
+        }}
         draggingNodeId = null;
         // Keep nodeDragMoved true briefly to suppress the click event
         setTimeout(() => {{ nodeDragMoved = false; }}, 0);
@@ -1689,9 +1933,12 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     deleteNodeBtn.addEventListener("click", () => {{
       if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
       const nodeId = selectedNodeId;
-      ancestorFocusMode = 0;
       hiddenNodes.add(nodeId);
-      deselect(); // clears selectedNodeId and markSelectedNode
+      clearSelectionDetails();
+      if (focusNodeId === nodeId) {{
+        focusNodeId = null;
+        if (ancestorFocusMode > 0) ancestorFocusMode = 0;
+      }}
       saveViewerState();
       updateVisibilityFast();
     }});
@@ -1703,20 +1950,45 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       saveViewerState();
     }});
 
-    function clearAll() {{
+    function syncLegendRows() {{
+      document.querySelectorAll(".legend-row").forEach(row => {{
+        row.classList.toggle("inactive", hiddenTypes.has(row.dataset.type));
+      }});
+    }}
+
+    function resetViewState({{includeCategories = false}} = {{}}) {{
       hiddenNodes.clear();
-      hiddenTypes.clear();
       selectedNodeId = null;
+      focusNodeId = null;
       ancestorFocusMode = 0;
       ancestorHiddenByFocus.clear();
       manualPositions.clear();
-      // Reset legend buttons to visible
-      document.querySelectorAll(".legend-btn").forEach(btn => btn.classList.remove("hidden-type"));
-      localStorage.removeItem(viewerStateKey);
+      if (includeCategories) {{
+        hiddenTypes.clear();
+        syncLegendRows();
+      }}
+      if (includeCategories) localStorage.removeItem(viewerStateKey);
+      else saveViewerState();
       updateVisibilityFull();
     }}
 
-    document.getElementById("clear-btn").addEventListener("click", clearAll);
+    const resetBtn = document.getElementById("reset-btn");
+    let resetClickTimer = null;
+    resetBtn.addEventListener("click", () => {{
+      if (resetClickTimer) clearTimeout(resetClickTimer);
+      resetClickTimer = setTimeout(() => {{
+        resetClickTimer = null;
+        resetViewState({{includeCategories: false}});
+      }}, 180);
+    }});
+    resetBtn.addEventListener("dblclick", event => {{
+      event.preventDefault();
+      if (resetClickTimer) {{
+        clearTimeout(resetClickTimer);
+        resetClickTimer = null;
+      }}
+      resetViewState({{includeCategories: true}});
+    }});
 
     // ── Sidebar drag-to-reorder ───────────────────────────────────────────────
 
@@ -1756,8 +2028,15 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     // ── Other event listeners ────────────────────────────────────────────────
 
     focusToggle.addEventListener("click", () => {{
-      if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
+      if (ancestorFocusMode === 0) {{
+        if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
+        focusNodeId = selectedNodeId;
+      }} else if (!focusNodeId || isHiddenNode(focusNodeId)) {{
+        if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
+        focusNodeId = selectedNodeId;
+      }}
       ancestorFocusMode = (ancestorFocusMode + 1) % 3;
+      if (ancestorFocusMode === 0) focusNodeId = null;
       saveViewerState();
       applyAncestorFocus();
     }});
@@ -1771,9 +2050,16 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         return;
       }}
       if (event.key.toLowerCase() === "h") {{
-        if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
+        if (ancestorFocusMode === 0) {{
+          if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
+          focusNodeId = selectedNodeId;
+        }} else if (!focusNodeId || isHiddenNode(focusNodeId)) {{
+          if (!selectedNodeId || isHiddenNode(selectedNodeId)) return;
+          focusNodeId = selectedNodeId;
+        }}
         event.preventDefault();
         ancestorFocusMode = (ancestorFocusMode + 1) % 3;
+        if (ancestorFocusMode === 0) focusNodeId = null;
         saveViewerState();
         applyAncestorFocus();
         return;
@@ -1788,7 +2074,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       }}
       if (event.key.toLowerCase() === "c") {{
         event.preventDefault();
-        clearAll();
+        resetViewState({{includeCategories: event.shiftKey}});
       }}
     }});
 
@@ -1816,6 +2102,21 @@ def main() -> None:
     parser.add_argument("source", help="Path to the canonical dependency-graph JSON file")
     parser.add_argument("--html-out", dest="html_out", help="Path to write the standalone HTML viewer")
     parser.add_argument(
+        "--tex-entry",
+        dest="tex_entry",
+        help="TeX entrypoint used to extract MathJax macros. Defaults to document.source_entrypoint when present.",
+    )
+    parser.add_argument(
+        "--macro-file",
+        dest="macro_file",
+        help="MathJax macro JSON file to merge before rendering. Defaults to _build/<entry>-mathjax-macros.json.",
+    )
+    parser.add_argument(
+        "--refresh-macros",
+        action="store_true",
+        help="Regenerate the default macro file from the TeX entrypoint before rendering.",
+    )
+    parser.add_argument(
         "--reduce-transitive-edges",
         action="store_true",
         help="Apply graph-theoretic transitive reduction before rendering",
@@ -1828,6 +2129,8 @@ def main() -> None:
 
     doc = json.loads(source_path.read_text(encoding="utf-8"))
     validate_document(doc)
+    macro_path = prepare_macro_file(args, source_path, doc)
+    macro_count = merge_mathjax_macros(doc, macro_path)
     reduction_note = ""
     removed_edges: list[dict] = []
     if args.reduce_transitive_edges:
@@ -1850,6 +2153,8 @@ def main() -> None:
                 "entities": len(doc["entities"]),
                 "reduced": args.reduce_transitive_edges,
                 "removed_edges": len(removed_edges),
+                "macro_file": str(macro_path) if macro_path else None,
+                "macros_from_file": macro_count,
             },
             indent=2,
         )
