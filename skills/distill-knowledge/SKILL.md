@@ -11,9 +11,8 @@ Dependencies: none
 
 Preserve project-continuity knowledge before attention moves elsewhere. This skill separates four outputs that are easy to conflate:
 
-- workflow adjustments: changes to how agents should behave going forward, encoded in spec files
-- interface updates: notes about interaction points future humans or agents must know
-- project lessons: context not easily recoverable from the repo after the adjustment above
+- workflow and doc updates: changes encoded in spec files, workflow files, and interface docs so agents and contributors act correctly going forward
+- project lessons: context not already encoded in any of the above — dead ends, rejected decisions, transient warnings, sensitivities that don't fit in a rule
 - memory candidates: optional user-level or cross-project facts worth proposing for durable memory
 
 ## Invocation Rules
@@ -69,7 +68,7 @@ If no adjustment is needed, say so explicitly.
 
 ### 3. Update Project Lessons
 
-Write a lesson entry **only if the lesson is not already captured** by the spec or interface files updated in step 2. Duplicating content that now lives in a spec file adds noise and diverges over time.
+Write a lesson entry only for knowledge **not already encoded** anywhere in the repo — spec files, workflow files, READMEs, code comments, docstrings, or any other file agents or contributors will actually read. If it's captured in any of those, do not duplicate it here — duplicated content diverges and adds noise.
 
 Locate the project lesson target using this precedence:
 
@@ -80,21 +79,19 @@ Locate the project lesson target using this precedence:
 
 If no lesson target exists and the project would benefit from one, create a minimal `lessons` file at the repo root unless local instructions say otherwise.
 
-Project lessons should capture knowledge not easily recovered from the current repo state:
+Good lesson candidates — things with no better home:
 
 - dead ends and why they failed
-- user-visible sensitivities and acceptance criteria
 - rejected designs or terminology
-- local environment or tool quirks not worth encoding as a rule
-- next-agent warnings that are project-specific and transient
+- user-visible sensitivities and acceptance criteria
+- local environment or tool quirks too narrow or transient to encode as a rule
+- next-agent warnings that are project-specific and short-lived
 
 Keep lessons short and durable. Prefer entries shaped as:
 
 - Context: what area or problem this concerns
 - Lesson: what future agents should know
 - Use/Avoid: concrete guidance for next time
-
-Do not duplicate what step 2 already encoded.
 
 ### 4. Propose Memory Candidates
 
