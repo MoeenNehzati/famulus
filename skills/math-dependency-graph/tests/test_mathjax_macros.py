@@ -15,7 +15,7 @@ SCRIPT_DIR = SKILL_DIR / "scripts"
 FIXTURE_DIR = SKILL_DIR / "tests" / "fixtures" / "macro-paper"
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from build_math_dependency_graph import build_html_with_elk  # noqa: E402
+from build_math_dependency_graph import TYPE_STYLES, build_html_with_elk  # noqa: E402
 from extract_mathjax_macros import default_output_path, extract_macros  # noqa: E402
 
 
@@ -93,9 +93,21 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
 
         html = build_html_with_elk(doc)
 
+        self.assertEqual(TYPE_STYLES["theorem"]["shape"], "rect")
         self.assertIn(".selection-ring", html)
-        self.assertIn("stroke: #f8fbff;", html)
-        self.assertIn("stroke-width: 6;", html)
+        self.assertIn("stroke: #111111;", html)
+        self.assertIn("stroke-width: 3;", html)
+        self.assertIn("function expandSelectionRing(", html)
+        self.assertIn("const SELECTION_RING_GAP = 6;", html)
+        self.assertIn("const SELECTION_RING_STROKE_WIDTH = 3;", html)
+        self.assertIn("extraClearance: 3", html)
+        self.assertIn("const gap = SELECTION_RING_GAP;", html)
+        self.assertIn("const offsetLines = rawPoints.map", html)
+        self.assertIn("function lineIntersection(", html)
+        self.assertLess(
+            html.index('group.appendChild(selectionRing);'),
+            html.index('group.appendChild(shapeEl);'),
+        )
         self.assertIn(".graph-node.selected .node-shape", html)
         self.assertIn("filter: brightness(1.18) saturate(1.06);", html)
         self.assertIn('shapeEl.setAttribute("class", "node-shape")', html)
@@ -108,11 +120,83 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
         html = build_html_with_elk(doc)
 
         self.assertIn("function manualDoglegPath(", html)
+        self.assertIn("function edgeNodeGap(", html)
+        self.assertIn("return SELECTION_RING_GAP + SELECTION_RING_STROKE_WIDTH + routingConfig.extraClearance;", html)
+        self.assertIn("function offsetEdgeEndpoints(", html)
+        self.assertIn("function offsetEndpointAwayFromNode(", html)
+        self.assertIn("ts + edgeNodeGap()", html)
+        self.assertIn("tt + edgeNodeGap()", html)
+        self.assertIn("srcPos.x + srcPos.width + edgeNodeGap()", html)
+        self.assertIn("dstPos.x - edgeNodeGap()", html)
+        self.assertIn("const MIN_ARROW_LANDING_RUN = 18;", html)
+        self.assertIn("const mergeLane = edgeNodeGap() + Math.max(MIN_ARROW_LANDING_RUN, routingConfig.mergeLaneDistance);", html)
+        self.assertIn("const laneX = sourceOnRight ? dstPos.x - mergeLane : dstPos.x + dstPos.width + mergeLane;", html)
+        self.assertIn("const key = pathEl.dataset.targetNodeId;", html)
         self.assertIn("function incidentEdgePaths(nodeId)", html)
         self.assertIn("function rerouteIncidentEdgesFromCurrentPositions(nodeId)", html)
+        self.assertIn("function rerouteAllVisibleEdgesFromCurrentPositions()", html)
         mouseup_handler = html.split('document.addEventListener("mouseup", event => {', 1)[1].split("});", 1)[0]
         self.assertIn("rerouteIncidentEdgesFromCurrentPositions(droppedNodeId);", mouseup_handler)
         self.assertNotIn("updateVisibilityFull();", mouseup_handler)
+
+    def test_arrowheads_are_synced_svg_polygons_not_markers(self) -> None:
+        doc = json.loads((FIXTURE_DIR / "graph.json").read_text(encoding="utf-8"))
+
+        html = build_html_with_elk(doc)
+
+        self.assertIn(".edge-arrow", html)
+        self.assertIn("function pathPointsForArrow(pathEl)", html)
+        self.assertIn("function syncArrowheadForPath(pathEl)", html)
+        self.assertIn("function attachArrowhead(pathEl)", html)
+        self.assertIn("path.dataset.edgeId = meta.edge_id || elkEdge.id;", html)
+        self.assertIn("attachArrowhead(path);", html)
+        self.assertIn("syncArrowheadForPath(pathEl);", html)
+        self.assertIn('edgeLayer.querySelectorAll(".edge-arrow[data-bridge=\'true\']")', html)
+        self.assertIn("arrowEl.setAttribute(\"fill\", pathEl.style.stroke || pathEl.getAttribute(\"stroke\") || \"#111111\");", html)
+        self.assertNotIn('marker-end="url(#arrow)"', html)
+        self.assertNotIn('setAttribute("marker-end"', html)
+
+    def test_routing_controls_update_edges_and_layout(self) -> None:
+        doc = json.loads((FIXTURE_DIR / "graph.json").read_text(encoding="utf-8"))
+
+        html = build_html_with_elk(doc)
+
+        self.assertIn('<div class="routing-controls" id="routing-controls">', html)
+        self.assertIn('<summary>Presets</summary>', html)
+        self.assertIn('<label for="routing-compactness">Graph spread</label>', html)
+        self.assertIn('<summary>Advanced</summary>', html)
+        self.assertIn('const routingPresets = {', html)
+        self.assertIn('const shapePresets = {', html)
+        self.assertIn('compact: { extraClearance: 0, parallelSpacing: 4, mergeLaneDistance: 18', html)
+        self.assertIn('spacious: { extraClearance: 16, parallelSpacing: 36, mergeLaneDistance: 80', html)
+        self.assertIn('curvy: { cornerRadius: 60 }', html)
+        self.assertIn('max="260"', html)
+        self.assertIn('function applyEdgeRoutingChange(patch)', html)
+        self.assertIn('function applyLayoutRoutingChange(patch)', html)
+        self.assertIn('rerouteAllVisibleEdgesFromCurrentPositions();', html)
+        self.assertIn('updateVisibilityFull();', html)
+        self.assertIn('routingCompactnessSelect.addEventListener("change"', html)
+        self.assertIn('routingShapeSelect.addEventListener("change"', html)
+        self.assertIn('routingConfig', html)
+        self.assertIn('String(routingConfig.nodeSpacing)', html)
+        self.assertIn('routingConfig.cornerRadius', html)
+        self.assertIn('routingConfig.mergeLaneDistance', html)
+        self.assertIn("function enforceVerticalNodeSpacing(children)", html)
+        self.assertIn("routingConfig.nodeSpacing", html)
+        self.assertIn("rerouteAllVisibleEdgesFromCurrentPositions();", html)
+        self.assertIn('aria-label="Vertical cell spacing"', html)
+
+    def test_http_page_watches_for_regenerated_html(self) -> None:
+        doc = json.loads((FIXTURE_DIR / "graph.json").read_text(encoding="utf-8"))
+
+        html = build_html_with_elk(doc)
+
+        self.assertIn('const GRAPH_BUILD_ID = "', html)
+        self.assertIn("function startBuildRefreshWatcher()", html)
+        self.assertIn('fetch(url.toString(), { cache: "no-store" })', html)
+        self.assertIn('url.searchParams.set("graph_probe"', html)
+        self.assertIn('reloadUrl.searchParams.set("graph_v", nextBuildId);', html)
+        self.assertIn("window.location.replace(reloadUrl.toString());", html)
 
     def test_delete_paths_do_not_call_deselect_and_reset_view(self) -> None:
         doc = json.loads((FIXTURE_DIR / "graph.json").read_text(encoding="utf-8"))
@@ -125,6 +209,20 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
         self.assertNotIn("deselect();", toolbar_handler)
         self.assertIn("clearSelectionDetails();", double_click_handler)
         self.assertNotIn("deselect();", double_click_handler)
+
+    def test_restore_hidden_node_reroutes_incident_edges(self) -> None:
+        doc = json.loads((FIXTURE_DIR / "graph.json").read_text(encoding="utf-8"))
+
+        html = build_html_with_elk(doc)
+
+        restore_handler = html.split('item.addEventListener("dblclick", () => {', 1)[1].split("});", 1)[0]
+        self.assertIn("hiddenNodes.delete(entity.id);", restore_handler)
+        self.assertIn("updateVisibilityFast();", restore_handler)
+        self.assertIn("rerouteIncidentEdgesFromCurrentPositions(entity.id);", restore_handler)
+        self.assertLess(
+            restore_handler.index("updateVisibilityFast();"),
+            restore_handler.index("rerouteIncidentEdgesFromCurrentPositions(entity.id);"),
+        )
 
     def test_toolbar_help_uses_wrapper_tooltips_for_disabled_buttons(self) -> None:
         doc = json.loads((FIXTURE_DIR / "graph.json").read_text(encoding="utf-8"))
@@ -313,6 +411,25 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     await new Promise(resolve => setTimeout(resolve, 60));
                     if (affected.getAttribute("d") === affectedBefore) throw new Error("incident edge did not reroute");
                     if (unaffected.getAttribute("d") !== unaffectedBefore) throw new Error("unaffected edge rerouted");
+
+                    document.getElementById("reset-btn").dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+                    await new Promise(resolve => setTimeout(resolve, 80));
+                    const childAfterReset = document.querySelector('[data-node-id="child"]');
+                    const rootChildAfterReset = document.querySelector('[data-source-node-id="root"][data-target-node-id="child"]');
+                    const staleRootChildPath = rootChildAfterReset.getAttribute("d");
+                    childAfterReset.dispatchEvent(new MouseEvent("dblclick", {bubbles: true, clientX: 360, clientY: 160}));
+                    await new Promise(resolve => setTimeout(resolve, 80));
+                    root.dispatchEvent(new MouseEvent("mousedown", {bubbles: true, button: 0, clientX: 60, clientY: 100}));
+                    document.dispatchEvent(new MouseEvent("mousemove", {bubbles: true, clientX: 140, clientY: 150}));
+                    document.dispatchEvent(new MouseEvent("mouseup", {bubbles: true, clientX: 140, clientY: 150}));
+                    await new Promise(resolve => setTimeout(resolve, 80));
+                    const removedChild = Array.from(document.querySelectorAll(".removed-item"))
+                      .find(item => item.textContent.includes("Child"));
+                    if (!removedChild) throw new Error("removed child not listed");
+                    removedChild.dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+                    await new Promise(resolve => setTimeout(resolve, 80));
+                    if (rootChildAfterReset.style.display === "none") throw new Error("restored edge stayed hidden");
+                    if (rootChildAfterReset.getAttribute("d") === staleRootChildPath) throw new Error("restored edge used stale path");
                     pass();
                   } catch (error) {
                     fail(error.message || String(error));

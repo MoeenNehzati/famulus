@@ -33,6 +33,7 @@ import argparse
 import html
 import json
 import copy
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict
@@ -52,7 +53,7 @@ TYPE_STYLES = {
     "notation": {"shape": "parallelogram", "color": "#148f77"},
     "lemma": {"shape": "ellipse", "color": "#1e8449"},
     "proposition": {"shape": "rect", "color": "#7d6608"},
-    "theorem": {"shape": "double-rect", "color": "#6c3483"},
+    "theorem": {"shape": "rect", "color": "#6c3483"},
     "corollary": {"shape": "circle", "color": "#b7950b"},
     "remark": {"shape": "rect", "color": "#616a6b"},
 }
@@ -283,6 +284,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     edge_payload = []
     for idx, edge in enumerate(edges, start=1):
         edge_payload.append({"edge_id": f"edge_{idx}", **edge})
+    graph_build_id = str(int(time.time() * 1000))
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -290,6 +292,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
   <meta charset="utf-8" />
   <title>Math dependency graph</title>
   <script>
+    const GRAPH_BUILD_ID = "{graph_build_id}";
     window.MathJax = {{
       tex: {{
         macros: {json.dumps(mathjax_macros, indent=10)},
@@ -337,6 +340,63 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       top: 10px;
       left: 10px;
       z-index: 5;
+    }}
+    .routing-controls {{
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      z-index: 5;
+      width: min(340px, calc(100vw - 40px));
+      max-height: calc(100vh - 90px);
+      overflow: auto;
+      border: 1px solid #d5d8dc;
+      border-radius: 8px;
+      background: rgba(249, 247, 241, 0.94);
+      backdrop-filter: blur(6px);
+      box-shadow: 0 10px 24px rgba(17,24,39,0.12);
+      font-size: 0.86rem;
+    }}
+    .routing-controls details {{
+      border-top: 1px solid #e1e5e8;
+    }}
+    .routing-controls details:first-child {{
+      border-top: none;
+    }}
+    .routing-controls summary {{
+      cursor: pointer;
+      padding: 7px 10px;
+      font-weight: 700;
+      user-select: none;
+    }}
+    .routing-controls-body {{
+      padding: 0 10px 9px;
+      display: grid;
+      gap: 8px;
+    }}
+    .routing-row {{
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }}
+    .routing-row label {{
+      min-width: 0;
+    }}
+    .routing-row input[type="range"] {{
+      width: 145px;
+    }}
+    .routing-row select {{
+      max-width: 165px;
+      border: 1px solid #aeb6bf;
+      border-radius: 6px;
+      background: #f8f9f9;
+      padding: 3px 6px;
+      font-family: inherit;
+    }}
+    .routing-value {{
+      font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+      color: #566573;
+      margin-left: 6px;
     }}
     .toolbar-btn {{
       display: inline-flex;
@@ -551,16 +611,13 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     }}
     .selection-ring {{
       fill: none;
-      stroke: #f8fbff;
-      stroke-width: 6;
+      stroke: #111111;
+      stroke-width: 3;
       stroke-linejoin: round;
       stroke-linecap: round;
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.12s ease;
-      filter:
-        drop-shadow(0 6px 14px rgba(0,0,0,0.42))
-        drop-shadow(0 1px 3px rgba(0,0,0,0.36));
     }}
     .graph-node.selected .selection-ring {{
       opacity: 1;
@@ -688,6 +745,11 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       opacity: 0.92;
       transition: stroke-width 0.12s ease, opacity 0.12s ease, filter 0.12s ease, stroke 0.12s ease;
     }}
+    .edge-arrow {{
+      opacity: 0.92;
+      pointer-events: none;
+      transition: opacity 0.12s ease, filter 0.12s ease, fill 0.12s ease;
+    }}
     .elk-status {{
       font-size: 0.95rem;
       color: #566573;
@@ -718,13 +780,66 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           <button id="reset-btn" class="toolbar-btn" type="button" aria-label="Reset graph state">Reset</button>
         </span>
       </div>
+      <div class="routing-controls" id="routing-controls">
+        <details open>
+          <summary>Presets</summary>
+          <div class="routing-controls-body">
+            <div class="routing-row">
+              <label for="routing-compactness">Graph spread</label>
+              <select id="routing-compactness" aria-label="Spacing preset">
+                <option value="compact">Compact</option>
+                <option value="balanced" selected>Balanced</option>
+                <option value="spacious">Spacious</option>
+              </select>
+            </div>
+            <div class="routing-row">
+              <label for="routing-shape">Shape</label>
+              <select id="routing-shape" aria-label="Edge shape preset">
+                <option value="sharp">Sharp</option>
+                <option value="soft" selected>Soft</option>
+                <option value="curvy">Curvy</option>
+              </select>
+            </div>
+          </div>
+        </details>
+        <details>
+          <summary>Advanced</summary>
+          <div class="routing-controls-body">
+            <div class="routing-row">
+              <label for="routing-clearance">Node gap <span id="routing-clearance-value" class="routing-value"></span></label>
+              <input id="routing-clearance" type="range" min="0" max="30" step="1" aria-label="Extra edge clearance">
+            </div>
+            <div class="routing-row">
+              <label for="routing-radius">Curve <span id="routing-radius-value" class="routing-value"></span></label>
+              <input id="routing-radius" type="range" min="0" max="80" step="1" aria-label="Edge corner radius">
+            </div>
+            <div class="routing-row">
+              <label for="routing-parallel">Parallel gap <span id="routing-parallel-value" class="routing-value"></span></label>
+              <input id="routing-parallel" type="range" min="0" max="60" step="1" aria-label="Parallel edge spacing">
+            </div>
+            <div class="routing-row">
+              <label for="routing-merge">Merge lane <span id="routing-merge-value" class="routing-value"></span></label>
+              <input id="routing-merge" type="range" min="0" max="140" step="1" aria-label="Merged target lane distance">
+            </div>
+            <div class="routing-row">
+              <label for="routing-node-spacing">Vertical spacing <span id="routing-node-spacing-value" class="routing-value"></span></label>
+              <input id="routing-node-spacing" type="range" min="8" max="220" step="1" aria-label="Vertical cell spacing">
+            </div>
+            <div class="routing-row">
+              <label for="routing-layer-spacing">Layer spacing <span id="routing-layer-spacing-value" class="routing-value"></span></label>
+              <input id="routing-layer-spacing" type="range" min="35" max="260" step="1" aria-label="Layer spacing">
+            </div>
+            <div class="routing-row">
+              <label for="routing-edge-node-spacing">Edge-node spacing <span id="routing-edge-node-spacing-value" class="routing-value"></span></label>
+              <input id="routing-edge-node-spacing" type="range" min="0" max="160" step="1" aria-label="ELK edge-node spacing">
+            </div>
+          </div>
+        </details>
+      </div>
       <div class="canvas-wrap" id="canvas-wrap">
         <div id="elk-status" class="elk-status">Rendering graph layout...</div>
         <svg id="graph-svg" width="1200" height="800" viewBox="0 0 1200 800">
           <defs>
-            <marker id="arrow" markerWidth="6" markerHeight="5" refX="5.4" refY="2.5" orient="auto" markerUnits="strokeWidth">
-              <path d="M0,0 L6,2.5 L0,5 z" fill="context-stroke"></path>
-            </marker>
           </defs>
           <g id="edge-layer"></g>
           <g id="node-layer"></g>
@@ -800,6 +915,26 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     const elkStatus = document.getElementById("elk-status");
     const rawJsonCodeEl = document.getElementById("raw-json-code");
     const panelContent = document.getElementById("panel-content");
+    const routingCompactnessSelect = document.getElementById("routing-compactness");
+    const routingShapeSelect = document.getElementById("routing-shape");
+    const routingInputs = {{
+      extraClearance: document.getElementById("routing-clearance"),
+      cornerRadius: document.getElementById("routing-radius"),
+      parallelSpacing: document.getElementById("routing-parallel"),
+      mergeLaneDistance: document.getElementById("routing-merge"),
+      nodeSpacing: document.getElementById("routing-node-spacing"),
+      layerSpacing: document.getElementById("routing-layer-spacing"),
+      edgeNodeSpacing: document.getElementById("routing-edge-node-spacing")
+    }};
+    const routingValueEls = {{
+      extraClearance: document.getElementById("routing-clearance-value"),
+      cornerRadius: document.getElementById("routing-radius-value"),
+      parallelSpacing: document.getElementById("routing-parallel-value"),
+      mergeLaneDistance: document.getElementById("routing-merge-value"),
+      nodeSpacing: document.getElementById("routing-node-spacing-value"),
+      layerSpacing: document.getElementById("routing-layer-spacing-value"),
+      edgeNodeSpacing: document.getElementById("routing-edge-node-spacing-value")
+    }};
 
     // Core state
     const entityMap = new Map(docData.entities.map(e => [e.id, e]));
@@ -846,12 +981,66 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     let elk = null;
     const viewerStateKey = `math-dependency-graph::${{docData.document?.source_file || docData.document?.title || "document"}}`;
 
+    function startBuildRefreshWatcher() {{
+      if (!/^https?:$/.test(window.location.protocol)) return;
+      const matchBuildId = text => {{
+        const match = text.match(/const GRAPH_BUILD_ID = "([^"]+)"/);
+        return match ? match[1] : null;
+      }};
+      const checkForNewBuild = async () => {{
+        try {{
+          const url = new URL(window.location.href);
+          url.searchParams.set("graph_probe", String(Date.now()));
+          const response = await fetch(url.toString(), {{ cache: "no-store" }});
+          if (!response.ok) return;
+          const nextBuildId = matchBuildId(await response.text());
+          if (!nextBuildId || nextBuildId === GRAPH_BUILD_ID) return;
+          const reloadUrl = new URL(window.location.href);
+          reloadUrl.searchParams.delete("graph_probe");
+          reloadUrl.searchParams.set("graph_v", nextBuildId);
+          window.location.replace(reloadUrl.toString());
+        }} catch (error) {{}}
+      }};
+      window.setInterval(checkForNewBuild, 1500);
+    }}
+
+    const routingPresets = {{
+      compact: {{ extraClearance: 0, parallelSpacing: 4, mergeLaneDistance: 18, nodeSpacing: 12, layerSpacing: 45, edgeNodeSpacing: 8 }},
+      balanced: {{ extraClearance: 3, parallelSpacing: 12, mergeLaneDistance: 34, nodeSpacing: 46, layerSpacing: 90, edgeNodeSpacing: 40 }},
+      spacious: {{ extraClearance: 16, parallelSpacing: 36, mergeLaneDistance: 80, nodeSpacing: 120, layerSpacing: 210, edgeNodeSpacing: 110 }}
+    }};
+    const shapePresets = {{
+      sharp: {{ cornerRadius: 0 }},
+      soft: {{ cornerRadius: 18 }},
+      curvy: {{ cornerRadius: 60 }}
+    }};
+    const routingConfig = {{
+      compactnessPreset: "balanced",
+      shapePreset: "soft",
+      ...routingPresets.balanced,
+      ...shapePresets.soft
+    }};
+
     edgeData.forEach(edge => {{
       if (!outgoing.has(edge.source)) outgoing.set(edge.source, []);
       outgoing.get(edge.source).push(edge);
       if (!incoming.has(edge.target)) incoming.set(edge.target, []);
       incoming.get(edge.target).push(edge);
     }});
+
+    function syncRoutingControls() {{
+      routingCompactnessSelect.value = routingConfig.compactnessPreset;
+      routingShapeSelect.value = routingConfig.shapePreset;
+      Object.entries(routingInputs).forEach(([key, input]) => {{
+        input.value = routingConfig[key];
+        routingValueEls[key].textContent = routingConfig[key];
+      }});
+    }}
+
+    function applyRoutingPatch(patch) {{
+      Object.assign(routingConfig, patch);
+      syncRoutingControls();
+    }}
 
     // ── State persistence ────────────────────────────────────────────────────
 
@@ -864,7 +1053,8 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           focusNodeId,
           ancestorFocusMode,
           panelCollapsed: layoutEl.classList.contains("panel-collapsed"),
-          manualPositions: Array.from(manualPositions.entries())
+          manualPositions: Array.from(manualPositions.entries()),
+          routingConfig
         }};
         window.localStorage.setItem(viewerStateKey, JSON.stringify(payload));
       }} catch (e) {{}}
@@ -877,6 +1067,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         const payload = JSON.parse(raw);
         (payload.hiddenTypes || []).forEach(t => {{ if (typeStyles[t]) hiddenTypes.add(t); }});
         (payload.hiddenNodes || []).forEach(id => {{ if (entityMap.has(id)) hiddenNodes.add(id); }});
+        if (payload.routingConfig) applyRoutingPatch(payload.routingConfig);
         if (payload.selectedNodeId && entityMap.has(payload.selectedNodeId)) {{
           selectedNodeId = payload.selectedNodeId;
         }}
@@ -951,6 +1142,13 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       return manualPositions.get(nodeId) || lastNodePositions.get(nodeId) || null;
     }}
 
+    const SELECTION_RING_GAP = 6;
+    const SELECTION_RING_STROKE_WIDTH = 3;
+    const MIN_ARROW_LANDING_RUN = 18;
+    function edgeNodeGap() {{
+      return SELECTION_RING_GAP + SELECTION_RING_STROKE_WIDTH + routingConfig.extraClearance;
+    }}
+
     // Simple straight-line path between two node bounding boxes during live drag.
     // Clip a straight line to node boundaries using proper rect intersection.
     // Returns an SVG path string that starts just outside srcPos and ends just
@@ -972,15 +1170,15 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       let ts = Infinity;
       if (Math.abs(ndx) > 1e-6) ts = Math.min(ts, (srcPos.width  / 2) / Math.abs(ndx));
       if (Math.abs(ndy) > 1e-6) ts = Math.min(ts, (srcPos.height / 2) / Math.abs(ndy));
-      const p0x = sx + ndx * (ts + 4);
-      const p0y = sy + ndy * (ts + 4);
+      const p0x = sx + ndx * (ts + edgeNodeGap());
+      const p0y = sy + ndy * (ts + edgeNodeGap());
 
       // Distance from target center to target boundary along (-ndx, -ndy)
       let tt = Infinity;
       if (Math.abs(ndx) > 1e-6) tt = Math.min(tt, (dstPos.width  / 2) / Math.abs(ndx));
       if (Math.abs(ndy) > 1e-6) tt = Math.min(tt, (dstPos.height / 2) / Math.abs(ndy));
-      const p1x = tx - ndx * (tt + 5);
-      const p1y = ty - ndy * (tt + 5);
+      const p1x = tx - ndx * (tt + edgeNodeGap());
+      const p1y = ty - ndy * (tt + edgeNodeGap());
 
       return `M ${{p0x}} ${{p0y}} L ${{p1x}} ${{p1y}}`;
     }}
@@ -992,33 +1190,34 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       const ty = dstPos.y + dstPos.height / 2;
       const dx = tx - sx;
       const dy = ty - sy;
-      const routeOffset = (routeIndex - (routeCount - 1) / 2) * 12;
+      const routeOffset = (routeIndex - (routeCount - 1) / 2) * routingConfig.parallelSpacing;
+      const mergeLane = edgeNodeGap() + Math.max(MIN_ARROW_LANDING_RUN, routingConfig.mergeLaneDistance);
 
       if (Math.abs(dx) >= Math.abs(dy)) {{
         const sourceOnRight = dx >= 0;
-        const startX = sourceOnRight ? srcPos.x + srcPos.width + 4 : srcPos.x - 4;
+        const startX = sourceOnRight ? srcPos.x + srcPos.width + edgeNodeGap() : srcPos.x - edgeNodeGap();
         const startY = sy + routeOffset;
-        const endX = sourceOnRight ? dstPos.x - 5 : dstPos.x + dstPos.width + 5;
+        const endX = sourceOnRight ? dstPos.x - edgeNodeGap() : dstPos.x + dstPos.width + edgeNodeGap();
         const endY = ty + routeOffset;
-        const midX = (startX + endX) / 2;
+        const laneX = sourceOnRight ? dstPos.x - mergeLane : dstPos.x + dstPos.width + mergeLane;
         return roundedPathForPoints([
           {{x: startX, y: startY}},
-          {{x: midX, y: startY}},
-          {{x: midX, y: endY}},
+          {{x: laneX, y: startY}},
+          {{x: laneX, y: endY}},
           {{x: endX, y: endY}}
         ]);
       }}
 
       const sourceBelow = dy >= 0;
       const startX = sx + routeOffset;
-      const startY = sourceBelow ? srcPos.y + srcPos.height + 4 : srcPos.y - 4;
+      const startY = sourceBelow ? srcPos.y + srcPos.height + edgeNodeGap() : srcPos.y - edgeNodeGap();
       const endX = tx + routeOffset;
-      const endY = sourceBelow ? dstPos.y - 5 : dstPos.y + dstPos.height + 5;
-      const midY = (startY + endY) / 2;
+      const endY = sourceBelow ? dstPos.y - edgeNodeGap() : dstPos.y + dstPos.height + edgeNodeGap();
+      const laneY = sourceBelow ? dstPos.y - mergeLane : dstPos.y + dstPos.height + mergeLane;
       return roundedPathForPoints([
         {{x: startX, y: startY}},
-        {{x: startX, y: midY}},
-        {{x: endX, y: midY}},
+        {{x: startX, y: laneY}},
+        {{x: endX, y: laneY}},
         {{x: endX, y: endY}}
       ]);
     }}
@@ -1032,7 +1231,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       const visiblePaths = incidentEdgePaths(nodeId);
       const routeCounts = new Map();
       visiblePaths.forEach(pathEl => {{
-        const key = `${{pathEl.dataset.sourceNodeId}}->${{pathEl.dataset.targetNodeId}}`;
+        const key = pathEl.dataset.targetNodeId;
         routeCounts.set(key, (routeCounts.get(key) || 0) + 1);
       }});
       const routeSeen = new Map();
@@ -1042,10 +1241,34 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         const srcPos = getEffectivePos(srcId);
         const dstPos = getEffectivePos(dstId);
         if (!srcPos || !dstPos) return;
-        const key = `${{srcId}}->${{dstId}}`;
+        const key = dstId;
         const routeIndex = routeSeen.get(key) || 0;
         routeSeen.set(key, routeIndex + 1);
         pathEl.setAttribute("d", manualDoglegPath(srcPos, dstPos, routeIndex, routeCounts.get(key) || 1));
+        syncArrowheadForPath(pathEl);
+      }});
+    }}
+
+    function rerouteAllVisibleEdgesFromCurrentPositions() {{
+      const visiblePaths = Array.from(document.querySelectorAll(".edge-path"))
+        .filter(pathEl => pathEl.style.display !== "none");
+      const routeCounts = new Map();
+      visiblePaths.forEach(pathEl => {{
+        const key = pathEl.dataset.targetNodeId;
+        routeCounts.set(key, (routeCounts.get(key) || 0) + 1);
+      }});
+      const routeSeen = new Map();
+      visiblePaths.forEach(pathEl => {{
+        const srcId = pathEl.dataset.sourceNodeId;
+        const dstId = pathEl.dataset.targetNodeId;
+        const srcPos = getEffectivePos(srcId);
+        const dstPos = getEffectivePos(dstId);
+        if (!srcPos || !dstPos) return;
+        const key = dstId;
+        const routeIndex = routeSeen.get(key) || 0;
+        routeSeen.set(key, routeIndex + 1);
+        pathEl.setAttribute("d", manualDoglegPath(srcPos, dstPos, routeIndex, routeCounts.get(key) || 1));
+        syncArrowheadForPath(pathEl);
       }});
     }}
 
@@ -1058,6 +1281,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         const dstPos = getEffectivePos(dstId);
         if (srcPos && dstPos) {{
           pathEl.setAttribute("d", simpleEdgePath(srcPos, dstPos));
+          syncArrowheadForPath(pathEl);
         }}
       }});
     }}
@@ -1205,6 +1429,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           hiddenNodes.delete(entity.id);
           saveViewerState();
           updateVisibilityFast();
+          rerouteIncidentEdgesFromCurrentPositions(entity.id);
         }});
         item.addEventListener("click", () => {{
           showEntityDetails(entity);
@@ -1289,6 +1514,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           pathEl.style.opacity = "0.96";
           pathEl.style.display = "";
         }}
+        syncArrowheadForPath(pathEl);
       }});
 
       renderRemovedNodes();
@@ -1390,6 +1616,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     function bridgeEdge(sourceId, targetId, hiddenPath, seedEdge) {{
       const hiddenLabels = hiddenPath.map(id => entityMap.get(id)?.short_title || id);
       return {{
+        edge_id: `bridge_${{sourceId}}_${{targetId}}_${{hiddenPath.join("_") || "direct"}}`,
         source: sourceId,
         target: targetId,
         use_type: "hidden-bridge",
@@ -1471,9 +1698,10 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
           "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
           "elk.separateConnectedComponents": "true",
-          "elk.spacing.nodeNode": "46",
-          "elk.layered.spacing.nodeNodeBetweenLayers": "90",
-          "elk.layered.spacing.edgeNodeBetweenLayers": "40",
+          "elk.spacing.nodeNode": String(routingConfig.nodeSpacing),
+          "elk.layered.spacing.nodeNode": String(routingConfig.nodeSpacing),
+          "elk.layered.spacing.nodeNodeBetweenLayers": String(routingConfig.layerSpacing),
+          "elk.layered.spacing.edgeNodeBetweenLayers": String(routingConfig.edgeNodeSpacing),
           "elk.padding": "[left=40,top=40,right=40,bottom=40]"
         }},
         children: visibleEntities.map(e => ({{ id: e.id, width: 210, height: 68 }})),
@@ -1486,7 +1714,48 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       return [section.startPoint, ...(section.bendPoints || []), section.endPoint].filter(Boolean);
     }}
 
-    function roundedPathForPoints(points, radius = 14) {{
+    function offsetEndpointAwayFromNode(points, endpointIndex, nodeId) {{
+      if (points.length === 0) return points;
+      const nodePos = lastNodePositions.get(nodeId);
+      if (!nodePos) return points;
+      const updated = points.map(p => ({{ x: p.x, y: p.y }}));
+      const point = updated[endpointIndex];
+      const cx = nodePos.x + nodePos.width / 2;
+      const cy = nodePos.y + nodePos.height / 2;
+      const dx = point.x - cx;
+      const dy = point.y - cy;
+      const length = Math.hypot(dx, dy) || 1;
+      updated[endpointIndex] = {{
+        x: point.x + edgeNodeGap() * dx / length,
+        y: point.y + edgeNodeGap() * dy / length
+      }};
+      return updated;
+    }}
+
+    function offsetEdgeEndpoints(points, sourceId, targetId) {{
+      let updated = offsetEndpointAwayFromNode(points, 0, sourceId);
+      updated = offsetEndpointAwayFromNode(updated, updated.length - 1, targetId);
+      return updated;
+    }}
+
+    function enforceVerticalNodeSpacing(children) {{
+      const layers = new Map();
+      (children || []).forEach(node => {{
+        const key = String(Math.round((node.x || 0) / 20) * 20);
+        if (!layers.has(key)) layers.set(key, []);
+        layers.get(key).push(node);
+      }});
+      layers.forEach(layer => {{
+        layer.sort((a, b) => (a.y || 0) - (b.y || 0));
+        let nextY = null;
+        layer.forEach(node => {{
+          if (nextY !== null && (node.y || 0) < nextY) node.y = nextY;
+          nextY = (node.y || 0) + (node.height || 68) + routingConfig.nodeSpacing;
+        }});
+      }});
+    }}
+
+    function roundedPathForPoints(points, radius = routingConfig.cornerRadius) {{
       if (!points.length) return "";
       if (points.length < 3) {{
         let d = `M ${{points[0].x}} ${{points[0].y}}`;
@@ -1510,13 +1779,73 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       return d;
     }}
 
+    function pathPointsForArrow(pathEl) {{
+      try {{
+        const length = pathEl.getTotalLength();
+        if (length <= 0) return null;
+        const tip = pathEl.getPointAtLength(length);
+        const tail = pathEl.getPointAtLength(Math.max(0, length - 14));
+        return {{ tip, tail }};
+      }} catch (error) {{
+        return null;
+      }}
+    }}
+
+    function arrowForPath(pathEl) {{
+      if (!pathEl || !pathEl.dataset.edgeId) return null;
+      return edgeLayer.querySelector(`.edge-arrow[data-edge-id="${{pathEl.dataset.edgeId}}"]`);
+    }}
+
+    function syncArrowheadForPath(pathEl) {{
+      const arrowEl = arrowForPath(pathEl);
+      if (!arrowEl) return;
+      if (pathEl.style.display === "none") {{
+        arrowEl.style.display = "none";
+        return;
+      }}
+      const points = pathPointsForArrow(pathEl);
+      if (!points) return;
+      const dx = points.tip.x - points.tail.x;
+      const dy = points.tip.y - points.tail.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const ux = dx / length;
+      const uy = dy / length;
+      const size = 8;
+      const halfWidth = 4;
+      const baseX = points.tip.x - ux * size;
+      const baseY = points.tip.y - uy * size;
+      const leftX = baseX + -uy * halfWidth;
+      const leftY = baseY + ux * halfWidth;
+      const rightX = baseX - -uy * halfWidth;
+      const rightY = baseY - ux * halfWidth;
+      arrowEl.setAttribute("points", `${{points.tip.x}},${{points.tip.y}} ${{leftX}},${{leftY}} ${{rightX}},${{rightY}}`);
+      arrowEl.style.display = pathEl.style.display;
+      arrowEl.style.opacity = pathEl.style.opacity;
+      arrowEl.style.filter = pathEl.style.filter;
+      arrowEl.setAttribute("fill", pathEl.style.stroke || pathEl.getAttribute("stroke") || "#111111");
+      arrowEl.dataset.sourceNodeId = pathEl.dataset.sourceNodeId;
+      arrowEl.dataset.targetNodeId = pathEl.dataset.targetNodeId;
+      arrowEl.dataset.bridge = pathEl.dataset.bridge;
+    }}
+
+    function attachArrowhead(pathEl) {{
+      const existing = arrowForPath(pathEl);
+      if (existing) existing.remove();
+      const arrowEl = createSvgElement("polygon");
+      arrowEl.setAttribute("class", "edge-arrow");
+      arrowEl.dataset.edgeId = pathEl.dataset.edgeId;
+      edgeLayer.appendChild(arrowEl);
+      syncArrowheadForPath(pathEl);
+      return arrowEl;
+    }}
+
     function mergedTargetPoints(edge, points, targetCounts) {{
       if ((targetCounts.get(edge.target) || 0) <= 1) return points;
       if (points.length < 2) return points;
       const targetPos = lastNodePositions.get(edge.target);
       if (!targetPos) return points;
       const mergedEnd = {{ x: targetPos.x, y: targetPos.y + targetPos.height / 2 }};
-      const mergedEntry = {{ x: targetPos.x - 30, y: mergedEnd.y }};
+      const mergedEntry = {{ x: targetPos.x - edgeNodeGap() - Math.max(MIN_ARROW_LANDING_RUN, routingConfig.mergeLaneDistance), y: mergedEnd.y }};
       const updated = points.map(p => ({{ x: p.x, y: p.y }}));
       if (updated.length === 2) return [updated[0], mergedEntry, mergedEnd];
       updated[updated.length - 2] = mergedEntry;
@@ -1525,6 +1854,77 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     }}
 
     // ── Node rendering ───────────────────────────────────────────────────────
+
+    function expandSelectionRing(ring, x, y, w, h, shape) {{
+      const gap = SELECTION_RING_GAP;
+      const tag = ring.tagName.toLowerCase();
+      if (tag === "rect") {{
+        ring.setAttribute("x", x - gap);
+        ring.setAttribute("y", y - gap);
+        ring.setAttribute("width", w + 2 * gap);
+        ring.setAttribute("height", h + 2 * gap);
+        if (shape === "roundrect") {{
+          ring.setAttribute("rx", 18 + gap);
+          ring.setAttribute("ry", 18 + gap);
+        }}
+        return;
+      }}
+      if (tag === "circle") {{
+        const r = Number(ring.getAttribute("r") || 0);
+        ring.setAttribute("r", r + gap);
+        return;
+      }}
+      if (tag === "ellipse") {{
+        const rx = Number(ring.getAttribute("rx") || 0);
+        const ry = Number(ring.getAttribute("ry") || 0);
+        ring.setAttribute("rx", rx + gap);
+        ring.setAttribute("ry", ry + gap);
+        return;
+      }}
+      if (tag === "polygon") {{
+        const rawPoints = (ring.getAttribute("points") || "")
+          .trim()
+          .split(/\\s+/)
+          .map(pair => pair.split(",").map(Number))
+          .filter(pair => pair.length === 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1]));
+        if (rawPoints.length < 3) return;
+
+        const signedArea = rawPoints.reduce((sum, [x1, y1], idx) => {{
+          const [x2, y2] = rawPoints[(idx + 1) % rawPoints.length];
+          return sum + x1 * y2 - x2 * y1;
+        }}, 0);
+        const outwardSign = signedArea >= 0 ? 1 : -1;
+
+        const offsetLines = rawPoints.map(([x1, y1], idx) => {{
+          const [x2, y2] = rawPoints[(idx + 1) % rawPoints.length];
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          const length = Math.hypot(dx, dy) || 1;
+          const nx = outwardSign * dy / length;
+          const ny = -outwardSign * dx / length;
+          return {{
+            p: {{ x: x1 + gap * nx, y: y1 + gap * ny }},
+            d: {{ x: dx, y: dy }}
+          }};
+        }});
+
+        function lineIntersection(lineA, lineB, fallback) {{
+          const cross = lineA.d.x * lineB.d.y - lineA.d.y * lineB.d.x;
+          if (Math.abs(cross) < 1e-6) return fallback;
+          const px = lineB.p.x - lineA.p.x;
+          const py = lineB.p.y - lineA.p.y;
+          const t = (px * lineB.d.y - py * lineB.d.x) / cross;
+          return {{ x: lineA.p.x + t * lineA.d.x, y: lineA.p.y + t * lineA.d.y }};
+        }}
+
+        const expanded = rawPoints.map((point, idx) => {{
+          const prev = offsetLines[(idx + rawPoints.length - 1) % rawPoints.length];
+          const current = offsetLines[idx];
+          return lineIntersection(prev, current, {{ x: point[0], y: point[1] }});
+        }}).map(point => `${{point.x}},${{point.y}}`);
+        if (expanded.length) ring.setAttribute("points", expanded.join(" "));
+      }}
+    }}
 
     function renderNode(entity, position) {{
       const style = nodeStyle(entity);
@@ -1590,6 +1990,12 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         selectionRing = shapeEl.cloneNode(false);
       }}
 
+      if (selectionRing) {{
+        expandSelectionRing(selectionRing, x, y, w, h, style.shape);
+        selectionRing.setAttribute("class", "selection-ring");
+        group.appendChild(selectionRing);
+      }}
+
       if (shapeEl) {{
         shapeEl.setAttribute("class", "node-shape");
         shapeEl.setAttribute("fill", style.color);
@@ -1597,11 +2003,6 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         shapeEl.setAttribute("stroke-width", "2");
         if (isInferred) shapeEl.setAttribute("stroke-dasharray", "6 3");
         group.appendChild(shapeEl);
-      }}
-
-      if (selectionRing) {{
-        selectionRing.setAttribute("class", "selection-ring");
-        group.appendChild(selectionRing);
       }}
 
       const foreignObject = createSvgElement("foreignObject");
@@ -1620,10 +2021,13 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     function emphasizeEdge(pathEl, strokeColor = null) {{
       if (!pathEl) return;
       if (pathEl.parentNode === edgeLayer) edgeLayer.appendChild(pathEl);
+      const arrowEl = arrowForPath(pathEl);
+      if (arrowEl && arrowEl.parentNode === edgeLayer) edgeLayer.appendChild(arrowEl);
       if (strokeColor) pathEl.style.stroke = strokeColor;
       pathEl.style.strokeWidth = "3";
       pathEl.style.opacity = "0.98";
       pathEl.style.filter = "drop-shadow(0 0 1px rgba(17, 24, 39, 0.18))";
+      syncArrowheadForPath(pathEl);
     }}
 
     function clearEdgeEmphasis(pathEl) {{
@@ -1632,10 +2036,11 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       pathEl.style.strokeWidth = "";
       pathEl.style.opacity = "";
       pathEl.style.filter = "";
+      syncArrowheadForPath(pathEl);
     }}
 
     function setIncomingEdgeHighlight(nodeId, active) {{
-      document.querySelectorAll(`[data-target-node-id="${{nodeId}}"]`).forEach(pathEl => {{
+      document.querySelectorAll(`.edge-path[data-target-node-id="${{nodeId}}"]`).forEach(pathEl => {{
         if (active) emphasizeEdge(pathEl);
         else clearEdgeEmphasis(pathEl);
       }});
@@ -1751,6 +2156,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         const graph = await computeLayout(visibleEntities, visibleEdges);
         if (currentVersion !== renderVersion) return;
         elkStatus.textContent = "";
+        enforceVerticalNodeSpacing(graph.children || []);
 
         const nodeLookup = new Map((graph.children || []).map(n => [n.id, n]));
         visibleEntities.forEach(entity => {{
@@ -1766,8 +2172,14 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         }});
         hasFullLayout = true;
 
-        const graphWidth = Math.max(900, (graph.width || 0) + 80);
-        const graphHeight = Math.max(500, (graph.height || 0) + 80);
+        const graphWidth = Math.max(
+          900,
+          ...Array.from(lastNodePositions.values()).map(pos => pos.x + pos.width + 80)
+        );
+        const graphHeight = Math.max(
+          500,
+          ...Array.from(lastNodePositions.values()).map(pos => pos.y + pos.height + 80)
+        );
         svgEl.setAttribute("width", String(graphWidth));
         svgEl.setAttribute("height", String(graphHeight));
         svgEl.setAttribute("viewBox", `0 0 ${{graphWidth}} ${{graphHeight}}`);
@@ -1780,19 +2192,24 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           const meta = visibleEdges[idx];
           const section = (elkEdge.sections || [])[0];
           if (!section || !meta) return;
-          const points = mergedTargetPoints(meta, pointsForSection(section), targetCounts);
+          const points = offsetEdgeEndpoints(
+            mergedTargetPoints(meta, pointsForSection(section), targetCounts),
+            meta.source,
+            meta.target
+          );
           const path = createSvgElement("path");
           path.setAttribute("class", "edge-path");
           path.setAttribute("d", roundedPathForPoints(points));
           path.setAttribute("stroke", edgeColorForTarget(meta.target));
-          path.setAttribute("marker-end", "url(#arrow)");
           if (meta.confidence === "Likely") path.setAttribute("stroke-dasharray", "8 5");
           else if (meta.confidence === "Speculative") path.setAttribute("stroke-dasharray", "3 5");
           else if (meta.bridge) path.setAttribute("stroke-dasharray", "6 4");
+          path.dataset.edgeId = meta.edge_id || elkEdge.id;
           path.dataset.targetNodeId = meta.target;
           path.dataset.sourceNodeId = meta.source;
           path.dataset.bridge = meta.bridge ? "true" : "false";
           edgeLayer.appendChild(path);
+          attachArrowhead(path);
           bindEdgeHover(path, meta);
           lastRenderedEdges.push(meta);
         }});
@@ -1815,6 +2232,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         manualPositions.forEach((_, nodeId) => {{
           if (!isHiddenNode(nodeId)) rerouteIncidentEdgesFromCurrentPositions(nodeId);
         }});
+        rerouteAllVisibleEdgesFromCurrentPositions();
 
         applyAncestorFocus();
         typesetElement(nodeLayer);
@@ -1849,10 +2267,12 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         const src = pathEl.dataset.sourceNodeId;
         const dst = pathEl.dataset.targetNodeId;
         pathEl.style.display = (!isHiddenNode(src) && !isHiddenNode(dst)) ? "" : "none";
+        syncArrowheadForPath(pathEl);
       }});
 
       // Remove all bridge edges; recompute them from current node positions.
       edgeLayer.querySelectorAll(".edge-path[data-bridge='true']").forEach(el => el.remove());
+      edgeLayer.querySelectorAll(".edge-arrow[data-bridge='true']").forEach(el => el.remove());
 
       const visibleEdges = computeVisibleEdges();
       visibleEdges.forEach(edge => {{
@@ -1865,11 +2285,12 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         path.setAttribute("d", manualDoglegPath(srcPos, dstPos));
         path.setAttribute("stroke", edgeColorForTarget(edge.target));
         path.setAttribute("stroke-dasharray", "6 4");
-        path.setAttribute("marker-end", "url(#arrow)");
+        path.dataset.edgeId = edge.edge_id || `bridge_${{edge.source}}_${{edge.target}}`;
         path.dataset.targetNodeId = edge.target;
         path.dataset.sourceNodeId = edge.source;
         path.dataset.bridge = "true";
         edgeLayer.appendChild(path);
+        attachArrowhead(path);
         bindEdgeHover(path, edge);
       }});
 
@@ -2025,6 +2446,48 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       panelContent.querySelectorAll(".sidebar-section.drag-over").forEach(el => el.classList.remove("drag-over"));
     }});
 
+    // ── Routing controls ─────────────────────────────────────────────────────
+
+    function applyEdgeRoutingChange(patch) {{
+      applyRoutingPatch(patch);
+      saveViewerState();
+      rerouteAllVisibleEdgesFromCurrentPositions();
+    }}
+
+    function applyLayoutRoutingChange(patch) {{
+      applyRoutingPatch(patch);
+      saveViewerState();
+      updateVisibilityFull();
+    }}
+
+    routingCompactnessSelect.addEventListener("change", () => {{
+      const presetName = routingCompactnessSelect.value;
+      applyLayoutRoutingChange({{
+        compactnessPreset: presetName,
+        ...routingPresets[presetName]
+      }});
+    }});
+
+    routingShapeSelect.addEventListener("change", () => {{
+      const presetName = routingShapeSelect.value;
+      applyEdgeRoutingChange({{
+        shapePreset: presetName,
+        ...shapePresets[presetName]
+      }});
+    }});
+
+    ["extraClearance", "cornerRadius", "parallelSpacing", "mergeLaneDistance"].forEach(key => {{
+      routingInputs[key].addEventListener("input", () => {{
+        applyEdgeRoutingChange({{ [key]: Number(routingInputs[key].value) }});
+      }});
+    }});
+
+    ["nodeSpacing", "layerSpacing", "edgeNodeSpacing"].forEach(key => {{
+      routingInputs[key].addEventListener("input", () => {{
+        applyLayoutRoutingChange({{ [key]: Number(routingInputs[key].value) }});
+      }});
+    }});
+
     // ── Other event listeners ────────────────────────────────────────────────
 
     focusToggle.addEventListener("click", () => {{
@@ -2080,7 +2543,9 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 
     // ── Initialization ────────────────────────────────────────────────────────
 
+    startBuildRefreshWatcher();
     restoreViewerState();
+    syncRoutingControls();
     syncPanelToggle();
     restoreSidebarOrder();
 

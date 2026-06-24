@@ -104,7 +104,14 @@ Then report briefly:
    python scripts/build_math_dependency_graph.py <source.json> --tex-entry <entrypoint.tex>
    ```
    Output defaults to `_build/<name>.html` next to the JSON. Use `--html-out <path>` to override.
-7. Flag uncertain or heuristic edges explicitly.
+7. For repeated browser inspection after rerenders, run the no-cache local
+   server from the document workspace:
+   ```
+   python scripts/serve_graph.py --directory <document-workspace> --port 8765
+   ```
+   The server binds to `127.0.0.1` by default and keeps running until stopped.
+   Open `http://127.0.0.1:8765/<graph>.html`.
+8. Flag uncertain or heuristic edges explicitly.
 
 ## 6. Canonical fields
 
@@ -184,6 +191,10 @@ manual corrections.
 The HTML graph should:
 - use different node shapes for different entity types
 - color-code entity types
+- use a single-line boundary for every unselected node; reserve the double-line
+  boundary for the selected node, drawn as two somewhat thick black outlines
+  separated by a small gap; the second outline must sit outside the cell and
+  must not overlap the node label
 - encode dependency confidence through edge style
 - use a layered left-to-right layout for distinct implications
 - place same-result vertical variants such as attached corollaries directly below their parent when appropriate
@@ -290,6 +301,6 @@ Lower `position` values get earlier colors.
 | `notation` | Parallelogram |
 | `lemma` | Ellipse |
 | `proposition` | Rectangle |
-| `theorem` | Double rectangle |
+| `theorem` | Rectangle |
 | `corollary` | Circle |
 | `remark` | Rectangle |
