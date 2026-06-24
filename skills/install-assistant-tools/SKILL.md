@@ -11,7 +11,7 @@ The skill ships three standalone scripts in `bin/`:
 
 - `bin/assistant` — launches `claude --agent assistant` (or `codex --profile
   assistant` with `-c`) from the assistant project directory.
-- `bin/coder` — launches `claude --agent coder` or `codex --profile coder`
+- `bin/collab` — launches `claude --agent collab` or `codex --profile collab`
   from the current directory.
 - `bin/tmux-workspace` — creates or attaches to a tmux workspace; `tw` is an
   alias symlink for it.
@@ -25,7 +25,7 @@ definitions).
 ```
 bin/
   assistant          source script for the assistant command
-  coder              source script for the coder command
+  collab             source script for the collab command
   tmux-workspace     source script for tw / tmux-workspace
 scripts/
   install_assistant_tools.sh
@@ -42,11 +42,13 @@ bash scripts/install_assistant_tools.sh
 The script installs or updates:
 
 - `$bin_dir/assistant` — symlink to `bin/assistant` in this skill directory.
-- `$bin_dir/coder` — symlink to `bin/coder`.
+- `$bin_dir/collab` — symlink to `bin/collab`.
 - `$bin_dir/tmux-workspace` — symlink to `bin/tmux-workspace`.
 - `$bin_dir/tw` — symlink to `bin/tmux-workspace` (alias).
 - Each repo-owned profile under `profiles/*.config.toml`, linked into both the
   Codex home and Claude home.
+- Legacy repo-owned `coder` launcher/profile symlinks, if present, are removed
+  during install.
 - A managed PATH block in the user shell rc (and system rc when writable).
 - `~/.config/environment.d/20-ai-agent.conf` — sets `AI_AGENT_COMMAND_TEMPLATE`
   for the systemd user environment, required by the `recurring-tasks` skill so
@@ -130,12 +132,12 @@ Expected behavior:
 
 - `type assistant` reports a file (not a function).
 - `assistant --help` prints usage and exits 0.
-- `coder --help` prints usage and exits 0.
+- `collab --help` prints usage and exits 0.
 - `tw -h` documents `-c|--codex`.
 - `assistant -c` launches Codex from the configured assistant directory with
   `--profile assistant`.
-- `coder --codex` launches Codex from the current directory with
-  `--profile coder`.
+- `collab --codex` launches Codex from the current directory with
+  `--profile collab`.
 - `tw -c` creates or attaches to the Codex-specific tmux workspace.
 - Each repo-owned profile in `profiles/*.config.toml` has matching symlinks
   under `$CODEX_HOME` or `~/.codex`, and under `$CLAUDE_HOME` or `~/.claude`.

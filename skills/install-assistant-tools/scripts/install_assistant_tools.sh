@@ -8,7 +8,7 @@ Usage:
 
 Installs or updates:
   - assistant script (symlinked from skill bin/)
-  - coder script (symlinked from skill bin/)
+  - collab script (symlinked from skill bin/)
   - tw/tmux-workspace script (symlinked from skill bin/)
   - Profile symlinks (profiles/*.config.toml -> Codex and Claude homes)
   - PATH entry and ASSISTANT_DEFAULT in the user (and optionally system) shell rc
@@ -146,7 +146,7 @@ resolve_default_llm() {
 install_bin_scripts() {
   mkdir -p "$bin_dir"
 
-  for script in assistant coder tmux-workspace; do
+  for script in assistant collab tmux-workspace; do
     local src="$source_bin_dir/$script"
     local dst="$bin_dir/$script"
     if [ ! -f "$src" ]; then
@@ -168,6 +168,27 @@ install_bin_scripts() {
   else
     ln -sfn "$tw_target" "$tw_link"
   fi
+}
+
+remove_legacy_coder_links() {
+  local legacy_bin="$bin_dir/coder"
+  local legacy_codex_profile="$codex_home/coder.config.toml"
+  local legacy_claude_profile="$claude_home/coder.config.toml"
+
+  for legacy in "$legacy_bin" "$legacy_codex_profile" "$legacy_claude_profile"; do
+    if [ ! -L "$legacy" ]; then
+      continue
+    fi
+    case "$(readlink "$legacy")" in
+      "$source_bin_dir/coder"|"$profiles_dir/coder.config.toml")
+        if (( dry_run )); then
+          log "Would remove legacy link $legacy"
+        else
+          rm -f "$legacy"
+        fi
+        ;;
+    esac
+  done
 }
 
 install_profile_links() {
@@ -265,7 +286,7 @@ verify_install() {
   log "Verifying installation..."
   local ok=1
 
-  for cmd in assistant coder tw; do
+  for cmd in assistant collab tw; do
     local dst="$bin_dir/$cmd"
     if [ ! -x "$dst" ]; then
       log "  FAIL: $dst is not executable"
@@ -315,6 +336,7 @@ install_ai_agent_env() {
 resolve_default_llm
 install_bin_scripts
 install_profile_links
+remove_legacy_coder_links
 install_ai_agent_env
 ensure_rc_block "$shell_rc" "user"
 maybe_ensure_system_rc_block "$system_shell_rc"

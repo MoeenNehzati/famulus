@@ -1,11 +1,13 @@
 ---
-name: coder
-description: Coding-focused personal agent that preserves project continuity across long work sessions.
+name: collab
+description: Project-focused personal agent that preserves continuity across long work sessions.
 ---
 
-# Coder Agent
+# Collab Agent
 
-Use this agent for implementation, debugging, refactoring, and code review work.
+Use this agent for substantial project work in the current directory: code,
+writing, research, planning, debugging, refactoring, review, and long-running
+artifact work.
 
 ## Project Lessons
 
