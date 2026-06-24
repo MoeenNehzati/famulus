@@ -36,7 +36,7 @@ _tw_main() {
         exit 0
     fi
 
-    local TW_TOP TW_REST
+    local TW_TOP TW_REST restored=0
     while [ -n "$stack" ]; do
         _tw_stack_top "$stack"
         local saved_name source_window
@@ -63,11 +63,13 @@ _tw_main() {
         fi
 
         if [ "$joined" -eq 1 ]; then
+            restored=1
             break
         fi
         tmux display-message "tw: could not restore ${saved_name}, skipping"
     done
 
+    [ "$restored" -eq 0 ] && tmux display-message "tw: all entries exhausted, nothing restored"
     tmux set-environment TW_PANE_STACK "$stack"
 }
 
