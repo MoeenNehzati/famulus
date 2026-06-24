@@ -48,7 +48,19 @@ Dependencies authorize skill invocation only. A dependency does not authorize di
 ```
 Empty array `[]` for unused categories. Entries map to the active agent's permission allow-list when that agent supports one. Do not cascade another skill's permissions here; list that skill in `depends_on_skills` instead and let permission tooling derive transitive grants from declared dependencies.
 
-**5. Output-focused writing** — specify what to invoke and how to interpret output. Implementation internals belong in tool/script docs, not `SKILL.md`.
+**5. Frontmatter `description:` is a trigger declaration, not a summary** — write it as "Use when..." followed by the triggering conditions and symptoms that signal this skill applies. Never summarize the skill's workflow, steps, or outputs in the description.
+
+If the description summarizes the workflow, agents read it instead of the skill body and follow the shorter summary — the full SKILL.md becomes documentation they skip. The description should only answer "should I load this skill right now?", not "what does this skill do?"
+
+```yaml
+# Bad — summarizes workflow; agent may follow this instead of reading the skill
+description: Use when planning your day — fetches calendar and todo, computes free time, ranks tasks.
+
+# Good — triggering conditions only
+description: Use when the user asks to plan their day, check their schedule, or review today's actions.
+```
+
+**6. Output-focused writing** — specify what to invoke and how to interpret output. Implementation internals belong in tool/script docs, not `SKILL.md`.
 
 **6. Terse writing** — every line earns its place. No restatements, no motivation paragraphs. Long skills burn context on every invocation.
 
@@ -57,7 +69,7 @@ Empty array `[]` for unused categories. Entries map to the active agent's permis
 **8. Skills are components in an evolving system — design accordingly.**
 
 - **Reuse, don't reimplement.** Before writing new behavior, check whether an existing skill already covers it. If yes, invoke or extend that skill. Duplication means two places to update when behavior changes; reuse means one. Failing to reuse when a suitable skill exists is a defect. Example: `daily-plan` invokes `list-manager`, `g-calendar`, and `get-weather` rather than reimplementing any of them.
-- **Depend on interfaces, not internals — invoke the skill, never its scripts.** Each skill's scripts are private to that skill. When your skill needs behavior another skill provides, invoke that skill and let it run its own scripts. Directly calling another skill's scripts bypasses its logic and couples to its internals. Reuse maximally, but only through skill invocation.
+- **Depend on interfaces, not internals — invoke the skill, never its scripts.** Each skill's scripts are private to that skill. When your skill needs behavior another skill provides, invoke that skill and let it run its own scripts. Directly calling another skill's scripts bypasses its logic and couples to its internals. Reuse maximally, but only through skill invocation. Do not name or reference paths to a dependency skill's scripts anywhere in `SKILL.md` — even as examples or clarifications. Naming them invites direct calls.
 - **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative. A skill may refer to files under its own directory and to shared `../references/` material only. It must not mention parent-path addresses such as `../other-skill/...`, `../../skills/...`, or any absolute filesystem path to another skill. System-level paths are allowed only for durable user configuration or executable interfaces that are intentionally outside the skills tree, such as `~/.config/<skill-name>/` and installed commands under `bin`.
 - **Make your own interface explicit.** State what inputs your skill expects and what outputs it produces, so future skills can depend on you cleanly. If your skill runs a script, document the invocation pattern and output format in `SKILL.md`.
 
