@@ -38,17 +38,37 @@ _tw_main() {
     win_width=$(tmux display-message -p "#{window_width}")
     win_height=$(tmux display-message -p "#{window_height}")
 
+    # Guard: if pane fills the entire window, there is no split to record
+    if [ "$pane_width" -eq "$win_width" ] && [ "$pane_height" -eq "$win_height" ]; then
+        tmux display-message "tw: pane fills entire window — nothing to break"
+        exit 0
+    fi
+
     local pos
     pos=$(_tw_compute_position "$pane_left" "$pane_top" "$pane_width" "$pane_height" \
                                 "$win_width" "$win_height")
 
-    # Generate unique saved window name
-    local saved_name="tw-saved-$$"
+    # Generate unique saved window name using tmux pane ID (server-unique)
+    local pane_id
+    pane_id=$(tmux display-message -p "#{pane_id}")
+    local saved_name="tw-saved-${pane_id#%}"  # strip leading % from %3 → tw-saved-3
 
-    # Encode entry: saved-window|source-window|split|position|size
-    local entry="${saved_name}|${window_name}|${pos}"
+    # Sanitize window name: replace spaces and pipes with dashes to avoid
+    # corrupting the space-delimited stack and pipe-delimited entry format
+    local safe_window_name
+    safe_window_name="${window_name//[ |]/-}"
 
-    # Push onto session stack
+    # Entry format: saved-name|split|position|size|source-window
+    # source-window is LAST so that pipes in the window name don't corrupt
+    # positional field parsing (cut -d'|' -f5- captures it all)
+    local entry="${saved_name}|${pos}|${safe_window_name}"
+
+    # Push onto session stack — AFTER break-pane succeeds, to avoid a dangling
+    # stack entry if break-pane fails
+    # Break pane out without following first
+    tmux break-pane -d -n "$saved_name"
+
+    # Only update stack if break-pane succeeded
     local current_stack raw
     raw=$(tmux show-environment TW_PANE_STACK 2>/dev/null || echo "-TW_PANE_STACK")
     if [[ "$raw" == -* ]]; then current_stack=""; else current_stack="${raw#TW_PANE_STACK=}"; fi
@@ -56,9 +76,6 @@ _tw_main() {
     local new_stack
     new_stack=$(_tw_stack_push "$current_stack" "$entry")
     tmux set-environment TW_PANE_STACK "$new_stack"
-
-    # Break pane out without following
-    tmux break-pane -d -n "$saved_name"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
