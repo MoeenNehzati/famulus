@@ -1,0 +1,4 @@
+interface:
+  display_name: "Update Skill Guidelines"
+  short_description: "Keep skill standards and hooks aligned"
+  default_prompt: "Use $update-skill-guidelines to revise the skill standards and update the matching hooks."

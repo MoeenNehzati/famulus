@@ -224,7 +224,7 @@ install_profile_links() {
 install_git_hooks() {
   local hook
 
-  for hook in pre-commit check-skill-names check-skill-dependencies pre-push; do
+  for hook in pre-commit git/check-not-detached skill/check-names skill/check-dependencies pre-push; do
     local hook_path="$hooks_dir/$hook"
     if [ ! -f "$hook_path" ]; then
       echo "Missing git hook script: $hook_path" >&2

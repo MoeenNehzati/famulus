@@ -56,9 +56,9 @@ The script installs or updates:
 - Each repo-owned profile under `profiles/*.config.toml`, linked into both the
   Codex home and Claude home.
 - The repo's Git hook path: `git config core.hooksPath .githooks`, after
-  verifying that `.githooks/pre-commit`, `.githooks/check-skill-names`,
-  `.githooks/check-skill-dependencies`, and `.githooks/pre-push` exist and are
-  executable.
+  verifying that `.githooks/pre-commit`, `.githooks/git/check-not-detached`,
+  `.githooks/skill/check-names`, `.githooks/skill/check-dependencies`, and
+  `.githooks/pre-push` exist and are executable.
 - Legacy repo-owned `coder` launcher/profile symlinks, if present, are removed
   during install.
 - A managed PATH block in the user shell rc (and system rc when writable).
