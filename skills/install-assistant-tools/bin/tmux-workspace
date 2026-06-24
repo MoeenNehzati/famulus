@@ -28,6 +28,14 @@ Examples:
   $prog shell scratch
   $prog raw -- list-sessions
   $prog raw -- attach -t paper
+
+Key bindings (set on each new session):
+  prefix+e   scratch popup (stateless shell overlay)
+  prefix+b   break current pane to its own window, save position to stack
+  prefix+j   restore last broken pane back (LIFO stack)
+  prefix+@   raw join: pull last active window into current as h-split
+  prefix+m   toggle slim btop monitor pane on the right
+  prefix+!   (tmux default) break-and-follow without stack
 EOUSAGE
 }
 
@@ -135,6 +143,15 @@ tmux_do bind-key e display-popup -E -w 80% -h 50% -x C -y C
 
 # prefix+@ — raw join: pull last active window into current as h-split
 tmux_do bind-key '@' join-pane -s '!' -h
+
+# prefix+b — smart break-and-stay (saves position to stack)
+tmux_do bind-key b run-shell "$_tw_bin/tw-break"
+
+# prefix+j — smart join (pops stack, restores position)
+tmux_do bind-key j run-shell "$_tw_bin/tw-join"
+
+# prefix+m — monitor toggle (slim btop pane on right)
+tmux_do bind-key m run-shell "$_tw_bin/tw-monitor"
 
 case "$template" in
   llm)
