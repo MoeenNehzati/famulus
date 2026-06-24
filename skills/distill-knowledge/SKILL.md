@@ -9,10 +9,11 @@ Dependencies: none
 
 ## Purpose
 
-Preserve project-continuity knowledge before attention moves elsewhere. This skill separates three outputs that are easy to conflate:
+Preserve project-continuity knowledge before attention moves elsewhere. This skill separates four outputs that are easy to conflate:
 
-- interface updates: repo-visible notes about interaction points future humans, agents, scripts, tests, builds, or workflows must know how to use or preserve
-- project lessons: hidden or historical context not easily recoverable from the repo
+- workflow adjustments: changes to how agents should behave going forward, encoded in spec files
+- interface updates: notes about interaction points future humans or agents must know
+- project lessons: context not easily recoverable from the repo after the adjustment above
 - memory candidates: optional user-level or cross-project facts worth proposing for durable memory
 
 ## Invocation Rules
@@ -36,37 +37,39 @@ When automatically invoking, first say: `One moment, I will distill the project 
 
 ## Workflow
 
-### 1. Identify the Work Segment
+### 1. Summarize What Was Learned
 
-Summarize the segment in one or two sentences for yourself before editing. Track:
+Before touching any file, tell the user what was learned in this segment. Cover:
 
-- changed interaction contracts
-- decisions the user accepted or rejected
+- decisions made and why
 - failed paths and why they failed
+- rules or conventions that emerged
+- environment quirks or tool behavior
 - unresolved risks or future cleanup
-- project-specific user preferences or sensitivities
-- environment quirks, commands, generated artifacts, or verification habits
 
-### 2. Update Interface Notes First
+Keep it short — a few bullets. This surfaces the lessons so the user can correct or add context before anything is written.
 
-Interface updates are not broad documentation. Document interaction points, not whole artifacts.
+### 2. Apply Workflow Adjustments
 
-Inspect only the relevant repo surfaces before editing. Typical interface surfaces include:
+If any lesson implies a change to how agents should behave going forward, update the relevant files now. This is the functional step — it changes agent behavior, not just documentation.
 
-- README, AGENTS, skill instructions, or contributor notes
-- script help text, CLI comments, and command examples
-- schema/config comments or reference files
-- build/test workflow notes
-- generated-artifact source-of-truth notes and regeneration commands
-- public or agent-facing entrypoints
+**Machine-facing spec files** (primary targets):
+- `skill-guidelines.md` and other files under `references/` — rules and conventions for agent behavior
+- `SKILL.md` files — workflow instructions for specific skills
+- Agent instructions, schemas, or config files agents read at runtime
 
-For scripts, capture the CLI contract: purpose, inputs, outputs, side effects, failure behavior, and verification command when relevant.
+**Human-facing interface surfaces** (secondary targets):
+- README, AGENTS, contributor notes
+- Script help text, CLI comments, and command examples
+- Build/test workflow notes, generated-artifact regeneration commands
 
-For TeX or prose projects, do not add commentary everywhere. Prefer entrypoints, build behavior, tool-dependent macros, generated outputs, section routing, submission constraints, and other non-human or workflow-facing interaction points.
+Update machine-facing files first: they encode rules that prevent future agents from repeating the same mistake. Human-facing docs follow the same session.
 
-If no interface update is needed, explicitly record that in the final report.
+If no adjustment is needed, say so explicitly.
 
 ### 3. Update Project Lessons
+
+Write a lesson entry **only if the lesson is not already captured** by the spec or interface files updated in step 2. Duplicating content that now lives in a spec file adds noise and diverges over time.
 
 Locate the project lesson target using this precedence:
 
@@ -82,10 +85,8 @@ Project lessons should capture knowledge not easily recovered from the current r
 - dead ends and why they failed
 - user-visible sensitivities and acceptance criteria
 - rejected designs or terminology
-- local environment or tool quirks
-- important project-specific preferences
-- next-agent warnings
-- exact commands only when the command itself is part of the lesson
+- local environment or tool quirks not worth encoding as a rule
+- next-agent warnings that are project-specific and transient
 
 Keep lessons short and durable. Prefer entries shaped as:
 
@@ -93,11 +94,11 @@ Keep lessons short and durable. Prefer entries shaped as:
 - Lesson: what future agents should know
 - Use/Avoid: concrete guidance for next time
 
-Do not duplicate implementation details that the code or interface notes already make obvious.
+Do not duplicate what step 2 already encoded.
 
 ### 4. Propose Memory Candidates
 
-After interface updates and project lessons are handled, list memory candidates only when useful. Do not write memories automatically unless the user explicitly asks.
+After adjustments and lessons are handled, list memory candidates only when useful. Do not write memories automatically unless the user explicitly asks.
 
 Good memory candidates are durable facts about:
 
@@ -124,13 +125,13 @@ Ask a short question such as:
 
 After the user gives pointers, rerun the workflow using those pointers as the missing context.
 
-### 5. Report
+## Report
 
 End with a concise report:
 
-- interface files changed, or why none were needed
-- lesson files changed
+- what was learned (already shown in step 1)
+- spec or interface files changed, or why none were needed
+- lesson entries added, or why none were needed
 - memory candidates proposed, if any
-- verification performed
 
 Do not commit unless the user explicitly asks.
