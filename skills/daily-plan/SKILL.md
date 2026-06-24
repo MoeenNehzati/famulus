@@ -1,12 +1,9 @@
 ---
 name: daily-plan
 description: |
-  Suggest what to work on today by combining the todo list with today's
-  calendar. Shows today's calendar events, computes how much free time is
-  available today (10-hour work budget minus calendar events and estimated
-  commute), estimates urgency and time cost for each todo item, and proposes
-  a ranked shortlist that fits the available time. Use when the user asks
-  "what should I do today", "what should I work on", "plan my day", or similar.
+  Use when the user asks to plan their day, see what to work on today, check
+  their schedule, or review today's actions. Triggers on "plan my day",
+  "what should I do today", "what should I work on", "show my plan", or similar.
 ---
 
 When this skill is used, begin with:
@@ -20,19 +17,49 @@ Dependencies:
 - g-calendar
 - get-weather
 
+`daily-plan` is a consumer skill. Never run scripts owned by dependency skills
+directly — all reads and writes must go through the dependency skill's interface.
+
 ## 0. Overview
 
 This skill produces a daily plan file saved to Google Drive under `plans/`,
-then outputs it to the user. The plan has five sections:
+then outputs it to the user. The plan has six sections:
 
-- **Calendar** — today's timed events and free time
+- **Calendar** — today's timed events, optional location line, and free time
 - **The Day** — 2-sentence weather summary and outfit/commute note
-- **Upcoming Events** — all-day events (birthdays, trips, etc.) in the next 7 days
+- **Due Soon** — obligations from the Due calendar entering the 5-day lookahead
+  window; auto-injects missing items into todo and flags deadline mismatches
+- **Upcoming** — all-day events (birthdays, holidays, academic calendar) in the
+  next 7 days
 - **Actions** — a ranked shortlist of todo items, initially marked as
   *suggestions*; once the user decides, it becomes *decisions* (with unchosen
   items removed)
 - **Triage** — unreviewed potential-actions, written into the file so the user
   can decide at their own pace (no interactive back-and-forth required)
+
+### Calendar taxonomy
+
+Classify every calendar event by these rules, in order:
+
+1. **Location** — any event (timed or all-day) from the **"Location"** calendar.
+   Used only for commute inference and a single display line. Never shown as
+   a section.
+2. **Activities** — timed events (have a specific start time) from any other
+   calendar. Shown in the Calendar section; drive free-time calculation.
+3. **Due** — all-day events from the **"Due"** calendar. Processed in Step 4a;
+   shown in the Due Soon section.
+4. **Upcoming** — all-day events from any other calendar (Birthdays, Holidays,
+   NYU Events, Talks when all-day, etc.). Shown in the Upcoming section.
+
+**Reading `g-calendar` output:** `gcal.sh agenda --all-calendars` prints one
+line per event in this format:
+```
+<start> -> <end>  <title>  [calendar: <name>, id: <id>]
+```
+- Calendar name for taxonomy classification is the `<name>` in `[calendar: <name>]`.
+- All-day events have date-only timestamps (`2026-07-01`); timed events have
+  datetime timestamps (`2026-07-01T14:00:00-04:00`). Use this to distinguish
+  Activities from Due/Upcoming.
 
 The skill is invoked in one of two modes:
 
@@ -87,45 +114,88 @@ Invoke these skills simultaneously through their skill interfaces:
 
 - The first calendar result gives today's timed events → used for
   free-time computation and the **Calendar** section.
-- The second calendar result gives a 7-day window → used for the
-  **Upcoming Events** section (filter to all-day events only, starting
-  tomorrow).
+- The second calendar result gives a 7-day window → used for Due Soon
+  (filtered to 5 days, Due calendar only) and the **Upcoming** section
+  (filtered to 7 days, all other non-Location all-day events).
 - To target a different date (e.g. planning for tomorrow), ask `g-calendar` for
   that explicit date range in both calendar requests.
 - Only request an explicit date range when the user asks for a date other than
   today; otherwise use default current-day behavior so calendar and weather stay
   aligned with the local system date.
 - If `todo` is empty or doesn't exist, set the Actions section to a single
-  line: `(nothing on the todo list)` and skip steps 5-6.
+  line: `(nothing on the todo list)` and skip step 7.
 
 ## 4. Compute today's free time
 
 Start from a fixed **10-hour work budget**.
 
-For each **timed** event (not all-day) that falls today:
+**Commute inference — use the Location calendar first:**
+From today's agenda, find any event from the **"Location"** calendar (all-day
+or timed). Use its title to estimate a round-trip commute from Ridgewood,
+Queens, NYC:
+- "WFH", "Home", or similar → 0 commute
+- Nearby Queens/Brooklyn (Bushwick, Williamsburg, Astoria, LIC) → 30-45 min RT
+- "Office", "NYU", Manhattan → 45-75 min RT depending on area
+- Farther out (Bronx, SI, NJ, far edges, multiple transfers) → 75-120 min RT
+- If no Location calendar event exists today → fall back to per-event logic below
 
+**Per-event logic (only when no Location calendar event):**
+For each **Activity** (timed, non-Location) event today:
 - Subtract its duration from the budget.
-- If the event has a **location** field, estimate a round-trip commute from
-  Ridgewood, Queens, NYC:
-  - Nearby Queens/Brooklyn (Bushwick, Williamsburg, Astoria, LIC) → 30-45 min RT
-  - Manhattan → 45-75 min RT depending on area
-  - Farther out (Bronx, SI, NJ, far edges, multiple transfers) → 75-120 min RT
-  - Clearly remote/virtual (Zoom, Google Meet, Home, blank) → 0 commute
-- If the event has **no location field at all**, add a fixed **90-minute**
-  buffer.
+- If the event has an explicit **location** field → use the commute table above.
+- If the event has **no location field at all** → add a fixed **90-minute** buffer.
+
+**When a Location calendar event exists:**
+- Subtract the commute once (not per timed event — you're already there).
+- Subtract each Activity event's duration normally (no per-event commute buffer).
 
 ```
-free_hours = max(0, 10 - sum(event_durations + commute_or_buffer))
+free_hours = max(0, 10 - sum(activity_durations) - commute)
 ```
 
-Also compute free time in three buckets (for time-of-day filtering in step 6):
+Also compute free time in three buckets (for time-of-day filtering in step 7):
 
 - **Morning**: 00:00-12:00
 - **Afternoon**: 12:00-17:00
 - **Evening**: 17:00+
 
-All-day events do not consume budget. If an all-day event implies a commute
-(e.g. "Office"), subtract only the commute estimate (not a full-day duration).
+Due and Upcoming all-day events never consume budget.
+
+## 4a. Process Due events
+
+**Missing calendars:** If no **"Due"** calendar appears in the 7-day agenda,
+skip the rest of this step and add this line to the plan under a `## Due Soon`
+heading:
+```
+Note: "Due" calendar not found — create one named "Due" for recurring obligations
+and one named "Location" for daily location metadata. See §0 calendar taxonomy.
+```
+If no **"Location"** calendar appears in today's agenda, commute inference
+falls back to per-event logic silently (no note needed).
+
+From the 7-day agenda (already fetched in step 3), filter for: all-day events
+from the **"Due"** calendar whose date falls within the next **5 days**
+(today through today+4 inclusive).
+
+For each Due event, look up the todo list for a matching item. **Match
+criteria**: the Due event title (case-insensitive) is a substring of the todo
+item title, AND the todo item deadline date equals the Due event date.
+
+Apply the following logic per Due event:
+
+| Match result | Action |
+|---|---|
+| No match found | Auto-add to todo via `list-manager` (use Due event title verbatim, deadline = Due event date, infer area×action placement). Record as "→ Added to todo" in Due Soon. |
+| Match found, same deadline, **unchecked** | Suppress — already tracked. No mention in Due Soon. |
+| Match found, same deadline, **checked** | Suppress — done this cycle. No mention in Due Soon. |
+| Match found, **different deadline** | Record as "⚠ Mismatch" in Due Soon. |
+| Match found, **no deadline set** | Record as "⚠ Mismatch" in Due Soon. |
+
+If the Due Soon section ends up with nothing to show (all suppressed), omit
+the section entirely from the plan.
+
+**Auto-inject writes:** use `list-manager` to add the item to `todo` before
+writing the plan. Use today's date as the creation date.
 
 ## 5. Compose "The Day" (weather)
 
@@ -140,19 +210,27 @@ Example: *"Partly sunny and warm, 22-28°C with a chance of afternoon showers
 around 3pm. A t-shirt and light jacket will do — bring an umbrella if you're
 heading out after noon."*
 
-## 6. Extract upcoming all-day events
+## 6. Build the Upcoming section
 
-From the `--days 7` agenda output, filter for **all-day events only** (these
-appear without a specific time, spanning full calendar dates) that fall
-**after today** (i.e. tomorrow through 7 days out). Exclude today's all-day
-events (already in the Calendar section).
+From the 7-day agenda, filter for: **all-day events** that are:
+- NOT from the "Location" calendar
+- NOT from the "Due" calendar
+- Fall **after today** (tomorrow through 7 days out)
+
+This includes birthdays (Birthdays calendar), holidays (Holidays in Iran,
+Holidays in United States), academic calendar events (NYU Events), etc.
 
 Format each as:
 ```
 - <Weekday, Month D>: <event title>
 ```
 
-If there are no all-day events in the next 7 days, write:
+For events from the **Birthdays** calendar, append the days-until count:
+```
+- <Weekday, Month D>: <name>'s birthday (in N days)
+```
+
+If there are no qualifying events, write:
 ```
 (none this week)
 ```
@@ -185,21 +263,26 @@ Build the Markdown plan document in this order:
 # Plan: <Month D, YYYY>
 
 ## Calendar
+Today: <location title>              ← only if Location calendar has an event today; omit line otherwise
 - HH:MM: <event title> [@ <location>] (<duration>)
-- All day: <event title>
 - ...
-(no events today)   ← only if calendar is empty
+(no events today)                    ← only if no Activity events
 
-Free time: ~<free_hours>h (10h budget - <busy>h meetings - <commute>h commute)
+Free time: ~<free_hours>h (10h budget - <busy>h activities - <commute>h commute)
 
 ## The Day
 <Sentence 1: conditions + temperature range + notable changes.>
 <Sentence 2: what to wear + commute/outdoor tip.>
 
-## Upcoming Events
+## Due Soon
+← omit this section entirely if all Due events are suppressed →
+→ Added to todo: <title> (due <Weekday, Mon D>)   ← one line per auto-injected item
+⚠ <title> — todo deadline: <X>, calendar: <Y>      ← one line per mismatch
+
+## Upcoming
 - <Weekday, Month D>: <event title>
 - ...
-(none this week)   ← only if no all-day events in next 7 days
+(none this week)                     ← only if no qualifying events
 
 ## Actions (suggestions)
 1. [ ] <item title> — <one-line reason: urgency + time estimate + fit>
@@ -224,6 +307,8 @@ Rules:
 - The `## Triage` section lists only unreviewed (`[ ]`) items from
   `potential-actions` — exclude `[+]` (accepted) and `[-]` (rejected).
 - If no unreviewed items exist, omit `## Triage` entirely.
+- If the Due Soon section is omitted, still run step 4a — the auto-inject
+  writes happen regardless; the section is just not shown when everything is clean.
 
 Then write the file:
 
@@ -346,3 +431,6 @@ When the user marks one or more actions as done (e.g., "mark 1 as done",
 
 - This skill never modifies the calendar.
 - No automatic/scheduled runs — manual invocation only.
+- The only todo writes this skill performs are auto-inject in step 4a. It never
+  removes or edits existing todo items except via the standard triage and
+  checkmark flows.
