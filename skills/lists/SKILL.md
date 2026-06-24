@@ -2,10 +2,10 @@
 name: lists
 description: |
   Manage personal text-based lists (groceries, todos, etc.) stored as
-  Markdown checklist files on Google Drive under lists/, accessed via
-  Google Drive through the skill-owned `lists.sh` script. Use when the user
-  asks to show, create, or delete a list, or to add, check off, uncheck, or
-  remove an item (optionally nested under another item) on a list.
+  Markdown checklist files under assistant cloud storage, accessed through
+  the skill-owned `lists.sh` script. Use when the user asks to show, create,
+  or delete a list, or to add, check off, uncheck, or remove an item
+  (optionally nested under another item) on a list.
 ---
 
 When this skill is used, begin with:
@@ -26,8 +26,8 @@ arguments or flags):
     be empty if none exist).
   - With `name`: prints that list's full contents (empty output if the list
     doesn't exist).
-  - Any non-zero exit, timeout, or stderr from the script means the list state
-    is unknown. Stop and report the read failure; do not infer that the list is
+  - Any non-zero exit or stderr from the script means the list state is
+    unknown. Stop and report the read failure; do not infer that the list is
     empty and do not write.
 - **Write**: `scripts/lists.sh write <name>`
   with the new full file content piped via stdin (heredoc).
@@ -38,15 +38,15 @@ arguments or flags):
     the file rather than leave an empty one).
 
 For every operation below: do a `read` first to get current content, compute
-the new content, then `write` it back. If the read fails or times out, stop
-without writing. Never use raw `rclone` commands, including for diagnosis;
-rerun the skill-owned script and report its visible error instead.
+the new content, then `write` it back. If the read fails, stop without
+writing. Never bypass the script for cloud access; cloud transport is
+delegated to the `cloud-files` skill.
 
 ## 1. Storage model
 
-- Each list is `<name>.md` under `GDrive:assistant/lists/` by default
-  (managed entirely by the script above). The script also supports
-  `LISTS_REMOTE_ROOT` for tests or nonstandard installs.
+- Each list is `<name>.md` under `assistant/lists/` in cloud storage
+  (managed entirely by the script above, which delegates cloud transport to
+  `cloud-files`).
 - List names: derive from the user's wording, lowercase, spaces replaced
   with hyphens (e.g. "grocery list" -> `grocery` or `groceries` — match
   against existing list names from `read` with no argument before picking a

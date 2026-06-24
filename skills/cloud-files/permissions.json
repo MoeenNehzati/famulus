@@ -1,0 +1,6 @@
+{
+  "bash": [
+    "Bash(scripts/cloud-files.sh:*)"
+  ],
+  "network": []
+}

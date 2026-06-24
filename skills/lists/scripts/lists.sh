@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Two operations against GDrive:assistant/lists/:
+# Two operations against assistant/lists/ through the cloud-files skill:
 #   lists.sh read [name]   - no name: list all lists; name: print that list's contents
 #   lists.sh write <name>  - write stdin as the new full content of <name>;
 #                             empty stdin deletes the list file
@@ -7,24 +7,24 @@ set -euo pipefail
 
 op="${1:-}"
 name="${2:-}"
-remote_root="${LISTS_REMOTE_ROOT:-GDrive:assistant/lists}"
-timeout_seconds="${LISTS_RCLONE_TIMEOUT_SECONDS:-45}"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cloud_files="${script_dir}/../../cloud-files/scripts/cloud-files.sh"
 
-run_rclone() {
-  timeout "${timeout_seconds}s" rclone "$@"
-}
-
-remote_path() {
+list_path() {
   local list_name="$1"
-  printf '%s/%s.md' "$remote_root" "$list_name"
+  printf 'lists/%s.md' "$list_name"
 }
 
 case "$op" in
   read)
     if [ -z "$name" ]; then
-      run_rclone lsf "${remote_root}/" --include "*.md"
+      "$cloud_files" list lists | while IFS= read -r entry; do
+        case "$entry" in
+          *.md) printf '%s\n' "$entry" ;;
+        esac
+      done
     else
-      run_rclone cat "$(remote_path "$name")"
+      "$cloud_files" read "$(list_path "$name")"
     fi
     ;;
   write)
@@ -34,9 +34,9 @@ case "$op" in
     fi
     content="$(cat)"
     if [ -z "$content" ]; then
-      run_rclone deletefile "$(remote_path "$name")"
+      "$cloud_files" delete "$(list_path "$name")"
     else
-      printf '%s\n' "$content" | run_rclone rcat "$(remote_path "$name")"
+      printf '%s\n' "$content" | "$cloud_files" write "$(list_path "$name")"
     fi
     ;;
   *)
