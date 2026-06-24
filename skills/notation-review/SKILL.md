@@ -26,6 +26,8 @@ Skill: notation-review
 
 Category: document-oriented
 
+Dependencies: none
+
 ## 1. Goal
 
 Your job is to audit mathematical notation, not prose.

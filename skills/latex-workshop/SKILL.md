@@ -7,6 +7,8 @@ Skill: latex-workshop
 
 Category: document-oriented
 
+Dependencies: none
+
 ## Goal
 
 Behave the way VS Code LaTeX Workshop is configured to behave for the target

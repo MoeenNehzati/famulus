@@ -7,11 +7,15 @@ description: Use when asked to triage email, process the inbox, or surface actio
 
 Category: automation
 
+Dependencies:
+- email-client
+- list-manager
+
 Scans emails received since the last triage run. Extracts action items and routes them to the right list. Never adds events to the calendar automatically — the user decides.
 
-**IMPORTANT: Never ask the user for a lookback period or watermark date. The date always comes from `get-cutoff.py`. If that script emits a warning or fails, report it to the user — but do not ask them to supply a date instead.**
+Use the `email-client` skill to read and send email. Use the `list-manager` skill to read and update destination lists.
 
-**Sub-skills to invoke:** `email` (reading/sending), `lists` (list management). Never call their scripts directly — invoke the skill.
+**IMPORTANT: Never ask the user for a lookback period or watermark date. The date always comes from `get-cutoff.py`. If that script emits a warning or fails, report it to the user — but do not ask them to supply a date instead.**
 
 **Decision logging:** After every classification, call:
 ```bash
@@ -75,18 +79,18 @@ Batch up to 10 reads in parallel. Classify each email by sender type and targeti
 
 ---
 
-## Step 4 — Read both destination lists via `lists` skill
+## Step 4 — Read both destination lists via `list-manager` skill
 
-Invoke the `lists` skill to read `todo` and `potential-actions`.
+Invoke the `list-manager` skill to read `todo` and `potential-actions`.
 
 ---
 
 ## Step 5 — Add action items, deduplicating
 
-Every item sent to the `lists` skill must be concrete enough for the `lists`
+Every item sent to the `list-manager` skill must be concrete enough for the list
 skill to infer title, optional description, and optional deadline. Do not
 manually format list storage lines here; pass the freeform action content and
-destination list to the `lists` skill.
+destination list to the `list-manager` skill.
 
 **Format by category:**
 - Bill: `Pay [Sender]; amount/context $[amount]; deadline [date]` → `todo`
@@ -100,7 +104,7 @@ destination list to the `lists` skill.
 
 If deadline or date is unknown, omit rather than guess.
 
-**Dedup:** before adding to `potential-actions`, scan for a case-insensitive substring match on the key noun (sender name, event name, program name). If a match exists in any state (`[ ]`, `[+]`, or `[-]`), skip — the item has already been triaged. Log with `DEDUP` and note the matched item. Use the `lists` skill to add new items.
+**Dedup:** before adding to `potential-actions`, scan for a case-insensitive substring match on the key noun (sender name, event name, program name). If a match exists in any state (`[ ]`, `[+]`, or `[-]`), skip — the item has already been triaged. Log with `DEDUP` and note the matched item. Use the `list-manager` skill to add new items.
 
 ---
 

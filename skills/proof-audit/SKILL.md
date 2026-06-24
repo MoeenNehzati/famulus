@@ -15,6 +15,8 @@ description: |
   - suggest a repair direction without rewriting unless asked
 ---
 
+Dependencies: none
+
 When this skill is used, begin with:
 
 Skill: proof-audit

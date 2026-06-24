@@ -26,6 +26,8 @@ Skill: make-tex-docstring
 
 Category: document-oriented
 
+Dependencies: none
+
 ## 1. Goal
 
 Your job is to create a short top-of-document TeX comment block that records the document profile.

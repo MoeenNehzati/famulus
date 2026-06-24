@@ -125,8 +125,8 @@ Skills are on-demand instruction sets loaded when invoked. They cover:
 **Personal assistant & automation**
 - `daily-plan` — generate a daily plan from calendar, todos, and weather
 - `g-calendar` — read and write Google Calendar via a local OAuth CLI
-- `lists` — manage personal Markdown checklists stored on Google Drive
-- `weather` — fetch today's weather with a day-planning summary
+- `list-manager` — manage personal Markdown checklists stored on Google Drive
+- `get-weather` — fetch weather for a day or date range with a planning summary
 - `fix-bisync` — diagnose and repair rclone bisync failures
 
 **Writing & documents**
@@ -192,14 +192,15 @@ tests/test_skill_metadata.py
 
 The Codex install test runs this metadata check first.
 
-To make Git block pushes that would reintroduce invalid skill metadata, enable
-the tracked hook path once per clone:
+The `install-assistant-tools` skill configures the tracked hook path. To set it
+manually:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-The tracked `.githooks/pre-commit` hook blocks commits in detached HEAD state.
+The tracked `.githooks/pre-commit` hook blocks commits in detached HEAD state
+and dispatches to skill-name and dependency checks.
 The tracked `.githooks/pre-push` hook runs `tests/test_skill_metadata.py`.
 
 ## Claude

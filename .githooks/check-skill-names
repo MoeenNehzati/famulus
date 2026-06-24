@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+errors=()
+
+while IFS= read -r -d '' skill_dir; do
+    skill_name="${skill_dir#skills/}"
+    skill_file="${skill_dir}/SKILL.md"
+
+    if [[ ! "$skill_name" =~ ^[a-z0-9]+(-[a-z0-9]+)+$ ]]; then
+        errors+=("${skill_dir}: skill directory name must be lower-case dash-separated with at least two words")
+    fi
+
+    if [[ ! -f "$skill_file" ]]; then
+        errors+=("${skill_dir}: missing SKILL.md")
+        continue
+    fi
+
+    frontmatter_name="$(sed -nE 's/^name:[[:space:]]*//p' "$skill_file" | head -n 1)"
+    if [[ "$frontmatter_name" != "$skill_name" ]]; then
+        errors+=("${skill_file}: frontmatter name must match directory name ${skill_name}")
+    fi
+done < <(find skills -mindepth 1 -maxdepth 1 -type d -print0)
+
+if ((${#errors[@]})); then
+    echo "error: invalid skill names." >&2
+    printf '  %s\n' "${errors[@]}" >&2
+    exit 1
+fi

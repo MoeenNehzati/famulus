@@ -1,26 +1,29 @@
 ---
-name: weather
+name: get-weather
 description: |
-  Fetch today's weather for the user's current location (via IP
-  geolocation) and present a day-planning-oriented summary: temperature
-  range in Celsius, how conditions change through the day, rain/wind
-  windows, and what to wear/which activities fit which parts of the day.
-  Use when the user asks about today's weather, whether it'll rain, what
-  to wear, or how to plan their day around the weather.
+  Fetch weather for the user's current location or a named location, including
+  today, a specific date, or a supported date range. Present a
+  day-planning-oriented summary: temperature range in Celsius, how conditions
+  change over the requested period, rain/wind windows, and what to wear/which
+  activities fit which parts of the day. Use when the user asks about weather,
+  whether it'll rain, what to wear, or how to plan around weather.
 ---
 
 When this skill is used, begin with:
 
-Skill: weather
+Skill: get-weather
 
 Category: automation
 
+Dependencies: none
+
 ## 0. What this does
 
-`scripts/weather.sh` geolocates the current IP (via ip-api.com, no key) and
-fetches today's hourly forecast from Open-Meteo (no key) for that location,
-printing combined JSON to stdout. The agent then interprets that JSON into a
-day-planning summary. Read-only — makes no changes to anything.
+`scripts/weather.sh` geolocates the current IP (via ip-api.com, no key) or
+geocodes a named location, then fetches hourly weather from Open-Meteo (no key)
+for the requested date range, printing combined JSON to stdout. The agent then
+interprets that JSON into a day-planning summary. Read-only — makes no changes
+to anything.
 
 ## 1. Run the script
 
@@ -139,7 +142,7 @@ For the day's overall description, summarize the dominant codes across all
 
 ## 4. Time-of-day buckets and suggestions
 
-Split the 24 hours into the same buckets used by the `daily-plan` skill:
+Split the 24 hours into the same buckets used by the daily planning workflow:
 
 - **Morning**: hours with local time before 12:00
 - **Afternoon**: hours from 12:00 up to (not including) 17:00
@@ -197,6 +200,6 @@ date, not hours — e.g. `start_date`/`end_date` both `2026-06-14` is 1 day;
 ## Out of scope
 
 - No caching/persistence between invocations — always fetches fresh data.
-- No integration with `daily-plan` yet (read-only standalone skill).
+- No write-back integration with the daily planning workflow yet (read-only standalone skill).
 - No range-length limit beyond Open-Meteo's existing forecast window (a
   range extending past it errors via the existing forecast-error check).

@@ -12,6 +12,8 @@ Skill: cloud-files
 
 Category: automation
 
+Dependencies: none
+
 ## 0. Boundary
 
 This skill owns cloud file transport. Other skills should not mention or call

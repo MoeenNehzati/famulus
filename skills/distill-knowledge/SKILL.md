@@ -3,6 +3,8 @@ name: distill-knowledge
 description: Use when the user explicitly invokes this skill to preserve project-continuity knowledge, or automatically when ending, pausing, or changing tracks after work that produced decisions, failed paths, interface contracts, environment quirks, or user preferences worth preserving. Four or more substantive turns plus a transition cue is a sufficient auto-use signal, not a requirement. Do not auto-use for general "remember this" requests, short clarifications, or incidental mentions of switching inside another task.
 ---
 
+Dependencies: none
+
 # Distill Knowledge
 
 ## Purpose

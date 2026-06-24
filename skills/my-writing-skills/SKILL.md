@@ -3,6 +3,9 @@ name: my-writing-skills
 description: Use when creating or editing a personal skill in the shared skills directory
 ---
 
+Dependencies:
+- superpowers:writing-skills
+
 ## Git Safety
 
 Before editing any skill file, verify the repo containing that file is on a

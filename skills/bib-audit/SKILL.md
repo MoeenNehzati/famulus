@@ -7,6 +7,8 @@ description: Use when auditing a .bib bibliography file for syntactic validity, 
 
 Category: document-oriented
 
+Dependencies: none
+
 Conservative bibliography auditor. Default behavior: produce a structured report. Apply transformations only on explicit user approval.
 
 ## Test files

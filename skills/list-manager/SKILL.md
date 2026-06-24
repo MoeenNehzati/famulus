@@ -1,5 +1,5 @@
 ---
-name: lists
+name: list-manager
 description: |
   Manage personal text-based lists (groceries, todos, etc.) stored as
   Markdown checklist files under assistant cloud storage, accessed through
@@ -10,9 +10,12 @@ description: |
 
 When this skill is used, begin with:
 
-Skill: lists
+Skill: list-manager
 
 Category: automation
+
+Dependencies:
+- cloud-files
 
 ## 0. The only commands this skill uses
 

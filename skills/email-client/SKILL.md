@@ -1,11 +1,13 @@
 ---
-name: email
+name: email-client
 description: Use when reading, listing, searching, or sending email for the user. Covers both nyu (sn3379@nyu.edu) and personal (smnehzati@gmail.com) Gmail accounts.
 ---
 
 # Email
 
 Category: automation
+
+Dependencies: none
 
 Two Gmail accounts: **nyu** (`sn3379@nyu.edu`) and **personal** (`smnehzati@gmail.com`).
 

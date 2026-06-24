@@ -25,6 +25,8 @@ Skill: formal-prose-review
 
 Category: document-oriented
 
+Dependencies: none
+
 ## 1. Goal
 
 Your job is to polish technical prose for a formal setting.

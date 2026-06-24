@@ -3,6 +3,8 @@ name: initialize-tdd
 description: Use when starting a brand new project that should follow a staged, approval-gated TDD workflow (design -> tests -> implementation -> docs). Scaffolds a new project directory with CLAUDE.md, README, .gitignore, git init, the superpowers skills plugin, and (for Python) a venv + centralized logger/config modules + a starter test suite.
 ---
 
+Dependencies: none
+
 # Initialize TDD Project
 
 Scaffolds a new project set up the way described in CLAUDE.md's staged TDD

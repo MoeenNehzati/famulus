@@ -26,6 +26,8 @@ Skill: technical-flow-review
 
 Category: document-oriented
 
+Dependencies: none
+
 ## 1. Goal
 
 Your job is to review the technical flow of a document, not to audit proofs, notation, or prose line by line.

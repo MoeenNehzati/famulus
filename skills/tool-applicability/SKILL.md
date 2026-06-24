@@ -22,6 +22,8 @@ Skill: tool-applicability
 
 Category: mathematical-analysis
 
+Dependencies: none
+
 ## 1. Goal
 
 Your job is to determine what a candidate mathematical tool can actually achieve in the present setting.

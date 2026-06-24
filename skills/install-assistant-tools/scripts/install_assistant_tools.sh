@@ -11,6 +11,7 @@ Installs or updates:
   - collab script (symlinked from skill bin/)
   - tw/tmux-workspace script (symlinked from skill bin/)
   - Profile symlinks (profiles/*.config.toml -> Codex and Claude homes)
+  - Git hook path for this repository (.githooks)
   - PATH entry and ASSISTANT_DEFAULT in the user (and optionally system) shell rc
 
 Options:
@@ -112,6 +113,7 @@ shell_rc="${shell_rc:-$home_dir/.bashrc}"
 codex_home="${codex_home:-${CODEX_HOME:-$home_dir/.codex}}"
 claude_home="${claude_home:-${CLAUDE_HOME:-$home_dir/.claude}}"
 profiles_dir="$repo_root/profiles"
+hooks_dir="$repo_root/.githooks"
 
 assistant_block_begin="# >>> assistant-tools >>>"
 assistant_block_end="# <<< assistant-tools <<<"
@@ -216,6 +218,29 @@ install_profile_links() {
 
   if (( linked_any == 0 )); then
     log "Warning: no profile files found in $profiles_dir"
+  fi
+}
+
+install_git_hooks() {
+  local hook
+
+  for hook in pre-commit check-skill-names check-skill-dependencies pre-push; do
+    local hook_path="$hooks_dir/$hook"
+    if [ ! -f "$hook_path" ]; then
+      echo "Missing git hook script: $hook_path" >&2
+      exit 1
+    fi
+    if (( dry_run )); then
+      log "Would chmod +x $hook_path"
+    else
+      chmod +x "$hook_path"
+    fi
+  done
+
+  if (( dry_run )); then
+    log "Would set git -C $repo_root config core.hooksPath .githooks"
+  else
+    git -C "$repo_root" config core.hooksPath .githooks
   fi
 }
 
@@ -336,6 +361,7 @@ install_ai_agent_env() {
 resolve_default_llm
 install_bin_scripts
 install_profile_links
+install_git_hooks
 remove_legacy_coder_links
 install_ai_agent_env
 ensure_rc_block "$shell_rc" "user"
@@ -352,6 +378,7 @@ log "  Bin dir:        $bin_dir"
 log "  Source bin:     $source_bin_dir"
 log "  Codex home:     $codex_home"
 log "  Claude home:    $claude_home"
+log "  Git hooks:      $hooks_dir"
 log "  Default LLM:    $default_llm"
 log "  User shell rc:  $shell_rc"
 if (( update_system_shell_rc )); then

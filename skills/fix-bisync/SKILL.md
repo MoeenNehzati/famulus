@@ -10,6 +10,8 @@ Skill: fix-bisync
 
 Category: automation
 
+Dependencies: none
+
 ## 1. Goal
 
 Handle a bisync failure in four phases:

@@ -15,6 +15,11 @@ Skill: daily-plan
 
 Category: automation
 
+Dependencies:
+- list-manager
+- g-calendar
+- get-weather
+
 ## 0. Overview
 
 This skill produces a daily plan file saved to Google Drive under `plans/`,
@@ -72,24 +77,23 @@ scripts/plans.sh exists <key>
 
 ## 3. Gather inputs (all in parallel)
 
-Run all five of these simultaneously:
+Invoke these skills simultaneously through their skill interfaces:
 
-```bash
-../lists/scripts/lists.sh read todo
-../lists/scripts/lists.sh read potential-actions
-../g-calendar/scripts/gcal.sh agenda --all-calendars
-../g-calendar/scripts/gcal.sh agenda --all-calendars --days 7
-../weather/scripts/weather.sh
-```
+- `list-manager`: read `todo`
+- `list-manager`: read `potential-actions`
+- `g-calendar`: get today's agenda for all calendars
+- `g-calendar`: get the next 7 days for all calendars
+- `get-weather`: get today's weather
 
-- The first `agenda` call (no `--days`) gives today's timed events → used for
+- The first calendar result gives today's timed events → used for
   free-time computation and the **Calendar** section.
-- The second `agenda --days 7` call gives a 7-day window → used for the
+- The second calendar result gives a 7-day window → used for the
   **Upcoming Events** section (filter to all-day events only, starting
   tomorrow).
-- To target a different date (e.g. planning for tomorrow), use `--from YYYY-MM-DD --to YYYY-MM-DD` on both calls; `--days N` extends the range from `--from`.
-- Only use explicit `--from/--to` date flags when the user asks for a date other
-  than today; otherwise use the default commands so calendar and weather stay
+- To target a different date (e.g. planning for tomorrow), ask `g-calendar` for
+  that explicit date range in both calendar requests.
+- Only request an explicit date range when the user asks for a date other than
+  today; otherwise use default current-day behavior so calendar and weather stay
   aligned with the local system date.
 - If `todo` is empty or doesn't exist, set the Actions section to a single
   line: `(nothing on the todo list)` and skip steps 5-6.
@@ -155,7 +159,7 @@ If there are no all-day events in the next 7 days, write:
 
 ## 7. Estimate and rank todo items
 
-For every unchecked item returned by the `lists` skill from `todo` (top-level
+For every unchecked item returned by the `list-manager` skill from `todo` (top-level
 and nested), use the list item's parsed title, description, deadline, and
 creation date:
 
@@ -258,13 +262,13 @@ Options per item: accept (→ todo) | accept + today | reject | skip
 - **reject**: mark `[-]` in `potential-actions` (stays for reference, not shown again)
 - **skip**: leave as `[ ]` (will appear next time)
 
-Wait for the user's response, then in a single pass through the `lists` skill:
+Wait for the user's response, then in a single pass through the `list-manager` skill:
 
-1. **Update `potential-actions` in-place**: ask `lists` to mark accepted
+1. **Update `potential-actions` in-place**: ask `list-manager` to mark accepted
    items as accepted, rejected items as rejected, and leave skipped items
    unreviewed.
 
-2. **Update `todo`**: ask the `lists` skill to accept each item into `todo`,
+2. **Update `todo`**: ask the `list-manager` skill to accept each item into `todo`,
    preserving the item's parsed title, description, and deadline, with today's
    date as the todo creation date.
 
@@ -280,7 +284,7 @@ Wait for the user's response, then in a single pass through the `lists` skill:
 ## 10. Deadline nudge
 
 After the plan is shown and triage is complete, scan all **unchecked** `todo`
-items from the `lists` skill for items whose parsed deadline is empty.
+items from the `list-manager` skill for items whose parsed deadline is empty.
 
 If any such items exist, show them and ask for deadlines:
 
@@ -293,8 +297,8 @@ If any such items exist, show them and ask for deadlines:
 ```
 
 Wait for the user's response. For each item the user assigns a deadline to,
-ask the `lists` skill to find the matching todo item and set that item's
-deadline. The `lists` skill owns matching and representation details.
+ask the `list-manager` skill to find the matching todo item and set that item's
+deadline. The `list-manager` skill owns matching and representation details.
 
 Confirm which items were updated. Items the user skips remain unchanged.
 
@@ -331,10 +335,10 @@ When the user marks one or more actions as done (e.g., "mark 1 as done",
    scripts/plans.sh write <key>
    ```
 4. For each marked action, find the matching item in the todo list and check
-   it off by asking the `lists` skill to match the plan action text to an
+   it off by asking the `list-manager` skill to match the plan action text to an
    unchecked todo item and mark it checked. The action text in the plan
    (before the `—` separator) may be shortened or lightly reworded, so if
-   `lists` cannot find a confident match, report that rather than guessing.
+   `list-manager` cannot find a confident match, report that rather than guessing.
 5. Confirm to the user which todo item(s) were checked off. If no confident
    match is found for an action, say so rather than guessing wrong.
 

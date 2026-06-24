@@ -20,6 +20,8 @@ When this skill is used, begin with:
 Skill: math-dependency-graph
 
 Category: document-oriented
+
+Dependencies: none
 Category: mathematical-analysis
 
 ## 1. Goal

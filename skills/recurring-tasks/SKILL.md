@@ -7,6 +7,9 @@ description: Use when setting up, enabling, disabling, testing, viewing logs, or
 
 Category: automation
 
+Dependencies:
+- install-assistant-tools
+
 Manages AI-driven recurring jobs as **systemd user timers**. `jobs.yaml` is the
 source of truth. Each enabled job invokes a skill non-interactively via assistant on a
 cron-like schedule.
@@ -75,12 +78,8 @@ AI_AGENT_COMMAND_TEMPLATE is not set.
 ```
 
 It is set persistently in `~/.config/environment.d/20-ai-agent.conf` by
-`install-assistant-tools`. If it disappears (e.g. file deleted), re-run
-`install-assistant-tools`, or restore manually:
-
-```bash
-bash skills/install-assistant-tools/scripts/install_assistant_tools.sh
-```
+`install-assistant-tools`. If it disappears (e.g. file deleted), use the
+`install-assistant-tools` skill to restore it.
 
 ---
 
@@ -208,7 +207,7 @@ Multi-turn reasoning loop — do not script this:
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| All jobs log "AI_AGENT_COMMAND_TEMPLATE is not set" | Variable missing from systemd user environment | Re-run `install-assistant-tools`, or restore `~/.config/environment.d/20-ai-agent.conf` and run `systemctl --user set-environment ...` |
+| All jobs log "AI_AGENT_COMMAND_TEMPLATE is not set" | Variable missing from systemd user environment | Use the `install-assistant-tools` skill, or restore `~/.config/environment.d/20-ai-agent.conf` and run `systemctl --user set-environment ...` |
 | Timer shows "not active" / unit not found | `setup.sh` never run, or units deleted | Run `scripts/setup.sh` |
 | Job fails but timer is active | Job-level error (script bug, missing dependency, auth issue) | Check `logs/<name>/run.log` and `scripts/status.sh <name>` |
 | Healthcheck reports stale log | Timer missed fires or job produced no output | Test manually; check `Persistent=true` is set (re-run setup.sh) |

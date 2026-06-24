@@ -12,13 +12,15 @@ Skill: wrap-up
 
 Category: automation
 
+Dependencies:
+- daily-plan
+- list-manager
+
 ## 0. Overview
 
 End-of-day review. Reads today's plan, surfaces incomplete actions, collects
 completions and notes from the user in a single prompt, then updates the plan
 and lists accordingly.
-
-Depends on: `daily-plan` (plan read/write), `lists` (todo updates and new items).
 
 ## 1. Read today's plan
 
@@ -69,7 +71,7 @@ If the section already exists, append to it (continuing the numbering).
 For each planned action the user says was completed:
 
 1. Use `daily-plan` to change `[ ]` → `[x]` on that action's line.
-2. Use the `lists` skill to check off the matching todo item — fuzzy-match
+2. Use the `list-manager` skill to check off the matching todo item — fuzzy-match
    the action text (before `—`) against unchecked `- [ ]` items on the todo
    list. If no confident match is found, say so rather than guessing wrong.
 
@@ -86,14 +88,14 @@ marking the action done or leaving it untouched:
      - [x] <completed part X>
      - [ ] <remaining part Y>
    ```
-2. Use the `lists` skill to apply the same split to the matching todo item:
-   identify the matching todo item and ask `lists` to split it into the parent
-   plus completed and remaining sub-items. The `lists` skill owns preservation
+2. Use the `list-manager` skill to apply the same split to the matching todo item:
+   identify the matching todo item and ask `list-manager` to split it into the parent
+   plus completed and remaining sub-items. The `list-manager` skill owns preservation
    of item metadata and representation details.
 
 ## 6. Add new list items
 
-For each new item the user provided, use the `lists` skill (§3.4) to add it
+For each new item the user provided, use the `list-manager` skill (§3.4) to add it
 to the appropriate list. Infer the list from context; default to `todo`.
 
 ## 7. Confirm

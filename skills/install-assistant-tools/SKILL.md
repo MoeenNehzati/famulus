@@ -5,6 +5,14 @@ description: Install or update the user's assistant and tw/tmux-workspace helper
 
 # Install Assistant Tools
 
+When this skill is used, begin with:
+
+Skill: install-assistant-tools
+
+Category: automation
+
+Dependencies: none
+
 ## Overview
 
 The skill ships three standalone scripts in `bin/`:
@@ -47,12 +55,16 @@ The script installs or updates:
 - `$bin_dir/tw` — symlink to `bin/tmux-workspace` (alias).
 - Each repo-owned profile under `profiles/*.config.toml`, linked into both the
   Codex home and Claude home.
+- The repo's Git hook path: `git config core.hooksPath .githooks`, after
+  verifying that `.githooks/pre-commit`, `.githooks/check-skill-names`,
+  `.githooks/check-skill-dependencies`, and `.githooks/pre-push` exist and are
+  executable.
 - Legacy repo-owned `coder` launcher/profile symlinks, if present, are removed
   during install.
 - A managed PATH block in the user shell rc (and system rc when writable).
 - `~/.config/environment.d/20-ai-agent.conf` — sets `AI_AGENT_COMMAND_TEMPLATE`
-  for the systemd user environment, required by the `recurring-tasks` skill so
-  automated jobs (email-triage, daily-plan, etc.) know how to invoke Claude.
+  for the systemd user environment, required by automated skill jobs so they
+  know how to invoke Claude.
 
 The managed block written to the rc file is intentionally minimal:
 
@@ -74,6 +86,7 @@ reported as warnings.
 - Source bin: `<skill-dir>/bin/`
 - Codex home: `$CODEX_HOME`, or `$HOME/.codex` when unset
 - Claude home: `$CLAUDE_HOME`, or `$HOME/.claude` when unset
+- Git hooks path: `<repo-root>/.githooks`
 
 ## Install or Update
 
@@ -141,6 +154,7 @@ Expected behavior:
 - `tw -c` creates or attaches to the Codex-specific tmux workspace.
 - Each repo-owned profile in `profiles/*.config.toml` has matching symlinks
   under `$CODEX_HOME` or `~/.codex`, and under `$CLAUDE_HOME` or `~/.claude`.
+- `git -C <repo-root> config --get core.hooksPath` prints `.githooks`.
 
 Do not run `assistant -c` or `tw -c` as validation unless the user wants an
 interactive Codex/tmux session launched.

@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+errors=()
+
+extract_skill_dependencies() {
+    awk '
+        /^Dependencies:[[:space:]]*none[[:space:]]*$/ { seen=1; exit }
+        /^Dependencies:[[:space:]]*$/ { seen=1; in_block=1; next }
+        in_block && /^[[:space:]]*-[[:space:]]*/ {
+            sub(/^[[:space:]]*-[[:space:]]*/, "")
+            sub(/[[:space:]]+$/, "")
+            print
+            next
+        }
+        in_block && /^[[:space:]]*$/ { exit }
+        in_block { exit }
+        END { if (!seen) exit 2 }
+    ' "$1"
+}
+
+normalize_dependency_file() {
+    sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$1" \
+        | grep -Ev '^[[:space:]]*(#|$)' \
+        | sort \
+        || true
+}
+
+extract_skill_body_without_dependency_block() {
+    awk '
+        NR == 1 && /^---[[:space:]]*$/ { in_frontmatter=1; next }
+        in_frontmatter && /^---[[:space:]]*$/ { in_frontmatter=0; next }
+        in_frontmatter { next }
+        /^Dependencies:[[:space:]]*$/ { in_deps=1; next }
+        /^Dependencies:[[:space:]]*none[[:space:]]*$/ { next }
+        in_deps && /^[[:space:]]*-[[:space:]]*/ { next }
+        in_deps && /^[[:space:]]*$/ { in_deps=0; next }
+        in_deps { in_deps=0 }
+        { print }
+    ' "$1"
+}
+
+collect_known_skill_names() {
+    find skills -mindepth 1 -maxdepth 1 -type d -printf '%f\n'
+    find skills -mindepth 2 -maxdepth 2 -name depends_on_skills -print0 \
+        | xargs -0 -r sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' \
+        | grep -Ev '^[[:space:]]*(#|$)' \
+        || true
+}
+
+extract_exact_skill_mentions() {
+    local body_file="$1"
+    local known_skill
+    local escaped_skill
+
+    while IFS= read -r known_skill; do
+        [[ -z "$known_skill" ]] && continue
+        escaped_skill="$(printf '%s' "$known_skill" | sed -E 's/[][(){}.^$*+?|\\-]/\\&/g')"
+        if grep -Eq "(^|[^A-Za-z0-9:_-])${escaped_skill}([^A-Za-z0-9:_-]|$)" "$body_file"; then
+            printf '%s\n' "$known_skill"
+        fi
+    done
+}
+
+while IFS= read -r -d '' skill_file; do
+    while IFS=: read -r line_no line; do
+        [[ -z "$line_no" ]] && continue
+        errors+=("${skill_file}:${line_no}: parent paths in SKILL.md may only point to ../references: ${line}")
+    done < <(
+        grep -nE '(^|[^[:alnum:]_./~-])(\.\.?/)*\.\./' "$skill_file" \
+            | grep -Ev '(^|[^[:alnum:]_./~-])(\.\.?/)*\.\./references(/|[[:space:]`'"'"'")]|$)' \
+            || true
+    )
+done < <(find skills -mindepth 2 -maxdepth 2 -name SKILL.md -print0)
+
+while IFS= read -r -d '' skill_file; do
+    skill_dir="${skill_file%/SKILL.md}"
+    dependency_file="${skill_dir}/depends_on_skills"
+    skill_name="${skill_dir#skills/}"
+
+    if grep -nE 'Sub-skills to invoke:|Depends on:' "$skill_file" >/tmp/skill-dependency-markers.$$ 2>/dev/null; then
+        while IFS= read -r marker; do
+            errors+=("${skill_file}:${marker}: use the Dependencies block plus depends_on_skills")
+        done </tmp/skill-dependency-markers.$$
+    fi
+    rm -f /tmp/skill-dependency-markers.$$
+
+    skill_deps_file="$(mktemp)"
+    sidecar_deps_file="$(mktemp)"
+    body_deps_file="$(mktemp)"
+
+    if extract_skill_dependencies "$skill_file" | sort >"$skill_deps_file"; then
+        has_dependency_block=1
+    else
+        has_dependency_block=0
+    fi
+
+    if (( ! has_dependency_block )); then
+        errors+=("${skill_file}: missing Dependencies block")
+    fi
+
+    if [[ -f "$dependency_file" ]]; then
+        normalize_dependency_file "$dependency_file" >"$sidecar_deps_file"
+        if (( has_dependency_block )) && ! cmp -s "$skill_deps_file" "$sidecar_deps_file"; then
+            errors+=("${skill_file}: Dependencies block does not match ${dependency_file}")
+        fi
+
+        body_file="$(mktemp)"
+        extract_skill_body_without_dependency_block "$skill_file" >"$body_file"
+        collect_known_skill_names \
+            | sort -u \
+            | grep -Fxv "$skill_name" \
+            | extract_exact_skill_mentions "$body_file" \
+            | sort -u >"$body_deps_file"
+        rm -f "$body_file"
+
+        if ! cmp -s "$body_deps_file" "$sidecar_deps_file"; then
+            errors+=("${skill_file}: exact skill-name mentions in SKILL.md body do not match ${dependency_file}")
+        fi
+    else
+        errors+=("${skill_file}: missing ${dependency_file}")
+    fi
+
+    rm -f "$skill_deps_file" "$sidecar_deps_file" "$body_deps_file"
+done < <(find skills -mindepth 2 -maxdepth 2 -name SKILL.md -print0)
+
+if ((${#errors[@]})); then
+    echo "error: invalid skill dependencies." >&2
+    printf '  %s\n' "${errors[@]}" >&2
+    exit 1
+fi

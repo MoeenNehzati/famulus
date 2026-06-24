@@ -1,9 +1,6 @@
 {
   "bash": [
     "Bash(scripts/plans.sh:*)",
-    "Bash(../lists/scripts/lists.sh:*)",
-    "Bash(../g-calendar/scripts/gcal.sh:*)",
-    "Bash(../weather/scripts/weather.sh:*)",
     "Bash(date:*)"
   ],
   "network": []

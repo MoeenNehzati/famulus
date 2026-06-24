@@ -14,6 +14,8 @@ Skill: g-calendar
 
 Category: automation
 
+Dependencies: none
+
 ## 0. Read this first
 
 - **Only invoke `gcal.sh`.** Every Bash call must be exactly

@@ -7,6 +7,8 @@ tools:
 
 Category: document-oriented
 
+Dependencies: none
+
 # PDF to Markdown
 
 ## Overview
