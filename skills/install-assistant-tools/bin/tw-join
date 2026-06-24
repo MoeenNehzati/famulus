@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# tw-join: restore most recent pane from TW_PANE_STACK.
+# Called via: tmux bind-key j run-shell "/path/to/tw-join"
+set -euo pipefail
+
+# _tw_stack_top stack_string — sets globals TW_TOP (first entry) and TW_REST (remainder)
+_tw_stack_top() {
+    local stack="$1"
+    TW_TOP="${stack%% *}"
+    if [ "$TW_TOP" = "$stack" ]; then TW_REST=""; else TW_REST="${stack#* }"; fi
+}
+
+# _tw_join_flags entry — prints the join-pane flag string
+# Entry format: saved-name|split|position|size|source-window
+_tw_join_flags() {
+    local entry="$1"
+    local split position size flags=""
+    split=$(echo "$entry" | cut -d'|' -f2)
+    position=$(echo "$entry" | cut -d'|' -f3)
+    size=$(echo "$entry" | cut -d'|' -f4)
+
+    if [ "$split" = "H" ]; then flags="-h"; fi
+    if [ "$position" = "before" ]; then flags="$flags -b"; fi
+    flags="$flags -l ${size}%"
+    echo "${flags# }"
+}
+
+_tw_main() {
+    local raw
+    raw=$(tmux show-environment TW_PANE_STACK 2>/dev/null || echo "-TW_PANE_STACK")
+    local stack
+    if [[ "$raw" == -* ]]; then stack=""; else stack="${raw#TW_PANE_STACK=}"; fi
+
+    if [ -z "$stack" ]; then
+        tmux display-message "tw: nothing to restore"
+        exit 0
+    fi
+
+    local TW_TOP TW_REST
+    while [ -n "$stack" ]; do
+        _tw_stack_top "$stack"
+        local saved_name source_window
+        saved_name=$(echo "$TW_TOP" | cut -d'|' -f1)
+        source_window=$(echo "$TW_TOP" | cut -d'|' -f5-)
+        stack="$TW_REST"
+
+        # Check saved window exists
+        if ! tmux list-windows -F "#{window_name}" | grep -Fxq "$saved_name"; then
+            tmux display-message "tw: window ${saved_name} gone, skipping"
+            continue
+        fi
+
+        local flags
+        flags=$(_tw_join_flags "$TW_TOP")
+
+        # Join to source window if it still exists, else to current window
+        local joined=0
+        # shellcheck disable=SC2086
+        if tmux list-windows -F "#{window_name}" | grep -Fxq "$source_window"; then
+            tmux join-pane $flags -s ":${saved_name}" -t ":${source_window}" 2>/dev/null && joined=1
+        else
+            tmux join-pane $flags -s ":${saved_name}" 2>/dev/null && joined=1
+        fi
+
+        if [ "$joined" -eq 1 ]; then
+            break
+        fi
+        tmux display-message "tw: could not restore ${saved_name}, skipping"
+    done
+
+    tmux set-environment TW_PANE_STACK "$stack"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    _tw_main "$@"
+fi
