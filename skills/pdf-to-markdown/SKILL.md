@@ -56,12 +56,14 @@ Always specify `--output_dir` — the default buries output in the anaconda site
 marker_single paper.pdf \
   --output_dir ./output \
   --disable_image_extraction \
+  --llm_service <configured-marker-llm-service> \
   --use_llm \
   --redo_inline_math \
   --highres_image_dpi 300
 ```
-Requires a configured Marker LLM backend. Uses the selected provider API
-(pay-per-token where applicable).
+Requires a configured Marker LLM backend, such as an Anthropic-backed Marker
+service with `ANTHROPIC_API_KEY` in the environment or the matching API-key
+flag. Uses the selected provider API (pay-per-token where applicable).
 
 **Other useful flags:**
 - `--page_range 0,5-10` — convert specific pages only
