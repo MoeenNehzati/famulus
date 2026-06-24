@@ -40,6 +40,10 @@ The skill is invoked in one of two modes:
 
 ## 1. Determine today's plan filename
 
+Use the machine's local date as the source of truth for "today". Session or
+prompt metadata dates are advisory only; if they disagree with `date`, follow
+`date` and mention the mismatch in the response.
+
 Run:
 
 ```bash
@@ -47,7 +51,8 @@ date +%-m-%-d-%y
 ```
 
 This gives the filename key, e.g. `6-16-26` for June 16, 2026. The full plan
-file lives at `GDrive:plans/<key>.md`, managed by the `plans.sh` script.
+file lives at `GDrive:assistant/plans/<key>.md`, managed by the `plans.sh`
+script.
 
 ## 2. Check whether today's plan already exists
 
@@ -83,6 +88,9 @@ Run all five of these simultaneously:
   **Upcoming Events** section (filter to all-day events only, starting
   tomorrow).
 - To target a different date (e.g. planning for tomorrow), use `--from YYYY-MM-DD --to YYYY-MM-DD` on both calls; `--days N` extends the range from `--from`.
+- Only use explicit `--from/--to` date flags when the user asks for a date other
+  than today; otherwise use the default commands so calendar and weather stay
+  aligned with the local system date.
 - If `todo` is empty or doesn't exist, set the Actions section to a single
   line: `(nothing on the todo list)` and skip steps 5-6.
 
