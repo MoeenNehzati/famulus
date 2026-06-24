@@ -7,10 +7,12 @@ description: Install or update the user's assistant and tw/tmux-workspace helper
 
 ## Overview
 
-The skill ships two standalone scripts in `bin/`:
+The skill ships three standalone scripts in `bin/`:
 
 - `bin/assistant` — launches `claude --agent assistant` (or `codex --profile
   assistant` with `-c`) from the assistant project directory.
+- `bin/coder` — launches `claude --agent coder` or `codex --profile coder`
+  from the current directory.
 - `bin/tmux-workspace` — creates or attaches to a tmux workspace; `tw` is an
   alias symlink for it.
 
@@ -23,6 +25,7 @@ definitions).
 ```
 bin/
   assistant          source script for the assistant command
+  coder              source script for the coder command
   tmux-workspace     source script for tw / tmux-workspace
 scripts/
   install_assistant_tools.sh
@@ -39,10 +42,11 @@ bash scripts/install_assistant_tools.sh
 The script installs or updates:
 
 - `$bin_dir/assistant` — symlink to `bin/assistant` in this skill directory.
+- `$bin_dir/coder` — symlink to `bin/coder`.
 - `$bin_dir/tmux-workspace` — symlink to `bin/tmux-workspace`.
 - `$bin_dir/tw` — symlink to `bin/tmux-workspace` (alias).
-- Each repo-owned Codex profile under `profiles/*.config.toml`, linked into
-  the Codex home so `codex --profile <name>` can load it.
+- Each repo-owned profile under `profiles/*.config.toml`, linked into both the
+  Codex home and Claude home.
 - A managed PATH block in the user shell rc (and system rc when writable).
 - `~/.config/environment.d/20-ai-agent.conf` — sets `AI_AGENT_COMMAND_TEMPLATE`
   for the systemd user environment, required by the `recurring-tasks` skill so
@@ -67,6 +71,7 @@ reported as warnings.
 - Bin dir: `$HOME/Documents/scripts/bin`
 - Source bin: `<skill-dir>/bin/`
 - Codex home: `$CODEX_HOME`, or `$HOME/.codex` when unset
+- Claude home: `$CLAUDE_HOME`, or `$HOME/.claude` when unset
 
 ## Install or Update
 
@@ -95,6 +100,7 @@ Use explicit paths for a nonstandard layout:
 bash scripts/install_assistant_tools.sh \
   --bin-dir /path/to/bin \
   --codex-home /path/to/codex-home \
+  --claude-home /path/to/claude-home \
   --shell-rc /path/to/user/.bashrc \
   --system-shell-rc /path/to/system/bashrc
 ```
@@ -124,12 +130,15 @@ Expected behavior:
 
 - `type assistant` reports a file (not a function).
 - `assistant --help` prints usage and exits 0.
+- `coder --help` prints usage and exits 0.
 - `tw -h` documents `-c|--codex`.
 - `assistant -c` launches Codex from the configured assistant directory with
   `--profile assistant`.
+- `coder --codex` launches Codex from the current directory with
+  `--profile coder`.
 - `tw -c` creates or attaches to the Codex-specific tmux workspace.
-- Each repo-owned profile in `profiles/*.config.toml` has a matching symlink
-  under `$CODEX_HOME` or `~/.codex`.
+- Each repo-owned profile in `profiles/*.config.toml` has matching symlinks
+  under `$CODEX_HOME` or `~/.codex`, and under `$CLAUDE_HOME` or `~/.claude`.
 
 Do not run `assistant -c` or `tw -c` as validation unless the user wants an
 interactive Codex/tmux session launched.

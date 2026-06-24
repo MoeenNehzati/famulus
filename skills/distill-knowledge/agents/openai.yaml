@@ -1,0 +1,4 @@
+interface:
+  display_name: "Distill Knowledge"
+  short_description: "Preserve project lessons before switching tracks"
+  default_prompt: "Use $distill-knowledge to update interface notes, project lessons, and memory candidates before switching tracks."

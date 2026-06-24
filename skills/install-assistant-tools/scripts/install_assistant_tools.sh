@@ -8,8 +8,9 @@ Usage:
 
 Installs or updates:
   - assistant script (symlinked from skill bin/)
+  - coder script (symlinked from skill bin/)
   - tw/tmux-workspace script (symlinked from skill bin/)
-  - Codex profile symlinks (profiles/*.config.toml -> codex home)
+  - Profile symlinks (profiles/*.config.toml -> Codex and Claude homes)
   - PATH entry and ASSISTANT_DEFAULT in the user (and optionally system) shell rc
 
 Options:
@@ -21,6 +22,8 @@ Options:
                          (default: /etc/bash.bashrc)
   --codex-home DIR       Codex state/config directory for profile symlinks
                          (default: $CODEX_HOME or $HOME/.codex)
+  --claude-home DIR      Claude state/config directory for profile symlinks
+                         (default: $CLAUDE_HOME or $HOME/.claude)
   --default-llm claude|codex
                          Default backend for assistant (prompted if omitted)
   --no-system-shell-rc   Do not update the system bash rc file
@@ -34,6 +37,7 @@ bin_dir=""
 shell_rc=""
 system_shell_rc="/etc/bash.bashrc"
 codex_home=""
+claude_home=""
 default_llm=""
 update_system_shell_rc=1
 dry_run=0
@@ -64,6 +68,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --codex-home)
       codex_home="${2:?--codex-home requires a directory}"
+      shift 2
+      ;;
+    --claude-home)
+      claude_home="${2:?--claude-home requires a directory}"
       shift 2
       ;;
     --default-llm)
@@ -102,6 +110,7 @@ fi
 bin_dir="${bin_dir:-$home_dir/Documents/scripts/bin}"
 shell_rc="${shell_rc:-$home_dir/.bashrc}"
 codex_home="${codex_home:-${CODEX_HOME:-$home_dir/.codex}}"
+claude_home="${claude_home:-${CLAUDE_HOME:-$home_dir/.claude}}"
 profiles_dir="$repo_root/profiles"
 
 assistant_block_begin="# >>> assistant-tools >>>"
@@ -137,7 +146,7 @@ resolve_default_llm() {
 install_bin_scripts() {
   mkdir -p "$bin_dir"
 
-  for script in assistant tmux-workspace; do
+  for script in assistant coder tmux-workspace; do
     local src="$source_bin_dir/$script"
     local dst="$bin_dir/$script"
     if [ ! -f "$src" ]; then
@@ -170,15 +179,17 @@ install_profile_links() {
     return 0
   fi
 
-  mkdir -p "$codex_home"
+  mkdir -p "$codex_home" "$claude_home"
 
   for profile in "$profiles_dir"/*.config.toml; do
     [ -e "$profile" ] || continue
     linked_any=1
     if (( dry_run )); then
       log "Would link $codex_home/$(basename "$profile") -> $profile"
+      log "Would link $claude_home/$(basename "$profile") -> $profile"
     else
       ln -sfn "$profile" "$codex_home/$(basename "$profile")"
+      ln -sfn "$profile" "$claude_home/$(basename "$profile")"
     fi
   done
 
@@ -254,7 +265,7 @@ verify_install() {
   log "Verifying installation..."
   local ok=1
 
-  for cmd in assistant tw; do
+  for cmd in assistant coder tw; do
     local dst="$bin_dir/$cmd"
     if [ ! -x "$dst" ]; then
       log "  FAIL: $dst is not executable"
@@ -318,6 +329,7 @@ log "Installed assistant tools."
 log "  Bin dir:        $bin_dir"
 log "  Source bin:     $source_bin_dir"
 log "  Codex home:     $codex_home"
+log "  Claude home:    $claude_home"
 log "  Default LLM:    $default_llm"
 log "  User shell rc:  $shell_rc"
 if (( update_system_shell_rc )); then
