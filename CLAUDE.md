@@ -17,6 +17,10 @@ Mode definitions are domain-general; math is one recurring example among others
   restatements of why something matters, unless asked.
 - If a question asks for a yes/no or a narrow verdict, answer that first, then
   elaborate.
+- If the user asks multiple separate questions, answer the quick ones first
+  before doing slower work. In particular, answer questions that need no tools
+  or only trivial checks before invoking multiple commands or longer workflows
+  for the rest.
 - Start every response with the current mode on its own line: `Mode: Explore`
   or `Mode: Proof`.
 - Default mode is **Explore**. The active mode persists across the conversation
