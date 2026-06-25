@@ -11,6 +11,17 @@ if ! git symbolic-ref HEAD >/dev/null 2>&1; then
 fi
 
 failed=0
+
+# Regenerate profiles table if config files changed
+repo_root="$(cd "$hook_dir/../.." && pwd)"
+if [ -f "$repo_root/scripts/generate-settings-table.sh" ]; then
+  bash "$repo_root/scripts/generate-settings-table.sh" >/dev/null 2>&1
+  if ! git diff --quiet "$repo_root/PROFILES.md" 2>/dev/null; then
+    echo "✓ Updated PROFILES.md based on latest config files"
+    git add "$repo_root/PROFILES.md"
+  fi
+fi
+
 "${hook_dir}/git/check-not-detached" || failed=1
 "${hook_dir}/skill/check-names" || failed=1
 "${hook_dir}/skill/check-dependencies" || failed=1

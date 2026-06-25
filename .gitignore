@@ -36,3 +36,5 @@ plugins/
 # Python bytecode in skills/
 skills/**/__pycache__/
 skills/**/*.pyc
+
+*.code-workspace

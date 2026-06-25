@@ -148,7 +148,7 @@ resolve_default_llm() {
 install_bin_scripts() {
   mkdir -p "$bin_dir"
 
-  for script in assistant collab tmux-workspace; do
+  for script in assistant collab coauthor tmux-workspace; do
     local src="$source_bin_dir/$script"
     local dst="$bin_dir/$script"
     if [ ! -f "$src" ]; then
@@ -213,6 +213,16 @@ install_profile_links() {
     else
       ln -sfn "$profile" "$codex_home/$(basename "$profile")"
       ln -sfn "$profile" "$claude_home/$(basename "$profile")"
+    fi
+  done
+
+  for settings_file in "$profiles_dir"/*_claude_setting.json; do
+    [ -e "$settings_file" ] || continue
+    linked_any=1
+    if (( dry_run )); then
+      log "Would link $claude_home/$(basename "$settings_file") -> $settings_file"
+    else
+      ln -sfn "$settings_file" "$claude_home/$(basename "$settings_file")"
     fi
   done
 
@@ -309,7 +319,7 @@ verify_install() {
   log "Verifying installation..."
   local ok=1
 
-  for cmd in assistant collab tw; do
+  for cmd in assistant collab coauthor tw; do
     local dst="$bin_dir/$cmd"
     if [ ! -x "$dst" ]; then
       log "  FAIL: $dst is not executable"

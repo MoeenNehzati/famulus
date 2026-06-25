@@ -7,12 +7,13 @@ Usage: collab [--claude|--codex] [-h|--help] [args...]
 
 Launch the collab agent from the current directory.
 
-  --claude      Use Claude (claude --agent collab)
+  --claude      Use Claude (claude --agent collab with settings)
   --codex       Use Codex (codex --profile collab)
   -h, --help    Show this help
 
 The default backend is \$COLLAB_DEFAULT, then \$ASSISTANT_DEFAULT.
 Falls back to claude if neither is set.
+Claude loads settings from \$CLAUDE_HOME/collab_claude_setting.json.
 EOF
 }
 
@@ -24,8 +25,10 @@ case "${1:-}" in
   -h|--help) usage; exit 0 ;;
 esac
 
+claude_home="${CLAUDE_HOME:-$HOME/.claude}"
+
 case "$backend" in
-  claude) exec claude --agent collab "$@" ;;
+  claude) exec claude --agent collab --settings "$claude_home/collab_claude_setting.json" "$@" ;;
   codex)  exec codex --profile collab "$@" ;;
   *)      echo "collab: unknown backend '$backend' - set COLLAB_DEFAULT or ASSISTANT_DEFAULT to claude or codex" >&2; exit 1 ;;
 esac

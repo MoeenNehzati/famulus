@@ -15,12 +15,15 @@ Dependencies: none
 
 ## Overview
 
-The skill ships three standalone scripts in `bin/`:
+The skill ships four standalone scripts in `bin/`:
 
-- `bin/assistant` — launches `claude --agent assistant` (or `codex --profile
-  assistant` with `-c`) from the assistant project directory.
-- `bin/collab` — launches `claude --agent collab` or `codex --profile collab`
-  from the current directory.
+- `bin/assistant` — launches `claude --agent assistant` (secretary: fetch info,
+  write, implement easy logic) or `codex --profile assistant` from the
+  assistant project directory.
+- `bin/collab` — launches `claude --agent collab` (serious coding,
+  documentation/learning) or `codex --profile collab` from the current directory.
+- `bin/coauthor` — launches `claude --agent coauthor` (math/research, deep
+  thinking) or `codex --profile coauthor` from the current directory.
 - `bin/tmux-workspace` — creates or attaches to a tmux workspace; `tw` is an
   alias symlink for it.
 
@@ -34,6 +37,7 @@ definitions).
 bin/
   assistant          source script for the assistant command
   collab             source script for the collab command
+  coauthor           source script for the coauthor command
   tmux-workspace     source script for tw / tmux-workspace
 scripts/
   install_assistant_tools.sh
@@ -51,10 +55,13 @@ The script installs or updates:
 
 - `$bin_dir/assistant` — symlink to `bin/assistant` in this skill directory.
 - `$bin_dir/collab` — symlink to `bin/collab`.
+- `$bin_dir/coauthor` — symlink to `bin/coauthor`.
 - `$bin_dir/tmux-workspace` — symlink to `bin/tmux-workspace`.
 - `$bin_dir/tw` — symlink to `bin/tmux-workspace` (alias).
 - Each repo-owned profile under `profiles/*.config.toml`, linked into both the
   Codex home and Claude home.
+- Each Claude settings file under `profiles/*_claude_setting.json`, linked into
+  the Claude home (`$CLAUDE_HOME` or `~/.claude`).
 - The repo's Git hook path: `git config core.hooksPath .githooks`, after
   verifying that `.githooks/` exists and marking all files in it executable.
 - Legacy repo-owned `coder` launcher/profile symlinks, if present, are removed
@@ -144,14 +151,19 @@ Expected behavior:
 - `type assistant` reports a file (not a function).
 - `assistant --help` prints usage and exits 0.
 - `collab --help` prints usage and exits 0.
+- `coauthor --help` prints usage and exits 0.
 - `tw -h` documents `-c|--codex`.
 - `assistant -c` launches Codex from the configured assistant directory with
   `--profile assistant`.
 - `collab --codex` launches Codex from the current directory with
   `--profile collab`.
+- `coauthor --codex` launches Codex from the current directory with
+  `--profile coauthor`.
 - `tw -c` creates or attaches to the Codex-specific tmux workspace.
 - Each repo-owned profile in `profiles/*.config.toml` has matching symlinks
   under `$CODEX_HOME` or `~/.codex`, and under `$CLAUDE_HOME` or `~/.claude`.
+- Each Claude settings file in `profiles/*_claude_setting.json` has a matching
+  symlink under `$CLAUDE_HOME` or `~/.claude`.
 - `git -C <repo-root> config --get core.hooksPath` prints `.githooks`.
 
 Do not run `assistant -c` or `tw -c` as validation unless the user wants an

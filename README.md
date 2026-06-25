@@ -145,6 +145,16 @@ Skills are on-demand instruction sets loaded when invoked. They cover:
 - `refactor-skills` — audit/refactor skills against local conventions
 - `initialize-tdd` — scaffold a staged TDD project
 
+## Profiles & Agent Configuration
+
+Three agent profiles are configured for both Claude and Codex. See [PROFILES.md](PROFILES.md) for a complete comparison of model selection and capability levels.
+
+Profile-specific settings are stored in:
+- **Codex**: `profiles/*.config.toml`
+- **Claude**: `profiles/*_claude_setting.json`
+
+The `PROFILES.md` comparison table is auto-generated from these source files and updated automatically before each commit by the pre-commit hook.
+
 ## Codex
 
 Codex uses `.codex-plugin/plugin.json`, which points directly at:
