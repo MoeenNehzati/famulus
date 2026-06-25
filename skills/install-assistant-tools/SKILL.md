@@ -11,7 +11,8 @@ Skill: install-assistant-tools
 
 Category: automation
 
-Dependencies: none
+Dependencies:
+- recurring-tasks
 
 ## Overview
 
@@ -59,11 +60,11 @@ The script installs or updates:
   verifying that `.githooks/` exists and marking all files in it executable.
 - Legacy repo-owned `coder` launcher/profile symlinks, if present, are removed
   during install.
-- A managed PATH block in the user shell rc (default: `~/.bashrc`) and the
-  login shell profile (default: `~/.profile`), and optionally the system rc when
-  writable. The login profile entry is required so that login shells — in
-  particular `bash -lc` used by `run-skill.sh` in systemd jobs — can find the
-  `assistant` command.
+- A managed PATH block in the user shell rc (default: `~/.bashrc`) and
+  optionally the system rc when writable.
+- `skills/recurring-tasks/scripts/env.sh` — generated file (gitignored) that
+  exports the bin dir PATH. Sourced by `invoke-agent.sh` so systemd jobs can
+  find `assistant` without touching system profiles.
 - `~/.config/environment.d/20-ai-agent.conf` — sets `AI_AGENT_COMMAND_TEMPLATE`
   for the systemd user environment, required by automated skill jobs so they
   know how to invoke Claude.
@@ -83,8 +84,8 @@ reported as warnings.
 ## Default Targets
 
 - User rc: `$HOME/.bashrc`
-- Login shell profile: `$HOME/.profile`
 - System rc: `/etc/bash.bashrc`
+- Runner env: `<repo-root>/skills/recurring-tasks/scripts/env.sh` (generated)
 - Bin dir: `$HOME/Documents/scripts/bin`
 - Source bin: `<skill-dir>/bin/`
 - Codex home: `$CODEX_HOME`, or `$HOME/.codex` when unset
@@ -120,12 +121,14 @@ bash scripts/install_assistant_tools.sh \
   --codex-home /path/to/codex-home \
   --claude-home /path/to/claude-home \
   --shell-rc /path/to/user/.bashrc \
-  --login-shell-rc /path/to/user/.profile \
   --system-shell-rc /path/to/system/bashrc
 ```
 
-Pass `--no-login-shell-rc` to skip the login profile update.
-Pass `--no-system-shell-rc` to update only the current user's shell rcs.
+Pass `--no-system-shell-rc` to update only the current user's shell rc.
+
+To also write the PATH block to a login shell profile (e.g. `~/.profile`), pass
+`--login-shell-rc FILE`. This is off by default — `env.sh` handles the systemd
+PATH requirement instead.
 
 ## Updating Scripts
 

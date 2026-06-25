@@ -17,120 +17,106 @@ Category: automation
 Dependencies:
 - cloud-files
 
-## 0. The only commands this skill uses
+## 0. Commands
 
-Every operation goes through exactly one script, with two subcommands. Use
-**only** these two invocation patterns — nothing else
-(`scripts/lists.sh`, no `cd`, no other
-arguments or flags):
+Lists are stored in cloud storage managed by the cloud-files skill. Every
+operation goes through one script. Use **only** these invocation
+patterns — no `cd`, no other tools:
 
-- **Read**: `scripts/lists.sh read [name]`
-  - No `name`: prints the names of all lists (one `<name>.md` per line, may
-    be empty if none exist).
-  - With `name`: prints that list's full contents (empty output if the list
-    doesn't exist).
-  - Any non-zero exit or stderr from the script means the list state is
-    unknown. Stop and report the read failure; do not infer that the list is
-    empty and do not write.
-- **Write**: `scripts/lists.sh write <name>`
-  with the new full file content piped via stdin (heredoc).
-  - Non-empty stdin: overwrites `<name>.md` with that content (creates the
-    file/directory if needed).
-  - Empty stdin: deletes `<name>.md` if it exists (this is how a list is
-    deleted — including when the last item is removed and you want to drop
-    the file rather than leave an empty one).
+| Subcommand | What it does |
+|---|---|
+| `scripts/lists.sh read` | List all list names (one `.md` per line) |
+| `scripts/lists.sh read <name>` | Print full file contents (use sparingly — see §0.1) |
+| `scripts/lists.sh write <name>` | Overwrite with stdin; empty stdin deletes the file |
+| `scripts/lists.sh unchecked <name>` | Print only `[ ]` task lines (fresh read each call) |
+| `scripts/lists.sh grep <name> <text>` | Fixed-string case-insensitive search with line numbers |
+| `scripts/lists.sh toggle <name> <id> check\|uncheck` | Toggle checkbox by ID (atomic read-modify-write) |
+| `scripts/lists.sh append <name>` | Append stdin item; auto-injects `<!-- #id -->` (atomic) |
+| `scripts/lists.sh migrate <name>` | Add `<!-- #id -->` to every task line that lacks one |
 
-For every operation below: do a `read` first to get current content, compute
-the new content, then `write` it back. If the read fails, stop without
-writing. Never bypass the script for cloud access; cloud transport is
-delegated to the `cloud-files` skill.
+Non-zero exit or stderr from any subcommand → stop; do not infer state; do not write.
+
+### 0.1 Token efficiency
+
+**Prefer atomic subcommands over raw `read`.** Each of `unchecked`, `grep`,
+`toggle`, and `append` reads fresh from cloud internally — no cache, no
+stale data risk. Only reach for `read <name>` when you genuinely need the
+full file to understand structure (nested add, remove-with-cascade, §3.4/3.6).
+
+**If you recently ran `unchecked` or `grep` and have IDs in context, go
+directly to `toggle` — no second read needed.**
+
+### 0.2 Bracket safety
+
+`grep` uses `-niF` (fixed-string): brackets in titles or search terms are
+always treated as literals. `toggle` finds its target via `<!-- #id -->` using
+the same fixed-string search — unambiguous regardless of what the title
+contains. `sed` in `toggle` targets a specific line number and substitutes the
+checkbox token (`[ ]` or `[x]`) which always appears before any title text,
+so brackets in titles are never touched.
 
 ## 1. Storage model
 
-- Each list is `<name>.md` under `assistant/lists/` in cloud storage
-  (managed entirely by the script above, which delegates cloud transport to
-  `cloud-files`).
-- List names: derive from the user's wording, lowercase, spaces replaced
-  with hyphens (e.g. "grocery list" -> `grocery` or `groceries` — match
-  against existing list names from `read` with no argument before picking a
-  name for a *new* list).
-- Creating an empty list (no items) isn't a separate action — a list comes
-  into existence the first time an item is added to it, and disappears if
-  emptied out (per the `write` semantics above).
-- A list that contains only persistent title lines (no task items) is not
-  deleted on write — title lines count as non-empty content.
+- Each list is `<name>.md` under `assistant/lists/` in cloud storage.
+- List names: lowercase, spaces → hyphens. Match against existing names
+  before picking a name for a new list.
+- A list comes into existence the first time an item is added; it disappears
+  when emptied (empty stdin to `write`).
+- A list with only persistent title lines (no task items) is not deleted.
 
 ## 2. File format
 
-Each list file is a Markdown checklist, optionally nested via 2-space
-indentation per level. Every item carries a creation date in
-`(MM/DD/YY)` format immediately after the checkbox:
+Each list file is a Markdown checklist with optional nesting via 2-space
+indentation. Every task line carries a creation date and a hidden stable ID:
 
 ```
-- [ ] (06/13/26) Plan trip
+- [ ] (06/13/26) Plan trip <!-- #a3f2 -->
   deadline: this month
-  - [ ] (06/13/26) Book flight
+  - [ ] (06/13/26) Book flight <!-- #b7c1 -->
     deadline: by Friday
-  - [ ] (06/10/26) Book hotel
-- [ ] (06/13/26) Buy groceries
-- [x] (06/12/26) Pay rent
+  - [ ] (06/10/26) Book hotel <!-- #e209 -->
+- [ ] (06/13/26) Buy groceries <!-- #f14d -->
+- [x] (06/12/26) Pay rent <!-- #c88a -->
 ```
 
-- `- [ ] (MM/DD/YY) title` = unchecked item, created on that date
-- `- [x] (MM/DD/YY) title` = checked item, created on that date
-- The date is set once when the item is added and never changes
-  (checking/unchecking doesn't update it).
-- For matching an item by its text (in 3.5/3.6 and "under Y" in 3.4), use
-  the title text *after* the `(MM/DD/YY) ` prefix, plus any continuation
-  lines belonging to that item. The date itself is not part of the matchable
+- `- [ ] (MM/DD/YY) title <!-- #xxxx -->` — unchecked
+- `- [x] (MM/DD/YY) title <!-- #xxxx -->` — checked
+- **Date**: set on creation; never changes.
+- **ID** (`<!-- #xxxx -->`): 4 lowercase hex chars in an HTML comment at the
+  end of the checkbox line. Auto-injected by `append`; added to existing items
+  by `migrate`. Invisible in rendered Markdown. **Never shown to the user** —
+  strip `<!-- #... -->` when displaying list items.
+- **For matching** (§3.5/3.6 "under Y" in §3.4): match against title text
+  after `(MM/DD/YY) ` and before ` <!-- #`. The date and ID are not matchable
   text.
 
-**File header line (optional):** A list file may begin with a header line
-(not a task item) declaring its name and accepted checkbox states:
-
+**File header line (optional):**
 ```
 [<list-name>] [<state>] <meaning> · [<state>] <meaning> · ...
 ```
+Declares valid checkbox states. If absent, only `[ ]` and `[x]` are valid.
 
-The skill reads this line to determine what states are valid for that list.
-If absent, only `[ ]` and `[x]` are assumed valid.
-
-**Persistent title lines:** A list may contain plain `- Title` lines (no
-checkbox, no date) as permanent structural headers. These are never checked,
-unchecked, or removed. When present, they form a two-level hierarchy:
-
+**Persistent title lines:** Plain `- Title` lines (no checkbox, no date)
+as structural headers — never checked, unchecked, or removed:
 - Level 1 (area):   `- Title`
 - Level 2 (action): `  - Title`
+- Task items begin at level 3: `    - [state] (MM/DD/YY) title <!-- #xxxx -->`
 
-Task items begin at level 3: `    - [state] (MM/DD/YY) title`, and may nest
-arbitrarily deeper using the same task-line format.
-
-**Item continuation lines:** A task item may have optional continuation lines
-immediately beneath it:
-
+**Item continuation lines:**
 ```markdown
-    - [ ] (06/24/26) Reply to Diego
-      Follow up on the appendix draft and ask whether the two-page prevalence version is enough.
+    - [ ] (06/24/26) Reply to Diego <!-- #d3a1 -->
+      Follow up on the appendix draft.
       deadline: by Friday
 ```
+- **title**: text on the checkbox line after `(MM/DD/YY) ` and before ` <!-- #`.
+- **description**: optional freeform lines. Omit when there's no extra context.
+- **`deadline:`**: optional. Put description lines first, then `deadline:`.
+- Continuation lines: task indentation + 2 spaces (level-3 task → 6 spaces).
+- A nested task is a checkbox line at its own indentation, not a continuation.
 
-- The task title is the text on the checkbox line after `(MM/DD/YY) `.
-- Freeform description lines are optional. Omit them entirely if there is no
-  description.
-- `deadline: <deadline phrase or date>` is optional. Omit it if there is no
-  deadline.
-- Continuation lines are indented two spaces more than the task line they
-  describe. For a level-3 task, use 6 spaces; for a level-4 nested task, use 8
-  spaces; in general, task indentation plus 2 spaces.
-- If both description and deadline are present, put description lines first and
-  the `deadline:` line last.
-- A nested task is still a checkbox line (`- [state] ...`) at its own
-  indentation level, not a description line.
-
-For fuzzy matching (§3.5, §3.6), plain title lines are skipped — they have
-no checkbox text to match. For task items, match against the title and optional
-continuation lines, but preserve continuation lines unchanged unless the user
-explicitly asks to edit them.
+Plain title lines have no ID and are skipped for fuzzy matching. For task
+items, match against title and optional continuation lines; preserve
+continuation lines unless the user explicitly asks to edit them.
 
 ## 3. Operations
 
@@ -143,15 +129,18 @@ scripts/lists.sh read
 ### 3.2 Show / read a list
 
 ```bash
-scripts/lists.sh read <name>
+scripts/lists.sh unchecked <name>
 ```
 
-Present the contents to the user (render as a checklist). When displaying,
-omit any area or action title-line section that has no `[ ]` task items
-beneath it — the file retains all title lines, but the display filters out
-empty sections. If output is empty and the name doesn't appear in 3.1's
-output, the list doesn't exist — report that and offer to create it (by
-adding the first item, see 3.4).
+Present the output to the user with `<!-- #xxxx -->` stripped from each line.
+By default show only unchecked items. If the user asks to see everything
+(checked items too), use `scripts/lists.sh read <name>` and strip IDs before
+displaying.
+
+When displaying, omit any area or action title-line section that has no `[ ]`
+task items beneath it. If `unchecked` returns `(no unchecked items)` and the
+name doesn't appear in §3.1's output, the list doesn't exist — report that
+and offer to create it.
 
 ### 3.3 Delete a whole list
 
@@ -162,153 +151,144 @@ scripts/lists.sh write <name> <<'EOF'
 EOF
 ```
 
-(empty heredoc — this deletes the file per the write semantics in section 0)
-
 ### 3.4 Add an item
 
-1. `read <name>` to get current content. If the read fails, stop. Empty output + name not in 3.1's
-   listing means the list doesn't exist yet — that's fine, proceed with
-   empty content; the list will be created by the write below.
-2. Get today's date: `date +%m/%d/%y` (already allowlisted separately from
-   this skill's two commands). Use its output as `<date>` below.
-3. Parse the user's freeform item text into:
-   - **title**: short imperative task label for the checkbox line.
-   - **description**: optional longer context, rationale, source details, or
-     progress-report material. Omit when the freeform item has no useful extra
-     context beyond the title and deadline.
-   - **deadline**: optional due phrase/date, event date/time, or timeframe.
-     Write this as a `deadline:` continuation line.
-4. Check for a deadline:
-   - If the user already specified a due date or due phrase (for example,
-     `by tomorrow`, `by Friday`, `this week`, `this summer`, or an explicit
-     date), write it as an indented `deadline:` continuation line, not as
-     part of the task title.
-   - If the user did not specify any deadline, ask for one and wait for the
-     user's answer before composing or writing the item. If the answer adds
-     context beyond a deadline, fold that context into the description.
-   - If the user explicitly says there is no deadline, omit the `deadline:`
-     line.
-5. Compose the new content:
-   - **Plain add** ("add X"): append a new item at the end of the content
-     (after a trailing newline if the content is non-empty):
-     ```markdown
-     - [ ] (<date>) <title>
-       <optional freeform description>
-       deadline: <optional deadline>
-     ```
-     Omit the description and/or `deadline:` lines when absent.
-   - **Nested add** ("add X under Y"): fuzzy-match Y (case-insensitive
-     substring match against Y's text, ignoring any `(MM/DD/YY) ` prefix)
-     against existing lines.
-     - 0 matches: report "couldn't find '<Y>' on this list", show the
-       current list contents, do not write.
-     - 2+ matches: show the matching lines (with their text) and ask the
-       user which one they mean. Wait for their answer before proceeding.
-     - 1 match: insert the new task line at Y's indentation + 2 spaces,
-       followed by any continuation lines at Y's indentation + 4 spaces.
-       Insert it immediately after Y's last existing child line, or
-       immediately after Y itself if it has no children. A "child" of Y is
-       a contiguous run of following lines whose indentation is strictly
-       greater than Y's.
-   - **Structured add** (for lists with area×action title lines, when no
-     explicit "under Y" is given): infer the best-fit area×action section
-     from the item title, description, deadline, and context. Make a placement
-     decision without asking — announce which section you chose (e.g. "Added
-     under Research → Writing"). The user can override with "add X under
-     Area > Action".
-6. Write back:
+1. Get today's date: `date +%m/%d/%y`.
+2. Parse the user's freeform item text into **title**, optional **description**,
+   optional **deadline**. If no deadline was given, ask; if the user says none,
+   omit the `deadline:` line.
+3. Add the item:
 
-```bash
-scripts/lists.sh write <name> <<'EOF'
-<full new file content>
-EOF
-```
+   **Plain add** ("add X"): pass only the item content — the ID is
+   auto-injected by `append`:
+   ```bash
+   scripts/lists.sh append <name> <<'EOF'
+   - [ ] (<date>) <title>
+     <optional description>
+     deadline: <optional deadline>
+   EOF
+   ```
+   Omit description and/or `deadline:` when absent.
 
-7. Confirm to the user what was added and where (mention the date if
-   useful, e.g. "added with today's date, 06/13/26").
+   **Nested add** ("add X under Y"): search for Y:
+   ```bash
+   scripts/lists.sh grep <name> "<Y text>"
+   ```
+   - 0 matches → report not found, show `unchecked <name>`, stop.
+   - 2+ matches → show them (IDs stripped) and ask which. Wait.
+   - 1 match → extract the ID from `<!-- #xxxx -->` in the grep output.
+     For this structural edit (inserting at the right indentation level),
+     read the full file, insert the new item after Y's last child, and write
+     back via heredoc. Include `<!-- #xxxx -->` for the new item — generate a
+     4-char hex ID that doesn't already appear in the file content.
+
+   **Structured add** (structured lists, no explicit "under Y"): infer the
+   best-fit area×action section; announce your choice. Read the full file,
+   insert, write back via heredoc (include ID for the new item).
+
+4. Confirm what was added (strip ID from confirmation).
 
 ### 3.5 Check / uncheck an item
 
-1. `read <name>`. If the read fails, stop. If the list doesn't exist (empty output, not in 3.1's
-   listing), report not-found.
-2. Fuzzy-match the target text (case-insensitive substring) against the
-   item text of each line — the text after `- [ ] ` / `- [x] ` and after
-   stripping any `(MM/DD/YY) ` prefix. Also consider optional description and
-   `deadline:` continuation lines belonging to that item.
-   Plain title lines (no checkbox) are excluded from matching.
-   - 0 matches: report "couldn't find '<text>' on this list", show the
-     current list contents, do not write.
-   - 2+ matches: show the matching lines and ask the user which one. Wait
-     for their answer.
-   - 1 match: toggle that line's checkbox: `[ ]` -> `[x]` for "check"
-     requests, `[x]` -> `[ ]` for "uncheck" requests. Leave children's
-     checkboxes unchanged.
-3. Write the full content back via `write` (same pattern as 3.4 step 5). If
-   this was the list's only item and checking/unchecking doesn't remove it,
-   the content is still non-empty, so the list is not deleted.
-4. Confirm to the user which item was checked/unchecked.
+If you recently ran `unchecked` or `grep` and already have the item's ID in
+context, skip to step 3.
+
+1. Find the item:
+   ```bash
+   scripts/lists.sh grep <name> "<text>"
+   ```
+   - 0 matches → report not found, show `unchecked <name>`, stop.
+   - 2+ matches → show them (IDs stripped) and ask which. Wait.
+   - 1 match → extract the 4-char hex ID from `<!-- #xxxx -->`.
+
+2. Toggle:
+   ```bash
+   scripts/lists.sh toggle <name> <id> check      # or: uncheck
+   ```
+   The script reads fresh from cloud, finds the line by ID, toggles the
+   checkbox, and writes back — all atomically.
+
+3. Confirm which item was checked/unchecked (strip ID from output).
 
 ### 3.6 Remove an item
 
-1. `read <name>`. If the read fails, stop. If the list doesn't exist (empty output, not in 3.1's
-   listing), report not-found.
-2. Fuzzy-match the target text (case-insensitive substring) against item
-   text (after stripping any `(MM/DD/YY) ` prefix and including optional
-   continuation lines, same as 3.5), same rules as 3.5 (0 matches -> report
-   and stop; 2+ matches -> ask which one).
-   Plain title lines (no checkbox) are excluded from matching.
-3. On a single match: identify the matched line and all of its descendant
-   lines (contiguous following lines with strictly greater indentation —
-   this is the cascade set).
-   A cascade set never includes persistent title lines — if the cascade
-   boundary would reach a title line, stop there.
-   - If the cascade set contains only the matched line, remove it directly.
-   - If the cascade set contains more than just the matched line, list the
-     lines that will be removed and ask the user to confirm before
-     proceeding.
-4. Remove the matched line and (if confirmed) its descendants from the
-   content. Write the result back via `write` (same pattern as 3.4 step 5).
-   If the resulting content is empty, this deletes the list file (per
-   section 0) — mention that to the user if it happens.
-5. Confirm to the user what was removed.
+1. Find the item:
+   ```bash
+   scripts/lists.sh grep <name> "<text>"
+   ```
+   Same match rules as §3.5.
+
+2. Extract the ID and read the full file to identify the cascade set
+   (the matched line + all contiguous following lines with strictly greater
+   indentation). A cascade set never includes persistent title lines.
+   ```bash
+   scripts/lists.sh read <name>
+   ```
+
+3. If the cascade set contains more than just the matched line, list the lines
+   that will be removed (IDs stripped) and ask for confirmation.
+
+4. Remove the matched line and (if confirmed) its descendants; write back:
+   ```bash
+   scripts/lists.sh write <name> <<'EOF'
+   <full new content>
+   EOF
+   ```
+   If the result is empty, the list file is deleted — mention this.
+
+5. Confirm what was removed.
 
 ## 4. General notes
 
-- Always show the resulting list (or the relevant portion) after a
-  write operation so the user can verify the change.
-- If the user's request doesn't specify which list and there's exactly one
-  list whose name plausibly matches the topic (e.g. "groceries" for "add
-  milk"), use it. If there are multiple plausible matches or none, ask the
-  user which list (offering to create a new one if none match).
+- **Never show `<!-- #xxxx -->` to the user.** Strip ID comments when
+  displaying any list content.
+- After a write, show the changed item(s) or relevant section — not the full
+  list — unless the user asks.
+- If the user's request doesn't specify which list and one name clearly
+  matches, use it. Otherwise ask.
 
-## 5. potential-actions ↔ todo dependency
+## 5. Migration
+
+Run once per list to add IDs to existing items:
+
+```bash
+scripts/lists.sh migrate <name>
+```
+
+The script reads fresh from cloud, adds `<!-- #xxxx -->` to every task line
+that lacks one (with collision-free IDs), and writes back. After migration all
+`toggle` and ID-based operations work on that list.
+
+## 6. potential-actions ↔ todo dependency
 
 `potential-actions` is a staging list; `todo` holds committed actions.
 
 **Item lifecycle:**
 - Items start as `[ ]` (unreviewed).
-- **Accepted** (`[+]`): mark `[+]` in `potential-actions` AND add the item
-  to `todo` under the inferred best-fit area×action section (same placement
-  logic as §3.4), preserving its title, optional description, and optional
-  `deadline:` line. Use today's date as the todo creation date. Both writes
-  happen together in one pass.
-- **Rejected** (`[-]`): mark `[-]` in `potential-actions`. Nothing added to `todo`.
-- Items are never deleted from `potential-actions` — the `[+]`/`[-]` state is the audit trail.
+- **Accepted** (`[+]`): mark `[+]` via `toggle` in `potential-actions` AND
+  add the item to `todo` under the inferred best-fit area×action section
+  (§3.4 placement logic), preserving title, description, and `deadline:`.
+  Use today's date as the todo creation date. Generate a new ID for the todo
+  entry. Both writes happen together.
+- **Rejected** (`[-]`): mark `[-]` via `toggle` in `potential-actions`.
+  Nothing added to `todo`.
+- Items are never deleted from `potential-actions` — `[+]`/`[-]` is the
+  audit trail.
 
-**Dedup rule:** never add to `potential-actions` if a match already exists in any state (`[ ]`, `[+]`, or `[-]`). A previously rejected item is not re-added on future triage runs.
+**Dedup rule:** never add to `potential-actions` if a match already exists in
+any state.
 
-**Filtering:** only `[ ]` items are surfaced in suggestions (daily plan, triage prompts).
+**Filtering:** only `[ ]` items are surfaced in suggestions.
 
-## 6. Structured list configuration
+## 7. Structured list configuration
 
 The following lists follow the area×action structure defined in
-`references/action-structure.md` (see also
-`references/list-structure.md` for the general
-format). The skill detects a structured list by the presence of a file
-header line (first line starts with `[`) and persistent title lines.
+`references/action-structure.md` (see also `references/list-structure.md`).
+Detected by the presence of a file header line (starts with `[`) and
+persistent title lines.
 
 - `todo` — structured list; valid states declared in its file header
 - `potential-actions` — structured list; valid states declared in its file header
 
-When operating on these lists, apply the display filtering (§3.2), placement
-inference (§3.4), and title-line-skipping rules (§3.5, §3.6, §5).
+When operating on these lists, apply display filtering (§3.2), placement
+inference (§3.4), and title-line-skipping rules (§3.5, §3.6, §6).
