@@ -82,12 +82,13 @@ case "$op" in
   # ── Filtered reads (fresh from cloud each call) ─────────────────────────────
 
   unchecked)
-    # Print only unchecked [ ] task lines, including their <!-- #id --> comments.
-    # Callers should strip <!-- #id --> when displaying to the user.
+    # Print unchecked [ ] task lines with hierarchical numbers (1, 1.1, 2, …).
+    # Checked items and their children are excluded. Continuation lines
+    # (description / deadline) of unchecked tasks are included.
+    # <!-- #id --> comments are stripped; numbers are display-only (not stored).
     require_name
     "$cloud_files" read "$(list_path "$name")" \
-      | grep -E '^[[:space:]]*- \[ \]' \
-      || echo "(no unchecked items)"
+      | python3 "${script_dir}/number-unchecked.py"
     ;;
 
   grep)

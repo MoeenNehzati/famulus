@@ -133,10 +133,13 @@ scripts/lists.sh read
 scripts/lists.sh unchecked <name>
 ```
 
-Present the output to the user with `<!-- #xxxx -->` stripped from each line.
-By default show only unchecked items. If the user asks to see everything
-(checked items too), use `scripts/lists.sh read <name>` and strip IDs before
-displaying.
+Output is already numbered hierarchically (`1`, `1.1`, `1.2`, `2`, …) and
+`<!-- #xxxx -->` IDs are stripped. Numbers are display-only — not stored in
+the file. Use numbers when presenting items to the user and when accepting
+user references like "mark 3 done" or "set deadline on 2.1".
+
+If the user asks to see everything (checked items too), use
+`scripts/lists.sh read <name>` and strip IDs before displaying.
 
 When displaying, omit any area or action title-line section that has no `[ ]`
 task items beneath it. If `unchecked` returns `(no unchecked items)` and the
