@@ -60,15 +60,27 @@ Smart break-and-stay. Called by `prefix + b`.
    `TW_PANE_STACK` — space-separated list of encoded entries).
 3. Run `break-pane -d` to break the pane out without following.
 
-**Position encoding:** `<window-name>:<H|V>:<before|after>:<size%>`
-- `H`/`V` — horizontal or vertical split direction to use on restore
-- `before`/`after` — whether the pane was before or after other panes (controls
-  `-b` flag on `join-pane`)
-- `size%` — percentage width or height to restore
+**Entry format:** `saved-name|split|position|size|source-window-id`
+- `saved-name` — tmux window name assigned to the broken-out pane (`tw-saved-<pane-id>`)
+- `split` — `H` or `V` (horizontal or vertical split direction on restore)
+- `position` — `before` or `after` (controls `-b` flag on `join-pane`)
+- `size` — integer percentage (width for H, height for V); clamped to min 1
+- `source-window-id` — `#{window_id}` of the origin window (`@N` format, LAST
+  field so `cut -d'|' -f5-` captures it regardless of any chars in the ID)
+
+Source-window is stored as the tmux window ID (`@N`) rather than a name or
+index — IDs are stable across window additions and removals; names can be
+changed and indices shift.
+
+Stack is a space-separated list; entries are pushed prepended (LIFO). Stored in
+session environment variable `TW_PANE_STACK`.
 
 **Edge cases:**
-- Only one pane in window: break still works; position entry records the window
-  name so `j` can join it back correctly.
+- Only one pane in window: `tw-break` detects this (pane dimensions equal
+  window dimensions after checking `#{window_zoomed_flag}`) and exits with a
+  message rather than creating an unrestorable entry.
+- Zoomed pane: `#{window_zoomed_flag}` is checked *before* the sole-pane guard
+  — a zoomed pane looks full-size but is not alone. Message: "unzoom before breaking".
 
 ### `bin/tw-join`
 
@@ -93,11 +105,16 @@ Smart join. Called by `prefix + j`.
 Monitor toggle. Called by `prefix + m`.
 
 **Behavior:**
-1. Check if any pane in the current window has title `tw-monitor` (set via
-   `select-pane -T tw-monitor` when created).
-2. If **not present**: split a new pane on the right (`split-window -h -l 25%
-   btop`), set its title to `tw-monitor`.
+1. Check if any pane in the current window has `@tw_role == "monitor"` (set via
+   `set-option -p -t <pane> @tw_role monitor` when created).
+2. If **not present**: capture current pane ID, split a new pane on the right
+   (`split-window -h -l 25% btop`), tag it with `@tw_role`, return focus to
+   original pane by ID.
 3. If **present**: kill that pane (`kill-pane -t <pane-id>`).
+
+Detection uses the pane user variable `@tw_role` rather than `pane_title`
+because TUI programs like btop overwrite `pane_title` via OSC escape sequences
+immediately after the pane opens.
 
 Independent from the `logs` window — both can run btop simultaneously.
 
@@ -114,11 +131,12 @@ Uses tmux session environment variables — no temp files, session-scoped,
 survives pane switches and window changes.
 
 ```
-TW_PANE_STACK="logs:H:after:30% scratch:V:before:50%"
+TW_PANE_STACK="tw-saved-3|H|after|30|@5 tw-saved-7|V|before|50|@2"
 ```
 
 Each entry is a space-separated token. Stack grows left (push prepends, pop
-takes first token).
+takes first token). Fields within an entry are `|`-separated; source-window-id
+is LAST so it can be extracted with `cut -d'|' -f5-`.
 
 ---
 
@@ -149,9 +167,13 @@ resolves its own location at session-creation time and passes absolute paths to
 
 ```bash
 _tw_bin="$(dirname "$(readlink -f "$0")")"
-tmux_do bind-key b run-shell "$_tw_bin/tw-break"
-tmux_do bind-key j run-shell "$_tw_bin/tw-join"
-tmux_do bind-key m run-shell "$_tw_bin/tw-monitor"
+tmux_do bind-key b run-shell "'$_tw_bin/tw-break'"
+tmux_do bind-key j run-shell "'$_tw_bin/tw-join'"
+tmux_do bind-key m run-shell "'$_tw_bin/tw-monitor'"
 ```
+
+The inner single-quotes are required: tmux passes the `run-shell` string to
+`sh -c`, which word-splits on spaces. Without them, any space in the install
+path silently breaks all three bindings.
 
 No installer changes needed.

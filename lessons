@@ -1,3 +1,34 @@
+tmux workspace (tw) lessons
+
+pane_title is not reliable for tagging panes. TUI programs like btop overwrite
+it via OSC escape sequences immediately after opening. Use tmux pane user
+variables (`set-option -p -t <pane> @key value` / `#{@key}` in formats) for
+persistent, process-safe pane tagging.
+
+Use window IDs (`#{window_id}`, format `@N`) when storing cross-window
+references in persistent state (e.g. TW_PANE_STACK). Window names can be
+changed and indices shift when windows are added or removed; IDs are stable for
+the life of the tmux server.
+
+tmux run-shell hands its string to `sh -c` which word-splits on spaces. Protect
+paths: `run-shell "'$path'"` — single-quotes inside the double-quoted outer
+string so `sh` sees a quoted path.
+
+A zoomed pane (`prefix+z`) reports `pane_width == win_width` and
+`pane_height == win_height`, identical to a sole pane. Check
+`#{window_zoomed_flag}` before any sole-pane dimension comparison.
+
+In a `while` loop that pops a stack and attempts a recoverable operation:
+every skip path must `continue`, not fall through. A missing `continue` after
+a failed `join-pane` caused the loop to exit, permanently orphaning the saved
+window with no stack entry and no error.
+
+`tmux split-window -P -F "#{pane_id}" 2>&1` is risky: tmux warnings on success
+pollute the captured pane ID. Use `2>/dev/null` when capturing a pane ID from
+split-window.
+
+---
+
 Math dependency graph viewer lessons
 
 Treat the viewer as an interactive editing surface, not just a static graph
