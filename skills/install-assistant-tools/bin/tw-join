@@ -11,7 +11,7 @@ _tw_stack_top() {
 }
 
 # _tw_join_flags entry — prints the join-pane flag string
-# Entry format: saved-name|split|position|size|source-window
+# Entry format: saved-name|split|position|size|source-window-id (@N)
 _tw_join_flags() {
     local entry="$1"
     local split position size flags=""
@@ -56,7 +56,7 @@ _tw_main() {
         # Join to source window if it still exists, else to current window
         local joined=0
         # shellcheck disable=SC2086
-        if tmux list-windows -F "#{window_name}" | grep -Fxq "$source_window"; then
+        if tmux list-windows -F "#{window_id}" | grep -Fxq "$source_window"; then
             tmux join-pane $flags -s ":${saved_name}" -t ":${source_window}" 2>/dev/null && joined=1
         else
             tmux join-pane $flags -s ":${saved_name}" 2>/dev/null && joined=1
@@ -67,6 +67,7 @@ _tw_main() {
             break
         fi
         tmux display-message "tw: could not restore ${saved_name}, skipping"
+        continue
     done
 
     [ "$restored" -eq 0 ] && tmux display-message "tw: all entries exhausted, nothing restored"

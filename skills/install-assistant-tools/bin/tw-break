@@ -13,10 +13,12 @@ _tw_compute_position() {
     if [ "$pane_width" -lt "$win_width" ]; then
         split="H"
         size=$(( pane_width * 100 / win_width ))
+        (( size < 1 )) && size=1
         if [ "$pane_left" -eq 0 ]; then position="before"; else position="after"; fi
     else
         split="V"
         size=$(( pane_height * 100 / win_height ))
+        (( size < 1 )) && size=1
         if [ "$pane_top" -eq 0 ]; then position="before"; else position="after"; fi
     fi
     echo "${split}|${position}|${size}"
@@ -29,14 +31,22 @@ _tw_stack_push() {
 }
 
 _tw_main() {
-    local window_name pane_left pane_top pane_width pane_height win_width win_height
-    window_name=$(tmux display-message -p "#{window_name}")
+    local window_id pane_left pane_top pane_width pane_height win_width win_height
+    window_id=$(tmux display-message -p "#{window_id}")
     pane_left=$(tmux display-message -p "#{pane_left}")
     pane_top=$(tmux display-message -p "#{pane_top}")
     pane_width=$(tmux display-message -p "#{pane_width}")
     pane_height=$(tmux display-message -p "#{pane_height}")
     win_width=$(tmux display-message -p "#{window_width}")
     win_height=$(tmux display-message -p "#{window_height}")
+
+    # Guard: if pane is zoomed, pane dimensions equal window dimensions — check first
+    local zoomed
+    zoomed=$(tmux display-message -p "#{window_zoomed_flag}")
+    if [ "$zoomed" -eq 1 ]; then
+        tmux display-message "tw: unzoom (prefix+z) before breaking"
+        exit 0
+    fi
 
     # Guard: if pane fills the entire window, there is no split to record
     if [ "$pane_width" -eq "$win_width" ] && [ "$pane_height" -eq "$win_height" ]; then
@@ -53,15 +63,9 @@ _tw_main() {
     pane_id=$(tmux display-message -p "#{pane_id}")
     local saved_name="tw-saved-${pane_id#%}"  # strip leading % from %3 → tw-saved-3
 
-    # Sanitize window name: replace spaces and pipes with dashes to avoid
-    # corrupting the space-delimited stack and pipe-delimited entry format
-    local safe_window_name
-    safe_window_name="${window_name//[ |]/-}"
-
-    # Entry format: saved-name|split|position|size|source-window
-    # source-window is LAST so that pipes in the window name don't corrupt
-    # positional field parsing (cut -d'|' -f5- captures it all)
-    local entry="${saved_name}|${pos}|${safe_window_name}"
+    # Entry format: saved-name|split|position|size|source-window-id (@N)
+    # source-window-id is LAST; using @N avoids name-matching issues entirely
+    local entry="${saved_name}|${pos}|${window_id}"
 
     # Push onto session stack — AFTER break-pane succeeds, to avoid a dangling
     # stack entry if break-pane fails
