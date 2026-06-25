@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "model": "claude-haiku-4-5-20251001",
+  "effortLevel": "low",
+  "env": {
+    "MAX_THINKING_TOKENS": "2000",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000",
+    "MAX_MCP_OUTPUT_TOKENS": "5000",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-haiku-4-5-20251001"
+  }
+}

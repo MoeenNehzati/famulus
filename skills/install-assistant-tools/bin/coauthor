@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: coauthor [--claude|--codex] [-h|--help] [args...]
+
+Launch the coauthor agent (math/research mode) from the current directory.
+
+  --claude      Use Claude (claude --agent coauthor with high-effort settings)
+  --codex       Use Codex (codex --profile coauthor)
+  -h, --help    Show this help
+
+The default backend is \$COAUTHOR_DEFAULT, then \$ASSISTANT_DEFAULT.
+Falls back to claude if neither is set.
+Claude loads settings from \$CLAUDE_HOME/coauthor_claude_setting.json.
+EOF
+}
+
+backend="${COAUTHOR_DEFAULT:-${ASSISTANT_DEFAULT:-claude}}"
+
+case "${1:-}" in
+  --claude)  backend=claude; shift ;;
+  --codex)   backend=codex;  shift ;;
+  -h|--help) usage; exit 0 ;;
+esac
+
+claude_home="${CLAUDE_HOME:-$HOME/.claude}"
+
+case "$backend" in
+  claude) exec claude --agent coauthor --settings "$claude_home/coauthor_claude_setting.json" "$@" ;;
+  codex)  exec codex --profile coauthor "$@" ;;
+  *)      echo "coauthor: unknown backend '$backend' - set COAUTHOR_DEFAULT or ASSISTANT_DEFAULT to claude or codex" >&2; exit 1 ;;
+esac
