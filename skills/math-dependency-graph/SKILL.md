@@ -304,3 +304,145 @@ Lower `position` values get earlier colors.
 | `theorem` | Rectangle |
 | `corollary` | Circle |
 | `remark` | Rectangle |
+
+---
+
+## 10. Developer architecture
+
+This section is for contributors extending or debugging the renderer. It is not part of the model's extraction workflow.
+
+### 10.1 Three-component pipeline
+
+```
+LaTeX source
+    │
+    ▼
+[extract_mathjax_macros.py]  ──▶  _build/<entry>-mathjax-macros.json
+                                           │
+[model: you]  ──▶  canonical JSON          │
+                        │                  │
+                        ▼                  ▼
+               [build_math_dependency_graph.py]
+                        │
+                        ▼
+               _build/<name>.html  (self-contained, no server needed)
+```
+
+**Component 1 — the model.** Reads the math document and writes the canonical JSON. All semantic decisions (what is an entity, what depends on what, confidence levels) live here. The renderer does no semantic work.
+
+**Component 2 — macro extractor (`extract_mathjax_macros.py`).** Recursively follows `\input`/`\include`, collects `\newcommand`, `\renewcommand`, `\DeclareMathOperator`, and writes a flat `{ "macroName": "expansion" }` dict to `_build/<entrypoint>-mathjax-macros.json`. The renderer merges this into MathJax's `tex.macros` config so that local TeX macros (e.g. `\vx`, `\PP`) render correctly in the browser. Override any MathJax-incompatible macros via `document.mathjax_macros` in the JSON (see §6 above).
+
+**Component 3 — renderer (`build_math_dependency_graph.py`).** A ~2700-line Python script that generates one self-contained HTML file. All interactivity is inline JS inside that HTML. External dependencies are ELK.js and MathJax, both loaded from CDN.
+
+### 10.2 JSON → HTML interface contract
+
+The renderer consumes the JSON verbatim — no semantic normalization, no field inference. Key invariants a new developer must respect:
+
+- **Every display string must be MathJax-ready.** `description`, `title`, `short_title`, `evidence`, and `dep.description` all pass through `MathJax.typesetPromise()`. Invalid LaTeX will produce visible error markup.
+- **No raw LaTeX cross-references in `evidence`.** `\ref{label}` does not resolve in MathJax and renders as literal text. Write resolved references: `"Lemma C.1"`, `"Assumption 5.1"`.
+- **No LaTeX tilde `~` outside math mode.** It appears as a literal `~` in the browser. Use a regular space.
+- **`position` is layout-only.** It controls ELK node ordering and edge color assignment (cycled across a 6-color palette). It is not displayed.
+- **Missing optional fields** (`ref`, `title`, `active_in`, `source`, `defined`) render silently as `—` in the side panel.
+- **Hover tooltips are not MathJax-rendered** (they use `escapeHtml` only). The side panel is MathJax-rendered. This means math in `description` renders in the panel but shows raw LaTeX on hover — author accordingly.
+
+### 10.3 Python renderer structure (lines 1–290)
+
+| Function | Lines | Purpose |
+|---|---|---|
+| `validate_and_normalize` | ~60–80 | Adds missing `position` fields, checks required keys |
+| `reduce_transitive_edges` | ~140–165 | Removes edges where an alternate path exists (optional, default off) |
+| `resolve_render_type` | ~230–260 | Maps corollaries to their parent's visual type for shape inheritance |
+| `prepare_macro_file` | ~165–185 | Runs extractor if needed; returns resolved macro file path |
+| `merge_mathjax_macros` | ~112–130 | Merges extracted macros into `doc["document"]["mathjax_macros"]` |
+
+The HTML template begins at line ~290 as a Python f-string. Convention inside: `{{`/`}}` = literal JS brace; `{expr}` = Python expression evaluated at render time. Entity data is embedded via `json.dumps(doc)` into the JS variable `const docData`.
+
+### 10.4 JavaScript subsystems (inside the generated HTML)
+
+The embedded JS has no module system. Subsystems share module-level variables and communicate via direct function calls. Reading the file top-to-bottom follows the initialization order.
+
+**Core data (~lines 940–990)**
+
+```js
+docData      // parsed JSON: { document, entities, ... }
+entityMap    // Map<id, entity> — primary entity lookup
+edgeData     // flat list of { source, target, confidence, use_type, ... }
+outgoing     // Map<id, Set<id>> — adjacency for ancestor traversal
+incoming     // Map<id, Set<id>> — adjacency for ancestor traversal (reversed)
+```
+
+**Routing config (~lines 1000–1050)**
+
+```js
+routingConfig = {
+  compactnessPreset,   // "compact" | "balanced" | "spacious"
+  shapePreset,         // "sharp" | "soft" | "curvy"
+  cornerRadius,        // 0–200; fraction t = cornerRadius/400 for soft; pull frac = cornerRadius/200 for curvy
+  parallelSpacing,     // lateral offset between parallel edges to same target
+  mergeLaneDistance,   // how far out from target incoming edges converge before splitting
+  sourceLaneDistance,  // how long outgoing edges from same source travel bundled before fanning out
+  nodeSpacing,         // vertical gap between nodes in same ELK layer
+  layerSpacing,        // horizontal gap between ELK layers
+  edgeNodeSpacing,     // ELK edge-to-node minimum clearance
+  extraClearance       // extra padding between edge paths and node borders
+}
+```
+
+All slider changes update `routingConfig` immediately. Layout-affecting keys (`nodeSpacing`, `layerSpacing`, `edgeNodeSpacing`) call `applyLayoutRoutingChange()` → `updateVisibilityFull()`. Edge-only keys call `applyEdgeRoutingChange()` → `rerouteAllVisibleEdgesFromCurrentPositions()`.
+
+**Layout engine (~lines 2200–2300)**
+
+`updateVisibilityFull()` — async. Runs ELK layout, creates fresh DOM nodes and edge paths, then calls `rerouteAllVisibleEdgesFromCurrentPositions()` to apply manual routing on top of ELK's computed waypoints.
+
+`updateVisibilityFast()` — synchronous. Toggles `display` on existing DOM elements (no ELK), then calls `rerouteAllVisibleEdgesFromCurrentPositions()` to keep routing consistent after visibility changes.
+
+**Edge path generators (~lines 1158–1290)**
+
+Three path functions, each returning an SVG path string:
+
+| Function | When used |
+|---|---|
+| `simpleEdgePath(src, dst)` | During live node drag (straight line clipped to node boundaries) |
+| `softDoglegPath(points, t)` | Fraction-based rounded polyline; `t=0` → sharp right angles, `t=0.5` → maximum rounding. Used by `manualDoglegPath` for sharp and soft modes, and for ELK-computed waypoints. |
+| `manualDoglegPath(srcPos, dstPos, routeIndex, routeCount)` | Main dogleg router. Chooses H-primary or V-primary based on `|dx|` vs `|dy|`. Applies parallel offset, source-lane bundling, and curve style (curvy = cubic Bézier with `frac = cornerRadius/200`; soft/sharp = `softDoglegPath` with `t = cornerRadius/400`). |
+
+`rerouteAllVisibleEdgesFromCurrentPositions()` calls `manualDoglegPath` for every visible `.edge-path` DOM element, using positions from `manualPositions` (drag overrides) or `lastNodePositions` (ELK output).
+
+**Bridge edges (~lines 1680–1760)**
+
+When nodes are hidden (via legend filter or explicit removal), `computeVisibleEdges()` generates synthetic bridge edges connecting visible endpoints across hidden intermediaries via `traverse()` (BFS over `outgoing`/`incoming`). Bridge edges render as medium-dashed lines (`stroke-dasharray: 6 4`).
+
+**Ancestor focus (~lines 1490–1590)**
+
+Three modes via `ancestorFocusMode` (0=off, 1=dim, 2=hide). `collectAncestors(nodeId)` walks `incoming` upward, returning a `Set` of ancestor IDs including the focus node itself. `applyAncestorFocus()` sets visibility via inline `style.opacity`/`style.display` — not CSS classes — to avoid specificity conflicts with the normal visibility system which also uses inline styles.
+
+**State persistence (~lines 1054–1130)**
+
+`saveViewerState()` / `restoreViewerState()` serialize `routingConfig`, `hiddenNodes`, `hiddenTypes`, `manualPositions`, `selectedNodeId`, `focusNodeId`, `ancestorFocusMode` to `localStorage`. Key is `math-dependency-graph::<source_file or title>`.
+
+**Node drag (~lines 2380–2430)**
+
+Drag stores positions in `manualPositions: Map<id, {x,y,width,height}>`. On mousemove: calls `rerouteIncidentEdgesFromCurrentPositions(nodeId)`. On mouseup: calls `rerouteAllVisibleEdgesFromCurrentPositions()` and saves state. The Redraw button clears `manualPositions` and re-runs ELK.
+
+### 10.5 Adding a new entity type
+
+1. Add entries to `TYPE_STYLES` in Python (~line 55): `{ "fill": "#hex", "shape": "shape-name" }`.
+2. Add ELK sizing and CSS polygon/ellipse definition to `TYPE_SHAPE_ATTRS` (~line 85).
+3. Add a rendering branch in the JS `renderNodeShape()` function (~line 2050).
+4. Update the legend rendering (~line 1419) if the legend is generated from `TYPE_STYLES`.
+
+### 10.6 Routing system quick reference
+
+The routing slider panel (collapsed by default) exposes all `routingConfig` parameters. Presets are layered: a compactness preset sets layout parameters; a shape preset sets `cornerRadius`. Individual sliders override preset values. Double-clicking a slider resets it to the current preset's value. Double-clicking Reset resets all routing to defaults (`balanced` compactness, `soft` shape).
+
+| Preset | Nodes compact | Edge bundled | Use when |
+|---|---|---|---|
+| compact | yes | tight | dense graphs, many nodes |
+| balanced | moderate | moderate | default; most documents |
+| spacious | open | loose | presentations, few nodes |
+
+| Shape | Curve style |
+|---|---|
+| sharp | Right-angle bends via `softDoglegPath(t=0)` |
+| soft | Rounded corners via `softDoglegPath(t = cornerRadius/400)` |
+| curvy | Smooth S-curves via cubic Bézier (`frac = cornerRadius/200`) |

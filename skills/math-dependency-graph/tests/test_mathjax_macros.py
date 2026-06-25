@@ -163,13 +163,14 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
 
         self.assertIn('<div class="routing-controls" id="routing-controls">', html)
         self.assertIn('<summary>Presets</summary>', html)
-        self.assertIn('<label for="routing-compactness">Graph spread</label>', html)
+        self.assertIn('for="routing-compactness"', html)
+        self.assertIn('>Graph spread</label>', html)
         self.assertIn('<summary>Advanced</summary>', html)
         self.assertIn('const routingPresets = {', html)
         self.assertIn('const shapePresets = {', html)
-        self.assertIn('compact: { extraClearance: 0, parallelSpacing: 4, mergeLaneDistance: 18', html)
+        self.assertIn('compact: { extraClearance: 0, parallelSpacing: 8, mergeLaneDistance: 18', html)
         self.assertIn('spacious: { extraClearance: 16, parallelSpacing: 36, mergeLaneDistance: 80', html)
-        self.assertIn('curvy: { cornerRadius: 60 }', html)
+        self.assertIn('curvy: { cornerRadius: 200 }', html)
         self.assertIn('max="260"', html)
         self.assertIn('function applyEdgeRoutingChange(patch)', html)
         self.assertIn('function applyLayoutRoutingChange(patch)', html)
@@ -230,7 +231,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
         html = build_html_with_elk(doc)
 
         self.assertIn(".toolbar-tip::after", html)
-        self.assertIn('data-tooltip="Hide the selected node from the visible graph.', html)
+        self.assertIn('data-tooltip="Hide the selected node from the graph.', html)
         self.assertIn('<button id="delete-node-btn" class="toolbar-btn" type="button" disabled aria-label="Hide selected node">', html)
 
     def test_reset_click_preserves_categories_double_click_clears_legend(self) -> None:
@@ -463,6 +464,45 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             except subprocess.CalledProcessError as exc:
                 self.skipTest(f"headless Chrome failed in this environment: {exc}")
         self.assertIn('data-test-status="PASS"', result.stdout)
+
+
+# ---------------------------------------------------------------------------
+# TODO: Playwright browser tests
+#
+# The existing test_browser_smoke_for_core_interactions uses raw Chrome + an
+# injected JS assertion script, which can only check a pass/fail flag. A proper
+# Playwright suite would cover the interactive behaviors that the current HTML-
+# structure tests cannot reach. Recommended scope:
+#
+#   Infrastructure
+#   - Session-scoped fixture that starts serve_graph.py as a subprocess and
+#     tears it down after the suite. Build the HTML from a small fixture JSON
+#     into a temp directory that the server serves.
+#   - Wait helper: poll for `document.querySelector(".graph-node")` to appear
+#     (ELK is async; layout completes in a Web Worker).
+#
+#   Test cases
+#   - Nodes render: at least N .graph-node elements appear after ELK finishes.
+#   - Side panel: click a node → panel shows the correct short_title and ref.
+#   - Hover tooltip: hover a node → tooltip div appears with the right type text.
+#   - Node drag: mouse-drag a node → its SVG transform attribute changes.
+#   - Edge reroute after drag: after dragging a node, at least one .edge-path
+#     `d` attribute changes (edges follow the moved node).
+#   - Legend filter: click a type chip → nodes of that type get display:none;
+#     a bridge edge (.edge-path[data-bridge="true"]) appears if applicable.
+#   - Ancestor focus: click a node, press "h" twice → non-ancestor nodes
+#     get opacity 0.18 (dim mode) then display:none (hide mode).
+#   - Double-click reset: double-click the Reset button → routingConfig returns
+#     to balanced/soft defaults (read from localStorage or a JS eval).
+#   - localStorage persistence: reload the page → selected node and routing
+#     config are restored from localStorage.
+#   - MathJax: after page load, at least one <svg> element exists inside the
+#     node layer (MathJax rendered something). Don't try to assert correctness
+#     of the SVG output — just that it ran.
+#
+#   Install: pip install playwright && playwright install chromium
+#   Run:     pytest tests/test_browser_playwright.py
+# ---------------------------------------------------------------------------
 
 
 if __name__ == "__main__":

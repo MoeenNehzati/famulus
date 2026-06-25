@@ -13,7 +13,7 @@ The viewer is split into two zones:
     Holds primary actions that a user needs at any moment regardless of context:
     - Ancestor focus cycle (off → dim → hide non-ancestors)
     - Delete selected node (remove it from the visible graph)
-    - Redraw all (reset manual positions and rerun the automatic ELK layout)
+    - Redraw (reset manual positions and rerun the automatic ELK layout)
 
     Rule: if a user might want to invoke it while staring at the graph, it
     belongs in the toolbar, not the panel.
@@ -765,18 +765,18 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
   <div class="layout" id="layout">
     <div class="canvas-area">
       <div class="canvas-toolbar" id="canvas-toolbar">
-        <span class="toolbar-tip" data-tooltip="Cycle ancestor focus for the selected node: highlight, hide, then show the full graph.">
+        <span class="toolbar-tip" data-tooltip="Cycle ancestor focus for the selected node: off → dim non-ancestors → hide non-ancestors → off. Shortcut: h.">
           <button id="focus-toggle" class="toolbar-btn" type="button" aria-label="Cycle ancestor focus">Highlight ancestors</button>
         </span>
-        <span class="toolbar-tip" data-tooltip="Hide the selected node from the visible graph. Double-click a node to hide it directly.">
+        <span class="toolbar-tip" data-tooltip="Hide the selected node from the graph. Double-click a node to hide it directly. Double-click it in the Removed nodes list to restore it.">
           <button id="delete-node-btn" class="toolbar-btn" type="button" disabled aria-label="Hide selected node">Delete node</button>
         </span>
         <div class="toolbar-sep"></div>
-        <span class="toolbar-tip" data-tooltip="Reset manual node positions and rerun the automatic layout. Shortcut: r.">
-          <button id="redraw-btn" class="toolbar-btn" type="button" aria-label="Redraw graph layout">Redraw all</button>
+        <span class="toolbar-tip" data-tooltip="Clear any manually dragged positions and rerun the automatic ELK layout from scratch. All sliders apply immediately — use this only to reset drag offsets. Shortcut: r.">
+          <button id="redraw-btn" class="toolbar-btn" type="button" aria-label="Redraw graph layout">Redraw</button>
         </span>
         <div class="toolbar-sep"></div>
-        <span class="toolbar-tip" data-tooltip="Click: restore individually hidden and focus-hidden nodes while keeping hidden legend categories. Double-click: reset everything, including legend categories. Shortcut: c.">
+        <span class="toolbar-tip" data-tooltip="Click: restore individually hidden and focus-hidden nodes while keeping hidden legend categories. Double-click: reset everything — hidden categories, all routing sliders, and presets back to defaults. Shortcut: c.">
           <button id="reset-btn" class="toolbar-btn" type="button" aria-label="Reset graph state">Reset</button>
         </span>
       </div>
@@ -785,16 +785,16 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           <summary>Presets</summary>
           <div class="routing-controls-body">
             <div class="routing-row">
-              <label for="routing-compactness">Graph spread</label>
-              <select id="routing-compactness" aria-label="Spacing preset">
+              <label for="routing-compactness" title="Overall spacing preset. Compact: dense, minimal gaps. Balanced: comfortable default. Spacious: wide open. Applied immediately (triggers full redraw).">Graph spread</label>
+              <select id="routing-compactness" aria-label="Spacing preset" title="Compact: dense layout. Balanced: comfortable default. Spacious: wide open. Applied immediately — triggers a full redraw with new ELK spacing.">
                 <option value="compact">Compact</option>
                 <option value="balanced" selected>Balanced</option>
                 <option value="spacious">Spacious</option>
               </select>
             </div>
             <div class="routing-row">
-              <label for="routing-shape">Shape</label>
-              <select id="routing-shape" aria-label="Edge shape preset">
+              <label for="routing-shape" title="Edge bend style. Sharp: right angles. Soft: gentle rounded corners (controlled by Curve slider). Curvy: smooth Bézier S-curves. Applied immediately.">Shape</label>
+              <select id="routing-shape" aria-label="Edge shape preset" title="Sharp: right-angle bends. Soft: rounded corners via Curve slider. Curvy: smooth Bézier S-curves — visually distinct regardless of node spacing. Applied immediately.">
                 <option value="sharp">Sharp</option>
                 <option value="soft" selected>Soft</option>
                 <option value="curvy">Curvy</option>
@@ -806,32 +806,36 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           <summary>Advanced</summary>
           <div class="routing-controls-body">
             <div class="routing-row">
-              <label for="routing-clearance">Node gap <span id="routing-clearance-value" class="routing-value"></span></label>
-              <input id="routing-clearance" type="range" min="0" max="30" step="1" aria-label="Extra edge clearance">
+              <label for="routing-clearance" title="Extra padding between edge paths and node borders. Increase to prevent edges from touching node boundaries. Double-click to reset to preset value. Applied immediately.">Node gap <span id="routing-clearance-value" class="routing-value"></span></label>
+              <input id="routing-clearance" type="range" min="0" max="30" step="1" aria-label="Extra edge clearance" title="Extra padding between edge paths and node borders. Double-click to reset to preset value.">
             </div>
             <div class="routing-row">
-              <label for="routing-radius">Curve <span id="routing-radius-value" class="routing-value"></span></label>
-              <input id="routing-radius" type="range" min="0" max="80" step="1" aria-label="Edge corner radius">
+              <label for="routing-radius" title="Corner rounding radius for edge bends — only applies in Sharp mode. 0 = right angles; higher = rounder corners. Soft uses midpoint quadratic curves; Curvy uses Bézier S-curves. Double-click to reset to preset value. Applied immediately.">Curve <span id="routing-radius-value" class="routing-value"></span></label>
+              <input id="routing-radius" type="range" min="0" max="200" step="1" aria-label="Edge corner radius" title="Corner rounding — Sharp mode only. Soft and Curvy ignore this slider. Double-click to reset to preset value.">
             </div>
             <div class="routing-row">
-              <label for="routing-parallel">Parallel gap <span id="routing-parallel-value" class="routing-value"></span></label>
-              <input id="routing-parallel" type="range" min="0" max="60" step="1" aria-label="Parallel edge spacing">
+              <label for="routing-parallel" title="Lateral offset between parallel edges sharing the same source–target pair, so they don't overlap. Double-click to reset to preset value. Applied immediately.">Parallel gap <span id="routing-parallel-value" class="routing-value"></span></label>
+              <input id="routing-parallel" type="range" min="0" max="60" step="1" aria-label="Parallel edge spacing" title="Lateral offset between parallel edges sharing the same target. Double-click to reset to preset value.">
             </div>
             <div class="routing-row">
-              <label for="routing-merge">Merge lane <span id="routing-merge-value" class="routing-value"></span></label>
-              <input id="routing-merge" type="range" min="0" max="140" step="1" aria-label="Merged target lane distance">
+              <label for="routing-merge" title="How far out from the target node incoming edges converge into a shared arrival lane before splitting to their individual Y positions. Double-click to reset to preset value. Applied immediately.">Merge lane <span id="routing-merge-value" class="routing-value"></span></label>
+              <input id="routing-merge" type="range" min="0" max="140" step="1" aria-label="Merged target lane distance" title="How far out incoming edges converge into a shared arrival lane near the target. Double-click to reset to preset value.">
             </div>
             <div class="routing-row">
-              <label for="routing-node-spacing">Vertical spacing <span id="routing-node-spacing-value" class="routing-value"></span></label>
-              <input id="routing-node-spacing" type="range" min="8" max="220" step="1" aria-label="Vertical cell spacing">
+              <label for="routing-source-lane" title="How long edges from the same source travel together in a shared bundle before fanning out to their individual Y positions. 0 = fan out immediately. Double-click to reset to preset value. Applied immediately.">Source lane <span id="routing-source-lane-value" class="routing-value"></span></label>
+              <input id="routing-source-lane" type="range" min="0" max="120" step="1" aria-label="Source exit bundle distance" title="How far from the source node edges travel together before diverging. 0 = fan out immediately. Double-click to reset to preset value.">
             </div>
             <div class="routing-row">
-              <label for="routing-layer-spacing">Layer spacing <span id="routing-layer-spacing-value" class="routing-value"></span></label>
-              <input id="routing-layer-spacing" type="range" min="35" max="260" step="1" aria-label="Layer spacing">
+              <label for="routing-node-spacing" title="Vertical gap between node cells within the same column. Double-click to reset to preset value. Applied immediately — triggers a full ELK redraw.">Vertical spacing <span id="routing-node-spacing-value" class="routing-value"></span></label>
+              <input id="routing-node-spacing" type="range" min="8" max="220" step="1" aria-label="Vertical cell spacing" title="Vertical gap between nodes in the same column. Double-click to reset to preset value. Triggers a full ELK redraw.">
             </div>
             <div class="routing-row">
-              <label for="routing-edge-node-spacing">Edge-node spacing <span id="routing-edge-node-spacing-value" class="routing-value"></span></label>
-              <input id="routing-edge-node-spacing" type="range" min="0" max="160" step="1" aria-label="ELK edge-node spacing">
+              <label for="routing-layer-spacing" title="Horizontal distance between successive columns of nodes. Double-click to reset to preset value. Applied immediately — triggers a full ELK redraw.">Horizontal spacing <span id="routing-layer-spacing-value" class="routing-value"></span></label>
+              <input id="routing-layer-spacing" type="range" min="35" max="260" step="1" aria-label="Horizontal column spacing" title="Horizontal distance between columns of nodes. Double-click to reset to preset value. Triggers a full ELK redraw.">
+            </div>
+            <div class="routing-row">
+              <label for="routing-edge-node-spacing" title="Gap between an edge route and a node cell when the edge passes between columns. Prevents edges from hugging node boundaries mid-route. Double-click to reset to preset value. Applied immediately — triggers a full ELK redraw.">Edge-node spacing <span id="routing-edge-node-spacing-value" class="routing-value"></span></label>
+              <input id="routing-edge-node-spacing" type="range" min="0" max="160" step="1" aria-label="ELK edge-node spacing" title="Gap between edge routes and node cells when crossing between columns. Double-click to reset to preset value. Triggers a full ELK redraw.">
             </div>
           </div>
         </details>
@@ -857,7 +861,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           <details id="cheatsheet-details">
             <summary>How to use</summary>
             <div class="small" style="margin-top:0.4rem;"><strong>Double-click</strong> a node to hide it; double-click again in the <em>Removed nodes</em> list to restore it.</div>
-            <div class="small" style="margin-top:0.25rem;"><strong>Toolbar</strong> (top-left, always visible): <em>Highlight ancestors</em> cycles focus (off → dim → hide); <em>Delete node</em> removes the selected node; <em>Redraw all</em> resets layout.</div>
+            <div class="small" style="margin-top:0.25rem;"><strong>Toolbar</strong> (top-left, always visible): <em>Highlight ancestors</em> cycles focus (off → dim → hide); <em>Delete node</em> removes the selected node; <em>Redraw</em> clears drag offsets and reruns ELK layout. All panel settings apply immediately — Redraw is only needed after manual drags.</div>
             <div class="small" style="margin-top:0.25rem;">Hover a node or edge to preview metadata. Click to pin details here.</div>
             <div class="small" style="margin-top:0.25rem;">Click a type in the legend to hide or show that category. Causality is preserved via bridge edges.</div>
             <div class="small" style="margin-top:0.25rem;"><kbd>h</kbd> cycles ancestor focus (off → dim → hide). <kbd>Esc</kbd> or ✕ deselects. <kbd>r</kbd> redraws. <kbd>c</kbd> clears everything.</div>
@@ -922,6 +926,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       cornerRadius: document.getElementById("routing-radius"),
       parallelSpacing: document.getElementById("routing-parallel"),
       mergeLaneDistance: document.getElementById("routing-merge"),
+      sourceLaneDistance: document.getElementById("routing-source-lane"),
       nodeSpacing: document.getElementById("routing-node-spacing"),
       layerSpacing: document.getElementById("routing-layer-spacing"),
       edgeNodeSpacing: document.getElementById("routing-edge-node-spacing")
@@ -931,6 +936,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       cornerRadius: document.getElementById("routing-radius-value"),
       parallelSpacing: document.getElementById("routing-parallel-value"),
       mergeLaneDistance: document.getElementById("routing-merge-value"),
+      sourceLaneDistance: document.getElementById("routing-source-lane-value"),
       nodeSpacing: document.getElementById("routing-node-spacing-value"),
       layerSpacing: document.getElementById("routing-layer-spacing-value"),
       edgeNodeSpacing: document.getElementById("routing-edge-node-spacing-value")
@@ -1005,14 +1011,14 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     }}
 
     const routingPresets = {{
-      compact: {{ extraClearance: 0, parallelSpacing: 4, mergeLaneDistance: 18, nodeSpacing: 12, layerSpacing: 45, edgeNodeSpacing: 8 }},
-      balanced: {{ extraClearance: 3, parallelSpacing: 12, mergeLaneDistance: 34, nodeSpacing: 46, layerSpacing: 90, edgeNodeSpacing: 40 }},
-      spacious: {{ extraClearance: 16, parallelSpacing: 36, mergeLaneDistance: 80, nodeSpacing: 120, layerSpacing: 210, edgeNodeSpacing: 110 }}
+      compact: {{ extraClearance: 0, parallelSpacing: 8, mergeLaneDistance: 18, sourceLaneDistance: 0, nodeSpacing: 12, layerSpacing: 60, edgeNodeSpacing: 25 }},
+      balanced: {{ extraClearance: 3, parallelSpacing: 12, mergeLaneDistance: 34, sourceLaneDistance: 0, nodeSpacing: 46, layerSpacing: 90, edgeNodeSpacing: 40 }},
+      spacious: {{ extraClearance: 16, parallelSpacing: 36, mergeLaneDistance: 80, sourceLaneDistance: 0, nodeSpacing: 120, layerSpacing: 210, edgeNodeSpacing: 110 }}
     }};
     const shapePresets = {{
       sharp: {{ cornerRadius: 0 }},
-      soft: {{ cornerRadius: 18 }},
-      curvy: {{ cornerRadius: 60 }}
+      soft: {{ cornerRadius: 160 }},
+      curvy: {{ cornerRadius: 200 }}
     }};
     const routingConfig = {{
       compactnessPreset: "balanced",
@@ -1183,6 +1189,29 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       return `M ${{p0x}} ${{p0y}} L ${{p1x}} ${{p1y}}`;
     }}
 
+    // Fraction-based rounded polyline: r = t * min(adjacent segment lengths)
+    // Works on any number of points; t=0 → sharp, t=0.5 → max rounding.
+    function softDoglegPath(points, t) {{
+      if (points.length < 2) return "";
+      if (points.length === 2) return `M ${{points[0].x}} ${{points[0].y}} L ${{points[1].x}} ${{points[1].y}}`;
+      let d = `M ${{points[0].x}} ${{points[0].y}}`;
+      for (let i = 1; i < points.length - 1; i++) {{
+        const A = points[i-1], B = points[i], C = points[i+1];
+        const abLen = Math.hypot(B.x - A.x, B.y - A.y);
+        const bcLen = Math.hypot(C.x - B.x, C.y - B.y);
+        if (abLen < 0.5 || bcLen < 0.5) {{ d += ` L ${{B.x}} ${{B.y}}`; continue; }}
+        const r = t * Math.min(abLen, bcLen);
+        if (r < 0.5) {{ d += ` L ${{B.x}} ${{B.y}}`; continue; }}
+        const p1x = B.x - (B.x - A.x) / abLen * r;
+        const p1y = B.y - (B.y - A.y) / abLen * r;
+        const p2x = B.x + (C.x - B.x) / bcLen * r;
+        const p2y = B.y + (C.y - B.y) / bcLen * r;
+        d += ` L ${{p1x}} ${{p1y}} Q ${{B.x}} ${{B.y}} ${{p2x}} ${{p2y}}`;
+      }}
+      d += ` L ${{points[points.length - 1].x}} ${{points[points.length - 1].y}}`;
+      return d;
+    }}
+
     function manualDoglegPath(srcPos, dstPos, routeIndex = 0, routeCount = 1) {{
       const sx = srcPos.x + srcPos.width / 2;
       const sy = srcPos.y + srcPos.height / 2;
@@ -1192,6 +1221,12 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       const dy = ty - sy;
       const routeOffset = (routeIndex - (routeCount - 1) / 2) * routingConfig.parallelSpacing;
       const mergeLane = edgeNodeGap() + Math.max(MIN_ARROW_LANDING_RUN, routingConfig.mergeLaneDistance);
+      // cornerRadius 0-200 maps to fraction 0-0.5 of each segment for soft,
+      // and 0-1 of control-point pull for curvy. Sharp uses absolute pixel radius.
+      const shape = routingConfig.shapePreset;
+      const cr = routingConfig.cornerRadius;
+
+      const exitLane = routingConfig.sourceLaneDistance || 0;
 
       if (Math.abs(dx) >= Math.abs(dy)) {{
         const sourceOnRight = dx >= 0;
@@ -1200,12 +1235,25 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         const endX = sourceOnRight ? dstPos.x - edgeNodeGap() : dstPos.x + dstPos.width + edgeNodeGap();
         const endY = ty + routeOffset;
         const laneX = sourceOnRight ? dstPos.x - mergeLane : dstPos.x + dstPos.width + mergeLane;
-        return roundedPathForPoints([
-          {{x: startX, y: startY}},
-          {{x: laneX, y: startY}},
-          {{x: laneX, y: endY}},
-          {{x: endX, y: endY}}
-        ]);
+        const hasBundle = exitLane > 0.5 && Math.abs(routeOffset) > 0.5;
+        const bundleX = sourceOnRight ? startX + exitLane : startX - exitLane;
+
+        if (shape === "curvy") {{
+          const frac = cr / 200;
+          if (hasBundle) {{
+            const cp1x = bundleX + frac * (laneX - bundleX);
+            const cp2x = endX + frac * (laneX - endX);
+            return `M ${{startX}} ${{sy}} L ${{bundleX}} ${{sy}} L ${{bundleX}} ${{startY}} C ${{cp1x}} ${{startY}} ${{cp2x}} ${{endY}} ${{endX}} ${{endY}}`;
+          }}
+          const cp1x = startX + frac * (laneX - startX);
+          const cp2x = endX + frac * (laneX - endX);
+          return `M ${{startX}} ${{startY}} C ${{cp1x}} ${{startY}} ${{cp2x}} ${{endY}} ${{endX}} ${{endY}}`;
+        }}
+        const t = cr / 400;
+        const pts = hasBundle
+          ? [{{x: startX, y: sy}}, {{x: bundleX, y: sy}}, {{x: bundleX, y: startY}}, {{x: laneX, y: startY}}, {{x: laneX, y: endY}}, {{x: endX, y: endY}}]
+          : [{{x: startX, y: startY}}, {{x: laneX, y: startY}}, {{x: laneX, y: endY}}, {{x: endX, y: endY}}];
+        return softDoglegPath(pts, t);
       }}
 
       const sourceBelow = dy >= 0;
@@ -1214,12 +1262,25 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       const endX = tx + routeOffset;
       const endY = sourceBelow ? dstPos.y - edgeNodeGap() : dstPos.y + dstPos.height + edgeNodeGap();
       const laneY = sourceBelow ? dstPos.y - mergeLane : dstPos.y + dstPos.height + mergeLane;
-      return roundedPathForPoints([
-        {{x: startX, y: startY}},
-        {{x: startX, y: laneY}},
-        {{x: endX, y: laneY}},
-        {{x: endX, y: endY}}
-      ]);
+      const hasBundle = exitLane > 0.5 && Math.abs(routeOffset) > 0.5;
+      const bundleY = sourceBelow ? startY + exitLane : startY - exitLane;
+
+      if (shape === "curvy") {{
+        const frac = cr / 200;
+        if (hasBundle) {{
+          const cp1y = bundleY + frac * (laneY - bundleY);
+          const cp2y = endY + frac * (laneY - endY);
+          return `M ${{sx}} ${{startY}} L ${{sx}} ${{bundleY}} L ${{startX}} ${{bundleY}} C ${{startX}} ${{cp1y}} ${{endX}} ${{cp2y}} ${{endX}} ${{endY}}`;
+        }}
+        const cp1y = startY + frac * (laneY - startY);
+        const cp2y = endY + frac * (laneY - endY);
+        return `M ${{startX}} ${{startY}} C ${{startX}} ${{cp1y}} ${{endX}} ${{cp2y}} ${{endX}} ${{endY}}`;
+      }}
+      const t = cr / 400;
+      const pts = hasBundle
+        ? [{{x: sx, y: startY}}, {{x: sx, y: bundleY}}, {{x: startX, y: bundleY}}, {{x: startX, y: laneY}}, {{x: endX, y: laneY}}, {{x: endX, y: endY}}]
+        : [{{x: startX, y: startY}}, {{x: startX, y: laneY}}, {{x: endX, y: laneY}}, {{x: endX, y: endY}}];
+      return softDoglegPath(pts, t);
     }}
 
     function incidentEdgePaths(nodeId) {{
@@ -1358,6 +1419,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       const row = document.createElement("div");
       row.className = "legend-row";
       row.dataset.type = type;
+      row.title = `Click to hide/show all ${type} nodes. Hidden categories are grayed out; causality is preserved via bridge edges.`;
       row.appendChild(createLegendIcon(type, style));
       const label = document.createElement("div");
       label.textContent = type;
@@ -1472,11 +1534,8 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       deleteNodeBtn.disabled = !hasSelection;
     }}
 
-    // Keep syncFocusToggle as an alias so existing callsites still work
-    function syncFocusToggle() {{ syncToolbar(); }}
-
     function applyAncestorFocus() {{
-      syncFocusToggle();
+      syncToolbar();
       ancestorHiddenByFocus.clear();
       const active = ancestorFocusMode > 0 && focusNodeId && !isHiddenNode(focusNodeId);
       const keep = active ? collectAncestors(focusNodeId) : null;
@@ -1753,30 +1812,6 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           nextY = (node.y || 0) + (node.height || 68) + routingConfig.nodeSpacing;
         }});
       }});
-    }}
-
-    function roundedPathForPoints(points, radius = routingConfig.cornerRadius) {{
-      if (!points.length) return "";
-      if (points.length < 3) {{
-        let d = `M ${{points[0].x}} ${{points[0].y}}`;
-        for (let i = 1; i < points.length; i++) d += ` L ${{points[i].x}} ${{points[i].y}}`;
-        return d;
-      }}
-      let d = `M ${{points[0].x}} ${{points[0].y}}`;
-      for (let i = 1; i < points.length - 1; i++) {{
-        const prev = points[i - 1], curr = points[i], next = points[i + 1];
-        const inDx = curr.x - prev.x, inDy = curr.y - prev.y;
-        const outDx = next.x - curr.x, outDy = next.y - curr.y;
-        const inLen = Math.hypot(inDx, inDy), outLen = Math.hypot(outDx, outDy);
-        if (inLen < 1e-6 || outLen < 1e-6) {{ d += ` L ${{curr.x}} ${{curr.y}}`; continue; }}
-        const r = Math.min(radius, inLen / 2, outLen / 2);
-        const p1x = curr.x - (inDx / inLen) * r, p1y = curr.y - (inDy / inLen) * r;
-        const p2x = curr.x + (outDx / outLen) * r, p2y = curr.y + (outDy / outLen) * r;
-        d += ` L ${{p1x}} ${{p1y}} Q ${{curr.x}} ${{curr.y}} ${{p2x}} ${{p2y}}`;
-      }}
-      const last = points[points.length - 1];
-      d += ` L ${{last.x}} ${{last.y}}`;
-      return d;
     }}
 
     function pathPointsForArrow(pathEl) {{
@@ -2199,7 +2234,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           );
           const path = createSvgElement("path");
           path.setAttribute("class", "edge-path");
-          path.setAttribute("d", roundedPathForPoints(points));
+          path.setAttribute("d", softDoglegPath(points, routingConfig.cornerRadius / 400));
           path.setAttribute("stroke", edgeColorForTarget(meta.target));
           if (meta.confidence === "Likely") path.setAttribute("stroke-dasharray", "8 5");
           else if (meta.confidence === "Speculative") path.setAttribute("stroke-dasharray", "3 5");
@@ -2294,6 +2329,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         bindEdgeHover(path, edge);
       }});
 
+      rerouteAllVisibleEdgesFromCurrentPositions();
       applyAncestorFocus();
     }}
 
@@ -2387,6 +2423,12 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       if (includeCategories) {{
         hiddenTypes.clear();
         syncLegendRows();
+        applyRoutingPatch({{
+          compactnessPreset: "balanced",
+          ...routingPresets.balanced,
+          shapePreset: "soft",
+          ...shapePresets.soft
+        }});
       }}
       if (includeCategories) localStorage.removeItem(viewerStateKey);
       else saveViewerState();
@@ -2476,15 +2518,26 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       }});
     }});
 
-    ["extraClearance", "cornerRadius", "parallelSpacing", "mergeLaneDistance"].forEach(key => {{
+    function presetValueForKey(key) {{
+      if (key === "cornerRadius") return shapePresets[routingConfig.shapePreset]?.cornerRadius ?? routingConfig.cornerRadius;
+      return routingPresets[routingConfig.compactnessPreset]?.[key] ?? routingConfig[key];
+    }}
+
+    ["extraClearance", "cornerRadius", "parallelSpacing", "mergeLaneDistance", "sourceLaneDistance"].forEach(key => {{
       routingInputs[key].addEventListener("input", () => {{
         applyEdgeRoutingChange({{ [key]: Number(routingInputs[key].value) }});
+      }});
+      routingInputs[key].addEventListener("dblclick", () => {{
+        applyEdgeRoutingChange({{ [key]: presetValueForKey(key) }});
       }});
     }});
 
     ["nodeSpacing", "layerSpacing", "edgeNodeSpacing"].forEach(key => {{
       routingInputs[key].addEventListener("input", () => {{
         applyLayoutRoutingChange({{ [key]: Number(routingInputs[key].value) }});
+      }});
+      routingInputs[key].addEventListener("dblclick", () => {{
+        applyLayoutRoutingChange({{ [key]: presetValueForKey(key) }});
       }});
     }});
 
