@@ -25,7 +25,8 @@ _tw_main() {
         original_pane=$(tmux display-message -p "#{pane_id}")
 
         local new_pane
-        if ! new_pane=$(tmux split-window -h -l 25% -P -F "#{pane_id}" "btop" 2>/dev/null); then
+        # -p 1 = compact preset (cpu only); 33% gives ~40 cols on a typical terminal
+        if ! new_pane=$(tmux split-window -h -l 33% -P -F "#{pane_id}" "btop -p 1" 2>/dev/null); then
             tmux display-message "tw: terminal too narrow for monitor pane"
             exit 0
         fi

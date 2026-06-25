@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# tw-help: searchable key bindings palette (bound to prefix+h)
+# Usage:
+#   tw-help              open popup (when inside tmux), or print plain text
+#   tw-help --palette    run the fzf palette directly (called by the popup)
+set -euo pipefail
+
+# Curated bindings: tab-separated  category \t key \t description
+BINDINGS=(
+  "exit	prefix+d	detach from session (session stays running)"
+  "panes	prefix+|	split left/right (current path)"
+  "panes	prefix+-	split top/bottom (current path)"
+  "panes	Alt+arrow	move between panes (no prefix needed)"
+  "panes	prefix+arrow	resize pane by 5"
+  "panes	prefix+z	zoom / unzoom pane"
+  "panes	prefix+x	kill pane (confirm)"
+  "windows	prefix+c	new window (current path)"
+  "windows	prefix+1…9	switch to window by number"
+  "windows	prefix+,	rename window"
+  "windows	prefix+w	window picker"
+  "windows	prefix+&	kill window (confirm)"
+  "sessions	prefix+s	session / tree chooser"
+  "sessions	prefix+d	detach"
+  "sessions	prefix+C	new Claude workspace (prompt for name)"
+  "copy	prefix+[	enter copy mode"
+  "copy	v	begin selection (in copy mode)"
+  "copy	y	copy to clipboard (wl-copy / xclip)"
+  "copy	prefix+]	paste"
+  "tw	prefix+b	break pane → own window, save position to stack"
+  "tw	prefix+j	restore last broken pane (LIFO stack)"
+  "tw	prefix+@	raw join: pull last active window as h-split"
+  "tw	prefix+e	scratch popup (stateless shell overlay)"
+  "tw	prefix+m	toggle slim btop monitor pane on the right"
+  "tw	prefix+!	tmux default break-and-follow (no stack)"
+  "other	prefix+r	reload ~/.tmux.conf"
+  "other	prefix+h	this help palette"
+)
+
+_plain_output() {
+  printf '\n  tmux key bindings  (prefix = ctrl-b)\n\n'
+  printf '  %-10s  %-20s  %s\n' "category" "key" "description"
+  printf '  %s\n' "──────────────────────────────────────────────────────────────────"
+  for entry in "${BINDINGS[@]}"; do
+    IFS=$'\t' read -r cat key desc <<< "$entry"
+    printf '  %-10s  %-20s  %s\n' "$cat" "$key" "$desc"
+  done
+  printf '\n'
+}
+
+_palette_mode() {
+  local entries=()
+
+  # Format: display\tsearchable-text
+  # fzf displays field 1, searches field 2 — keeps padding out of match scoring.
+
+  _add_sep() {
+    local label="$1"
+    entries+=("$(printf '%-10s  %-22s  %s' '──────' '──────────────────────' "─── $label ───")	.")
+  }
+
+  _add_sep "curated bindings"
+  for entry in "${BINDINGS[@]}"; do
+    IFS=$'\t' read -r cat key desc <<< "$entry"
+    entries+=("$(printf '%-10s  %-22s  %s' "$cat" "$key" "$desc")	$cat $key $desc")
+  done
+
+  _add_sep "all tmux bindings"
+  if [ -n "${TMUX:-}" ]; then
+    while IFS= read -r line; do
+      local key cmd
+      key=$(awk '{print $4}' <<< "$line")
+      cmd=$(awk '{for(i=5;i<=NF;i++) printf "%s%s",$i,(i<NF?" ":"")}' <<< "$line")
+      entries+=("$(printf '%-10s  %-22s  %s' 'tmux' "prefix+$key" "$cmd")	tmux prefix $key $cmd")
+    done < <(tmux list-keys -T prefix 2>/dev/null)
+  fi
+
+  _add_sep "copy-mode-vi"
+  if [ -n "${TMUX:-}" ]; then
+    while IFS= read -r line; do
+      local key cmd
+      key=$(awk '{print $4}' <<< "$line")
+      cmd=$(awk '{for(i=5;i<=NF;i++) printf "%s%s",$i,(i<NF?" ":"")}' <<< "$line")
+      entries+=("$(printf '%-10s  %-22s  %s' 'copy-vi' "$key" "$cmd")	copy vi $key $cmd")
+    done < <(tmux list-keys -T copy-mode-vi 2>/dev/null)
+  fi
+
+  printf '%s\n' "${entries[@]}" | fzf \
+    --delimiter $'\t' \
+    --with-nth 1 \
+    --nth 2 \
+    --reverse \
+    --no-multi \
+    --prompt '  search > ' \
+    --header $'  prefix = ctrl-b  |  search all bindings  |  esc to close\n' \
+    --color 'header:italic:dim,prompt:bold' \
+    --bind 'enter:abort,esc:abort' \
+    --height 100% \
+    --info inline \
+    --margin 1,2 \
+    || true
+}
+
+_tw_main() {
+  if [ "${1:-}" = "--palette" ]; then
+    _palette_mode
+    return 0
+  fi
+
+  if [ -z "${TMUX:-}" ]; then
+    _plain_output
+    return 0
+  fi
+
+  local self
+  self="$(readlink -f "$0")"
+
+  if command -v fzf >/dev/null 2>&1; then
+    tmux display-popup -E -w 90 -h 38 -x C -y C -- "$self" --palette
+  else
+    local text
+    text=$(_plain_output)
+    tmux display-popup -E -w 82 -h 32 -x C -y C -- bash -c \
+      "printf '%s\n\n  Press any key to close…' $(printf '%q' "$text"); read -rsn1"
+  fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  _tw_main "$@"
+fi

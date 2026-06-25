@@ -59,7 +59,11 @@ The script installs or updates:
   verifying that `.githooks/` exists and marking all files in it executable.
 - Legacy repo-owned `coder` launcher/profile symlinks, if present, are removed
   during install.
-- A managed PATH block in the user shell rc (and system rc when writable).
+- A managed PATH block in the user shell rc (default: `~/.bashrc`) and the
+  login shell profile (default: `~/.profile`), and optionally the system rc when
+  writable. The login profile entry is required so that login shells — in
+  particular `bash -lc` used by `run-skill.sh` in systemd jobs — can find the
+  `assistant` command.
 - `~/.config/environment.d/20-ai-agent.conf` — sets `AI_AGENT_COMMAND_TEMPLATE`
   for the systemd user environment, required by automated skill jobs so they
   know how to invoke Claude.
@@ -79,6 +83,7 @@ reported as warnings.
 ## Default Targets
 
 - User rc: `$HOME/.bashrc`
+- Login shell profile: `$HOME/.profile`
 - System rc: `/etc/bash.bashrc`
 - Bin dir: `$HOME/Documents/scripts/bin`
 - Source bin: `<skill-dir>/bin/`
@@ -115,10 +120,12 @@ bash scripts/install_assistant_tools.sh \
   --codex-home /path/to/codex-home \
   --claude-home /path/to/claude-home \
   --shell-rc /path/to/user/.bashrc \
+  --login-shell-rc /path/to/user/.profile \
   --system-shell-rc /path/to/system/bashrc
 ```
 
-Pass `--no-system-shell-rc` to update only the current user's shell rc.
+Pass `--no-login-shell-rc` to skip the login profile update.
+Pass `--no-system-shell-rc` to update only the current user's shell rcs.
 
 ## Updating Scripts
 

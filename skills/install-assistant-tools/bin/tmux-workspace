@@ -133,6 +133,8 @@ fi
 
 # Apply global options (idempotent — safe to run on each new session).
 tmux_do set-option -g status on
+tmux_do set-option -g status-left '#[fg=colour244][#{session_name}] ctrl-b h: help  #[default]'
+tmux_do set-option -g status-left-length 44
 tmux_do set-option -g status-right '#{?client_prefix,#[bg=red fg=white] PREFIX ,}#{?window_zoomed_flag,#[bg=yellow fg=black] ZOOM ,} %H:%M'
 
 # Resolve path to companion scripts (works through symlinks).
@@ -152,6 +154,9 @@ tmux_do bind-key j run-shell "'$_tw_bin/tw-join'"
 
 # prefix+m — monitor toggle (slim btop pane on right)
 tmux_do bind-key m run-shell "'$_tw_bin/tw-monitor'"
+
+# prefix+h — help popup (key bindings cheatsheet)
+tmux_do bind-key h run-shell "'$_tw_bin/tw-help'"
 
 case "$template" in
   llm)
