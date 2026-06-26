@@ -13,17 +13,27 @@ Category: automation
 
 Dependencies: none
 
+## Platform Support
+
+This installation is designed for **Linux systems** with bash and standard Unix tools.
+
+If you're installing on a different operating system, you should try to replicate
+the same logic in your environment (e.g., updating the appropriate shell rc file,
+adjusting paths for your system layout).
+
 ## Overview
 
 The skill ships four standalone scripts in `bin/`:
 
 - `bin/assistant` — launches `claude --agent assistant` (secretary: fetch info,
-  write, implement easy logic) or `codex --profile assistant` from the
-  assistant project directory.
+  write, implement easy logic) or `codex --profile assistant` from
+  `$AI/workers/assistant`. Pass `-l/--local` to stay in the current directory.
 - `bin/collab` — launches `claude --agent collab` (serious coding,
-  documentation/learning) or `codex --profile collab` from the current directory.
+  documentation/learning) or `codex --profile collab` from
+  `$AI/workers/collab`. Pass `-l/--local` to stay in the current directory.
 - `bin/coauthor` — launches `claude --agent coauthor` (math/research, deep
-  thinking) or `codex --profile coauthor` from the current directory.
+  thinking) or `codex --profile coauthor` from `$AI/workers/coauthor`.
+  Pass `-l/--local` to stay in the current directory.
 - `bin/tmux-workspace` — creates or attaches to a tmux workspace; `tw` is an
   alias symlink for it.
 
@@ -40,12 +50,25 @@ bin/
   coauthor           source script for the coauthor command
   tmux-workspace     source script for tw / tmux-workspace
 scripts/
-  install_assistant_tools.sh
+  install_assistant_tools.sh   install bin scripts, profiles, rc block, git hooks
+  setup_symlinks.py            wire Claude and Codex config dirs to the repo
 ```
 
 ## Workflow
 
-Run the bundled installer script from anywhere:
+**Step 1 — Set up config dir symlinks** (new machine or after repo move):
+
+```bash
+python3 scripts/setup_symlinks.py
+```
+
+This wires the Claude and Codex config directories to the repo so both tools
+share the same skills, references, agents, and profiles without separate copies.
+Use `--dry-run` to preview, or `--no-claude`/`--no-codex` to skip one tool.
+Claude and Codex config dirs are auto-detected from `$CLAUDE_HOME`/`$CODEX_HOME`;
+if neither is set nor found at the default path, the script prompts interactively.
+
+**Step 2 — Install bin scripts, rc block, and git hooks:**
 
 ```bash
 bash scripts/install_assistant_tools.sh
@@ -66,7 +89,9 @@ The script installs or updates:
   verifying that `.githooks/` exists and marking all files in it executable.
 - Legacy repo-owned `coder` launcher/profile symlinks, if present, are removed
   during install.
-- A managed PATH block in the user shell rc (and system rc when writable).
+- A managed PATH block in the user shell rc (and system rc when writable),
+  including `export AI=<repo-root>` so all scripts can locate worker dirs.
+- Worker directories `$AI/workers/{assistant,collab,coauthor}` (created if absent).
 - `~/.config/environment.d/20-ai-agent.conf` — sets `AI_AGENT_COMMAND_TEMPLATE`
   for the systemd user environment, required by automated skill jobs so they
   know how to invoke Claude.
@@ -89,6 +114,8 @@ reported as warnings.
 - System rc: `/etc/bash.bashrc`
 - Bin dir: `$HOME/Documents/scripts/bin`
 - Source bin: `<skill-dir>/bin/`
+- AI root: two levels above the skill dir (e.g. `~/Documents/AI`); exported as `$AI`
+- Workers: `$AI/workers/{assistant,collab,coauthor}`
 - Codex home: `$CODEX_HOME`, or `$HOME/.codex` when unset
 - Claude home: `$CLAUDE_HOME`, or `$HOME/.claude` when unset
 - Git hooks path: `<repo-root>/.githooks`
@@ -169,15 +196,9 @@ Expected behavior:
 Do not run `assistant -c` or `tw -c` as validation unless the user wants an
 interactive Codex/tmux session launched.
 
-## Optional: Export Package Path Variable
+## AI Root Variable
 
-It is useful to export a shell variable pointing to the AI package root (the
-directory containing this skill, references, profiles, and related assets):
-
-```bash
-export AI="$HOME/Documents/AI"
-```
-
-Add this to `~/.bashrc` outside the managed block. Then `ls $AI/skills`,
-`cd $AI`, etc. work without typing the full path. Adjust if the package lives
-elsewhere.
+The installer exports `AI=<repo-root>` in the managed shell rc block, making
+`$AI/skills`, `$AI/workers`, etc. available in any terminal. The value is the
+absolute path two levels above the `install-assistant-tools` skill directory.
+No manual configuration is needed.

@@ -1,37 +1,3 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
-usage() {
-  cat <<EOF
-Usage: assistant [--claude|--codex] [-h|--help] [args...]
-
-Launch the assistant from the assistant project directory.
-
-  --claude      Use Claude (claude --agent assistant with settings)
-  --codex       Use Codex (codex --profile assistant)
-  -h, --help    Show this help
-
-The default backend is \$ASSISTANT_DEFAULT (set by the installer).
-Falls back to claude if \$ASSISTANT_DEFAULT is unset.
-The working directory is \$ASSISTANT_DIR or \$HOME/Documents/assistant.
-Claude loads settings from \$CLAUDE_HOME/assistant_claude_setting.json.
-EOF
-}
-
-backend="${ASSISTANT_DEFAULT:-claude}"
-
-case "${1:-}" in
-  --claude)  backend=claude; shift ;;
-  --codex)   backend=codex;  shift ;;
-  -h|--help) usage; exit 0 ;;
-esac
-
-cd "${ASSISTANT_DIR:-$HOME/Documents/assistant}" || exit 1
-
-claude_home="${CLAUDE_HOME:-$HOME/.claude}"
-
-case "$backend" in
-  claude) exec claude --agent assistant --settings "$claude_home/assistant_claude_setting.json" "$@" ;;
-  codex)  exec codex --profile assistant "$@" ;;
-  *)      echo "assistant: unknown backend '$backend' — set ASSISTANT_DEFAULT to claude or codex" >&2; exit 1 ;;
-esac
+exec "$(dirname "${BASH_SOURCE[0]}")/_agent-launch" \
+  assistant "${ASSISTANT_DEFAULT:-claude}" "$@"

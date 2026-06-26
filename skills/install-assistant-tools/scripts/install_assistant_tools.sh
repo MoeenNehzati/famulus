@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# This installer is designed for Linux systems with bash and standard Unix tools.
+# If installing on a different operating system, you may need to adjust paths and
+# shell rc file locations for your environment.
 set -euo pipefail
 
 usage() {
@@ -47,6 +50,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 skill_dir="$(cd "$script_dir/.." && pwd)"
 source_bin_dir="$skill_dir/bin"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
+ai_root="$(cd "$skill_dir/../.." && pwd)"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -145,10 +149,21 @@ resolve_default_llm() {
   fi
 }
 
+install_worker_dirs() {
+  for agent in assistant collab coauthor; do
+    local wdir="$ai_root/workers/$agent"
+    if (( dry_run )); then
+      log "Would create worker dir $wdir"
+    else
+      mkdir -p "$wdir"
+    fi
+  done
+}
+
 install_bin_scripts() {
   mkdir -p "$bin_dir"
 
-  for script in assistant collab coauthor tmux-workspace; do
+  for script in _agent-launch assistant collab coauthor tmux-workspace; do
     local src="$source_bin_dir/$script"
     local dst="$bin_dir/$script"
     if [ ! -f "$src" ]; then
@@ -277,6 +292,7 @@ ensure_rc_block() {
 $assistant_block_begin
 export PATH="$bin_dir:\$PATH"
 export ASSISTANT_DEFAULT=$default_llm
+export AI="$ai_root"
 $assistant_block_end
 EOF
 
@@ -367,6 +383,7 @@ install_ai_agent_env() {
 }
 
 resolve_default_llm
+install_worker_dirs
 install_bin_scripts
 install_profile_links
 install_git_hooks
@@ -387,6 +404,7 @@ log "  Source bin:     $source_bin_dir"
 log "  Codex home:     $codex_home"
 log "  Claude home:    $claude_home"
 log "  Git hooks:      $hooks_dir"
+log "  AI root:        $ai_root"
 log "  Default LLM:    $default_llm"
 log "  User shell rc:  $shell_rc"
 if (( update_system_shell_rc )); then
