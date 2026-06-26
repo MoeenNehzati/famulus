@@ -1,6 +1,6 @@
 ---
 name: install-assistant-tools
-description: Install or update the user's assistant and tw/tmux-workspace helpers on a machine. Use when the user wants assistant, assistant -c, tw, or tw -c installed, repaired, refreshed, or propagated to another system; when a system lacks these commands; or when the helper definitions should be updated in user and system bash startup files.
+description: Install or update the assistant, collab, coauthor, and tw/tmux-workspace helpers on a machine. Use when the user wants these commands installed, repaired, refreshed, or propagated to another system; when a system lacks them; or when the helper definitions should be updated in shell startup files.
 ---
 
 # Install Assistant Tools
@@ -15,190 +15,181 @@ Dependencies: none
 
 ## Platform Support
 
-This installation is designed for **Linux systems** with bash and standard Unix tools.
+The installer and launchers run on **Linux, macOS, and Windows** (Python 3.6+
+required). One exception: `tmux-workspace` is Unix-only (tmux does not exist on
+Windows).
 
-If you're installing on a different operating system, you should try to replicate
-the same logic in your environment (e.g., updating the appropriate shell rc file,
-adjusting paths for your system layout).
-
-## Overview
-
-The skill ships four standalone scripts in `bin/`:
-
-- `bin/assistant` — launches `claude --agent assistant` (secretary: fetch info,
-  write, implement easy logic) or `codex --profile assistant` from
-  `$AI/workers/assistant`. Pass `-l/--local` to stay in the current directory.
-- `bin/collab` — launches `claude --agent collab` (serious coding,
-  documentation/learning) or `codex --profile collab` from
-  `$AI/workers/collab`. Pass `-l/--local` to stay in the current directory.
-- `bin/coauthor` — launches `claude --agent coauthor` (math/research, deep
-  thinking) or `codex --profile coauthor` from `$AI/workers/coauthor`.
-  Pass `-l/--local` to stay in the current directory.
-- `bin/tmux-workspace` — creates or attaches to a tmux workspace; `tw` is an
-  alias symlink for it.
-
-The installer symlinks these into a bin directory on PATH and writes a minimal
-managed block to the shell rc (PATH export only — no inline function
-definitions).
+If any step fails or a command is not usable on the user's platform, **ask
+whether they want the skill to adapt the relevant scripts** before attempting
+any changes.
 
 ## Layout
 
 ```
 bin/
-  assistant          source script for the assistant command
-  collab             source script for the collab command
-  coauthor           source script for the coauthor command
-  tmux-workspace     source script for tw / tmux-workspace
+  assistant          Python launcher — claude --agent assistant or codex --profile assistant
+  collab             Python launcher — claude --agent collab or codex --profile collab
+  coauthor           Python launcher — claude --agent coauthor or codex --profile coauthor
+  tmux-workspace     Bash script for tw / tmux-workspace (Unix only)
+  _agent_launch.py   Shared launcher logic imported by the three launchers above
+  assistant.bat      Windows wrapper (delegates to assistant via py.exe)
+  collab.bat         Windows wrapper (delegates to collab via py.exe)
+  coauthor.bat       Windows wrapper (delegates to coauthor via py.exe)
 scripts/
-  install_assistant_tools.sh   install bin scripts, profiles, rc block, git hooks
-  setup_symlinks.py            wire Claude and Codex config dirs to the repo
+  install.py         Combined entry point — runs setup_symlinks then setup_tools
+  setup_symlinks.py  Wires Claude and Codex config dirs to the repo
+  setup_tools.py     Installs bin scripts, profiles, rc block, git hooks
 ```
 
 ## Workflow
 
-**Step 1 — Set up config dir symlinks** (new machine or after repo move):
+### 1. Tell the user what will happen
+
+Before running anything, summarize:
+
+- Config dir symlinks will be created so Claude and Codex share skills, agents,
+  and profiles from this repo (no duplicate copies).
+- Launcher scripts will be symlinked into a bin directory on PATH.
+- A minimal block will be written to the shell rc exporting PATH and `$AI`.
+- Worker directories will be created if absent.
+- Git hooks will be configured.
+- The installer will run basic checks at the end to confirm everything works.
+
+Ask for confirmation before proceeding.
+
+### 2. Run the combined installer
+
+| Platform | Command |
+|---|---|
+| Linux / macOS | `python3 scripts/install.py` |
+| Windows | `py scripts\install.py` |
+
+Use `--dry-run` on an unfamiliar machine to preview without writing:
 
 ```bash
-python3 scripts/setup_symlinks.py
+python3 scripts/install.py --dry-run   # Linux/macOS
+py scripts\install.py --dry-run        # Windows
 ```
 
-This wires the Claude and Codex config directories to the repo so both tools
-share the same skills, references, agents, and profiles without separate copies.
-Use `--dry-run` to preview, or `--no-claude`/`--no-codex` to skip one tool.
-Claude and Codex config dirs are auto-detected from `$CLAUDE_HOME`/`$CODEX_HOME`;
-if neither is set nor found at the default path, the script prompts interactively.
+The installer auto-detects the user's shell on Unix (`zsh` → `.zshrc`, else
+`.bashrc`). On Windows it writes PATH and env vars to the user registry
+(`HKEY_CURRENT_USER\Environment`) and broadcasts `WM_SETTINGCHANGE` so new
+terminals pick up the change immediately — no reboot needed.
 
-**Step 2 — Install bin scripts, rc block, and git hooks:**
+The scripts are self-documenting — check their inline comments for what each
+step does and why.
+
+### 3. Sanity check
+
+After the installer finishes, reload the shell environment and verify:
+
+**Linux / macOS**
+```bash
+source ~/.zshrc    # or ~/.bashrc — the installer prints which one it used
+type assistant     # should report a file, not a function
+```
+
+**Windows** (open a new terminal, then):
+```cmd
+where assistant
+```
+
+If the command is not found, the bin dir is not on PATH. Check the installer
+output for errors, then open a fresh terminal (the registry update requires a
+new session).
+
+### 4. Basic smoke test
 
 ```bash
-bash scripts/install_assistant_tools.sh
+assistant --help
+collab --help
+coauthor --help
+tw -h       # Unix only; skip on Windows
 ```
 
-The script installs or updates:
+Each `--help` should print usage and exit 0. If any command is not found or
+errors, see "Troubleshooting" below.
 
-- `$bin_dir/assistant` — symlink to `bin/assistant` in this skill directory.
-- `$bin_dir/collab` — symlink to `bin/collab`.
-- `$bin_dir/coauthor` — symlink to `bin/coauthor`.
-- `$bin_dir/tmux-workspace` — symlink to `bin/tmux-workspace`.
-- `$bin_dir/tw` — symlink to `bin/tmux-workspace` (alias).
-- Each repo-owned profile under `profiles/*.config.toml`, linked into both the
-  Codex home and Claude home.
-- Each Claude settings file under `profiles/*_claude_setting.json`, linked into
-  the Claude home (`$CLAUDE_HOME` or `~/.claude`).
-- The repo's Git hook path: `git config core.hooksPath .githooks`, after
-  verifying that `.githooks/` exists and marking all files in it executable.
-- Legacy repo-owned `coder` launcher/profile symlinks, if present, are removed
-  during install.
-- A managed PATH block in the user shell rc (and system rc when writable),
-  including `export AI=<repo-root>` so all scripts can locate worker dirs.
-- Worker directories `$AI/workers/{assistant,collab,coauthor}` (created if absent).
-- `~/.config/environment.d/20-ai-agent.conf` — sets `AI_AGENT_COMMAND_TEMPLATE`
-  for the systemd user environment, required by automated skill jobs so they
-  know how to invoke Claude.
+### 5. If something fails
 
-The managed block written to the rc file is intentionally minimal:
+If a command fails or is not available on the user's platform:
 
-```bash
-# >>> assistant-tools >>>
-export PATH="/path/to/bin:$PATH"
-# <<< assistant-tools <<<
-```
+1. Report the exact error.
+2. **Ask the user:** "Would you like me to adapt the scripts for your platform?"
+3. If yes, inspect the failing script and propose the minimal change needed.
 
-After symlinking, the installer runs `assistant --help` and `tw --help` to
-verify the installed scripts are reachable and executable. Failures are
-reported as warnings.
+Do not modify scripts speculatively — only on explicit user approval.
 
 ## Default Targets
 
-- User rc: `$HOME/.bashrc`
-- System rc: `/etc/bash.bashrc`
-- Bin dir: `$HOME/Documents/scripts/bin`
-- Source bin: `<skill-dir>/bin/`
-- AI root: two levels above the skill dir (e.g. `~/Documents/AI`); exported as `$AI`
-- Workers: `$AI/workers/{assistant,collab,coauthor}`
-- Codex home: `$CODEX_HOME`, or `$HOME/.codex` when unset
-- Claude home: `$CLAUDE_HOME`, or `$HOME/.claude` when unset
-- Git hooks path: `<repo-root>/.githooks`
+| Item | Default |
+|---|---|
+| User rc | `~/.zshrc` (zsh) or `~/.bashrc` (bash/other) — auto-detected; Windows uses registry |
+| System rc | `/etc/bash.bashrc` (skipped on Windows) |
+| Bin dir | `$HOME/Documents/scripts/bin` |
+| AI root | Two levels above the skill dir (e.g. `~/Documents/AI`), exported as `$AI` |
+| Workers | `$AI/workers/{assistant,collab,coauthor}` |
+| Codex home | `$CODEX_HOME`, or `$HOME/.codex` |
+| Claude home | `$CLAUDE_HOME`, or `$HOME/.claude` |
+| Git hooks | `<repo-root>/.githooks` |
 
-## Install or Update
-
-From the skill directory, run:
-
-```bash
-bash scripts/install_assistant_tools.sh
-```
-
-If the system rc is not writable, the script updates the user rc and prints a
-warning. To update `/etc/bash.bashrc`, rerun with appropriate privileges:
-
-```bash
-sudo bash scripts/install_assistant_tools.sh --home /home/USER
-```
-
-Use `--dry-run` before writing on unfamiliar machines:
-
-```bash
-bash scripts/install_assistant_tools.sh --dry-run
-```
-
-Use explicit paths for a nonstandard layout:
-
-```bash
-bash scripts/install_assistant_tools.sh \
-  --bin-dir /path/to/bin \
-  --codex-home /path/to/codex-home \
-  --claude-home /path/to/claude-home \
-  --shell-rc /path/to/user/.bashrc \
-  --system-shell-rc /path/to/system/bashrc
-```
-
-Pass `--no-system-shell-rc` to update only the current user's shell rc.
+All targets can be overridden with flags — run `python3 scripts/install.py --help`
+for the full list.
 
 ## Updating Scripts
 
-Because the installed commands are symlinks into `bin/`, editing
-`bin/assistant` or `bin/tmux-workspace` in place takes effect immediately with
-no reinstall needed. Re-run the installer only when adding a new machine,
-repairing broken symlinks, or updating the rc block.
+Because installed commands are symlinks into `bin/`, editing `bin/assistant` or
+`bin/tmux-workspace` in place takes effect immediately — no reinstall needed.
+Re-run the installer only when:
 
-## Validation
+- Setting up a new machine
+- Repairing broken symlinks
+- Updating the rc block or git hooks
 
-After installation the installer runs `assistant --help` and `tw --help`
-automatically. To validate manually:
+## Troubleshooting
 
-```bash
-source ~/.bashrc
-type assistant
-assistant --help
-tw -h
-```
+**`assistant: command not found`** — bin dir not on PATH. Check rc block was
+written and a new terminal or `source ~/.bashrc` was run.
 
-Expected behavior:
+**`ModuleNotFoundError: No module named '_agent_launch'`** — `_agent_launch.py`
+is missing from the bin dir. Re-run the installer; check `BIN_SCRIPTS` in
+`setup_tools.py` includes it.
 
-- `type assistant` reports a file (not a function).
-- `assistant --help` prints usage and exits 0.
-- `collab --help` prints usage and exits 0.
-- `coauthor --help` prints usage and exits 0.
-- `tw -h` documents `-c|--codex`.
-- `assistant -c` launches Codex from the configured assistant directory with
-  `--profile assistant`.
-- `collab --codex` launches Codex from the current directory with
-  `--profile collab`.
-- `coauthor --codex` launches Codex from the current directory with
-  `--profile coauthor`.
-- `tw -c` creates or attaches to the Codex-specific tmux workspace.
-- Each repo-owned profile in `profiles/*.config.toml` has matching symlinks
-  under `$CODEX_HOME` or `~/.codex`, and under `$CLAUDE_HOME` or `~/.claude`.
-- Each Claude settings file in `profiles/*_claude_setting.json` has a matching
-  symlink under `$CLAUDE_HOME` or `~/.claude`.
-- `git -C <repo-root> config --get core.hooksPath` prints `.githooks`.
+**`tw: command not found` on Windows** — expected; tmux is not available on
+Windows. Skip `tw` checks on that platform.
 
-Do not run `assistant -c` or `tw -c` as validation unless the user wants an
-interactive Codex/tmux session launched.
+**`.bat` wrappers on Windows** — `assistant.bat`, `collab.bat`, and
+`coauthor.bat` are installed automatically alongside the Python launchers. With
+the bin dir on `%PATH%`, bare `assistant`, `collab`, and `coauthor` work in
+`cmd.exe` and PowerShell without typing `.bat`. The Python Launcher (`py.exe`)
+must be available — it ships with standard Python installs from python.org.
 
-## AI Root Variable
+**`py.exe` not found** — install Python from python.org and ensure "Install
+Python Launcher" is checked during setup.
 
-The installer exports `AI=<repo-root>` in the managed shell rc block, making
-`$AI/skills`, `$AI/workers`, etc. available in any terminal. The value is the
-absolute path two levels above the `install-assistant-tools` skill directory.
-No manual configuration is needed.
+## Developer Notes
+
+### Adding a new agent
+
+To add an agent (e.g. `researcher`):
+
+1. **`bin/researcher`** — copy `bin/assistant`, change `agent=` and the env var
+2. **`bin/researcher.bat`** — copy `bin/assistant.bat`, change the script name
+3. **`setup_tools.py`** — add `"researcher"` to `AGENTS`, `BIN_SCRIPTS`,
+   `BAT_WRAPPERS`, and `VERIFY_CMDS`
+4. **`profiles/researcher.config.toml`** — Codex profile (linked by installer)
+5. **`profiles/researcher_claude_setting.json`** — Claude settings (linked by installer)
+
+Re-run the installer after to create the new symlinks and worker directory.
+
+### Key contracts
+
+- **`$AI`** — set by the installer to the repo root. All bin scripts default the
+  working directory to `$AI/workers/<agent>`. Pass `-l/--local` to stay in the
+  current directory instead.
+- **`profiles/`** — the installer links every `*.config.toml` file into both
+  Codex and Claude homes, and every `*_claude_setting.json` into Claude home
+  only. Naming convention: `<agent>.config.toml` and `<agent>_claude_setting.json`.
+- **`workers/`** — one subdirectory per agent, created empty by the installer.
+  These are the agents' default working directories and can accumulate project
+  files over time.

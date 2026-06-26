@@ -1,3 +1,22 @@
-#!/usr/bin/env bash
-exec "$(dirname "${BASH_SOURCE[0]}")/_agent-launch" \
-  assistant "${ASSISTANT_DEFAULT:-claude}" "$@"
+#!/usr/bin/env python3
+"""Launcher for the 'assistant' agent.
+
+Delegates entirely to _agent_launch.py which handles flag parsing, working
+directory switching, and exec/subprocess dispatch. The default backend is
+controlled by $ASSISTANT_DEFAULT (set by the installer; falls back to 'claude').
+
+To add a new agent, copy this file, change the agent name and env var, add the
+corresponding .bat wrapper, and register everything in setup_tools.py (AGENTS,
+BIN_SCRIPTS, BAT_WRAPPERS, VERIFY_CMDS).
+"""
+import os, sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _agent_launch
+
+_agent_launch.launch(
+    agent="assistant",
+    default_backend=os.environ.get("ASSISTANT_DEFAULT", "claude"),
+    args=sys.argv[1:],
+)

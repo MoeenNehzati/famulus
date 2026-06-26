@@ -1,3 +1,17 @@
-#!/usr/bin/env bash
-exec "$(dirname "${BASH_SOURCE[0]}")/_agent-launch" \
-  collab "${COLLAB_DEFAULT:-${ASSISTANT_DEFAULT:-claude}}" "$@"
+#!/usr/bin/env python3
+"""Launcher for the 'collab' agent.
+
+Backend priority: $COLLAB_DEFAULT > $ASSISTANT_DEFAULT > 'claude'.
+See bin/assistant for notes on adding new agents.
+"""
+import os, sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _agent_launch
+
+_agent_launch.launch(
+    agent="collab",
+    default_backend=os.environ.get("COLLAB_DEFAULT", os.environ.get("ASSISTANT_DEFAULT", "claude")),
+    args=sys.argv[1:],
+)
