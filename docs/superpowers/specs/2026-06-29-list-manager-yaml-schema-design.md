@@ -22,7 +22,7 @@ categories:
     categories:
       - name: Writing
         entries:
-          - id: a3f2
+          - id: a3f2b9
             title: Reply to Diego
             state: incomplete
             created: "2026-06-13"
@@ -51,7 +51,7 @@ entry
 
 | Field | Required | Type | Notes |
 |---|---|---|---|
-| `id` | yes | string | 4-char lowercase hex, auto-assigned |
+| `id` | yes | string | 6-char lowercase hex, auto-assigned |
 | `title` | yes | string | |
 | `created` | yes | string (date) | `YYYY-MM-DD`; set on creation, never changes |
 | `description` | no | string | omit if absent |
@@ -153,7 +153,9 @@ lists.py read /tmp/todo.yaml state=incomplete location=home
 lists.py read /tmp/todo.yaml title~=Diego
 ```
 
-Output is always raw YAML including IDs.
+Output is always raw YAML including IDs. When filters are applied, output is a
+**flat YAML list** of matching entries (not the nested category structure) —
+the LLM only sees what it needs.
 
 ### Human-readable display (`scripts/beautify.py`)
 
@@ -188,6 +190,17 @@ lists.py read /tmp/todo.yaml state=incomplete | scripts/beautify.py
   deadline: "2026-07-15"
 ```
 
+### Immutable fields
+
+`update` rejects changes to `id` and `created` — these are set on creation and
+never change. Attempting to update them exits nonzero with a clear error.
+
+### Missing target in `create-entry`
+
+If the target category path does not exist in the file, `create-entry` exits
+nonzero with a clear error listing available categories. It does not create
+categories on the fly.
+
 ### Validation flow
 
 `create-entry` and `update` validate before modifying the local file:
@@ -209,9 +222,9 @@ the (always-valid) local file to cloud.
 
 ## 3. Migration (Markdown → YAML)
 
-### Script: `scripts/migrate-to-yaml.py`
+### Orchestration
 
-Migration is orchestrated by the skill. For each list:
+Migration is orchestrated by the skill using the `lists.py migrate-md` subcommand. For each list:
 1. Invoke cloud-files skill: "download `lists/todo.md` to `/tmp/todo.md`"
 2. `lists.py migrate-md /tmp/todo.md /tmp/todo.yaml`
 3. Invoke cloud-files skill: "upload `/tmp/todo.yaml` to `lists/todo.yaml`"
@@ -224,7 +237,7 @@ Migration is orchestrated by the skill. For each list:
 | File header line `[name] [state] meaning · ...` | `schema:` field (state declarations are now in JSONSchema) |
 | Persistent title line `- Area` | Category `name:` at level 1 |
 | Persistent title line `  - Action` | Category `name:` at level 2 |
-| `- [ ] (MM/DD/YY) title <!-- #xxxx -->` | Entry with `state: incomplete`, `created: YYYY-MM-DD`, `id: xxxx` |
+| `- [ ] (MM/DD/YY) title <!-- #xxxx -->` | Entry with `state: incomplete`, `created: YYYY-MM-DD`, `id: xxxx` (original ID preserved as-is) |
 | `- [x] (MM/DD/YY) title <!-- #xxxx -->` | Entry with `state: done` (or equivalent final state) |
 | `- [+]`, `[-]` etc. | Mapped to appropriate state per list type |
 | Continuation line `description text` | `description:` field |
