@@ -1,7 +1,7 @@
 {
   "bash": [
-    "Bash(scripts/lists.sh:*)",
-    "Bash(date:*)"
+    "Bash(python3 scripts/lists.py:*)",
+    "Bash(python3 scripts/beautify.py:*)"
   ],
   "network": []
 }

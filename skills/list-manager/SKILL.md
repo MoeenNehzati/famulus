@@ -1,11 +1,10 @@
 ---
 name: list-manager
 description: |
-  Manage personal text-based lists (groceries, todos, etc.) stored as
-  Markdown checklist files under assistant cloud storage, accessed through
-  the skill-owned `lists.sh` script. Use when the user asks to show, create,
-  or delete a list, or to add, check off, uncheck, or remove an item
-  (optionally nested under another item) on a list.
+  Manage personal structured lists (todos, potential actions, notes, etc.)
+  stored as YAML files validated against JSONSchema under assistant cloud
+  storage. Use when the user asks to show, create, or delete a list, or to
+  add, update, check off, or query items on a list.
 ---
 
 When this skill is used, begin with:
@@ -17,284 +16,211 @@ Category: automation
 Dependencies:
 - cloud-files
 
-## 0. Commands
+## 0. Architecture
 
-Lists are stored in cloud storage managed by the cloud-files skill. Every
-operation goes through one script. Use **only** these invocation
-patterns — no `cd`, no other tools:
+Lists are YAML files stored in cloud storage. Every operation follows this
+three-step pattern:
 
-| Subcommand | What it does |
-|---|---|
-| `scripts/lists.sh read` | List all list names (one `.md` per line) |
-| `scripts/lists.sh read <name>` | Print full file contents (use sparingly — see §0.1) |
-| `scripts/lists.sh write <name>` | Overwrite with stdin; empty stdin deletes the file |
-| `scripts/lists.sh unchecked <name>` | Print only `[ ]` task lines (fresh read each call) |
-| `scripts/lists.sh grep <name> <text>` | Fixed-string case-insensitive search with line numbers |
-| `scripts/lists.sh toggle <name> <id> check\|uncheck` | Toggle checkbox by ID (atomic read-modify-write) |
-| `scripts/lists.sh append <name>` | Append stdin item; auto-injects `<!-- #id -->` (atomic) |
-| `scripts/lists.sh gen-id <name>` | Print a unique 4-char hex ID for use in structural `write` heredocs |
-| `scripts/lists.sh migrate <name>` | Add `<!-- #id -->` to every task line that lacks one |
+1. **Download**: invoke the cloud-files skill to download the list to a temp
+   file, e.g. `lists/todo.yaml` → `/tmp/todo.yaml`.
+2. **Operate**: call `scripts/lists.py` on the local temp file.
+3. **Upload**: invoke the cloud-files skill to upload the modified temp file
+   back to `lists/todo.yaml`.
 
-Non-zero exit or stderr from any subcommand → stop; do not infer state; do not write.
-
-### 0.1 Token efficiency
-
-**Prefer atomic subcommands over raw `read`.** Each of `unchecked`, `grep`,
-`toggle`, and `append` reads fresh from cloud internally — no cache, no
-stale data risk. Only reach for `read <name>` when you genuinely need the
-full file to understand structure (nested add, remove-with-cascade, §3.4/3.6).
-
-**If you recently ran `unchecked` or `grep` and have IDs in context, go
-directly to `toggle` — no second read needed.**
-
-### 0.2 Bracket safety
-
-`grep` uses `-niF` (fixed-string): brackets in titles or search terms are
-always treated as literals. `toggle` finds its target via `<!-- #id -->` using
-the same fixed-string search — unambiguous regardless of what the title
-contains. `sed` in `toggle` targets a specific line number and substitutes the
-checkbox token (`[ ]` or `[x]`) which always appears before any title text,
-so brackets in titles are never touched.
-
-## 1. Storage model
-
-- Each list is `<name>.md` under `assistant/lists/` in cloud storage.
-- List names: lowercase, spaces → hyphens. Match against existing names
-  before picking a name for a new list.
-- A list comes into existence the first time an item is added; it disappears
-  when emptied (empty stdin to `write`).
-- A list with only persistent title lines (no task items) is not deleted.
-
-## 2. File format
-
-Each list file is a Markdown checklist with optional nesting via 2-space
-indentation. Every task line carries a creation date and a hidden stable ID:
+`lists.py` is a pure local operator — it has no cloud knowledge. Validation
+runs inside `lists.py` before any write; if validation fails, `lists.py`
+exits nonzero and the local file is untouched. Never call upload on failure.
 
 ```
-- [ ] (06/13/26) Plan trip <!-- #a3f2 -->
-  deadline: this month
-  - [ ] (06/13/26) Book flight <!-- #b7c1 -->
-    deadline: by Friday
-  - [ ] (06/10/26) Book hotel <!-- #e209 -->
-- [ ] (06/13/26) Buy groceries <!-- #f14d -->
-- [x] (06/12/26) Pay rent <!-- #c88a -->
+invoke cloud-files skill → download lists/todo.yaml to /tmp/todo.yaml
+python3 scripts/lists.py <subcommand> /tmp/todo.yaml <args>
+invoke cloud-files skill → upload /tmp/todo.yaml to lists/todo.yaml
 ```
 
-- `- [ ] (MM/DD/YY) title <!-- #xxxx -->` — unchecked
-- `- [x] (MM/DD/YY) title <!-- #xxxx -->` — checked
-- **Date**: set on creation; never changes.
-- **ID** (`<!-- #xxxx -->`): 4 lowercase hex chars in an HTML comment at the
-  end of the checkbox line. Auto-injected by `append`; added to existing items
-  by `migrate`. Invisible in rendered Markdown. **Never shown to the user** —
-  strip `<!-- #... -->` when displaying list items.
-- **For matching** (§3.5/3.6 "under Y" in §3.4): match against title text
-  after `(MM/DD/YY) ` and before ` <!-- #`. The date and ID are not matchable
-  text.
+## 1. Subcommands
 
-**File header line (optional):**
+All subcommands take the local file path as their first argument.
+
+| Subcommand | Signature | Description |
+|---|---|---|
+| `init` | `init <file> --schema <name>` | Create a new empty list file. |
+| `read` | `read <file> [filters...]` | Full YAML or filtered flat list of entries. |
+| `create-entry` | `create-entry <file> <target> [--entries <file>]` | Add entries to a category or as children of an entry. |
+| `update` | `update <file> [--file <file>]` | Update fields on entries by ID. |
+| `gen-id` | `gen-id <file> [--count n]` | Print n collision-free 6-char hex IDs (default 1). |
+| `migrate-md` | `migrate-md <src.md> <dst.yaml> --schema <name>` | Convert a Markdown list to YAML. |
+
+Non-zero exit → stop; do not upload; report the error from stderr.
+
+## 2. Storage model
+
+- Each list is `<name>.yaml` under `lists/` in cloud storage.
+- List names: lowercase, spaces → hyphens.
+- The schema (type of list) is declared inside the YAML file as `schema: <name>`.
+- Available schemas: `todo`, `potential-actions`, `default`.
+- A list comes into existence on `init`; deleted by removing the cloud file.
+
+## 3. File format
+
+Each list is a YAML document with this top-level structure:
+
+```yaml
+schema: todo        # declares which JSONSchema to validate against
+name: My Todo List  # human-readable name
+categories:         # top-level categories
+  - name: Work
+    categories:     # nested subcategories (any depth)
+      - name: Writing
+        entries:    # entries (validated by the list's schema)
+          - id: a3f2b9
+            title: Reply to Diego
+            created: "2026-06-29"
+            state: incomplete
+            deadline: "2026-07-04"
+            location: home   # optional
+            children:        # nested sub-entries (same schema)
+              - id: b7c1e2
+                title: Write intro
+                created: "2026-06-29"
+                state: done
+                deadline: "2026-07-02"
 ```
-[<list-name>] [<state>] <meaning> · [<state>] <meaning> · ...
+
+### Entry types by schema
+
+| Schema | Entry type | `state` values |
+|---|---|---|
+| `todo` | action | `incomplete`, `inprogress`, `done` |
+| `potential-actions` | potential_action | `undecided`, `accepted`, `rejected` |
+| `default` | entry | (any; no required state or deadline) |
+
+All entries have: `id` (6-char hex), `title`, `created` (YYYY-MM-DD).
+Actions and potential_actions also require: `state`, `deadline` (YYYY-MM-DD).
+Optional on all task entries: `description`, `location`, `children`.
+
+IDs are immutable — never update `id` or `created` via `update`.
+
+## 4. Operations
+
+### 4.1 List all lists
+
+Invoke cloud-files skill to list files under `lists/`. Each `.yaml` file is a list.
+
+### 4.2 Read / show a list
+
+**Unfiltered (full structure):**
+```bash
+python3 scripts/lists.py read /tmp/todo.yaml
 ```
-Declares valid checkbox states. If absent, only `[ ]` and `[x]` are valid.
 
-**Persistent title lines:** Plain `- Title` lines (no checkbox, no date)
-as structural headers — never checked, unchecked, or removed:
-- Level 1 (area):   `- Title`
-- Level 2 (action): `  - Title`
-- Task items begin at level 3: `    - [state] (MM/DD/YY) title <!-- #xxxx -->`
-
-**Item continuation lines:**
-```markdown
-    - [ ] (06/24/26) Reply to Diego <!-- #d3a1 -->
-      Follow up on the appendix draft.
-      deadline: by Friday
+**Filtered (flat list of matching entries):**
+```bash
+python3 scripts/lists.py read /tmp/todo.yaml state=incomplete
+python3 scripts/lists.py read /tmp/todo.yaml state=incomplete,inprogress
+python3 scripts/lists.py read /tmp/todo.yaml state=incomplete location=home
+python3 scripts/lists.py read /tmp/todo.yaml title~=Diego
 ```
-- **title**: text on the checkbox line after `(MM/DD/YY) ` and before ` <!-- #`.
-- **description**: optional freeform lines. Omit when there's no extra context.
-- **`deadline:`**: optional. Put description lines first, then `deadline:`.
-- Continuation lines: task indentation + 2 spaces (level-3 task → 6 spaces).
-- A nested task is a checkbox line at its own indentation, not a continuation.
 
-Plain title lines have no ID and are skipped for fuzzy matching. For task
-items, match against title and optional continuation lines; preserve
-continuation lines unless the user explicitly asks to edit them.
+Filter syntax:
+- `key=value` — exact match; comma-separated values are OR'd
+- `key~=value` — substring match
+- Multiple distinct keys are AND'd
 
-## 3. Operations
+**To display to the user:** pipe through `scripts/beautify.py`:
+```bash
+python3 scripts/lists.py read /tmp/todo.yaml state=incomplete | python3 scripts/beautify.py
+```
 
-### 3.1 List all lists
+`beautify.py` strips IDs and formats hierarchically. The LLM sees raw YAML
+(with IDs for `update`/`create-entry`); the user sees beautified output.
+
+### 4.3 Create a new list
 
 ```bash
-scripts/lists.sh read
+python3 scripts/lists.py init /tmp/mylist.yaml --schema todo --name "My Tasks"
+# then upload to cloud
 ```
 
-### 3.2 Show / read a list
+### 4.4 Add entries
+
+Target is either a **category path** (`Work/Writing`) or a **6-char entry ID**
+(adds as children of that entry). Input is a YAML list of entries on stdin or
+`--entries <file>`. IDs are auto-assigned if absent.
 
 ```bash
-scripts/lists.sh unchecked <name>
-```
-
-Output is already numbered hierarchically (`1`, `1.1`, `1.2`, `2`, …) and
-`<!-- #xxxx -->` IDs are stripped. Numbers are display-only — not stored in
-the file. Use numbers when presenting items to the user and when accepting
-user references like "mark 3 done" or "set deadline on 2.1".
-
-If the user asks to see everything (checked items too), use
-`scripts/lists.sh read <name>` and strip IDs before displaying.
-
-When displaying, omit any area or action title-line section that has no `[ ]`
-task items beneath it. If `unchecked` returns `(no unchecked items)` and the
-name doesn't appear in §3.1's output, the list doesn't exist — report that
-and offer to create it.
-
-### 3.3 Delete a whole list
-
-Confirm with the user first (destructive), then:
-
-```bash
-scripts/lists.sh write <name> <<'EOF'
+python3 scripts/lists.py create-entry /tmp/todo.yaml Work/Writing <<'EOF'
+- title: Draft intro
+  state: incomplete
+  created: "2026-06-29"
+  deadline: "2026-07-15"
 EOF
 ```
 
-### 3.4 Add an item
-
-1. Get today's date: `date +%m/%d/%y`.
-2. Parse the user's freeform item text into **title**, optional **description**,
-   optional **deadline**. If no deadline was given, ask; if the user says none,
-   omit the `deadline:` line.
-3. Add the item:
-
-   **Plain add** ("add X"): pass only the item content — the ID is
-   auto-injected by `append`:
-   ```bash
-   scripts/lists.sh append <name> <<'EOF'
-   - [ ] (<date>) <title>
-     <optional description>
-     deadline: <optional deadline>
-   EOF
-   ```
-   Omit description and/or `deadline:` when absent.
-
-   **Nested add** ("add X under Y"): search for Y:
-   ```bash
-   scripts/lists.sh grep <name> "<Y text>"
-   ```
-   - 0 matches → report not found, show `unchecked <name>`, stop.
-   - 2+ matches → show them (IDs stripped) and ask which. Wait.
-   - 1 match → get a fresh ID and read the full file:
-     ```bash
-     id=$(scripts/lists.sh gen-id <name>)
-     scripts/lists.sh read <name>
-     ```
-     Insert the new item (with `<!-- #${id} -->`) after Y's last child and
-     write back via heredoc.
-
-   **Structured add** (structured lists, no explicit "under Y"): infer the
-   best-fit area×action section; announce your choice. Get a fresh ID, read
-   the full file, insert (with `<!-- #${id} -->`), write back via heredoc.
-
-4. Confirm what was added (strip ID from confirmation).
-
-### 3.5 Check / uncheck an item
-
-If you recently ran `unchecked` or `grep` and already have the item's ID in
-context, skip to step 3.
-
-1. Find the item:
-   ```bash
-   scripts/lists.sh grep <name> "<text>"
-   ```
-   - 0 matches → report not found, show `unchecked <name>`, stop.
-   - 2+ matches → show them (IDs stripped) and ask which. Wait.
-   - 1 match → extract the 4-char hex ID from `<!-- #xxxx -->`.
-
-2. Toggle:
-   ```bash
-   scripts/lists.sh toggle <name> <id> check      # or: uncheck
-   ```
-   The script reads fresh from cloud, finds the line by ID, toggles the
-   checkbox, and writes back — all atomically.
-
-3. Confirm which item was checked/unchecked (strip ID from output).
-
-### 3.6 Remove an item
-
-1. Find the item:
-   ```bash
-   scripts/lists.sh grep <name> "<text>"
-   ```
-   Same match rules as §3.5.
-
-2. Extract the ID and read the full file to identify the cascade set
-   (the matched line + all contiguous following lines with strictly greater
-   indentation). A cascade set never includes persistent title lines.
-   ```bash
-   scripts/lists.sh read <name>
-   ```
-
-3. If the cascade set contains more than just the matched line, list the lines
-   that will be removed (IDs stripped) and ask for confirmation.
-
-4. Remove the matched line and (if confirmed) its descendants; write back:
-   ```bash
-   scripts/lists.sh write <name> <<'EOF'
-   <full new content>
-   EOF
-   ```
-   If the result is empty, the list file is deleted — mention this.
-
-5. Confirm what was removed.
-
-## 4. General notes
-
-- **Never show `<!-- #xxxx -->` to the user.** Strip ID comments when
-  displaying any list content.
-- After a write, show the changed item(s) or relevant section — not the full
-  list — unless the user asks.
-- If the user's request doesn't specify which list and one name clearly
-  matches, use it. Otherwise ask.
-
-## 5. Migration
-
-Run once per list to add IDs to existing items:
-
+Bulk input via file:
 ```bash
-scripts/lists.sh migrate <name>
+python3 scripts/lists.py create-entry /tmp/todo.yaml Work/Writing --entries /tmp/new_entries.yaml
 ```
 
-The script reads fresh from cloud, adds `<!-- #xxxx -->` to every task line
-that lacks one (with collision-free IDs), and writes back. After migration all
-`toggle` and ID-based operations work on that list.
+If the target category doesn't exist, `lists.py` exits nonzero and lists
+available categories. Do not create categories on the fly.
 
-## 6. potential-actions ↔ todo dependency
+### 4.5 Update entries
+
+Input is a YAML list of partial updates keyed by `id`. Multiple entries in one
+call. Fields `id` and `created` are immutable — attempts to change them exit
+nonzero.
+
+```bash
+python3 scripts/lists.py update /tmp/todo.yaml <<'EOF'
+- id: a3f2b9
+  state: done
+- id: b7c1e2
+  deadline: "2026-07-20"
+EOF
+```
+
+Via file:
+```bash
+python3 scripts/lists.py update /tmp/todo.yaml --file /tmp/updates.yaml
+```
+
+### 4.6 Generate IDs
+
+```bash
+python3 scripts/lists.py gen-id /tmp/todo.yaml          # one ID
+python3 scripts/lists.py gen-id /tmp/todo.yaml --count 5
+```
+
+Prints one ID per line. IDs are collision-free against all existing IDs in the file.
+
+## 5. Migration (Markdown → YAML)
+
+To convert an old Markdown list to YAML:
+
+1. Invoke cloud-files skill: download `lists/todo.md` to `/tmp/todo.md`
+2. Run: `python3 scripts/lists.py migrate-md /tmp/todo.md /tmp/todo.yaml --schema todo`
+3. Invoke cloud-files skill: upload `/tmp/todo.yaml` to `lists/todo.yaml`
+4. Invoke cloud-files skill: delete `lists/todo.md`
+
+`migrate-md` converts `- [ ]` (incomplete) and `- [x]` (done) items.
+Deadlines in `(due: ...)` are parsed; unresolvable ones are flagged in stderr
+but the file is still written with a placeholder date. Review the output.
+
+## 6. potential-actions ↔ todo workflow
 
 `potential-actions` is a staging list; `todo` holds committed actions.
 
-**Item lifecycle:**
-- Items start as `[ ]` (unreviewed).
-- **Accepted** (`[+]`): mark `[+]` via `toggle` in `potential-actions` AND
-  add the item to `todo` under the inferred best-fit area×action section
-  (§3.4 placement logic), preserving title, description, and `deadline:`.
-  Use today's date as the todo creation date. Generate a new ID for the todo
-  entry. Both writes happen together.
-- **Rejected** (`[-]`): mark `[-]` via `toggle` in `potential-actions`.
-  Nothing added to `todo`.
-- Items are never deleted from `potential-actions` — `[+]`/`[-]` is the
-  audit trail.
+- **Accept** an item: update its state to `accepted` in potential-actions AND
+  create a matching entry in todo with state `incomplete`, using today's date.
+- **Reject** an item: update its state to `rejected` in potential-actions.
+- Items stay in potential-actions as audit trail.
 
-**Dedup rule:** never add to `potential-actions` if a match already exists in
-any state.
+**Dedup rule:** before adding to potential-actions, read and verify no entry
+with the same title already exists in any state.
 
-**Filtering:** only `[ ]` items are surfaced in suggestions.
+## 7. Token efficiency
 
-## 7. Structured list configuration
-
-The following lists follow the area×action structure defined in
-`references/action-structure.md` (see also `references/list-structure.md`).
-Detected by the presence of a file header line (starts with `[`) and
-persistent title lines.
-
-- `todo` — structured list; valid states declared in its file header
-- `potential-actions` — structured list; valid states declared in its file header
-
-When operating on these lists, apply display filtering (§3.2), placement
-inference (§3.4), and title-line-skipping rules (§3.5, §3.6, §6).
+- Prefer filtered `read` over full `read` — the LLM only sees relevant entries.
+- Use `--entries` / `--file` to pass bulk operations; avoid exposing the LLM
+  to full list content when only a subset is needed.
+- After a write, re-read and beautify only the affected section to confirm.
