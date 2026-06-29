@@ -29,6 +29,7 @@ On Windows these steps are skipped with a note.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import stat
@@ -36,6 +37,11 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+# Make sibling skill scripts importable.
+sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills" / "cloud-files" / "scripts")))
+
+import cloud_files
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -121,6 +127,10 @@ def parse_args() -> argparse.Namespace:
         help="Claude config dir for profile symlinks (default: $CLAUDE_HOME or ~/.claude)")
     parser.add_argument("--default-llm", choices=["claude", "codex"],
         help="Default backend for assistant (prompted if omitted)")
+    parser.add_argument("--cloud-files-remote", metavar="ID", default="root",
+        help="Google Drive root folder id for cloud-files (default: root)")
+    parser.add_argument("--cloud-files-remote-llm-root", metavar="PATH", default="assistant/",
+        help="Path under the Drive root reserved for LLM files (default: assistant/)")
     parser.add_argument("--no-system-shell-rc", action="store_true",
         help="Do not update the system shell rc file")
     parser.add_argument("--dry-run", action="store_true",
@@ -237,6 +247,39 @@ def install_git_hooks(repo_root: Path, hooks_dir: Path, dry_run: bool) -> None:
             ["git", "-C", str(repo_root), "config", "core.hooksPath", ".githooks"],
             check=True,
         )
+
+
+def install_cloud_files_config(home: Path, remote: str, remote_llm_root: str, dry_run: bool) -> None:
+    """Write the cloud-files config under ~/.config/cloud-files/."""
+    config_dir = home / ".config" / "cloud-files"
+    config_path = config_dir / "config.json"
+
+    existing: dict[str, object] = {}
+    if config_path.exists():
+        try:
+            existing = json.loads(config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            existing = {}
+
+    try:
+        normalized_llm_root = cloud_files.normalize_llm_root(remote_llm_root)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    payload: dict[str, object] = {
+        "remote": remote,
+        "remote_llm_root": normalized_llm_root,
+        "timeout_seconds": int(existing.get("timeout_seconds", 45)),
+    }
+    if "credentials_path" in existing:
+        payload["credentials_path"] = existing["credentials_path"]
+
+    if dry_run:
+        log(f"Would write cloud-files config {config_path}")
+        return
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def install_ai_agent_env(home: Path, dry_run: bool) -> None:
@@ -486,6 +529,32 @@ def warn_missing_commands(names: list[str]) -> None:
             log(f"Warning: '{name}' is not currently on PATH.")
 
 
+# ── Python packages ───────────────────────────────────────────────────────────
+
+# Packages required by skill scripts (cross-platform; installed via pip).
+REQUIRED_PYTHON_PACKAGES = [
+    "dateparser",  # list-manager: migrate-md deadline resolution
+]
+
+
+def install_python_packages(dry_run: bool) -> None:
+    """Ensure required Python packages are installed."""
+    log("\nInstalling required Python packages...")
+    for package in REQUIRED_PYTHON_PACKAGES:
+        if dry_run:
+            log(f"  (dry-run) Would install: {package}")
+            continue
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", package, "--quiet"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            log(f"  OK: {package}")
+        else:
+            log(f"  WARN: failed to install {package}: {result.stderr.strip()}")
+
+
 # ── Core logic ────────────────────────────────────────────────────────────────
 
 def run(
@@ -497,6 +566,8 @@ def run(
     codex_home: Path | None = None,
     claude_home: Path | None = None,
     default_llm: str | None = None,
+    cloud_files_remote: str = "root",
+    cloud_files_remote_llm_root: str = "assistant/",
     update_system_shell_rc: bool = True,
     dry_run: bool = False,
 ) -> None:
@@ -542,12 +613,19 @@ def run(
             log("Non-interactive mode: defaulting to 'claude'. Use --default-llm to override.")
             default_llm = "claude"
 
+    install_python_packages(dry_run)
     install_worker_dirs(repo_root, dry_run)
     install_bin_scripts(source_bin_dir, bin_dir, dry_run)
     install_profile_links(profiles_dir, codex_home, claude_home, dry_run)
     install_git_hooks(repo_root, hooks_dir, dry_run)
     remove_legacy_coder_links(source_bin_dir, profiles_dir, bin_dir, codex_home, claude_home, dry_run)
     install_ai_agent_env(home, dry_run)
+    install_cloud_files_config(
+        home,
+        remote=cloud_files_remote,
+        remote_llm_root=cloud_files_remote_llm_root,
+        dry_run=dry_run,
+    )
 
     # Platform-specific PATH and environment variable setup.
     if sys.platform == "win32":
@@ -600,6 +678,8 @@ def main() -> None:
         codex_home=Path(args.codex_home)  if args.codex_home  else None,
         claude_home=Path(args.claude_home) if args.claude_home else None,
         default_llm=args.default_llm,
+        cloud_files_remote=args.cloud_files_remote,
+        cloud_files_remote_llm_root=args.cloud_files_remote_llm_root,
         update_system_shell_rc=not args.no_system_shell_rc,
         dry_run=args.dry_run,
     )
