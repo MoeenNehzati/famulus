@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "entry.json",
+  "type": "object",
+  "required": ["id", "title", "created"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{6}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created": {
+      "type": "string",
+      "format": "date"
+    },
+    "description": {
+      "type": "string"
+    },
+    "children": {
+      "type": "array",
+      "items": {"$ref": "entry.json"}
+    }
+  }
+}
