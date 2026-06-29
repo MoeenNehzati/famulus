@@ -7,6 +7,7 @@ description: |
   - a TeX document is missing a top-of-document profile comment
   - the user wants to add or standardize a document docstring/header comment
   - another skill needs document-profile information and the file does not already state it clearly
+  - a skill marked `Category: document-oriented` is about to be applied to a `.tex` file — check for a profile comment before proceeding
 
   Do not use when:
   - the file already has a suitable top-of-document profile comment
