@@ -2,8 +2,8 @@
 # Tests for lists.sh — runs fully locally using a filesystem mock of cloud-files.
 #
 # The mock mirrors the directory layout lists.sh expects so that the relative
-# path  ${script_dir}/../../cloud-files/scripts/cloud-files.sh  resolves to
-# the mock instead of the real rclone-backed script.
+# path  ${script_dir}/../../cloud-files/scripts/read_llm_file.py  resolves to
+# the mock instead of the real Drive-backed scripts.
 #
 # Usage:
 #   bash tests/test_lists.sh          # from list-manager/ directory
@@ -26,33 +26,39 @@ mkdir -p "$WORK/store/lists"
 
 # Symlink the real script into the workspace so it resolves its own path correctly.
 ln -s "$REAL_LISTS_SH" "$WORK/list-manager/scripts/lists.sh"
+ln -s "$SKILL_DIR/scripts/number-unchecked.py" "$WORK/list-manager/scripts/number-unchecked.py"
 LISTS="$WORK/list-manager/scripts/lists.sh"
 
-# Mock cloud-files.sh: read/write/delete/list against a local store directory.
+# Mock cloud-files Python entrypoints against a local store directory.
 # TEST_STORE_DIR is exported before each test group so the mock knows where to look.
-cat > "$WORK/cloud-files/scripts/cloud-files.sh" << 'MOCK'
+cat > "$WORK/cloud-files/scripts/read_llm_file.py" << 'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
-op="${1:-}"; relpath="${2:-}"
 STORE="${TEST_STORE_DIR:?TEST_STORE_DIR not set}"
-case "$op" in
-  list)
-    if [ -d "$STORE/$relpath" ]; then ls "$STORE/$relpath"; fi
-    ;;
-  read)
-    if [ -f "$STORE/$relpath" ]; then cat "$STORE/$relpath"; fi
-    ;;
-  write)
-    mkdir -p "$(dirname "$STORE/$relpath")"
-    cat > "$STORE/$relpath"
-    ;;
-  delete)
-    rm -f "$STORE/$relpath"
-    ;;
-  *) echo "mock: unknown op '$op'" >&2; exit 1 ;;
-esac
+if [ "${1:-}" = "--list" ]; then
+  relpath="${2:-}"
+  if [ -d "$STORE/$relpath" ]; then ls "$STORE/$relpath"; fi
+else
+  relpath="${1:-}"
+  if [ -f "$STORE/$relpath" ]; then cat "$STORE/$relpath"; fi
+fi
 MOCK
-chmod +x "$WORK/cloud-files/scripts/cloud-files.sh"
+cat > "$WORK/cloud-files/scripts/write_llm_file.py" << 'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+STORE="${TEST_STORE_DIR:?TEST_STORE_DIR not set}"
+relpath="${1:-}"
+mkdir -p "$(dirname "$STORE/$relpath")"
+cat > "$STORE/$relpath"
+MOCK
+cat > "$WORK/cloud-files/scripts/delete_llm_file.py" << 'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+STORE="${TEST_STORE_DIR:?TEST_STORE_DIR not set}"
+relpath="${1:-}"
+rm -f "$STORE/$relpath"
+MOCK
+chmod +x "$WORK/cloud-files/scripts/read_llm_file.py" "$WORK/cloud-files/scripts/write_llm_file.py" "$WORK/cloud-files/scripts/delete_llm_file.py"
 
 export TEST_STORE_DIR="$WORK/store"
 

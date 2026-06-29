@@ -1,10 +1,18 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "task_entry.json",
-  "allOf": [{"$ref": "entry.json"}],
-  "required": ["state", "deadline"],
+  "allOf": [
+    {
+      "$ref": "entry.json"
+    }
+  ],
+  "required": [
+    "state",
+    "deadline"
+  ],
   "properties": {
-    "state": {"type": "string"},
+    "state": {
+      "type": "string"
+    },
     "deadline": {
       "type": "string",
       "format": "date"
