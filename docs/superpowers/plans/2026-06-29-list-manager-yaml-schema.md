@@ -298,11 +298,11 @@ mkdir -p schemas/lists
     "name": {"type": "string", "minLength": 1},
     "categories": {
       "type": "array",
-      "items": {"$ref": "#/$defs/category"}
+      "items": {"$ref": "#/definitions/category"}
     }
   },
   "additionalProperties": false,
-  "$defs": {
+  "definitions": {
     "category": {
       "type": "object",
       "required": ["name"],
@@ -310,7 +310,7 @@ mkdir -p schemas/lists
         "name": {"type": "string", "minLength": 1},
         "categories": {
           "type": "array",
-          "items": {"$ref": "#/$defs/category"}
+          "items": {"$ref": "#/definitions/category"}
         },
         "entries": {
           "type": "array",
@@ -336,11 +336,11 @@ mkdir -p schemas/lists
     "name": {"type": "string", "minLength": 1},
     "categories": {
       "type": "array",
-      "items": {"$ref": "#/$defs/category"}
+      "items": {"$ref": "#/definitions/category"}
     }
   },
   "additionalProperties": false,
-  "$defs": {
+  "definitions": {
     "category": {
       "type": "object",
       "required": ["name"],
@@ -348,7 +348,7 @@ mkdir -p schemas/lists
         "name": {"type": "string", "minLength": 1},
         "categories": {
           "type": "array",
-          "items": {"$ref": "#/$defs/category"}
+          "items": {"$ref": "#/definitions/category"}
         },
         "entries": {
           "type": "array",
@@ -374,11 +374,11 @@ mkdir -p schemas/lists
     "name": {"type": "string", "minLength": 1},
     "categories": {
       "type": "array",
-      "items": {"$ref": "#/$defs/category"}
+      "items": {"$ref": "#/definitions/category"}
     }
   },
   "additionalProperties": false,
-  "$defs": {
+  "definitions": {
     "category": {
       "type": "object",
       "required": ["name"],
@@ -386,7 +386,7 @@ mkdir -p schemas/lists
         "name": {"type": "string", "minLength": 1},
         "categories": {
           "type": "array",
-          "items": {"$ref": "#/$defs/category"}
+          "items": {"$ref": "#/definitions/category"}
         },
         "entries": {
           "type": "array",
