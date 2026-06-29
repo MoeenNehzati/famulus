@@ -7,7 +7,6 @@ Subcommands:
   create-entry  <file> <target> [--entries <file>]
   update        <file> [--file <file>]
   gen-id        <file> [--count <n>]
-  migrate-md    <src.md> <dst.yaml> --schema <name> [--name <list-name>]
 """
 
 import argparse
@@ -20,7 +19,7 @@ from pathlib import Path
 
 import yaml
 import jsonschema
-from jsonschema import Draft7Validator, FormatChecker
+from jsonschema import FormatChecker
 
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="jsonschema")
 
@@ -99,7 +98,7 @@ def validate_list(data: dict) -> None:
         die(f"validation failed: {e.message}")
 
 
-# ── Filter helpers (for `read`) ────────────────────────────────────────────────
+# ── Filter helpers (for `read`) ───────────────────────────────────────────────
 
 def parse_filters(filter_args: list[str]) -> list[tuple[str, str, str]]:
     """Parse filter strings into (key, op, value) tuples.
@@ -119,7 +118,6 @@ def parse_filters(filter_args: list[str]) -> list[tuple[str, str, str]]:
 
 def entry_matches(entry: dict, filters: list[tuple[str, str, str]]) -> bool:
     """Return True if entry satisfies all filters (AND semantics across keys)."""
-    # Group by key for OR semantics within same key
     from collections import defaultdict
     by_key: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for key, op, val in filters:
@@ -127,11 +125,9 @@ def entry_matches(entry: dict, filters: list[tuple[str, str, str]]) -> bool:
 
     for key, conditions in by_key.items():
         field_val = str(entry.get(key, ""))
-        # At least one condition for this key must match (OR)
         matched_any = False
         for op, val in conditions:
             if op == "=":
-                # comma-separated OR values
                 if field_val in [v.strip() for v in val.split(",")]:
                     matched_any = True
                     break
@@ -148,15 +144,12 @@ def collect_matching_entries(node, filters: list[tuple[str, str, str]]) -> list[
     """Walk the document tree; return flat list of entries matching all filters."""
     results: list[dict] = []
     if isinstance(node, dict):
-        # Is this an entry (has 'id' and 'title')?
         if "id" in node and "title" in node:
             if entry_matches(node, filters):
                 results.append(node)
-            # Recurse into children
             for child in node.get("children", []):
                 results.extend(collect_matching_entries(child, filters))
         else:
-            # Category or document root — recurse
             for v in node.values():
                 results.extend(collect_matching_entries(v, filters))
     elif isinstance(node, list):
@@ -221,7 +214,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         "categories": [],
     }
 
-    validate_list(data)  # ensures schema name is valid before writing
+    validate_list(data)
     save_yaml(file, data)
     print(f"created {file}")
 
@@ -240,7 +233,6 @@ def cmd_read(args: argparse.Namespace) -> None:
     data = load_yaml(file)
 
     if not args.filters:
-        # Unfiltered: print full document
         print(yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False), end="")
         return
 
@@ -254,15 +246,12 @@ def cmd_create_entry(args: argparse.Namespace) -> None:
     data = load_yaml(file)
     target = args.target
 
-    # Determine where to add entries
     if HEX6_RE.match(target):
-        # Target is an entry ID — add as children
         parent_entry = find_entry_by_id(data, target)
         if parent_entry is None:
             die(f"no entry with id '{target}' found in {file}")
         dest_list = parent_entry.setdefault("children", [])
     else:
-        # Target is a category path
         parts = [p.strip() for p in target.split("/") if p.strip()]
         category = find_category_by_path(data.get("categories", []), parts)
         if category is None:
@@ -273,7 +262,6 @@ def cmd_create_entry(args: argparse.Namespace) -> None:
             )
         dest_list = category.setdefault("entries", [])
 
-    # Load new entries
     if args.entries:
         with open(args.entries, encoding="utf-8") as f:
             new_entries = yaml.safe_load(f)
@@ -283,7 +271,6 @@ def cmd_create_entry(args: argparse.Namespace) -> None:
     if not isinstance(new_entries, list):
         die("entries input must be a YAML list")
 
-    # Assign IDs and validate
     existing_ids = collect_ids(data)
     for entry in new_entries:
         if "id" not in entry:
@@ -313,7 +300,6 @@ def cmd_update(args: argparse.Namespace) -> None:
         if "id" not in patch:
             die("each update must have an 'id' field")
 
-        # Check for immutable field violations
         bad = IMMUTABLE_FIELDS & set(patch.keys()) - {"id"}
         if bad:
             die(f"cannot update immutable field(s): {', '.join(sorted(bad))}")
@@ -332,188 +318,33 @@ def cmd_update(args: argparse.Namespace) -> None:
     save_yaml(file, data)
 
 
-def cmd_migrate_md(args: argparse.Namespace) -> None:
-    try:
-        import dateparser
-    except ImportError:
-        die("dateparser is required for migrate-md: pip install dateparser")
-
-    src = Path(args.src)
-    dst = Path(args.dst)
-    schema_name = args.schema
-    name = args.name if hasattr(args, "name") and args.name else dst.stem
-
-    if not src.exists():
-        die(f"source file not found: {src}")
-    if dst.exists():
-        die(f"destination file already exists: {dst}")
-
-    text = src.read_text(encoding="utf-8")
-    lines = text.splitlines()
-
-    categories: list[dict] = []
-    # Stack of (indent_level, category_dict)
-    cat_stack: list[tuple[int, dict]] = []
-    # Current leaf entries list
-    current_entries: list[dict] = []
-    # Current category at each level
-    current_cat: dict | None = None
-
-    import datetime
-    today = datetime.date.today().isoformat()
-
-    def parse_deadline(raw: str) -> str | None:
-        """Parse free-form deadline string to YYYY-MM-DD or return None."""
-        raw = raw.strip()
-        # Already ISO format
-        if re.match(r"^\d{4}-\d{2}-\d{2}$", raw):
-            return raw
-        parsed = dateparser.parse(raw, settings={"PREFER_DATES_FROM": "future"})
-        if parsed:
-            return parsed.date().isoformat()
-        return None
-
-    unresolvable: list[str] = []
-    existing_ids: set[str] = set()
-
-    def fresh_id() -> str:
-        nid = gen_ids(existing_ids, 1)[0]
-        existing_ids.add(nid)
-        return nid
-
-    # Simple markdown parser: headings = categories, list items = entries
-    # Supports `- [ ]` (incomplete) and `- [x]` (done)
-    # Deadline parsed from `(due: ...)` or `(deadline: ...)`
-    current_level_cats: list[list[dict]] = [categories]  # index = heading level - 1
-
-    active_cats: list[dict | None] = [None, None, None, None, None, None]  # by heading level
-
-    for line in lines:
-        # Heading?
-        heading_m = re.match(r"^(#{1,6})\s+(.+)$", line)
-        if heading_m:
-            level = len(heading_m.group(1))
-            cat_name = heading_m.group(2).strip()
-            cat = {"name": cat_name}
-            # Find parent category
-            if level == 1:
-                categories.append(cat)
-                active_cats[0] = cat
-                for i in range(1, 6):
-                    active_cats[i] = None
-            else:
-                parent_level = level - 2  # 0-indexed
-                parent = active_cats[parent_level] if parent_level >= 0 else None
-                if parent is not None:
-                    parent.setdefault("categories", []).append(cat)
-                else:
-                    # Fall back to top level
-                    categories.append(cat)
-                active_cats[level - 1] = cat
-                for i in range(level, 6):
-                    active_cats[i] = None
-            continue
-
-        # List item?
-        item_m = re.match(r"^(\s*)-\s+\[([xX ]?)\]\s+(.+)$", line)
-        if item_m:
-            indent = len(item_m.group(1))
-            checked = item_m.group(2).lower() == "x"
-            raw_title = item_m.group(3).strip()
-
-            # Extract deadline from title: (due: ...) or (deadline: ...)
-            deadline = None
-            title = raw_title
-            due_m = re.search(r"\((?:due|deadline):\s*([^)]+)\)", raw_title, re.IGNORECASE)
-            if due_m:
-                deadline_raw = due_m.group(1).strip()
-                deadline = parse_deadline(deadline_raw)
-                if deadline is None:
-                    unresolvable.append(f"'{deadline_raw}' in: {raw_title}")
-                title = raw_title[:due_m.start()].strip() + raw_title[due_m.end():].strip()
-                title = title.strip()
-
-            state = "done" if checked else "incomplete"
-
-            entry: dict = {
-                "id": fresh_id(),
-                "title": title,
-                "created": today,
-                "state": state,
-            }
-            if deadline:
-                entry["deadline"] = deadline
-            elif schema_name in ("todo", "potential-actions"):
-                # Required field — flag but still include placeholder
-                entry["deadline"] = today  # placeholder
-                unresolvable.append(f"no deadline found for: {raw_title}")
-
-            # Find the right category to put this entry under
-            # The last active category at any level receives the entry
-            target_cat = None
-            for i in range(5, -1, -1):
-                if active_cats[i] is not None:
-                    target_cat = active_cats[i]
-                    break
-            if target_cat is not None:
-                target_cat.setdefault("entries", []).append(entry)
-            else:
-                # No category — create a default one
-                default_cat = {"name": "General", "entries": [entry]}
-                categories.append(default_cat)
-                active_cats[0] = default_cat
-
-    if unresolvable:
-        print("warning: unresolvable deadlines:", file=sys.stderr)
-        for item in unresolvable:
-            print(f"  - {item}", file=sys.stderr)
-        # Still proceed — caller can decide whether to use the output
-
-    doc = {"schema": schema_name, "name": name, "categories": categories}
-    validate_list(doc)
-    save_yaml(dst, doc)
-    print(f"migrated {src} → {dst}")
-
-
 # ── Argument parsing + dispatch ───────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="lists.py")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # init
     p_init = sub.add_parser("init", help="Create a new empty list file")
     p_init.add_argument("file", help="Path to create")
     p_init.add_argument("--schema", required=True, help="Schema name (todo, potential-actions, default)")
     p_init.add_argument("--name", help="List name (defaults to filename stem)")
 
-    # read
     p_read = sub.add_parser("read", help="Read list, optionally filtered")
     p_read.add_argument("file", help="Path to list YAML")
     p_read.add_argument("filters", nargs="*", help="key=value or key~=value filters")
 
-    # create-entry
     p_create = sub.add_parser("create-entry", help="Add entries to a category or entry")
     p_create.add_argument("file", help="Path to list YAML")
     p_create.add_argument("target", help="Category path (Work/Writing) or 6-char entry ID")
     p_create.add_argument("--entries", dest="entries", help="YAML file of entries (default: stdin)")
 
-    # update
     p_update = sub.add_parser("update", help="Update fields on entries")
     p_update.add_argument("file", help="Path to list YAML")
     p_update.add_argument("--file", dest="file_input", help="YAML file of updates (default: stdin)")
 
-    # gen-id
     p_genid = sub.add_parser("gen-id", help="Generate collision-free IDs")
     p_genid.add_argument("file", help="Path to list YAML")
     p_genid.add_argument("--count", type=int, default=1, help="Number of IDs to generate")
-
-    # migrate-md
-    p_migrate = sub.add_parser("migrate-md", help="Migrate Markdown list to YAML")
-    p_migrate.add_argument("src", help="Source Markdown file")
-    p_migrate.add_argument("dst", help="Destination YAML file")
-    p_migrate.add_argument("--schema", required=True, help="Target schema name")
-    p_migrate.add_argument("--name", help="List name (defaults to dst stem)")
 
     return parser
 
@@ -528,7 +359,6 @@ def main() -> None:
         "create-entry": cmd_create_entry,
         "update": cmd_update,
         "gen-id": cmd_gen_id,
-        "migrate-md": cmd_migrate_md,
     }
 
     fn = dispatch[args.command]
