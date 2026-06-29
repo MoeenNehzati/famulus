@@ -21,6 +21,10 @@ class CloudFilesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             cloud_files.normalize_llm_root("../assistant")
 
+    def test_parse_llm_spec_rejects_parent_escape(self) -> None:
+        with self.assertRaises(ValueError):
+            cloud_files.parse_llm_spec("llm:../../outside.txt")
+
     def test_read_uses_configured_llm_root(self) -> None:
         config = cloud_files.CloudFilesConfig(
             remote_llm_root="assistant/",
@@ -95,6 +99,63 @@ class CloudFilesTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(stdout.getvalue(), "a.md\nnested/\n")
         list_entries.assert_called_once_with(config, "lists", use_llm_root=True)
+
+    def test_cp_download_writes_local_file(self) -> None:
+        config = cloud_files.CloudFilesConfig(
+            remote_llm_root="assistant/",
+            timeout_seconds=45,
+            credentials_path=Path("/tmp/creds.json"),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            local_path = Path(tmp) / "todo.md"
+            with mock.patch.object(cloud_files, "load_config", return_value=config):
+                with mock.patch.object(
+                    cloud_files,
+                    "expand_remote_sources",
+                    return_value=[
+                        cloud_files.RemoteEntry(
+                            path="lists/todo.md",
+                            id="abc123",
+                            is_dir=False,
+                        )
+                    ],
+                ):
+                    with mock.patch.object(
+                        cloud_files, "download_bytes", return_value=b"todo\n"
+                    ) as download_bytes:
+                        rc = cloud_files.main(["cp", "llm:lists/todo.md", str(local_path)])
+            local_bytes = local_path.read_bytes()
+        self.assertEqual(rc, 0)
+        self.assertEqual(local_bytes, b"todo\n")
+        download_bytes.assert_called_once_with(
+            config,
+            "lists/todo.md",
+            use_llm_root=True,
+        )
+
+    def test_cp_upload_reads_local_file(self) -> None:
+        config = cloud_files.CloudFilesConfig(
+            remote_llm_root="assistant/",
+            timeout_seconds=45,
+            credentials_path=Path("/tmp/creds.json"),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            local_path = Path(tmp) / "todo.md"
+            local_path.write_text("todo\n", encoding="utf-8")
+            with mock.patch.object(cloud_files, "load_config", return_value=config):
+                with mock.patch.object(
+                    cloud_files, "resolve_remote_target", return_value="lists/todo.md"
+                ):
+                    with mock.patch.object(cloud_files, "upload_bytes") as upload_bytes:
+                        rc = cloud_files.main(["cp", str(local_path), "llm:lists/todo.md"])
+        self.assertEqual(rc, 0)
+        upload_bytes.assert_called_once_with(
+            config,
+            "lists/todo.md",
+            b"todo\n",
+            source_name="todo.md",
+            use_llm_root=True,
+        )
 
     def test_load_config_reads_default_location(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

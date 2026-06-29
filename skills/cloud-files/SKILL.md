@@ -27,15 +27,28 @@ If credentials are missing, place your Google OAuth client JSON at `~/.config/cl
 
 ## 1. Preapproved LLM-root operations
 
-Use only these scripts for routine LLM storage:
+Use these scripts for routine LLM storage:
 
 ```bash
-scripts/read_llm_file.py [--list] [path]
-scripts/write_llm_file.py <path>
-scripts/delete_llm_file.py <path>
+scripts/cp_llm.py <src>... <dst>
+scripts/ls_llm.py [llm:pattern...]
+scripts/rm_llm.py llm:pattern...
 ```
 
-These scripts operate only under the configured `remote_llm_root`.
+`cp_llm.py` is the canonical transfer interface. Exactly one side must be
+remote and use the `llm:` prefix:
+
+```bash
+scripts/cp_llm.py llm:lists/todo.md /tmp/todo.md
+scripts/cp_llm.py /tmp/todo.md llm:lists/todo.md
+```
+
+`ls_llm.py` and `rm_llm.py` interpret their `llm:` arguments as remote paths or
+remote glob patterns under the configured `remote_llm_root`.
+
+Legacy `read_llm_file.py`, `write_llm_file.py`, and `delete_llm_file.py`
+remain in the skill directory for compatibility, but `cp_llm.py`, `ls_llm.py`,
+and `rm_llm.py` are the preferred interface.
 
 ## 2. Separately prompted broader reads
 

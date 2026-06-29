@@ -1,5 +1,8 @@
 {
   "bash": [
+    "Bash(scripts/cp_llm.py:*)",
+    "Bash(scripts/ls_llm.py:*)",
+    "Bash(scripts/rm_llm.py:*)",
     "Bash(scripts/read_llm_file.py:*)",
     "Bash(scripts/write_llm_file.py:*)",
     "Bash(scripts/delete_llm_file.py:*)"

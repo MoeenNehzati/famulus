@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import glob
 import json
 import mimetypes
+import os
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Sequence
 
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
@@ -19,6 +21,8 @@ CREDENTIALS_FILE_NAME = "credentials.json"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 DRIVE_API_ROOT = "https://www.googleapis.com/drive/v3/files"
 DRIVE_UPLOAD_ROOT = "https://www.googleapis.com/upload/drive/v3/files"
+LLM_PREFIX = "llm:"
+GLOB_CHARS = "*?[]"
 
 
 @dataclass(frozen=True)
@@ -26,6 +30,13 @@ class CloudFilesConfig:
     remote_llm_root: str
     timeout_seconds: int
     credentials_path: Path
+
+
+@dataclass(frozen=True)
+class RemoteEntry:
+    path: str
+    id: str
+    is_dir: bool
 
 
 class CloudFilesError(RuntimeError):
@@ -67,6 +78,50 @@ def validate_relpath(path: str, *, allow_empty: bool = False) -> str:
     if not parts and not allow_empty:
         raise ValueError("path required")
     return "/".join(parts)
+
+
+def normalize_relpath_pattern(path: str, *, allow_empty: bool = False) -> str:
+    raw = path.strip()
+    if not raw:
+        if allow_empty:
+            return ""
+        raise ValueError("path required")
+    if raw.startswith("/") or "\\" in raw:
+        raise ValueError(f"invalid path: {path}")
+    parts: list[str] = []
+    for part in raw.split("/"):
+        if part == "":
+            continue
+        if part in {".", ".."}:
+            raise ValueError(f"invalid path: {path}")
+        parts.append(part)
+    if not parts:
+        if allow_empty:
+            return ""
+        raise ValueError("path required")
+    return "/".join(parts)
+
+
+def has_glob_magic(path: str) -> bool:
+    return any(char in path for char in GLOB_CHARS)
+
+
+def parse_llm_spec(
+    spec: str,
+    *,
+    allow_empty: bool = False,
+    allow_glob: bool = False,
+) -> tuple[str, bool]:
+    if not spec.startswith(LLM_PREFIX):
+        raise ValueError(f"remote path must start with {LLM_PREFIX}")
+    raw = spec[len(LLM_PREFIX):]
+    dir_hint = bool(raw) and raw.endswith("/")
+    normalized = (
+        normalize_relpath_pattern(raw, allow_empty=allow_empty)
+        if allow_glob
+        else validate_relpath(raw, allow_empty=allow_empty)
+    )
+    return normalized, dir_hint
 
 
 def default_config_path(home: Path | None = None) -> Path:
@@ -297,6 +352,24 @@ def resolve_file(config: CloudFilesConfig, base_id: str, relpath: str) -> dict[s
     return matches[0]
 
 
+def resolve_entry(config: CloudFilesConfig, base_id: str, relpath: str) -> RemoteEntry:
+    normalized = validate_relpath(relpath)
+    parts = split_relpath(normalized)
+    parent_path = "/".join(parts[:-1])
+    parent_id = resolve_folder_path(config, base_id, parent_path, create=False)
+    matches = list_children(config, parent_id, name=parts[-1])
+    if not matches:
+        raise FileNotFoundError(normalized)
+    if len(matches) > 1:
+        raise CloudFilesError(f"ambiguous file path: {normalized}")
+    match = matches[0]
+    return RemoteEntry(
+        path=normalized,
+        id=str(match["id"]),
+        is_dir=match.get("mimeType") == FOLDER_MIME_TYPE,
+    )
+
+
 def resolve_base_id(config: CloudFilesConfig, *, use_llm_root: bool) -> str:
     if not use_llm_root:
         return "root"
@@ -304,18 +377,22 @@ def resolve_base_id(config: CloudFilesConfig, *, use_llm_root: bool) -> str:
     return resolve_folder_path(config, "root", llm_root, create=True)
 
 
-def read_text(config: CloudFilesConfig, relpath: str, *, use_llm_root: bool) -> str:
+def download_bytes(config: CloudFilesConfig, relpath: str, *, use_llm_root: bool) -> bytes:
     base_id = resolve_base_id(config, use_llm_root=use_llm_root)
-    info = resolve_file(config, base_id, relpath)
-    if info.get("mimeType") == FOLDER_MIME_TYPE:
+    entry = resolve_entry(config, base_id, relpath)
+    if entry.is_dir:
         raise CloudFilesError(f"path is a folder: {relpath}; use list instead")
-    body = drive_request(
+    return drive_request(
         config,
         "GET",
-        f"{DRIVE_API_ROOT}/{urllib.parse.quote(str(info['id']))}",
+        f"{DRIVE_API_ROOT}/{urllib.parse.quote(entry.id)}",
         query={"alt": "media", "supportsAllDrives": "true"},
         expect_json=False,
     )
+
+
+def read_text(config: CloudFilesConfig, relpath: str, *, use_llm_root: bool) -> str:
+    body = download_bytes(config, relpath, use_llm_root=use_llm_root)
     try:
         return body.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -356,11 +433,12 @@ def multipart_body(
     return b"".join(parts), boundary
 
 
-def write_text(
+def upload_bytes(
     config: CloudFilesConfig,
     relpath: str,
-    text: str,
+    content: bytes,
     *,
+    source_name: str | None = None,
     use_llm_root: bool = True,
 ) -> None:
     base_id = resolve_base_id(config, use_llm_root=use_llm_root)
@@ -373,8 +451,7 @@ def write_text(
     if len(existing) > 1:
         raise CloudFilesError(f"ambiguous file path: {normalized}")
 
-    content = text.encode("utf-8")
-    mime_type = mimetypes.guess_type(filename)[0] or "text/plain; charset=utf-8"
+    mime_type = mimetypes.guess_type(source_name or filename)[0] or "application/octet-stream"
 
     if existing:
         metadata = {"name": filename}
@@ -409,6 +486,22 @@ def write_text(
     )
 
 
+def write_text(
+    config: CloudFilesConfig,
+    relpath: str,
+    text: str,
+    *,
+    use_llm_root: bool = True,
+) -> None:
+    upload_bytes(
+        config,
+        relpath,
+        text.encode("utf-8"),
+        source_name=Path(relpath).name,
+        use_llm_root=use_llm_root,
+    )
+
+
 def delete_file(
     config: CloudFilesConfig,
     relpath: str,
@@ -427,6 +520,140 @@ def delete_file(
     )
 
 
+def walk_remote_entries(
+    config: CloudFilesConfig,
+    parent_id: str,
+    *,
+    prefix: str = "",
+) -> list[RemoteEntry]:
+    entries: list[RemoteEntry] = []
+    for child in list_children(config, parent_id):
+        name = str(child["name"])
+        path = f"{prefix}{name}"
+        entry = RemoteEntry(
+            path=path,
+            id=str(child["id"]),
+            is_dir=child.get("mimeType") == FOLDER_MIME_TYPE,
+        )
+        entries.append(entry)
+        if entry.is_dir:
+            entries.extend(
+                walk_remote_entries(config, entry.id, prefix=f"{entry.path}/")
+            )
+    return entries
+
+
+def match_remote_entries(
+    config: CloudFilesConfig,
+    base_id: str,
+    pattern: str,
+    *,
+    include_dirs: bool,
+) -> list[RemoteEntry]:
+    normalized = normalize_relpath_pattern(pattern, allow_empty=True)
+    if not normalized or not has_glob_magic(normalized):
+        raise ValueError("glob pattern required")
+    matches = [
+        entry
+        for entry in walk_remote_entries(config, base_id)
+        if (include_dirs or not entry.is_dir)
+        and PurePosixPath(entry.path).full_match(normalized)
+    ]
+    if not matches:
+        raise FileNotFoundError(normalized)
+    return sorted(matches, key=lambda entry: entry.path)
+
+
+def expand_local_sources(args: Sequence[str]) -> list[Path]:
+    sources: list[Path] = []
+    for raw in args:
+        matches = (
+            [Path(match) for match in glob.glob(raw, recursive=True)]
+            if has_glob_magic(raw)
+            else [Path(raw)]
+        )
+        if not matches:
+            raise FileNotFoundError(raw)
+        for path in matches:
+            if not path.exists():
+                raise FileNotFoundError(str(path))
+            if path.is_dir():
+                raise CloudFilesError(f"directory copy is not supported: {path}")
+            sources.append(path)
+    return sources
+
+
+def expand_remote_sources(
+    config: CloudFilesConfig,
+    source_specs: Sequence[str],
+    *,
+    use_llm_root: bool,
+) -> list[RemoteEntry]:
+    base_id = resolve_base_id(config, use_llm_root=use_llm_root)
+    sources: dict[str, RemoteEntry] = {}
+    for spec in source_specs:
+        pattern, _dir_hint = parse_llm_spec(spec, allow_glob=True)
+        if has_glob_magic(pattern):
+            for entry in match_remote_entries(
+                config,
+                base_id,
+                pattern,
+                include_dirs=False,
+            ):
+                sources[entry.path] = entry
+            continue
+        entry = resolve_entry(config, base_id, pattern)
+        if entry.is_dir:
+            raise CloudFilesError(f"path is a folder: {pattern}")
+        sources[entry.path] = entry
+    return [sources[path] for path in sorted(sources)]
+
+
+def resolve_local_target(
+    raw_dest: str,
+    *,
+    source_name: str,
+    multiple_sources: bool,
+) -> Path:
+    dest = Path(raw_dest)
+    dir_hint = raw_dest.endswith((os.sep, "/"))
+    if multiple_sources or dir_hint or dest.is_dir():
+        if not dest.exists():
+            raise CloudFilesError(f"destination directory does not exist: {dest}")
+        if not dest.is_dir():
+            raise CloudFilesError(f"destination is not a directory: {dest}")
+        return dest / source_name
+    if not dest.parent.exists():
+        raise CloudFilesError(f"destination directory does not exist: {dest.parent}")
+    return dest
+
+
+def resolve_remote_target(
+    config: CloudFilesConfig,
+    raw_dest_spec: str,
+    *,
+    source_name: str,
+    multiple_sources: bool,
+    use_llm_root: bool,
+) -> str:
+    dest_relpath, dir_hint = parse_llm_spec(raw_dest_spec, allow_empty=True)
+    base_id = resolve_base_id(config, use_llm_root=use_llm_root)
+    use_as_dir = multiple_sources or dir_hint
+    existing: RemoteEntry | None = None
+    if dest_relpath:
+        try:
+            existing = resolve_entry(config, base_id, dest_relpath)
+        except FileNotFoundError:
+            existing = None
+    if existing is not None and existing.is_dir:
+        use_as_dir = True
+    if existing is not None and not existing.is_dir and use_as_dir:
+        raise CloudFilesError(f"destination is not a directory: {raw_dest_spec}")
+    if use_as_dir:
+        return f"{dest_relpath}/{source_name}" if dest_relpath else source_name
+    return dest_relpath
+
+
 def read_entrypoint(args: Sequence[str], *, use_llm_root: bool) -> int:
     config = load_config()
     argv = list(args)
@@ -438,6 +665,92 @@ def read_entrypoint(args: Sequence[str], *, use_llm_root: bool) -> int:
 
     path = validate_relpath(argv[0]) if argv else validate_relpath("")
     sys.stdout.write(read_text(config, path, use_llm_root=use_llm_root))
+    return 0
+
+
+def cp_entrypoint(args: Sequence[str], *, use_llm_root: bool) -> int:
+    if len(args) < 2:
+        raise ValueError("usage: cp_llm.py <source>... <destination>")
+    config = load_config()
+    source_args = list(args[:-1])
+    raw_dest = args[-1]
+    dest_is_remote = raw_dest.startswith(LLM_PREFIX)
+    source_are_remote = [source.startswith(LLM_PREFIX) for source in source_args]
+
+    if dest_is_remote:
+        if any(source_are_remote):
+            raise ValueError("cp_llm.py requires exactly one remote side")
+        local_sources = expand_local_sources(source_args)
+        multiple_sources = len(local_sources) > 1
+        for source in local_sources:
+            remote_target = resolve_remote_target(
+                config,
+                raw_dest,
+                source_name=source.name,
+                multiple_sources=multiple_sources,
+                use_llm_root=use_llm_root,
+            )
+            upload_bytes(
+                config,
+                remote_target,
+                source.read_bytes(),
+                source_name=source.name,
+                use_llm_root=use_llm_root,
+            )
+        return 0
+
+    if not all(source_are_remote):
+        raise ValueError("cp_llm.py requires exactly one remote side")
+
+    remote_sources = expand_remote_sources(config, source_args, use_llm_root=use_llm_root)
+    multiple_sources = len(remote_sources) > 1
+    for source in remote_sources:
+        local_target = resolve_local_target(
+            raw_dest,
+            source_name=Path(source.path).name,
+            multiple_sources=multiple_sources,
+        )
+        local_target.write_bytes(
+            download_bytes(config, source.path, use_llm_root=use_llm_root)
+        )
+    return 0
+
+
+def ls_entrypoint(args: Sequence[str], *, use_llm_root: bool) -> int:
+    config = load_config()
+    specs = list(args) or [LLM_PREFIX]
+    base_id = resolve_base_id(config, use_llm_root=use_llm_root)
+    for spec in specs:
+        pattern, _dir_hint = parse_llm_spec(spec, allow_empty=True, allow_glob=True)
+        if not pattern:
+            for entry in list_entries(config, "", use_llm_root=use_llm_root):
+                print(entry)
+            continue
+        if has_glob_magic(pattern):
+            for entry in match_remote_entries(
+                config,
+                base_id,
+                pattern,
+                include_dirs=True,
+            ):
+                print(f"{entry.path}/" if entry.is_dir else entry.path)
+            continue
+        entry = resolve_entry(config, base_id, pattern)
+        if entry.is_dir:
+            for child in list_entries(config, pattern, use_llm_root=use_llm_root):
+                print(child)
+            continue
+        print(entry.path)
+    return 0
+
+
+def rm_entrypoint(args: Sequence[str], *, use_llm_root: bool) -> int:
+    if not args:
+        raise ValueError("usage: rm_llm.py <pattern>...")
+    config = load_config()
+    entries = expand_remote_sources(config, args, use_llm_root=use_llm_root)
+    for entry in entries:
+        delete_file(config, entry.path, use_llm_root=use_llm_root)
     return 0
 
 
@@ -472,13 +785,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
     if not args:
         print(
-            "usage: cloud_files.py {read|list|write|delete|read-remote|list-remote} ...",
+            "usage: cloud_files.py {cp|ls|rm|read|list|write|delete|read-remote|list-remote} ...",
             file=sys.stderr,
         )
         return 2
 
     command = args.pop(0)
     try:
+        if command == "cp":
+            return cp_entrypoint(args, use_llm_root=True)
+        if command == "ls":
+            return ls_entrypoint(args, use_llm_root=True)
+        if command == "rm":
+            return rm_entrypoint(args, use_llm_root=True)
         if command in {"read", "list"}:
             read_args = ["--list", *args] if command == "list" else args
             return read_entrypoint(read_args, use_llm_root=True)
@@ -490,7 +809,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             read_args = ["--list", *args] if command == "list-remote" else args
             return read_entrypoint(read_args, use_llm_root=False)
         print(
-            "usage: cloud_files.py {read|list|write|delete|read-remote|list-remote} ...",
+            "usage: cloud_files.py {cp|ls|rm|read|list|write|delete|read-remote|list-remote} ...",
             file=sys.stderr,
         )
         return 2
