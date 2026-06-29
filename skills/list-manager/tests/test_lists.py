@@ -8,13 +8,18 @@ import yaml
 
 LISTS_PY = Path(__file__).parent.parent / "scripts" / "lists.py"
 
-# A valid todo YAML used by multiple tests
+# A valid todo YAML used by multiple tests.
+# Domain categories (Work, Personal) must have exactly the 6 task-list subcategories.
+# Writing is at index 3; Tasks (with Book dentist) is at index 4.
 TODO_YAML = """\
 schema: todo
 name: todo
 categories:
 - name: Work
   categories:
+  - name: Replies
+  - name: Payments
+  - name: Reading
   - name: Writing
     entries:
     - id: a3f2b9
@@ -28,13 +33,23 @@ categories:
       state: inprogress
       created: '2026-06-28'
       deadline: '2026-07-10'
+  - name: Tasks
+  - name: Misc
 - name: Personal
-  entries:
-  - id: c3d1e5
-    title: Book dentist
-    state: done
-    created: '2026-06-20'
-    deadline: '2026-06-30'
+  categories:
+  - name: Replies
+  - name: Payments
+  - name: Reading
+  - name: Writing
+  - name: Tasks
+    entries:
+    - id: c3d1e5
+      title: Book dentist
+      state: done
+      created: '2026-06-20'
+      deadline: '2026-06-30'
+  - name: Misc
+  - name: Shop
 """
 
 
@@ -218,7 +233,7 @@ def test_create_entry_by_category_path(todo_file):
     result = run(["create-entry", str(todo_file), "Work/Writing"], stdin=NEW_ENTRY_YAML)
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
-    writing_cat = data["categories"][0]["categories"][0]
+    writing_cat = data["categories"][0]["categories"][3]
     assert writing_cat["name"] == "Writing"
     assert len(writing_cat["entries"]) == 3
     assert writing_cat["entries"][2]["title"] == "Draft blog post"
@@ -228,7 +243,7 @@ def test_create_entry_assigns_id(todo_file):
     result = run(["create-entry", str(todo_file), "Work/Writing"], stdin=NEW_ENTRY_NO_ID_YAML)
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
-    new_entry = data["categories"][0]["categories"][0]["entries"][2]
+    new_entry = data["categories"][0]["categories"][3]["entries"][2]
     assert "id" in new_entry
     assert len(new_entry["id"]) == 6
     assert all(c in "0123456789abcdef" for c in new_entry["id"])
@@ -244,7 +259,7 @@ def test_create_entry_by_entry_id(todo_file):
     result = run(["create-entry", str(todo_file), "a3f2b9"], stdin=child_yaml)
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
-    parent = data["categories"][0]["categories"][0]["entries"][0]
+    parent = data["categories"][0]["categories"][3]["entries"][0]
     assert parent["id"] == "a3f2b9"
     children = parent.get("children", [])
     assert len(children) == 1
@@ -275,7 +290,7 @@ def test_create_entry_from_file(todo_file, tmp_path):
     result = run(["create-entry", str(todo_file), "Work/Writing", "--entries", str(entries_file)])
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
-    assert len(data["categories"][0]["categories"][0]["entries"]) == 3
+    assert len(data["categories"][0]["categories"][3]["entries"]) == 3
 
 
 def test_create_entry_bulk(todo_file):
@@ -292,7 +307,7 @@ def test_create_entry_bulk(todo_file):
     result = run(["create-entry", str(todo_file), "Work/Writing"], stdin=bulk)
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
-    entries = data["categories"][0]["categories"][0]["entries"]
+    entries = data["categories"][0]["categories"][3]["entries"]
     assert len(entries) == 4
     titles = [e["title"] for e in entries]
     assert "Task A" in titles
@@ -306,7 +321,7 @@ def test_update_changes_state(todo_file):
     result = run(["update", str(todo_file)], stdin=update_yaml)
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
-    entry = data["categories"][0]["categories"][0]["entries"][0]
+    entry = data["categories"][0]["categories"][3]["entries"][0]
     assert entry["state"] == "done"
 
 
@@ -320,7 +335,7 @@ def test_update_multiple_entries(todo_file):
     result = run(["update", str(todo_file)], stdin=update_yaml)
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
-    entries = data["categories"][0]["categories"][0]["entries"]
+    entries = data["categories"][0]["categories"][3]["entries"]
     assert entries[0]["state"] == "done"
     assert entries[1]["deadline"] == "2026-07-20"
 
@@ -350,6 +365,6 @@ def test_update_from_file(todo_file, tmp_path):
     result = run(["update", str(todo_file), "--file", str(updates_file)])
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
-    entry = data["categories"][0]["categories"][0]["entries"][0]
+    entry = data["categories"][0]["categories"][3]["entries"][0]
     assert entry["state"] == "done"
 

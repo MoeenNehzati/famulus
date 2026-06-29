@@ -48,7 +48,8 @@ All subcommands take the local file path as their first argument.
 | `create-entry` | `create-entry <file> <target> [--entries <file>]` | Add entries to a category or as children of an entry. |
 | `update` | `update <file> [--file <file>]` | Update fields on entries by ID. |
 | `gen-id` | `gen-id <file> [--count n]` | Print n collision-free 6-char hex IDs (default 1). |
-| `migrate-md` | `migrate-md <src.md> <dst.yaml> --schema <name>` | Convert a Markdown list to YAML. |
+
+Migration from Markdown is a separate one-time script — see section 5.
 
 Non-zero exit → stop; do not upload; report the error from stderr.
 
@@ -134,6 +135,12 @@ python3 scripts/lists.py read /tmp/todo.yaml state=incomplete | python3 scripts/
 `beautify.py` strips IDs and formats hierarchically. The LLM sees raw YAML
 (with IDs for `update`/`create-entry`); the user sees beautified output.
 
+Flags:
+- `--diff` — outputs diff-format text (wrap in ` ```diff ` block in your reply for green/red rendering in conversation)
+- `--markdown` — outputs Markdown (strikethrough for done, bold for in-progress)
+- `--no-color` — disables ANSI color codes (default: on)
+- `-D` / `--no-descriptions` — hide entry descriptions (shown by default)
+
 ### 4.3 Create a new list
 
 ```bash
@@ -195,16 +202,31 @@ Prints one ID per line. IDs are collision-free against all existing IDs in the f
 
 ## 5. Migration (Markdown → YAML)
 
-To convert an old Markdown list to YAML:
+Migration is a **one-time operation** handled by a separate standalone script,
+not a `lists.py` subcommand. Requires `pip install dateparser`.
+
+```bash
+python3 scripts/migrate_md.py <src.md> <dst.yaml> --schema <name> [--name <list-name>]
+```
+
+Full workflow:
 
 1. Invoke cloud-files skill: download `lists/todo.md` to `/tmp/todo.md`
-2. Run: `python3 scripts/lists.py migrate-md /tmp/todo.md /tmp/todo.yaml --schema todo`
+2. Run: `python3 scripts/migrate_md.py /tmp/todo.md /tmp/todo.yaml --schema todo`
 3. Invoke cloud-files skill: upload `/tmp/todo.yaml` to `lists/todo.yaml`
 4. Invoke cloud-files skill: delete `lists/todo.md`
 
-`migrate-md` converts `- [ ]` (incomplete) and `- [x]` (done) items.
-Deadlines in `(due: ...)` are parsed; unresolvable ones are flagged in stderr
-but the file is still written with a placeholder date. Review the output.
+The script handles:
+- `- [x]` / `- [ ]` checkboxes → `state` field
+- `- [+]` / `- [-]` markers for potential-actions → `accepted` / `rejected`
+- `(MM/DD/YY)` creation date prefix on each item
+- Inline `(due: ...)` / `(deadline: ...)` tags
+- `deadline: <phrase>` continuation lines — parsed relative to the entry's creation date
+- Description continuation lines (any other indented text after an entry)
+- Nested checkboxes → `children[]`
+- Entries with no deadline fall back to their `created` date (flagged in stderr)
+
+Validates output against the target schema before writing. Exits nonzero on failure.
 
 ## 6. potential-actions ↔ todo workflow
 

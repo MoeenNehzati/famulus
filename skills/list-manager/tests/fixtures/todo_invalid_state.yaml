@@ -2,9 +2,16 @@ schema: todo
 name: My Todo List
 categories:
   - name: Work
-    entries:
-      - id: "a1b2c3"
-        title: Some task
-        created: "2026-06-01"
-        state: undecided
-        deadline: "2026-07-15"
+    categories:
+      - name: Replies
+      - name: Payments
+      - name: Reading
+      - name: Writing
+      - name: Tasks
+        entries:
+          - id: "a1b2c3"
+            title: Some task
+            created: "2026-06-01"
+            state: undecided
+            deadline: "2026-07-15"
+      - name: Misc

@@ -1,4 +1,8 @@
-# List Structure
+# List Structure (Legacy Markdown Format)
+
+> **This document describes the old Markdown format used before migration to YAML.**
+> It is kept as a reference for `scripts/migrate_md.py`. The current list format
+> is YAML — see `SKILL.md` sections 3–4 for the live format.
 
 A structured list file uses plain title lines as persistent headers, with
 task items nested beneath them.

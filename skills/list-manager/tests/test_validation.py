@@ -321,33 +321,139 @@ class TestTodoListSchema:
         errors = validate(schema, resolver, data)
         assert errors == []
 
-    def test_nested_categories(self):
+    def test_domain_category_with_all_subcategories(self):
+        """A domain category with all 6 required subcategories passes."""
         schema, resolver = load_list_schema("todo")
         data = {
             "schema": "todo",
-            "name": "Nested",
+            "name": "Valid",
             "categories": [
                 {
-                    "name": "Outer",
+                    "name": "Research",
                     "categories": [
-                        {
-                            "name": "Inner",
-                            "entries": [
-                                {
-                                    "id": "aabbcc",
-                                    "title": "Deep task",
-                                    "created": "2026-06-01",
-                                    "state": "incomplete",
-                                    "deadline": "2026-07-01",
-                                }
-                            ],
-                        }
+                        {"name": "Replies"},
+                        {"name": "Payments"},
+                        {"name": "Reading"},
+                        {"name": "Writing"},
+                        {"name": "Tasks"},
+                        {"name": "Misc"},
                     ],
                 }
             ],
         }
         errors = validate(schema, resolver, data)
         assert errors == []
+
+    def test_domain_category_missing_subcategory_fails(self):
+        """A domain category missing one required subcategory fails."""
+        schema, resolver = load_list_schema("todo")
+        data = {
+            "schema": "todo",
+            "name": "Invalid",
+            "categories": [
+                {
+                    "name": "Research",
+                    "categories": [
+                        {"name": "Replies"},
+                        {"name": "Payments"},
+                        {"name": "Reading"},
+                        {"name": "Writing"},
+                        # Tasks missing
+                        {"name": "Misc"},
+                    ],
+                }
+            ],
+        }
+        errors = validate(schema, resolver, data)
+        assert errors
+
+    def test_domain_category_extra_subcategory_fails(self):
+        """A non-Personal domain category with Shop (extra name) fails."""
+        schema, resolver = load_list_schema("todo")
+        data = {
+            "schema": "todo",
+            "name": "Invalid",
+            "categories": [
+                {
+                    "name": "Research",
+                    "categories": [
+                        {"name": "Replies"},
+                        {"name": "Payments"},
+                        {"name": "Reading"},
+                        {"name": "Writing"},
+                        {"name": "Tasks"},
+                        {"name": "Misc"},
+                        {"name": "Shop"},  # not allowed outside Personal
+                    ],
+                }
+            ],
+        }
+        errors = validate(schema, resolver, data)
+        assert errors
+
+    def test_personal_domain_allows_shop(self):
+        """Personal domain category requires Shop in addition to the 6 base subcategories."""
+        schema, resolver = load_list_schema("todo")
+        data = {
+            "schema": "todo",
+            "name": "Valid",
+            "categories": [
+                {
+                    "name": "Personal",
+                    "categories": [
+                        {"name": "Replies"},
+                        {"name": "Payments"},
+                        {"name": "Reading"},
+                        {"name": "Writing"},
+                        {"name": "Tasks"},
+                        {"name": "Misc"},
+                        {"name": "Shop"},
+                    ],
+                }
+            ],
+        }
+        errors = validate(schema, resolver, data)
+        assert errors == []
+
+    def test_personal_domain_without_shop_fails(self):
+        """Personal domain category missing Shop fails."""
+        schema, resolver = load_list_schema("todo")
+        data = {
+            "schema": "todo",
+            "name": "Invalid",
+            "categories": [
+                {
+                    "name": "Personal",
+                    "categories": [
+                        {"name": "Replies"},
+                        {"name": "Payments"},
+                        {"name": "Reading"},
+                        {"name": "Writing"},
+                        {"name": "Tasks"},
+                        {"name": "Misc"},
+                        # Shop missing
+                    ],
+                }
+            ],
+        }
+        errors = validate(schema, resolver, data)
+        assert errors
+
+    def test_domain_category_without_categories_key_fails(self):
+        """A domain category with no 'categories' field fails (required)."""
+        schema, resolver = load_list_schema("todo")
+        data = {
+            "schema": "todo",
+            "name": "Invalid",
+            "categories": [
+                {
+                    "name": "Research",
+                    # no categories key
+                }
+            ],
+        }
+        errors = validate(schema, resolver, data)
+        assert errors
 
 
 # ---------------------------------------------------------------------------
@@ -368,15 +474,25 @@ class TestPotentialActionsListSchema:
             "name": "My Options",
             "categories": [
                 {
-                    "name": "Career",
-                    "entries": [
+                    "name": "Research",
+                    "categories": [
+                        {"name": "Replies"},
+                        {"name": "Payments"},
+                        {"name": "Reading"},
                         {
-                            "id": "a1b2c3",
-                            "title": "Apply somewhere",
-                            "created": "2026-06-01",
-                            "state": "incomplete",
-                            "deadline": "2026-09-01",
-                        }
+                            "name": "Writing",
+                            "entries": [
+                                {
+                                    "id": "a1b2c3",
+                                    "title": "Apply somewhere",
+                                    "created": "2026-06-01",
+                                    "state": "incomplete",  # invalid for potential-actions
+                                    "deadline": "2026-09-01",
+                                }
+                            ],
+                        },
+                        {"name": "Tasks"},
+                        {"name": "Misc"},
                     ],
                 }
             ],

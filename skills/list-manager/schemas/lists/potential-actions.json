@@ -7,12 +7,47 @@
     "name": {"type": "string", "minLength": 1},
     "categories": {
       "type": "array",
-      "items": {"$ref": "#/definitions/category"}
+      "items": {"$ref": "#/definitions/domain_category"}
     }
   },
   "additionalProperties": false,
   "definitions": {
+    "domain_category": {
+      "description": "Top-level domain. Personal requires 7 subcategories (adds Shop); all others require exactly 6.",
+      "type": "object",
+      "required": ["name", "categories"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "categories": {}
+      },
+      "additionalProperties": false,
+      "if": {
+        "properties": { "name": { "const": "Personal" } },
+        "required": ["name"]
+      },
+      "then": {
+        "properties": {
+          "categories": {
+            "allOf": [
+              {"$ref": "task-list-personal.json"},
+              {"items": {"$ref": "#/definitions/category"}}
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "categories": {
+            "allOf": [
+              {"$ref": "task-list.json"},
+              {"items": {"$ref": "#/definitions/category"}}
+            ]
+          }
+        }
+      }
+    },
     "category": {
+      "description": "Subcategory (e.g. Replies, Tasks). May nest further categories and holds entries.",
       "type": "object",
       "required": ["name"],
       "properties": {

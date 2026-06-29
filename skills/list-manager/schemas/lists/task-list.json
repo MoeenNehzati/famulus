@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Constraint for task-list subcategory arrays. Domain categories must contain exactly: Replies, Payments, Reading, Writing, Tasks, Misc — no more, no fewer.",
+  "type": "array",
+  "uniqueItems": true,
+  "minItems": 6,
+  "maxItems": 6,
+  "items": {
+    "type": "object",
+    "required": ["name"],
+    "properties": {
+      "name": {
+        "enum": ["Replies", "Payments", "Reading", "Writing", "Tasks", "Misc"]
+      }
+    }
+  },
+  "allOf": [
+    { "contains": { "required": ["name"], "properties": { "name": { "const": "Replies"  } } } },
+    { "contains": { "required": ["name"], "properties": { "name": { "const": "Payments" } } } },
+    { "contains": { "required": ["name"], "properties": { "name": { "const": "Reading"  } } } },
+    { "contains": { "required": ["name"], "properties": { "name": { "const": "Writing"  } } } },
+    { "contains": { "required": ["name"], "properties": { "name": { "const": "Tasks"    } } } },
+    { "contains": { "required": ["name"], "properties": { "name": { "const": "Misc"     } } } }
+  ]
+}

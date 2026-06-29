@@ -1,24 +1,30 @@
 schema: potential-actions
 name: Potential Actions
 categories:
-  - name: Career
-    entries:
-      - id: "ab12cd"
-        title: Apply for senior role at Acme
-        created: "2026-05-01"
-        state: undecided
-        deadline: "2026-08-01"
-        description: Interesting position, good comp
-      - id: "ef34cd"
-        title: Take online ML course
-        created: "2026-06-01"
-        state: accepted
-        deadline: "2026-12-31"
-        location: home
-  - name: Health
-    entries:
-      - id: "12ab34"
-        title: Try intermittent fasting
-        created: "2026-06-10"
-        state: rejected
-        deadline: "2026-07-01"
+  - name: Research
+    categories:
+      - name: Replies
+      - name: Payments
+      - name: Reading
+      - name: Writing
+        entries:
+          - id: "ab12cd"
+            title: Apply for senior role at Acme
+            created: "2026-05-01"
+            state: undecided
+            deadline: "2026-08-01"
+            description: Interesting position, good comp
+          - id: "ef34cd"
+            title: Take online ML course
+            created: "2026-06-01"
+            state: accepted
+            deadline: "2026-12-31"
+            location: home
+      - name: Tasks
+        entries:
+          - id: "12ab34"
+            title: Try intermittent fasting
+            created: "2026-06-10"
+            state: rejected
+            deadline: "2026-07-01"
+      - name: Misc
