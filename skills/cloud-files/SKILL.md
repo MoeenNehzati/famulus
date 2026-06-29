@@ -1,9 +1,10 @@
 ---
 name: cloud-files
 description: |
-  Read, list, write, and delete plain files under a configured cloud remote's
-  `assistant/` prefix through a skill-owned script. Use when another skill
-  needs narrow cloud-file storage without exposing arbitrary remote paths.
+  Read, write, and delete plain files under a configured Google Drive LLM root
+  through skill-owned Python scripts. Use when another skill needs bounded
+  cloud-file storage or a separately prompted broader read from the configured
+  Drive root.
 ---
 
 When this skill is used, begin with:
@@ -16,41 +17,35 @@ Dependencies: none
 
 ## 0. Boundary
 
-This skill owns cloud file transport. Other skills should not mention or call
-the underlying storage tool. They should ask this skill to operate on files
-under the assistant storage prefix.
+This skill owns Google Drive transport. Other skills should call this skill's
+scripts rather than speaking to the Drive API directly.
 
-The script only permits paths under:
+Install-time config lives at `~/.config/cloud-files/config.json`.
+OAuth credentials live at `~/.config/cloud-files/credentials.json`.
 
-```text
-<remote>:assistant/
-```
+If credentials are missing, place your Google OAuth client JSON at `~/.config/cloud-files/client.json` and run `scripts/setup_oauth.py`. This one-time setup is intentionally outside `permissions.json`.
 
-It rejects absolute paths, empty paths for file operations, `..`, and remote
-names containing path separators or `:`.
+## 1. Preapproved LLM-root operations
 
-## 1. Commands
-
-Use only this script:
+Use only these scripts for routine LLM storage:
 
 ```bash
-scripts/cloud-files.sh <operation> [path]
+scripts/read_llm_file.py [--list] [path]
+scripts/write_llm_file.py <path>
+scripts/delete_llm_file.py <path>
 ```
 
-Operations:
+These scripts operate only under the configured `remote_llm_root`.
 
-- `list [path]`: list files/directories under `assistant/<path>`; if `path`
-  is omitted, list `assistant/`.
-- `read <path>`: print `assistant/<path>` to stdout.
-- `write <path>`: read stdin and overwrite `assistant/<path>`.
-- `delete <path>`: delete `assistant/<path>`.
+## 2. Separately prompted broader reads
 
-Environment:
+For a broader read from Google Drive root, use:
 
-- `CLOUD_FILES_REMOTE`: remote name, default `GDrive`.
-- `CLOUD_FILES_TIMEOUT_SECONDS`: timeout for each remote operation, default
-  `45`.
+```bash
+scripts/read_remote.py [--list] [path]
+```
 
-If the script exits nonzero, the remote state is unknown. Report the visible
-error and do not infer that a file is missing or empty unless the script
-successfully returned empty output.
+It is intentionally not listed in `permissions.json`.
+
+If a script exits nonzero, report the visible error and do not infer remote
+state beyond what the successful output established.

@@ -57,6 +57,8 @@ def parse_args() -> argparse.Namespace:
         help="Skip updating the system shell rc")
     parser.add_argument("--default-llm",    choices=["claude", "codex"],
         help="Default assistant backend (prompted if omitted)")
+    parser.add_argument("--cloud-files-remote-llm-root", metavar="PATH", default="assistant/",
+        help="Path under the Drive root reserved for LLM files (default: assistant/)")
 
     return parser.parse_args()
 
@@ -89,6 +91,7 @@ def main() -> None:
         claude_home=claude_home,
         codex_home=codex_home,
         default_llm=args.default_llm,
+        cloud_files_remote_llm_root=args.cloud_files_remote_llm_root,
         update_system_shell_rc=not args.no_system_shell_rc,
         dry_run=args.dry_run,
     )

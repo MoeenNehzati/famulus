@@ -127,8 +127,6 @@ def parse_args() -> argparse.Namespace:
         help="Claude config dir for profile symlinks (default: $CLAUDE_HOME or ~/.claude)")
     parser.add_argument("--default-llm", choices=["claude", "codex"],
         help="Default backend for assistant (prompted if omitted)")
-    parser.add_argument("--cloud-files-remote", metavar="ID", default="root",
-        help="Google Drive root folder id for cloud-files (default: root)")
     parser.add_argument("--cloud-files-remote-llm-root", metavar="PATH", default="assistant/",
         help="Path under the Drive root reserved for LLM files (default: assistant/)")
     parser.add_argument("--no-system-shell-rc", action="store_true",
@@ -249,7 +247,7 @@ def install_git_hooks(repo_root: Path, hooks_dir: Path, dry_run: bool) -> None:
         )
 
 
-def install_cloud_files_config(home: Path, remote: str, remote_llm_root: str, dry_run: bool) -> None:
+def install_cloud_files_config(home: Path, remote_llm_root: str, dry_run: bool) -> None:
     """Write the cloud-files config under ~/.config/cloud-files/."""
     config_dir = home / ".config" / "cloud-files"
     config_path = config_dir / "config.json"
@@ -267,7 +265,6 @@ def install_cloud_files_config(home: Path, remote: str, remote_llm_root: str, dr
         raise SystemExit(str(exc)) from exc
 
     payload: dict[str, object] = {
-        "remote": remote,
         "remote_llm_root": normalized_llm_root,
         "timeout_seconds": int(existing.get("timeout_seconds", 45)),
     }
@@ -280,6 +277,66 @@ def install_cloud_files_config(home: Path, remote: str, remote_llm_root: str, dr
 
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def cloud_files_client_setup_lines(home: Path) -> list[str]:
+    client_json = home / ".config" / "cloud-files" / "client.json"
+    return [
+        "Cloud-files Google OAuth client setup still needed.",
+        "  In Google Cloud Console, create or download an OAuth client JSON for a Desktop app.",
+        f"  Save that file as: {client_json}",
+    ]
+
+
+def maybe_run_cloud_files_oauth_setup(
+    home: Path,
+    repo_root: Path,
+    *,
+    dry_run: bool,
+    stdin_isatty: bool | None = None,
+) -> str:
+    credentials_path = home / ".config" / "cloud-files" / "credentials.json"
+    if credentials_path.exists():
+        return "already_configured"
+
+    client_json = home / ".config" / "cloud-files" / "client.json"
+    setup_script = repo_root / "skills" / "cloud-files" / "scripts" / "setup_oauth.py"
+
+    if dry_run:
+        if client_json.exists():
+            log(f"Would run cloud-files OAuth setup: {sys.executable} {setup_script}")
+            return "would_run"
+        for line in cloud_files_client_setup_lines(home):
+            log(line)
+        log("  Then re-run the installer to launch browser authorization.")
+        return "needs_client_json"
+
+    if not client_json.exists():
+        for line in cloud_files_client_setup_lines(home):
+            log(line)
+        if stdin_isatty is None:
+            stdin_isatty = sys.stdin.isatty()
+        if not stdin_isatty:
+            log("  Cloud-files OAuth skipped for now: client.json is still missing.")
+            return "needs_client_json"
+        reply = input(
+            "Press Enter after saving client.json to launch browser authorization, "
+            "or type 'skip' to continue without it: "
+        ).strip().lower()
+        if reply == "skip":
+            log("  Cloud-files OAuth skipped.")
+            return "skipped"
+        if not client_json.exists():
+            log("  Cloud-files OAuth skipped: client.json is still missing.")
+            return "needs_client_json"
+
+    log("Launching cloud-files browser authorization...")
+    result = subprocess.run([sys.executable, str(setup_script)], check=False)
+    if result.returncode == 0:
+        return "configured"
+
+    log(f"Warning: cloud-files OAuth setup exited {result.returncode}.")
+    return "failed"
 
 
 def install_ai_agent_env(home: Path, dry_run: bool) -> None:
@@ -566,7 +623,6 @@ def run(
     codex_home: Path | None = None,
     claude_home: Path | None = None,
     default_llm: str | None = None,
-    cloud_files_remote: str = "root",
     cloud_files_remote_llm_root: str = "assistant/",
     update_system_shell_rc: bool = True,
     dry_run: bool = False,
@@ -622,7 +678,6 @@ def run(
     install_ai_agent_env(home, dry_run)
     install_cloud_files_config(
         home,
-        remote=cloud_files_remote,
         remote_llm_root=cloud_files_remote_llm_root,
         dry_run=dry_run,
     )
@@ -658,6 +713,15 @@ def run(
         log(f"  User shell rc:  {shell_rc}")
         if update_system_shell_rc:
             log(f"  System rc:      {system_shell_rc}")
+    cloud_files_status = maybe_run_cloud_files_oauth_setup(
+        home,
+        repo_root,
+        dry_run=dry_run,
+    )
+    if cloud_files_status == "already_configured":
+        log("Cloud-files OAuth already configured.")
+    elif cloud_files_status == "configured":
+        log("Cloud-files OAuth configured.")
     log("")
     if sys.platform == "win32":
         log("Open a new terminal to use the installed commands.")
@@ -678,7 +742,6 @@ def main() -> None:
         codex_home=Path(args.codex_home)  if args.codex_home  else None,
         claude_home=Path(args.claude_home) if args.claude_home else None,
         default_llm=args.default_llm,
-        cloud_files_remote=args.cloud_files_remote,
         cloud_files_remote_llm_root=args.cloud_files_remote_llm_root,
         update_system_shell_rc=not args.no_system_shell_rc,
         dry_run=args.dry_run,

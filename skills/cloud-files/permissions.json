@@ -1,6 +1,8 @@
 {
   "bash": [
-    "Bash(scripts/cloud-files.sh:*)"
+    "Bash(scripts/read_llm_file.py:*)",
+    "Bash(scripts/write_llm_file.py:*)",
+    "Bash(scripts/delete_llm_file.py:*)"
   ],
   "network": []
 }

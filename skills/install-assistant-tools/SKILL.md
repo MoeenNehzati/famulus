@@ -11,7 +11,8 @@ Skill: install-assistant-tools
 
 Category: automation
 
-Dependencies: none
+Dependencies:
+- cloud-files
 
 ## Platform Support
 
@@ -53,6 +54,10 @@ Before running anything, summarize:
 - A minimal block will be written to the shell rc exporting PATH and `$AI`.
 - Worker directories will be created if absent.
 - Git hooks will be configured.
+- `~/.config/cloud-files/config.json` will be written.
+- If `~/.config/cloud-files/client.json` already exists, the installer will
+  launch the browser-based Google Drive authorization step; otherwise it will
+  tell the user how to get that file and where to save it.
 - The installer will run basic checks at the end to confirm everything works.
 
 Ask for confirmation before proceeding.
@@ -78,6 +83,19 @@ terminals pick up the change immediately — no reboot needed.
 
 The scripts are self-documenting — check their inline comments for what each
 step does and why.
+
+If the Google Drive credentials are missing, the installer handles first-run
+setup like this:
+
+- If `~/.config/cloud-files/client.json` is missing, it tells the user to
+  download a Google OAuth client JSON for a Desktop app and save it there.
+- On interactive runs, it then waits for that file and launches the browser
+  authorization step in the same install session. On non-interactive runs, it
+  stops after printing the instructions.
+- Once the client JSON exists, it runs the browser-based authorization helper,
+  which writes `~/.config/cloud-files/credentials.json`.
+- The upload/download/delete smoke test stays under the file-storage skill's
+  own tests, not in this installer.
 
 ### 3. Sanity check
 
