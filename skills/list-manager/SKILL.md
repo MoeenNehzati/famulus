@@ -136,9 +136,8 @@ python3 scripts/lists.py read /tmp/todo.yaml state=incomplete | python3 scripts/
 (with IDs for `update`/`create-entry`); the user sees beautified output.
 
 Flags:
-- `--diff` — outputs diff-format text (wrap in ` ```diff ` block in your reply for green/red rendering in conversation)
+- `--diff` — force diff renderer; auto-enabled for `todo` and `potential-actions` schemas; wrap output in a ` ```diff ` block in your reply
 - `--markdown` — outputs Markdown (strikethrough for done, bold for in-progress)
-- `--no-color` — disables ANSI color codes (default: on)
 - `-D` / `--no-descriptions` — hide entry descriptions (shown by default)
 
 ### 4.3 Create a new list

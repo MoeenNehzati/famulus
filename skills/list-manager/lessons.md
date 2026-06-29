@@ -1,12 +1,42 @@
 # List Manager — Project Lessons
 
-## Color rendering in conversation output
+## Color rendering in conversation output (exhaustive empirical map)
 
-**Context:** beautify.py output shown in conversation via `--diff` flag.
+**Context:** beatify.py `--diff` output shown in `diff` code blocks in conversation. Tested exhaustively June 2026.
 
-**Lesson:** In `diff` code blocks, only `+` lines (green) and `-` lines (red) render with color in the assistant's conversation renderer (verified on this user's setup). `@@...@@` hunk headers do **not** render as cyan — they stay white. ANSI escape codes are stripped entirely in the bash tool output panel. HTML `<span style="color:...">` tags are stripped by the conversation renderer.
+**Confirmed colors (3 total):**
+- **Green**: `+` prefix, OR any line whose content contains `=` characters (even with space prefix — space is hidden, `=` triggers green). Also `---`, `+++`, merge conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`), git meta lines (`diff --git`, `index`, `old mode`, `new mode`), `\`, `!`, `~` — these all render green, not their "standard" diff color.
+- **Red**: single `-` prefix only. The `-` character is always visible (no hidden equivalent for red).
+- **White**: space prefix (` `) with no `=` in content; `!!`; everything else not listed above.
 
-**Use/Avoid:** The only reliable color signal available for conversation output is `+` = green. Use `@@` headers for visual separation only, not for color. Do not attempt ANSI or HTML color in conversation output.
+**Confirmed non-functional:**
+- `@@...@@` hunk headers — do NOT render cyan in this renderer, even with proper git format (`@@ -0,0 +1 @@ Name`). Render white.
+- `{n,m}` line-highlight annotation — works with `python` etc. but NOT with `diff` (annotation shows as literal text, not applied).
+- `diff-python`, `diff-yaml` and other combo language tags — do not blend syntax highlighting with diff colors; render gray/white only.
+- ANSI escape codes (including 24-bit true-color `\033[38;2;R;G;Bm`) — the ESC character is stripped but the remainder (`[38;2;255;0;0m`) renders as visible garbage text. Not silently ignored — actively corrupts output.
+- HTML `<span style="color:...">` — stripped by conversation renderer.
+- Other syntax highlighters (Python, CSS, YAML, TOML, INI) — all render white/unstyled in the conversation renderer.
+- `---` (three dashes) — renders **green**, not red. Treated as a diff file header (`--- a/file`), not a deletion marker. Do not use `---` expecting red separators.
+
+**Key asymmetry:** Green can be achieved without a visible marker (space prefix + `=` content). Red cannot — `-` is always shown. There is no mechanism for cyan, gray, bold, or italic in diff blocks.
+
+**Use/Avoid:** Use ` === Name ===` (space + `=`) for green headers with no visible marker. Use `-=== Name ===` for red headers (accepts the visible `-`). Do not attempt ANSI, HTML, `@@`, or language combos. Do not attempt to get a 4th color — none exists in this renderer.
+
+---
+
+## beautify.py diff renderer design decisions
+
+**Context:** `--diff` renderer redesigned June 2026 for in-conversation color display.
+
+**Decisions:**
+- State symbols (`☐ ▷ ✓ ✗`) removed from diff output — color alone conveys state.
+- `inprogress` and `accepted` → `+` (green); `rejected` → `-` (red); all others → ` ` (white).
+- Category headers: `+{pad}=== Name ===` (green, space hidden by renderer, `+` shown).
+- Subcategory headers: `-{pad}=== Name ===` (red, `-` shown — unavoidable).
+- `todo` and `potential-actions` schemas auto-use diff renderer; other schemas fall back to rich.
+- Plain ANSI renderer (`--no-color`) removed — ANSI is stripped in the conversation renderer anyway.
+
+**Use/Avoid:** Do not re-add state symbols to diff output. Do not reintroduce `--no-color`. When adding new schemas that need color, add them to `DIFF_SCHEMAS` in beautify.py.
 
 ---
 
