@@ -30,7 +30,7 @@ STATE_SYMBOL = {
     "rejected":   "✗",
 }
 
-DIFF_SCHEMAS = {"todo", "potential-actions"}
+DIFF_SCHEMAS = {"todo", "potential-actions", "default"}
 
 # ── Rich renderer (fallback for non-diff schemas) ─────────────────────────────
 
@@ -123,7 +123,7 @@ def _rich_render(data, show_desc: bool) -> None:
 # White: space prefix
 
 def _diff_marker(state):
-    if state in ("accepted", "inprogress"):
+    if state in ("accepted", "inprogress", "done"):
         return "+"
     if state == "rejected":
         return "-"

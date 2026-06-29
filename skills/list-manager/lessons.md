@@ -30,10 +30,10 @@
 
 **Decisions:**
 - State symbols (`☐ ▷ ✓ ✗`) removed from diff output — color alone conveys state.
-- `inprogress` and `accepted` → `+` (green); `rejected` → `-` (red); all others → ` ` (white).
-- Category headers: `+{pad}=== Name ===` (green, space hidden by renderer, `+` shown).
+- `done`, `inprogress`, `accepted` → `+` (green); `rejected` → `-` (red); `incomplete`, `undecided` → ` ` (white).
+- Category headers: `+{pad}=== Name ===` (green, `+` shown).
 - Subcategory headers: `-{pad}=== Name ===` (red, `-` shown — unavoidable).
-- `todo` and `potential-actions` schemas auto-use diff renderer; other schemas fall back to rich.
+- `todo`, `potential-actions`, and `default` schemas auto-use diff renderer; other schemas fall back to rich.
 - Plain ANSI renderer (`--no-color`) removed — ANSI is stripped in the conversation renderer anyway.
 
 **Use/Avoid:** Do not re-add state symbols to diff output. Do not reintroduce `--no-color`. When adding new schemas that need color, add them to `DIFF_SCHEMAS` in beautify.py.

@@ -136,7 +136,10 @@ python3 scripts/lists.py read /tmp/todo.yaml state=incomplete | python3 scripts/
 (with IDs for `update`/`create-entry`); the user sees beautified output.
 
 Flags:
-- `--diff` — force diff renderer; auto-enabled for `todo` and `potential-actions` schemas; wrap output in a ` ```diff ` block in your reply
+- `--diff` — force diff renderer; auto-enabled for `todo`, `potential-actions`, and `default` schemas; wrap output in a ` ```diff ` block in your reply
+  - Green (`+`): `done`, `inprogress`, `accepted`
+  - Red (`-`): `rejected`
+  - White (` `): `incomplete`, `undecided`
 - `--markdown` — outputs Markdown (strikethrough for done, bold for in-progress)
 - `-D` / `--no-descriptions` — hide entry descriptions (shown by default)
 
