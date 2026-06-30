@@ -13,6 +13,11 @@ Usage:
     setup_oauth.py                              # reads ~/.config/cloud-files/client.json
     setup_oauth.py --from-json /path/to/client_secret_*.json
     setup_oauth.py --client-id ID --client-secret SECRET [--port 8765]
+
+Re-running this is safe (e.g. if the refresh token is later revoked or if the
+OAuth consent screen stays in "Testing"). If you do not want repeated
+re-authorization in that case, publish the app / move it to "In production"
+from Google Cloud OAuth -> Audience first.
 """
 
 from __future__ import annotations
@@ -140,6 +145,8 @@ def main() -> None:
     server = http.server.HTTPServer(("localhost", args.port), Handler)
 
     print("Opening browser for Google Drive authorization...")
+    print('Tip: if the OAuth consent screen is still in "Testing", Google may require repeated re-authorization after about 7 days.')
+    print('If you do not want that, publish the app / move it to "In production" from Google Cloud OAuth -> Audience before completing auth.')
     print(f"If it doesn't open automatically, visit:\n{auth_url}\n")
     webbrowser.open(auth_url)
 

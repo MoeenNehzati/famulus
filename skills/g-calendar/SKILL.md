@@ -182,7 +182,7 @@ as smnehzati@gmail.com:
 - **Enable the API**: APIs & Services -> Library -> "Google Calendar API"
   -> Enable (skip if already enabled).
 - **OAuth consent screen**: User type External. Add scope
-  `https://www.googleapis.com/auth/calendar`. Check **Publishing status**:
+  `https://www.googleapis.com/auth/calendar`. Check **Publishing status** (in the current Google Cloud UI this is usually under **OAuth -> Audience**):
   - "Testing" -> refresh tokens expire after 7 days. Try "Publish App" to
     move to "In production": for an unverified app with this sensitive
     scope, Google may still allow publishing for a small number of users

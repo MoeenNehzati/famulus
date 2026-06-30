@@ -25,6 +25,8 @@ OAuth credentials live at `~/.config/cloud-files/credentials.json`.
 
 If credentials are missing, place your Google OAuth client JSON at `~/.config/cloud-files/client.json` and run `scripts/setup_oauth.py`. This one-time setup is intentionally outside `permissions.json`.
 
+If the OAuth app stays in Google Cloud **Testing**, Google may expire refresh tokens after about 7 days. If you do not want repeated re-authorization, use **OAuth -> Audience** and click **Publish app** / move the app to **In production** before running `scripts/setup_oauth.py`.
+
 ## 1. Preapproved LLM-root operations
 
 Use these scripts for routine LLM storage:

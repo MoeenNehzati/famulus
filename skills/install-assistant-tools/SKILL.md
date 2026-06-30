@@ -13,6 +13,7 @@ Category: automation
 
 Dependencies:
 - cloud-files
+- g-calendar
 
 ## Platform Support
 
@@ -55,9 +56,12 @@ Before running anything, summarize:
 - Worker directories will be created if absent.
 - Git hooks will be configured.
 - `~/.config/cloud-files/config.json` will be written.
-- If `~/.config/cloud-files/client.json` already exists, the installer will
-  launch the browser-based Google Drive authorization step; otherwise it will
-  tell the user how to get that file and where to save it.
+- After the core install, the installer will run a separate optional Google-services step and ask whether to connect:
+  - Google Drive for `cloud-files`
+  - Google Calendar for `g-calendar`
+- If the user chooses a service and `~/.config/<skill>/client.json` already exists, the installer will launch that service's browser-based authorization step.
+- If the client JSON is missing, the installer will explain how to get it and where to save it.
+- If the OAuth consent screen stays in **Testing**, Google may require repeated re-authorization; users who want to avoid that should use **OAuth -> Audience** and click **Publish app** / move the app to **In production**.
 - The installer will run basic checks at the end to confirm everything works.
 - If any destination path already exists (symlink, file, or directory), the
   installer will prompt before writing — it never overwrites silently. See
@@ -87,18 +91,15 @@ terminals pick up the change immediately — no reboot needed.
 The scripts are self-documenting — check their inline comments for what each
 step does and why.
 
-If the Google Drive credentials are missing, the installer handles first-run
-setup like this:
+Optional Google services step:
 
-- If `~/.config/cloud-files/client.json` is missing, it tells the user to
-  download a Google OAuth client JSON for a Desktop app and save it there.
-- On interactive runs, it then waits for that file and launches the browser
-  authorization step in the same install session. On non-interactive runs, it
-  stops after printing the instructions.
-- Once the client JSON exists, it runs the browser-based authorization helper,
-  which writes `~/.config/cloud-files/credentials.json`.
-- The upload/download/delete smoke test stays under the file-storage skill's
-  own tests, not in this installer.
+- After the core install, the installer separately asks whether to connect Google Drive (`cloud-files`) and/or Google Calendar (`g-calendar`).
+- For each selected service:
+  - If `~/.config/<skill>/credentials.json` already exists, the installer reports it as already configured.
+  - If `~/.config/<skill>/client.json` is missing, it tells the user to download a Google OAuth client JSON for a Desktop app and save it there.
+  - On interactive runs, it can wait for that file and then launch browser authorization in the same install session. On non-interactive runs, it stops after printing the instructions.
+- Advise users that keeping the OAuth consent screen in **Testing** may cause repeated re-authorization; publishing the app / moving it to **In production** is preferred for long-term personal use.
+- The file-storage upload/download/delete smoke test stays under the cloud-files skill's own tests, not in this installer.
 
 ### 3. Sanity check
 

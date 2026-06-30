@@ -65,6 +65,23 @@ AGENTS = ["assistant", "collab", "coauthor"]
 # Legacy symlink targets to clean up (filenames only, checked in bin and homes).
 LEGACY_NAMES = ["coder", "coder.config.toml"]
 
+GOOGLE_OAUTH_SERVICE_ORDER = ["cloud-files", "g-calendar"]
+
+GOOGLE_OAUTH_SERVICES: dict[str, dict[str, str]] = {
+    "cloud-files": {
+        "label": "Google Drive (cloud-files)",
+        "status_label": "Cloud-files OAuth",
+        "config_dir": "cloud-files",
+        "skill_dir": "cloud-files",
+    },
+    "g-calendar": {
+        "label": "Google Calendar (g-calendar)",
+        "status_label": "g-calendar OAuth",
+        "config_dir": "g-calendar",
+        "skill_dir": "g-calendar",
+    },
+}
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -279,13 +296,85 @@ def install_cloud_files_config(home: Path, remote_llm_root: str, dry_run: bool) 
     config_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-def cloud_files_client_setup_lines(home: Path) -> list[str]:
-    client_json = home / ".config" / "cloud-files" / "client.json"
+def google_oauth_publish_guidance_lines() -> list[str]:
     return [
-        "Cloud-files Google OAuth client setup still needed.",
+        '  If the app stays in Google OAuth "Testing", Google may require repeated re-authorization again after about 7 days.',
+        '  If you do not want repeated re-authorization, use Google Cloud OAuth -> Audience and click "Publish app" / move it to "In production".',
+    ]
+
+
+def google_service_client_setup_lines(home: Path, *, service_key: str) -> list[str]:
+    spec = GOOGLE_OAUTH_SERVICES[service_key]
+    client_json = home / ".config" / spec["config_dir"] / "client.json"
+    lines = [
+        f'{spec["label"]} OAuth client setup still needed.',
         "  In Google Cloud Console, create or download an OAuth client JSON for a Desktop app.",
         f"  Save that file as: {client_json}",
     ]
+    lines.extend(google_oauth_publish_guidance_lines())
+    return lines
+
+
+def cloud_files_client_setup_lines(home: Path) -> list[str]:
+    return google_service_client_setup_lines(home, service_key="cloud-files")
+
+
+def g_calendar_client_setup_lines(home: Path) -> list[str]:
+    return google_service_client_setup_lines(home, service_key="g-calendar")
+
+
+def maybe_run_google_oauth_setup(
+    home: Path,
+    repo_root: Path,
+    *,
+    service_key: str,
+    dry_run: bool,
+    stdin_isatty: bool | None = None,
+) -> str:
+    spec = GOOGLE_OAUTH_SERVICES[service_key]
+    credentials_path = home / ".config" / spec["config_dir"] / "credentials.json"
+    if credentials_path.exists():
+        return "already_configured"
+
+    client_json = home / ".config" / spec["config_dir"] / "client.json"
+    setup_script = repo_root / "skills" / spec["skill_dir"] / "scripts" / "setup_oauth.py"
+    setup_lines = google_service_client_setup_lines(home, service_key=service_key)
+
+    if dry_run:
+        if client_json.exists():
+            log(f'Would run {spec["status_label"]}: {sys.executable} {setup_script}')
+            return "would_run"
+        for line in setup_lines:
+            log(line)
+        log("  Then re-run the installer or choose this service in the optional Google setup step to launch browser authorization.")
+        return "needs_client_json"
+
+    if not client_json.exists():
+        for line in setup_lines:
+            log(line)
+        if stdin_isatty is None:
+            stdin_isatty = sys.stdin.isatty()
+        if not stdin_isatty:
+            log(f'  {spec["status_label"]} skipped for now: client.json is still missing.')
+            return "needs_client_json"
+        reply = input(
+            f'Press Enter after saving {client_json.name} to launch browser authorization for {spec["label"]}, '
+            "or type 'skip' to continue without it: "
+        ).strip().lower()
+        if reply == "skip":
+            log(f'  {spec["status_label"]} skipped.')
+            return "skipped"
+        if not client_json.exists():
+            log(f'  {spec["status_label"]} skipped: client.json is still missing.')
+            return "needs_client_json"
+
+    log(f'Launching {spec["label"]} browser authorization...')
+    result = subprocess.run([sys.executable, str(setup_script)], check=False)
+    if result.returncode == 0:
+        return "configured"
+
+    log(f'Warning: {spec["status_label"]} exited {result.returncode}.')
+    return "failed"
 
 
 def maybe_run_cloud_files_oauth_setup(
@@ -295,48 +384,130 @@ def maybe_run_cloud_files_oauth_setup(
     dry_run: bool,
     stdin_isatty: bool | None = None,
 ) -> str:
-    credentials_path = home / ".config" / "cloud-files" / "credentials.json"
-    if credentials_path.exists():
-        return "already_configured"
+    return maybe_run_google_oauth_setup(
+        home,
+        repo_root,
+        service_key="cloud-files",
+        dry_run=dry_run,
+        stdin_isatty=stdin_isatty,
+    )
 
-    client_json = home / ".config" / "cloud-files" / "client.json"
-    setup_script = repo_root / "skills" / "cloud-files" / "scripts" / "setup_oauth.py"
+
+def maybe_run_g_calendar_oauth_setup(
+    home: Path,
+    repo_root: Path,
+    *,
+    dry_run: bool,
+    stdin_isatty: bool | None = None,
+) -> str:
+    return maybe_run_google_oauth_setup(
+        home,
+        repo_root,
+        service_key="g-calendar",
+        dry_run=dry_run,
+        stdin_isatty=stdin_isatty,
+    )
+
+
+def choose_optional_google_services(
+    pending_services: list[str],
+    *,
+    stdin_isatty: bool | None = None,
+    input_func=input,
+) -> set[str]:
+    if not pending_services:
+        return set()
+
+    if stdin_isatty is None:
+        stdin_isatty = sys.stdin.isatty()
+    if not stdin_isatty:
+        log("Optional Google service setup skipped in non-interactive mode.")
+        return set()
+
+    log("")
+    log("Optional Google services step:")
+    for service_key in pending_services:
+        log(f'  - {GOOGLE_OAUTH_SERVICES[service_key]["label"]}')
+    log('  Keeping an OAuth app in "Testing" may cause repeated re-authorization; publish it if you want longer-lived access.')
+
+    if pending_services == ["cloud-files"]:
+        reply = input_func("Connect Google Drive for cloud-files now? [y/N]: ").strip().lower()
+        return {"cloud-files"} if reply in {"y", "yes"} else set()
+
+    if pending_services == ["g-calendar"]:
+        reply = input_func("Connect Google Calendar for g-calendar now? [y/N]: ").strip().lower()
+        return {"g-calendar"} if reply in {"y", "yes"} else set()
+
+    while True:
+        reply = input_func(
+            "Connect optional Google services now? [b]oth / [d]rive / [c]alendar / [s]kip [s]: "
+        ).strip().lower()
+        if reply in {"", "s", "skip"}:
+            return set()
+        if reply in {"b", "both"}:
+            return set(pending_services)
+        if reply in {"d", "drive"}:
+            return {"cloud-files"}
+        if reply in {"c", "calendar"}:
+            return {"g-calendar"}
+        log("Please answer with b, d, c, or s.")
+
+
+def maybe_run_optional_google_oauth_setups(
+    home: Path,
+    repo_root: Path,
+    *,
+    dry_run: bool,
+    stdin_isatty: bool | None = None,
+    input_func=input,
+) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    pending_services: list[str] = []
+
+    for service_key in GOOGLE_OAUTH_SERVICE_ORDER:
+        spec = GOOGLE_OAUTH_SERVICES[service_key]
+        credentials_path = home / ".config" / spec["config_dir"] / "credentials.json"
+        if credentials_path.exists():
+            statuses[service_key] = "already_configured"
+        else:
+            pending_services.append(service_key)
+
+    if not pending_services:
+        return statuses
 
     if dry_run:
-        if client_json.exists():
-            log(f"Would run cloud-files OAuth setup: {sys.executable} {setup_script}")
-            return "would_run"
-        for line in cloud_files_client_setup_lines(home):
-            log(line)
-        log("  Then re-run the installer to launch browser authorization.")
-        return "needs_client_json"
+        log("")
+        log("Optional Google services step:")
+        log("  Would ask whether to connect Google Drive (cloud-files) and Google Calendar (g-calendar).")
+        for service_key in pending_services:
+            spec = GOOGLE_OAUTH_SERVICES[service_key]
+            client_json = home / ".config" / spec["config_dir"] / "client.json"
+            if client_json.exists():
+                log(f'  {spec["label"]}: would launch browser authorization if selected.')
+            else:
+                for line in google_service_client_setup_lines(home, service_key=service_key):
+                    log(line)
+        return statuses
 
-    if not client_json.exists():
-        for line in cloud_files_client_setup_lines(home):
-            log(line)
-        if stdin_isatty is None:
-            stdin_isatty = sys.stdin.isatty()
-        if not stdin_isatty:
-            log("  Cloud-files OAuth skipped for now: client.json is still missing.")
-            return "needs_client_json"
-        reply = input(
-            "Press Enter after saving client.json to launch browser authorization, "
-            "or type 'skip' to continue without it: "
-        ).strip().lower()
-        if reply == "skip":
-            log("  Cloud-files OAuth skipped.")
-            return "skipped"
-        if not client_json.exists():
-            log("  Cloud-files OAuth skipped: client.json is still missing.")
-            return "needs_client_json"
+    chosen_services = choose_optional_google_services(
+        pending_services,
+        stdin_isatty=stdin_isatty,
+        input_func=input_func,
+    )
 
-    log("Launching cloud-files browser authorization...")
-    result = subprocess.run([sys.executable, str(setup_script)], check=False)
-    if result.returncode == 0:
-        return "configured"
+    for service_key in pending_services:
+        if service_key not in chosen_services:
+            statuses[service_key] = "skipped"
+            continue
+        statuses[service_key] = maybe_run_google_oauth_setup(
+            home,
+            repo_root,
+            service_key=service_key,
+            dry_run=dry_run,
+            stdin_isatty=stdin_isatty,
+        )
 
-    log(f"Warning: cloud-files OAuth setup exited {result.returncode}.")
-    return "failed"
+    return statuses
 
 
 def install_ai_agent_env(home: Path, dry_run: bool) -> None:
@@ -713,15 +884,26 @@ def run(
         log(f"  User shell rc:  {shell_rc}")
         if update_system_shell_rc:
             log(f"  System rc:      {system_shell_rc}")
-    cloud_files_status = maybe_run_cloud_files_oauth_setup(
+    google_oauth_statuses = maybe_run_optional_google_oauth_setups(
         home,
         repo_root,
         dry_run=dry_run,
     )
-    if cloud_files_status == "already_configured":
-        log("Cloud-files OAuth already configured.")
-    elif cloud_files_status == "configured":
-        log("Cloud-files OAuth configured.")
+    for service_key in GOOGLE_OAUTH_SERVICE_ORDER:
+        status = google_oauth_statuses.get(service_key)
+        if status is None:
+            continue
+        label = GOOGLE_OAUTH_SERVICES[service_key]["status_label"]
+        if status == "already_configured":
+            log(f"{label} already configured.")
+        elif status == "configured":
+            log(f"{label} configured.")
+        elif status == "skipped":
+            log(f"{label} skipped.")
+        elif status == "needs_client_json":
+            log(f"{label} still needs client.json.")
+        elif status == "failed":
+            log(f"{label} failed.")
     log("")
     if sys.platform == "win32":
         log("Open a new terminal to use the installed commands.")

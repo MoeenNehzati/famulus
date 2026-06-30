@@ -61,7 +61,9 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
             lines = setup_tools.cloud_files_client_setup_lines(home)
 
         self.assertTrue(lines)
-        self.assertIn("client.json", "\n".join(lines))
+        rendered = "\n".join(lines)
+        self.assertIn("client.json", rendered)
+        self.assertIn("Publish app", rendered)
 
     def test_skips_when_credentials_already_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -105,6 +107,93 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
             [sys.executable, "/repo/skills/cloud-files/scripts/setup_oauth.py"],
             check=False,
         )
+
+
+    def test_g_calendar_setup_lines_reference_client_json_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            lines = setup_tools.g_calendar_client_setup_lines(home)
+
+        self.assertTrue(lines)
+        rendered = "\n".join(lines)
+        self.assertIn("client.json", rendered)
+        self.assertIn("Publish app", rendered)
+
+    def test_runs_g_calendar_setup_oauth_when_client_json_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            client = home / ".config" / "g-calendar" / "client.json"
+            client.parent.mkdir(parents=True)
+            client.write_text("{}", encoding="utf-8")
+
+            with mock.patch.object(
+                setup_tools.subprocess,
+                "run",
+                return_value=mock.Mock(returncode=0),
+            ) as run:
+                status = setup_tools.maybe_run_g_calendar_oauth_setup(
+                    home,
+                    Path("/repo"),
+                    dry_run=False,
+                    stdin_isatty=False,
+                )
+
+        self.assertEqual(status, "configured")
+        run.assert_called_once_with(
+            [sys.executable, "/repo/skills/g-calendar/scripts/setup_oauth.py"],
+            check=False,
+        )
+
+    def test_optional_google_services_prompt_runs_selected_setups(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            for skill in ("cloud-files", "g-calendar"):
+                client = home / ".config" / skill / "client.json"
+                client.parent.mkdir(parents=True, exist_ok=True)
+                client.write_text("{}", encoding="utf-8")
+
+            with mock.patch.object(
+                setup_tools.subprocess,
+                "run",
+                return_value=mock.Mock(returncode=0),
+            ) as run:
+                statuses = setup_tools.maybe_run_optional_google_oauth_setups(
+                    home,
+                    Path("/repo"),
+                    dry_run=False,
+                    stdin_isatty=True,
+                    input_func=lambda _prompt: "b",
+                )
+
+        self.assertEqual(statuses["cloud-files"], "configured")
+        self.assertEqual(statuses["g-calendar"], "configured")
+        self.assertEqual(
+            run.call_args_list,
+            [
+                mock.call([sys.executable, "/repo/skills/cloud-files/scripts/setup_oauth.py"], check=False),
+                mock.call([sys.executable, "/repo/skills/g-calendar/scripts/setup_oauth.py"], check=False),
+            ],
+        )
+
+    def test_optional_google_services_noninteractive_skips_pending_services(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            for skill in ("cloud-files", "g-calendar"):
+                client = home / ".config" / skill / "client.json"
+                client.parent.mkdir(parents=True, exist_ok=True)
+                client.write_text("{}", encoding="utf-8")
+
+            with mock.patch.object(setup_tools.subprocess, "run") as run:
+                statuses = setup_tools.maybe_run_optional_google_oauth_setups(
+                    home,
+                    Path("/repo"),
+                    dry_run=False,
+                    stdin_isatty=False,
+                )
+
+        self.assertEqual(statuses["cloud-files"], "skipped")
+        self.assertEqual(statuses["g-calendar"], "skipped")
+        run.assert_not_called()
 
     def test_noninteractive_missing_client_only_prints_instructions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
