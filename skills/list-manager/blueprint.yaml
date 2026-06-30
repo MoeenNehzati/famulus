@@ -8,10 +8,15 @@ category: automation
 # breaking way.
 interface_version: 1
 
-# cloud-files is blueprint-migrated, so pin the current major version.
+# cloud-files is blueprint-migrated. list-manager uses cloud-files' lists-*
+# interfaces to read/write list files under the lists/ directory.
 depends_on:
   cloud-files:
     major_version: 1
+    exports:
+      - lists-read
+      - lists-write
+      - lists-delete
 
 suggested_permissions:
   bash:

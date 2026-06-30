@@ -109,20 +109,20 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertEqual(payload["script_interface"], "read-list")
 
     def test_dispatcher_rejects_private_interface_for_dependency(self) -> None:
-        """Test that non-exported interfaces cannot be used by dependent skills."""
+        """Test that internal-only interfaces cannot be used by dependent skills."""
         result = self.run_cmd(
             "tools/invoke_skill_export.py",
             "--dry-run",
             "--caller-skill",
             "daily-plan",
             "list-manager",
-            "migrate-markdown",  # This is not exported
+            "migrate-markdown",  # This is internal-only
             "/tmp/input.md",
             "/tmp/output.yaml",
             "todo",
         )
         self.assertEqual(result.returncode, 2)
-        self.assertIn("not exported", result.stderr)
+        self.assertIn("internal-only", result.stderr)
 
     def test_dispatcher_allows_private_interface_for_owner(self) -> None:
         """Test that the owning skill can use non-exported interfaces."""

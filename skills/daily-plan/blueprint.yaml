@@ -21,6 +21,12 @@ depends_on:
     major_version: 1
     exports:
       - scripts-weather
+  cloud-files:
+    major_version: 1
+    exports:
+      - plans-read
+      - plans-write
+      - plans-delete
 
 suggested_permissions:
   bash:

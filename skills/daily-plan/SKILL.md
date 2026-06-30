@@ -12,6 +12,7 @@ description: |
 Category: automation
 
 Dependencies:
+- cloud-files
 - g-calendar
 - get-weather
 - list-manager
