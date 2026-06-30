@@ -28,7 +28,7 @@ def test_daily_at_8():
 
 def test_every_5_minutes():
     mod = _load()
-    assert mod.cron_to_systemd_calendar("*/5 * * * *") == "*-*-* *:*/5:00"
+    assert mod.cron_to_systemd_calendar("*/5 * * * *") == "*-*-* *:00/5:00"
     print("PASS: every 5 minutes")
 
 def test_weekly_monday():

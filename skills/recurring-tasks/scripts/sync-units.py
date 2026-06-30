@@ -39,10 +39,13 @@ def cron_to_systemd_calendar(cron: str) -> str:
         '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat',
     }
 
-    def field(v: str, pad: bool = False) -> str:
+    def field(v: str, pad: bool = False, step_base: str | None = None) -> str:
         if v == '*':
             return '*'
         if re.fullmatch(r'\*/\d+', v):
+            step = v[2:]
+            if step_base is not None:
+                return f"{step_base}/{step}"
             return v
         if re.fullmatch(r'\d+', v):
             return v.zfill(2) if pad else v
@@ -57,7 +60,7 @@ def cron_to_systemd_calendar(cron: str) -> str:
     else:
         raise ValueError(f"Unsupported dow pattern: {dow!r}")
 
-    return f'{dow_prefix}*-*-* {field(hour, pad=True)}:{field(minute, pad=True)}:00'
+    return f'{dow_prefix}*-*-* {field(hour, pad=True)}:{field(minute, pad=True, step_base="00")}:00'
 
 
 def write_runner(job: dict, log: Path, runner_dir: Path) -> Path:

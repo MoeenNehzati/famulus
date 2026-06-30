@@ -208,6 +208,7 @@ python3 tests/test_codex_install.py
 python3 tests/test_claude_install.py
 python3 skills/install-assistant-tools/tests/test_setup_symlinks.py
 python3 skills/install-assistant-tools/tests/test_setup_tools_cloud_files.py
+python3 skills/install-assistant-tools/tests/test_setup_tools_recurring_env.py
 ```
 
 What they cover:

@@ -17,6 +17,7 @@ CHECK_ROOTS = [
 ]
 EXCLUDED_PATHS = {
     Path("skills/install-assistant-tools"),
+    Path("skills/recurring-tasks"),
 }
 FORBIDDEN = re.compile(r"(\.claude|\.codex|Claude|Codex|claude|codex)")
 

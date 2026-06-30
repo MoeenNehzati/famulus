@@ -43,8 +43,9 @@ jobs.yaml
        └─ scripts/run-skill.sh <name>
             └─ reads $AI_AGENT_COMMAND_TEMPLATE from systemd user environment
                  └─ scripts/invoke-agent.sh <name>
-                      └─ assistant --permission-mode bypassPermissions
-                                   -p "/<name>"
+                      └─ backend-aware assistant launcher
+                           ├─ Claude: assistant --local --claude -p "/<name>"
+                           └─ Codex:  assistant --local --codex exec "$<name>"
                          output → logs/<name>/run.log
 ```
 
@@ -115,11 +116,12 @@ logs/healthcheck/
 | `scripts/setup.sh` | **Run on first install or after any change.** Syncs unit files from `jobs.yaml`, installs healthcheck cron entry, lists active timers. |
 | `scripts/sync-units.py` | Writes/updates/removes systemd unit files and runner scripts to match `jobs.yaml`. Called by `setup.sh`. |
 | `scripts/run-skill.sh <name>` | Reads `$AI_AGENT_COMMAND_TEMPLATE`, substitutes `{skill}` → `<name>`, executes via `bash -lc`. Called by every runner. |
-| `scripts/invoke-agent.sh <name>` | Default agent invoker: calls `assistant --permission-mode bypassPermissions -p "/<name>"`. This is what `AI_AGENT_COMMAND_TEMPLATE` points to. |
+| `scripts/invoke-agent.sh <name>` | Backend-aware agent invoker. Claude uses `assistant --local --claude -p "/<name>"`; Codex uses `assistant --local --codex exec "$<name>"`. This is what `AI_AGENT_COMMAND_TEMPLATE` points to. |
 | `scripts/healthcheck.sh` | Cron-based monitor. Checks all enabled jobs; sends desktop notification on any failure. Logs every run to `logs/healthcheck/run.log`. |
 | `scripts/enable-job.py <name>` | Sets `enabled: true` in `jobs.yaml` and syncs. |
 | `scripts/disable-job.py <name>` | Sets `enabled: false` in `jobs.yaml` and syncs. |
 | `scripts/test-job.py <name>` | Starts the service immediately via systemd, waits up to 6 min, reports pass/fail with log and journal tail. |
+| `scripts/test-live-job.py --backend <claude\|codex>` | Creates a temporary skill + scheduled job, runs it through the real backend, verifies output, then restores the original schedule. |
 | `scripts/view-logs.sh <name> [lines]` | Tails the run log live (Ctrl-C to stop; default 50 lines). Pass `healthcheck` to view the monitor log. |
 | `scripts/status.sh [name]` | Lists all active timers. With a job name, also shows service status and recent journal entries. |
 
@@ -180,6 +182,13 @@ scripts/view-logs.sh healthcheck  # monitor log
 
 ```bash
 python3 scripts/test-job.py <name>
+```
+
+### Run a live backend self-test
+
+```bash
+python3 scripts/test-live-job.py --backend claude
+python3 scripts/test-live-job.py --backend codex
 ```
 
 ### Run the healthcheck manually

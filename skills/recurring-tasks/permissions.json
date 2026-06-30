@@ -5,6 +5,7 @@
     "Bash(scripts/enable-job.py:*)",
     "Bash(scripts/disable-job.py:*)",
     "Bash(scripts/test-job.py:*)",
+    "Bash(scripts/test-live-job.py:*)",
     "Bash(scripts/view-logs.sh:*)",
     "Bash(scripts/status.sh:*)",
     "Bash(systemctl:*)",
