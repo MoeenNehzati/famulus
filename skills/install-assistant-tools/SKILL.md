@@ -49,23 +49,19 @@ scripts/
 
 Before running anything, summarize:
 
-- Config dir symlinks will be created so Claude and Codex share skills, agents,
-  and profiles from this repo (no duplicate copies).
-- Launcher scripts will be symlinked into a bin directory on PATH.
-- A minimal block will be written to the shell rc exporting PATH and `$AI`.
+- Claude and Codex config dirs will be wired back to this repo with symlinks.
+- Launcher scripts will be symlinked into a bin dir on `PATH`.
+- A managed rc block or Windows user-environment entry will set `PATH`,
+  `ASSISTANT_DEFAULT`, and `$AI`.
 - Worker directories will be created if absent.
 - Git hooks will be configured.
-- `~/.config/cloud-files/config.json` will be written.
-- After the core install, the installer will run a separate optional Google-services step and ask whether to connect:
-  - Google Drive for `cloud-files`
-  - Google Calendar for `g-calendar`
-- If the user chooses a service and `~/.config/<skill>/client.json` already exists, the installer will launch that service's browser-based authorization step.
-- If the client JSON is missing, the installer will explain how to get it and where to save it.
-- If the OAuth consent screen stays in **Testing**, Google may require repeated re-authorization; users who want to avoid that should use **OAuth -> Audience** and click **Publish app** / move the app to **In production**.
-- The installer will run basic checks at the end to confirm everything works.
-- If any destination path already exists (symlink, file, or directory), the
-  installer will prompt before writing — it never overwrites silently. See
-  "Conflict Handling" below for details.
+- `~/.config/cloud-files/config.json` will be written or updated.
+- After the core install, the installer can optionally walk through Google
+  Drive (`cloud-files`) and Google Calendar (`g-calendar`) OAuth setup.
+- Existing symlinks may be replaced if they already point somewhere else.
+- Existing real files or directories are **not** overwritten; they are skipped
+  with a warning.
+- The installer runs lightweight verification at the end.
 
 Ask for confirmation before proceeding.
 
@@ -83,44 +79,80 @@ python3 scripts/install.py --dry-run   # Linux/macOS
 py scripts\install.py --dry-run        # Windows
 ```
 
+Useful flags:
+
+```bash
+python3 scripts/install.py --help
+python3 scripts/install.py --no-claude
+python3 scripts/install.py --no-codex
+python3 scripts/install.py --bin-dir /custom/bin --shell-rc /custom/rc
+python3 scripts/install.py --default-llm codex
+```
+
 The installer auto-detects the user's shell on Unix (`zsh` → `.zshrc`, else
 `.bashrc`). On Windows it writes PATH and env vars to the user registry
 (`HKEY_CURRENT_USER\Environment`) and broadcasts `WM_SETTINGCHANGE` so new
-terminals pick up the change immediately — no reboot needed.
-
-The scripts are self-documenting — check their inline comments for what each
-step does and why.
+terminals pick up the change immediately.
 
 Optional Google services step:
 
-- After the core install, the installer separately asks whether to connect Google Drive (`cloud-files`) and/or Google Calendar (`g-calendar`).
-- For each selected service:
-  - If `~/.config/<skill>/credentials.json` already exists, the installer reports it as already configured.
-  - If `~/.config/<skill>/client.json` is missing, it tells the user to download a Google OAuth client JSON for a Desktop app and save it there.
-  - On interactive runs, it can wait for that file and then launch browser authorization in the same install session. On non-interactive runs, it stops after printing the instructions.
-- Advise users that keeping the OAuth consent screen in **Testing** may cause repeated re-authorization; publishing the app / moving it to **In production** is preferred for long-term personal use.
-- The file-storage upload/download/delete smoke test stays under the cloud-files skill's own tests, not in this installer.
+- If `credentials.json` already exists for a service, the installer reports it
+  as already configured.
+- If `client.json` exists and the user chooses that service, the installer runs
+  the service's `setup_oauth.py`.
+- If `client.json` is missing, the installer prints where to save it.
+- In non-interactive mode, optional Google service setup is skipped.
+- Keeping a Google OAuth app in **Testing** may require repeated
+  re-authorization; **Publish app** / **In production** is preferred.
 
-### 3. Sanity check
+### 3. What the current implementation really does on conflicts
 
-After the installer finishes, reload the shell environment and verify:
+This is important for reliable operator expectations.
+
+#### Existing symlink at destination
+
+- If the destination is already a symlink, the installer removes it and creates
+  the new symlink.
+- There is no interactive prompt.
+
+#### Existing real file or directory at destination
+
+- The installer does **not** overwrite it.
+- It logs `SKIP (real path exists, not a symlink): ...` and leaves it alone.
+- There is no backup, merge, rollback, or conflict-resolution UI in the current
+  implementation.
+
+#### Missing source path
+
+- The installer skips that item and logs `SKIP (missing source): ...`.
+
+#### Symlinked `~/.codex`
+
+- `setup_symlinks.py` warns and skips Codex directory links if `CODEX_HOME`
+  itself is a symlink.
+
+Do **not** promise merge, backup, replace/keep menus, rollback, or
+non-interactive conflict-policy flags unless the code has actually gained them.
+
+### 4. Sanity check
+
+After the installer finishes, reload the environment and verify:
 
 **Linux / macOS**
 ```bash
 source ~/.zshrc    # or ~/.bashrc — the installer prints which one it used
-type assistant     # should report a file, not a function
+type assistant
 ```
 
-**Windows** (open a new terminal, then):
+**Windows**
 ```cmd
 where assistant
 ```
 
-If the command is not found, the bin dir is not on PATH. Check the installer
-output for errors, then open a fresh terminal (the registry update requires a
-new session).
+If the command is not found, the bin dir is not on `PATH`. Check installer
+output and open a fresh terminal.
 
-### 4. Basic smoke test
+### 5. Basic smoke test
 
 ```bash
 assistant --help
@@ -129,10 +161,9 @@ coauthor --help
 tw -h       # Unix only; skip on Windows
 ```
 
-Each `--help` should print usage and exit 0. If any command is not found or
-errors, see "Troubleshooting" below.
+Each help command should exit 0.
 
-### 5. If something fails
+### 6. If something fails
 
 If a command fails or is not available on the user's platform:
 
@@ -140,176 +171,7 @@ If a command fails or is not available on the user's platform:
 2. **Ask the user:** "Would you like me to adapt the scripts for your platform?"
 3. If yes, inspect the failing script and propose the minimal change needed.
 
-Do not modify scripts speculatively — only on explicit user approval.
-
-## Conflict Handling
-
-Before creating any symlink, the installer inspects the destination path and handles each case distinctly.
-
-### Existing symlink
-
-Already points to the intended source → report `OK`, do nothing.  
-Points elsewhere → prompt. The wording depends on whether the destination is a
-directory path or a single-file path (e.g. `~/.claude/CLAUDE.md`).
-
-**Directory symlink pointing elsewhere:**
-
-```
-Existing symlink:
-  destination: ~/.claude/skills
-  current target: ~/other-skills-repo/skills
-  intended target: ~/Documents/claude-config/skills
-
-  [s] Skip
-  [r] Replace (back up current symlink target metadata)
-  [a] Abort installation
-Choice [s]:
-```
-
-**Single-file symlink pointing elsewhere:**
-
-```
-Claude currently reads this path through an existing link:
-
-Machine path:        ~/.claude/CLAUDE.md
-Currently linked to: ~/other-config/CLAUDE.md
-Installer proposes:  ~/Documents/claude-config/CLAUDE.md
-
-  [k] Keep existing link
-  [r] Replace link with repository link
-  [a] Abort installation
-Choice [k]:
-```
-
-### Existing file
-
-Prompt with keep / replace / merge / diff / abort:
-
-```
-A file already exists at the Claude configuration path.
-
-Machine file:         ~/.claude/CLAUDE.md
-Repository version:   ~/Documents/claude-config/CLAUDE.md
-
-  [k] Keep machine file
-  [r] Replace machine file with the repository version
-  [m] Merge both versions in an editor, then use the merged result
-  [d] Show diff
-  [a] Abort installation
-
-Choice [k]:
-```
-
-Default: **keep**. Replace moves the original to a timestamped backup first — it never deletes directly:
-
-```
-~/.claude/.install-backups/2026-06-30T143210/CLAUDE.md
-```
-
-#### Merge (file)
-
-Available only for ordinary UTF-8 text files under ~2 MiB.
-
-**Important:** after installation the machine path becomes a symlink to the repository file. So the merged result *replaces the repository file*, not the machine file. The installer warns:
-
-```
-Merging will modify the repository file:
-  ~/Documents/claude-config/CLAUDE.md
-
-Your existing machine file will first be backed up.
-No Git commit or push will be performed automatically.
-Continue? [y/N]
-```
-
-Merge workspace under `/tmp/claude-config-merge-<id>/`:
-
-```
-MACHINE_VERSION
-REPOSITORY_VERSION
-MERGED
-```
-
-`MERGED` starts pre-populated with both versions separated by standard conflict markers.
-
-Editor is selected in order: `--merge-tool` flag → `$VISUAL` → `$EDITOR`. Must run synchronously (GUI editors need `--wait`).
-
-After the editor exits the installer:
-1. Checks `MERGED` is valid UTF-8.
-2. Rejects unresolved conflict markers.
-3. Runs syntax validation (JSON, TOML, YAML where applicable).
-4. Backs up both originals.
-5. Replaces the repository file with `MERGED`.
-6. Creates a symlink from the machine path to the repository file.
-7. Records everything in the install manifest.
-
-If validation fails or the user cancels, both originals are left untouched.
-
-Binary / oversized files skip merge and offer only keep / replace / abort.
-
-### Existing directory
-
-Prompt with skip / replace / merge:
-
-```
-Existing directory:
-  destination: ~/.claude/skills
-  intended target: ~/Documents/claude-config/skills
-
-  [s] Skip — leave the directory unchanged
-  [r] Replace — back up directory, then create symlink
-  [m] Merge — copy its contents into the repository analogue, then create symlink
-  [a] Abort installation
-Choice [s]:
-```
-
-Default: **skip**.
-
-**Replace** — moves the entire directory into the timestamped backup tree, then creates the symlink.
-
-**Merge** — available only when a declared repository analogue exists (e.g. `~/.claude/skills` ↔ `repo/skills`). Steps:
-
-1. Show planned source and destination.
-2. Copy machine-local contents into the repository analogue.
-3. For each internal collision, prompt again (keep repo version / use local / show diff / abort merge).
-4. Validate merged tree before touching the original directory.
-5. Move the original directory into the backup tree.
-6. Create the whole-directory symlink.
-
-The installer stages copied content in a temp directory and validates *before* backing up or replacing — no partial merges.
-
-### Non-interactive mode
-
-With `--yes`, `--non-interactive`, or no TTY:
-
-* Never replace or merge by default — treat all conflicts as `skip`.
-* Explicit flags required for destructive actions:
-
-```bash
---on-file-conflict replace          # replace existing file with symlink
---on-dir-conflict replace           # replace existing directory with symlink
---on-dir-conflict merge --confirm-migrate-to-repo  # merge then symlink
-```
-
-File merge (`[m]`) is interactive-only — it requires a live editor session and
-is not available in non-interactive mode.
-
-### Logging and rollback
-
-Every replacement or merge writes a manifest:
-
-```
-.install-state/2026-06-30T143210.json
-```
-
-recording destination path, prior type/target, backup path, action taken, repository analogue (merges), and files copied or overridden.
-
-To restore a prior state:
-
-```bash
-python3 scripts/install.py --rollback 2026-06-30T143210
-```
-
-This reinstates the original file, directory, or symlink from the backup recorded in the manifest, and removes whatever the installer put in its place.
+Do not modify scripts speculatively.
 
 ## Default Targets
 
@@ -318,7 +180,7 @@ This reinstates the original file, directory, or symlink from the backup recorde
 | User rc | `~/.zshrc` (zsh) or `~/.bashrc` (bash/other) — auto-detected; Windows uses registry |
 | System rc | `/etc/bash.bashrc` (skipped on Windows) |
 | Bin dir | `$HOME/Documents/scripts/bin` |
-| AI root | Two levels above the skill dir (e.g. `~/Documents/AI`), exported as `$AI` |
+| AI root | Two levels above the skill dir (for example `~/Documents/AI`), exported as `$AI` |
 | Workers | `$AI/workers/{assistant,collab,coauthor}` |
 | Codex home | `$CODEX_HOME`, or `$HOME/.codex` |
 | Claude home | `$CLAUDE_HOME`, or `$HOME/.claude` |
@@ -330,57 +192,89 @@ for the full list.
 ## Updating Scripts
 
 Because installed commands are symlinks into `bin/`, editing `bin/assistant` or
-`bin/tmux-workspace` in place takes effect immediately — no reinstall needed.
-Re-run the installer only when:
+`bin/tmux-workspace` takes effect immediately. Re-run the installer when:
 
-- Setting up a new machine
-- Repairing broken symlinks
-- Updating the rc block or git hooks
+- setting up a new machine
+- repairing broken symlinks
+- updating the rc block or git hooks
+- adding new profile or launcher links
+
+## Tests and Handoff Checks
+
+For cross-platform validation, use the Python tests rather than shell wrappers:
+
+```bash
+python3 tests/test_codex_install.py
+python3 tests/test_claude_install.py
+python3 skills/install-assistant-tools/tests/test_setup_symlinks.py
+python3 skills/install-assistant-tools/tests/test_setup_tools_cloud_files.py
+```
+
+What they cover:
+
+- `test_codex_install.py`: isolated Codex marketplace install, skill visibility,
+  installed package contents, and running `install.py` from the installed plugin
+  into a fresh temp environment.
+- `test_claude_install.py`: isolated Claude marketplace install, installed
+  package contents, and Claude's plugin inventory/details output.
+- `test_setup_symlinks.py`: dry-run behavior, conflict preservation,
+  symlink replacement, and symlinked-`CODEX_HOME` skipping.
+- `test_setup_tools_cloud_files.py`: cloud-files config writing and optional
+  Google OAuth decision paths.
+
+Known handoff caveat / TODO:
+
+- `claude plugins validate --strict` still warns about plugin-root `CLAUDE.md`.
+- The warning means Claude packages that file but does not treat it as plugin
+  project context in the way the validator wants.
+- For now, keep it documented rather than silently ignoring it: the current
+  Python Claude install test uses non-strict validation and then verifies the
+  installed cache contents directly.
+- Future cleanup should decide whether to remove or relocate that context so
+  strict validation passes cleanly.
 
 ## Troubleshooting
 
-**`assistant: command not found`** — bin dir not on PATH. Check rc block was
-written and a new terminal or `source ~/.bashrc` was run.
+**`assistant: command not found`** — bin dir not on PATH. Check the managed rc
+block or Windows user environment and then open a new shell.
 
 **`ModuleNotFoundError: No module named '_agent_launch'`** — `_agent_launch.py`
-is missing from the bin dir. Re-run the installer; check `BIN_SCRIPTS` in
-`setup_tools.py` includes it.
+is missing from the bin dir. Re-run the installer and check `BIN_SCRIPTS` in
+`setup_tools.py`.
 
 **`tw: command not found` on Windows** — expected; tmux is not available on
-Windows. Skip `tw` checks on that platform.
+Windows.
 
 **`.bat` wrappers on Windows** — `assistant.bat`, `collab.bat`, and
-`coauthor.bat` are installed automatically alongside the Python launchers. With
-the bin dir on `%PATH%`, bare `assistant`, `collab`, and `coauthor` work in
-`cmd.exe` and PowerShell without typing `.bat`. The Python Launcher (`py.exe`)
-must be available — it ships with standard Python installs from python.org.
+`coauthor.bat` are installed automatically alongside the Python launchers.
+With the bin dir on `%PATH%`, bare `assistant`, `collab`, and `coauthor` work
+in `cmd.exe` and PowerShell without typing `.bat`.
 
-**`py.exe` not found** — install Python from python.org and ensure "Install
-Python Launcher" is checked during setup.
+**`py.exe` not found** — install Python from python.org and ensure the Python
+Launcher is included.
+
+**Codex warns about temporary-dir PATH aliases in tests** — the Codex CLI may
+warn when helper binaries are created under `/tmp`. The Python tests still use
+isolated temporary homes and assert real installed-path behavior around that
+warning.
 
 ## Developer Notes
 
 ### Adding a new agent
 
-To add an agent (e.g. `researcher`):
+To add an agent (for example `researcher`):
 
-1. **`bin/researcher`** — copy `bin/assistant`, change `agent=` and the env var
-2. **`bin/researcher.bat`** — copy `bin/assistant.bat`, change the script name
-3. **`setup_tools.py`** — add `"researcher"` to `AGENTS`, `BIN_SCRIPTS`,
-   `BAT_WRAPPERS`, and `VERIFY_CMDS`
-4. **`profiles/researcher.config.toml`** — Codex profile (linked by installer)
-5. **`profiles/researcher_claude_setting.json`** — Claude settings (linked by installer)
-
-Re-run the installer after to create the new symlinks and worker directory.
+1. copy `bin/assistant` to `bin/researcher` and update `agent=` / env fallback
+2. copy `bin/assistant.bat` to `bin/researcher.bat`
+3. add `researcher` to `AGENTS`, `BIN_SCRIPTS`, `BAT_WRAPPERS`, and
+   `VERIFY_CMDS` in `setup_tools.py`
+4. add `profiles/researcher.config.toml`
+5. add `profiles/researcher_claude_setting.json`
+6. re-run the installer
 
 ### Key contracts
 
-- **`$AI`** — set by the installer to the repo root. All bin scripts default the
-  working directory to `$AI/workers/<agent>`. Pass `-l/--local` to stay in the
-  current directory instead.
-- **`profiles/`** — the installer links every `*.config.toml` file into both
-  Codex and Claude homes, and every `*_claude_setting.json` into Claude home
-  only. Naming convention: `<agent>.config.toml` and `<agent>_claude_setting.json`.
-- **`workers/`** — one subdirectory per agent, created empty by the installer.
-  These are the agents' default working directories and can accumulate project
-  files over time.
+- `$AI` points to the repo root and controls the default worker directories.
+- `profiles/*.config.toml` are linked into both Codex and Claude homes.
+- `profiles/*_claude_setting.json` are linked into Claude home only.
+- `workers/` contains one default working directory per agent.

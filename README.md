@@ -63,13 +63,14 @@ Claude symlinks the shared directories directly:
 ~/.claude/CLAUDE.md  -> /home/moeen/Documents/AI/CLAUDE.md
 ```
 
-Before creating each symlink the installer inspects the destination. Existing
-symlinks, files, and directories are handled with distinct prompts (skip /
-replace / merge) rather than overwriting silently. Every replacement or merge
-is backed up and logged to `.install-state/<timestamp>.json` so it can be
-rolled back with `--rollback <timestamp>`. Run `python3 scripts/install.py
---help` for flags, or see the `install-assistant-tools` skill for the full
-conflict-handling reference.
+Before creating each symlink the installer inspects the destination.
+
+- Existing symlinks are replaced.
+- Existing real files or directories are skipped with a warning.
+- There is currently no interactive merge / backup / rollback flow.
+
+Run `python3 scripts/install.py --help` for flags, or see the
+`install-assistant-tools` skill for the current conflict-handling behavior.
 
 Codex reads user-level skills from `~/.agents/skills`. Link that directory to
 the canonical checkout:
@@ -188,14 +189,15 @@ in `.codex-plugin/plugin.json`, optional Codex hooks, or skill-local
 Run:
 
 ```bash
-tests/test_codex_install.sh
+python3 tests/test_codex_install.py
 ```
 
 The test creates an isolated temporary `CODEX_HOME`, a temporary local
 marketplace, and an empty work directory. It first confirms that this repo's
-skills are not visible before installation. It then installs the plugin and
-checks that every `skills/*/SKILL.md` is installed and explicitly invokable as
-`moeen:<skill>`.
+skills are not visible before installation. It then installs the plugin,
+checks every packaged skill and key shared assets, and runs the packaged
+`install-assistant-tools` installer into a fresh temporary home to verify the
+installed launchers, profiles, and symlink wiring.
 
 The test uses `codex debug prompt-input`; it does not call a model.
 
@@ -279,12 +281,34 @@ In this layout, skills load without plugin namespacing.
 
 ### Claude Install Test
 
-`tests/test_claude_install.sh` is currently a placeholder because local Claude
-subscription access is unavailable. It documents the intended coverage:
+Run:
 
-- load this repository as a Claude plugin in an isolated environment
-- verify every `skills/*/SKILL.md` entry is visible
-- verify shared references are packaged and path-resolvable
+```bash
+python3 tests/test_claude_install.py
+```
+
+The test creates an isolated temporary Claude home, validates the local plugin
+and marketplace manifests, installs the plugin from the local marketplace, and
+checks that the installed cache contains every packaged skill plus the expected
+agents and shared files. It also verifies Claude's local `plugins details`
+inventory for the full packaged skill and agent set.
+
+The test uses Claude's local plugin-management commands only; it does not call
+a model.
+
+Note: `claude plugins validate --strict` still warns because the repository root
+contains `CLAUDE.md`; Claude's validator treats that as plugin-root context that
+is packaged but not loaded as project context. The install test therefore runs
+non-strict validation and then asserts the installed cache contents directly.
+
+TODO for future cleanup:
+
+- Decide whether plugin-root `CLAUDE.md` should remain packaged.
+- If we want `claude plugins validate --strict` to pass cleanly, restructure or
+  relocate that context instead of relying on plugin-root `CLAUDE.md`.
+- We are intentionally **not** changing it yet because current install/runtime
+  behavior is acceptable, and the stronger Python install test now checks the
+  installed cache contents directly.
 
 ## Superpowers Dependency
 
@@ -309,17 +333,24 @@ Validate the Codex plugin manifest:
 python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
 ```
 
-Run the Codex isolated install test:
+Run the isolated install tests:
 
 ```bash
-tests/test_codex_install.sh
+python3 tests/test_codex_install.py
+python3 tests/test_claude_install.py
 ```
 
-Check shell syntax for install tests:
+Run focused installer unit tests:
 
 ```bash
-bash -n tests/test_codex_install.sh
-bash -n tests/test_claude_install.sh
+python3 skills/install-assistant-tools/tests/test_setup_symlinks.py
+python3 skills/install-assistant-tools/tests/test_setup_tools_cloud_files.py
+```
+
+Check Python syntax for install tests:
+
+```bash
+python3 -m py_compile tests/test_codex_install.py tests/test_claude_install.py
 ```
 
 After a coherent skill or plugin change, review the diff and commit so the

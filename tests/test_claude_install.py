@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Cross-platform isolated install test for the Claude plugin packaging.
+
+This test is intentionally stronger than a manifest-only check:
+- it uses a temporary HOME/CLAUDE_HOME
+- adds the local marketplace
+- installs the plugin through Claude's plugin manager
+- verifies the installed cache contents, not just command success
+- checks Claude's reported plugin inventory against the repo skill/agent set
+
+It does not call a model.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from install_test_utils import (  # noqa: E402
+    REPO_ROOT,
+    claude_env,
+    expected_skills,
+    python_test_env,
+    read_json,
+    run_command,
+)
+
+
+class ClaudeInstallTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        if shutil.which("claude") is None:
+            raise unittest.SkipTest("claude CLI is not installed")
+
+    def test_claude_plugin_marketplace_install_isolated(self) -> None:
+        expected = expected_skills()
+        plugin_name = read_json(REPO_ROOT / ".claude-plugin" / "plugin.json")["name"]
+        marketplace_name = read_json(REPO_ROOT / ".claude-plugin" / "marketplace.json")["name"]
+
+        with tempfile.TemporaryDirectory(prefix=f"{plugin_name}-claude-install-") as tmp:
+            tmp_root = Path(tmp)
+            env = python_test_env(tmp_root)
+            run_command([sys.executable, str(REPO_ROOT / "tests" / "test_skill_metadata.py")], env=env)
+            run_command([sys.executable, str(REPO_ROOT / "tests" / "test_platform_neutral_content.py")], env=env)
+
+            home = tmp_root / "home"
+            claude_home = home / ".claude"
+            home.mkdir()
+            plugin_env = claude_env(home, claude_home, tmp_root)
+
+            run_command(["claude", "plugins", "validate", str(REPO_ROOT / ".claude-plugin" / "plugin.json")], env=plugin_env)
+            run_command(["claude", "plugins", "validate", str(REPO_ROOT / ".claude-plugin" / "marketplace.json")], env=plugin_env)
+
+            before_install = run_command(["claude", "plugins", "list"], env=plugin_env)
+            self.assertNotIn(f"{plugin_name}@{marketplace_name}", before_install.stdout)
+
+            run_command(
+                ["claude", "plugins", "marketplace", "add", str(REPO_ROOT / ".claude-plugin" / "marketplace.json")],
+                env=plugin_env,
+            )
+
+            marketplace_list = run_command(["claude", "plugins", "marketplace", "list"], env=plugin_env)
+            self.assertIn(marketplace_name, marketplace_list.stdout)
+
+            known_marketplaces = json.loads(
+                (claude_home / "plugins" / "known_marketplaces.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                known_marketplaces[marketplace_name]["source"]["path"],
+                str(REPO_ROOT / ".claude-plugin" / "marketplace.json"),
+            )
+
+            run_command(["claude", "plugins", "install", f"{plugin_name}@{marketplace_name}"], env=plugin_env)
+            plugins_list = run_command(["claude", "plugins", "list"], env=plugin_env)
+            self.assertIn(f"{plugin_name}@{marketplace_name}", plugins_list.stdout)
+
+            installed_plugins = json.loads(
+                (claude_home / "plugins" / "installed_plugins.json").read_text(encoding="utf-8")
+            )
+            installs = installed_plugins["plugins"][f"{plugin_name}@{marketplace_name}"]
+            self.assertEqual(len(installs), 1)
+            installed_path = Path(installs[0]["installPath"])
+            self.assertTrue(str(installed_path).startswith(str(claude_home / "plugins" / "cache")))
+            self.assertNotEqual(installed_path.resolve(), REPO_ROOT.resolve())
+
+            missing_skills = [
+                skill_name
+                for skill_name in expected
+                if not (installed_path / "skills" / skill_name / "SKILL.md").is_file()
+            ]
+            self.assertEqual(missing_skills, [], f"Missing installed Claude skills: {missing_skills}")
+
+            required_paths = [
+                installed_path / ".claude-plugin" / "plugin.json",
+                installed_path / ".claude-plugin" / "marketplace.json",
+                installed_path / "CLAUDE.md",
+                installed_path / "references",
+                installed_path / "agents" / "assistant.md",
+                installed_path / "agents" / "collab.md",
+                installed_path / "agents" / "coauthor.md",
+                installed_path / "skills" / "install-assistant-tools" / "scripts" / "install.py",
+            ]
+            missing_paths = [
+                str(path.relative_to(installed_path)) for path in required_paths if not path.exists()
+            ]
+            self.assertEqual(missing_paths, [], f"Missing installed Claude plugin assets: {missing_paths}")
+
+            details = run_command(["claude", "plugins", "details", f"{plugin_name}@{marketplace_name}"], env=plugin_env)
+            details_text = details.stdout
+            self.assertIn(f"Skills ({len(expected)})", details_text)
+            self.assertIn("Agents (3)", details_text)
+            for skill_name in expected:
+                self.assertIn(skill_name, details_text)
+            for agent_name in ("assistant", "collab", "coauthor"):
+                self.assertIn(agent_name, details_text)
+
+
+if __name__ == "__main__":
+    unittest.main()

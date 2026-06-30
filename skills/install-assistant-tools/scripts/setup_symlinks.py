@@ -167,9 +167,14 @@ def run(
                 codex_home.mkdir(parents=True, exist_ok=True)
             make_link(repo_root / "references", codex_home / "references", dry_run)
             make_link(repo_root / "agents",     codex_home / "agents",     dry_run)
-            # AGENTS.md is a tracked symlink to CLAUDE.md in the repo; linking it
-            # here keeps Codex and Claude reading identical repo instructions.
-            make_link(repo_root / "AGENTS.md",  codex_home / "AGENTS.md",  dry_run)
+            # AGENTS.md is a tracked symlink to CLAUDE.md in the source repo.
+            # Some plugin packaging flows flatten or omit that symlink, so fall
+            # back to the real CLAUDE.md file while still creating
+            # $CODEX_HOME/AGENTS.md.
+            agents_md_source = repo_root / "AGENTS.md"
+            if not agents_md_source.exists():
+                agents_md_source = repo_root / "CLAUDE.md"
+            make_link(agents_md_source, codex_home / "AGENTS.md", dry_run)
 
             # Codex loads profiles from individual files directly under $CODEX_HOME.
             if profiles_dir.is_dir():
