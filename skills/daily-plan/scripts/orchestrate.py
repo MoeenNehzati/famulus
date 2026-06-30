@@ -1,12 +1,31 @@
 #!/usr/bin/env python3
 """Orchestrate daily plan generation without LLM involvement.
 
-This script coordinates all dependencies (g-calendar, list-manager, get-weather,
-cloud-files) via the dispatcher to build and persist a daily plan for today.
+Usage:
+  orchestrate.py            Show today's plan (generate if doesn't exist)
+  orchestrate.py --forced   Regenerate plan even if it already exists
 
-Invocation:
-  orchestrate.py produce    # Generate and save plan
-  orchestrate.py output     # Show existing plan (or generate if missing)
+Algorithm:
+1. Check if plan exists in cloud storage (unless --forced)
+   - If exists and not forced: show it and exit
+   - If doesn't exist or forced: continue to step 2
+2. Gather data in parallel from dispatcher (via cloud-files for storage):
+   - Calendar events (today and 7-day window)
+   - Weather forecast
+   - Todo list
+3. Assemble data into plan with sections: Calendar, Weather, Upcoming, Actions
+4. Persist plan to cloud storage (plans/M-D-YY.md)
+5. Display to user
+
+Parallel execution reduces time from ~8s (sequential) to ~2.5s using ThreadPoolExecutor.
+
+Plan sections:
+- Calendar: Today's timed events + free time (10h budget - activities - commute)
+- The Day: 2-sentence weather summary + outfit recommendations
+- Upcoming: Next 7 days of all-day events
+- Actions: Top 5 todo items
+
+See blueprint.yaml for dependencies, interfaces, and access control.
 """
 
 from __future__ import annotations
@@ -277,46 +296,34 @@ def build_plan(date_key: str, today_date: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Orchestrate daily plan generation without LLM involvement."
+        description="Generate or show today's daily plan."
     )
     parser.add_argument(
-        "mode",
-        choices=["produce", "output"],
-        help="produce: generate and save new plan; output: show existing plan",
+        "--forced",
+        action="store_true",
+        help="Regenerate plan even if it already exists",
     )
     args = parser.parse_args()
 
     try:
         date_key = get_today_date()
 
-        # Check if plan exists
-        exists = plan_exists(date_key)
-
-        if args.mode == "produce":
-            if exists:
-                print(f"Plan for today ({date_key}) already exists.")
-                print(read_plan(date_key))
+        # Try to fetch existing plan (unless --forced)
+        if not args.forced:
+            try:
+                plan_content = read_plan(date_key)
+                print(plan_content)
                 return 0
+            except OrchestratorError:
+                # Plan doesn't exist; fall through to generate
+                pass
 
-            # Generate plan
-            today_str = datetime.now().strftime("%B %d, %Y")
-            plan = build_plan(date_key, today_str)
-            write_plan(date_key, plan)
-            print(plan)
-            return 0
-
-        else:  # output mode
-            if not exists:
-                print("No plan found. Generating...")
-                today_str = datetime.now().strftime("%B %d, %Y")
-                plan = build_plan(date_key, today_str)
-                write_plan(date_key, plan)
-                print(plan)
-                return 0
-
-            # Show existing plan
-            print(read_plan(date_key))
-            return 0
+        # Generate plan (parallel data gathering)
+        today_str = datetime.now().strftime("%B %d, %Y")
+        plan = build_plan(date_key, today_str)
+        write_plan(date_key, plan)
+        print(plan)
+        return 0
 
     except OrchestratorError as e:
         print(f"Error: {e}", file=sys.stderr)
