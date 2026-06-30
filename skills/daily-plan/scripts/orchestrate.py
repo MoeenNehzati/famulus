@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -187,13 +188,33 @@ def calculate_free_time(events: list[dict]) -> tuple[int, str]:
 
 
 def build_plan(date_key: str, today_date: str) -> str:
-    """Build the daily plan from all gathered data."""
+    """Build the daily plan from all gathered data in parallel."""
     lines = [f"# Plan: {today_date}\n"]
 
     try:
-        # Get calendar
+        # Gather all data in parallel using thread pool
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            # Submit all independent tasks
+            futures = {
+                "calendar_today": executor.submit(get_calendar_today),
+                "calendar_week": executor.submit(get_calendar_week),
+                "weather": executor.submit(get_weather),
+                "todo": executor.submit(lambda: read_list("todo")),
+            }
+
+            # Collect results as they complete
+            results = {}
+            for name, future in futures.items():
+                try:
+                    results[name] = future.result()
+                except OrchestratorError as e:
+                    results[name] = None
+                    print(f"⚠️ Failed to fetch {name}: {e}", file=sys.stderr)
+
+        # Build plan from parallel results
+        # Calendar section
         lines.append("## Calendar")
-        calendar_events = get_calendar_today()
+        calendar_events = results.get("calendar_today") or []
         if calendar_events:
             for line in calendar_events:
                 parsed = parse_calendar_line(line)
@@ -206,20 +227,23 @@ def build_plan(date_key: str, today_date: str) -> str:
         free_hours, breakdown = calculate_free_time(calendar_events)
         lines.append(f"\nFree time: ~{free_hours}h (10h budget - {breakdown})\n")
 
-        # Get weather
+        # Weather section
         lines.append("## The Day")
-        weather = get_weather()
-        # Ensure 2 sentences
-        sentences = weather.split(". ")
-        weather_text = ". ".join(sentences[:2])
-        if not weather_text.endswith("."):
-            weather_text += "."
-        lines.append(weather_text)
+        weather = results.get("weather") or ""
+        if weather:
+            # Ensure 2 sentences
+            sentences = weather.split(". ")
+            weather_text = ". ".join(sentences[:2])
+            if not weather_text.endswith("."):
+                weather_text += "."
+            lines.append(weather_text)
+        else:
+            lines.append("(weather unavailable)")
         lines.append("")
 
-        # Get upcoming events
+        # Upcoming events section
         lines.append("## Upcoming")
-        all_events = get_calendar_week()
+        all_events = results.get("calendar_week") or []
         upcoming = []
         for line in all_events:
             parsed = parse_calendar_line(line)
@@ -232,22 +256,21 @@ def build_plan(date_key: str, today_date: str) -> str:
             lines.append("(none this week)")
         lines.append("")
 
-        # Get todo items
+        # Actions section
         lines.append("## Actions (suggestions)")
-        try:
-            todo = read_list("todo")
-            if todo.get("items"):
-                for idx, item in enumerate(todo["items"][:5], 1):
-                    lines.append(f"{idx}. [ ] {item}")
-            else:
-                lines.append("(nothing on the todo list)")
-        except OrchestratorError:
-            lines.append("(todo list not found)")
+        todo = results.get("todo")
+        if todo and todo.get("items"):
+            for idx, item in enumerate(todo["items"][:5], 1):
+                lines.append(f"{idx}. [ ] {item}")
+        elif todo is None:
+            lines.append("(todo list unavailable)")
+        else:
+            lines.append("(nothing on the todo list)")
 
         lines.append("\n→ Tell me which items you're keeping and I'll finalize the plan.\n")
 
-    except OrchestratorError as e:
-        lines.append(f"\n⚠️ Error gathering data: {e}\n")
+    except Exception as e:
+        lines.append(f"\n⚠️ Unexpected error: {e}\n")
 
     return "\n".join(lines)
 
