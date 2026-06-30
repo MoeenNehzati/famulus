@@ -51,6 +51,7 @@ script_interfaces:
         allow_stdin: false
         notes: "First positional is the local YAML file; remaining positionals are filters."
     exported: true
+    allowed_callers: []
 
   update-list:
     cwd: skill_root
@@ -70,6 +71,7 @@ script_interfaces:
         forbidden_flags: ["--file"]
         notes: "Internal convenience mode for the owning skill when feeding YAML directly."
     exported: true
+    allowed_callers: []
 
   beautify-list:
     cwd: skill_root
@@ -80,6 +82,7 @@ script_interfaces:
         allow_stdin: true
         notes: "Reads YAML from stdin and renders user-facing list output."
     exported: true
+    allowed_callers: []
 
   init-list:
     cwd: skill_root
@@ -89,6 +92,7 @@ script_interfaces:
         allow_extra_positionals: true
         allow_stdin: false
     exported: true
+    allowed_callers: []
 
   create-entry:
     cwd: skill_root
@@ -106,6 +110,7 @@ script_interfaces:
         required_flags: ["--entries"]
         allowed_flags: ["--entries"]
     exported: true
+    allowed_callers: []
 
   generate-id:
     cwd: skill_root
@@ -115,6 +120,7 @@ script_interfaces:
         allow_extra_positionals: true
         allow_stdin: false
     exported: true
+    allowed_callers: []
 
   migrate-markdown:
     cwd: skill_root
@@ -123,4 +129,6 @@ script_interfaces:
       - min_positionals: 3
         allow_extra_positionals: true
         allow_stdin: false
+    # Internal-only: only list-manager can use for migrations
     exported: false
+    allowed_callers: []

@@ -30,13 +30,12 @@ depends_on:
 
 suggested_permissions:
   bash:
-    - command: ["python3", "scripts/plans.sh"]
-      args_prefix: ["read", "write", "exists"]
-      reason: "Plan file operations via wrapper."
+    - command: ["python3", "scripts/orchestrate.py"]
+      reason: "Main orchestration script for plan generation via dispatcher."
     - command: ["python3", "scripts/render-plan.py"]
-      reason: "Plan rendering helper."
+      reason: "Plan rendering helper for display formatting."
     - command: ["date"]
-      reason: "Get current date for plan key."
+      reason: "Get current date for plan key (M-D-YY format)."
   network: []
 
 skill_interface:
@@ -51,6 +50,24 @@ skill_interface:
     - May update todo list via list-manager.
 
 script_interfaces:
+  # Orchestration entry point: coordinates all dependencies via dispatcher
+  # to generate and persist the daily plan without LLM involvement.
+  orchestrate:
+    cwd: skill_root
+    command: ["python3", "scripts/orchestrate.py"]
+    patterns:
+      - name: "produce"
+        min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        notes: "generate and save new plan (or show existing if already generated today)"
+      - name: "output"
+        min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        notes: "show existing plan (generate if missing)"
+    exported: false
+
   plan-storage:
     cwd: skill_root
     command: ["scripts/plans.sh"]

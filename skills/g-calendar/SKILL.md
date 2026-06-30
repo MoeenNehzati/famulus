@@ -17,8 +17,7 @@ Dependencies: none
 
 Interface Version: 1
 
-Exported Script Interfaces:
-- `scripts-gcal`
+Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 When this skill is used, begin with:
 

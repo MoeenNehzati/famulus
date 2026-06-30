@@ -30,4 +30,7 @@ script_interfaces:
       - min_positionals: 0
         allow_extra_positionals: true
         allow_stdin: false
-    exported: true
+    # Only daily-plan can access g-calendar functionality
+    exported: false
+    allowed_callers:
+      - daily-plan

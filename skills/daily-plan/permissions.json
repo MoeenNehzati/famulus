@@ -1,6 +1,6 @@
 {
   "bash": [
-    "Bash(python3 scripts/plans.sh read write exists:*)",
+    "Bash(python3 scripts/orchestrate.py:*)",
     "Bash(python3 scripts/render-plan.py:*)",
     "Bash(date:*)"
   ],

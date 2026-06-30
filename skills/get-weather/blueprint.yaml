@@ -28,4 +28,6 @@ script_interfaces:
       - min_positionals: 0
         allow_extra_positionals: true
         allow_stdin: false
+    # Public: anyone can use weather data
     exported: true
+    allowed_callers: []
