@@ -24,7 +24,10 @@ fi
 
 "${hook_dir}/git/check-not-detached" || failed=1
 "${hook_dir}/skill/check-names" || failed=1
+"${hook_dir}/skill/check-blueprints" || failed=1
 "${hook_dir}/skill/check-dependencies" || failed=1
+"${hook_dir}/skill/check-boundaries" || failed=1
+"${hook_dir}/skill/check-blueprint-tooling" || failed=1
 "${hook_dir}/skill/check-metadata" || failed=1
 "${hook_dir}/skill/check-platform-neutral" || failed=1
 "${hook_dir}/skill/check-install" || failed=1

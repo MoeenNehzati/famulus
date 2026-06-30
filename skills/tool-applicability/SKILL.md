@@ -16,13 +16,20 @@ description: |
   - determine what the tool requires, what it gives, whether that is an exact fit, fit with added assumptions, nearby weaker result, or mismatch, and what the exact gap or weakest plausible repair is
 ---
 
-When this skill is used, begin with:
-
-Skill: tool-applicability
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: mathematical-analysis
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
+When this skill is used, begin with:
+
+Skill: tool-applicability
 
 ## 1. Goal
 

@@ -2,7 +2,7 @@
 
 **A skill is a software module.** The standards below are its module spec — the same engineering discipline that applies to any well-designed module applies here: declared interfaces, enforced abstraction boundaries, single responsibility, explicit state contracts, and dependency hygiene. These are not stylistic preferences; they are structural requirements.
 
-**1. Skill identity and dependencies come first** — every skill has a stable dash-separated name and declares skill-level dependencies before workflow instructions.
+**1. Skill identity and contract come first** — every skill has a stable dash-separated name and declares its dependency and interface contract before workflow instructions.
 
 The skill directory name and frontmatter `name:` must match exactly. Skill names must be lower-case, dash-separated, and at least two words:
 
@@ -14,7 +14,7 @@ email-client
 
 Do not create one-word skill names such as `lists`, `weather`, or `email`. The dash-separated rule keeps skill IDs distinct from ordinary prose and makes mechanical dependency checks reliable.
 
-In `SKILL.md`, put a `Dependencies:` block near the beginning, immediately after the `Category:` line:
+Historical legacy skills may keep a hand-authored dependency block in `SKILL.md`:
 
 ```markdown
 Category: automation
@@ -27,11 +27,88 @@ Dependencies:
 
 Use `Dependencies: none` when the skill must not invoke other skills. List only skill names, not paths, scripts, or implementation details.
 
-Each skill also ships a sidecar `depends_on_skills` next to `SKILL.md`, with the same dependency names, one per line. Use an empty file for no dependencies. Scripts and permission generators read `depends_on_skills`; humans read the `SKILL.md` block. These two declarations must match.
+In this repository, local skills use a canonical `blueprint.yaml` next to `SKILL.md`. Initialize a new blueprint by copying `references/skill-blueprint-template.yaml` into the skill directory as your base, then customize it in place. The blueprint is hand-authored and comment-rich. It is the source of truth for:
+
+- `category`
+- `interface_version`
+- `depends_on`
+- `suggested_permissions`
+- `skill_interface`
+- `script_interfaces`
+
+For blueprint skills, `depends_on_skills` and the top-of-file contract block in `SKILL.md` are generated compatibility artifacts. The blueprint is canonical; the generated files must match it exactly.
+Every local skill must therefore have a sibling `blueprint.yaml`, exactly one generated contract block in `SKILL.md`, and generated artifacts that stay in sync with the blueprint.
 
 Every exact skill-name mention in the body of `SKILL.md` must also match the dependency set. Do not mention a skill as an invoked collaborator unless it is in both the `Dependencies:` block and `depends_on_skills`.
 
-Dependencies authorize skill invocation only. A dependency does not authorize direct access to another skill's files or scripts.
+Dependencies authorize skill invocation and, for blueprint-migrated dependencies, dispatcher calls through `../../tools/invoke_skill_export.py` to that skill's exported script interface. A dependency never authorizes direct access to another skill's files or raw script paths.
+
+**Blueprint authoring — REQUIRED: Initialize by copying the template**
+
+**Always initialize a new blueprint by copying `references/skill-blueprint-template.yaml` to `skills/<skill-name>/blueprint.yaml`.** Do not create a blueprint from scratch; start with the template as your base. The template includes:
+
+- Complete documentation on all blueprint fields and concepts
+- Detailed explanation of the pattern-based invocation system
+- Examples of single-pattern and multi-pattern interfaces
+- Access control patterns (`exported`, `allowed_callers`)
+- Constraint validation via regex (`positional_patterns`, `flag_patterns`)
+- Best practices for blueprint design
+- Regex syntax guide with common examples
+
+**Keep the comments.** The template's extensive comments are part of the specification; they explain intent and guide future edits. Deleting or shortening them reduces clarity and defeats the purpose of the template.
+
+**Blueprint authoring notes**
+
+- `category`: required string, or a list of strings for a genuinely multi-category skill. Values from `references/skill-categories.md`.
+- `interface_version`: required positive integer. Bump only when exported contract changes in a breaking way.
+- `depends_on`: mapping from skill name to dependency contract. Use `major_version` for blueprint dependencies and `{}` only for legacy non-blueprint dependencies. Include `exports` list to name which interfaces this skill is allowed to use.
+- `suggested_permissions`: mapping with `bash` and `network` lists. Every entry must include a `reason` explaining why it's safe to pre-approve.
+- `skill_interface`: three plain-language lists (`inputs`, `outputs`, `side_effects`) that describe the skill's high-level contract.
+- `script_interfaces`: **Pattern-based invocation contracts** (see template for details). Each interface maps to one or more patterns that describe valid calling conventions. Patterns support:
+  - Positional argument constraints (`min_positionals`, `max_positionals`, `positional_patterns` with regex)
+  - Flag constraints (`required_flags`, `allowed_flags`, `forbidden_flags`, `flag_patterns` with regex)
+  - Access control (`exported` boolean, `allowed_callers` list for restrict-to-skills)
+  - Multi-pattern interfaces for different calling styles (file vs stdin, etc.)
+
+**Dispatcher role**
+
+`../../tools/invoke_skill_export.py` is the only sanctioned local cross-skill script boundary for blueprint-migrated skills. Its job is to:
+
+1. Load the callee's `blueprint.yaml`
+2. Resolve the requested `script_interface` and auto-match against available patterns
+3. Allow the owning skill to use its full private interface (all patterns)
+4. Allow external callers to use only exported interfaces and patterns
+5. Verify that the caller declared the dependency with matching major version
+6. Verify that the interface is listed in `depends_on.exports` (if caller specified)
+7. Verify that the caller is in `allowed_callers` (if interface is restricted)
+8. Match the actual invocation against available patterns:
+   - Check positional count constraints (min/max)
+   - Check positional argument values against regex patterns
+   - Check required flags are present, forbidden flags are absent
+   - Check flag values against regex patterns
+9. Resolve the declared working directory and execute the command
+
+The pattern-based approach enables **compile-time validation**: git hooks verify that only allowed skills can export restricted interfaces, catching misuse before deployment rather than at runtime.
+
+Use `--dry-run` to inspect the resolved command without executing it:
+```bash
+python3 tools/invoke_skill_export.py --dry-run --caller-skill daily-plan \
+  list-manager read-list /tmp/todo.yaml
+```
+
+**Injection lifecycle**
+
+`../../tools/sync_skill_blueprints.py` injects and refreshes the generated compatibility artifacts for blueprint skills:
+
+- `depends_on_skills`
+- `permissions.json`
+- the generated contract block placed immediately after the YAML frontmatter in `SKILL.md`
+
+That generated block is not user-authored. Do not edit it by hand. The hook path for this is:
+
+- `../../.githooks/skill/check-blueprints` for blueprint presence, injection layout, and artifact sync
+- `../../.githooks/skill/check-boundaries` for local script boundary enforcement
+- `../../.githooks/skill/check-blueprint-tooling` for regression tests covering dispatcher and injection behavior
 
 **2. Skill categories** — declare `Category: <name>` near the top of `SKILL.md`. Valid values: top-level `references/skill-categories.md`. Omit only if no existing category fits.
 
@@ -39,7 +116,7 @@ Dependencies authorize skill invocation only. A dependency does not authorize di
 - Personal overrides and additions at the top (what's different or added).
 - Then a **REQUIRED — NON-NEGOTIABLE** instruction to invoke the original `X` skill at the bottom. The original skill's rules apply in full; the personal section adds on top.
 
-**4. `permissions.json`** — every skill ships one alongside `SKILL.md`:
+**4. `permissions.json` and `suggested_permissions`** — every skill ships a `permissions.json` alongside `SKILL.md`:
 ```json
 {
   "bash": ["Bash(scripts/example.sh:*)"],
@@ -47,6 +124,21 @@ Dependencies authorize skill invocation only. A dependency does not authorize di
 }
 ```
 Empty array `[]` for unused categories. Entries map to the active agent's permission allow-list when that agent supports one. Do not cascade another skill's permissions here; list that skill in `depends_on_skills` instead and let permission tooling derive transitive grants from declared dependencies.
+
+For blueprint-migrated skills, `permissions.json` is generated from `suggested_permissions` in `blueprint.yaml`. `suggested_permissions` is advisory, not a grant. It should explain what is safe and useful to pre-approve for smoother execution. Use structured entries plus a short `reason`, for example:
+
+```yaml
+suggested_permissions:
+  bash:
+    - command: ["python3", "scripts/lists.py"]
+      args_prefix: ["read"]
+      reason: "Stable read path behind the exported read-list interface."
+  network:
+    - kind: web_search
+      reason: "Needed when live verification is required."
+```
+
+The generated `permissions.json` remains the compatibility artifact for current tooling.
 
 **5. Frontmatter `description:` is a trigger declaration, not a summary** — write it as "Use when..." followed by the triggering conditions and symptoms that signal this skill applies. Never summarize the skill's workflow, steps, or outputs in the description.
 
@@ -69,9 +161,19 @@ description: Use when the user asks to plan their day, check their schedule, or 
 **8. Skills are components in an evolving system — design accordingly.**
 
 - **Reuse, don't reimplement.** Before writing new behavior, check whether an existing skill already covers it. If yes, invoke or extend that skill. Duplication means two places to update when behavior changes; reuse means one. Failing to reuse when a suitable skill exists is a defect. Example: `daily-plan` invokes `list-manager`, `g-calendar`, and `get-weather` rather than reimplementing any of them.
-- **Depend on interfaces, not internals — invoke the skill, never its scripts.** Each skill's scripts are private to that skill. When your skill needs behavior another skill provides, invoke that skill and let it run its own scripts. Directly calling another skill's scripts bypasses its logic and couples to its internals. Reuse maximally, but only through skill invocation. Do not name or reference paths to a dependency skill's scripts anywhere in `SKILL.md` — even as examples or clarifications. Naming them invites direct calls.
-- **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative. A skill may refer to files under its own directory and to shared `../references/` material only. It must not mention parent-path addresses such as `../other-skill/...`, `../../skills/...`, or any absolute filesystem path to another skill. System-level paths are allowed only for durable user configuration or executable interfaces that are intentionally outside the skills tree, such as `~/.config/<skill-name>/` and installed commands under `bin`.
-- **Make your own interface explicit.** State what inputs your skill expects and what outputs it produces, so future skills can depend on you cleanly. If your skill runs a script, document the invocation pattern and output format in `SKILL.md`.
+- **Depend on interfaces, not internals.** There are only two valid cross-skill boundaries:
+  - invoke the dependency skill as a skill
+  - call the dependency skill's exported script interface through `../../tools/invoke_skill_export.py`
+
+  Directly naming another skill's script path is forbidden. The owning skill's `blueprint.yaml` defines the full internal script interface under `script_interfaces`, and the externally callable subset under `exported_interface`.
+- **Do not introduce new cross-skill Python imports.** If behavior should be shared across skills, expose it through a skill invocation or exported script interface. If truly shared library code is needed, move it to an explicit shared library area outside individual skill script directories.
+- **Do not reach into another skill's script directory from local scripts.** For blueprint-migrated skills, local `.py` and `.sh` files must not call, source, or add another skill's `scripts/` directory to `sys.path`. Use a skill invocation or `../../tools/invoke_skill_export.py` instead.
+- **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative. A skill may refer to files under its own directory, to shared `../references/` material, and to shared repo tools under `../../tools/`. It must not mention parent-path addresses such as `../other-skill/...`, `../../skills/...`, or any absolute filesystem path to another skill. System-level paths are allowed only for durable user configuration or executable interfaces that are intentionally outside the skills tree, such as `~/.config/<skill-name>/` and installed commands under `bin`.
+- **Make your own interface explicit.** State what inputs your skill expects and what outputs it produces, so future skills can depend on you cleanly. For blueprint skills:
+  - `skill_interface` describes the skill-level contract
+  - `script_interfaces` describes the owning skill's full script surface
+  - `exported_interface` names the externally supported subset
+  - `interface_version` is the major version of that public contract
 
 **9. No code in SKILL.md — scripts only, with one exception** — skill files must not contain executable code logic. Any logic (shell commands, Python, etc.) belongs in a dedicated file under `scripts/`. `SKILL.md` specifies only *when* to call a script, *how* to invoke it, and how to interpret its output. The script file itself carries everything else: what it does, how it works, and its full interface (arguments, flags, exit codes, output format). This minimizes permission prompts: scripts under each skill's `scripts/` directory can be pre-approved, whereas inline Bash in a skill body triggers approval on every run.
 

@@ -20,13 +20,20 @@ description: |
   - produce a coherent candidate notation scheme without rewriting text unless asked
 ---
 
-When this skill is used, begin with:
-
-Skill: notation-review
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: document-oriented
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
+When this skill is used, begin with:
+
+Skill: notation-review
 
 ## 1. Goal
 

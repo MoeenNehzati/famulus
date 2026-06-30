@@ -21,13 +21,20 @@ description: |
   - do not edit the file unless the user agrees
 ---
 
-When this skill is used, begin with:
-
-Skill: make-tex-docstring
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: document-oriented
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
+When this skill is used, begin with:
+
+Skill: make-tex-docstring
 
 ## 1. Goal
 

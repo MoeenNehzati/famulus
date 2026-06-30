@@ -7,14 +7,27 @@ description: |
   add, update, check off, or query items on a list.
 ---
 
-When this skill is used, begin with:
-
-Skill: list-manager
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: automation
 
 Dependencies:
 - cloud-files
+
+Interface Version: 1
+
+Exported Script Interfaces:
+- `beautify-list`
+- `create-entry`
+- `generate-id`
+- `init-list`
+- `read-list`
+- `update-list`
+<!-- END BLUEPRINT CONTRACT -->
+When this skill is used, begin with:
+
+Skill: list-manager
 
 ## 0. Architecture
 
@@ -142,6 +155,7 @@ Flags:
   - White (` `): `incomplete`, `undecided`
 - `--markdown` — outputs Markdown (strikethrough for done, bold for in-progress)
 - `-D` / `--no-descriptions` — hide entry descriptions (shown by default)
+- `--sort FIELD` — sort results by the given field (e.g., `deadline`, `created`, `title`). Date fields (YYYY-MM-DD format) are sorted chronologically (earliest first). Non-date fields are sorted lexicographically. Entries missing the sort field are placed at the end.
 
 ### 4.3 Create a new list
 

@@ -238,6 +238,23 @@ def cmd_read(args: argparse.Namespace) -> None:
 
     filters = parse_filters(args.filters)
     matches = collect_matching_entries(data, filters)
+
+    # Sort if requested
+    if hasattr(args, 'sort') and args.sort:
+        sort_field = args.sort
+        # Try to sort by the field, treating dates as dates
+        try:
+            matches.sort(key=lambda e: (
+                # Missing values sort last
+                float('inf') if sort_field not in e else (
+                    # Treat YYYY-MM-DD as dates (earlier dates first)
+                    e[sort_field] if not isinstance(e[sort_field], str) or len(e[sort_field]) < 10
+                    else (e[sort_field], 0)  # Sort dates lexicographically (safe for YYYY-MM-DD)
+                )
+            ))
+        except (TypeError, ValueError) as ex:
+            die(f"sort by '{sort_field}' failed: {ex}")
+
     print(yaml.dump(matches, allow_unicode=True, default_flow_style=False, sort_keys=False), end="")
 
 
@@ -332,6 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_read = sub.add_parser("read", help="Read list, optionally filtered")
     p_read.add_argument("file", help="Path to list YAML")
     p_read.add_argument("filters", nargs="*", help="key=value or key~=value filters")
+    p_read.add_argument("--sort", metavar="FIELD", help="Sort results by field (e.g., deadline, created). Dates sorted ascending (earliest first)")
 
     p_create = sub.add_parser("create-entry", help="Add entries to a category or entry")
     p_create.add_argument("file", help="Path to list YAML")

@@ -9,13 +9,21 @@ description: |
   whether it'll rain, what to wear, or how to plan around weather.
 ---
 
-When this skill is used, begin with:
-
-Skill: get-weather
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: automation
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces:
+- `scripts-weather`
+<!-- END BLUEPRINT CONTRACT -->
+When this skill is used, begin with:
+
+Skill: get-weather
 
 ## 0. What this does
 

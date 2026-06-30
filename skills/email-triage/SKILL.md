@@ -3,13 +3,20 @@ name: email-triage
 description: Use when asked to triage email, process the inbox, or surface action items from recent emails. Reads emails since the last triage run (watermark) and syncs with the todo list and potential-actions list.
 ---
 
-# Email Triage
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: automation
 
 Dependencies:
 - email-client
 - list-manager
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
+# Email Triage
 
 Scans emails received since the last triage run. Extracts action items and routes them to the right list. Never adds events to the calendar automatically — the user decides.
 

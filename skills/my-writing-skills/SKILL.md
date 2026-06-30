@@ -3,8 +3,18 @@ name: my-writing-skills
 description: Use when creating or editing a personal skill in the shared skills directory
 ---
 
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Category: workflow
+
 Dependencies:
 - superpowers:writing-skills
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
 
 ## Git Safety
 

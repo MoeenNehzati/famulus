@@ -4,13 +4,20 @@ description: |
   Diagnose rclone bisync failures by inspecting wrapper configuration, logs, state files, and filters; identify the first real failure and any concrete culprit files; propose prevention options; with user approval implement preventive changes; then either provide the repair command or run it depending on the user's preference.
 ---
 
-When this skill is used, begin with:
-
-Skill: fix-bisync
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: automation
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
+When this skill is used, begin with:
+
+Skill: fix-bisync
 
 ## 1. Goal
 

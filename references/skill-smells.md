@@ -14,10 +14,10 @@ Visible symptoms that signal a skill needs refactoring. Each smell maps to one o
 **Analog:** Wrong layer of abstraction.
 **Moves:** Extract Script.
 
-## Missing or incomplete `permissions.json`
-**Signal:** `permissions.json` is absent, or scripts the skill calls are not listed in it.
+## Missing or incomplete contract artifacts
+**Signal:** A migrated skill is missing `blueprint.yaml`, its generated `depends_on_skills` / `permissions.json` artifacts are stale, or its contract block in `SKILL.md` is out of sync.
 **Analog:** Missing interface declaration.
-**Moves:** Add/fix `permissions.json`.
+**Moves:** Add/fix blueprint, Sync generated artifacts.
 
 ## Duplicated guidelines
 **Signal:** Conventions, rules, or reference content that already exist in another skill or `references/` file are copy-pasted here.
@@ -68,6 +68,6 @@ Visible symptoms that signal a skill needs refactoring. Each smell maps to one o
 **Moves:** Inline Thin Skill.
 
 ## Leaky internals
-**Signal:** SKILL.md references another skill's scripts directly (e.g. `../lists/scripts/lists.sh`) instead of invoking the skill.
+**Signal:** SKILL.md or a script references another skill's raw script path directly, or bypasses the dispatcher and calls a non-exported invocation form.
 **Analog:** Inappropriate Intimacy.
-**Moves:** Depend on Interface (replace script call with skill invocation).
+**Moves:** Depend on Interface (replace raw script access with a skill invocation or dispatcher call to an exported interface).

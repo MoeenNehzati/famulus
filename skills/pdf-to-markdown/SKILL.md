@@ -5,9 +5,17 @@ tools:
   - marker_single
 ---
 
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
 Category: document-oriented
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
 
 # PDF to Markdown
 

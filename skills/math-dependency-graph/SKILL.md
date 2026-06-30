@@ -15,14 +15,21 @@ description: |
   - render a standalone HTML graph from the JSON
 ---
 
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Category: document-oriented
+Category: mathematical-analysis
+
+Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
 When this skill is used, begin with:
 
 Skill: math-dependency-graph
-
-Category: document-oriented
-
-Dependencies: none
-Category: mathematical-analysis
 
 ## 1. Goal
 

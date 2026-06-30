@@ -3,11 +3,18 @@ name: email-client
 description: Use when reading, listing, searching, or sending email for the user. Covers both nyu (sn3379@nyu.edu) and personal (smnehzati@gmail.com) Gmail accounts.
 ---
 
-# Email
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: automation
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
+# Email
 
 Two Gmail accounts: **nyu** (`sn3379@nyu.edu`) and **personal** (`smnehzati@gmail.com`).
 

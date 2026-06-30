@@ -1,0 +1,121 @@
+# Canonical contract for list-manager.
+# This file is hand-authored and comment-rich on purpose. Sync tooling may read
+# and validate it, but must not rewrite it in ways that destroy comments.
+
+category: automation
+
+# Bump this major version whenever the exported script contract changes in a
+# breaking way.
+interface_version: 1
+
+# cloud-files is blueprint-migrated, so pin the current major version.
+depends_on:
+  cloud-files:
+    major_version: 1
+
+suggested_permissions:
+  bash:
+    - command: ["python3", "scripts/lists.py"]
+      reason: "Core local list operations; broad pre-approval avoids repeated prompts."
+    - command: ["python3", "scripts/beautify.py"]
+      reason: "Pure formatter used for user-facing rendering of YAML output."
+    - command: ["python3", "scripts/migrate_md.py"]
+      reason: "One-time migration utility for importing legacy Markdown lists."
+  network: []
+
+skill_interface:
+  inputs:
+    - Local YAML list files under /tmp after download from cloud storage.
+    - User commands such as read, update, create-entry, or init.
+  outputs:
+    - YAML data for LLM consumption.
+    - Beautified list output for user display.
+    - Updated local YAML files ready for upload.
+  side_effects:
+    - Writes the local YAML file for mutating operations.
+    - Produces stdout/stderr for orchestration and validation errors.
+
+script_interfaces:
+  # The primary local CLI for structured list operations.
+  read-list:
+    cwd: skill_root
+    command: ["python3", "scripts/lists.py", "read"]
+    patterns:
+      - min_positionals: 1
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "First positional is the local YAML file; remaining positionals are filters."
+    exported: true
+
+  update-list:
+    cwd: skill_root
+    command: ["python3", "scripts/lists.py", "update"]
+    patterns:
+      - name: "file-mode"
+        min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        required_flags: ["--file"]
+        allowed_flags: ["--file"]
+        notes: "Externally supported update mode; caller prepares the patch file."
+      - name: "stdin-batch"
+        min_positionals: 1
+        max_positionals: 1
+        allow_stdin: true
+        forbidden_flags: ["--file"]
+        notes: "Internal convenience mode for the owning skill when feeding YAML directly."
+    exported: true
+
+  beautify-list:
+    cwd: skill_root
+    command: ["python3", "scripts/beautify.py"]
+    patterns:
+      - min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: true
+        notes: "Reads YAML from stdin and renders user-facing list output."
+    exported: true
+
+  init-list:
+    cwd: skill_root
+    command: ["python3", "scripts/lists.py", "init"]
+    patterns:
+      - min_positionals: 1
+        allow_extra_positionals: true
+        allow_stdin: false
+    exported: true
+
+  create-entry:
+    cwd: skill_root
+    command: ["python3", "scripts/lists.py", "create-entry"]
+    patterns:
+      - name: "stdin-mode"
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: true
+        forbidden_flags: ["--entries"]
+      - name: "file-mode"
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+        required_flags: ["--entries"]
+        allowed_flags: ["--entries"]
+    exported: true
+
+  generate-id:
+    cwd: skill_root
+    command: ["python3", "scripts/lists.py", "gen-id"]
+    patterns:
+      - min_positionals: 1
+        allow_extra_positionals: true
+        allow_stdin: false
+    exported: true
+
+  migrate-markdown:
+    cwd: skill_root
+    command: ["python3", "scripts/migrate_md.py"]
+    patterns:
+      - min_positionals: 3
+        allow_extra_positionals: true
+        allow_stdin: false
+    exported: false

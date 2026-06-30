@@ -19,13 +19,20 @@ description: |
   - respect field conventions and user-approved wording unless they create real error or ambiguity
 ---
 
-When this skill is used, begin with:
-
-Skill: formal-prose-review
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: document-oriented
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
+When this skill is used, begin with:
+
+Skill: formal-prose-review
 
 ## 1. Goal
 

@@ -1,0 +1,41 @@
+# Canonical contract for cloud-files.
+
+category: automation
+
+interface_version: 1
+
+depends_on: {}
+
+suggested_permissions:
+  bash:
+    - command: ["python3", "scripts/cloud_files.py"]
+      reason: "Main cloud file operations."
+    - command: ["python3", "scripts/read_llm_file.py"]
+      reason: "Read files from cloud storage."
+    - command: ["python3", "scripts/write_llm_file.py"]
+      reason: "Write files to cloud storage."
+    - command: ["python3", "scripts/delete_llm_file.py"]
+      reason: "Delete files from cloud storage."
+    - command: ["python3", "scripts/ls_llm.py"]
+      reason: "List files in cloud storage."
+    - command: ["python3", "scripts/setup_oauth.py"]
+      reason: "OAuth setup for cloud access."
+  network: []
+
+skill_interface:
+  inputs:
+    - File paths and content for cloud operations.
+  outputs:
+    - File contents and operation results.
+  side_effects:
+    - Reads and writes files on cloud storage.
+
+script_interfaces:
+  scripts-cloud-files:
+    cwd: skill_root
+    command: ["python3", "scripts/cloud_files.py"]
+    patterns:
+      - min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+    exported: false

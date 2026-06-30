@@ -1,7 +1,7 @@
 {
   "bash": [
     "Bash(scripts/gcal.sh:*)",
-    "Bash(scripts/setup_oauth.py:*)"
+    "Bash(python3 scripts/setup_oauth.py:*)"
   ],
   "network": []
 }

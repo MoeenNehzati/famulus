@@ -2,7 +2,7 @@
 # Guideline §1 — dependencies: Dependencies block must be present, must match the depends_on_skills
 # sidecar, and every exact skill-name mention in the body must appear in both declarations.
 # Guideline §8 — local references: parent paths in SKILL.md may only point to ../references/
-# (exception: update-skill-guidelines may also reference ../../.githooks/).
+# or ../../tools/ (exception: update-skill-guidelines may also reference ../../.githooks/).
 set -euo pipefail
 
 errors=()
@@ -70,13 +70,13 @@ while IFS= read -r -d '' skill_file; do
     skill_name="${skill_file%/SKILL.md}"
     skill_name="${skill_name#skills/}"
     if [[ "$skill_name" == "update-skill-guidelines" ]]; then
-        allowed_dirs='references|\.githooks'
+        allowed_dirs='references|tools|\.githooks'
     else
-        allowed_dirs='references'
+        allowed_dirs='references|tools'
     fi
     while IFS=: read -r line_no line; do
         [[ -z "$line_no" ]] && continue
-        errors+=("${skill_file}:${line_no}: parent paths in SKILL.md may only point to ../references: ${line}")
+        errors+=("${skill_file}:${line_no}: parent paths in SKILL.md may only point to ../references or ../../tools: ${line}")
     done < <(
         grep -nE '(^|[^[:alnum:]_./~-])(\.\.?/)*\.\./' "$skill_file" \
             | grep -Ev "(^|[^[:alnum:]_./~-])(\.\.?/)*\.\./($allowed_dirs)(/|[[:space:]\`'\"']|$)" \

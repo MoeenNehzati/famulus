@@ -3,12 +3,19 @@ name: recurring-tasks
 description: Use when setting up, enabling, disabling, testing, viewing logs, or debugging recurring tasks managed as systemd user timers. Also use when the healthcheck monitor reports a problem, or when adding a new automated job.
 ---
 
-# Recurring Tasks
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: automation
 
 Dependencies:
 - install-assistant-tools
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
+# Recurring Tasks
 
 Manages AI-driven recurring jobs as **systemd user timers**. `jobs.yaml` is the
 source of truth. Each enabled job invokes a skill non-interactively via assistant on a

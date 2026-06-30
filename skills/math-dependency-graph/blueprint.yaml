@@ -1,0 +1,61 @@
+# Canonical contract for math-dependency-graph.
+# This file was migrated from legacy skill metadata.
+# Tighten the placeholder script interfaces as each script contract becomes clearer.
+
+category:
+  - document-oriented
+  - mathematical-analysis
+
+# Bump this major version whenever the exported contract changes in a
+# breaking way for dependent skills.
+interface_version: 1
+
+depends_on:
+  {}
+
+suggested_permissions:
+  bash:
+    - command: ["python3"]
+      reason: "Migrated from legacy permissions.json."
+  network:
+    []
+
+skill_interface:
+  inputs:
+    - "User requests that match the SKILL.md description for this skill."
+  outputs:
+    - "Responses, artifacts, or side effects described by this skill's workflow."
+  side_effects:
+    - "May invoke local scripts or dependencies as described in SKILL.md."
+
+script_interfaces:
+  scripts-build-math-dependency-graph:
+    cwd: skill_root
+    command: ["python3", "scripts/build_math_dependency_graph.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/build_math_dependency_graph.py; tighten this contract when needed."
+    exported_interface: []
+  scripts-extract-mathjax-macros:
+    cwd: skill_root
+    command: ["python3", "scripts/extract_mathjax_macros.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/extract_mathjax_macros.py; tighten this contract when needed."
+    exported_interface: []
+  scripts-serve-graph:
+    cwd: skill_root
+    command: ["python3", "scripts/serve_graph.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/serve_graph.py; tighten this contract when needed."
+    exported_interface: []

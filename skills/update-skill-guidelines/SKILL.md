@@ -3,13 +3,20 @@ name: update-skill-guidelines
 description: Update the shared skill-writing standards and keep their mechanical Git hook checks aligned. Use when changing references/skill-guidelines.md, adding/removing skill conventions, changing dependency or naming rules, or auditing whether .githooks/skill checks still reflect the guideline.
 ---
 
-When this skill is used, begin with:
-
-Skill: update-skill-guidelines
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: automation
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
+When this skill is used, begin with:
+
+Skill: update-skill-guidelines
 
 ## Goal
 

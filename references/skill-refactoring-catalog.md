@@ -20,8 +20,8 @@ Rewrite the YAML `description` field to state only trigger conditions ("Use when
 Add or correct the `Category:` line using `references/skill-categories.md`.
 **Risk:** None.
 
-### Add/fix `permissions.json`
-Add a `permissions.json` if missing. Add any script paths the skill invokes that aren't already listed.
+### Sync generated contract artifacts
+If the skill is blueprint-migrated, update `blueprint.yaml` and regenerate `depends_on_skills`, `permissions.json`, and the generated contract block in `SKILL.md`.
 **Risk:** None — purely additive.
 
 ---
@@ -98,12 +98,12 @@ Steps:
 **Risk:** High — requires knowing all callers.
 
 ### Depend on Interface
-If a skill calls another skill's scripts directly, replace the script call with a proper skill invocation.
+If a skill calls another skill's scripts directly, replace the raw script call with either a proper skill invocation or a dispatcher call to the dependency's exported interface.
 
 Steps:
-1. Identify the script being called and which skill owns it.
-2. Understand what that skill's invocation produces.
-3. Replace the raw script call in SKILL.md or scripts/ with a skill invocation.
+1. Identify the raw script access and which skill owns it.
+2. Understand the owning skill's exported interface and which invocation mode matches the current use.
+3. Replace the raw script call in SKILL.md or scripts/ with either a skill invocation or a dispatcher call to the exported interface.
 4. Verify output is equivalent.
 
 **Preserve:** Output and side effects.

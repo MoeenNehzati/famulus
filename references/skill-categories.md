@@ -58,6 +58,21 @@ Implications:
 - do not apply preventive changes without user approval
 - prefer showing repair commands unless the user explicitly asks to run them
 
+### `workflow`
+
+Use for skills that primarily govern agent working style, repo process,
+handoff discipline, or skill-authoring/refactoring conventions rather than a
+document domain or machine-facing automation task.
+
+Typical examples:
+- mode-switching skills such as tight/loose mode
+- skill-authoring and skill-refactoring guides
+- repo workflow and knowledge-distillation procedures
+
+Implications:
+- prefer preserving process invariants and operator clarity over adding new execution behavior
+- documentation, checks, and handoff quality are part of the skill's behavior
+
 ## Notes
 
 - Keep this list small and stable.

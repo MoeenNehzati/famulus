@@ -1,0 +1,77 @@
+# Canonical contract for daily-plan.
+
+category: automation
+
+interface_version: 1
+
+depends_on:
+  list-manager:
+    major_version: 1
+    exports:
+      - read-list
+      - update-list
+      - beautify-list
+      - generate-id
+      - create-entry
+  g-calendar:
+    major_version: 1
+    exports:
+      - scripts-gcal
+  get-weather:
+    major_version: 1
+    exports:
+      - scripts-weather
+
+suggested_permissions:
+  bash:
+    - command: ["python3", "scripts/plans.sh"]
+      args_prefix: ["read", "write", "exists"]
+      reason: "Plan file operations via wrapper."
+    - command: ["python3", "scripts/render-plan.py"]
+      reason: "Plan rendering helper."
+    - command: ["date"]
+      reason: "Get current date for plan key."
+  network: []
+
+skill_interface:
+  inputs:
+    - User requests to plan today.
+    - Calendar, todo, and weather data.
+  outputs:
+    - Persisted daily plan file.
+    - Display-ready plan content.
+  side_effects:
+    - Writes plan file to cloud storage.
+    - May update todo list via list-manager.
+
+script_interfaces:
+  plan-storage:
+    cwd: skill_root
+    command: ["scripts/plans.sh"]
+    patterns:
+      - name: "read"
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+      - name: "write"
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: true
+      - name: "exists"
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+      - name: "delete"
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+    exported: false
+
+  render-plan:
+    cwd: skill_root
+    command: ["python3", "scripts/render-plan.py"]
+    patterns:
+      - min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: true
+    exported: false

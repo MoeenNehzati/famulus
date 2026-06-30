@@ -3,9 +3,17 @@ name: tight-mode
 description: Use when the user invokes "tight mode" or asks for rigorous, exact, verified output — when certainty matters more than breadth or speed. Contrasts with loose-mode.
 ---
 
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
 Category: workflow
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
 
 ## Core principle
 

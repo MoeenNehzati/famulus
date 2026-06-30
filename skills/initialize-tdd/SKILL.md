@@ -3,7 +3,17 @@ name: initialize-tdd
 description: Use when starting a brand new project that should follow a staged, approval-gated TDD workflow (design -> tests -> implementation -> docs). Scaffolds a new project directory with CLAUDE.md, README, .gitignore, git init, the superpowers skills plugin, and (for Python) a venv + centralized logger/config modules + a starter test suite.
 ---
 
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Category: automation
+
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
 
 # Initialize TDD Project
 

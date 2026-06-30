@@ -3,17 +3,24 @@ name: install-assistant-tools
 description: Install or update the assistant, collab, coauthor, and tw/tmux-workspace helpers on a machine. Use when the user wants these commands installed, repaired, refreshed, or propagated to another system; when a system lacks them; or when the helper definitions should be updated in shell startup files.
 ---
 
-# Install Assistant Tools
-
-When this skill is used, begin with:
-
-Skill: install-assistant-tools
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: automation
 
 Dependencies:
 - cloud-files
 - g-calendar
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
+# Install Assistant Tools
+
+When this skill is used, begin with:
+
+Skill: install-assistant-tools
 
 ## Platform Support
 

@@ -1,0 +1,222 @@
+# Canonical contract for recurring-tasks.
+# This file was migrated from legacy skill metadata.
+# Tighten the placeholder script interfaces as each script contract becomes clearer.
+
+category: automation
+
+# Bump this major version whenever the exported contract changes in a
+# breaking way for dependent skills.
+interface_version: 1
+
+depends_on:
+  install-assistant-tools:
+    major_version: 1
+
+suggested_permissions:
+  bash:
+    - command: ["scripts/setup.sh"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["scripts/sync-units.py"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["scripts/enable-job.py"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["scripts/disable-job.py"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["scripts/test-job.py"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["scripts/test-live-job.py"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["scripts/view-logs.sh"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["scripts/status.sh"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["systemctl"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["journalctl"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["grep"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["tail"]
+      reason: "Migrated from legacy permissions.json."
+  network:
+    []
+
+skill_interface:
+  inputs:
+    - "User requests that match the SKILL.md description for this skill."
+  outputs:
+    - "Responses, artifacts, or side effects described by this skill's workflow."
+  side_effects:
+    - "May invoke local scripts or dependencies as described in SKILL.md."
+
+script_interfaces:
+  scripts-job-utils:
+    cwd: skill_root
+    command: ["python3", "scripts/_job_utils.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/_job_utils.py; tighten this contract when needed."
+    exported_interface: []
+  scripts-disable-job:
+    cwd: skill_root
+    command: ["python3", "scripts/disable-job.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/disable-job.py; tighten this contract when needed."
+    exported_interface: []
+  scripts-enable-job:
+    cwd: skill_root
+    command: ["python3", "scripts/enable-job.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/enable-job.py; tighten this contract when needed."
+    exported_interface: []
+  scripts-env:
+    cwd: skill_root
+    command: ["scripts/env.sh"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/env.sh; tighten this contract when needed."
+    exported_interface: []
+  scripts-healthcheck:
+    cwd: skill_root
+    command: ["scripts/healthcheck.sh"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/healthcheck.sh; tighten this contract when needed."
+    exported_interface: []
+  scripts-invoke-agent:
+    cwd: skill_root
+    command: ["scripts/invoke-agent.sh"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/invoke-agent.sh; tighten this contract when needed."
+    exported_interface: []
+  scripts-run-skill:
+    cwd: skill_root
+    command: ["scripts/run-skill.sh"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/run-skill.sh; tighten this contract when needed."
+    exported_interface: []
+  runners-daily-plan:
+    cwd: skill_root
+    command: ["scripts/runners/daily-plan.sh"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/runners/daily-plan.sh; tighten this contract when needed."
+    exported_interface: []
+  runners-email-triage:
+    cwd: skill_root
+    command: ["scripts/runners/email-triage.sh"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/runners/email-triage.sh; tighten this contract when needed."
+    exported_interface: []
+  scripts-setup:
+    cwd: skill_root
+    command: ["scripts/setup.sh"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/setup.sh; tighten this contract when needed."
+    exported_interface: []
+  scripts-status:
+    cwd: skill_root
+    command: ["scripts/status.sh"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/status.sh; tighten this contract when needed."
+    exported_interface: []
+  scripts-sync-units:
+    cwd: skill_root
+    command: ["python3", "scripts/sync-units.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/sync-units.py; tighten this contract when needed."
+    exported_interface: []
+  scripts-test-job:
+    cwd: skill_root
+    command: ["python3", "scripts/test-job.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/test-job.py; tighten this contract when needed."
+    exported_interface: []
+  scripts-test-live-job:
+    cwd: skill_root
+    command: ["python3", "scripts/test-live-job.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/test-live-job.py; tighten this contract when needed."
+    exported_interface: []
+  scripts-test-enable-disable:
+    cwd: skill_root
+    command: ["python3", "scripts/test_enable_disable.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/test_enable_disable.py; tighten this contract when needed."
+    exported_interface: []
+  scripts-test-sync-units:
+    cwd: skill_root
+    command: ["python3", "scripts/test_sync_units.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/test_sync_units.py; tighten this contract when needed."
+    exported_interface: []
+  scripts-view-logs:
+    cwd: skill_root
+    command: ["scripts/view-logs.sh"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/view-logs.sh; tighten this contract when needed."
+    exported_interface: []

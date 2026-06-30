@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Guideline §1 — local skill contract: every local skill must have a sibling
+# blueprint.yaml, a single generated contract block in SKILL.md, and all generated
+# artifacts must stay in sync with the blueprint.
+set -uo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+python3 "$repo_root/tools/check_skill_blueprints.py"

@@ -1,0 +1,33 @@
+# Canonical contract for g-calendar.
+
+category: automation
+
+interface_version: 1
+
+depends_on: {}
+
+suggested_permissions:
+  bash:
+    - command: ["scripts/gcal.sh"]
+      reason: "Calendar query tool."
+    - command: ["python3", "scripts/setup_oauth.py"]
+      reason: "OAuth setup tool."
+  network: []
+
+skill_interface:
+  inputs:
+    - User requests for calendar data.
+  outputs:
+    - Calendar event data and agenda information.
+  side_effects:
+    - May interact with Google Calendar API.
+
+script_interfaces:
+  scripts-gcal:
+    cwd: skill_root
+    command: ["scripts/gcal.sh"]
+    patterns:
+      - min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+    exported: true

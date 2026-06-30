@@ -1,0 +1,32 @@
+# Canonical contract for wrap-up.
+# This file was migrated from legacy skill metadata.
+# Tighten the placeholder script interfaces as each script contract becomes clearer.
+
+category: automation
+
+# Bump this major version whenever the exported contract changes in a
+# breaking way for dependent skills.
+interface_version: 1
+
+depends_on:
+  daily-plan:
+    major_version: 1
+  list-manager:
+    major_version: 1
+
+suggested_permissions:
+  bash:
+    []
+  network:
+    []
+
+skill_interface:
+  inputs:
+    - "User requests that match the SKILL.md description for this skill."
+  outputs:
+    - "Responses, artifacts, or side effects described by this skill's workflow."
+  side_effects:
+    - "May invoke local scripts or dependencies as described in SKILL.md."
+
+script_interfaces:
+  {}

@@ -3,7 +3,17 @@ name: refactor-skills
 description: Use when auditing or refactoring an existing skill for convention compliance or structural improvement
 ---
 
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Category: workflow
+
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
 
 **Skills are software modules. Refactoring a skill follows standard software refactoring discipline** — the same principles Fowler describes for code apply directly: behavior preservation is non-negotiable, moves are small and verified one at a time, and the safety net (characterization) comes before the first change.
 

@@ -1,7 +1,8 @@
 {
   "bash": [
     "Bash(python3 scripts/lists.py:*)",
-    "Bash(python3 scripts/beautify.py:*)"
+    "Bash(python3 scripts/beautify.py:*)",
+    "Bash(python3 scripts/migrate_md.py:*)"
   ],
   "network": []
 }

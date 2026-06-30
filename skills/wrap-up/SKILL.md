@@ -6,15 +6,22 @@ description: |
   notes, and captures any new items for lists.
 ---
 
-When this skill is used, begin with:
-
-Skill: wrap-up
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: automation
 
 Dependencies:
 - daily-plan
 - list-manager
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
+When this skill is used, begin with:
+
+Skill: wrap-up
 
 ## 0. Overview
 

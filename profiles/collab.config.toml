@@ -1,7 +1,17 @@
 model_instructions_file = "agents/collab.md"
 model = "gpt-5.4"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "high"
 model_reasoning_summary = "concise"
 
 [projects."/home/moeen/Documents/AI"]
 trust_level = "trusted"
+
+[projects."/home/moeen/Documents/AI/workers/collab"]
+trust_level = "trusted"
+
+[notice.model_migrations]
+"gpt-5.4" = "gpt-5.5"
+
+[tui]
+status_line = ["model-with-reasoning", "current-dir", "model", "reasoning", "context-remaining", "five-hour-limit"]
+status_line_use_colors = true

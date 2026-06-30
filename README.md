@@ -12,6 +12,8 @@ There is no Claude-to-Codex skill-body conversion step.
 skills/                 # canonical skill source, one directory per skill
 profiles/               # optional Codex profile files, one file per profile
 references/             # shared support docs used by multiple skills
+.claude/                # repo-local Claude mirrors and ignored local settings
+.codex/                 # repo-local Codex mirrors
 .claude-plugin/         # Claude plugin metadata
 .codex-plugin/          # Codex plugin metadata
 CLAUDE.md               # shared repo instructions
@@ -21,7 +23,8 @@ tests/                  # install/visibility checks
 ```
 
 Each skill lives at `skills/<name>/SKILL.md` and may include local
-`scripts/`, `references/`, `assets/`, tests, and `permissions.json`.
+`scripts/`, `references/`, `assets/`, tests, `permissions.json`, and for
+blueprint-migrated skills a `blueprint.yaml`.
 `permissions.json` is repo metadata for expected runtime needs; it is kept with
 the skill and copied by plugin installation, but it is not a Codex permission
 grant.
@@ -29,6 +32,77 @@ grant.
 Shared reference material that is not itself a skill lives in top-level
 `references/`. This keeps `skills/` compatible with Codex plugin validation,
 which treats every immediate child of `skills/` as a skill directory.
+
+## Blueprint Migration
+
+This repository now uses a blueprint-based contract system for all local
+skills.
+
+- Every local skill has a hand-authored `blueprint.yaml` as the canonical
+  contract.
+- Generated artifacts for blueprint skills are:
+  - `depends_on_skills`
+  - `permissions.json`
+  - the generated contract block injected near the top of `SKILL.md`
+
+The reference starting point for a new migrated skill is:
+
+```text
+references/skill-blueprint-template.yaml
+```
+
+Copy that file into `skills/<name>/blueprint.yaml` and edit it in place. The
+template is intentionally comment-heavy and explains what each field means and
+what kind of input it accepts.
+
+### Dispatcher
+
+Blueprint-migrated skills may depend on other skills at two levels:
+
+- skill-to-skill invocation
+- exported script-interface invocation through:
+
+```text
+tools/invoke_skill_export.py
+```
+
+That dispatcher reads the callee's `blueprint.yaml`, validates the requested
+interface and mode, checks dependency/version/export declarations, and only then
+executes the concrete command.
+
+### Current Migration Status
+
+All local skills under `skills/` are expected to be blueprint-migrated. If a
+new local skill appears without `blueprint.yaml`, the tracked hooks should fail.
+
+### Maintainer Workflow
+
+For a new blueprint-migrated skill or an interface change:
+
+1. Copy `references/skill-blueprint-template.yaml` to `skills/<name>/blueprint.yaml`.
+2. Edit the blueprint and keep its comments unless they are no longer accurate.
+3. Run:
+
+```bash
+python3 tools/sync_skill_blueprints.py
+```
+
+4. Review the generated updates to `depends_on_skills`, `permissions.json`, and
+   the injected contract block in `SKILL.md`.
+5. Run:
+
+```bash
+python3 tests/test_skill_blueprint_tools.py
+bash .githooks/pre-commit
+```
+
+### Hook Coverage
+
+The blueprint-related checks live in the tracked hook path:
+
+- `.githooks/skill/check-blueprints` — blueprint presence, injection layout, and artifact sync
+- `.githooks/skill/check-boundaries` — prevents blueprint skills from reaching into another skill's scripts
+- `.githooks/skill/check-blueprint-tooling` — regression tests for template, dispatcher, and injection behavior
 
 ## Shared Instructions
 
@@ -42,6 +116,30 @@ This keeps Claude-facing and Codex-facing repository instructions mechanically
 identical. On Unix-like systems Git tracks the symlink directly. On systems
 without symlink support, Git may check out `AGENTS.md` as a text file containing
 `CLAUDE.md`.
+
+## Repo-Local Mirrors
+
+This checkout also exposes the canonical top-level directories through thin
+repo-local mirrors:
+
+```text
+.claude/agents      -> ../agents
+.claude/references  -> ../references
+.claude/skills      -> ../skills
+.codex/agents       -> ../agents
+.codex/references   -> ../references
+.codex/skills       -> ../skills
+```
+
+These mirrors are a convenience layer for agents or tools that look for
+repo-local `.claude/` or `.codex/` context. They are not the canonical source
+of truth; the real content still lives in top-level `skills/`, `references/`,
+`agents/`, and `CLAUDE.md` / `AGENTS.md`.
+
+For Codex in particular, `.codex/skills` is only a repo-local mirror. The
+documented user-level skill path remains `~/.agents/skills`.
+
+`.claude/settings.local.json` is machine-local state and is ignored by Git.
 
 ## Systemwide Local Setup
 
@@ -134,7 +232,7 @@ Skills are on-demand instruction sets loaded when invoked. They cover:
 **Personal assistant & automation**
 - `daily-plan` — generate a daily plan from calendar, todos, and weather
 - `g-calendar` — read and write Google Calendar via a local OAuth CLI
-- `list-manager` — manage personal Markdown checklists stored on Google Drive
+- `list-manager` — manage personal structured YAML lists stored in assistant cloud storage
 - `get-weather` — fetch weather for a day or date range with a planning summary
 - `fix-bisync` — diagnose and repair rclone bisync failures
 
@@ -345,6 +443,14 @@ Run focused installer unit tests:
 ```bash
 python3 skills/install-assistant-tools/tests/test_setup_symlinks.py
 python3 skills/install-assistant-tools/tests/test_setup_tools_cloud_files.py
+```
+
+Run blueprint tooling regression tests:
+
+```bash
+python3 tests/test_skill_blueprint_tools.py
+python3 tools/check_skill_blueprints.py
+python3 tools/check_skill_boundaries.py
 ```
 
 Check Python syntax for install tests:

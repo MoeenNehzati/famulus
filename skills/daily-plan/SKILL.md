@@ -6,16 +6,23 @@ description: |
   "what should I do today", "what should I work on", "show my plan", or similar.
 ---
 
-When this skill is used, begin with:
-
-Skill: daily-plan
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: automation
 
 Dependencies:
-- list-manager
 - g-calendar
 - get-weather
+- list-manager
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
+When this skill is used, begin with:
+
+Skill: daily-plan
 
 `daily-plan` is a consumer skill. Never run scripts owned by dependency skills
 directly — all reads and writes must go through the dependency skill's interface.

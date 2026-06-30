@@ -1,11 +1,11 @@
 {
   "bash": [
-    "Bash(scripts/cp_llm.py:*)",
-    "Bash(scripts/ls_llm.py:*)",
-    "Bash(scripts/rm_llm.py:*)",
-    "Bash(scripts/read_llm_file.py:*)",
-    "Bash(scripts/write_llm_file.py:*)",
-    "Bash(scripts/delete_llm_file.py:*)"
+    "Bash(python3 scripts/cloud_files.py:*)",
+    "Bash(python3 scripts/read_llm_file.py:*)",
+    "Bash(python3 scripts/write_llm_file.py:*)",
+    "Bash(python3 scripts/delete_llm_file.py:*)",
+    "Bash(python3 scripts/ls_llm.py:*)",
+    "Bash(python3 scripts/setup_oauth.py:*)"
   ],
   "network": []
 }

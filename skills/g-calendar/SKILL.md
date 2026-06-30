@@ -8,13 +8,21 @@ description: |
   event.
 ---
 
-When this skill is used, begin with:
-
-Skill: g-calendar
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: automation
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces:
+- `scripts-gcal`
+<!-- END BLUEPRINT CONTRACT -->
+When this skill is used, begin with:
+
+Skill: g-calendar
 
 ## 0. Read this first
 

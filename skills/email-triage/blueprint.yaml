@@ -1,0 +1,90 @@
+# Canonical contract for email-triage.
+# This file was migrated from legacy skill metadata.
+# Tighten the placeholder script interfaces as each script contract becomes clearer.
+
+category: automation
+
+# Bump this major version whenever the exported contract changes in a
+# breaking way for dependent skills.
+interface_version: 1
+
+depends_on:
+  email-client:
+    major_version: 1
+  list-manager:
+    major_version: 1
+
+suggested_permissions:
+  bash:
+    - command: ["scripts/fetch-envelopes.py"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["scripts/get-cutoff.py"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["scripts/update-watermark.py"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["scripts/log-decision.sh"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["python3", "scripts/prune-log.py"]
+      reason: "Migrated from legacy permissions.json."
+  network:
+    []
+
+skill_interface:
+  inputs:
+    - "User requests that match the SKILL.md description for this skill."
+  outputs:
+    - "Responses, artifacts, or side effects described by this skill's workflow."
+  side_effects:
+    - "May invoke local scripts or dependencies as described in SKILL.md."
+
+script_interfaces:
+  scripts-fetch-envelopes:
+    cwd: skill_root
+    command: ["python3", "scripts/fetch-envelopes.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/fetch-envelopes.py; tighten this contract when needed."
+    exported_interface: []
+  scripts-get-cutoff:
+    cwd: skill_root
+    command: ["python3", "scripts/get-cutoff.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/get-cutoff.py; tighten this contract when needed."
+    exported_interface: []
+  scripts-log-decision:
+    cwd: skill_root
+    command: ["scripts/log-decision.sh"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/log-decision.sh; tighten this contract when needed."
+    exported_interface: []
+  scripts-prune-log:
+    cwd: skill_root
+    command: ["python3", "scripts/prune-log.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/prune-log.py; tighten this contract when needed."
+    exported_interface: []
+  scripts-update-watermark:
+    cwd: skill_root
+    command: ["python3", "scripts/update-watermark.py"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/update-watermark.py; tighten this contract when needed."
+    exported_interface: []

@@ -3,9 +3,17 @@ name: loose-mode
 description: Use when the user invokes "loose mode" or asks for broad exploration, strategy, options, or a fast overview — when breadth and speed matter more than certainty. Contrasts with tight-mode.
 ---
 
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
 Category: workflow
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
 
 ## Core principle
 

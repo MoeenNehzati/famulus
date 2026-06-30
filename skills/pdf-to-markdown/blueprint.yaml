@@ -1,0 +1,57 @@
+# Canonical contract for pdf-to-markdown.
+# This file was migrated from legacy skill metadata.
+# Tighten the placeholder script interfaces as each script contract becomes clearer.
+
+category: document-oriented
+
+# Bump this major version whenever the exported contract changes in a
+# breaking way for dependent skills.
+interface_version: 1
+
+depends_on:
+  {}
+
+suggested_permissions:
+  bash:
+    - command: ["scripts/fetch-arxiv-source.sh"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["scripts/check-marker-models.sh"]
+      reason: "Migrated from legacy permissions.json."
+    - command: ["marker_single"]
+      reason: "Migrated from legacy permissions.json."
+  network:
+    - kind: web_search
+      reason: "Migrated from legacy permissions.json."
+    - kind: web_fetch
+      domains: ["arxiv.org"]
+      reason: "Migrated from legacy permissions.json."
+
+skill_interface:
+  inputs:
+    - "User requests that match the SKILL.md description for this skill."
+  outputs:
+    - "Responses, artifacts, or side effects described by this skill's workflow."
+  side_effects:
+    - "May invoke local scripts or dependencies as described in SKILL.md."
+
+script_interfaces:
+  scripts-check-marker-models:
+    cwd: skill_root
+    command: ["scripts/check-marker-models.sh"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/check-marker-models.sh; tighten this contract when needed."
+    exported_interface: []
+  scripts-fetch-arxiv-source:
+    cwd: skill_root
+    command: ["scripts/fetch-arxiv-source.sh"]
+    interface:
+      default:
+        min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Auto-migrated placeholder interface for scripts/fetch-arxiv-source.sh; tighten this contract when needed."
+    exported_interface: []

@@ -15,7 +15,17 @@ description: |
   - suggest a repair direction without rewriting unless asked
 ---
 
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Category: mathematical-analysis
+
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
 
 When this skill is used, begin with:
 

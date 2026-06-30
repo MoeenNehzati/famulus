@@ -3,9 +3,17 @@ name: git-workflow
 description: Use when working in any git repo — committing, staging, checking branch state, or deciding whether to suggest a commit. Also use before editing files in any repo to verify branch safety.
 ---
 
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
 Category: automation
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
 
 ## Branch safety (always check first)
 

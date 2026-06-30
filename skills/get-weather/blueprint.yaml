@@ -1,0 +1,31 @@
+# Canonical contract for get-weather.
+
+category: automation
+
+interface_version: 1
+
+depends_on: {}
+
+suggested_permissions:
+  bash:
+    - command: ["scripts/weather.sh"]
+      reason: "Weather lookup tool."
+  network: []
+
+skill_interface:
+  inputs:
+    - User requests for weather information.
+  outputs:
+    - Current weather data and forecasts.
+  side_effects:
+    - May query weather APIs.
+
+script_interfaces:
+  scripts-weather:
+    cwd: skill_root
+    command: ["scripts/weather.sh"]
+    patterns:
+      - min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+    exported: true

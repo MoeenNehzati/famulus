@@ -4,5 +4,8 @@
     "Bash(scripts/check-marker-models.sh:*)",
     "Bash(marker_single:*)"
   ],
-  "network": ["WebSearch", "WebFetch(https://arxiv.org/*)"]
+  "network": [
+    "WebSearch",
+    "WebFetch(https://arxiv.org/*)"
+  ]
 }

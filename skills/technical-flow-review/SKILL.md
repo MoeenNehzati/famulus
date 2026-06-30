@@ -20,13 +20,20 @@ description: |
   - suggest a clearer structural direction without rewriting the document unless asked
 ---
 
-When this skill is used, begin with:
-
-Skill: technical-flow-review
+<!-- BEGIN BLUEPRINT CONTRACT -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Category: document-oriented
 
 Dependencies: none
+
+Interface Version: 1
+
+Exported Script Interfaces: none
+<!-- END BLUEPRINT CONTRACT -->
+When this skill is used, begin with:
+
+Skill: technical-flow-review
 
 ## 1. Goal
 
