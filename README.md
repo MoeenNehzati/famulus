@@ -63,6 +63,14 @@ Claude symlinks the shared directories directly:
 ~/.claude/CLAUDE.md  -> /home/moeen/Documents/AI/CLAUDE.md
 ```
 
+Before creating each symlink the installer inspects the destination. Existing
+symlinks, files, and directories are handled with distinct prompts (skip /
+replace / merge) rather than overwriting silently. Every replacement or merge
+is backed up and logged to `.install-state/<timestamp>.json` so it can be
+rolled back with `--rollback <timestamp>`. Run `python3 scripts/install.py
+--help` for flags, or see the `install-assistant-tools` skill for the full
+conflict-handling reference.
+
 Codex reads user-level skills from `~/.agents/skills`. Link that directory to
 the canonical checkout:
 

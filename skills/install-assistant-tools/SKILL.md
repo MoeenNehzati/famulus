@@ -59,6 +59,9 @@ Before running anything, summarize:
   launch the browser-based Google Drive authorization step; otherwise it will
   tell the user how to get that file and where to save it.
 - The installer will run basic checks at the end to confirm everything works.
+- If any destination path already exists (symlink, file, or directory), the
+  installer will prompt before writing — it never overwrites silently. See
+  "Conflict Handling" below for details.
 
 Ask for confirmation before proceeding.
 
@@ -137,6 +140,175 @@ If a command fails or is not available on the user's platform:
 3. If yes, inspect the failing script and propose the minimal change needed.
 
 Do not modify scripts speculatively — only on explicit user approval.
+
+## Conflict Handling
+
+Before creating any symlink, the installer inspects the destination path and handles each case distinctly.
+
+### Existing symlink
+
+Already points to the intended source → report `OK`, do nothing.  
+Points elsewhere → prompt. The wording depends on whether the destination is a
+directory path or a single-file path (e.g. `~/.claude/CLAUDE.md`).
+
+**Directory symlink pointing elsewhere:**
+
+```
+Existing symlink:
+  destination: ~/.claude/skills
+  current target: ~/other-skills-repo/skills
+  intended target: ~/Documents/claude-config/skills
+
+  [s] Skip
+  [r] Replace (back up current symlink target metadata)
+  [a] Abort installation
+Choice [s]:
+```
+
+**Single-file symlink pointing elsewhere:**
+
+```
+Claude currently reads this path through an existing link:
+
+Machine path:        ~/.claude/CLAUDE.md
+Currently linked to: ~/other-config/CLAUDE.md
+Installer proposes:  ~/Documents/claude-config/CLAUDE.md
+
+  [k] Keep existing link
+  [r] Replace link with repository link
+  [a] Abort installation
+Choice [k]:
+```
+
+### Existing file
+
+Prompt with keep / replace / merge / diff / abort:
+
+```
+A file already exists at the Claude configuration path.
+
+Machine file:         ~/.claude/CLAUDE.md
+Repository version:   ~/Documents/claude-config/CLAUDE.md
+
+  [k] Keep machine file
+  [r] Replace machine file with the repository version
+  [m] Merge both versions in an editor, then use the merged result
+  [d] Show diff
+  [a] Abort installation
+
+Choice [k]:
+```
+
+Default: **keep**. Replace moves the original to a timestamped backup first — it never deletes directly:
+
+```
+~/.claude/.install-backups/2026-06-30T143210/CLAUDE.md
+```
+
+#### Merge (file)
+
+Available only for ordinary UTF-8 text files under ~2 MiB.
+
+**Important:** after installation the machine path becomes a symlink to the repository file. So the merged result *replaces the repository file*, not the machine file. The installer warns:
+
+```
+Merging will modify the repository file:
+  ~/Documents/claude-config/CLAUDE.md
+
+Your existing machine file will first be backed up.
+No Git commit or push will be performed automatically.
+Continue? [y/N]
+```
+
+Merge workspace under `/tmp/claude-config-merge-<id>/`:
+
+```
+MACHINE_VERSION
+REPOSITORY_VERSION
+MERGED
+```
+
+`MERGED` starts pre-populated with both versions separated by standard conflict markers.
+
+Editor is selected in order: `--merge-tool` flag → `$VISUAL` → `$EDITOR`. Must run synchronously (GUI editors need `--wait`).
+
+After the editor exits the installer:
+1. Checks `MERGED` is valid UTF-8.
+2. Rejects unresolved conflict markers.
+3. Runs syntax validation (JSON, TOML, YAML where applicable).
+4. Backs up both originals.
+5. Replaces the repository file with `MERGED`.
+6. Creates a symlink from the machine path to the repository file.
+7. Records everything in the install manifest.
+
+If validation fails or the user cancels, both originals are left untouched.
+
+Binary / oversized files skip merge and offer only keep / replace / abort.
+
+### Existing directory
+
+Prompt with skip / replace / merge:
+
+```
+Existing directory:
+  destination: ~/.claude/skills
+  intended target: ~/Documents/claude-config/skills
+
+  [s] Skip — leave the directory unchanged
+  [r] Replace — back up directory, then create symlink
+  [m] Merge — copy its contents into the repository analogue, then create symlink
+  [a] Abort installation
+Choice [s]:
+```
+
+Default: **skip**.
+
+**Replace** — moves the entire directory into the timestamped backup tree, then creates the symlink.
+
+**Merge** — available only when a declared repository analogue exists (e.g. `~/.claude/skills` ↔ `repo/skills`). Steps:
+
+1. Show planned source and destination.
+2. Copy machine-local contents into the repository analogue.
+3. For each internal collision, prompt again (keep repo version / use local / show diff / abort merge).
+4. Validate merged tree before touching the original directory.
+5. Move the original directory into the backup tree.
+6. Create the whole-directory symlink.
+
+The installer stages copied content in a temp directory and validates *before* backing up or replacing — no partial merges.
+
+### Non-interactive mode
+
+With `--yes`, `--non-interactive`, or no TTY:
+
+* Never replace or merge by default — treat all conflicts as `skip`.
+* Explicit flags required for destructive actions:
+
+```bash
+--on-file-conflict replace          # replace existing file with symlink
+--on-dir-conflict replace           # replace existing directory with symlink
+--on-dir-conflict merge --confirm-migrate-to-repo  # merge then symlink
+```
+
+File merge (`[m]`) is interactive-only — it requires a live editor session and
+is not available in non-interactive mode.
+
+### Logging and rollback
+
+Every replacement or merge writes a manifest:
+
+```
+.install-state/2026-06-30T143210.json
+```
+
+recording destination path, prior type/target, backup path, action taken, repository analogue (merges), and files copied or overridden.
+
+To restore a prior state:
+
+```bash
+python3 scripts/install.py --rollback 2026-06-30T143210
+```
+
+This reinstates the original file, directory, or symlink from the backup recorded in the manifest, and removes whatever the installer put in its place.
 
 ## Default Targets
 
