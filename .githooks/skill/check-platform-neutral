@@ -5,4 +5,4 @@
 set -uo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
-python3 "$repo_root/tests/test_platform_neutral_content.py"
+python3 "$repo_root/validators/platform_neutral.py"
