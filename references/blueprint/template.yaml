@@ -271,7 +271,7 @@ script_interfaces:
         allow_stdin: true
 
     # Internal-only: only the owning skill can use this.
-    exported: false
+    allow_all_skills: false
     allowed_callers: []
 
   # ============================================================================
@@ -300,8 +300,8 @@ script_interfaces:
         positional_patterns:
           0: "^special/.*"
 
-    # Not publicly exported; only skill-a and skill-b can use it.
-    exported: false
+    # Not public; only skill-a and skill-b can use it.
+    allow_all_skills: false
     allowed_callers:
       - skill-a
       - skill-b
@@ -313,8 +313,8 @@ script_interfaces:
 # When a caller invokes an interface via the dispatcher:
 #
 # 1. PERMISSION CHECK: Verify caller declared this skill in depends_on.
-#    - If exported: true, any dependent is allowed.
-#    - If exported: false, caller must be in allowed_callers.
+#    - If allow_all_skills: true, any dependent is allowed.
+#    - If allow_all_skills: false, caller must be in allowed_callers.
 #
 # 2. VERSION CHECK: Verify caller's depends_on.major_version matches.
 #    - Prevents incompatible versions from being used together.

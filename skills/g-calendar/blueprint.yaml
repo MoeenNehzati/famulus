@@ -31,7 +31,7 @@ script_interfaces:
         allow_extra_positionals: true
         allow_stdin: false
     # Only daily-plan can access g-calendar functionality
-    exported: false
+    allow_all_skills: false
     allowed_callers:
       - daily-plan
 
@@ -44,6 +44,6 @@ script_interfaces:
         allow_stdin: false
         notes: "OAuth setup for Google Calendar access."
     # Restricted to install-assistant-tools; not publicly exported.
-    exported: false
+    allow_all_skills: false
     allowed_callers:
       - install-assistant-tools

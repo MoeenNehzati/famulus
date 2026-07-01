@@ -132,8 +132,8 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                     f"{blueprint.path}: depends_on.{dep_name}.major_version={major_version} "
                     f"does not match {dep_name} interface_version={callee_version}"
                 )
-            # Validate exports: interface can be exported (exported: true) OR
-            # restricted to specific callers (exported: false with allowed_callers).
+            # Validate exports: interface can be public (allow_all_skills: true) OR
+            # restricted to specific callers (allow_all_skills: false with allowed_callers).
             callee_interfaces = expect_mapping(callee.data.get("script_interfaces"), "script_interfaces")
             for export_name in expect_list_of_strings(exports, f"{blueprint.path}: depends_on.{dep_name}.exports"):
                 interface_spec = callee_interfaces.get(export_name)
@@ -143,12 +143,12 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                         f"which is not defined by {dep_name}"
                     )
                     continue
-                is_exported = interface_spec.get("exported", False)
+                allow_all_skills = interface_spec.get("allow_all_skills", False)
                 has_allowed_callers = bool(expect_list_of_strings(interface_spec.get("allowed_callers"), ""))
-                if not is_exported and not has_allowed_callers:
+                if not allow_all_skills and not has_allowed_callers:
                     errors.append(
                         f"{blueprint.path}: depends_on.{dep_name}.exports includes `{export_name}`, "
-                        f"which is internal-only (not exported and no allowed_callers)"
+                        f"which is internal-only (not public and no allowed_callers)"
                     )
 
         suggested_permissions = expect_mapping(
@@ -231,9 +231,9 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                             except BlueprintError as exc:
                                 errors.append(str(exc))
 
-            # Validate exported and allowed_callers
-            if "exported" in interface_spec and not isinstance(interface_spec["exported"], bool):
-                errors.append(f"{context}: `exported` must be a boolean")
+            # Validate allow_all_skills and allowed_callers
+            if "allow_all_skills" in interface_spec and not isinstance(interface_spec["allow_all_skills"], bool):
+                errors.append(f"{context}: `allow_all_skills` must be a boolean")
             if "allowed_callers" in interface_spec:
                 try:
                     expect_list_of_strings(interface_spec["allowed_callers"], f"{context}.allowed_callers")
@@ -273,11 +273,11 @@ def generated_permissions(data: dict[str, Any]) -> dict[str, list[str]]:
 
 
 def exported_interfaces(data: dict[str, Any]) -> list[str]:
-    """Return list of exported interface names."""
+    """Return list of public interface names (allow_all_skills: true)."""
     interfaces = expect_mapping(data.get("script_interfaces"), "script_interfaces")
     result: list[str] = []
     for name, spec in interfaces.items():
-        if isinstance(spec, dict) and spec.get("exported", False):
+        if isinstance(spec, dict) and spec.get("allow_all_skills", False):
             result.append(name)
     return sorted(result)
 

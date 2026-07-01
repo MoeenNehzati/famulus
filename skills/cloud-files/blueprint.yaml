@@ -49,7 +49,7 @@ script_interfaces:
           0: "^lists/.*"  # ONLY paths under lists/ directory
         notes: "Read list files from cloud storage. Restricted to lists/ directory."
     # Not publicly exported; only list-manager can use this interface.
-    exported: false
+    allow_all_skills: false
     allowed_callers:
       - list-manager
 
@@ -64,7 +64,7 @@ script_interfaces:
           0: "^lists/.*"  # ONLY paths under lists/ directory
         notes: "Write list files to cloud storage. Restricted to lists/ directory."
     # Not publicly exported; only list-manager can use this interface.
-    exported: false
+    allow_all_skills: false
     allowed_callers:
       - list-manager
 
@@ -79,7 +79,7 @@ script_interfaces:
           0: "^lists/.*"  # ONLY paths under lists/ directory
         notes: "Delete list files from cloud storage. Restricted to lists/ directory."
     # Not publicly exported; only list-manager can use this interface.
-    exported: false
+    allow_all_skills: false
     allowed_callers:
       - list-manager
 
@@ -100,7 +100,7 @@ script_interfaces:
           0: "^plans/.*"  # ONLY paths under plans/ directory
         notes: "Read plan files from cloud storage. Restricted to plans/ directory."
     # Not publicly exported; only daily-plan can use this interface.
-    exported: false
+    allow_all_skills: false
     allowed_callers:
       - daily-plan
 
@@ -115,7 +115,7 @@ script_interfaces:
           0: "^plans/.*"  # ONLY paths under plans/ directory
         notes: "Write plan files to cloud storage. Restricted to plans/ directory."
     # Not publicly exported; only daily-plan can use this interface.
-    exported: false
+    allow_all_skills: false
     allowed_callers:
       - daily-plan
 
@@ -130,7 +130,7 @@ script_interfaces:
           0: "^plans/.*"  # ONLY paths under plans/ directory
         notes: "Delete plan files from cloud storage. Restricted to plans/ directory."
     # Not publicly exported; only daily-plan can use this interface.
-    exported: false
+    allow_all_skills: false
     allowed_callers:
       - daily-plan
 
@@ -143,6 +143,6 @@ script_interfaces:
         allow_stdin: false
         notes: "OAuth setup for Google Drive access."
     # Restricted to install-assistant-tools; not publicly exported.
-    exported: false
+    allow_all_skills: false
     allowed_callers:
       - install-assistant-tools

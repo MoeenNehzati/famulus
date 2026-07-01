@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "skill-blueprint-template.yaml"
+BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint" / "template.yaml"
 README = REPO_ROOT / "README.md"
 
 
@@ -47,13 +47,13 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertIn("interface_version:", text)
         self.assertIn("script_interfaces:", text)
         self.assertIn("patterns:", text)
-        self.assertIn("exported:", text)
+        self.assertIn("allow_all_skills:", text)
         self.assertGreaterEqual(text.count("#"), 25, "template should remain heavily commented")
 
     def test_readme_covers_blueprint_handoff_basics(self) -> None:
         text = README.read_text(encoding="utf-8")
         self.assertIn("## Blueprint Migration", text)
-        self.assertIn("references/skill-blueprint-template.yaml", text)
+        self.assertIn("references/blueprint", text)
         self.assertIn("tools/invoke_skill_export.py", text)
         self.assertIn("python3 tools/sync_skill_blueprints.py", text)
         self.assertIn(".githooks/skill/check-blueprints", text)

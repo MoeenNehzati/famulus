@@ -239,27 +239,27 @@ def resolve_interface(
     pattern_spec, pattern_name = find_matching_pattern(interface_spec, script_args, stdin_requested)
 
     # Check if caller is allowed to use this interface
-    exported = interface_spec.get("exported", False)
+    allow_all_skills = interface_spec.get("allow_all_skills", False)
     allowed_callers = expect_string_list(interface_spec.get("allowed_callers"), "allowed_callers")
 
     # Owner skill can always use the interface
     if caller_skill == target_skill:
         return interface_spec, pattern_spec, pattern_name
 
-    # External caller: check if exported or in allowed_callers
-    if not exported and not allowed_callers:
-        # Not exported and no specific callers: internal-only
+    # External caller: check if allow_all_skills or in allowed_callers
+    if not allow_all_skills and not allowed_callers:
+        # Not public and no specific callers: internal-only
         raise InvocationError(
             f"interface `{script_interface}` of skill `{target_skill}` is internal-only"
         )
 
-    if not exported and allowed_callers:
+    if not allow_all_skills and allowed_callers:
         # Restricted to specific callers: check if caller is in the list
         if caller_skill is None or caller_skill not in allowed_callers:
             raise InvocationError(
                 f"skill `{caller_skill}` is not in allowed_callers for `{target_skill}:{script_interface}`"
             )
-    elif exported and allowed_callers and caller_skill is not None and caller_skill not in allowed_callers:
+    elif allow_all_skills and allowed_callers and caller_skill is not None and caller_skill not in allowed_callers:
         # Even though exported, further restricted to specific callers
         raise InvocationError(
             f"skill `{caller_skill}` is not in allowed_callers for `{target_skill}:{script_interface}`"

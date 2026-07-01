@@ -48,12 +48,19 @@ skills.
 The reference starting point for a new migrated skill is:
 
 ```text
-references/skill-blueprint-template.yaml
+references/blueprint/template.yaml
 ```
 
 Copy that file into `skills/<name>/blueprint.yaml` and edit it in place. The
 template is intentionally comment-heavy and explains what each field means and
 what kind of input it accepts.
+
+For a complete guide on blueprints, including examples, patterns, and the
+two-layer validation approach, see:
+
+```text
+references/blueprint/guide.md
+```
 
 ### Dispatcher
 

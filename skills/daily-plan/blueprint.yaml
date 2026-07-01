@@ -5,28 +5,21 @@ category: automation
 interface_version: 1
 
 depends_on:
-  list-manager:
-    major_version: 1
-    exports:
-      - read-list
-      - update-list
-      - beautify-list
-      - generate-id
-      - create-entry
-  g-calendar:
-    major_version: 1
-    exports:
-      - scripts-gcal
-  get-weather:
-    major_version: 1
-    exports:
-      - scripts-weather
   cloud-files:
     major_version: 1
     exports:
       - plans-read
       - plans-write
       - plans-delete
+  g-calendar:
+    major_version: 1
+  get-weather:
+    major_version: 1
+  list-manager:
+    major_version: 1
+    exports:
+      - read-list
+      - update-list
 
 suggested_permissions:
   bash:
@@ -66,7 +59,7 @@ script_interfaces:
         max_positionals: 1
         allow_stdin: false
         notes: "show existing plan (generate if missing)"
-    exported: false
+    allow_all_skills: false
 
   plan-storage:
     cwd: skill_root
@@ -88,7 +81,7 @@ script_interfaces:
         min_positionals: 2
         max_positionals: 2
         allow_stdin: false
-    exported: false
+    allow_all_skills: false
 
   render-plan:
     cwd: skill_root
@@ -97,4 +90,4 @@ script_interfaces:
       - min_positionals: 0
         allow_extra_positionals: true
         allow_stdin: true
-    exported: false
+    allow_all_skills: false

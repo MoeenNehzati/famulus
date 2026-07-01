@@ -10,7 +10,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = REPO_ROOT / "skills"
-BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "skill-blueprint-template.yaml"
+BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint" / "template.yaml"
 CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
 CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
 

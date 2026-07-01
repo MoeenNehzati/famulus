@@ -32,6 +32,9 @@ jobs:
       - name: Install Codex CLI (npm)
         run: npm install -g @openai/codex
 
+      - name: Add npm global bin to PATH
+        run: echo "$(npm prefix -g)/bin" >> $GITHUB_PATH
+
       - name: Verify CLI installations
         run: |
           claude --version
