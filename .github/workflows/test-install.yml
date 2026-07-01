@@ -26,20 +26,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Claude CLI (npm)
-        run: npm install -g claude
-
-      - name: Install Codex CLI (npm)
-        run: npm install -g @openai/codex
-
-      - name: Add npm global bin to PATH
-        run: echo "$(npm prefix -g)/bin" >> $GITHUB_PATH
-
-      - name: Verify CLI installations
-        run: |
-          claude --version
-          codex --version
-
       - name: Run Claude install test
         run: python3 tests/test_claude_install.py
 
