@@ -38,10 +38,21 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Make sibling skill scripts importable.
-sys.path.insert(0, str((Path(__file__).resolve().parents[3] / "skills" / "cloud-files" / "scripts")))
-
-import cloud_files
+# Cloud-files path normalization (inlined to avoid cross-skill imports)
+def normalize_llm_root(root: str) -> str:
+    raw = root.strip()
+    if not raw:
+        return ""
+    if raw.startswith("/") or "\\" in raw:
+        raise ValueError(f"invalid remote_llm_root: {root}")
+    parts: list[str] = []
+    for part in raw.split("/"):
+        if part in {"", "."}:
+            continue
+        if part == "..":
+            raise ValueError(f"invalid remote_llm_root: {root}")
+        parts.append(part)
+    return "/".join(parts) if parts else ""
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -277,7 +288,7 @@ def install_cloud_files_config(home: Path, remote_llm_root: str, dry_run: bool) 
             existing = {}
 
     try:
-        normalized_llm_root = cloud_files.normalize_llm_root(remote_llm_root)
+        normalized_llm_root = normalize_llm_root(remote_llm_root)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
@@ -369,7 +380,12 @@ def maybe_run_google_oauth_setup(
             return "needs_client_json"
 
     log(f'Launching {spec["label"]} browser authorization...')
-    result = subprocess.run([sys.executable, str(setup_script)], check=False)
+    repo_root = Path(__file__).resolve().parents[3]
+    dispatcher = repo_root / "tools" / "invoke_skill_export.py"
+    result = subprocess.run(
+        [sys.executable, str(dispatcher), "--caller-skill", "install-assistant-tools", spec["skill_dir"], "setup-oauth"],
+        check=False,
+    )
     if result.returncode == 0:
         return "configured"
 

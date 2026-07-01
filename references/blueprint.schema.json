@@ -1,0 +1,283 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Skill Blueprint Schema",
+  "description": "Schema for blueprint.yaml files that define skill contracts, dependencies, and interfaces.",
+  "type": "object",
+  "required": ["category", "interface_version"],
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "title": "Skill Category",
+      "description": "One or more categories from references/skill-categories.md",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      ]
+    },
+    "interface_version": {
+      "title": "Interface Version",
+      "description": "Major version of the exported contract. Bump when breaking changes occur.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "depends_on": {
+      "title": "Dependencies",
+      "description": "Map of skill name to dependency specification.",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "major_version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "exports": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "skill_interface": {
+      "title": "Skill Interface",
+      "description": "High-level contract describing inputs, outputs, and side effects.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "side_effects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "suggested_permissions": {
+      "title": "Suggested Permissions",
+      "description": "Permission suggestions for pre-approval.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bash": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["command", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              },
+              "args_prefix": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "network": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": ["web_search", "web_fetch"]
+              },
+              "domains": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "script_interfaces": {
+      "title": "Script Interfaces",
+      "description": "Map of exported script interface name to invocation contract.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["command", "patterns"],
+        "additionalProperties": false,
+        "properties": {
+          "cwd": {
+            "enum": ["skill_root", "repo_root"],
+            "default": "skill_root"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "patterns": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/definitions/pattern"
+            }
+          },
+          "allow_all_skills": {
+            "type": "boolean",
+            "default": false
+          },
+          "allowed_callers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": []
+          }
+        },
+        "allOf": [
+          {
+            "$ref": "#/definitions/allowAllSkillsConstraint"
+          }
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "pattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "min_positionals": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "max_positionals": {
+          "type": "integer"
+        },
+        "allow_extra_positionals": {
+          "type": "boolean",
+          "default": false
+        },
+        "allow_stdin": {
+          "type": "boolean",
+          "default": false
+        },
+        "positional_patterns": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "flag_patterns": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "required_flags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        },
+        "allowed_flags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        },
+        "forbidden_flags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "allowAllSkillsConstraint": {
+      "description": "If allow_all_skills is true, allowed_callers must be empty (public interface). If allow_all_skills is false, allowed_callers can be non-empty (restricted interface).",
+      "if": {
+        "properties": {
+          "allow_all_skills": {
+            "const": true
+          }
+        },
+        "required": ["allow_all_skills"]
+      },
+      "then": {
+        "properties": {
+          "allowed_callers": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  }
+}

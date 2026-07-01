@@ -182,30 +182,34 @@ script_interfaces:
         notes: "First positional is the input file; additional positionals are filters."
 
     # ========================================================================
-    # EXPORT CONTROL: Public vs private, and caller restrictions
+    # ACCESS CONTROL: Public vs private, and caller restrictions
     # ========================================================================
     #
-    # exported: boolean
-    #   true  = this interface is publicly exported; any skill that declares
-    #           this skill as a dependency can use this interface.
+    # allow_all_skills: boolean (default: false)
+    #   true  = this interface is public; any skill that declares this skill
+    #           as a dependency can use this interface.
     #   false = this interface is restricted; only skills in allowed_callers
-    #           (or the owning skill itself) can use it.
+    #           can use it.
     #
-    # allowed_callers: list of skill names (only meaningful if exported: false)
-    #   When exported: false, this list controls which skills can call this
-    #   interface. If the list is empty and exported: false, only the owning
+    # allowed_callers: list of skill names (only meaningful if allow_all_skills: false)
+    #   When allow_all_skills: false, this list controls which skills can call this
+    #   interface. If the list is empty and allow_all_skills: false, only the owning
     #   skill (internal use only) can call it.
     #   Example: allowed_callers: [daily-plan, email-triage]
     #   This means ONLY daily-plan and email-triage can use this interface,
     #   even though they declared the dependency.
     #
+    # Constraint: If allow_all_skills: true, allowed_callers must be empty.
+    #
     # Access control is validated:
-    # - AT COMMIT TIME by check-boundaries hook: if a skill tries to export
-    #   an interface that is restricted to specific callers, the hook rejects it
+    # - AT SCHEMA TIME: blueprint.schema.json prevents allow_all_skills: true
+    #   with non-empty allowed_callers
+    # - AT COMMIT TIME: relationship validator checks that restricted interfaces
+    #   only export to skills in allowed_callers
     # - AT RUNTIME by the dispatcher: if the caller is not in allowed_callers,
     #   the invocation fails
     #
-    exported: true
+    allow_all_skills: true
     allowed_callers: []
 
   # ============================================================================
@@ -244,17 +248,17 @@ script_interfaces:
         forbidden_flags: ["--file"]  # Incompatible with stdin mode
         notes: "Stdin mode: reads update data from stdin."
 
-    # Both patterns are public (exported: true), so any dependent skill can use
+    # Both patterns are public (allow_all_skills: true), so any dependent skill can use
     # either pattern. The dispatcher auto-matches based on what the caller provides.
-    exported: true
+    allow_all_skills: true
     allowed_callers: []
 
   # ============================================================================
-  # EXAMPLE 3: Internal-only interface (not exported)
+  # EXAMPLE 3: Internal-only interface (restricted access)
   # ============================================================================
   #
   # Some interfaces should only be used by the owning skill, not by dependents.
-  # Use exported: false with an empty allowed_callers list.
+  # Use allow_all_skills: false with an empty allowed_callers list.
   #
   # Common example: helper scripts used internally but not part of the public API.
   #
