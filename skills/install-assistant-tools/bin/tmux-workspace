@@ -80,6 +80,10 @@ tmux_do() {
   command tmux "${tmux_args[@]}" "$@"
 }
 
+# Ensure tmux server is running (query commands like has-session can't bootstrap the server)
+# Use raw tmux here to avoid tmux_args interference
+command tmux new-session -d -s _init >/dev/null 2>&1 || true
+
 if [ "${#positional[@]}" -gt 0 ] && is_template "${positional[0]}"; then
   template="${positional[0]}"
   positional=("${positional[@]:1}")
@@ -87,6 +91,7 @@ else
   template="llm"
 fi
 
+# Allow 'raw' template to run arbitrary tmux commands
 if [ "$template" = "raw" ]; then
   if [ "${#positional[@]}" -eq 0 ]; then
     tmux_do
