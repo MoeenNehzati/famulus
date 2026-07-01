@@ -9,7 +9,7 @@ from pathlib import Path
 FORBIDDEN = re.compile(r"(\.claude|\.codex|Claude|Codex|claude|codex)")
 
 _CHECK_ROOTS = ["skills", "references", "agents", "CLAUDE.md"]
-_EXCLUDED_PARTS = {"tests", ".git", ".claude-plugin", ".codex-plugin"}
+_EXCLUDED_PARTS = {"tests", "validators", ".git", ".claude-plugin", ".codex-plugin"}
 _EXCLUDED_PATHS = {
     Path("skills/install-assistant-tools"),
     Path("skills/recurring-tasks"),

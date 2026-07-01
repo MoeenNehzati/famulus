@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
-"""Validate skill metadata accepted by Codex."""
-
+"""Validate that skills have well-formed YAML frontmatter accepted by all platforms."""
 from __future__ import annotations
 
 import re
@@ -9,15 +7,17 @@ from pathlib import Path
 
 import yaml
 
-
 MAX_CODEX_DESCRIPTION_LENGTH = 1024
 
 
-def main() -> int:
-    repo_root = Path(__file__).resolve().parents[1]
+def validate(repo_root: Path) -> list[str]:
+    """Return error strings for every skill with invalid frontmatter."""
     errors: list[str] = []
+    skills_dir = repo_root / "skills"
+    if not skills_dir.is_dir():
+        return errors
 
-    for skill_path in sorted((repo_root / "skills").glob("*/SKILL.md")):
+    for skill_path in sorted(skills_dir.glob("*/SKILL.md")):
         text = skill_path.read_text(encoding="utf-8")
         match = re.match(r"---\n(.*?)\n---", text, re.DOTALL)
         if not match:
@@ -36,12 +36,17 @@ def main() -> int:
                 f"Codex maximum is {MAX_CODEX_DESCRIPTION_LENGTH}"
             )
 
+    return errors
+
+
+def main() -> int:
+    repo_root = Path(__file__).resolve().parents[3]
+    errors = validate(repo_root)
     if errors:
         print("Invalid skill metadata:")
         for error in errors:
             print(f"- {error}")
         return 1
-
     return 0
 
 
