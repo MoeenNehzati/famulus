@@ -38,7 +38,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         )
 
     def test_blueprints_are_in_sync(self) -> None:
-        result = self.run_cmd("tools/sync_skill_blueprints.py", "--check")
+        result = self.run_cmd("skills/my-writing-skills/scripts/sync_skill_blueprints.py", "--check")
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
 
     def test_blueprint_template_exists_and_is_comment_rich(self) -> None:
@@ -55,13 +55,13 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertIn("## Blueprint Migration", text)
         self.assertIn("references/blueprint", text)
         self.assertIn("tools/invoke_skill_export.py", text)
-        self.assertIn("python3 tools/sync_skill_blueprints.py", text)
+        self.assertIn("python3 skills/my-writing-skills/scripts/sync_skill_blueprints.py", text)
         self.assertIn(".githooks/skill/check-blueprints", text)
         self.assertIn("list-manager", text)
         self.assertIn("daily-plan", text)
 
     def test_blueprint_hook_check_passes(self) -> None:
-        result = self.run_cmd("tools/check_skill_blueprints.py")
+        result = self.run_cmd("skills/my-writing-skills/validators/blueprints.py")
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
 
     def test_boundary_hook_check_passes(self) -> None:
@@ -216,7 +216,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertIn("does not match any declared pattern", result.stderr)
 
     def test_contract_block_is_injected_after_frontmatter(self) -> None:
-        sync_module = load_module("sync_skill_blueprints", REPO_ROOT / "tools" / "sync_skill_blueprints.py")
+        sync_module = load_module("sync_skill_blueprints", REPO_ROOT / "skills" / "my-writing-skills" / "scripts" / "sync_skill_blueprints.py")
         contract_block = "<!-- BEGIN BLUEPRINT CONTRACT -->\nInjected\n<!-- END BLUEPRINT CONTRACT -->\n"
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -235,7 +235,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertEqual(updated, expected)
 
     def test_contract_block_is_replaced_in_place(self) -> None:
-        sync_module = load_module("sync_skill_blueprints", REPO_ROOT / "tools" / "sync_skill_blueprints.py")
+        sync_module = load_module("sync_skill_blueprints", REPO_ROOT / "skills" / "my-writing-skills" / "scripts" / "sync_skill_blueprints.py")
         contract_block = "<!-- BEGIN BLUEPRINT CONTRACT -->\nNew\n<!-- END BLUEPRINT CONTRACT -->\n"
 
         with tempfile.TemporaryDirectory() as tmpdir:

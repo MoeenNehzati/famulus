@@ -91,7 +91,7 @@ For a new blueprint-migrated skill or an interface change:
 3. Run:
 
 ```bash
-python3 tools/sync_skill_blueprints.py
+python3 skills/my-writing-skills/scripts/sync_skill_blueprints.py
 ```
 
 4. Review the generated updates to `depends_on_skills`, `permissions.json`, and
@@ -456,8 +456,8 @@ Run blueprint tooling regression tests:
 
 ```bash
 python3 tests/test_skill_blueprint_tools.py
-python3 tools/check_skill_blueprints.py
-python3 tools/check_skill_boundaries.py
+python3 skills/my-writing-skills/validators/blueprints.py
+python3 skills/my-writing-skills/validators/boundaries.py
 ```
 
 Check Python syntax for install tests:
