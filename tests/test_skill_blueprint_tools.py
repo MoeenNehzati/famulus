@@ -65,7 +65,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
 
     def test_boundary_hook_check_passes(self) -> None:
-        result = self.run_cmd("tools/check_skill_boundaries.py")
+        result = self.run_cmd("skills/my-writing-skills/validators/boundaries.py")
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
 
     def test_dispatcher_allows_declared_export(self) -> None:
