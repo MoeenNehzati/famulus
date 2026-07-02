@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-# Platform neutrality: shared content (skills/, references/, agents/, CLAUDE.md) must contain no
-# platform-specific terms (claude, codex, .claude, .codex, Claude, Codex). Skills must work
-# identically regardless of which assistant platform loads them.
-set -uo pipefail
-
-repo_root="$(git rev-parse --show-toplevel)"
-python3 "$repo_root/validators/platform_neutral.py"

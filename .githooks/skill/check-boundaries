@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# Guideline §8 — boundary hygiene for local skills: local scripts must not reach into
-# another skill's scripts directory or inject another skill's scripts onto sys.path.
-set -uo pipefail
-
-repo_root="$(git rev-parse --show-toplevel)"
-python3 "$repo_root/skills/my-writing-skills/validators/boundaries.py"

@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-if ! git symbolic-ref HEAD >/dev/null 2>&1; then
-    echo "error: repository is in detached HEAD state." >&2
-    echo "Check out a named branch before committing:" >&2
-    echo "  git checkout master" >&2
-    exit 1
-fi

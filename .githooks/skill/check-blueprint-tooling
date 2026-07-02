@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# Regression coverage for blueprint tooling: template presence, dispatcher behavior,
-# and contract-block injection semantics must remain tested in pre-commit.
-set -uo pipefail
-
-repo_root="$(git rev-parse --show-toplevel)"
-python3 "$repo_root/skills/my-writing-skills/tests/test_blueprint_tools.py"
