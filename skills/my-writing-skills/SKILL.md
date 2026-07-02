@@ -23,6 +23,16 @@ named branch (`git symbolic-ref HEAD` from the repo root). If it fails, check
 out a named branch first. The pre-commit hook will block the eventual commit,
 but catching this before editing avoids doing work that can't land.
 
+## Skill-system subdirectories
+
+This skill owns the conformance infrastructure for the skill system:
+
+- **`validators/`** — Python validator modules (names, metadata, blueprints, boundaries, dependencies, blueprint relationships). Each exports `validate(repo_root: Path) -> list[str]` and is auto-discovered by `validators/runner.py` on every commit. See `../../references/skill-guidelines.md` for the full validator contract and conventions.
+- **`tests/`** — behavior tests for the blueprint dispatcher and sync scripts (`test_blueprint_tools.py`).
+- **`scripts/`** — blueprint sync script (`sync_skill_blueprints.py`).
+
+To add a new conformance check: add a `.py` file to `validators/` with a `validate(repo_root)` function and a matching `tests/validate_<name>.py`. No registration needed.
+
 @./../../references/skill-guidelines.md
 
 **REQUIRED — NON-NEGOTIABLE:** Invoke `superpowers:writing-skills` and read it fully before proceeding. All upstream rules apply; the personal conventions in `skill-guidelines.md` are added on top.

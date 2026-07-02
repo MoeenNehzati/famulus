@@ -12,14 +12,16 @@ There is no Claude-to-Codex skill-body conversion step.
 skills/                 # canonical skill source, one directory per skill
 profiles/               # optional Codex profile files, one file per profile
 references/             # shared support docs used by multiple skills
+validators/             # repo-wide conformance validators (Python); run by pre-commit
+scripts/                # repo-wide utility scripts (blueprint sync, skill dispatch, etc.)
+tests/                  # unit tests for validators in validators/
 .claude/                # repo-local Claude mirrors and ignored local settings
 .codex/                 # repo-local Codex mirrors
 .claude-plugin/         # Claude plugin metadata
 .codex-plugin/          # Codex plugin metadata
 CLAUDE.md               # shared repo instructions
 AGENTS.md -> CLAUDE.md  # symlink for agents that read AGENTS.md
-tests/                  # install/visibility checks
-.githooks/              # local Git hooks for mechanical checks
+.githooks/              # local Git hooks (pre-commit delegates to validators/runner.py)
 ```
 
 Each skill lives at `skills/<name>/SKILL.md` and may include local
@@ -105,11 +107,12 @@ bash .githooks/pre-commit
 
 ### Hook Coverage
 
-The blueprint-related checks live in the tracked hook path:
+`.githooks/pre-commit` runs `validators/runner.py`, which auto-discovers and runs every module in:
 
-- `.githooks/skill/check-blueprints` — blueprint presence, injection layout, and artifact sync
-- `.githooks/skill/check-boundaries` — prevents blueprint skills from reaching into another skill's scripts
-- `.githooks/skill/check-blueprint-tooling` — regression tests for template, dispatcher, and injection behavior
+- `validators/` — repo-wide checks (platform neutrality)
+- `skills/my-writing-skills/validators/` — skill-system checks (names, metadata, blueprints, boundaries, dependencies, blueprint relationships)
+
+Each validator module exports `validate(repo_root: Path) -> list[str]`. Adding a new `.py` file to either package with that signature is enough to have it enforced on every commit. Unit tests for validators live in `tests/validate_*.py`.
 
 ## Shared Instructions
 
@@ -308,14 +311,12 @@ The test uses `codex debug prompt-input`; it does not call a model.
 
 ### Metadata Guard
 
-Codex rejects skill descriptions longer than 1024 characters. Enforce that
-before install or push with:
+Codex rejects skill descriptions longer than 1024 characters. The `skill_metadata`
+validator enforces this on every commit via `validators/runner.py`. To run it manually:
 
 ```bash
-tests/test_skill_metadata.py
+python3 skills/my-writing-skills/validators/skill_metadata.py
 ```
-
-The Codex install test runs this metadata check first.
 
 The `install-assistant-tools` skill configures the tracked hook path. To set it
 manually:
@@ -325,8 +326,7 @@ git config core.hooksPath .githooks
 ```
 
 The tracked `.githooks/pre-commit` hook blocks commits in detached HEAD state
-and dispatches to categorized Git and skill checks under `.githooks/git/` and
-`.githooks/skill/`.
+and runs all conformance validators through `validators/runner.py`.
 
 ## Claude
 
