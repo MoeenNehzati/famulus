@@ -99,7 +99,7 @@ python3 skills/my-writing-skills/scripts/sync_skill_blueprints.py
 5. Run:
 
 ```bash
-python3 tests/test_skill_blueprint_tools.py
+python3 skills/my-writing-skills/tests/test_blueprint_tools.py
 bash .githooks/pre-commit
 ```
 
@@ -294,7 +294,7 @@ in `.codex-plugin/plugin.json`, optional Codex hooks, or skill-local
 Run:
 
 ```bash
-python3 tests/test_codex_install.py
+python3 skills/install-assistant-tools/tests/test_codex_install.py
 ```
 
 The test creates an isolated temporary `CODEX_HOME`, a temporary local
@@ -389,7 +389,7 @@ In this layout, skills load without plugin namespacing.
 Run:
 
 ```bash
-python3 tests/test_claude_install.py
+python3 skills/install-assistant-tools/tests/test_claude_install.py
 ```
 
 The test creates an isolated temporary Claude home, validates the local plugin
@@ -441,8 +441,8 @@ python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
 Run the isolated install tests:
 
 ```bash
-python3 tests/test_codex_install.py
-python3 tests/test_claude_install.py
+python3 skills/install-assistant-tools/tests/test_codex_install.py
+python3 skills/install-assistant-tools/tests/test_claude_install.py
 ```
 
 Run focused installer unit tests:
@@ -455,7 +455,7 @@ python3 skills/install-assistant-tools/tests/test_setup_tools_cloud_files.py
 Run blueprint tooling regression tests:
 
 ```bash
-python3 tests/test_skill_blueprint_tools.py
+python3 skills/my-writing-skills/tests/test_blueprint_tools.py
 python3 skills/my-writing-skills/validators/blueprints.py
 python3 skills/my-writing-skills/validators/boundaries.py
 ```
@@ -463,7 +463,7 @@ python3 skills/my-writing-skills/validators/boundaries.py
 Check Python syntax for install tests:
 
 ```bash
-python3 -m py_compile tests/test_codex_install.py tests/test_claude_install.py
+python3 -m py_compile skills/install-assistant-tools/tests/test_codex_install.py skills/install-assistant-tools/tests/test_claude_install.py
 ```
 
 After a coherent skill or plugin change, review the diff and commit so the

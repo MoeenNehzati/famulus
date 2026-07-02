@@ -4,4 +4,4 @@
 set -uo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
-python3 "$repo_root/tests/test_skill_blueprint_tools.py"
+python3 "$repo_root/skills/my-writing-skills/tests/test_blueprint_tools.py"
