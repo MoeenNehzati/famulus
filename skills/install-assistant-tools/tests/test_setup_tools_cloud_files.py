@@ -104,7 +104,7 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
 
         self.assertEqual(status, "configured")
         run.assert_called_once_with(
-            [sys.executable, "/repo/tools/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "cloud-files", "setup-oauth"],
+            [sys.executable, "/repo/scripts/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "cloud-files", "setup-oauth"],
             check=False,
         )
 
@@ -140,7 +140,7 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
 
         self.assertEqual(status, "configured")
         run.assert_called_once_with(
-            [sys.executable, "/repo/tools/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "g-calendar", "setup-oauth"],
+            [sys.executable, "/repo/scripts/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "g-calendar", "setup-oauth"],
             check=False,
         )
 
@@ -170,8 +170,8 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
         self.assertEqual(
             run.call_args_list,
             [
-                mock.call([sys.executable, "/repo/tools/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "cloud-files", "setup-oauth"], check=False),
-                mock.call([sys.executable, "/repo/tools/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "g-calendar", "setup-oauth"], check=False),
+                mock.call([sys.executable, "/repo/scripts/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "cloud-files", "setup-oauth"], check=False),
+                mock.call([sys.executable, "/repo/scripts/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "g-calendar", "setup-oauth"], check=False),
             ],
         )
 
@@ -233,7 +233,7 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
 
         self.assertEqual(status, "configured")
         run.assert_called_once_with(
-            [sys.executable, "/repo/tools/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "cloud-files", "setup-oauth"],
+            [sys.executable, "/repo/scripts/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "cloud-files", "setup-oauth"],
             check=False,
         )
 

@@ -54,7 +54,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         text = README.read_text(encoding="utf-8")
         self.assertIn("## Blueprint Migration", text)
         self.assertIn("references/blueprint", text)
-        self.assertIn("tools/invoke_skill_export.py", text)
+        self.assertIn("scripts/invoke_skill_export.py", text)
         self.assertIn("python3 skills/my-writing-skills/scripts/sync_skill_blueprints.py", text)
         self.assertIn(".githooks/skill/check-blueprints", text)
         self.assertIn("list-manager", text)
@@ -70,7 +70,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
     def test_dispatcher_allows_declared_export(self) -> None:
         result = self.run_cmd(
-            "tools/invoke_skill_export.py",
+            "scripts/invoke_skill_export.py",
             "--dry-run",
             "--caller-skill",
             "daily-plan",
@@ -97,7 +97,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
     def test_dispatcher_allows_export_without_caller_context(self) -> None:
         result = self.run_cmd(
-            "tools/invoke_skill_export.py",
+            "scripts/invoke_skill_export.py",
             "--dry-run",
             "list-manager",
             "read-list",
@@ -111,7 +111,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
     def test_dispatcher_rejects_private_interface_for_dependency(self) -> None:
         """Test that internal-only interfaces cannot be used by dependent skills."""
         result = self.run_cmd(
-            "tools/invoke_skill_export.py",
+            "scripts/invoke_skill_export.py",
             "--dry-run",
             "--caller-skill",
             "daily-plan",
@@ -127,7 +127,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
     def test_dispatcher_allows_private_interface_for_owner(self) -> None:
         """Test that the owning skill can use non-exported interfaces."""
         result = self.run_cmd(
-            "tools/invoke_skill_export.py",
+            "scripts/invoke_skill_export.py",
             "--dry-run",
             "--caller-skill",
             "list-manager",
@@ -146,7 +146,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         # update-list file-mode requires --file flag.
         # Calling with --file flag should work:
         result = self.run_cmd(
-            "tools/invoke_skill_export.py",
+            "scripts/invoke_skill_export.py",
             "--dry-run",
             "--caller-skill",
             "daily-plan",
@@ -160,7 +160,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
         # Calling with both --file and a forbidden flag should fail:
         result = self.run_cmd(
-            "tools/invoke_skill_export.py",
+            "scripts/invoke_skill_export.py",
             "--dry-run",
             "--caller-skill",
             "daily-plan",
@@ -176,7 +176,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
     def test_dispatcher_rejects_unexpected_flag(self) -> None:
         result = self.run_cmd(
-            "tools/invoke_skill_export.py",
+            "scripts/invoke_skill_export.py",
             "--dry-run",
             "--caller-skill",
             "daily-plan",
@@ -195,7 +195,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable,
-                "tools/invoke_skill_export.py",
+                "scripts/invoke_skill_export.py",
                 "--dry-run",
                 "--stdin",
                 "--caller-skill",

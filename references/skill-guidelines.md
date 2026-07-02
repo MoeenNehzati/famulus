@@ -41,7 +41,7 @@ Every local skill must therefore have a sibling `blueprint.yaml`, exactly one ge
 
 Every exact skill-name mention in the body of `SKILL.md` must also match the dependency set. Do not mention a skill as an invoked collaborator unless it is in both the `Dependencies:` block and `depends_on_skills`.
 
-Dependencies authorize skill invocation and, for blueprint-migrated dependencies, dispatcher calls through `../../tools/invoke_skill_export.py` to that skill's exported script interface. A dependency never authorizes direct access to another skill's files or raw script paths.
+Dependencies authorize skill invocation and, for blueprint-migrated dependencies, dispatcher calls through `../../scripts/invoke_skill_export.py` to that skill's exported script interface. A dependency never authorizes direct access to another skill's files or raw script paths.
 
 **Blueprint authoring — REQUIRED: Initialize by copying the template**
 
@@ -72,7 +72,7 @@ Dependencies authorize skill invocation and, for blueprint-migrated dependencies
 
 **Dispatcher role**
 
-`../../tools/invoke_skill_export.py` is the only sanctioned local cross-skill script boundary for blueprint-migrated skills. Its job is to:
+`../../scripts/invoke_skill_export.py` is the only sanctioned local cross-skill script boundary for blueprint-migrated skills. Its job is to:
 
 1. Load the callee's `blueprint.yaml`
 2. Resolve the requested `script_interface` and auto-match against available patterns
@@ -92,7 +92,7 @@ The pattern-based approach enables **compile-time validation**: git hooks verify
 
 Use `--dry-run` to inspect the resolved command without executing it:
 ```bash
-python3 tools/invoke_skill_export.py --dry-run --caller-skill daily-plan \
+python3 scripts/invoke_skill_export.py --dry-run --caller-skill daily-plan \
   list-manager read-list /tmp/todo.yaml
 ```
 
@@ -163,11 +163,11 @@ description: Use when the user asks to plan their day, check their schedule, or 
 - **Reuse, don't reimplement.** Before writing new behavior, check whether an existing skill already covers it. If yes, invoke or extend that skill. Duplication means two places to update when behavior changes; reuse means one. Failing to reuse when a suitable skill exists is a defect. Example: `daily-plan` invokes `list-manager`, `g-calendar`, and `get-weather` rather than reimplementing any of them.
 - **Depend on interfaces, not internals.** There are only two valid cross-skill boundaries:
   - invoke the dependency skill as a skill
-  - call the dependency skill's exported script interface through `../../tools/invoke_skill_export.py`
+  - call the dependency skill's exported script interface through `../../scripts/invoke_skill_export.py`
 
   Directly naming another skill's script path is forbidden. The owning skill's `blueprint.yaml` defines the full internal script interface under `script_interfaces`, and the externally callable subset under `exported_interface`.
 - **Do not introduce new cross-skill Python imports.** If behavior should be shared across skills, expose it through a skill invocation or exported script interface. If truly shared library code is needed, move it to an explicit shared library area outside individual skill script directories.
-- **Do not reach into another skill's script directory from local scripts.** For blueprint-migrated skills, local `.py` and `.sh` files must not call, source, or add another skill's `scripts/` directory to `sys.path`. Use a skill invocation or `../../tools/invoke_skill_export.py` instead.
+- **Do not reach into another skill's script directory from local scripts.** For blueprint-migrated skills, local `.py` and `.sh` files must not call, source, or add another skill's `scripts/` directory to `sys.path`. Use a skill invocation or `../../scripts/invoke_skill_export.py` instead.
 - **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative. A skill may refer to files under its own directory, to shared `../references/` material, and to shared repo tools under `../../tools/`. It must not mention parent-path addresses such as `../other-skill/...`, `../../skills/...`, or any absolute filesystem path to another skill. System-level paths are allowed only for durable user configuration or executable interfaces that are intentionally outside the skills tree, such as `~/.config/<skill-name>/` and installed commands under `bin`.
 - **Make your own interface explicit.** State what inputs your skill expects and what outputs it produces, so future skills can depend on you cleanly. For blueprint skills:
   - `skill_interface` describes the skill-level contract

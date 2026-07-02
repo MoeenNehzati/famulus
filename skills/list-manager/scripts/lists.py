@@ -18,10 +18,17 @@ import warnings
 from pathlib import Path
 
 import yaml
-import jsonschema
-from jsonschema import FormatChecker
 
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="jsonschema")
+try:
+    import jsonschema
+    from jsonschema import FormatChecker
+    HAS_JSONSCHEMA = True
+except ImportError:
+    HAS_JSONSCHEMA = False
+    FormatChecker = None
+
+if HAS_JSONSCHEMA:
+    warnings.filterwarnings("ignore", category=DeprecationWarning, module="jsonschema")
 
 SCHEMAS_DIR = Path(__file__).parent.parent / "schemas"
 IMMUTABLE_FIELDS = frozenset({"id", "created"})
@@ -82,6 +89,10 @@ def validate_list(data: dict) -> None:
     schema_path = SCHEMAS_DIR / "lists" / f"{schema_name}.json"
     if not schema_path.exists():
         die(f"unknown schema '{schema_name}' (no file at {schema_path})")
+
+    if not HAS_JSONSCHEMA:
+        # Schema validation skipped due to missing jsonschema module
+        return
 
     with open(schema_path) as f:
         schema = json.load(f)

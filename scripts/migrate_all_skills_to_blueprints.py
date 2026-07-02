@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = REPO_ROOT / "skills"
 
 CATEGORY_OVERRIDES: dict[str, list[str]] = {
-    "distill-knowledge": ["workflow"],
+    "prepare-handoff": ["workflow"],
     "initialize-tdd": ["automation"],
     "my-writing-skills": ["workflow"],
     "proof-audit": ["mathematical-analysis"],

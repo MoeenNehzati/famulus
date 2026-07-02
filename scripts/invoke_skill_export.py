@@ -67,9 +67,9 @@ def parse_cli() -> argparse.Namespace:
         description="Invoke an exported skill script interface declared in blueprint.yaml.",
         epilog=(
             "Examples:\n"
-            "  python3 tools/invoke_skill_export.py --dry-run --caller-skill daily-plan "
+            "  python3 scripts/invoke_skill_export.py --dry-run --caller-skill daily-plan "
             "list-manager read-list /tmp/todo.yaml state=incomplete\n"
-            "  python3 tools/invoke_skill_export.py --dry-run list-manager read-list /tmp/todo.yaml"
+            "  python3 scripts/invoke_skill_export.py --dry-run list-manager read-list /tmp/todo.yaml"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

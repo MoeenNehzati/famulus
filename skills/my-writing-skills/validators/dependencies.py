@@ -11,10 +11,10 @@ _EXTENDED_PARENT_EXCEPTIONS = {"update-skill-guidelines"}
 # Pattern: a relative path segment that goes upward (../.. or higher)
 _PARENT_PATH_RE = re.compile(r"(?:^|(?<=[^A-Za-z0-9_./~\-]))(?:\.\.?/)*\.\./")
 _ALLOWED_DIRS_BASE = re.compile(
-    r"(?:^|(?<=[^A-Za-z0-9_./~\-]))(?:\.\.?/)*\.\./(?:references|tools)(?:/|[ \t`'\"]|$)"
+    r"(?:^|(?<=[^A-Za-z0-9_./~\-]))(?:\.\.?/)*\.\./(?:references|tools|scripts)(?:/|[ \t`'\"]|$)"
 )
 _ALLOWED_DIRS_EXTENDED = re.compile(
-    r"(?:^|(?<=[^A-Za-z0-9_./~\-]))(?:\.\.?/)*\.\./(?:references|tools|\.githooks)(?:/|[ \t`'\"]|$)"
+    r"(?:^|(?<=[^A-Za-z0-9_./~\-]))(?:\.\.?/)*\.\./(?:references|tools|scripts|\.githooks)(?:/|[ \t`'\"]|$)"
 )
 
 _DEPRECATED_MARKERS_RE = re.compile(r"^(Sub-skills to invoke:|Depends on:)", re.MULTILINE)

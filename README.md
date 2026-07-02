@@ -70,7 +70,7 @@ Blueprint-migrated skills may depend on other skills at two levels:
 - exported script-interface invocation through:
 
 ```text
-tools/invoke_skill_export.py
+scripts/invoke_skill_export.py
 ```
 
 That dispatcher reads the callee's `blueprint.yaml`, validates the requested

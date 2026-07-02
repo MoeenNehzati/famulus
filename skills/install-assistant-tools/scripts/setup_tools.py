@@ -381,7 +381,7 @@ def maybe_run_google_oauth_setup(
 
     log(f'Launching {spec["label"]} browser authorization...')
     repo_root = Path(__file__).resolve().parents[3]
-    dispatcher = repo_root / "tools" / "invoke_skill_export.py"
+    dispatcher = repo_root / "scripts" / "invoke_skill_export.py"
     result = subprocess.run(
         [sys.executable, str(dispatcher), "--caller-skill", "install-assistant-tools", spec["skill_dir"], "setup-oauth"],
         check=False,
