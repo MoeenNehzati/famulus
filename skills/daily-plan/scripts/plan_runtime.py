@@ -1,5 +1,24 @@
 #!/usr/bin/env python3
-"""Helpers for generating, rendering, and mutating the daily plan."""
+"""Runtime helpers for generating, rendering, and mutating the daily plan.
+
+Persisted artifacts per day:
+- `plans/<date>.md`: human-readable rendered plan shown to the user
+- `plans/<date>.meta.json`: JSON object with two lists,
+  `{"actions": [[id, situation], ...], "triage": [[id, situation], ...]}`
+
+The metadata is the source of truth for which master-list items belong to the
+plan and whether each one is currently `shown` or `hidden`. The rendered plan
+contains HTML marker pairs `<!-- BEGIN ACTIONS --> ... <!-- END ACTIONS -->`
+and `<!-- BEGIN TRIAGE --> ... <!-- END TRIAGE -->`; every refresh replaces the
+contents of those blocks from the current master-list state.
+
+Mutation commands fall into two groups:
+- plan-local only: `hide`, `show`, `keep`, `remove`, `add`
+- master-list backed: `mark-done`, `reject`, `set-deadline`
+
+After every mutation or refresh, this module rewrites both the metadata file
+and the rendered plan so the stored plan remains human-readable and current.
+"""
 from __future__ import annotations
 
 import json

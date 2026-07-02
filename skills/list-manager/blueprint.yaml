@@ -24,6 +24,8 @@ suggested_permissions:
       reason: "Core local list operations; broad pre-approval avoids repeated prompts."
     - command: ["python3", "scripts/beautify.py"]
       reason: "Pure formatter used for user-facing rendering of YAML output."
+    - command: ["python3", "scripts/read_beautify.py"]
+      reason: "Default human-facing read path for lists."
     - command: ["python3", "scripts/migrate_md.py"]
       reason: "One-time migration utility for importing legacy Markdown lists."
   network: []
@@ -50,8 +52,9 @@ script_interfaces:
         allow_extra_positionals: true
         allow_stdin: false
         notes: "First positional is the local YAML file; remaining positionals are filters."
-    allow_all_skills: true
-    allowed_callers: []
+    allow_all_skills: false
+    allowed_callers:
+      - daily-plan
 
   update-list:
     cwd: skill_root
@@ -70,8 +73,21 @@ script_interfaces:
         allow_stdin: true
         forbidden_flags: ["--file"]
         notes: "Internal convenience mode for the owning skill when feeding YAML directly."
-    allow_all_skills: true
-    allowed_callers: []
+    allow_all_skills: false
+    allowed_callers:
+      - daily-plan
+
+  read-beautify:
+    cwd: skill_root
+    command: ["python3", "scripts/read_beautify.py"]
+    patterns:
+      - min_positionals: 1
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: "Read a local YAML list file and immediately return pretty output."
+    allow_all_skills: false
+    allowed_callers:
+      - daily-plan
 
   beautify-list:
     cwd: skill_root
@@ -81,7 +97,7 @@ script_interfaces:
         allow_extra_positionals: true
         allow_stdin: true
         notes: "Reads YAML from stdin and renders user-facing list output."
-    allow_all_skills: true
+    allow_all_skills: false
     allowed_callers: []
 
   init-list:
@@ -91,7 +107,7 @@ script_interfaces:
       - min_positionals: 1
         allow_extra_positionals: true
         allow_stdin: false
-    allow_all_skills: true
+    allow_all_skills: false
     allowed_callers: []
 
   create-entry:
@@ -109,7 +125,7 @@ script_interfaces:
         allow_stdin: false
         required_flags: ["--entries"]
         allowed_flags: ["--entries"]
-    allow_all_skills: true
+    allow_all_skills: false
     allowed_callers: []
 
   generate-id:
@@ -119,7 +135,7 @@ script_interfaces:
       - min_positionals: 1
         allow_extra_positionals: true
         allow_stdin: false
-    allow_all_skills: true
+    allow_all_skills: false
     allowed_callers: []
 
   migrate-markdown:

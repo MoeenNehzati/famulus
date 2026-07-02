@@ -15,13 +15,7 @@ Dependencies:
 
 Interface Version: 1
 
-Exported Script Interfaces:
-- `beautify-list`
-- `create-entry`
-- `generate-id`
-- `init-list`
-- `read-list`
-- `update-list`
+Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 When this skill is used, begin with:
 
@@ -42,8 +36,11 @@ Validation happens before writes. Never bypass it.
 
 ## Route by user intent
 
-- Show a list, query items, or search/sort entries → `read-list`, then
-  `beautify-list` for user-facing output.
+- Default to `read-beautify` for any human-facing read request: show,
+  browse, render, preview, display, "what's on", "what do I have on", or
+  similar phrasing where the user wants to see the list.
+- Use `read-list` only when the user explicitly asks for raw, YAML,
+  machine-readable, or similar underlying structured output.
 - List available lists → invoke the `cloud-files` dependency on `lists/`.
 - Create a new list → `init-list`.
 - Add entries or subentries → `create-entry`.

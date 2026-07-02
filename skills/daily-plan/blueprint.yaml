@@ -11,14 +11,21 @@ depends_on:
       - plans-read
       - plans-write
       - plans-delete
+      - lists-read
+      - lists-write
   g-calendar:
     major_version: 1
+    exports:
+      - scripts-gcal
   get-weather:
     major_version: 1
+    exports:
+      - scripts-weather
   list-manager:
     major_version: 1
     exports:
       - read-list
+      - read-beautify
       - update-list
 
 suggested_permissions:
@@ -27,6 +34,8 @@ suggested_permissions:
       reason: "Main orchestration script for plan generation via dispatcher."
     - command: ["python3", "scripts/render-plan.py"]
       reason: "Plan rendering helper for display formatting."
+    - command: ["python3", "scripts/mutate_plan.py"]
+      reason: "Apply plan-local or master-list-backed mutations and show the refreshed plan."
     - command: ["date"]
       reason: "Get current date for plan key (M-D-YY format)."
   network: []
@@ -49,16 +58,16 @@ script_interfaces:
     cwd: skill_root
     command: ["python3", "scripts/orchestrate.py"]
     patterns:
-      - name: "produce"
-        min_positionals: 1
-        max_positionals: 1
+      - min_positionals: 0
+        max_positionals: 0
         allow_stdin: false
-        notes: "generate and save new plan (or show existing if already generated today)"
-      - name: "output"
-        min_positionals: 1
-        max_positionals: 1
+        notes: "Generate today's plan, or refresh and show the existing one."
+      - min_positionals: 0
+        max_positionals: 0
         allow_stdin: false
-        notes: "show existing plan (generate if missing)"
+        required_flags: ["--forced"]
+        allowed_flags: ["--forced"]
+        notes: "Regenerate today's plan even if one already exists."
     allow_all_skills: false
 
   plan-storage:
@@ -90,4 +99,13 @@ script_interfaces:
       - min_positionals: 0
         allow_extra_positionals: true
         allow_stdin: true
+    allow_all_skills: false
+
+  mutate-plan:
+    cwd: skill_root
+    command: ["python3", "scripts/mutate_plan.py"]
+    patterns:
+      - min_positionals: 1
+        allow_extra_positionals: true
+        allow_stdin: false
     allow_all_skills: false

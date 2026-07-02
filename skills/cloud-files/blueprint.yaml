@@ -52,6 +52,7 @@ script_interfaces:
     allow_all_skills: false
     allowed_callers:
       - list-manager
+      - daily-plan
 
   lists-write:
     cwd: skill_root
@@ -67,6 +68,7 @@ script_interfaces:
     allow_all_skills: false
     allowed_callers:
       - list-manager
+      - daily-plan
 
   lists-delete:
     cwd: skill_root

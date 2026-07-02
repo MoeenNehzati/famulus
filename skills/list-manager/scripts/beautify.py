@@ -32,9 +32,24 @@ STATE_SYMBOL = {
 
 DIFF_SCHEMAS = {"todo", "potential-actions", "default"}
 
+
+def _deadline_label(ds: str, relative: bool) -> str:
+    if not relative:
+        return f"due {ds}"
+    try:
+        due = datetime.date.fromisoformat(ds)
+        delta = (due - datetime.date.today()).days
+    except ValueError:
+        return ds
+    if delta < 0:
+        return f"{abs(delta)}d overdue"
+    if delta == 0:
+        return "due today"
+    return f"in {delta}d"
+
 # ── Rich renderer (fallback for non-diff schemas) ─────────────────────────────
 
-def _rich_render(data, show_desc: bool) -> None:
+def _rich_render(data, show_desc: bool, relative_deadlines: bool) -> None:
     from rich.console import Console
     from rich.text import Text
     from rich.tree import Tree
@@ -79,7 +94,7 @@ def _rich_render(data, show_desc: bool) -> None:
         t.append(f"{symbol} ", style=base_style or ("dim" if is_finished else ""))
         t.append(title, style="dim" if is_finished else base_style)
         if deadline:
-            t.append(f"  [due {deadline}]", style=deadline_style(deadline))
+            t.append(f"  [{_deadline_label(deadline, relative_deadlines)}]", style=deadline_style(deadline))
         if location:
             t.append(f"  @ {location}", style="dim")
         return t
@@ -130,7 +145,7 @@ def _diff_marker(state):
     return " "
 
 
-def _format_entry_diff(entry, indent, counter, show_desc):
+def _format_entry_diff(entry, indent, counter, show_desc, relative_deadlines):
     lines = []
     state = entry.get("state", "")
     title = entry.get("title", "(untitled)")
@@ -141,7 +156,7 @@ def _format_entry_diff(entry, indent, counter, show_desc):
     pad = "    " * indent
     meta_parts = []
     if deadline:
-        meta_parts.append(f"due {deadline}")
+        meta_parts.append(_deadline_label(deadline, relative_deadlines))
     if location:
         meta_parts.append(f"@ {location}")
     meta = f"  [{', '.join(meta_parts)}]" if meta_parts else ""
@@ -151,11 +166,11 @@ def _format_entry_diff(entry, indent, counter, show_desc):
     if show_desc and description:
         lines.append(f" {pad}   {description}")
     for child in entry.get("children", []):
-        lines.extend(_format_entry_diff(child, indent + 1, counter, show_desc))
+        lines.extend(_format_entry_diff(child, indent + 1, counter, show_desc, relative_deadlines))
     return lines
 
 
-def _format_category_diff(cat, indent, counter, show_desc, depth=0):
+def _format_category_diff(cat, indent, counter, show_desc, relative_deadlines, depth=0):
     lines = []
     pad = "    " * indent
     name = cat.get("name", "(unnamed)")
@@ -166,13 +181,13 @@ def _format_category_diff(cat, indent, counter, show_desc, depth=0):
     else:
         lines.append(f"-{pad}=== {name} ===")
     for e in cat.get("entries", []):
-        lines.extend(_format_entry_diff(e, indent + 1, counter, show_desc))
+        lines.extend(_format_entry_diff(e, indent + 1, counter, show_desc, relative_deadlines))
     for sub in cat.get("categories", []):
-        lines.extend(_format_category_diff(sub, indent + 1, counter, show_desc, depth + 1))
+        lines.extend(_format_category_diff(sub, indent + 1, counter, show_desc, relative_deadlines, depth + 1))
     return lines
 
 
-def _diff_render(data, show_desc: bool) -> None:
+def _diff_render(data, show_desc: bool, relative_deadlines: bool) -> None:
     counter = [1]
     lines = []
     if isinstance(data, dict):
@@ -181,18 +196,18 @@ def _diff_render(data, show_desc: bool) -> None:
         if name:
             lines.append(f" {name}" + (f" ({schema})" if schema else ""))
         for i, cat in enumerate(data.get("categories", [])):
-            lines.extend(_format_category_diff(cat, 1, counter, show_desc))
+            lines.extend(_format_category_diff(cat, 1, counter, show_desc, relative_deadlines))
             if i < len(data.get("categories", [])) - 1:
                 lines.append(" ")
     elif isinstance(data, list):
         for e in data:
-            lines.extend(_format_entry_diff(e, 0, counter, show_desc))
+            lines.extend(_format_entry_diff(e, 0, counter, show_desc, relative_deadlines))
     print("\n".join(lines))
 
 
 # ── Markdown renderer (--markdown) ────────────────────────────────────────────
 
-def _format_entry_md(entry, indent, counter, show_desc):
+def _format_entry_md(entry, indent, counter, show_desc, relative_deadlines):
     lines = []
     prefix = "  " * indent
     state = entry.get("state", "")
@@ -204,7 +219,7 @@ def _format_entry_md(entry, indent, counter, show_desc):
     is_done = state in ("done", "accepted", "rejected")
     meta_parts = []
     if deadline:
-        meta_parts.append(f"due {deadline}")
+        meta_parts.append(_deadline_label(deadline, relative_deadlines))
     if location:
         meta_parts.append(f"@ {location}")
     meta = f" *[{', '.join(meta_parts)}]*" if meta_parts else ""
@@ -215,22 +230,22 @@ def _format_entry_md(entry, indent, counter, show_desc):
     if show_desc and description:
         lines.append(f"{prefix}  *{description}*")
     for child in entry.get("children", []):
-        lines.extend(_format_entry_md(child, indent + 1, counter, show_desc))
+        lines.extend(_format_entry_md(child, indent + 1, counter, show_desc, relative_deadlines))
     return lines
 
 
-def _format_category_md(cat, indent, counter, show_desc):
+def _format_category_md(cat, indent, counter, show_desc, relative_deadlines):
     lines = []
     hashes = "#" * (indent + 3)
     lines.append(f"{hashes} {cat.get('name', '(unnamed)')}")
     for e in cat.get("entries", []):
-        lines.extend(_format_entry_md(e, 0, counter, show_desc))
+        lines.extend(_format_entry_md(e, 0, counter, show_desc, relative_deadlines))
     for sub in cat.get("categories", []):
-        lines.extend(_format_category_md(sub, indent + 1, counter, show_desc))
+        lines.extend(_format_category_md(sub, indent + 1, counter, show_desc, relative_deadlines))
     return lines
 
 
-def _markdown_render(data, show_desc: bool) -> None:
+def _markdown_render(data, show_desc: bool, relative_deadlines: bool) -> None:
     counter = [1]
     lines = []
     if isinstance(data, dict):
@@ -239,12 +254,12 @@ def _markdown_render(data, show_desc: bool) -> None:
         if name:
             lines.append(f"# {name}" + (f" *({schema})*" if schema else ""))
         for i, cat in enumerate(data.get("categories", [])):
-            lines.extend(_format_category_md(cat, 0, counter, show_desc))
+            lines.extend(_format_category_md(cat, 0, counter, show_desc, relative_deadlines))
             if i < len(data.get("categories", [])) - 1:
                 lines.append("")
     elif isinstance(data, list):
         for e in data:
-            lines.extend(_format_entry_md(e, 0, [1], show_desc))
+            lines.extend(_format_entry_md(e, 0, [1], show_desc, relative_deadlines))
     print("\n".join(lines))
 
 
@@ -258,6 +273,8 @@ def main() -> None:
                         help="Force diff renderer (auto for todo/potential-actions)")
     parser.add_argument("--markdown", action="store_true",
                         help="Output markdown (for LLM markdown blocks)")
+    parser.add_argument("--relative-deadlines", action="store_true",
+                        help="Show relative deadline labels like [in 3d] or [2d overdue]")
     args = parser.parse_args()
 
     text = sys.stdin.read()
@@ -269,11 +286,11 @@ def main() -> None:
     schema = data.get("schema", "") if isinstance(data, dict) else ""
 
     if args.markdown:
-        _markdown_render(data, show_desc)
+        _markdown_render(data, show_desc, args.relative_deadlines)
     elif args.diff or schema in DIFF_SCHEMAS:
-        _diff_render(data, show_desc)
+        _diff_render(data, show_desc, args.relative_deadlines)
     else:
-        _rich_render(data, show_desc)
+        _rich_render(data, show_desc, args.relative_deadlines)
 
 
 if __name__ == "__main__":
