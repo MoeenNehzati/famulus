@@ -1,4 +1,4 @@
-# Canonical contract for distill-knowledge.
+# Canonical contract for prepare-handoff.
 # This file was migrated from legacy skill metadata.
 # Tighten the placeholder script interfaces as each script contract becomes clearer.
 
@@ -21,9 +21,9 @@ skill_interface:
   inputs:
     - "User requests that match the SKILL.md description for this skill."
   outputs:
-    - "Responses, artifacts, or side effects described by this skill's workflow."
+    - "A proposed handoff plan, followed after approval by workflow/doc updates, residual lessons, or both."
   side_effects:
-    - "May invoke local scripts or dependencies as described in SKILL.md."
+    - "May update workflow docs, documentation, and dated lesson files after user approval."
 
 script_interfaces:
   {}

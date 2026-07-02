@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare Handoff"
+  short_description: "Review continuity updates, then after approval update workflows, docs, and dated lessons"
+  default_prompt: "Use $prepare-handoff to review what workflows, docs, and residual lessons should change before a handoff or track switch."
