@@ -59,6 +59,7 @@ Copy the structure from `blueprint/template.yaml`:
 ```yaml
 category: automation
 interface_version: 1
+cross_platform: true
 
 depends_on:
   dependency-skill:
@@ -105,6 +106,14 @@ String or list of categories from `references/skill-categories.md`. Describes wh
 
 #### `interface_version`
 Positive integer. Increment when breaking changes occur. Dependents must match this version in their `depends_on.X.major_version`.
+
+#### `cross_platform`
+Optional boolean. Default behavior is `true`.
+
+- `true` = the skill is expected to satisfy the shared cross-platform validator
+- `false` = the skill is intentionally platform-specific and is exempt from that validator
+
+Use `false` only when platform-specific behavior is part of the skill's contract, such as integration with a scheduler, service manager, or OS-specific runtime surface. Do not use it merely to postpone portability work.
 
 #### `depends_on`
 Map of skill name → dependency spec. For each dependency with a blueprint, declare:

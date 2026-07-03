@@ -4,6 +4,8 @@ category: automation
 
 interface_version: 1
 
+cross_platform: false
+
 depends_on: {}
 
 suggested_permissions:

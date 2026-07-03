@@ -8,6 +8,8 @@ category: automation
 # breaking way for dependent skills.
 interface_version: 1
 
+cross_platform: false
+
 depends_on:
   {}
 

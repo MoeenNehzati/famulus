@@ -12,6 +12,22 @@ category: automation
 # contract changes in a breaking way for dependent skills.
 interface_version: 1
 
+# Optional boolean. Default: true.
+# Set this to false only when the skill is intentionally platform-specific and
+# should be exempt from the shared cross-platform validator.
+#
+# Why this exists:
+# - The default policy for shared skills is Python-first, portable runtime
+#   surfaces with no shell-only or OS-specific execution model.
+# - Some skills are intentionally tied to an operating-system facility
+#   (for example, a scheduler or service manager integration).
+# - Those skills should declare that exception in their own blueprint instead
+#   of relying on a hardcoded skip list inside a validator.
+#
+# Keep this true unless platform-specific behavior is an intentional part of
+# the skill's contract.
+cross_platform: true
+
 # Map of dependency skill name -> dependency contract.
 # Use {} only for legacy dependencies that do not yet have a blueprint.
 # For a blueprint-migrated dependency:

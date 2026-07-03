@@ -4,6 +4,8 @@ category: automation
 
 interface_version: 1
 
+cross_platform: false
+
 depends_on:
   cloud-files:
     major_version: 1

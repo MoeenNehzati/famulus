@@ -30,6 +30,12 @@
       "type": "integer",
       "minimum": 1
     },
+    "cross_platform": {
+      "title": "Cross-Platform Validator Opt-In",
+      "description": "Whether this skill is expected to satisfy the cross-platform validator. Omit or set true for the default shared-skill policy. Set false only for intentionally OS-bound skills, such as scheduler or service-manager integrations.",
+      "type": "boolean",
+      "default": true
+    },
     "depends_on": {
       "title": "Dependencies",
       "description": "Map of skill name to dependency specification.",
