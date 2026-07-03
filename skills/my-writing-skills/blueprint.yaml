@@ -9,7 +9,7 @@ category: workflow
 interface_version: 1
 
 depends_on:
-  "superpowers:writing-skills": {}
+  {}
 
 suggested_permissions:
   bash:

@@ -8,8 +8,7 @@ description: Use when creating or editing a personal skill in the shared skills 
 
 Category: workflow
 
-Dependencies:
-- superpowers:writing-skills
+Dependencies: none
 
 Interface Version: 1
 
@@ -33,6 +32,13 @@ This skill owns the conformance infrastructure for the skill system:
 
 To add a new conformance check: add a `.py` file to `validators/` with a `validate(repo_root)` function and a matching `tests/validate_<name>.py`. No registration needed.
 
-@./../../references/skill-guidelines.md
+## Referencing other skills
 
-**REQUIRED — NON-NEGOTIABLE:** Invoke `superpowers:writing-skills` and read it fully before proceeding. All upstream rules apply; the personal conventions in `skill-guidelines.md` are added on top.
+When this skill needs to mention another skill in documentation:
+
+- use the skill name only, with an explicit requirement marker such as
+  `**REQUIRED SUB-SKILL:** Use ...` or `**REQUIRED BACKGROUND:** Use ...`
+- do not use `@.../SKILL.md` links to another skill file, because they force
+  file loading instead of naming the dependency cleanly
+
+@./../../references/skill-guidelines.md
