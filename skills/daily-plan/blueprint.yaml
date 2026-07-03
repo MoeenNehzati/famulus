@@ -60,58 +60,62 @@ script_interfaces:
     id: orchestrate
     cwd: skill_root
     command: ["python3", "scripts/orchestrate.py"]
-    patterns:
-      - min_positionals: 0
-        max_positionals: 0
-        allow_stdin: false
-        notes: "Generate today's plan, or refresh and show the existing one."
-      - min_positionals: 0
-        max_positionals: 0
-        allow_stdin: false
-        required_flags: ["--forced"]
-        allowed_flags: ["--forced"]
-        notes: "Regenerate today's plan even if one already exists."
-    allow_all_skills: false
+    default:
+      patterns:
+        - min_positionals: 0
+          max_positionals: 0
+          allow_stdin: false
+          notes: "Generate today's plan, or refresh and show the existing one."
+        - min_positionals: 0
+          max_positionals: 0
+          allow_stdin: false
+          required_flags: ["--forced"]
+          allowed_flags: ["--forced"]
+          notes: "Regenerate today's plan even if one already exists."
+      allow_all_skills: false
 
   plan-storage:
     id: plan-storage
     cwd: skill_root
     command: ["scripts/plans.sh"]
-    patterns:
-      - name: "read"
-        min_positionals: 2
-        max_positionals: 2
-        allow_stdin: false
-      - name: "write"
-        min_positionals: 2
-        max_positionals: 2
-        allow_stdin: true
-      - name: "exists"
-        min_positionals: 2
-        max_positionals: 2
-        allow_stdin: false
-      - name: "delete"
-        min_positionals: 2
-        max_positionals: 2
-        allow_stdin: false
-    allow_all_skills: false
+    default:
+      patterns:
+        - name: "read"
+          min_positionals: 2
+          max_positionals: 2
+          allow_stdin: false
+        - name: "write"
+          min_positionals: 2
+          max_positionals: 2
+          allow_stdin: true
+        - name: "exists"
+          min_positionals: 2
+          max_positionals: 2
+          allow_stdin: false
+        - name: "delete"
+          min_positionals: 2
+          max_positionals: 2
+          allow_stdin: false
+      allow_all_skills: false
 
   render-plan:
     id: render-plan
     cwd: skill_root
     command: ["python3", "scripts/render-plan.py"]
-    patterns:
-      - min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: true
-    allow_all_skills: false
+    default:
+      patterns:
+        - min_positionals: 0
+          allow_extra_positionals: true
+          allow_stdin: true
+      allow_all_skills: false
 
   mutate-plan:
     id: mutate-plan
     cwd: skill_root
     command: ["python3", "scripts/mutate_plan.py"]
-    patterns:
-      - min_positionals: 1
-        allow_extra_positionals: true
-        allow_stdin: false
-    allow_all_skills: false
+    default:
+      patterns:
+        - min_positionals: 1
+          allow_extra_positionals: true
+          allow_stdin: false
+      allow_all_skills: false

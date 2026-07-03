@@ -27,10 +27,11 @@ script_interfaces:
     id: scripts-weather
     cwd: skill_root
     command: ["scripts/weather.sh"]
-    patterns:
-      - min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-    # Public: anyone can use weather data
-    allow_all_skills: true
-    allowed_callers: []
+    default:
+      patterns:
+        - min_positionals: 0
+          allow_extra_positionals: true
+          allow_stdin: false
+      # Public: anyone can use weather data
+      allow_all_skills: true
+      allowed_callers: []

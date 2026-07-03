@@ -56,7 +56,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertIn("references/blueprint", text)
         self.assertIn("scripts/invoke_skill_export.py", text)
         self.assertIn("python3 skills/my-writing-skills/scripts/sync_skill_blueprints.py", text)
-        self.assertIn(".githooks/skill/check-blueprints", text)
+        self.assertIn(".githooks/pre-commit", text)
         self.assertIn("list-manager", text)
         self.assertIn("daily-plan", text)
 
@@ -95,7 +95,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
             ],
         )
 
-    def test_dispatcher_allows_export_without_caller_context(self) -> None:
+    def test_dispatcher_rejects_restricted_interface_without_caller_context(self) -> None:
         result = self.run_cmd(
             "scripts/invoke_skill_export.py",
             "--dry-run",
@@ -104,9 +104,8 @@ class SkillBlueprintToolTests(unittest.TestCase):
             "/tmp/todo.yaml",
             "state=incomplete",
         )
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-        payload = json.loads(result.stdout)
-        self.assertEqual(payload["script_interface"], "read-list")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("allowed_callers", result.stderr)
 
     def test_dispatcher_rejects_private_interface_for_dependency(self) -> None:
         """Test that internal-only interfaces cannot be used by dependent skills."""
@@ -251,6 +250,56 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertIn("New", updated)
         self.assertNotIn("Old", updated)
         self.assertEqual(updated.count("BEGIN BLUEPRINT CONTRACT"), 1)
+
+    def test_interface_block_is_injected_after_contract_block(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints",
+            REPO_ROOT / "skills" / "my-writing-skills" / "scripts" / "sync_skill_blueprints.py",
+        )
+        interface_block = (
+            "<!-- BEGIN BLUEPRINT INTERFACES -->\nInjected\n<!-- END BLUEPRINT INTERFACES -->\n"
+        )
+        text = (
+            "---\nname: example-skill\ndescription: Use when testing.\n---\n\n"
+            "<!-- BEGIN BLUEPRINT CONTRACT -->\nContract\n<!-- END BLUEPRINT CONTRACT -->\n"
+            "Body.\n"
+        )
+
+        updated = sync_module.sync_interface_block(text, interface_block)
+
+        expected = (
+            "---\nname: example-skill\ndescription: Use when testing.\n---\n\n"
+            "<!-- BEGIN BLUEPRINT CONTRACT -->\nContract\n<!-- END BLUEPRINT CONTRACT -->\n"
+            "<!-- BEGIN BLUEPRINT INTERFACES -->\nInjected\n<!-- END BLUEPRINT INTERFACES -->\n"
+            "Body.\n"
+        )
+        self.assertEqual(updated, expected)
+
+    def test_generated_interface_block_uses_owner_interface_ids(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints",
+            REPO_ROOT / "skills" / "my-writing-skills" / "scripts" / "sync_skill_blueprints.py",
+        )
+        block = sync_module.generated_interface_block(
+            {
+                "script_interfaces": {
+                    "read-data": {
+                        "id": "read-data",
+                        "description": "Read an input file.",
+                        "command": ["python3", "scripts/tool.py"],
+                        "subinterfaces": {
+                            "daily-plan-view": {
+                                "id": "read-data-daily-plan",
+                                "patterns": [{"min_positionals": 1}],
+                            }
+                        },
+                    }
+                }
+            }
+        )
+
+        self.assertIn("`read-data` — Read an input file.", block)
+        self.assertNotIn("read-data-daily-plan", block)
 
 
 if __name__ == "__main__":

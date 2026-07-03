@@ -29,25 +29,27 @@ script_interfaces:
     id: scripts-gcal
     cwd: skill_root
     command: ["scripts/gcal.sh"]
-    patterns:
-      - min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-    # Only daily-plan can access g-calendar functionality
-    allow_all_skills: false
-    allowed_callers:
-      - daily-plan
+    default:
+      patterns:
+        - min_positionals: 0
+          allow_extra_positionals: true
+          allow_stdin: false
+      # Only daily-plan can access g-calendar functionality
+      allow_all_skills: false
+      allowed_callers:
+        - daily-plan
 
   setup-oauth:
     id: setup-oauth
     cwd: skill_root
     command: ["python3", "scripts/setup_oauth.py"]
-    patterns:
-      - min_positionals: 0
-        max_positionals: 0
-        allow_stdin: false
-        notes: "OAuth setup for Google Calendar access."
-    # Restricted to install-assistant-tools; not publicly exported.
-    allow_all_skills: false
-    allowed_callers:
-      - install-assistant-tools
+    default:
+      patterns:
+        - min_positionals: 0
+          max_positionals: 0
+          allow_stdin: false
+          notes: "OAuth setup for Google Calendar access."
+      # Restricted to install-assistant-tools; not publicly exported.
+      allow_all_skills: false
+      allowed_callers:
+        - install-assistant-tools

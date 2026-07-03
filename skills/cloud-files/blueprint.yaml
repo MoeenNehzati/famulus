@@ -42,51 +42,54 @@ script_interfaces:
     id: lists-read
     cwd: skill_root
     command: ["python3", "scripts/read_llm_file.py"]
-    patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        positional_patterns:
-          0: "^lists/.*"  # ONLY paths under lists/ directory
-        notes: "Read list files from cloud storage. Restricted to lists/ directory."
-    # Not publicly exported; only list-manager can use this interface.
-    allow_all_skills: false
-    allowed_callers:
-      - list-manager
-      - daily-plan
+    default:
+      patterns:
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+          positional_patterns:
+            0: "^lists/.*"  # ONLY paths under lists/ directory
+          notes: "Read list files from cloud storage. Restricted to lists/ directory."
+      # Not publicly exported; only list-manager can use this interface.
+      allow_all_skills: false
+      allowed_callers:
+        - list-manager
+        - daily-plan
 
   lists-write:
     id: lists-write
     cwd: skill_root
     command: ["python3", "scripts/write_llm_file.py"]
-    patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: true
-        positional_patterns:
-          0: "^lists/.*"  # ONLY paths under lists/ directory
-        notes: "Write list files to cloud storage. Restricted to lists/ directory."
-    # Not publicly exported; only list-manager can use this interface.
-    allow_all_skills: false
-    allowed_callers:
-      - list-manager
-      - daily-plan
+    default:
+      patterns:
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: true
+          positional_patterns:
+            0: "^lists/.*"  # ONLY paths under lists/ directory
+          notes: "Write list files to cloud storage. Restricted to lists/ directory."
+      # Not publicly exported; only list-manager can use this interface.
+      allow_all_skills: false
+      allowed_callers:
+        - list-manager
+        - daily-plan
 
   lists-delete:
     id: lists-delete
     cwd: skill_root
     command: ["python3", "scripts/delete_llm_file.py"]
-    patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        positional_patterns:
-          0: "^lists/.*"  # ONLY paths under lists/ directory
-        notes: "Delete list files from cloud storage. Restricted to lists/ directory."
-    # Not publicly exported; only list-manager can use this interface.
-    allow_all_skills: false
-    allowed_callers:
-      - list-manager
+    default:
+      patterns:
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+          positional_patterns:
+            0: "^lists/.*"  # ONLY paths under lists/ directory
+          notes: "Delete list files from cloud storage. Restricted to lists/ directory."
+      # Not publicly exported; only list-manager can use this interface.
+      allow_all_skills: false
+      allowed_callers:
+        - list-manager
 
   # ========================================================================
   # DAILY-PLAN INTERFACES: Restricted to plans/ directory
@@ -98,60 +101,64 @@ script_interfaces:
     id: plans-read
     cwd: skill_root
     command: ["python3", "scripts/read_llm_file.py"]
-    patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        positional_patterns:
-          0: "^plans/.*"  # ONLY paths under plans/ directory
-        notes: "Read plan files from cloud storage. Restricted to plans/ directory."
-    # Not publicly exported; only daily-plan can use this interface.
-    allow_all_skills: false
-    allowed_callers:
-      - daily-plan
+    default:
+      patterns:
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+          positional_patterns:
+            0: "^plans/.*"  # ONLY paths under plans/ directory
+          notes: "Read plan files from cloud storage. Restricted to plans/ directory."
+      # Not publicly exported; only daily-plan can use this interface.
+      allow_all_skills: false
+      allowed_callers:
+        - daily-plan
 
   plans-write:
     id: plans-write
     cwd: skill_root
     command: ["python3", "scripts/write_llm_file.py"]
-    patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: true
-        positional_patterns:
-          0: "^plans/.*"  # ONLY paths under plans/ directory
-        notes: "Write plan files to cloud storage. Restricted to plans/ directory."
-    # Not publicly exported; only daily-plan can use this interface.
-    allow_all_skills: false
-    allowed_callers:
-      - daily-plan
+    default:
+      patterns:
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: true
+          positional_patterns:
+            0: "^plans/.*"  # ONLY paths under plans/ directory
+          notes: "Write plan files to cloud storage. Restricted to plans/ directory."
+      # Not publicly exported; only daily-plan can use this interface.
+      allow_all_skills: false
+      allowed_callers:
+        - daily-plan
 
   plans-delete:
     id: plans-delete
     cwd: skill_root
     command: ["python3", "scripts/delete_llm_file.py"]
-    patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        positional_patterns:
-          0: "^plans/.*"  # ONLY paths under plans/ directory
-        notes: "Delete plan files from cloud storage. Restricted to plans/ directory."
-    # Not publicly exported; only daily-plan can use this interface.
-    allow_all_skills: false
-    allowed_callers:
-      - daily-plan
+    default:
+      patterns:
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+          positional_patterns:
+            0: "^plans/.*"  # ONLY paths under plans/ directory
+          notes: "Delete plan files from cloud storage. Restricted to plans/ directory."
+      # Not publicly exported; only daily-plan can use this interface.
+      allow_all_skills: false
+      allowed_callers:
+        - daily-plan
 
   setup-oauth:
     id: setup-oauth
     cwd: skill_root
     command: ["python3", "scripts/setup_oauth.py"]
-    patterns:
-      - min_positionals: 0
-        max_positionals: 0
-        allow_stdin: false
-        notes: "OAuth setup for Google Drive access."
-    # Restricted to install-assistant-tools; not publicly exported.
-    allow_all_skills: false
-    allowed_callers:
-      - install-assistant-tools
+    default:
+      patterns:
+        - min_positionals: 0
+          max_positionals: 0
+          allow_stdin: false
+          notes: "OAuth setup for Google Drive access."
+      # Restricted to install-assistant-tools; not publicly exported.
+      allow_all_skills: false
+      allowed_callers:
+        - install-assistant-tools
