@@ -63,3 +63,25 @@ def test_read_beautify_markdown_and_filter(todo_file):
     assert 'Tomorrow task' not in result.stdout
     assert 'Overdue task' in result.stdout
     assert 'Today task' in result.stdout
+
+
+def test_read_beautify_shows_ids_by_default(todo_file):
+    result = run([str(todo_file)])
+    assert result.returncode == 0, result.stderr
+    # Each row carries its #id so follow-up edits key on it directly.
+    assert '#aaaaaa' in result.stdout
+    assert '#bbbbbb' in result.stdout
+
+
+def test_read_beautify_no_ids(todo_file):
+    result = run([str(todo_file), '--no-ids'])
+    assert result.returncode == 0, result.stderr
+    assert '#aaaaaa' not in result.stdout
+    assert 'Overdue task' in result.stdout
+
+
+def test_read_beautify_ids_survive_filter(todo_file):
+    # The id must still be present in a filtered view (the whole point).
+    result = run([str(todo_file), 'state=incomplete'])
+    assert result.returncode == 0, result.stderr
+    assert '#aaaaaa' in result.stdout

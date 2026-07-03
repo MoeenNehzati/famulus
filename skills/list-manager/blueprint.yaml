@@ -21,11 +21,11 @@ depends_on:
 suggested_permissions:
   bash:
     - command: ["python3", "scripts/lists.py"]
-      reason: "Core local list operations; broad pre-approval avoids repeated prompts."
+      reason: "Core list operations; supports --cloud flag to handle cloud transport (via invoke_skill_export.py to cloud-files) automatically."
     - command: ["python3", "scripts/beautify.py"]
       reason: "Pure formatter used for user-facing rendering of YAML output."
     - command: ["python3", "scripts/read_beautify.py"]
-      reason: "Default human-facing read path for lists."
+      reason: "Default human-facing read path for lists; supports --cloud flag for cloud-backed lists."
     - command: ["python3", "scripts/migrate_md.py"]
       reason: "One-time migration utility for importing legacy Markdown lists."
   network: []
@@ -146,5 +146,107 @@ script_interfaces:
         allow_extra_positionals: true
         allow_stdin: false
     # Internal-only: only list-manager can use for migrations
+    allow_all_skills: false
+    allowed_callers: []
+
+  # ========================================================================
+  # CLOUD-BACKED INTERFACES: Self-contained cloud + local operations
+  # ========================================================================
+  # These wrap the same scripts with the --cloud flag: the first positional is
+  # the list NAME (not a file path); the script downloads, operates, and (for
+  # mutations) uploads. Filters follow the name as extra positionals.
+  #
+  cloud-read:
+    cwd: skill_root
+    command: ["python3", "scripts/lists.py", "read"]
+    patterns:
+      - min_positionals: 1
+        allow_extra_positionals: true   # name + filters
+        allow_stdin: false
+        required_flags: ["--cloud"]
+        allowed_flags: ["--cloud", "--sort", "-o", "--output"]
+        positional_patterns:
+          0: "^[a-zA-Z0-9_-]+$"  # List name must be a valid identifier
+        notes: "Read cloud list by name (raw YAML), optionally filtered."
+    allow_all_skills: false
+    allowed_callers: []
+
+  cloud-create-entry:
+    cwd: skill_root
+    command: ["python3", "scripts/lists.py", "create-entry"]
+    patterns:
+      - name: "stdin-mode"
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: true
+        required_flags: ["--cloud"]
+        forbidden_flags: ["--entries"]
+        positional_patterns:
+          0: "^[a-zA-Z0-9_-]+$"  # List name
+          1: "^[a-zA-Z0-9_/-]+$" # Target category path or entry id
+      - name: "file-mode"
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+        required_flags: ["--cloud", "--entries"]
+        allowed_flags: ["--cloud", "--entries"]
+        positional_patterns:
+          0: "^[a-zA-Z0-9_-]+$"  # List name
+          1: "^[a-zA-Z0-9_/-]+$" # Target category path or entry id
+    allow_all_skills: false
+    allowed_callers: []
+
+  cloud-update:
+    cwd: skill_root
+    command: ["python3", "scripts/lists.py", "update"]
+    patterns:
+      - name: "file-mode"
+        min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        required_flags: ["--cloud", "--file"]
+        allowed_flags: ["--cloud", "--file"]
+        positional_patterns:
+          0: "^[a-zA-Z0-9_-]+$"  # List name
+        notes: "Update cloud list entries from a patch file."
+      - name: "stdin-mode"
+        min_positionals: 1
+        max_positionals: 1
+        allow_stdin: true
+        required_flags: ["--cloud"]
+        forbidden_flags: ["--file"]
+        positional_patterns:
+          0: "^[a-zA-Z0-9_-]+$"  # List name
+        notes: "Update cloud list entries from a stdin patch."
+    allow_all_skills: false
+    allowed_callers: []
+
+  cloud-init:
+    cwd: skill_root
+    command: ["python3", "scripts/lists.py", "init"]
+    patterns:
+      - min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        required_flags: ["--cloud", "--schema"]
+        allowed_flags: ["--cloud", "--schema", "--name"]
+        positional_patterns:
+          0: "^[a-zA-Z0-9_-]+$"  # New list name
+        notes: "Create a new list in cloud storage."
+    allow_all_skills: false
+    allowed_callers: []
+
+  cloud-read-beautify:
+    cwd: skill_root
+    command: ["python3", "scripts/read_beautify.py"]
+    patterns:
+      - min_positionals: 1
+        allow_extra_positionals: true   # name + filters
+        allow_stdin: false
+        required_flags: ["--cloud"]
+        allowed_flags: ["--cloud", "--sort", "-D", "--no-descriptions", "--markdown", "-o", "--output"]
+        positional_patterns:
+          0: "^[a-zA-Z0-9_-]+$"  # List name
+        notes: "Read a cloud list by name and render it (diff-fenced), optionally filtered."
     allow_all_skills: false
     allowed_callers: []

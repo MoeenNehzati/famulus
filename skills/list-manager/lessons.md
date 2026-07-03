@@ -77,3 +77,26 @@
 **Lesson:** `/tmp/todo_new.yaml`, `/tmp/potential-actions_new.yaml`, `/tmp/shopping_new.yaml` were migrated from the original `.md` files but **not yet uploaded to cloud**. Old `.md` files should be deleted after upload is confirmed.
 
 **Use/Avoid:** Before assuming cloud lists are current, verify upload was completed.
+
+---
+
+## YAML has a date type; JSON Schema does not
+
+**Context:** Cloud `todo` updates started failing with `datetime.date(2026, 7, 5) is not of type 'string'`. Some entries stored `deadline: 2026-07-05` **unquoted**.
+
+**Lesson:** YAML natively parses an unquoted ISO date into a Python `datetime.date`. JSON Schema has no date type — a "date" is a `string` with `format: date` (see `schemas/types/task_entry.json`, `action.json`). So a YAML-native date object fails the `type: string` check, with a confusing message. Quoted dates (`'2026-07-05'`) load as strings and pass. Because `update` validates the **whole document** before saving, a single unquoted date (or any missing required field) blocks *every* edit to that list.
+
+**Use/Avoid:** Coerce `date`/`datetime` → ISO string at the YAML↔schema boundary. `lists.py` does this in `normalize_dates()`, called from `load_yaml` and at the top of `validate_list`. Do not "fix" this by loosening the schema to accept non-strings — keep `type: string, format: date` and normalize the data. Any code path that writes a list without going through `lists.py` (e.g. another skill writing directly via cloud-files) can reintroduce the problem.
+
+---
+
+## Formatting lists for agent relay (fence in the tool, address by id)
+
+**Context:** Showing lists to the user and then acting on rows ("mark 66 done", "delete 16"). Builds on the color-rendering map above.
+
+**Lesson:**
+- Put the ` ```diff ` fence **in `beautify`'s own stdout**, not in `SKILL.md` instructions. When the fence lived only in instructions, the agent rebuilt the list as its own markdown instead of relaying the tool output verbatim. Emitting the fence from the renderer makes verbatim relay the path of least resistance.
+- Rows carry an inline `#<id>` suffix (`beautify --ids`, on by default in `read_beautify`; `--no-ids` for daily-plan's plan document). The id **inherits its line's diff color and cannot be dimmed** — reconfirms the color map above (`@@…@@` hunk headers and leading `#` do **not** render gray here). Inline same-color is the only option.
+- The rendered item **numbers restart from 1 in every filtered view**, so a number is not a stable identifier across views. The `#id` is the addressing handle: edits reference ids (patch file keyed by `id`), never the display number.
+
+**Use/Avoid:** Keep the fence in `beautify`. Keep ids inline and on by default for the user path. Do not try to make ids gray, and do not build an "edit by row number" feature — resolve to ids from the shown output instead.

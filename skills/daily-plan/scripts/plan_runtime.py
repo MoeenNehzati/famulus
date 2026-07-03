@@ -288,7 +288,7 @@ def render_entries(entries: list[dict[str, Any]]) -> str:
         yaml.safe_dump(entries, tmp, allow_unicode=True, default_flow_style=False, sort_keys=False)
         tmp_path = tmp.name
     try:
-        rendered = run_dispatcher("list-manager", "read-beautify", tmp_path)
+        rendered = run_dispatcher("list-manager", "read-beautify", tmp_path, "--no-ids")
     finally:
         Path(tmp_path).unlink(missing_ok=True)
     return rendered.rstrip()

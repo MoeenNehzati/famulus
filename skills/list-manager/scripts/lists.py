@@ -10,10 +10,14 @@ Subcommands:
 """
 
 import argparse
+import datetime
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import warnings
 from pathlib import Path
 
@@ -37,9 +41,33 @@ HEX6_RE = re.compile(r"^[0-9a-f]{6}$")
 
 # ── I/O helpers ──────────────────────────────────────────────────────────────
 
+def normalize_dates(node) -> None:
+    """Coerce any date/datetime values to ISO strings, in place, recursively.
+
+    YAML parses an unquoted `deadline: 2026-07-05` into a datetime.date, which
+    then fails the schema's `type: string, format: date`. Normalizing on load
+    and before validation makes the store robust to writers that emit unquoted
+    dates, without changing the schema.
+    """
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if isinstance(v, datetime.date):  # also matches datetime.datetime
+                node[k] = v.isoformat()
+            else:
+                normalize_dates(v)
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            if isinstance(v, datetime.date):
+                node[i] = v.isoformat()
+            else:
+                normalize_dates(v)
+
+
 def load_yaml(path: Path) -> dict:
     with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+        data = yaml.safe_load(f) or {}
+    normalize_dates(data)
+    return data
 
 
 def save_yaml(path: Path, data: dict) -> None:
@@ -50,6 +78,64 @@ def save_yaml(path: Path, data: dict) -> None:
 def die(msg: str) -> None:
     print(f"error: {msg}", file=sys.stderr)
     sys.exit(1)
+
+
+# ── Cloud transport ───────────────────────────────────────────────────────────
+
+def get_invoke_skill_export() -> Path:
+    """Locate invoke_skill_export.py from repo root."""
+    repo_root = Path(__file__).parent.parent.parent.parent
+    script = repo_root / "scripts" / "invoke_skill_export.py"
+    if not script.exists():
+        # Fallback for alternate installations
+        alt = Path.home() / "Documents" / "AI" / "scripts" / "invoke_skill_export.py"
+        if alt.exists():
+            return alt
+    return script
+
+
+def download_list(list_name: str, dest_path: Path) -> None:
+    """Download list from cloud storage via cloud-files lists-read interface."""
+    remote_path = f"lists/{list_name}.yaml"
+    cmd = [
+        "python3",
+        str(get_invoke_skill_export()),
+        "--caller-skill", "list-manager",
+        "cloud-files", "lists-read",
+        remote_path,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            die(f"failed to download {remote_path}: {result.stderr}")
+        with open(dest_path, "w", encoding="utf-8") as f:
+            f.write(result.stdout)
+    except subprocess.TimeoutExpired:
+        die("download timed out")
+    except Exception as e:
+        die(f"download failed: {e}")
+
+
+def upload_list(list_name: str, src_path: Path) -> None:
+    """Upload list to cloud storage via cloud-files lists-write interface."""
+    remote_path = f"lists/{list_name}.yaml"
+    with open(src_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    cmd = [
+        "python3",
+        str(get_invoke_skill_export()),
+        "--caller-skill", "list-manager",
+        "cloud-files", "lists-write",
+        remote_path,
+    ]
+    try:
+        result = subprocess.run(cmd, input=content, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            die(f"failed to upload {remote_path}: {result.stderr}")
+    except subprocess.TimeoutExpired:
+        die("upload timed out")
+    except Exception as e:
+        die(f"upload failed: {e}")
 
 
 # ── ID generation ─────────────────────────────────────────────────────────────
@@ -82,6 +168,9 @@ def gen_ids(existing_ids: set[str], count: int = 1) -> list[str]:
 
 def validate_list(data: dict) -> None:
     """Validate data against its declared schema. Calls die() on failure."""
+    # Patch inputs (create-entry/update) may carry date objects from YAML; coerce
+    # them so what we validate matches what we save.
+    normalize_dates(data)
     schema_name = data.get("schema")
     if not schema_name:
         die("list file missing 'schema' field")
@@ -106,7 +195,30 @@ def validate_list(data: dict) -> None:
             data, schema, resolver=resolver, format_checker=FormatChecker()
         )
     except jsonschema.ValidationError as e:
-        die(f"validation failed: {e.message}")
+        die(f"validation failed: {describe_validation_error(data, e)}")
+
+
+def describe_validation_error(data: dict, err) -> str:
+    """Turn a jsonschema error into an actionable message: the specific problem,
+    the location, and the offending entry's id/title when there is one."""
+    path = list(err.absolute_path)
+    # Walk the document along the error path, remembering the nearest enclosing
+    # entry (a dict with id + title) so we can name the row that is wrong.
+    node, entry = data, None
+    for key in path:
+        try:
+            node = node[key]
+        except (KeyError, IndexError, TypeError):
+            break
+        if isinstance(node, dict) and "id" in node and "title" in node:
+            entry = node
+    loc = "/".join(str(p) for p in path) or "(document root)"
+    where = f"\n  at: {loc}"
+    who = ""
+    if entry is not None:
+        who = f"\n  entry: id={entry.get('id')} title={entry.get('title')!r}"
+    # `err.message` already names the field for required/type/format failures.
+    return f"{err.message}{where}{who}"
 
 
 # ── Filter helpers (for `read`) ───────────────────────────────────────────────
@@ -116,7 +228,8 @@ def parse_filters(filter_args: list[str]) -> list[tuple[str, str, str]]:
 
     Supported ops:
       key=value    exact match (comma-separated = OR)
-      key~=value   substring match
+      key~=value   regex search on the field (case-insensitive; substring is a
+                   plain-text regex, so old substring filters keep working)
     """
     filters = []
     for f in filter_args:
@@ -128,7 +241,7 @@ def parse_filters(filter_args: list[str]) -> list[tuple[str, str, str]]:
 
 
 def entry_matches(entry: dict, filters: list[tuple[str, str, str]]) -> bool:
-    """Return True if entry satisfies all filters (AND semantics across keys)."""
+    """Return True if entry satisfies all filters (AND across keys, OR within a key)."""
     from collections import defaultdict
     by_key: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for key, op, val in filters:
@@ -143,9 +256,16 @@ def entry_matches(entry: dict, filters: list[tuple[str, str, str]]) -> bool:
                     matched_any = True
                     break
             elif op == "~=":
-                if val in field_val:
-                    matched_any = True
-                    break
+                # Regex search; fall back to literal substring on a bad pattern
+                # so filters containing regex metacharacters never crash.
+                try:
+                    if re.search(val, field_val, re.IGNORECASE):
+                        matched_any = True
+                        break
+                except re.error:
+                    if val in field_val:
+                        matched_any = True
+                        break
         if not matched_any:
             return False
     return True
@@ -243,8 +363,15 @@ def cmd_read(args: argparse.Namespace) -> None:
     file = Path(args.file)
     data = load_yaml(file)
 
+    def emit(content: str) -> None:
+        if getattr(args, "output", None):
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write(content)
+        else:
+            print(content, end="")
+
     if not args.filters:
-        print(yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False), end="")
+        emit(yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False))
         return
 
     filters = parse_filters(args.filters)
@@ -266,7 +393,7 @@ def cmd_read(args: argparse.Namespace) -> None:
         except (TypeError, ValueError) as ex:
             die(f"sort by '{sort_field}' failed: {ex}")
 
-    print(yaml.dump(matches, allow_unicode=True, default_flow_style=False, sort_keys=False), end="")
+    emit(yaml.dump(matches, allow_unicode=True, default_flow_style=False, sort_keys=False))
 
 
 def cmd_create_entry(args: argparse.Namespace) -> None:
@@ -352,28 +479,45 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="lists.py")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    # Helper to add --cloud to any subcommand. When set, the source positional
+    # is treated as a cloud list NAME (download → operate → upload) instead of a
+    # local file PATH. It is a plain boolean, so it never consumes a positional
+    # and filters keep their own slot.
+    def add_cloud_arg(subparser):
+        subparser.add_argument(
+            "--cloud",
+            action="store_true",
+            help="Treat the source as a cloud list name; download, operate, and upload",
+        )
+
     p_init = sub.add_parser("init", help="Create a new empty list file")
-    p_init.add_argument("file", help="Path to create")
+    p_init.add_argument("file", help="Path to create, or cloud list name with --cloud")
     p_init.add_argument("--schema", required=True, help="Schema name (todo, potential-actions, default)")
     p_init.add_argument("--name", help="List name (defaults to filename stem)")
+    add_cloud_arg(p_init)
 
     p_read = sub.add_parser("read", help="Read list, optionally filtered")
-    p_read.add_argument("file", help="Path to list YAML")
-    p_read.add_argument("filters", nargs="*", help="key=value or key~=value filters")
+    p_read.add_argument("file", help="Path to list YAML, or cloud list name with --cloud")
+    p_read.add_argument("filters", nargs="*", help="key=value (exact/OR) or key~=value (regex) filters")
     p_read.add_argument("--sort", metavar="FIELD", help="Sort results by field (e.g., deadline, created). Dates sorted ascending (earliest first)")
+    p_read.add_argument("-o", "--output", metavar="FILE", help="Write output to file instead of stdout")
+    add_cloud_arg(p_read)
 
     p_create = sub.add_parser("create-entry", help="Add entries to a category or entry")
-    p_create.add_argument("file", help="Path to list YAML")
+    p_create.add_argument("file", help="Path to list YAML, or cloud list name with --cloud")
     p_create.add_argument("target", help="Category path (Work/Writing) or 6-char entry ID")
     p_create.add_argument("--entries", dest="entries", help="YAML file of entries (default: stdin)")
+    add_cloud_arg(p_create)
 
     p_update = sub.add_parser("update", help="Update fields on entries")
-    p_update.add_argument("file", help="Path to list YAML")
+    p_update.add_argument("file", help="Path to list YAML, or cloud list name with --cloud")
     p_update.add_argument("--file", dest="file_input", help="YAML file of updates (default: stdin)")
+    add_cloud_arg(p_update)
 
     p_genid = sub.add_parser("gen-id", help="Generate collision-free IDs")
-    p_genid.add_argument("file", help="Path to list YAML")
+    p_genid.add_argument("file", help="Path to list YAML, or cloud list name with --cloud")
     p_genid.add_argument("--count", type=int, default=1, help="Number of IDs to generate")
+    add_cloud_arg(p_genid)
 
     return parser
 
@@ -390,8 +534,30 @@ def main() -> None:
         "gen-id": cmd_gen_id,
     }
 
-    fn = dispatch[args.command]
-    fn(args)
+    # Cloud mode: the source positional is a list NAME. For reads we download →
+    # operate; for mutations we download → operate → upload; for init we create
+    # → upload (nothing to download). Local mode operates on the file in place.
+    if getattr(args, "cloud", False):
+        list_name = args.file
+        mutating = args.command in ("init", "create-entry", "update")
+        tmp_dir = Path(tempfile.mkdtemp())
+        temp_path = tmp_dir / f"{list_name}.yaml"
+        try:
+            if args.command == "init":
+                # New list: nothing to download; default display name to the
+                # cloud list name unless the caller set one explicitly.
+                if not getattr(args, "name", None):
+                    args.name = list_name
+            else:
+                download_list(list_name, temp_path)
+            args.file = str(temp_path)
+            dispatch[args.command](args)
+            if mutating:
+                upload_list(list_name, temp_path)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+    else:
+        dispatch[args.command](args)
 
 
 if __name__ == "__main__":

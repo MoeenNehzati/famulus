@@ -32,6 +32,15 @@ STATE_SYMBOL = {
 
 DIFF_SCHEMAS = {"todo", "potential-actions", "default"}
 
+# Render-scoped toggle: when true, entry lines carry a trailing `#<id>` so a
+# reader (human or LLM) can act on a specific row by id without counting.
+_SHOW_IDS = False
+
+
+def _id_suffix(entry: dict) -> str:
+    eid = entry.get("id")
+    return f"  #{eid}" if (_SHOW_IDS and eid) else ""
+
 
 def _deadline_label(ds: str, relative: bool) -> str:
     if not relative:
@@ -162,7 +171,7 @@ def _format_entry_diff(entry, indent, counter, show_desc, relative_deadlines):
     meta = f"  [{', '.join(meta_parts)}]" if meta_parts else ""
     num = counter[0]
     counter[0] += 1
-    lines.append(f"{marker}{pad}{num}. {title}{meta}")
+    lines.append(f"{marker}{pad}{num}. {title}{meta}{_id_suffix(entry)}")
     if show_desc and description:
         lines.append(f" {pad}   {description}")
     for child in entry.get("children", []):
@@ -202,7 +211,11 @@ def _diff_render(data, show_desc: bool, relative_deadlines: bool) -> None:
     elif isinstance(data, list):
         for e in data:
             lines.extend(_format_entry_diff(e, 0, counter, show_desc, relative_deadlines))
+    # Wrap in a ```diff fence so the output renders with diff highlighting
+    # when relayed into a chat reply, without relying on the caller to add it.
+    print("```diff")
     print("\n".join(lines))
+    print("```")
 
 
 # ── Markdown renderer (--markdown) ────────────────────────────────────────────
@@ -226,7 +239,7 @@ def _format_entry_md(entry, indent, counter, show_desc, relative_deadlines):
     num = counter[0]
     counter[0] += 1
     title_str = f"~~{title}~~" if is_done else f"**{title}**" if state == "inprogress" else title
-    lines.append(f"{prefix}- {num}. {symbol} {title_str}{meta}")
+    lines.append(f"{prefix}- {num}. {symbol} {title_str}{meta}{_id_suffix(entry)}")
     if show_desc and description:
         lines.append(f"{prefix}  *{description}*")
     for child in entry.get("children", []):
@@ -275,7 +288,12 @@ def main() -> None:
                         help="Output markdown (for LLM markdown blocks)")
     parser.add_argument("--relative-deadlines", action="store_true",
                         help="Show relative deadline labels like [in 3d] or [2d overdue]")
+    parser.add_argument("--ids", action="store_true",
+                        help="Append each entry's #id so rows can be acted on by id")
     args = parser.parse_args()
+
+    global _SHOW_IDS
+    _SHOW_IDS = args.ids
 
     text = sys.stdin.read()
     if not text.strip():

@@ -1,8 +1,12 @@
 ---
 name: list-manager
 description: |
-  Use when the user asks to show, create, delete, or modify a structured
-  personal list or its entries.
+  Use whenever the user refers to any personal list they keep — a list of any
+  name or topic (todo, shopping, reading, packing, gifts, projects, and any
+  other) — or asks to see, add to, check off, complete, reorder, rename, set a
+  deadline on, or remove items in one. Any phrasing like "my <X> list", "what's
+  on my <X>", "add X to my list", "show my <X>", "mark X done" triggers this,
+  whatever the list is called.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
@@ -23,35 +27,77 @@ Skill: list-manager
 
 ## Workflow
 
-This skill manages YAML list files stored under `lists/` in cloud storage.
+This skill manages YAML lists stored under `lists/` in cloud storage.
 
-For any operation on an existing list:
-1. Invoke the `cloud-files` dependency to download the target file.
-2. Run the appropriate local interface in this skill.
-3. If the operation succeeded, upload the modified file.
-4. If the operation failed, stop and do not upload.
+**Cloud is the store.** Pass `--cloud` and give the list NAME as the first
+positional; the script downloads, operates, and (for mutations) uploads:
+```bash
+lists.py read todo [filters...] --cloud
+read_beautify.py todo [filters...] --cloud        # rendered, diff-fenced
+lists.py create-entry todo Research/Writing --cloud
+lists.py update todo --file patch.yaml --cloud
+lists.py init groceries --schema default --cloud
+```
+Without `--cloud` the first positional is a local file path — that is the
+engine used internally and by tests; not the user path.
 
-`lists.py` is a local operator only; cloud transport stays in `cloud-files`.
-Validation happens before writes. Never bypass it.
+Cloud transport goes through cloud-files's restricted `lists-*` interfaces,
+which constrain access to the `lists/` directory. Validation runs before every
+write; never bypass it.
 
-## Route by user intent
+## Showing a list to the user
 
-- Default to `read-beautify` for any human-facing read request: show,
-  browse, render, preview, display, "what's on", "what do I have on", or
-  similar phrasing where the user wants to see the list.
-- Use `read-list` only when the user explicitly asks for raw, YAML,
-  machine-readable, or similar underlying structured output.
-- List available lists → invoke the `cloud-files` dependency on `lists/`.
-- Create a new list → `init-list`.
-- Add entries or subentries → `create-entry`.
-- Edit entries, check items off, change state, title, description, deadline, or
-  location → `update-list`.
-- Generate fresh IDs for external orchestration → `generate-id`.
-- Migrate a legacy Markdown list into YAML → `migrate-markdown`.
-- Delete a list → delete the corresponding file through the `cloud-files`
-  dependency.
+For any human-facing read ("show my …", "what's on …", "what's left") run
+`read_beautify <name> [filters] --cloud` and relay its stdout **verbatim** — it
+comes wrapped in a ` ```diff ` fence, grouped, numbered, deadline-annotated, and
+each row ends with its `#id` (ids are on by default). Do not re-number,
+re-group, summarize, drop the ids, or rebuild it as your own bullets.
 
-For exact calling conventions, use `blueprint.yaml` and the script help.
+## Filtering: fields first
+
+Choose which rows to show in this order:
+
+1. **Field filter (preferred).** Express the request as `read`/`read_beautify`
+   filters — one call, done in-script:
+   - `key=v1,v2` — exact match, comma = OR (e.g. `state=incomplete`)
+   - `key~=regex` — regex search on the field, case-insensitive
+     (e.g. `title~=^Reply`, `deadline~=^2026-07`)
+   Most requests ("what's not done", "replies", "due in July") are field filters.
+2. **Semantic selection** (e.g. "the apartment ones") — render with ids
+   (default), read the matching `#id`s from the output, and act on those. You
+   pick which rows; the script still owns formatting. Never hand-format rows.
+
+## Editing items the user points to
+
+The rendered list already shows each row's `#id`, so a follow-up like "mark 66
+done" or "push the apartment ones to Friday" resolves to ids **already in your
+context** — no counting, no re-reading, no mapping row numbers. Write the patch
+to a temp file and apply it in one call keyed by id:
+
+```yaml
+# /tmp/patch.yaml
+- id: 1ce1a7
+  state: done
+- id: a3aaba
+  state: done
+```
+```
+lists.py update todo --cloud --file /tmp/patch.yaml
+```
+
+If the list is not already shown with ids in context, first
+`read_beautify <name> [filters] --cloud` (ids on), then update. Do not grep the
+raw YAML to hand-map numbers to ids.
+
+## Other operations
+
+- Add entries → `create-entry`; edit / check off / set deadline → `update`.
+- Create a new list → `init`; generate fresh ids → `gen-id`.
+- Migrate a legacy Markdown list → `migrate-markdown`.
+- `beautify-list` (stdin) renders entries a caller already holds in memory;
+  used by other skills, not the user path.
+
+For exact calling conventions, use `blueprint.yaml` and the script `--help`.
 For the live data contract, use `schemas/`.
 
 ## Semantic invariants

@@ -197,6 +197,60 @@ def test_read_filter_substring(todo_file):
     assert entries[0]["id"] == "a3f2b9"
 
 
+def test_read_filter_regex_anchored(todo_file):
+    # ~= is a regex search: ^Reply matches "Reply to Diego" but not "Review draft".
+    result = run(["read", str(todo_file), "title~=^Reply"])
+    assert result.returncode == 0, result.stderr
+    entries = yaml.safe_load(result.stdout)
+    assert len(entries) == 1
+    assert entries[0]["id"] == "a3f2b9"
+
+
+def test_read_filter_regex_case_insensitive(todo_file):
+    result = run(["read", str(todo_file), "title~=diego"])
+    assert result.returncode == 0, result.stderr
+    entries = yaml.safe_load(result.stdout)
+    assert len(entries) == 1
+    assert entries[0]["id"] == "a3f2b9"
+
+
+def test_read_filter_ids_or(todo_file):
+    # id filter with comma-OR selects an explicit set — the semantic-selection path.
+    result = run(["read", str(todo_file), "id=a3f2b9,c3d1e5"])
+    assert result.returncode == 0, result.stderr
+    entries = yaml.safe_load(result.stdout)
+    assert {e["id"] for e in entries} == {"a3f2b9", "c3d1e5"}
+
+
+def test_update_coerces_unquoted_dates(tmp_path):
+    # An unquoted `deadline: 2026-07-04` parses as a date object, which would
+    # fail the schema's `type: string`. Normalization must coerce it so the
+    # update validates and the saved file stores a string.
+    f = tmp_path / "todo.yaml"
+    f.write_text(TODO_YAML.replace("'2026-07-04'", "2026-07-04"))
+    patch = tmp_path / "p.yaml"
+    patch.write_text("- id: a3f2b9\n  state: incomplete\n")
+    result = run(["update", str(f), "--file", str(patch)])
+    assert result.returncode == 0, result.stderr
+    saved = yaml.safe_load(f.read_text())
+    # If the deadline were saved unquoted, safe_load would return a date object.
+    dl = saved["categories"][0]["categories"][3]["entries"][0]["deadline"]
+    assert isinstance(dl, str), f"deadline saved as {type(dl)}, expected str"
+
+
+def test_validation_error_names_offending_entry(tmp_path):
+    # Drop `state` from entry a3f2b9 (a required field) → the diagnostic must
+    # name the entry's id and title, not just "'state' is a required property".
+    f = tmp_path / "todo.yaml"
+    f.write_text(TODO_YAML.replace("      state: incomplete\n", "", 1))
+    patch = tmp_path / "p.yaml"
+    patch.write_text("- id: b7c1e2\n  state: done\n")
+    result = run(["update", str(f), "--file", str(patch)])
+    assert result.returncode != 0
+    assert "a3f2b9" in result.stderr, result.stderr
+    assert "Reply to Diego" in result.stderr, result.stderr
+
+
 def test_read_filter_no_matches(todo_file):
     result = run(["read", str(todo_file), "state=cancelled"])
     assert result.returncode == 0, result.stderr
