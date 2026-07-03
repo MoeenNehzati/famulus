@@ -41,6 +41,7 @@ skill_interface:
 
 script_interfaces:
   scripts-fetch-envelopes:
+    id: scripts-fetch-envelopes
     cwd: skill_root
     command: ["python3", "scripts/fetch-envelopes.py"]
     interface:
@@ -51,6 +52,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/fetch-envelopes.py; tighten this contract when needed."
     exported_interface: []
   scripts-get-cutoff:
+    id: scripts-get-cutoff
     cwd: skill_root
     command: ["python3", "scripts/get-cutoff.py"]
     interface:
@@ -61,6 +63,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/get-cutoff.py; tighten this contract when needed."
     exported_interface: []
   scripts-log-decision:
+    id: scripts-log-decision
     cwd: skill_root
     command: ["scripts/log-decision.sh"]
     interface:
@@ -71,6 +74,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/log-decision.sh; tighten this contract when needed."
     exported_interface: []
   scripts-prune-log:
+    id: scripts-prune-log
     cwd: skill_root
     command: ["python3", "scripts/prune-log.py"]
     interface:
@@ -81,6 +85,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/prune-log.py; tighten this contract when needed."
     exported_interface: []
   scripts-update-watermark:
+    id: scripts-update-watermark
     cwd: skill_root
     command: ["python3", "scripts/update-watermark.py"]
     interface:

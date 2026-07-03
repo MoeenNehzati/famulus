@@ -24,6 +24,7 @@ skill_interface:
 
 script_interfaces:
   scripts-weather:
+    id: scripts-weather
     cwd: skill_root
     command: ["scripts/weather.sh"]
     patterns:

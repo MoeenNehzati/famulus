@@ -80,8 +80,13 @@ skill_interface:
 # SCRIPT INTERFACES: Invocation Patterns and Constraints
 # ==============================================================================
 #
-# Map of script-interface name -> concrete local invocation contract.
-# The interface name is the stable identifier used by the dispatcher and by
+# Map of script-interface group name -> concrete local invocation contract.
+# Each group has:
+# - one owner-facing/default interface id (the required top-level `id`)
+# - one shared `command`
+# - optional named narrower subinterfaces for external callers
+#
+# The ids are the stable identifiers used by the dispatcher and by
 # depends_on.<skill>.exports in dependent skills.
 #
 # Each interface defines one or more PATTERNS, which describe valid ways to
@@ -105,6 +110,18 @@ script_interfaces:
   # multiple valid calling conventions or complex constraints.
   #
   read-data:
+    # Required stable id of the owner-facing/default subinterface.
+    # This must be unique within the skill. That uniqueness is enforced by
+    # skills/my-writing-skills/validators/interface_ids.py.
+    id: read-data
+
+    # Optional human-facing summary for the owner-facing/default interface.
+    # If present, the sync tool injects this interface into SKILL.md so the
+    # skill can see why the script is useful without loading blueprint.yaml.
+    # Omit this field for narrow machine-facing interfaces that should stay out
+    # of SKILL.md.
+    description: "Read an input file and optionally apply extra filters."
+
     # Working directory where the command runs. Default: skill_root.
     # - skill_root: run in skills/<skill-name>/
     # - repo_root: run in the repository root
@@ -118,24 +135,25 @@ script_interfaces:
     command: ["python3", "scripts/example.py", "read"]
 
     # ========================================================================
-    # PATTERNS: Valid invocation shapes
+    # DEFAULT SUBINTERFACE: Valid owner-facing invocation shapes
     # ========================================================================
     #
-    # List of one or more patterns. Each pattern describes a valid way to call
-    # this interface. The dispatcher tries to match the actual invocation
-    # against each pattern in order and accepts the first match.
+    # The interface always has an owner-facing default subinterface. It shares
+    # the parent interface id above, so `default:` must not define its own id.
     #
-    # Use multiple patterns when the same script supports different calling
-    # conventions (e.g., file input vs stdin, different flag combinations).
+    # If `default:` is omitted entirely, the owner-facing default still exists
+    # and has no declared pattern restrictions. Define it only when you want
+    # to constrain or expose that owner-facing default surface explicitly.
     #
-    patterns:
+    default:
+      patterns:
       # Single-pattern interface: omit 'name' (used here for clarity).
       # The pattern below matches invocations like: read-data /path/to/file extra-arg
-      - min_positionals: 1
+        - min_positionals: 1
         # Maximum positional arguments. Omit for unlimited.
         # max_positionals: 3
-        allow_extra_positionals: true  # Allow positionals beyond min_positionals
-        allow_stdin: false
+          allow_extra_positionals: true  # Allow positionals beyond min_positionals
+          allow_stdin: false
 
         # ====================================================================
         # POSITIONAL CONSTRAINTS: Regex patterns for positional arguments
@@ -153,8 +171,8 @@ script_interfaces:
         # the entire string, not just substrings. Omit this field if there are
         # no constraints on positional values.
         #
-        positional_patterns:
-          0: ".*"  # First positional can be any value (no constraint)
+          positional_patterns:
+            0: ".*"  # First positional can be any value (no constraint)
 
         # ====================================================================
         # FLAG CONSTRAINTS: Patterns and requirements
@@ -174,9 +192,9 @@ script_interfaces:
         #   Example: forbidden_flags: ["--stdin"]
         #   This means --stdin (or --stdin=value) cannot be used.
         #
-        required_flags: []
-        allowed_flags: []
-        forbidden_flags: []
+          required_flags: []
+          allowed_flags: []
+          forbidden_flags: []
 
         # ====================================================================
         # FLAG VALUE CONSTRAINTS: Regex patterns for flag values
@@ -192,10 +210,10 @@ script_interfaces:
         #
         # Omit this field if flags have no value constraints.
         #
-        flag_patterns: {}
+          flag_patterns: {}
 
         # Optional note for future maintainers and dependent skills.
-        notes: "First positional is the input file; additional positionals are filters."
+          notes: "First positional is the input file; additional positionals are filters."
 
     # ========================================================================
     # ACCESS CONTROL: Public vs private, and caller restrictions
@@ -225,8 +243,8 @@ script_interfaces:
     # - AT RUNTIME by the dispatcher: if the caller is not in allowed_callers,
     #   the invocation fails
     #
-    allow_all_skills: true
-    allowed_callers: []
+      allow_all_skills: true
+      allowed_callers: []
 
   # ============================================================================
   # EXAMPLE 2: Interface with multiple patterns (different calling conventions)
@@ -241,9 +259,14 @@ script_interfaces:
   # - Pattern 2 (stdin-mode): allows stdin, forbids --file flag
   #
   update-data:
+    id: update-data
+    description: "Update a target resource from file or stdin input."
     cwd: skill_root
     command: ["python3", "scripts/example.py", "update"]
 
+    # Legacy shorthand: top-level patterns / allow_all_skills / allowed_callers
+    # are treated as the owner-facing default subinterface.
+    # New blueprints should prefer an explicit `default:` block.
     patterns:
       # PATTERN 1: File mode - requires --file flag pointing to an input file
       - name: "file-mode"  # Optional name for documentation and error messages
@@ -279,16 +302,13 @@ script_interfaces:
   # Common example: helper scripts used internally but not part of the public API.
   #
   internal-worker:
+    id: internal-worker
+    # No description here: internal helper interfaces can stay machine-facing
+    # and out of SKILL.md unless the owner skill truly needs them documented.
     cwd: skill_root
     command: ["python3", "scripts/internal.py"]
-    patterns:
-      - min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: true
-
-    # Internal-only: only the owning skill can use this.
-    allow_all_skills: false
-    allowed_callers: []
+    # No explicit default block here. The owner-facing default subinterface
+    # still exists, uses id `internal-worker`, and has no declared restrictions.
 
   # ============================================================================
   # EXAMPLE 4: Restricted interface (only specific skills allowed)
@@ -308,19 +328,24 @@ script_interfaces:
   # not at runtime.
   #
   special-data:
+    id: special-data
+    # Restricted subinterfaces often omit description so only the broad
+    # owner-facing/default surface is injected into SKILL.md.
     cwd: skill_root
     command: ["python3", "scripts/special.py", "read"]
-    patterns:
-      - min_positionals: 1
-        # Path argument must be under special/ directory (access control example)
-        positional_patterns:
-          0: "^special/.*"
-
-    # Not public; only skill-a and skill-b can use it.
-    allow_all_skills: false
-    allowed_callers:
-      - skill-a
-      - skill-b
+    subinterfaces:
+      restricted-view:
+        id: special-data-restricted
+        patterns:
+          - min_positionals: 1
+            # Path argument must be under special/ directory (access control example)
+            positional_patterns:
+              0: "^special/.*"
+        # Not public; only skill-a and skill-b can use it.
+        allow_all_skills: false
+        allowed_callers:
+          - skill-a
+          - skill-b
 
 # ==============================================================================
 # DISPATCH BEHAVIOR SUMMARY
@@ -335,7 +360,7 @@ script_interfaces:
 # 2. VERSION CHECK: Verify caller's depends_on.major_version matches.
 #    - Prevents incompatible versions from being used together.
 #
-# 3. EXPORT CHECK: Verify interface name is in depends_on.exports (if caller exists).
+# 3. EXPORT CHECK: Verify interface id is in depends_on.exports (if caller exists).
 #    - Prevents unexpected use of private interfaces.
 #
 # 4. PATTERN MATCHING: Try each pattern in order.

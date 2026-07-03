@@ -422,3 +422,89 @@ def test_update_from_file(todo_file, tmp_path):
     entry = data["categories"][0]["categories"][3]["entries"][0]
     assert entry["state"] == "done"
 
+
+# ── delete ────────────────────────────────────────────────────────────────────
+
+def test_delete_top_level_entry(todo_file):
+    """Delete a top-level category entry by id; file is updated and contains no trace."""
+    original = todo_file.read_text()
+    result = run(["delete", str(todo_file), "a3f2b9"])
+    assert result.returncode == 0, result.stderr
+    assert "deleted: a3f2b9" in result.stdout
+    data = yaml.safe_load(todo_file.read_text())
+    writing_entries = data["categories"][0]["categories"][3].get("entries", [])
+    assert all(e["id"] != "a3f2b9" for e in writing_entries)
+    # Other entries must survive
+    assert any(e["id"] == "b7c1e2" for e in writing_entries)
+
+
+def test_delete_nested_child(todo_file):
+    """Delete a nested child entry; only the child is removed, parent survives."""
+    # First add a child to a3f2b9
+    child_yaml = "- title: Sub-task\n  state: incomplete\n  created: '2026-06-29'\n  deadline: '2026-07-05'\n"
+    run(["create-entry", str(todo_file), "a3f2b9"], stdin=child_yaml)
+    data = yaml.safe_load(todo_file.read_text())
+    parent = data["categories"][0]["categories"][3]["entries"][0]
+    child_id = parent["children"][0]["id"]
+
+    result = run(["delete", str(todo_file), child_id])
+    assert result.returncode == 0, result.stderr
+    data2 = yaml.safe_load(todo_file.read_text())
+    parent2 = data2["categories"][0]["categories"][3]["entries"][0]
+    assert parent2["id"] == "a3f2b9"                  # parent still present
+    assert parent2.get("children", []) == []           # child gone
+
+
+def test_delete_bulk(todo_file):
+    """Delete multiple ids in one call."""
+    result = run(["delete", str(todo_file), "a3f2b9", "b7c1e2"])
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(todo_file.read_text())
+    writing_entries = data["categories"][0]["categories"][3].get("entries", [])
+    assert writing_entries == []
+
+
+def test_delete_unknown_id_exits_nonzero_file_unchanged(todo_file):
+    """Unknown id → nonzero exit and file not modified."""
+    before = todo_file.read_text()
+    result = run(["delete", str(todo_file), "ffffff"])
+    assert result.returncode != 0
+    assert "ffffff" in result.stderr
+    assert todo_file.read_text() == before
+
+
+def test_delete_partial_missing_aborts(todo_file):
+    """If any id is missing, all deletions are aborted; file is unchanged."""
+    before = todo_file.read_text()
+    result = run(["delete", str(todo_file), "a3f2b9", "zzzzzz"])
+    assert result.returncode != 0
+    assert todo_file.read_text() == before
+
+
+# ── create-entry defaults ─────────────────────────────────────────────────────
+
+def test_create_entry_defaults_state_and_created(todo_file):
+    """create-entry should default state=incomplete and created=today when omitted."""
+    import datetime
+    entry_yaml = "- title: Minimal task\n  deadline: '2026-08-01'\n"
+    result = run(["create-entry", str(todo_file), "Work/Writing"], stdin=entry_yaml)
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(todo_file.read_text())
+    entries = data["categories"][0]["categories"][3]["entries"]
+    new_entry = next(e for e in entries if e["title"] == "Minimal task")
+    assert new_entry["state"] == "incomplete"
+    assert new_entry["created"] == datetime.date.today().isoformat()
+
+
+def test_create_entry_unquoted_date_is_coerced(todo_file):
+    """create-entry with an unquoted date value must still validate and save as string."""
+    entry_yaml = "- title: Task with date\n  state: incomplete\n  created: '2026-06-01'\n  deadline: 2026-08-15\n"
+    result = run(["create-entry", str(todo_file), "Work/Writing"], stdin=entry_yaml)
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(todo_file.read_text())
+    entries = data["categories"][0]["categories"][3]["entries"]
+    new_entry = next(e for e in entries if e["title"] == "Task with date")
+    # deadline must be stored as a string (normalize_dates must have coerced it)
+    assert isinstance(new_entry["deadline"], str)
+    assert new_entry["deadline"] == "2026-08-15"
+

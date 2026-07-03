@@ -64,10 +64,10 @@ Dependencies authorize skill invocation and, for blueprint-migrated dependencies
 - `depends_on`: mapping from skill name to dependency contract. Use `major_version` for blueprint dependencies and `{}` only for legacy non-blueprint dependencies. Include `exports` list to name which interfaces this skill is allowed to use.
 - `suggested_permissions`: mapping with `bash` and `network` lists. Every entry must include a `reason` explaining why it's safe to pre-approve.
 - `skill_interface`: three plain-language lists (`inputs`, `outputs`, `side_effects`) that describe the skill's high-level contract.
-- `script_interfaces`: **Pattern-based invocation contracts** (see template for details). Each interface maps to one or more patterns that describe valid calling conventions. Patterns support:
+- `script_interfaces`: **Pattern-based invocation contracts** (see template for details). Each interface group has a required unique owner-facing `id`, a shared `command`, an optional `default` subinterface, and optional named `subinterfaces` for narrower external views. Interface-id uniqueness within a skill is enforced by `skills/my-writing-skills/validators/interface_ids.py`. Patterns support:
   - Positional argument constraints (`min_positionals`, `max_positionals`, `positional_patterns` with regex)
   - Flag constraints (`required_flags`, `allowed_flags`, `forbidden_flags`, `flag_patterns` with regex)
-  - Access control (`exported` boolean, `allowed_callers` list for restrict-to-skills)
+  - Access control (`allow_all_skills`, `allowed_callers`)
   - Multi-pattern interfaces for different calling styles (file vs stdin, etc.)
 
 **Dispatcher role**
@@ -75,9 +75,9 @@ Dependencies authorize skill invocation and, for blueprint-migrated dependencies
 `../../scripts/invoke_skill_export.py` is the only sanctioned local cross-skill script boundary for blueprint-migrated skills. Its job is to:
 
 1. Load the callee's `blueprint.yaml`
-2. Resolve the requested `script_interface` and auto-match against available patterns
-3. Allow the owning skill to use its full private interface (all patterns)
-4. Allow external callers to use only exported interfaces and patterns
+2. Resolve the requested `script_interface` id to either the owner-facing default surface or a named subinterface
+3. Allow the owning skill to use its full owner-facing/default interface
+4. Allow external callers to use only externally callable ids and patterns
 5. Verify that the caller declared the dependency with matching major version
 6. Verify that the interface is listed in `depends_on.exports` (if caller specified)
 7. Verify that the caller is in `allowed_callers` (if interface is restricted)
@@ -98,17 +98,19 @@ python3 scripts/invoke_skill_export.py --dry-run --caller-skill daily-plan \
 
 **Injection lifecycle**
 
-`../../tools/sync_skill_blueprints.py` injects and refreshes the generated compatibility artifacts for blueprint skills:
+`../../skills/my-writing-skills/scripts/sync_skill_blueprints.py` injects and refreshes the generated compatibility artifacts for blueprint skills:
 
 - `depends_on_skills`
 - `permissions.json`
 - the generated contract block placed immediately after the YAML frontmatter in `SKILL.md`
+- the generated owner-facing interface block placed immediately after the contract block when top/default interface descriptions are present
 
 That generated block is not user-authored. Do not edit it by hand. These checks are enforced on every commit by `validators/runner.py` (called from `.githooks/pre-commit`) via:
 
 - `skills/my-writing-skills/validators/blueprints.py` — blueprint presence, injection layout, and artifact sync
 - `skills/my-writing-skills/validators/boundaries.py` — local script boundary enforcement
 - `skills/my-writing-skills/validators/blueprint_relationships.py` — cross-blueprint dependency constraints
+- `skills/my-writing-skills/validators/interface_ids.py` — per-skill uniqueness and layout checks for interface ids
 
 Regression tests for the blueprint dispatcher and sync script live in `skills/my-writing-skills/tests/test_blueprint_tools.py`.
 
@@ -167,14 +169,15 @@ description: Use when the user asks to plan their day, check their schedule, or 
   - invoke the dependency skill as a skill
   - call the dependency skill's exported script interface through `../../scripts/invoke_skill_export.py`
 
-  Directly naming another skill's script path is forbidden. The owning skill's `blueprint.yaml` defines the full internal script interface under `script_interfaces`, and the externally callable subset under `exported_interface`.
+  Directly naming another skill's script path is forbidden. The owning skill's `blueprint.yaml` defines the full internal script interface under `script_interfaces`, including the owner-facing default id and any narrower named subinterfaces.
 - **Do not introduce new cross-skill Python imports.** If behavior should be shared across skills, expose it through a skill invocation or exported script interface. If truly shared library code is needed, move it to an explicit shared library area outside individual skill script directories.
 - **Do not reach into another skill's script directory from local scripts.** For blueprint-migrated skills, local `.py` and `.sh` files must not call, source, or add another skill's `scripts/` directory to `sys.path`. Use a skill invocation or `../../scripts/invoke_skill_export.py` instead.
 - **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative. A skill may refer to files under its own directory, to shared `../references/` material, and to shared repo tools under `../../tools/`. It must not mention parent-path addresses such as `../other-skill/...`, `../../skills/...`, or any absolute filesystem path to another skill. System-level paths are allowed only for durable user configuration or executable interfaces that are intentionally outside the skills tree, such as `~/.config/<skill-name>/` and installed commands under `bin`.
 - **Make your own interface explicit.** State what inputs your skill expects and what outputs it produces, so future skills can depend on you cleanly. For blueprint skills:
   - `skill_interface` describes the skill-level contract
   - `script_interfaces` describes the owning skill's full script surface
-  - `exported_interface` names the externally supported subset
+  - the owner-facing default subinterface shares the parent interface id
+  - named `subinterfaces` let you restrict other skills without constraining the owner-facing default surface
   - `interface_version` is the major version of that public contract
 
 **9. No code in SKILL.md — scripts only, with one exception** — skill files must not contain executable code logic. Any logic (shell commands, Python, etc.) belongs in a dedicated file under `scripts/`. `SKILL.md` specifies only *when* to call a script, *how* to invoke it, and how to interpret its output. The script file itself carries everything else: what it does, how it works, and its full interface (arguments, flags, exit codes, output format). This minimizes permission prompts: scripts under each skill's `scripts/` directory can be pre-approved, whereas inline Bash in a skill body triggers approval on every run.

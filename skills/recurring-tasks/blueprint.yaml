@@ -53,6 +53,7 @@ skill_interface:
 
 script_interfaces:
   scripts-job-utils:
+    id: scripts-job-utils
     cwd: skill_root
     command: ["python3", "scripts/_job_utils.py"]
     interface:
@@ -63,6 +64,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/_job_utils.py; tighten this contract when needed."
     exported_interface: []
   scripts-disable-job:
+    id: scripts-disable-job
     cwd: skill_root
     command: ["python3", "scripts/disable-job.py"]
     interface:
@@ -73,6 +75,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/disable-job.py; tighten this contract when needed."
     exported_interface: []
   scripts-enable-job:
+    id: scripts-enable-job
     cwd: skill_root
     command: ["python3", "scripts/enable-job.py"]
     interface:
@@ -83,6 +86,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/enable-job.py; tighten this contract when needed."
     exported_interface: []
   scripts-env:
+    id: scripts-env
     cwd: skill_root
     command: ["scripts/env.sh"]
     interface:
@@ -93,6 +97,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/env.sh; tighten this contract when needed."
     exported_interface: []
   scripts-healthcheck:
+    id: scripts-healthcheck
     cwd: skill_root
     command: ["scripts/healthcheck.sh"]
     interface:
@@ -103,6 +108,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/healthcheck.sh; tighten this contract when needed."
     exported_interface: []
   scripts-invoke-agent:
+    id: scripts-invoke-agent
     cwd: skill_root
     command: ["scripts/invoke-agent.sh"]
     interface:
@@ -113,6 +119,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/invoke-agent.sh; tighten this contract when needed."
     exported_interface: []
   scripts-run-skill:
+    id: scripts-run-skill
     cwd: skill_root
     command: ["scripts/run-skill.sh"]
     interface:
@@ -123,6 +130,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/run-skill.sh; tighten this contract when needed."
     exported_interface: []
   runners-daily-plan:
+    id: runners-daily-plan
     cwd: skill_root
     command: ["scripts/runners/daily-plan.sh"]
     interface:
@@ -133,6 +141,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/runners/daily-plan.sh; tighten this contract when needed."
     exported_interface: []
   runners-email-triage:
+    id: runners-email-triage
     cwd: skill_root
     command: ["scripts/runners/email-triage.sh"]
     interface:
@@ -143,6 +152,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/runners/email-triage.sh; tighten this contract when needed."
     exported_interface: []
   scripts-setup:
+    id: scripts-setup
     cwd: skill_root
     command: ["scripts/setup.sh"]
     interface:
@@ -153,6 +163,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/setup.sh; tighten this contract when needed."
     exported_interface: []
   scripts-status:
+    id: scripts-status
     cwd: skill_root
     command: ["scripts/status.sh"]
     interface:
@@ -163,6 +174,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/status.sh; tighten this contract when needed."
     exported_interface: []
   scripts-sync-units:
+    id: scripts-sync-units
     cwd: skill_root
     command: ["python3", "scripts/sync-units.py"]
     interface:
@@ -173,6 +185,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/sync-units.py; tighten this contract when needed."
     exported_interface: []
   scripts-test-job:
+    id: scripts-test-job
     cwd: skill_root
     command: ["python3", "scripts/test-job.py"]
     interface:
@@ -183,6 +196,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/test-job.py; tighten this contract when needed."
     exported_interface: []
   scripts-test-live-job:
+    id: scripts-test-live-job
     cwd: skill_root
     command: ["python3", "scripts/test-live-job.py"]
     interface:
@@ -193,6 +207,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/test-live-job.py; tighten this contract when needed."
     exported_interface: []
   scripts-test-enable-disable:
+    id: scripts-test-enable-disable
     cwd: skill_root
     command: ["python3", "scripts/test_enable_disable.py"]
     interface:
@@ -203,6 +218,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/test_enable_disable.py; tighten this contract when needed."
     exported_interface: []
   scripts-test-sync-units:
+    id: scripts-test-sync-units
     cwd: skill_root
     command: ["python3", "scripts/test_sync_units.py"]
     interface:
@@ -213,6 +229,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/test_sync_units.py; tighten this contract when needed."
     exported_interface: []
   scripts-view-logs:
+    id: scripts-view-logs
     cwd: skill_root
     command: ["scripts/view-logs.sh"]
     interface:

@@ -30,6 +30,7 @@ skill_interface:
 
 script_interfaces:
   scripts-email-get-message-id:
+    id: scripts-email-get-message-id
     cwd: skill_root
     command: ["scripts/email-get-message-id.sh"]
     interface:
@@ -40,6 +41,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/email-get-message-id.sh; tighten this contract when needed."
     exported_interface: []
   scripts-email-send:
+    id: scripts-email-send
     cwd: skill_root
     command: ["scripts/email-send.sh"]
     interface:

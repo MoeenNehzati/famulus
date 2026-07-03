@@ -70,9 +70,10 @@ Choose which rows to show in this order:
 ## Editing items the user points to
 
 The rendered list already shows each row's `#id`, so a follow-up like "mark 66
-done" or "push the apartment ones to Friday" resolves to ids **already in your
-context** — no counting, no re-reading, no mapping row numbers. Write the patch
-to a temp file and apply it in one call keyed by id:
+done", "push the apartment ones to Friday", or "delete the dentist entry"
+resolves to ids **already in your context** — no counting, no re-reading, no
+mapping row numbers. For updates, write the patch to a temp file and apply it in
+one call keyed by id:
 
 ```yaml
 # /tmp/patch.yaml
@@ -85,6 +86,12 @@ to a temp file and apply it in one call keyed by id:
 lists.py update todo --cloud --file /tmp/patch.yaml
 ```
 
+For deletions, pass the ids directly:
+```
+lists.py delete todo --cloud c3d1e5
+lists.py delete todo --cloud c3d1e5 a3f2b9   # bulk
+```
+
 If the list is not already shown with ids in context, first
 `read_beautify <name> [filters] --cloud` (ids on), then update. Do not grep the
 raw YAML to hand-map numbers to ids.
@@ -92,6 +99,10 @@ raw YAML to hand-map numbers to ids.
 ## Other operations
 
 - Add entries → `create-entry`; edit / check off / set deadline → `update`.
+- Delete entries → `delete <name> <id> [<id>...] --cloud`; each `#id` shown in
+  rendered output resolves directly. Deleting a parent removes its whole
+  subtree. All ids must exist; any missing id aborts with a nonzero exit and no
+  upload.
 - Create a new list → `init`; generate fresh ids → `gen-id`.
 - Migrate a legacy Markdown list → `migrate-markdown`.
 - `beautify-list` (stdin) renders entries a caller already holds in memory;

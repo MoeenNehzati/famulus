@@ -9,6 +9,8 @@ _SYNC_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "sync_skill_blu
 
 CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
 CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
+INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
+INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
 
 
 def validate(repo_root: Path) -> list[str]:
@@ -36,11 +38,17 @@ def validate(repo_root: Path) -> list[str]:
         start_count = text.count(CONTRACT_START)
         end_count = text.count(CONTRACT_END)
         has_contract = start_count > 0 or end_count > 0
+        interface_start_count = text.count(INTERFACES_START)
+        interface_end_count = text.count(INTERFACES_END)
 
         if start_count != end_count:
             errors.append(f"{skill_file}: blueprint contract markers are unbalanced")
         if start_count > 1 or end_count > 1:
             errors.append(f"{skill_file}: blueprint contract block must appear at most once")
+        if interface_start_count != interface_end_count:
+            errors.append(f"{skill_file}: blueprint interface markers are unbalanced")
+        if interface_start_count > 1 or interface_end_count > 1:
+            errors.append(f"{skill_file}: blueprint interface block must appear at most once")
         if not has_contract:
             errors.append(
                 f"{skill_file}: local skill is missing generated blueprint contract block"

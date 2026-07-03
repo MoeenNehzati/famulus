@@ -57,6 +57,7 @@ script_interfaces:
   # Orchestration entry point: coordinates all dependencies via dispatcher
   # to generate and persist the daily plan without LLM involvement.
   orchestrate:
+    id: orchestrate
     cwd: skill_root
     command: ["python3", "scripts/orchestrate.py"]
     patterns:
@@ -73,6 +74,7 @@ script_interfaces:
     allow_all_skills: false
 
   plan-storage:
+    id: plan-storage
     cwd: skill_root
     command: ["scripts/plans.sh"]
     patterns:
@@ -95,6 +97,7 @@ script_interfaces:
     allow_all_skills: false
 
   render-plan:
+    id: render-plan
     cwd: skill_root
     command: ["python3", "scripts/render-plan.py"]
     patterns:
@@ -104,6 +107,7 @@ script_interfaces:
     allow_all_skills: false
 
   mutate-plan:
+    id: mutate-plan
     cwd: skill_root
     command: ["python3", "scripts/mutate_plan.py"]
     patterns:

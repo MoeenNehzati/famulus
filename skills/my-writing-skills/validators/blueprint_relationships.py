@@ -27,6 +27,76 @@ def load_blueprints(skills_root: Path) -> dict[str, dict[str, Any]]:
     return blueprints
 
 
+def _expect_mapping(value: Any, context: str) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise BlueprintError(f"{context}: expected mapping")
+    return value
+
+
+def _expect_string_list(value: Any, context: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+        raise BlueprintError(f"{context}: expected list of non-empty strings")
+    return value
+
+
+def _interface_id(interface_name: str, interface_spec: dict[str, Any], context: str) -> str:
+    value = interface_spec.get("id")
+    if not isinstance(value, str) or not value.strip():
+        raise BlueprintError(f"{context}: missing non-empty string `id`")
+    return value.strip()
+
+
+def _default_surface(interface_spec: dict[str, Any], context: str) -> dict[str, Any]:
+    explicit = interface_spec.get("default")
+    if explicit is not None:
+        if not isinstance(explicit, dict):
+            raise BlueprintError(f"{context}.default: expected mapping")
+        return explicit
+    result: dict[str, Any] = {}
+    for field in ("patterns", "allow_all_skills", "allowed_callers"):
+        if field in interface_spec:
+            result[field] = interface_spec[field]
+    return result
+
+
+def _named_subinterfaces(interface_spec: dict[str, Any], context: str) -> dict[str, dict[str, Any]]:
+    raw = interface_spec.get("subinterfaces")
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise BlueprintError(f"{context}.subinterfaces: expected mapping")
+    result: dict[str, dict[str, Any]] = {}
+    for sub_name, sub_spec in raw.items():
+        if not isinstance(sub_spec, dict):
+            raise BlueprintError(f"{context}.subinterfaces.{sub_name}: expected mapping")
+        result[sub_name] = sub_spec
+    return result
+
+
+def _resolve_callable_surface(
+    blueprint: dict[str, Any],
+    export_id: str,
+) -> tuple[str, dict[str, Any]]:
+    interfaces = _expect_mapping(blueprint.get("script_interfaces"), "script_interfaces")
+    for interface_name, interface_spec in interfaces.items():
+        context = f"script_interfaces.{interface_name}"
+        if not isinstance(interface_spec, dict):
+            raise BlueprintError(f"{context}: expected mapping")
+        if _interface_id(interface_name, interface_spec, context) == export_id:
+            return export_id, _default_surface(interface_spec, context)
+        for sub_name, sub_spec in _named_subinterfaces(interface_spec, context).items():
+            sub_id = sub_spec.get("id")
+            if not isinstance(sub_id, str) or not sub_id.strip():
+                raise BlueprintError(f"{context}.subinterfaces.{sub_name}: missing non-empty string `id`")
+            if sub_id.strip() == export_id:
+                return sub_id.strip(), sub_spec
+    raise BlueprintError(f"script interface id `{export_id}` is not defined")
+
+
 def validate_relationships(
     blueprints: dict[str, dict[str, Any]], skills_root: Path
 ) -> list[str]:
@@ -76,36 +146,37 @@ def validate_relationships(
                     )
 
             if dep_blueprint is not None and exports:
-                dep_script_interfaces = dep_blueprint.get("script_interfaces") or {}
-                if not isinstance(dep_script_interfaces, dict):
-                    continue
-
                 for export_name in exports:
                     if not isinstance(export_name, str):
                         continue
-
-                    interface_spec = dep_script_interfaces.get(export_name)
-                    if interface_spec is None:
+                    try:
+                        resolved_id, surface_spec = _resolve_callable_surface(dep_blueprint, export_name)
+                    except BlueprintError:
                         errors.append(
                             f"{blueprint_path}: depends_on.{dep_name}.exports includes "
                             f"`{export_name}`, which is not defined in {dep_name}"
                         )
                         continue
 
-                    allow_all_skills = interface_spec.get("allow_all_skills", False)
-                    allowed_callers = interface_spec.get("allowed_callers") or []
-                    if not isinstance(allowed_callers, list):
-                        allowed_callers = []
+                    allow_all_skills = surface_spec.get("allow_all_skills", False)
+                    try:
+                        allowed_callers = _expect_string_list(
+                            surface_spec.get("allowed_callers"),
+                            f"{dep_name}:{resolved_id}.allowed_callers",
+                        )
+                    except BlueprintError as exc:
+                        errors.append(str(exc))
+                        continue
 
                     if not allow_all_skills and not allowed_callers:
                         errors.append(
                             f"{blueprint_path}: depends_on.{dep_name}.exports includes "
-                            f"`{export_name}`, which is internal-only in {dep_name}"
+                            f"`{resolved_id}`, which is internal-only in {dep_name}"
                         )
                     elif not allow_all_skills and skill_name not in allowed_callers:
                         errors.append(
                             f"{blueprint_path}: skill {skill_name} is not in "
-                            f"allowed_callers for {dep_name}.{export_name}. "
+                            f"allowed_callers for {dep_name}.{resolved_id}. "
                             f"Allowed: {allowed_callers}"
                         )
 

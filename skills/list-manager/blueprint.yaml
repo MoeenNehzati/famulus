@@ -45,6 +45,7 @@ skill_interface:
 script_interfaces:
   # The primary local CLI for structured list operations.
   read-list:
+    id: read-list
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "read"]
     patterns:
@@ -57,6 +58,7 @@ script_interfaces:
       - daily-plan
 
   update-list:
+    id: update-list
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "update"]
     patterns:
@@ -78,6 +80,7 @@ script_interfaces:
       - daily-plan
 
   read-beautify:
+    id: read-beautify
     cwd: skill_root
     command: ["python3", "scripts/read_beautify.py"]
     patterns:
@@ -90,6 +93,7 @@ script_interfaces:
       - daily-plan
 
   beautify-list:
+    id: beautify-list
     cwd: skill_root
     command: ["python3", "scripts/beautify.py"]
     patterns:
@@ -101,6 +105,7 @@ script_interfaces:
     allowed_callers: []
 
   init-list:
+    id: init-list
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "init"]
     patterns:
@@ -111,6 +116,7 @@ script_interfaces:
     allowed_callers: []
 
   create-entry:
+    id: create-entry
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "create-entry"]
     patterns:
@@ -129,6 +135,7 @@ script_interfaces:
     allowed_callers: []
 
   generate-id:
+    id: generate-id
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "gen-id"]
     patterns:
@@ -139,6 +146,7 @@ script_interfaces:
     allowed_callers: []
 
   migrate-markdown:
+    id: migrate-markdown
     cwd: skill_root
     command: ["python3", "scripts/migrate_md.py"]
     patterns:
@@ -157,6 +165,7 @@ script_interfaces:
   # mutations) uploads. Filters follow the name as extra positionals.
   #
   cloud-read:
+    id: cloud-read
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "read"]
     patterns:
@@ -172,6 +181,7 @@ script_interfaces:
     allowed_callers: []
 
   cloud-create-entry:
+    id: cloud-create-entry
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "create-entry"]
     patterns:
@@ -197,6 +207,7 @@ script_interfaces:
     allowed_callers: []
 
   cloud-update:
+    id: cloud-update
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "update"]
     patterns:
@@ -222,6 +233,7 @@ script_interfaces:
     allowed_callers: []
 
   cloud-init:
+    id: cloud-init
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "init"]
     patterns:
@@ -236,7 +248,25 @@ script_interfaces:
     allow_all_skills: false
     allowed_callers: []
 
+  cloud-delete:
+    id: cloud-delete
+    cwd: skill_root
+    command: ["python3", "scripts/lists.py", "delete"]
+    patterns:
+      - min_positionals: 2   # list name + at least one id
+        allow_extra_positionals: true  # additional ids
+        allow_stdin: false
+        required_flags: ["--cloud"]
+        allowed_flags: ["--cloud"]
+        positional_patterns:
+          0: "^[a-zA-Z0-9_-]+$"   # List name
+          1: "^[0-9a-f]{6}$"       # First entry ID
+        notes: "Delete one or more entries by ID from a cloud list."
+    allow_all_skills: false
+    allowed_callers: []
+
   cloud-read-beautify:
+    id: cloud-read-beautify
     cwd: skill_root
     command: ["python3", "scripts/read_beautify.py"]
     patterns:

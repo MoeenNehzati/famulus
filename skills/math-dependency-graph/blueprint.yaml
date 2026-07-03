@@ -30,6 +30,7 @@ skill_interface:
 
 script_interfaces:
   scripts-build-math-dependency-graph:
+    id: scripts-build-math-dependency-graph
     cwd: skill_root
     command: ["python3", "scripts/build_math_dependency_graph.py"]
     interface:
@@ -40,6 +41,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/build_math_dependency_graph.py; tighten this contract when needed."
     exported_interface: []
   scripts-extract-mathjax-macros:
+    id: scripts-extract-mathjax-macros
     cwd: skill_root
     command: ["python3", "scripts/extract_mathjax_macros.py"]
     interface:
@@ -50,6 +52,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/extract_mathjax_macros.py; tighten this contract when needed."
     exported_interface: []
   scripts-serve-graph:
+    id: scripts-serve-graph
     cwd: skill_root
     command: ["python3", "scripts/serve_graph.py"]
     interface:

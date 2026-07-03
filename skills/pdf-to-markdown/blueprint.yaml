@@ -38,6 +38,7 @@ skill_interface:
 
 script_interfaces:
   scripts-check-marker-models:
+    id: scripts-check-marker-models
     cwd: skill_root
     command: ["scripts/check-marker-models.sh"]
     interface:
@@ -48,6 +49,7 @@ script_interfaces:
         notes: "Auto-migrated placeholder interface for scripts/check-marker-models.sh; tighten this contract when needed."
     exported_interface: []
   scripts-fetch-arxiv-source:
+    id: scripts-fetch-arxiv-source
     cwd: skill_root
     command: ["scripts/fetch-arxiv-source.sh"]
     interface:

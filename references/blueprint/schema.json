@@ -154,54 +154,146 @@
     },
     "script_interfaces": {
       "title": "Script Interfaces",
-      "description": "Map of exported script interface name to invocation contract.",
+      "description": "Map of script-interface group name to invocation contract. Each group has one owner-facing default id plus optional named subinterfaces for narrower external views.",
       "type": "object",
       "additionalProperties": {
-        "type": "object",
-        "required": ["command", "patterns"],
-        "additionalProperties": false,
-        "properties": {
-          "cwd": {
-            "enum": ["skill_root", "repo_root"],
-            "default": "skill_root"
-          },
-          "command": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            },
-            "minItems": 1
-          },
-          "patterns": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "$ref": "#/definitions/pattern"
-            }
-          },
-          "allow_all_skills": {
-            "type": "boolean",
-            "default": false
-          },
-          "allowed_callers": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            },
-            "default": []
-          }
+        "$ref": "#/definitions/scriptInterface"
+      }
+    }
+  },
+  "definitions": {
+    "scriptInterface": {
+      "type": "object",
+      "required": ["id", "command"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable id of the owner-facing/default subinterface. This id must be unique within the skill. Uniqueness is enforced by skills/my-writing-skills/validators/interface_ids.py."
         },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional human-facing owner summary. When present, the sync tool injects this interface into SKILL.md. Omit it for narrow machine-facing subinterfaces that should stay out of the skill body."
+        },
+        "cwd": {
+          "enum": ["skill_root", "repo_root"],
+          "default": "skill_root"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "patterns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/pattern"
+          },
+          "description": "Legacy/default shorthand for the owner-facing default subinterface. Prefer `default.patterns` for new blueprints."
+        },
+        "allow_all_skills": {
+          "type": "boolean",
+          "default": false,
+          "description": "Legacy/default shorthand for the owner-facing default subinterface. Prefer `default.allow_all_skills` for new blueprints."
+        },
+        "allowed_callers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": [],
+          "description": "Legacy/default shorthand for the owner-facing default subinterface. Prefer `default.allowed_callers` for new blueprints."
+        },
+        "default": {
+          "$ref": "#/definitions/defaultSubinterface"
+        },
+        "subinterfaces": {
+          "type": "object",
+          "description": "Optional narrower callable views of the same script command. Use these to restrict other skills without affecting the owner-facing default surface.",
+          "additionalProperties": {
+            "$ref": "#/definitions/namedSubinterface"
+          }
+        }
+      },
         "allOf": [
           {
             "$ref": "#/definitions/allowAllSkillsConstraint"
           }
         ]
-      }
-    }
-  },
-  "definitions": {
+    },
+    "defaultSubinterface": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "patterns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/pattern"
+          }
+        },
+        "allow_all_skills": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowed_callers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/allowAllSkillsConstraint"
+        }
+      ]
+    },
+    "namedSubinterface": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable id of this named subinterface. Must be unique within the skill. Uniqueness is enforced by skills/my-writing-skills/validators/interface_ids.py."
+        },
+        "patterns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/pattern"
+          }
+        },
+        "allow_all_skills": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowed_callers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/allowAllSkillsConstraint"
+        }
+      ]
+    },
     "pattern": {
       "type": "object",
       "additionalProperties": false,

@@ -40,3 +40,37 @@ def test_valid_blueprint_passes(tmp_path: Path) -> None:
         {"depends_on": {}},
     )
     assert _mod.validate(tmp_path) == []
+
+
+def test_named_subinterface_export_is_resolved_by_id(tmp_path: Path) -> None:
+    _write_blueprint(
+        tmp_path / "skills" / "producer-skill" / "blueprint.yaml",
+        {
+            "interface_version": 1,
+            "script_interfaces": {
+                "read-data": {
+                    "id": "read-data",
+                    "command": ["python3", "scripts/tool.py"],
+                    "subinterfaces": {
+                        "daily-plan-view": {
+                            "id": "read-data-daily-plan",
+                            "patterns": [{"min_positionals": 1}],
+                            "allowed_callers": ["consumer-skill"],
+                        }
+                    },
+                }
+            },
+        },
+    )
+    _write_blueprint(
+        tmp_path / "skills" / "consumer-skill" / "blueprint.yaml",
+        {
+            "depends_on": {
+                "producer-skill": {
+                    "major_version": 1,
+                    "exports": ["read-data-daily-plan"],
+                }
+            }
+        },
+    )
+    assert _mod.validate(tmp_path) == []

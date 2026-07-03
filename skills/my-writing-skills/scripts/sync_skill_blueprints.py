@@ -7,9 +7,12 @@ This tool never rewrites blueprint files. It only validates them and syncs:
 - ``depends_on_skills``
 - ``permissions.json``
 - the generated contract block near the top of ``SKILL.md``
+- the generated owner-facing interface summary block in ``SKILL.md``
 
 The contract block is injected immediately after the YAML frontmatter in
-``SKILL.md``. If a block already exists, it is replaced in place.
+``SKILL.md``. The owner-facing interface block is injected immediately after
+the contract block. If a generated block already exists, it is replaced in
+place.
 """
 
 from __future__ import annotations
@@ -25,10 +28,13 @@ from typing import Any
 import yaml
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SKILLS_ROOT = REPO_ROOT / "skills"
 CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
 CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
+INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
+INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
+LEGACY_DEFAULT_FIELDS = ("patterns", "allow_all_skills", "allowed_callers")
 
 
 @dataclass(frozen=True)
@@ -78,6 +84,95 @@ def expect_list_of_strings(value: Any, context: str) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise BlueprintError(f"{context}: expected list of strings")
     return value
+
+
+def interface_id(interface_name: str, interface_spec: dict[str, Any], context: str) -> str:
+    value = interface_spec.get("id")
+    if not isinstance(value, str) or not value.strip():
+        raise BlueprintError(f"{context}: missing non-empty string `id`")
+    return value.strip()
+
+
+def legacy_default_fields(interface_spec: dict[str, Any]) -> dict[str, Any]:
+    return {
+        field: interface_spec[field]
+        for field in LEGACY_DEFAULT_FIELDS
+        if field in interface_spec
+    }
+
+
+def default_subinterface(interface_spec: dict[str, Any]) -> dict[str, Any]:
+    explicit = interface_spec.get("default")
+    if explicit is not None:
+        if not isinstance(explicit, dict):
+            raise BlueprintError("default subinterface must be a mapping")
+        return explicit
+    return legacy_default_fields(interface_spec)
+
+
+def named_subinterfaces(interface_spec: dict[str, Any], context: str) -> dict[str, dict[str, Any]]:
+    raw = interface_spec.get("subinterfaces")
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise BlueprintError(f"{context}.subinterfaces: expected mapping")
+    result: dict[str, dict[str, Any]] = {}
+    for name, spec in raw.items():
+        if not isinstance(spec, dict):
+            raise BlueprintError(f"{context}.subinterfaces.{name}: expected mapping")
+        result[name] = spec
+    return result
+
+
+def validate_patterns(errors: list[str], patterns: Any, context: str) -> None:
+    if patterns is None:
+        return
+    if not isinstance(patterns, list):
+        errors.append(f"{context}: `patterns` must be a list")
+        return
+    if not patterns:
+        errors.append(f"{context}: `patterns` must have at least one pattern")
+        return
+    for idx, pattern in enumerate(patterns):
+        if not isinstance(pattern, dict):
+            errors.append(f"{context}[{idx}]: expected mapping")
+            continue
+        min_pos = pattern.get("min_positionals", 0)
+        if not isinstance(min_pos, int) or min_pos < 0:
+            errors.append(f"{context}[{idx}]: min_positionals must be non-negative integer")
+        max_pos = pattern.get("max_positionals")
+        if max_pos is not None and (not isinstance(max_pos, int) or max_pos < min_pos):
+            errors.append(f"{context}[{idx}]: max_positionals must be >= min_positionals")
+        for field_name in ("allow_stdin", "allow_extra_positionals"):
+            if field_name in pattern and not isinstance(pattern[field_name], bool):
+                errors.append(f"{context}[{idx}]: {field_name} must be boolean")
+        for field_name in ("required_flags", "allowed_flags", "forbidden_flags"):
+            if field_name in pattern:
+                try:
+                    expect_list_of_strings(pattern[field_name], f"{context}[{idx}].{field_name}")
+                except BlueprintError as exc:
+                    errors.append(str(exc))
+
+
+def validate_access_surface(
+    errors: list[str],
+    spec: dict[str, Any],
+    context: str,
+    *,
+    allow_id: bool,
+) -> None:
+    if allow_id and "id" in spec and (not isinstance(spec["id"], str) or not spec["id"].strip()):
+        errors.append(f"{context}: `id` must be a non-empty string")
+
+    validate_patterns(errors, spec.get("patterns"), f"{context}.patterns")
+
+    if "allow_all_skills" in spec and not isinstance(spec["allow_all_skills"], bool):
+        errors.append(f"{context}: `allow_all_skills` must be a boolean")
+    if "allowed_callers" in spec:
+        try:
+            expect_list_of_strings(spec["allowed_callers"], f"{context}.allowed_callers")
+        except BlueprintError as exc:
+            errors.append(str(exc))
 
 
 def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
@@ -132,24 +227,6 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                     f"{blueprint.path}: depends_on.{dep_name}.major_version={major_version} "
                     f"does not match {dep_name} interface_version={callee_version}"
                 )
-            # Validate exports: interface can be public (allow_all_skills: true) OR
-            # restricted to specific callers (allow_all_skills: false with allowed_callers).
-            callee_interfaces = expect_mapping(callee.data.get("script_interfaces"), "script_interfaces")
-            for export_name in expect_list_of_strings(exports, f"{blueprint.path}: depends_on.{dep_name}.exports"):
-                interface_spec = callee_interfaces.get(export_name)
-                if not interface_spec:
-                    errors.append(
-                        f"{blueprint.path}: depends_on.{dep_name}.exports includes `{export_name}`, "
-                        f"which is not defined by {dep_name}"
-                    )
-                    continue
-                allow_all_skills = interface_spec.get("allow_all_skills", False)
-                has_allowed_callers = bool(expect_list_of_strings(interface_spec.get("allowed_callers"), ""))
-                if not allow_all_skills and not has_allowed_callers:
-                    errors.append(
-                        f"{blueprint.path}: depends_on.{dep_name}.exports includes `{export_name}`, "
-                        f"which is internal-only (not public and no allowed_callers)"
-                    )
 
         suggested_permissions = expect_mapping(
             data.get("suggested_permissions"), f"{blueprint.path}:suggested_permissions"
@@ -195,6 +272,11 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
             if not isinstance(interface_spec, dict):
                 errors.append(f"{context}: expected mapping")
                 continue
+            try:
+                interface_id(interface_name, interface_spec, context)
+            except BlueprintError as exc:
+                errors.append(str(exc))
+
             cwd = interface_spec.get("cwd", "skill_root")
             if cwd not in {"skill_root", "repo_root"}:
                 errors.append(f"{context}: cwd must be `skill_root` or `repo_root`")
@@ -202,43 +284,38 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
             if not isinstance(command, list) or not all(isinstance(token, str) and token for token in command):
                 errors.append(f"{context}: missing non-empty string list `command`")
 
-            # Validate new schema: patterns
-            patterns = interface_spec.get("patterns")
-            if patterns is not None:
-                if not isinstance(patterns, list):
-                    errors.append(f"{context}: `patterns` must be a list")
-                    continue
-                if not patterns:
-                    errors.append(f"{context}: `patterns` must have at least one pattern")
-                    continue
-                for idx, pattern in enumerate(patterns):
-                    if not isinstance(pattern, dict):
-                        errors.append(f"{context}.patterns[{idx}]: expected mapping")
-                        continue
-                    min_pos = pattern.get("min_positionals", 0)
-                    if not isinstance(min_pos, int) or min_pos < 0:
-                        errors.append(f"{context}.patterns[{idx}]: min_positionals must be non-negative integer")
-                    max_pos = pattern.get("max_positionals")
-                    if max_pos is not None and (not isinstance(max_pos, int) or max_pos < min_pos):
-                        errors.append(f"{context}.patterns[{idx}]: max_positionals must be >= min_positionals")
-                    for field_name in ("allow_stdin", "allow_extra_positionals"):
-                        if field_name in pattern and not isinstance(pattern[field_name], bool):
-                            errors.append(f"{context}.patterns[{idx}]: {field_name} must be boolean")
-                    for field_name in ("required_flags", "allowed_flags", "forbidden_flags"):
-                        if field_name in pattern:
-                            try:
-                                expect_list_of_strings(pattern[field_name], f"{context}.patterns[{idx}].{field_name}")
-                            except BlueprintError as exc:
-                                errors.append(str(exc))
+            if "default" in interface_spec and legacy_default_fields(interface_spec):
+                errors.append(
+                    f"{context}: cannot mix top-level default shorthand "
+                    f"(`patterns`/`allow_all_skills`/`allowed_callers`) with `default`"
+                )
 
-            # Validate allow_all_skills and allowed_callers
-            if "allow_all_skills" in interface_spec and not isinstance(interface_spec["allow_all_skills"], bool):
-                errors.append(f"{context}: `allow_all_skills` must be a boolean")
-            if "allowed_callers" in interface_spec:
-                try:
-                    expect_list_of_strings(interface_spec["allowed_callers"], f"{context}.allowed_callers")
-                except BlueprintError as exc:
-                    errors.append(str(exc))
+            validate_access_surface(errors, interface_spec, context, allow_id=False)
+
+            default_spec = interface_spec.get("default")
+            if default_spec is not None:
+                if not isinstance(default_spec, dict):
+                    errors.append(f"{context}.default: expected mapping")
+                else:
+                    if "id" in default_spec:
+                        errors.append(
+                            f"{context}.default: must not define `id`; the default subinterface shares the parent interface id"
+                        )
+                    validate_access_surface(errors, default_spec, f"{context}.default", allow_id=False)
+
+            sub_specs_raw = interface_spec.get("subinterfaces")
+            if sub_specs_raw is not None:
+                if not isinstance(sub_specs_raw, dict):
+                    errors.append(f"{context}.subinterfaces: expected mapping")
+                else:
+                    for sub_name, sub_spec in sub_specs_raw.items():
+                        sub_context = f"{context}.subinterfaces.{sub_name}"
+                        if not isinstance(sub_spec, dict):
+                            errors.append(f"{sub_context}: expected mapping")
+                            continue
+                        if not isinstance(sub_spec.get("id"), str) or not sub_spec["id"].strip():
+                            errors.append(f"{sub_context}: missing non-empty string `id`")
+                        validate_access_surface(errors, sub_spec, sub_context, allow_id=True)
     return errors
 
 
@@ -273,13 +350,37 @@ def generated_permissions(data: dict[str, Any]) -> dict[str, list[str]]:
 
 
 def exported_interfaces(data: dict[str, Any]) -> list[str]:
-    """Return list of public interface names (allow_all_skills: true)."""
+    """Return ids of public interfaces/subinterfaces."""
     interfaces = expect_mapping(data.get("script_interfaces"), "script_interfaces")
     result: list[str] = []
-    for name, spec in interfaces.items():
-        if isinstance(spec, dict) and spec.get("allow_all_skills", False):
-            result.append(name)
+    for interface_name, spec in interfaces.items():
+        if not isinstance(spec, dict):
+            continue
+        parent_id = interface_id(interface_name, spec, f"script_interfaces.{interface_name}")
+        owner_surface = default_subinterface(spec)
+        if bool(owner_surface.get("allow_all_skills", False)):
+            result.append(parent_id)
+        for sub_spec in named_subinterfaces(spec, f"script_interfaces.{interface_name}").values():
+            if bool(sub_spec.get("allow_all_skills", False)):
+                result.append(str(sub_spec["id"]).strip())
     return sorted(result)
+
+
+def described_interfaces(data: dict[str, Any]) -> list[tuple[str, str]]:
+    interfaces = expect_mapping(data.get("script_interfaces"), "script_interfaces")
+    result: list[tuple[str, str]] = []
+    for interface_name, spec in sorted(interfaces.items()):
+        if not isinstance(spec, dict):
+            continue
+        description = spec.get("description")
+        if isinstance(description, str) and description.strip():
+            result.append(
+                (
+                    interface_id(interface_name, spec, f"script_interfaces.{interface_name}"),
+                    description.strip(),
+                )
+            )
+    return result
 
 
 def generated_contract_block(data: dict[str, Any]) -> str:
@@ -314,6 +415,23 @@ def generated_contract_block(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def generated_interface_block(data: dict[str, Any]) -> str:
+    described = described_interfaces(data)
+    if not described:
+        return ""
+
+    lines = [
+        INTERFACES_START,
+        "> Generated from `blueprint.yaml`. Do not edit this block by hand.",
+        "",
+        "Owner-Facing Script Interfaces:",
+    ]
+    for interface_name, description in described:
+        lines.append(f"- `{interface_name}` — {description}")
+    lines.extend([INTERFACES_END, ""])
+    return "\n".join(lines)
+
+
 def sync_contract_block(skill_file: Path, contract_block: str) -> str:
     """Inject or replace the generated blueprint contract block in SKILL.md."""
     text = skill_file.read_text(encoding="utf-8")
@@ -332,6 +450,31 @@ def sync_contract_block(skill_file: Path, contract_block: str) -> str:
     return strip_legacy_contract_metadata(updated)
 
 
+def sync_interface_block(text: str, interface_block: str) -> str:
+    """Inject, replace, or remove the generated owner-facing interface block."""
+    if INTERFACES_START in text and INTERFACES_END in text:
+        pattern = re.compile(
+            rf"{re.escape(INTERFACES_START)}.*?{re.escape(INTERFACES_END)}\n?",
+            re.DOTALL,
+        )
+        text = pattern.sub(interface_block, text, count=1)
+        return re.sub(r"\n{3,}", "\n\n", text)
+
+    if not interface_block:
+        return text
+
+    contract_match = re.search(rf"{re.escape(CONTRACT_END)}\n*", text)
+    if contract_match:
+        updated = text[: contract_match.end()] + interface_block + text[contract_match.end() :]
+        return re.sub(r"\n{3,}", "\n\n", updated)
+
+    frontmatter_match = re.match(r"(---\n.*?\n---\n+)", text, re.DOTALL)
+    if not frontmatter_match:
+        raise BlueprintError("SKILL.md: missing YAML frontmatter for interface injection")
+    updated = text[: frontmatter_match.end()] + interface_block + text[frontmatter_match.end() :]
+    return re.sub(r"\n{3,}", "\n\n", updated)
+
+
 def strip_legacy_contract_metadata(text: str) -> str:
     """Remove stale top-of-file Category/Dependencies lines after blueprint injection."""
     if CONTRACT_END not in text:
@@ -341,7 +484,7 @@ def strip_legacy_contract_metadata(text: str) -> str:
     lines = suffix.splitlines()
     cutoff = len(lines)
     for idx, line in enumerate(lines):
-        if line.startswith("## "):
+        if line.startswith("## ") or line == INTERFACES_START:
             cutoff = idx
             break
 
@@ -377,6 +520,7 @@ def sync_skill(blueprint: SkillBlueprint, check_only: bool) -> list[str]:
     expected_depends = generated_dependency_lines(data)
     expected_permissions = json.dumps(generated_permissions(data), indent=2) + "\n"
     expected_skill = sync_contract_block(skill_dir / "SKILL.md", generated_contract_block(data))
+    expected_skill = sync_interface_block(expected_skill, generated_interface_block(data))
 
     errors: list[str] = []
 
@@ -400,7 +544,7 @@ def sync_skill(blueprint: SkillBlueprint, check_only: bool) -> list[str]:
     current_skill = skill_path.read_text(encoding="utf-8")
     if current_skill != expected_skill:
         if check_only:
-            errors.append(f"{skill_path}: generated blueprint contract block is out of sync")
+            errors.append(f"{skill_path}: generated blueprint blocks are out of sync")
         else:
             skill_path.write_text(expected_skill, encoding="utf-8")
 
@@ -435,7 +579,7 @@ def main() -> int:
             print(f"  {error}", file=sys.stderr)
         if args.check:
             print(
-                "Run `python3 tools/sync_skill_blueprints.py` to refresh generated artifacts.",
+                "Run `python3 skills/my-writing-skills/scripts/sync_skill_blueprints.py` to refresh generated artifacts.",
                 file=sys.stderr,
             )
         return 1

@@ -6,6 +6,7 @@ Subcommands:
   read          <file> [key=value | key~=value ...]
   create-entry  <file> <target> [--entries <file>]
   update        <file> [--file <file>]
+  delete        <file> <id> [<id>...]
   gen-id        <file> [--count <n>]
 """
 
@@ -180,8 +181,12 @@ def validate_list(data: dict) -> None:
         die(f"unknown schema '{schema_name}' (no file at {schema_path})")
 
     if not HAS_JSONSCHEMA:
-        # Schema validation skipped due to missing jsonschema module
-        return
+        print(
+            "warning: jsonschema is not installed — schema validation skipped. "
+            "Install it (`pip install jsonschema`) to validate entries before saving.",
+            file=sys.stderr,
+        )
+        die("cannot write: jsonschema is required for mutating operations but is not installed")
 
     with open(schema_path) as f:
         schema = json.load(f)
@@ -427,11 +432,19 @@ def cmd_create_entry(args: argparse.Namespace) -> None:
         die("entries input must be a YAML list")
 
     existing_ids = collect_ids(data)
+    today = datetime.date.today().isoformat()
     for entry in new_entries:
         if "id" not in entry:
             new_id = gen_ids(existing_ids, 1)[0]
             entry["id"] = new_id
             existing_ids.add(new_id)
+        # Default state and created so callers (e.g. email-triage) don't need
+        # to supply them; these are only required by todo/potential-actions schemas
+        # but are harmless on others.
+        if "state" not in entry:
+            entry["state"] = "incomplete"
+        if "created" not in entry:
+            entry["created"] = today
 
     dest_list.extend(new_entries)
     validate_list(data)
@@ -471,6 +484,59 @@ def cmd_update(args: argparse.Namespace) -> None:
 
     validate_list(data)
     save_yaml(file, data)
+
+
+# ── Deletion helpers ─────────────────────────────────────────────────────────
+
+def remove_entries_by_ids(node, ids_to_remove: set[str]) -> None:
+    """Remove entries with the given IDs from the tree, in place.
+
+    Operates on any list-bearing node: top-level category entries AND nested
+    children lists. Removing a parent removes the whole subtree naturally
+    (the node is never visited after removal).
+    """
+    if isinstance(node, dict):
+        for val in node.values():
+            if isinstance(val, list):
+                # Filter out matching entries at this level
+                val[:] = [
+                    item for item in val
+                    if not (isinstance(item, dict) and item.get("id") in ids_to_remove)
+                ]
+                # Recurse into survivors
+                for item in val:
+                    remove_entries_by_ids(item, ids_to_remove)
+            else:
+                remove_entries_by_ids(val, ids_to_remove)
+    elif isinstance(node, list):
+        node[:] = [
+            item for item in node
+            if not (isinstance(item, dict) and item.get("id") in ids_to_remove)
+        ]
+        for item in node:
+            remove_entries_by_ids(item, ids_to_remove)
+
+
+def cmd_delete(args: argparse.Namespace) -> None:
+    file = Path(args.file)
+    data = load_yaml(file)
+
+    ids_to_delete = set(args.ids)
+
+    # Detect missing ids before touching data
+    all_ids = collect_ids(data)
+    missing = ids_to_delete - all_ids
+    if missing:
+        for mid in sorted(missing):
+            print(f"error: id '{mid}' not found", file=sys.stderr)
+        sys.exit(1)
+
+    remove_entries_by_ids(data, ids_to_delete)
+    validate_list(data)
+    save_yaml(file, data)
+
+    for id_ in sorted(ids_to_delete):
+        print(f"deleted: {id_}")
 
 
 # ── Argument parsing + dispatch ───────────────────────────────────────────────
@@ -519,6 +585,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_genid.add_argument("--count", type=int, default=1, help="Number of IDs to generate")
     add_cloud_arg(p_genid)
 
+    p_delete = sub.add_parser("delete", help="Delete entries by ID (removes whole subtree)")
+    p_delete.add_argument("file", help="Path to list YAML, or cloud list name with --cloud")
+    p_delete.add_argument("ids", nargs="+", help="One or more 6-char entry IDs to delete")
+    add_cloud_arg(p_delete)
+
     return parser
 
 
@@ -531,6 +602,7 @@ def main() -> None:
         "read": cmd_read,
         "create-entry": cmd_create_entry,
         "update": cmd_update,
+        "delete": cmd_delete,
         "gen-id": cmd_gen_id,
     }
 
@@ -539,7 +611,7 @@ def main() -> None:
     # → upload (nothing to download). Local mode operates on the file in place.
     if getattr(args, "cloud", False):
         list_name = args.file
-        mutating = args.command in ("init", "create-entry", "update")
+        mutating = args.command in ("init", "create-entry", "update", "delete")
         tmp_dir = Path(tempfile.mkdtemp())
         temp_path = tmp_dir / f"{list_name}.yaml"
         try:

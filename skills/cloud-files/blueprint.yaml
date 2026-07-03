@@ -39,6 +39,7 @@ script_interfaces:
   # by hooks, runtime validation by dispatcher).
   #
   lists-read:
+    id: lists-read
     cwd: skill_root
     command: ["python3", "scripts/read_llm_file.py"]
     patterns:
@@ -55,6 +56,7 @@ script_interfaces:
       - daily-plan
 
   lists-write:
+    id: lists-write
     cwd: skill_root
     command: ["python3", "scripts/write_llm_file.py"]
     patterns:
@@ -71,6 +73,7 @@ script_interfaces:
       - daily-plan
 
   lists-delete:
+    id: lists-delete
     cwd: skill_root
     command: ["python3", "scripts/delete_llm_file.py"]
     patterns:
@@ -92,6 +95,7 @@ script_interfaces:
   # Path constraints enforce this at invocation time.
   #
   plans-read:
+    id: plans-read
     cwd: skill_root
     command: ["python3", "scripts/read_llm_file.py"]
     patterns:
@@ -107,6 +111,7 @@ script_interfaces:
       - daily-plan
 
   plans-write:
+    id: plans-write
     cwd: skill_root
     command: ["python3", "scripts/write_llm_file.py"]
     patterns:
@@ -122,6 +127,7 @@ script_interfaces:
       - daily-plan
 
   plans-delete:
+    id: plans-delete
     cwd: skill_root
     command: ["python3", "scripts/delete_llm_file.py"]
     patterns:
@@ -137,6 +143,7 @@ script_interfaces:
       - daily-plan
 
   setup-oauth:
+    id: setup-oauth
     cwd: skill_root
     command: ["python3", "scripts/setup_oauth.py"]
     patterns:

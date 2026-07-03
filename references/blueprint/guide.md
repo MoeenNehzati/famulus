@@ -30,14 +30,15 @@ Validates individual blueprint files in isolation:
 **Files checked:** Each `skills/<name>/blueprint.yaml`
 
 ### Layer 2: Relationships (Python Validator)
-**File:** `tools/validate_blueprint_relationships.py`
+**Files:** `skills/my-writing-skills/validators/blueprint_relationships.py` and `skills/my-writing-skills/validators/interface_ids.py`
 
 Validates constraints that span multiple blueprints:
 1. No skill depends on itself
 2. If dependency has a blueprint, `major_version` must be declared
 3. `major_version` matches the dependency's `interface_version`
-4. Exported interface name exists in the dependency
+4. Exported interface id exists in the dependency
 5. Non-public interfaces only export to skills in `allowed_callers`
+6. Interface ids are unique within each skill, including named subinterfaces
 
 **When it runs:**
 - At commit time (pre-commit hook)
@@ -79,24 +80,23 @@ skill_interface:
 
 script_interfaces:
   read-data:
+    id: read-data
     cwd: skill_root
     command: ["python3", "scripts/tool.py", "read"]
-    patterns:
-      - min_positionals: 1
-        allow_extra_positionals: true
-        allow_stdin: false
-    allow_all_skills: true
-    allowed_callers: []
+    default:
+      patterns:
+        - min_positionals: 1
+          allow_extra_positionals: true
+          allow_stdin: false
+      allow_all_skills: true
+      allowed_callers: []
 
   internal-helper:
+    id: internal-helper
     cwd: skill_root
     command: ["python3", "scripts/internal.py"]
-    patterns:
-      - min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: true
-    allow_all_skills: false
-    allowed_callers: []
+    # No explicit default block here: the owner-facing default subinterface
+    # still exists, uses id `internal-helper`, and has no declared restrictions.
 ```
 
 ### Step 3: Understand key fields
@@ -124,11 +124,23 @@ Map of skill name → dependency spec. For each dependency with a blueprint, dec
 High-level contract in plain language. Lists inputs, outputs, side effects.
 
 #### `script_interfaces`
-Map of interface name → invocation contract. Each interface defines:
+Map of interface-group name → invocation contract. Each group defines one owner-facing default id plus optional named subinterfaces for narrower external views.
+
+**`id`** — required stable id of the owner-facing/default subinterface. This id is what the dispatcher resolves for the top/default surface. Ids must be unique within the skill; that uniqueness is enforced by `skills/my-writing-skills/validators/interface_ids.py`.
+
+**`description`** — optional human-facing owner summary. If present, the sync tool injects this top/default interface into `SKILL.md` so the skill can see the useful owner-facing script surface without loading the full blueprint. Narrow named subinterfaces are not injected.
 
 **`cwd`** — where the command runs (`skill_root` or `repo_root`)
 
-**`command`** — argv prefix as list of tokens
+**`command`** — argv prefix as list of tokens shared by the default surface and all named subinterfaces in the group
+
+**`default`** — optional explicit override of the owner-facing default subinterface. The default subinterface shares the parent interface's `id`, so `default` must not define its own `id`.
+
+If `default` is omitted, the owner-facing default subinterface still exists, still uses the parent `id`, and has no declared pattern restrictions unless you define them.
+
+**`subinterfaces`** — optional named narrower views of the same command. Use these to restrict other skills without affecting the owner-facing default surface. Each named subinterface has its own required unique `id`.
+
+**`patterns` / `allow_all_skills` / `allowed_callers` at the top level** — supported as legacy shorthand for the owner-facing default subinterface. For new blueprints, prefer `default.patterns`, `default.allow_all_skills`, and `default.allowed_callers`.
 
 **`patterns`** — list of valid calling conventions
 - `min_positionals`, `max_positionals` — positional argument count
@@ -151,72 +163,77 @@ Map of interface name → invocation contract. Each interface defines:
 
 ## Common Patterns
 
-### Read-Only Interface
+### Read-Only Default Interface
 ```yaml
 read-data:
+  id: read-data
   cwd: skill_root
   command: ["python3", "scripts/reader.py"]
-  patterns:
-    - min_positionals: 1
-      positional_patterns:
-        0: "^[a-z0-9_-]+$"  # validate first arg format
-      allow_stdin: false
-  allow_all_skills: true
-  allowed_callers: []
+  default:
+    patterns:
+      - min_positionals: 1
+        positional_patterns:
+          0: "^[a-z0-9_-]+$"  # validate first arg format
+        allow_stdin: false
+    allow_all_skills: true
+    allowed_callers: []
 ```
 
 ### Internal-Only Interface
 ```yaml
 internal-worker:
+  id: internal-worker
   cwd: skill_root
   command: ["python3", "scripts/worker.py"]
-  patterns:
-    - min_positionals: 0
-      allow_stdin: true
-      allow_extra_positionals: true
-  allow_all_skills: false
-  allowed_callers: []  # empty = internal only
+  # No explicit default section: the owner-facing default subinterface still
+  # exists, uses id `internal-worker`, and has no declared pattern restrictions.
 ```
 
-### Restricted Access (Directory Ownership)
+### Restricted Named Subinterface (Without Affecting the Owner)
 ```yaml
 read-lists:
+  id: read-lists
   cwd: skill_root
   command: ["python3", "scripts/lists.py", "read"]
-  patterns:
-    - min_positionals: 1
-      positional_patterns:
-        0: "^lists/.*"  # only access lists/ directory
-  allow_all_skills: false
-  allowed_callers:
-    - daily-plan      # only these skills can call this
-    - email-triage
+  description: "Read list data using the full owner-facing script surface."
+  subinterfaces:
+    planner-view:
+      id: read-lists-planner
+      patterns:
+        - min_positionals: 1
+          positional_patterns:
+            0: "^lists/.*"  # only access lists/ directory
+      allow_all_skills: false
+      allowed_callers:
+        - daily-plan
+        - email-triage
 ```
 
 ### Multiple Calling Conventions
 ```yaml
 update-data:
+  id: update-data
   cwd: skill_root
   command: ["python3", "scripts/updater.py"]
-  patterns:
-    # PATTERN 1: File mode
-    - name: "file-mode"
-      min_positionals: 1
-      max_positionals: 1
-      required_flags: ["--file"]
-      allow_stdin: false
-      notes: "Caller supplies patch file via --file"
+  default:
+    patterns:
+      # PATTERN 1: File mode
+      - name: "file-mode"
+        min_positionals: 1
+        max_positionals: 1
+        required_flags: ["--file"]
+        allow_stdin: false
+        notes: "Caller supplies patch file via --file"
 
-    # PATTERN 2: Stdin mode
-    - name: "stdin-mode"
-      min_positionals: 1
-      max_positionals: 1
-      forbidden_flags: ["--file"]
-      allow_stdin: true
-      notes: "Caller pipes patch data to stdin"
-
-  allow_all_skills: true
-  allowed_callers: []
+      # PATTERN 2: Stdin mode
+      - name: "stdin-mode"
+        min_positionals: 1
+        max_positionals: 1
+        forbidden_flags: ["--file"]
+        allow_stdin: true
+        notes: "Caller pipes patch data to stdin"
+    allow_all_skills: true
+    allowed_callers: []
 ```
 
 ---
