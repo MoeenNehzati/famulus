@@ -47,9 +47,13 @@ def _available(*, cli: bool = True, pkg: bool = True):
 
 
 def _platform(env: dict[str, str]):
-    """Context manager patching os.environ for platform detection."""
-    # Clear all detection signals, then apply overrides.
-    clean = {"CURSOR_PLUGIN_ROOT": "", "CLAUDE_PLUGIN_ROOT": "", "COPILOT_CLI": "", "CLAUDECODE": ""}
+    """Context manager patching os.environ for platform detection.
+
+    Clears every signal in _PLATFORM_ENV_SIGNALS before applying overrides, so
+    tests are isolated from the live session environment automatically. When a
+    new signal is added to _PLATFORM_ENV_SIGNALS it is cleared here for free.
+    """
+    clean = {k: "" for k in _mod._PLATFORM_ENV_SIGNALS}
     clean.update(env)
     return patch.dict(_mod.os.environ, clean, clear=False)
 

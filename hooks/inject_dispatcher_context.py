@@ -83,6 +83,17 @@ def dispatcher_available() -> tuple[bool, list[str]]:
     return len(missing) == 0, missing
 
 
+# All environment variables read by detect_platform(). Keep this in sync with
+# the function body. Tests derive their env-clear list from this set so that
+# adding a new signal here automatically forces it to be cleared in isolation tests.
+_PLATFORM_ENV_SIGNALS: frozenset[str] = frozenset({
+    "CURSOR_PLUGIN_ROOT",
+    "CLAUDE_PLUGIN_ROOT",
+    "COPILOT_CLI",
+    "CLAUDECODE",
+})
+
+
 def detect_platform() -> str:
     """Return 'cursor', 'claude', or 'sdk'.
 
