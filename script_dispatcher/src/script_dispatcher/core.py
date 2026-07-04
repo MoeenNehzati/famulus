@@ -1,27 +1,17 @@
-#!/usr/bin/env python3
-"""Validate and invoke a skill script interface declared in blueprint.yaml.
-
-This dispatcher is the sanctioned boundary for local cross-skill script calls.
-It resolves a declared script interface id from the callee blueprint, checks
-that the caller is allowed to use it, validates the invocation against the
-selected pattern set, and then executes the resulting command.
-"""
+"""Shared resolution and execution logic for skill script interfaces."""
 
 from __future__ import annotations
 
-import argparse
-import json
+import os
 import re
 import subprocess
-import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILLS_ROOT = REPO_ROOT / "skills"
 LEGACY_DEFAULT_FIELDS = ("patterns", "allow_all_skills", "allowed_callers")
 
 
@@ -29,8 +19,50 @@ class InvocationError(Exception):
     """Raised when a dispatcher request is invalid."""
 
 
-def load_blueprint(skill_name: str) -> dict[str, Any]:
-    path = SKILLS_ROOT / skill_name / "blueprint.yaml"
+@dataclass(frozen=True)
+class ResolvedInvocation:
+    """Concrete invocation selected from a skill blueprint."""
+
+    caller_skill: str
+    target_skill: str
+    script_interface: str
+    pattern: str
+    cwd: Path
+    command: list[str]
+    stdin: bool
+
+    def as_payload(self) -> dict[str, Any]:
+        return {
+            "caller_skill": self.caller_skill,
+            "target_skill": self.target_skill,
+            "script_interface": self.script_interface,
+            "pattern": self.pattern,
+            "cwd": str(self.cwd),
+            "command": list(self.command),
+            "stdin": self.stdin,
+        }
+
+
+def get_repo_root(repo_root: Path | None = None) -> Path:
+    """Resolve the AI repo root, preferring the installer-managed AI env var."""
+    if repo_root is not None:
+        return repo_root.resolve()
+
+    env_root = os.environ.get("AI")
+    if env_root:
+        candidate = Path(env_root).expanduser().resolve()
+        if (candidate / "skills").is_dir() and (candidate / "scripts").is_dir():
+            return candidate
+
+    return Path(__file__).resolve().parents[3]
+
+
+def skills_root(repo_root: Path | None = None) -> Path:
+    return get_repo_root(repo_root) / "skills"
+
+
+def load_blueprint(skill_name: str, repo_root: Path | None = None) -> dict[str, Any]:
+    path = skills_root(repo_root) / skill_name / "blueprint.yaml"
     if not path.exists():
         raise InvocationError(f"skill `{skill_name}` does not define blueprint.yaml")
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -61,37 +93,6 @@ def expect_list(value: Any, context: str) -> list[Any]:
     if not isinstance(value, list):
         raise InvocationError(f"{context}: expected list")
     return value
-
-
-def parse_cli() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Invoke a skill script interface id declared in blueprint.yaml.",
-        epilog=(
-            "Examples:\n"
-            "  python3 scripts/invoke_skill_export.py --dry-run --caller-skill daily-plan "
-            "list-manager read-list /tmp/todo.yaml state=incomplete\n"
-            "  python3 scripts/invoke_skill_export.py --dry-run list-manager read-list /tmp/todo.yaml"
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--caller-skill",
-        help="Owning skill requesting the invocation. If omitted, only externally callable ids are allowed.",
-    )
-    parser.add_argument(
-        "--stdin",
-        action="store_true",
-        help="Read stdin and forward it to the target command. Fails if the matched surface disallows stdin.",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print the resolved invocation as JSON instead of executing it.",
-    )
-    parser.add_argument("target_skill")
-    parser.add_argument("script_interface")
-    parser.add_argument("script_args", nargs=argparse.REMAINDER)
-    return parser.parse_args()
 
 
 def interface_id(interface_name: str, interface_spec: dict[str, Any], context: str) -> str:
@@ -285,10 +286,11 @@ def resolve_interface_surface(
 def resolve_interface(
     target_skill: str,
     target_blueprint: dict[str, Any],
-    caller_skill: str | None,
+    caller_skill: str,
     script_interface: str,
     script_args: list[str],
     stdin_requested: bool,
+    repo_root: Path | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], str]:
     """Resolve and validate the interface.
 
@@ -313,41 +315,41 @@ def resolve_interface(
             f"skill `{caller_skill}` is not in allowed_callers for `{target_skill}:{resolved_id}`"
         )
 
-    if caller_skill is not None:
-        caller_blueprint = load_blueprint(caller_skill)
-        depends_on = expect_mapping(caller_blueprint.get("depends_on"), f"{caller_skill}.depends_on")
-        dep_spec = depends_on.get(target_skill)
-        if not isinstance(dep_spec, dict):
-            raise InvocationError(
-                f"caller skill `{caller_skill}` does not declare dependency on `{target_skill}`"
-            )
-
-        target_version = target_blueprint.get("interface_version")
-        declared_version = dep_spec.get("major_version")
-        if declared_version != target_version:
-            raise InvocationError(
-                f"caller skill `{caller_skill}` depends on `{target_skill}` version "
-                f"{declared_version}, but target exports version {target_version}"
-            )
-
-        allowed_exports = expect_string_list(
-            dep_spec.get("exports"),
-            f"{caller_skill}.depends_on.{target_skill}.exports",
+    caller_blueprint = load_blueprint(caller_skill, repo_root=repo_root)
+    depends_on = expect_mapping(caller_blueprint.get("depends_on"), f"{caller_skill}.depends_on")
+    dep_spec = depends_on.get(target_skill)
+    if not isinstance(dep_spec, dict):
+        raise InvocationError(
+            f"caller skill `{caller_skill}` does not declare dependency on `{target_skill}`"
         )
-        if resolved_id not in allowed_exports:
-            raise InvocationError(
-                f"caller skill `{caller_skill}` is not allowed to invoke `{target_skill}:{resolved_id}`"
-            )
+
+    target_version = target_blueprint.get("interface_version")
+    declared_version = dep_spec.get("major_version")
+    if declared_version != target_version:
+        raise InvocationError(
+            f"caller skill `{caller_skill}` depends on `{target_skill}` version "
+            f"{declared_version}, but target exports version {target_version}"
+        )
+
+    allowed_exports = expect_string_list(
+        dep_spec.get("exports"),
+        f"{caller_skill}.depends_on.{target_skill}.exports",
+    )
+    if resolved_id not in allowed_exports:
+        raise InvocationError(
+            f"caller skill `{caller_skill}` is not allowed to invoke `{target_skill}:{resolved_id}`"
+        )
 
     return parent_spec, surface_spec, pattern_spec, pattern_name
 
 
-def resolve_cwd(target_skill: str, parent_spec: dict[str, Any]) -> Path:
+def resolve_cwd(target_skill: str, parent_spec: dict[str, Any], repo_root: Path | None = None) -> Path:
+    root = get_repo_root(repo_root)
     cwd_value = parent_spec.get("cwd", "skill_root")
     if cwd_value == "skill_root":
-        return SKILLS_ROOT / target_skill
+        return root / "skills" / target_skill
     if cwd_value == "repo_root":
-        return REPO_ROOT
+        return root
     raise InvocationError(f"unsupported cwd value `{cwd_value}`")
 
 
@@ -358,54 +360,76 @@ def build_command(parent_spec: dict[str, Any], script_args: list[str]) -> list[s
     return [*command, *script_args]
 
 
-def main() -> int:
-    args = parse_cli()
-
-    try:
-        target_blueprint = load_blueprint(args.target_skill)
-        parent_spec, _surface_spec, _pattern_spec, pattern_name = resolve_interface(
-            args.target_skill,
-            target_blueprint,
-            args.caller_skill,
-            args.script_interface,
-            args.script_args,
-            args.stdin,
-        )
-        cwd = resolve_cwd(args.target_skill, parent_spec)
-        command = build_command(parent_spec, args.script_args)
-    except InvocationError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-
-    payload = {
-        "caller_skill": args.caller_skill,
-        "target_skill": args.target_skill,
-        "script_interface": args.script_interface,
-        "pattern": pattern_name,
-        "cwd": str(cwd),
-        "command": command,
-        "stdin": args.stdin,
-    }
-    if args.dry_run:
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
-
-    input_bytes = None
-    if args.stdin:
-        input_bytes = sys.stdin.buffer.read()
-
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        input=input_bytes,
-        capture_output=True,
+def resolve_dispatch(
+    *,
+    caller_skill: str,
+    target_skill: str,
+    script_interface: str,
+    args: list[str] | None = None,
+    stdin_requested: bool = False,
+    repo_root: Path | None = None,
+) -> ResolvedInvocation:
+    args = args or []
+    if not caller_skill.strip():
+        raise InvocationError("caller_skill must be a non-empty string")
+    target_blueprint = load_blueprint(target_skill, repo_root=repo_root)
+    parent_spec, _surface_spec, _pattern_spec, pattern_name = resolve_interface(
+        target_skill,
+        target_blueprint,
+        caller_skill.strip(),
+        script_interface,
+        args,
+        stdin_requested,
+        repo_root=repo_root,
     )
-    if completed.stdout:
-        sys.stdout.buffer.write(completed.stdout)
-    if completed.stderr:
-        sys.stderr.buffer.write(completed.stderr)
-    return completed.returncode
+    cwd = resolve_cwd(target_skill, parent_spec, repo_root=repo_root)
+    command = build_command(parent_spec, args)
+    return ResolvedInvocation(
+        caller_skill=caller_skill.strip(),
+        target_skill=target_skill,
+        script_interface=script_interface,
+        pattern=pattern_name,
+        cwd=cwd,
+        command=command,
+        stdin=stdin_requested,
+    )
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+def dispatch(
+    *,
+    caller_skill: str,
+    target_skill: str,
+    script_interface: str,
+    args: list[str] | None = None,
+    stdin: str | bytes | None = None,
+    timeout: float | None = None,
+    capture_output: bool = True,
+    check: bool = False,
+    text: bool | None = None,
+    repo_root: Path | None = None,
+) -> subprocess.CompletedProcess[Any]:
+    """Resolve and execute a declared skill interface."""
+    resolved = resolve_dispatch(
+        caller_skill=caller_skill,
+        target_skill=target_skill,
+        script_interface=script_interface,
+        args=args or [],
+        stdin_requested=stdin is not None,
+        repo_root=repo_root,
+    )
+
+    run_kwargs: dict[str, Any] = {
+        "cwd": resolved.cwd,
+        "capture_output": capture_output,
+        "check": check,
+    }
+    if timeout is not None:
+        run_kwargs["timeout"] = timeout
+    if stdin is not None:
+        run_kwargs["input"] = stdin
+    if text is not None:
+        run_kwargs["text"] = text
+    elif isinstance(stdin, str):
+        run_kwargs["text"] = True
+
+    return subprocess.run(resolved.command, **run_kwargs)

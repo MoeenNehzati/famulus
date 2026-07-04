@@ -19,6 +19,18 @@ Interface Version: 1
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Script Interfaces:
+
+Use the installed `dispatcher` command for this skill's script interfaces:
+- `scripts-gcal`
+  - `dispatcher --caller-skill g-calendar g-calendar scripts-gcal ...`
+- `setup-oauth`
+  - `dispatcher --caller-skill g-calendar g-calendar setup-oauth ...`
+  - OAuth setup for Google Calendar access.
+<!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 
 Skill: g-calendar

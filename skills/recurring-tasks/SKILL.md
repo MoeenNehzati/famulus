@@ -15,6 +15,47 @@ Interface Version: 1
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Script Interfaces:
+
+Use the installed `dispatcher` command for this skill's script interfaces:
+- `runners-daily-plan`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks runners-daily-plan ...`
+- `runners-email-triage`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks runners-email-triage ...`
+- `scripts-disable-job`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-disable-job ...`
+- `scripts-enable-job`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-enable-job ...`
+- `scripts-env`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-env ...`
+- `scripts-healthcheck`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-healthcheck ...`
+- `scripts-invoke-agent`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-invoke-agent ...`
+- `scripts-job-utils`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-job-utils ...`
+- `scripts-run-skill`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-run-skill ...`
+- `scripts-setup`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-setup ...`
+- `scripts-status`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-status ...`
+- `scripts-sync-units`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-sync-units ...`
+- `scripts-test-enable-disable`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-test-enable-disable ...`
+- `scripts-test-job`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-test-job ...`
+- `scripts-test-live-job`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-test-live-job ...`
+- `scripts-test-sync-units`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-test-sync-units ...`
+- `scripts-view-logs`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-view-logs ...`
+<!-- END BLUEPRINT INTERFACES -->
 # Recurring Tasks
 
 Manages AI-driven recurring jobs as **systemd user timers**. `jobs.yaml` is the

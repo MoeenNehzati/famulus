@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -15,6 +16,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint" / "template.yaml"
 README = REPO_ROOT / "README.md"
+DISPATCHER_SRC = REPO_ROOT / "script_dispatcher" / "src"
 
 
 def load_module(module_name: str, path: Path):
@@ -37,6 +39,19 @@ class SkillBlueprintToolTests(unittest.TestCase):
             check=False,
         )
 
+    def run_dispatcher_cmd(self, *args: str) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        current = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = str(DISPATCHER_SRC) if not current else f"{DISPATCHER_SRC}:{current}"
+        return subprocess.run(
+            [sys.executable, "-m", "script_dispatcher.cli", *args],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+
     def test_blueprints_are_in_sync(self) -> None:
         result = self.run_cmd("skills/my-writing-skills/scripts/sync_skill_blueprints.py", "--check")
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
@@ -54,7 +69,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         text = README.read_text(encoding="utf-8")
         self.assertIn("## Blueprint Migration", text)
         self.assertIn("references/blueprint", text)
-        self.assertIn("scripts/invoke_skill_export.py", text)
+        self.assertIn("dispatcher", text)
         self.assertIn("python3 skills/my-writing-skills/scripts/sync_skill_blueprints.py", text)
         self.assertIn(".githooks/pre-commit", text)
         self.assertIn("list-manager", text)
@@ -69,8 +84,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
 
     def test_dispatcher_allows_declared_export(self) -> None:
-        result = self.run_cmd(
-            "scripts/invoke_skill_export.py",
+        result = self.run_dispatcher_cmd(
             "--dry-run",
             "--caller-skill",
             "daily-plan",
@@ -95,9 +109,8 @@ class SkillBlueprintToolTests(unittest.TestCase):
             ],
         )
 
-    def test_dispatcher_rejects_restricted_interface_without_caller_context(self) -> None:
-        result = self.run_cmd(
-            "scripts/invoke_skill_export.py",
+    def test_dispatcher_requires_caller_skill(self) -> None:
+        result = self.run_dispatcher_cmd(
             "--dry-run",
             "list-manager",
             "read-list",
@@ -105,12 +118,11 @@ class SkillBlueprintToolTests(unittest.TestCase):
             "state=incomplete",
         )
         self.assertEqual(result.returncode, 2)
-        self.assertIn("allowed_callers", result.stderr)
+        self.assertIn("--caller-skill", result.stderr)
 
     def test_dispatcher_rejects_private_interface_for_dependency(self) -> None:
         """Test that internal-only interfaces cannot be used by dependent skills."""
-        result = self.run_cmd(
-            "scripts/invoke_skill_export.py",
+        result = self.run_dispatcher_cmd(
             "--dry-run",
             "--caller-skill",
             "daily-plan",
@@ -125,8 +137,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
     def test_dispatcher_allows_private_interface_for_owner(self) -> None:
         """Test that the owning skill can use non-exported interfaces."""
-        result = self.run_cmd(
-            "scripts/invoke_skill_export.py",
+        result = self.run_dispatcher_cmd(
             "--dry-run",
             "--caller-skill",
             "list-manager",
@@ -144,8 +155,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         """Test that if a pattern requires flags, they must be present."""
         # update-list file-mode requires --file flag.
         # Calling with --file flag should work:
-        result = self.run_cmd(
-            "scripts/invoke_skill_export.py",
+        result = self.run_dispatcher_cmd(
             "--dry-run",
             "--caller-skill",
             "daily-plan",
@@ -158,8 +168,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
 
         # Calling with both --file and a forbidden flag should fail:
-        result = self.run_cmd(
-            "scripts/invoke_skill_export.py",
+        result = self.run_dispatcher_cmd(
             "--dry-run",
             "--caller-skill",
             "daily-plan",
@@ -174,8 +183,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertIn("does not match any declared pattern", result.stderr)
 
     def test_dispatcher_rejects_unexpected_flag(self) -> None:
-        result = self.run_cmd(
-            "scripts/invoke_skill_export.py",
+        result = self.run_dispatcher_cmd(
             "--dry-run",
             "--caller-skill",
             "daily-plan",
@@ -194,7 +202,8 @@ class SkillBlueprintToolTests(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable,
-                "scripts/invoke_skill_export.py",
+                "-m",
+                "script_dispatcher.cli",
                 "--dry-run",
                 "--stdin",
                 "--caller-skill",
@@ -206,6 +215,12 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 "/tmp/todo-updates.yaml",
             ],
             cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "PYTHONPATH": str(DISPATCHER_SRC)
+                if not os.environ.get("PYTHONPATH")
+                else f"{DISPATCHER_SRC}:{os.environ['PYTHONPATH']}",
+            },
             input="x",
             capture_output=True,
             text=True,
@@ -281,6 +296,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
             REPO_ROOT / "skills" / "my-writing-skills" / "scripts" / "sync_skill_blueprints.py",
         )
         block = sync_module.generated_interface_block(
+            "demo-skill",
             {
                 "script_interfaces": {
                     "read-data": {
@@ -299,6 +315,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         )
 
         self.assertIn("`read-data` — Read an input file.", block)
+        self.assertIn("dispatcher --caller-skill demo-skill demo-skill read-data", block)
         self.assertNotIn("read-data-daily-plan", block)
 
 

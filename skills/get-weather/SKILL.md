@@ -17,6 +17,15 @@ Interface Version: 1
 Exported Script Interfaces:
 - `scripts-weather`
 <!-- END BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Script Interfaces:
+
+Use the installed `dispatcher` command for this skill's script interfaces:
+- `scripts-weather`
+  - `dispatcher --caller-skill get-weather get-weather scripts-weather ...`
+<!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 
 Skill: get-weather

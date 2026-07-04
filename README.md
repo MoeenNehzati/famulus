@@ -71,9 +71,7 @@ Blueprint-migrated skills may depend on other skills at two levels:
 - skill-to-skill invocation
 - exported script-interface invocation through:
 
-```text
-scripts/invoke_skill_export.py
-```
+`dispatcher`
 
 That dispatcher reads the callee's `blueprint.yaml`, validates the requested
 interface and mode, checks dependency/version/export declarations, and only then
@@ -147,7 +145,7 @@ of truth; the real content still lives in top-level `skills/`, `references/`,
 `agents/`, and `CLAUDE.md` / `AGENTS.md`.
 
 For Codex in particular, `.codex/skills` is only a repo-local mirror. The
-documented user-level skill path remains `~/.agents/skills`.
+user-level runtime skill path is `~/.codex/skills`.
 
 `.claude/settings.local.json` is machine-local state and is ignored by Git.
 
@@ -180,18 +178,23 @@ Before creating each symlink the installer inspects the destination.
 Run `python3 scripts/install.py --help` for flags, or see the
 `install-assistant-tools` skill for the current conflict-handling behavior.
 
-Codex reads user-level skills from `~/.agents/skills`. Link that directory to
-the canonical checkout:
+The installer also wires the Codex skill path:
 
 ```text
-~/.agents/skills -> /home/moeen/Documents/AI/skills
+~/.codex/skills -> /home/moeen/Documents/AI/skills
+```
+
+If you need to repair that link manually, link `~/.codex/skills` to the
+canonical checkout:
+
+```text
+~/.codex/skills -> /home/moeen/Documents/AI/skills
 ```
 
 Create or repair the link with:
 
 ```bash
-mkdir -p ~/.agents
-ln -sfn /home/moeen/Documents/AI/skills ~/.agents/skills
+ln -sfn /home/moeen/Documents/AI/skills ~/.codex/skills
 ```
 
 Codex must keep `~/.codex` itself as a real directory. Do not make
@@ -226,10 +229,8 @@ for f in /home/moeen/Documents/AI/profiles/*.config.toml; do
 done
 ```
 
-Do not rely on `~/.codex/skills` for personal skills. Some Codex surfaces may
-see it, but `~/.agents/skills` is the documented user-level skill location and
-keeps the CLI and IDE extension aligned. After changing skill links, restart
-Codex or open a new Codex panel/thread if the skills do not appear.
+After changing `~/.codex/skills`, restart Codex or open a new Codex
+panel/thread if the skills do not appear.
 
 With this direct user-level setup, Codex skills are invoked by bare skill name
 such as `$proof-audit`. When installed through the Codex plugin manifest instead,

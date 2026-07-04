@@ -14,6 +14,17 @@ Interface Version: 1
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Script Interfaces:
+
+Use the installed `dispatcher` command for this skill's script interfaces:
+- `scripts-bib-similarity`
+  - `dispatcher --caller-skill bib-audit bib-audit scripts-bib-similarity ...`
+- `scripts-bib-validate-bibtex`
+  - `dispatcher --caller-skill bib-audit bib-audit scripts-bib-validate-bibtex ...`
+<!-- END BLUEPRINT INTERFACES -->
 # Bibliography Audit
 
 Conservative bibliography auditor. Default behavior: produce a structured report. Apply transformations only on explicit user approval.

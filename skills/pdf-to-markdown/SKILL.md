@@ -17,6 +17,17 @@ Interface Version: 1
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Script Interfaces:
+
+Use the installed `dispatcher` command for this skill's script interfaces:
+- `scripts-check-marker-models`
+  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown scripts-check-marker-models ...`
+- `scripts-fetch-arxiv-source`
+  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown scripts-fetch-arxiv-source ...`
+<!-- END BLUEPRINT INTERFACES -->
 # PDF to Markdown
 
 ## Overview

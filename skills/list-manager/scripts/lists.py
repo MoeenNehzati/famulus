@@ -83,38 +83,44 @@ def die(msg: str) -> None:
 
 # ── Cloud transport ───────────────────────────────────────────────────────────
 
-def get_invoke_skill_export() -> Path:
-    """Locate invoke_skill_export.py from repo root."""
-    repo_root = Path(__file__).parent.parent.parent.parent
-    script = repo_root / "scripts" / "invoke_skill_export.py"
-    if not script.exists():
-        # Fallback for alternate installations
-        alt = Path.home() / "Documents" / "AI" / "scripts" / "invoke_skill_export.py"
-        if alt.exists():
-            return alt
-    return script
+def run_cloud_dispatch(interface_id: str, remote_path: str, *, stdin: str | None = None) -> tuple[int, str, str]:
+    try:
+        from script_dispatcher import InvocationError, dispatch
+    except ImportError:
+        die(
+            "script_dispatcher is not installed. Re-run install-assistant-tools to install the shared dispatcher package."
+        )
+
+    try:
+        result = dispatch(
+            caller_skill="list-manager",
+            target_skill="cloud-files",
+            script_interface=interface_id,
+            args=[remote_path],
+            stdin=stdin,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except InvocationError as exc:
+        die(f"invalid dispatcher request for cloud-files:{interface_id}: {exc}")
+    except subprocess.TimeoutExpired:
+        die(f"{interface_id} timed out")
+    except Exception as exc:
+        die(f"{interface_id} failed: {exc}")
+
+    return result.returncode, result.stdout, result.stderr
 
 
 def download_list(list_name: str, dest_path: Path) -> None:
     """Download list from cloud storage via cloud-files lists-read interface."""
     remote_path = f"lists/{list_name}.yaml"
-    cmd = [
-        "python3",
-        str(get_invoke_skill_export()),
-        "--caller-skill", "list-manager",
-        "cloud-files", "lists-read",
-        remote_path,
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            die(f"failed to download {remote_path}: {result.stderr}")
-        with open(dest_path, "w", encoding="utf-8") as f:
-            f.write(result.stdout)
-    except subprocess.TimeoutExpired:
-        die("download timed out")
-    except Exception as e:
-        die(f"download failed: {e}")
+    returncode, stdout, stderr = run_cloud_dispatch("lists-read", remote_path)
+    if returncode != 0:
+        die(f"failed to download {remote_path}: {stderr}")
+    with open(dest_path, "w", encoding="utf-8") as f:
+        f.write(stdout)
 
 
 def upload_list(list_name: str, src_path: Path) -> None:
@@ -122,21 +128,9 @@ def upload_list(list_name: str, src_path: Path) -> None:
     remote_path = f"lists/{list_name}.yaml"
     with open(src_path, "r", encoding="utf-8") as f:
         content = f.read()
-    cmd = [
-        "python3",
-        str(get_invoke_skill_export()),
-        "--caller-skill", "list-manager",
-        "cloud-files", "lists-write",
-        remote_path,
-    ]
-    try:
-        result = subprocess.run(cmd, input=content, capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            die(f"failed to upload {remote_path}: {result.stderr}")
-    except subprocess.TimeoutExpired:
-        die("upload timed out")
-    except Exception as e:
-        die(f"upload failed: {e}")
+    returncode, _stdout, stderr = run_cloud_dispatch("lists-write", remote_path, stdin=content)
+    if returncode != 0:
+        die(f"failed to upload {remote_path}: {stderr}")
 
 
 # ── ID generation ─────────────────────────────────────────────────────────────

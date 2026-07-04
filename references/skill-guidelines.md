@@ -41,7 +41,7 @@ Every local skill must therefore have a sibling `blueprint.yaml`, exactly one ge
 
 Every exact skill-name mention in the body of `SKILL.md` must also match the dependency set. Do not mention a skill as an invoked collaborator unless it is in both the `Dependencies:` block and `depends_on_skills`.
 
-Dependencies authorize skill invocation and, for blueprint-migrated dependencies, dispatcher calls through `../../scripts/invoke_skill_export.py` to that skill's exported script interface. A dependency never authorizes direct access to another skill's files or raw script paths.
+Dependencies authorize skill invocation and, for blueprint-migrated dependencies, dispatcher calls through the installed `dispatcher` command (CLI) or `script_dispatcher.dispatch()` (Python) to that skill's exported script interface. A dependency never authorizes direct access to another skill's files or raw script paths.
 
 **Blueprint authoring — REQUIRED: Initialize by copying the template**
 
@@ -69,10 +69,11 @@ Dependencies authorize skill invocation and, for blueprint-migrated dependencies
   - Flag constraints (`required_flags`, `allowed_flags`, `forbidden_flags`, `flag_patterns` with regex)
   - Access control (`allow_all_skills`, `allowed_callers`)
   - Multi-pattern interfaces for different calling styles (file vs stdin, etc.)
+  - `notes` on every pattern — **required, not optional**. Notes are injected verbatim into the generated SKILL.md interface block. A dependent skill calling through the dispatcher reads only SKILL.md, not `blueprint.yaml` or the underlying script. Write notes so a caller can invoke the interface correctly from SKILL.md alone.
 
 **Dispatcher role**
 
-`../../scripts/invoke_skill_export.py` is the only sanctioned local cross-skill script boundary for blueprint-migrated skills. Its job is to:
+The installed `dispatcher` command and the shared `script_dispatcher` Python package are the only sanctioned local cross-skill script boundaries for blueprint-migrated skills. Their job is to:
 
 1. Load the callee's `blueprint.yaml`
 2. Resolve the requested `script_interface` id to either the owner-facing default surface or a named subinterface
@@ -92,9 +93,17 @@ The pattern-based approach enables **compile-time validation**: git hooks verify
 
 Use `--dry-run` to inspect the resolved command without executing it:
 ```bash
-python3 scripts/invoke_skill_export.py --dry-run --caller-skill daily-plan \
+dispatcher --dry-run --caller-skill daily-plan \
   list-manager read-list /tmp/todo.yaml
 ```
+
+For Python skill code, the canonical form is:
+```python
+from script_dispatcher import dispatch
+```
+
+Do not invoke the `dispatcher` CLI from Python skill code, and do not modify `sys.path` to reach `script_dispatcher`. That canonical Python-side rule is enforced by `skills/my-writing-skills/validators/dispatcher_usage.py`.
+Every Python `dispatch(...)` call must also include `caller_skill` set to the owning skill's exact name; that value must be a string literal or a module-level string constant that resolves statically. This is enforced by `skills/my-writing-skills/validators/dispatch_caller_skill.py`.
 
 **Injection lifecycle**
 
@@ -103,12 +112,15 @@ python3 scripts/invoke_skill_export.py --dry-run --caller-skill daily-plan \
 - `depends_on_skills`
 - `permissions.json`
 - the generated contract block placed immediately after the YAML frontmatter in `SKILL.md`
-- the generated owner-facing interface block placed immediately after the contract block when top/default interface descriptions are present
+- the generated owner-facing dispatcher interface block placed immediately after the contract block
 
 That generated block is not user-authored. Do not edit it by hand. These checks are enforced on every commit by `validators/runner.py` (called from `.githooks/pre-commit`) via:
 
 - `skills/my-writing-skills/validators/blueprints.py` — blueprint presence, injection layout, and artifact sync
 - `skills/my-writing-skills/validators/boundaries.py` — local script boundary enforcement
+- `skills/my-writing-skills/validators/dispatch_caller_skill.py` — Python dispatch caller identity must match the owning skill
+- `skills/my-writing-skills/validators/dispatcher_usage.py` — canonical Python-side dispatcher usage
+- `skills/my-writing-skills/validators/skill_md_dispatch.py` — generated owner-facing `SKILL.md` interface block must expose dispatcher commands, not raw scripts
 - `skills/my-writing-skills/validators/blueprint_relationships.py` — cross-blueprint dependency constraints
 - `skills/my-writing-skills/validators/interface_ids.py` — per-skill uniqueness and layout checks for interface ids
 
@@ -167,11 +179,11 @@ description: Use when the user asks to plan their day, check their schedule, or 
 - **Reuse, don't reimplement.** Before writing new behavior, check whether an existing skill already covers it. If yes, invoke or extend that skill. Duplication means two places to update when behavior changes; reuse means one. Failing to reuse when a suitable skill exists is a defect. Example: `daily-plan` invokes `list-manager`, `g-calendar`, and `get-weather` rather than reimplementing any of them.
 - **Depend on interfaces, not internals.** There are only two valid cross-skill boundaries:
   - invoke the dependency skill as a skill
-  - call the dependency skill's exported script interface through `../../scripts/invoke_skill_export.py`
+  - call the dependency skill's exported script interface through `dispatcher` or `script_dispatcher.dispatch()`
 
   Directly naming another skill's script path is forbidden. The owning skill's `blueprint.yaml` defines the full internal script interface under `script_interfaces`, including the owner-facing default id and any narrower named subinterfaces.
 - **Do not introduce new cross-skill Python imports.** If behavior should be shared across skills, expose it through a skill invocation or exported script interface. If truly shared library code is needed, move it to an explicit shared library area outside individual skill script directories.
-- **Do not reach into another skill's script directory from local scripts.** For blueprint-migrated skills, local `.py` and `.sh` files must not call, source, or add another skill's `scripts/` directory to `sys.path`. Use a skill invocation or `../../scripts/invoke_skill_export.py` instead.
+- **Do not reach into another skill's script directory from local scripts.** For blueprint-migrated skills, local `.py` and `.sh` files must not call, source, or add another skill's `scripts/` directory to `sys.path`. Use a skill invocation, `dispatcher`, or `script_dispatcher.dispatch()` instead.
 - **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative. A skill may refer to files under its own directory, to shared `../references/` material, and to shared repo tools under `../../tools/`. It must not mention parent-path addresses such as `../other-skill/...`, `../../skills/...`, or any absolute filesystem path to another skill. System-level paths are allowed only for durable user configuration or executable interfaces that are intentionally outside the skills tree, such as `~/.config/<skill-name>/` and installed commands under `bin`.
 - **Make your own interface explicit.** State what inputs your skill expects and what outputs it produces, so future skills can depend on you cleanly. For blueprint skills:
   - `skill_interface` describes the skill-level contract

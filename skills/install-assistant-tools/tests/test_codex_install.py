@@ -210,6 +210,7 @@ class CodexInstallTests(unittest.TestCase):
                 self.assertEqual(path.resolve(), target.resolve(), f"Wrong target for {path}")
 
             codex_links = {
+                install_codex_home / "skills": installed_path / "skills",
                 install_codex_home / "references": installed_path / "references",
                 install_codex_home / "agents": installed_path / "agents",
                 install_codex_home / "AGENTS.md": (installed_path / "AGENTS.md") if (installed_path / "AGENTS.md").exists() else (installed_path / "CLAUDE.md"),

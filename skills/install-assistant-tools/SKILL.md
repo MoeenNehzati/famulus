@@ -16,6 +16,19 @@ Interface Version: 1
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Script Interfaces:
+
+Use the installed `dispatcher` command for this skill's script interfaces:
+- `scripts-install`
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-install ...`
+- `scripts-setup-symlinks`
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-setup-symlinks ...`
+- `scripts-setup-tools`
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-setup-tools ...`
+<!-- END BLUEPRINT INTERFACES -->
 # Install Assistant Tools
 
 When this skill is used, begin with:
@@ -57,6 +70,7 @@ scripts/
 Before running anything, summarize:
 
 - Claude and Codex config dirs will be wired back to this repo with symlinks.
+- Codex skills will be wired through `~/.codex/skills -> <repo>/skills` when that path can be created as a symlink.
 - Launcher scripts will be symlinked into a bin dir on `PATH`.
 - A managed rc block or Windows user-environment entry will set `PATH`,
   `ASSISTANT_DEFAULT`, and `$AI`.

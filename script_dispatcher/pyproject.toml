@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "script-dispatcher"
+version = "0.1.0"
+description = "Shared dispatcher for skill script interfaces"
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6"]
+
+[project.scripts]
+dispatcher = "script_dispatcher.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

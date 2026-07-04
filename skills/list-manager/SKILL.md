@@ -21,6 +21,52 @@ Interface Version: 1
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Script Interfaces:
+
+Use the installed `dispatcher` command for this skill's script interfaces:
+- `beautify-list`
+  - `dispatcher --caller-skill list-manager list-manager beautify-list ...`
+  - Reads YAML from stdin and renders user-facing list output.
+- `cloud-create-entry`
+  - `dispatcher --caller-skill list-manager list-manager cloud-create-entry ...`
+- `cloud-delete`
+  - `dispatcher --caller-skill list-manager list-manager cloud-delete ...`
+  - Delete one or more entries by ID from a cloud list.
+- `cloud-init`
+  - `dispatcher --caller-skill list-manager list-manager cloud-init ...`
+  - Create a new list in cloud storage.
+- `cloud-read`
+  - `dispatcher --caller-skill list-manager list-manager cloud-read ...`
+  - Read cloud list by name (raw YAML), optionally filtered.
+- `cloud-read-beautify`
+  - `dispatcher --caller-skill list-manager list-manager cloud-read-beautify ...`
+  - Read a cloud list by name and render it (diff-fenced), optionally filtered.
+- `cloud-update`
+  - `dispatcher --caller-skill list-manager list-manager cloud-update ...`
+  - file-mode: Update cloud list entries from a patch file.
+  - stdin-mode: Update cloud list entries from a stdin patch.
+- `create-entry`
+  - `dispatcher --caller-skill list-manager list-manager create-entry ...`
+- `generate-id`
+  - `dispatcher --caller-skill list-manager list-manager generate-id ...`
+- `init-list`
+  - `dispatcher --caller-skill list-manager list-manager init-list ...`
+- `migrate-markdown`
+  - `dispatcher --caller-skill list-manager list-manager migrate-markdown ...`
+- `read-beautify`
+  - `dispatcher --caller-skill list-manager list-manager read-beautify ...`
+  - Read a local YAML list file and immediately return pretty output.
+- `read-list`
+  - `dispatcher --caller-skill list-manager list-manager read-list ...`
+  - First positional is the local YAML file; remaining positionals are filters.
+- `update-list`
+  - `dispatcher --caller-skill list-manager list-manager update-list ...`
+  - file-mode: Externally supported update mode; caller prepares the patch file.
+  - stdin-batch: Internal convenience mode for the owning skill when feeding YAML directly.
+<!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 
 Skill: list-manager

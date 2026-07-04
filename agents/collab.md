@@ -9,13 +9,13 @@ Before substantial work in a repo, check for lessons in this order: `lessons/REA
 
 ## Track Switching
 
-Invoke `$distill-knowledge` before a topic switch when all hold: (1) ≥4 substantive turns since last distillation, (2) message is primarily a transition cue, (3) work produced decisions, failed paths, contracts, quirks, or preferences worth preserving.
+Invoke `$prepare-handoff` before a topic switch when all hold: (1) ≥4 substantive turns since the last handoff pass, (2) message is primarily a transition cue, (3) work produced decisions, failed paths, contracts, quirks, or preferences worth preserving.
 
 Cues: `switching`, `moving on`, `change tracks`, `new topic`, `pause this`, `park this`, `before we switch`, `let's stop here`.
 
 Don't invoke for `remember this` requests, clarifications, or incidental mentions of switching mid-task.
 
-Say: `One moment, I will distill the project knowledge before switching tracks.`
+Say: `One moment, I will prepare the handoff before switching tracks.`
 
 ## Session rules
 

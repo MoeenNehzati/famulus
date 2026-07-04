@@ -21,6 +21,23 @@ Interface Version: 1
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Script Interfaces:
+
+Use the installed `dispatcher` command for this skill's script interfaces:
+- `mutate-plan`
+  - `dispatcher --caller-skill daily-plan daily-plan mutate-plan ...`
+- `orchestrate`
+  - `dispatcher --caller-skill daily-plan daily-plan orchestrate ...`
+  - Generate today's plan, or refresh and show the existing one.
+  - Regenerate today's plan even if one already exists.
+- `plan-storage`
+  - `dispatcher --caller-skill daily-plan daily-plan plan-storage ...`
+- `render-plan`
+  - `dispatcher --caller-skill daily-plan daily-plan render-plan ...`
+<!-- END BLUEPRINT INTERFACES -->
 When this skill is used, run:
 
 ```bash

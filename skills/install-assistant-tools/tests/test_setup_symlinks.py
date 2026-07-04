@@ -56,6 +56,7 @@ class SetupSymlinksTests(unittest.TestCase):
                 claude_home / "CLAUDE.md": self.repo_root / "CLAUDE.md",
             }
             codex_expected = {
+                codex_home / "skills": self.repo_root / "skills",
                 codex_home / "references": self.repo_root / "references",
                 codex_home / "agents": self.repo_root / "agents",
                 codex_home / "AGENTS.md": (self.repo_root / "CLAUDE.md").resolve(),

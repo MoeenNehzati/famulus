@@ -14,6 +14,17 @@ Interface Version: 1
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Script Interfaces:
+
+Use the installed `dispatcher` command for this skill's script interfaces:
+- `scripts-email-get-message-id`
+  - `dispatcher --caller-skill email-client email-client scripts-email-get-message-id ...`
+- `scripts-email-send`
+  - `dispatcher --caller-skill email-client email-client scripts-email-send ...`
+<!-- END BLUEPRINT INTERFACES -->
 # Email
 
 Two Gmail accounts: **nyu** (`sn3379@nyu.edu`) and **personal** (`smnehzati@gmail.com`).

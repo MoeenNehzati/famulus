@@ -212,7 +212,21 @@ script_interfaces:
         #
           flag_patterns: {}
 
-        # Optional note for future maintainers and dependent skills.
+        # NOTES: Human-readable description of this pattern's calling convention.
+        #
+        # Notes are injected verbatim into the generated SKILL.md interface block,
+        # so dependent skills can call this interface correctly without reading
+        # blueprint.yaml or the underlying script.
+        #
+        # Write notes as if they are the only documentation a caller will see:
+        # - What each positional argument means
+        # - Which flags are required and what they expect
+        # - What the pattern is for (if it's one of several)
+        #
+        # Bad:  notes: "File mode."
+        # Good: notes: "File mode: first positional is the target list name; --file
+        #        points to a YAML patch file prepared by the caller."
+        #
           notes: "First positional is the input file; additional positionals are filters."
 
     # ========================================================================
@@ -409,8 +423,10 @@ script_interfaces:
 #    - daily-plan owns plans/ directory via allowed_callers
 #    - Prevents cross-contamination and enforces ownership at compile-time
 #
-# 4. Always include 'notes' to explain the pattern, especially for multi-pattern
-#    interfaces. Future maintainers (including yourself!) will thank you.
+# 4. Always include 'notes' on every pattern. Notes are injected into SKILL.md
+#    and are the only documentation a dependent skill sees when calling through
+#    the dispatcher — blueprint.yaml is not consulted at call time. Write notes
+#    so a caller can invoke the interface correctly without reading anything else.
 #
 # 5. Version your interface_version. When you add a new pattern or change
 #    existing constraints in a breaking way, bump interface_version.

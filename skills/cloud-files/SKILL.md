@@ -18,6 +18,34 @@ Interface Version: 1
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Script Interfaces:
+
+Use the installed `dispatcher` command for this skill's script interfaces:
+- `lists-delete`
+  - `dispatcher --caller-skill cloud-files cloud-files lists-delete ...`
+  - Delete list files from cloud storage. Restricted to lists/ directory.
+- `lists-read`
+  - `dispatcher --caller-skill cloud-files cloud-files lists-read ...`
+  - Read list files from cloud storage. Restricted to lists/ directory.
+- `lists-write`
+  - `dispatcher --caller-skill cloud-files cloud-files lists-write ...`
+  - Write list files to cloud storage. Restricted to lists/ directory.
+- `plans-delete`
+  - `dispatcher --caller-skill cloud-files cloud-files plans-delete ...`
+  - Delete plan files from cloud storage. Restricted to plans/ directory.
+- `plans-read`
+  - `dispatcher --caller-skill cloud-files cloud-files plans-read ...`
+  - Read plan files from cloud storage. Restricted to plans/ directory.
+- `plans-write`
+  - `dispatcher --caller-skill cloud-files cloud-files plans-write ...`
+  - Write plan files to cloud storage. Restricted to plans/ directory.
+- `setup-oauth`
+  - `dispatcher --caller-skill cloud-files cloud-files setup-oauth ...`
+  - OAuth setup for Google Drive access.
+<!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 
 Skill: cloud-files

@@ -16,6 +16,23 @@ Interface Version: 1
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Script Interfaces:
+
+Use the installed `dispatcher` command for this skill's script interfaces:
+- `scripts-fetch-envelopes`
+  - `dispatcher --caller-skill email-triage email-triage scripts-fetch-envelopes ...`
+- `scripts-get-cutoff`
+  - `dispatcher --caller-skill email-triage email-triage scripts-get-cutoff ...`
+- `scripts-log-decision`
+  - `dispatcher --caller-skill email-triage email-triage scripts-log-decision ...`
+- `scripts-prune-log`
+  - `dispatcher --caller-skill email-triage email-triage scripts-prune-log ...`
+- `scripts-update-watermark`
+  - `dispatcher --caller-skill email-triage email-triage scripts-update-watermark ...`
+<!-- END BLUEPRINT INTERFACES -->
 # Email Triage
 
 Scans emails received since the last triage run. Extracts action items and routes them to the right list. Never adds events to the calendar automatically — the user decides.

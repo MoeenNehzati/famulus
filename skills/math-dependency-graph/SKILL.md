@@ -27,6 +27,19 @@ Interface Version: 1
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Script Interfaces:
+
+Use the installed `dispatcher` command for this skill's script interfaces:
+- `scripts-build-math-dependency-graph`
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph scripts-build-math-dependency-graph ...`
+- `scripts-extract-mathjax-macros`
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph scripts-extract-mathjax-macros ...`
+- `scripts-serve-graph`
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph scripts-serve-graph ...`
+<!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 
 Skill: math-dependency-graph

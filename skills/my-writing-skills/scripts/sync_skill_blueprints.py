@@ -7,12 +7,12 @@ This tool never rewrites blueprint files. It only validates them and syncs:
 - ``depends_on_skills``
 - ``permissions.json``
 - the generated contract block near the top of ``SKILL.md``
-- the generated owner-facing interface summary block in ``SKILL.md``
+- the generated owner-facing dispatcher interface block in ``SKILL.md``
 
 The contract block is injected immediately after the YAML frontmatter in
-``SKILL.md``. The owner-facing interface block is injected immediately after
-the contract block. If a generated block already exists, it is replaced in
-place.
+``SKILL.md``. The owner-facing dispatcher interface block is injected
+immediately after the contract block. If a generated block already exists, it
+is replaced in place.
 """
 
 from __future__ import annotations
@@ -366,20 +366,43 @@ def exported_interfaces(data: dict[str, Any]) -> list[str]:
     return sorted(result)
 
 
-def described_interfaces(data: dict[str, Any]) -> list[tuple[str, str]]:
+def interface_pattern_notes(spec: dict[str, Any]) -> list[tuple[str | None, str | None]]:
+    """Return (name, notes) pairs for each pattern in the default subinterface.
+
+    Notes are injected verbatim into SKILL.md so callers can use the interface
+    without reading blueprint.yaml or the underlying script.
+    """
+    surface = default_subinterface(spec)
+    patterns = surface.get("patterns") or []
+    result: list[tuple[str | None, str | None]] = []
+    for pattern in patterns:
+        if not isinstance(pattern, dict):
+            continue
+        name = pattern.get("name") or None
+        notes = pattern.get("notes") or None
+        if name or notes:
+            result.append((name, notes))
+    return result
+
+
+def owner_interfaces(
+    data: dict[str, Any],
+) -> list[tuple[str, str | None, list[tuple[str | None, str | None]]]]:
+    """Return (id, description, pattern_notes) for each interface, sorted by id."""
     interfaces = expect_mapping(data.get("script_interfaces"), "script_interfaces")
-    result: list[tuple[str, str]] = []
+    result: list[tuple[str, str | None, list[tuple[str | None, str | None]]]] = []
     for interface_name, spec in sorted(interfaces.items()):
         if not isinstance(spec, dict):
             continue
         description = spec.get("description")
-        if isinstance(description, str) and description.strip():
-            result.append(
-                (
-                    interface_id(interface_name, spec, f"script_interfaces.{interface_name}"),
-                    description.strip(),
-                )
+        clean_description = description.strip() if isinstance(description, str) and description.strip() else None
+        result.append(
+            (
+                interface_id(interface_name, spec, f"script_interfaces.{interface_name}"),
+                clean_description,
+                interface_pattern_notes(spec),
             )
+        )
     return result
 
 
@@ -415,9 +438,9 @@ def generated_contract_block(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def generated_interface_block(data: dict[str, Any]) -> str:
-    described = described_interfaces(data)
-    if not described:
+def generated_interface_block(skill_name: str, data: dict[str, Any]) -> str:
+    interfaces = owner_interfaces(data)
+    if not interfaces:
         return ""
 
     lines = [
@@ -425,9 +448,22 @@ def generated_interface_block(data: dict[str, Any]) -> str:
         "> Generated from `blueprint.yaml`. Do not edit this block by hand.",
         "",
         "Owner-Facing Script Interfaces:",
+        "",
+        "Use the installed `dispatcher` command for this skill's script interfaces:",
     ]
-    for interface_name, description in described:
-        lines.append(f"- `{interface_name}` — {description}")
+    for interface_name, description, pattern_notes in interfaces:
+        if description:
+            lines.append(f"- `{interface_name}` — {description}")
+        else:
+            lines.append(f"- `{interface_name}`")
+        lines.append(
+            f"  - `dispatcher --caller-skill {skill_name} {skill_name} {interface_name} ...`"
+        )
+        for pat_name, pat_notes in pattern_notes:
+            if pat_name and pat_notes:
+                lines.append(f"  - {pat_name}: {pat_notes}")
+            elif pat_notes:
+                lines.append(f"  - {pat_notes}")
     lines.extend([INTERFACES_END, ""])
     return "\n".join(lines)
 
@@ -520,7 +556,7 @@ def sync_skill(blueprint: SkillBlueprint, check_only: bool) -> list[str]:
     expected_depends = generated_dependency_lines(data)
     expected_permissions = json.dumps(generated_permissions(data), indent=2) + "\n"
     expected_skill = sync_contract_block(skill_dir / "SKILL.md", generated_contract_block(data))
-    expected_skill = sync_interface_block(expected_skill, generated_interface_block(data))
+    expected_skill = sync_interface_block(expected_skill, generated_interface_block(blueprint.name, data))
 
     errors: list[str] = []
 

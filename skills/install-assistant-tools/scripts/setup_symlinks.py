@@ -16,6 +16,7 @@ Links created (documented in README.md § Systemwide Local Setup):
     CLAUDE.md  -> <repo>/CLAUDE.md   (shared repo instructions)
 
   Codex (~/.codex/ or $CODEX_HOME):
+    skills          -> <repo>/skills
     references      -> <repo>/references
     agents          -> <repo>/agents
     AGENTS.md       -> <repo>/AGENTS.md  (same content as CLAUDE.md via symlink)
@@ -165,6 +166,7 @@ def run(
             log(f"Setting up Codex symlinks in {codex_home} ...")
             if not dry_run:
                 codex_home.mkdir(parents=True, exist_ok=True)
+            make_link(repo_root / "skills",     codex_home / "skills",     dry_run)
             make_link(repo_root / "references", codex_home / "references", dry_run)
             make_link(repo_root / "agents",     codex_home / "agents",     dry_run)
             # AGENTS.md is a tracked symlink to CLAUDE.md in the source repo.

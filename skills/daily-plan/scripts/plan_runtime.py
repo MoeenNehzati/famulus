@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -56,16 +55,25 @@ class PlanError(Exception):
 
 
 def run_dispatcher(target_skill: str, script_interface: str, *args: str, stdin: str | None = None) -> str:
-    cmd = [
-        sys.executable,
-        str(REPO_ROOT / "scripts" / "invoke_skill_export.py"),
-        "--caller-skill", "daily-plan",
-        target_skill,
-        script_interface,
-        *args,
-    ]
     try:
-        result = subprocess.run(cmd, input=stdin, capture_output=True, text=True, check=False)
+        from script_dispatcher import InvocationError, dispatch
+    except ImportError as exc:  # pragma: no cover
+        raise PlanError(
+            "script_dispatcher is not installed. Re-run install-assistant-tools to install the shared dispatcher package."
+        ) from exc
+    try:
+        result = dispatch(
+            caller_skill="daily-plan",
+            target_skill=target_skill,
+            script_interface=script_interface,
+            args=list(args),
+            stdin=stdin,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except InvocationError as exc:
+        raise PlanError(f"dispatcher request invalid for {target_skill}:{script_interface}: {exc}") from exc
     except Exception as exc:  # pragma: no cover
         raise PlanError(f"Failed to invoke {target_skill}:{script_interface}: {exc}") from exc
     if result.returncode != 0:

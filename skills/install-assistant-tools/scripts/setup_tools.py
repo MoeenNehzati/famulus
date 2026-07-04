@@ -100,6 +100,30 @@ def log(msg: str = "") -> None:
     print(msg, flush=True)
 
 
+def dispatch_skill_interface(
+    *,
+    target_skill: str,
+    script_interface: str,
+    args: list[str] | None = None,
+    stdin: str | bytes | None = None,
+):
+    try:
+        from script_dispatcher import dispatch
+    except ImportError as exc:
+        raise RuntimeError(
+            "script_dispatcher is not installed. Re-run install-assistant-tools to install the shared dispatcher package."
+        ) from exc
+    return dispatch(
+        caller_skill="install-assistant-tools",
+        target_skill=target_skill,
+        script_interface=script_interface,
+        args=args or [],
+        stdin=stdin,
+        capture_output=True,
+        check=False,
+    )
+
+
 def make_link(src: Path, dst: Path, dry_run: bool) -> None:
     """Create or replace the symlink at dst pointing to src.
 
@@ -380,11 +404,9 @@ def maybe_run_google_oauth_setup(
             return "needs_client_json"
 
     log(f'Launching {spec["label"]} browser authorization...')
-    repo_root = Path(__file__).resolve().parents[3]
-    dispatcher = repo_root / "scripts" / "invoke_skill_export.py"
-    result = subprocess.run(
-        [sys.executable, str(dispatcher), "--caller-skill", "install-assistant-tools", spec["skill_dir"], "setup-oauth"],
-        check=False,
+    result = dispatch_skill_interface(
+        target_skill=spec["skill_dir"],
+        script_interface="setup-oauth",
     )
     if result.returncode == 0:
         return "configured"
@@ -812,6 +834,30 @@ REQUIRED_PYTHON_PACKAGES = [
 def install_python_packages(dry_run: bool) -> None:
     """Ensure required Python packages are installed."""
     log("\nInstalling required Python packages...")
+    local_packages = [
+        (
+            "script_dispatcher",
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "-e",
+                str(Path(__file__).resolve().parents[3] / "script_dispatcher"),
+                "--quiet",
+            ],
+        ),
+    ]
+    for label, cmd in local_packages:
+        if dry_run:
+            log(f"  (dry-run) Would install: {label}")
+            continue
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            log(f"  OK: {label}")
+        else:
+            log(f"  WARN: failed to install {label}: {result.stderr.strip()}")
+
     for package in REQUIRED_PYTHON_PACKAGES:
         if dry_run:
             log(f"  (dry-run) Would install: {package}")

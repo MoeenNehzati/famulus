@@ -25,7 +25,7 @@ class SetupCloudFilesConfigTests(unittest.TestCase):
             self.assertTrue(config_path.is_file())
             payload = json.loads(config_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(payload["remote_llm_root"], "assistant/")
+        self.assertEqual(payload["remote_llm_root"], "assistant")
         self.assertEqual(payload["timeout_seconds"], 45)
 
     def test_existing_timeout_is_preserved(self) -> None:
@@ -50,7 +50,7 @@ class SetupCloudFilesConfigTests(unittest.TestCase):
             )
             payload = json.loads(config_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(payload["remote_llm_root"], "assistant/")
+        self.assertEqual(payload["remote_llm_root"], "assistant")
         self.assertEqual(payload["timeout_seconds"], 11)
 
 
@@ -91,10 +91,10 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
             client.write_text("{}", encoding="utf-8")
 
             with mock.patch.object(
-                setup_tools.subprocess,
-                "run",
+                setup_tools,
+                "dispatch_skill_interface",
                 return_value=mock.Mock(returncode=0),
-            ) as run:
+            ) as dispatch_call:
                 status = setup_tools.maybe_run_cloud_files_oauth_setup(
                     home,
                     Path("/repo"),
@@ -103,9 +103,9 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
                 )
 
         self.assertEqual(status, "configured")
-        run.assert_called_once_with(
-            [sys.executable, "/repo/scripts/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "cloud-files", "setup-oauth"],
-            check=False,
+        dispatch_call.assert_called_once_with(
+            target_skill="cloud-files",
+            script_interface="setup-oauth",
         )
 
 
@@ -127,10 +127,10 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
             client.write_text("{}", encoding="utf-8")
 
             with mock.patch.object(
-                setup_tools.subprocess,
-                "run",
+                setup_tools,
+                "dispatch_skill_interface",
                 return_value=mock.Mock(returncode=0),
-            ) as run:
+            ) as dispatch_call:
                 status = setup_tools.maybe_run_g_calendar_oauth_setup(
                     home,
                     Path("/repo"),
@@ -139,9 +139,9 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
                 )
 
         self.assertEqual(status, "configured")
-        run.assert_called_once_with(
-            [sys.executable, "/repo/scripts/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "g-calendar", "setup-oauth"],
-            check=False,
+        dispatch_call.assert_called_once_with(
+            target_skill="g-calendar",
+            script_interface="setup-oauth",
         )
 
     def test_optional_google_services_prompt_runs_selected_setups(self) -> None:
@@ -153,10 +153,10 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
                 client.write_text("{}", encoding="utf-8")
 
             with mock.patch.object(
-                setup_tools.subprocess,
-                "run",
+                setup_tools,
+                "dispatch_skill_interface",
                 return_value=mock.Mock(returncode=0),
-            ) as run:
+            ) as dispatch_call:
                 statuses = setup_tools.maybe_run_optional_google_oauth_setups(
                     home,
                     Path("/repo"),
@@ -168,10 +168,10 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
         self.assertEqual(statuses["cloud-files"], "configured")
         self.assertEqual(statuses["g-calendar"], "configured")
         self.assertEqual(
-            run.call_args_list,
+            dispatch_call.call_args_list,
             [
-                mock.call([sys.executable, "/repo/scripts/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "cloud-files", "setup-oauth"], check=False),
-                mock.call([sys.executable, "/repo/scripts/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "g-calendar", "setup-oauth"], check=False),
+                mock.call(target_skill="cloud-files", script_interface="setup-oauth"),
+                mock.call(target_skill="g-calendar", script_interface="setup-oauth"),
             ],
         )
 
@@ -220,10 +220,10 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
                 return ""
 
             with mock.patch("builtins.input", side_effect=fake_input), mock.patch.object(
-                setup_tools.subprocess,
-                "run",
+                setup_tools,
+                "dispatch_skill_interface",
                 return_value=mock.Mock(returncode=0),
-            ) as run:
+            ) as dispatch_call:
                 status = setup_tools.maybe_run_cloud_files_oauth_setup(
                     home,
                     Path("/repo"),
@@ -232,9 +232,9 @@ class CloudFilesOauthSetupTests(unittest.TestCase):
                 )
 
         self.assertEqual(status, "configured")
-        run.assert_called_once_with(
-            [sys.executable, "/repo/scripts/invoke_skill_export.py", "--caller-skill", "install-assistant-tools", "cloud-files", "setup-oauth"],
-            check=False,
+        dispatch_call.assert_called_once_with(
+            target_skill="cloud-files",
+            script_interface="setup-oauth",
         )
 
 
