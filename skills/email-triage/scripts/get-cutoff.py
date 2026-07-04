@@ -12,8 +12,9 @@ himalaya's `after` is strictly after, so the cutoff is already offset by 1 day.
 import os
 import sys
 from datetime import date, timedelta
+from pathlib import Path
 
-WATERMARK = os.path.expanduser("last_run")
+WATERMARK = Path(os.path.expanduser("~/.local/share/email-triage/last_run"))
 
 if "--days" in sys.argv:
     idx = sys.argv.index("--days")

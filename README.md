@@ -19,6 +19,7 @@ tests/                  # unit tests for validators in validators/
 .codex/                 # repo-local Codex mirrors
 .claude-plugin/         # Claude plugin metadata
 .codex-plugin/          # Codex plugin metadata
+hooks/                  # SessionStart hooks injected into every LLM session
 CLAUDE.md               # shared repo instructions
 AGENTS.md -> CLAUDE.md  # symlink for agents that read AGENTS.md
 .githooks/              # local Git hooks (pre-commit delegates to validators/runner.py)
@@ -235,6 +236,28 @@ panel/thread if the skills do not appear.
 With this direct user-level setup, Codex skills are invoked by bare skill name
 such as `$proof-audit`. When installed through the Codex plugin manifest instead,
 the same skills are namespaced as `moeen:proof-audit`.
+
+## Session Hooks
+
+The `hooks/` directory contains LLM `SessionStart` hooks injected at the start
+of every session. The primary hook (`inject_dispatcher_context.py`) checks
+whether the dispatcher is installed and injects context into the session about
+the blueprint contract system — specifically that blueprint-managed skills must
+be invoked through `dispatcher`, not directly via their `scripts/` directories.
+
+Hooks are registered through two independent paths:
+
+| Mode | Mechanism | When it applies |
+|------|-----------|----------------|
+| Plugin | `hooks/hooks.json` (read by the platform) | Repo installed as a plugin; `CLAUDE_PLUGIN_ROOT` or `CODEX_PLUGIN_ROOT` is set by the host |
+| Dev / direct | `~/.claude/settings.local.json` and `~/.codex/config.toml` (written by installer) | Repo symlinked to `~/.claude` / `~/.codex`; platform variables are not set |
+
+The installer (`install-assistant-tools`) handles dev-mode registration automatically.
+Both paths call the same script via absolute path.
+
+To add a new hook, update all three together: `hooks/hooks.json`,
+`install_claude_hooks()`, and `install_codex_hooks()` in
+`skills/install-assistant-tools/scripts/setup_tools.py`.
 
 ## Skills
 

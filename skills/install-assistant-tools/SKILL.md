@@ -76,6 +76,7 @@ Before running anything, summarize:
   `ASSISTANT_DEFAULT`, and `$AI`.
 - Worker directories will be created if absent.
 - Git hooks will be configured.
+- LLM session hooks (`hooks/inject_dispatcher_context.py`) will be registered in `~/.claude/settings.local.json` and `~/.codex/config.toml` for dev-mode operation.
 - `~/.config/cloud-files/config.json` will be written or updated.
 - After the core install, the installer can optionally walk through Google
   Drive (`cloud-files`) and Google Calendar (`g-calendar`) OAuth setup.
@@ -132,8 +133,10 @@ This is important for reliable operator expectations.
 
 #### Existing symlink at destination
 
-- If the destination is already a symlink, the installer removes it and creates
-  the new symlink.
+- If the destination is already a symlink to the desired target, the installer
+  leaves it in place and logs `OK (already linked): ...`.
+- If the destination is a symlink to a different target, the installer removes
+  it and creates the new symlink.
 - There is no interactive prompt.
 
 #### Existing real file or directory at destination
@@ -206,6 +209,8 @@ Do not modify scripts speculatively.
 | Codex home | `$CODEX_HOME`, or `$HOME/.codex` |
 | Claude home | `$CLAUDE_HOME`, or `$HOME/.claude` |
 | Git hooks | `<repo-root>/.githooks` |
+| Claude session hook | entry merged into `<claude-home>/settings.local.json` |
+| Codex session hook | managed block appended to `<codex-home>/config.toml` |
 
 All targets can be overridden with flags — run `python3 scripts/install.py --help`
 for the full list.

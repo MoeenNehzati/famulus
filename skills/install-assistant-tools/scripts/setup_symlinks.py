@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -42,6 +43,46 @@ from pathlib import Path
 
 def log(msg: str = "") -> None:
     print(msg, flush=True)
+
+
+def git_exclude_path(repo_root: Path) -> Path | None:
+    """Return the repo-local Git exclude path when this checkout has one."""
+    dot_git = repo_root / ".git"
+    if dot_git.is_dir():
+        return dot_git / "info" / "exclude"
+    if dot_git.is_file():
+        line = dot_git.read_text(encoding="utf-8").strip()
+        if line.startswith("gitdir:"):
+            git_dir = Path(line.split(":", 1)[1].strip())
+            if not git_dir.is_absolute():
+                git_dir = (repo_root / git_dir).resolve()
+            return git_dir / "info" / "exclude"
+    return None
+
+
+def record_local_skill_exclude(repo_root: Path, entry_name: str, dry_run: bool) -> None:
+    """Record a preserved local skill entry in the repo-local Git exclude file."""
+    exclude_path = git_exclude_path(repo_root)
+    exclude_line = f"skills/{entry_name}"
+
+    if exclude_path is None:
+        log(f"    Note: preserved local skill not auto-ignored (no Git exclude path): {exclude_line}")
+        return
+
+    if dry_run:
+        log(f"    Would add to repo-local Git exclude: {exclude_line}")
+        return
+
+    exclude_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = exclude_path.read_text(encoding="utf-8") if exclude_path.exists() else ""
+    existing_lines = {line.strip() for line in existing.splitlines()}
+    if exclude_line in existing_lines:
+        return
+
+    prefix = "" if not existing or existing.endswith("\n") else "\n"
+    with exclude_path.open("a", encoding="utf-8") as fh:
+        fh.write(f"{prefix}{exclude_line}\n")
+    log(f"    Added to repo-local Git exclude: {exclude_line}")
 
 
 def make_link(src: Path, dst: Path, dry_run: bool) -> None:
@@ -54,6 +95,14 @@ def make_link(src: Path, dst: Path, dry_run: bool) -> None:
     if not src.exists():
         log(f"  SKIP (missing source): {src}")
         return
+
+    if dst.is_symlink():
+        try:
+            if dst.resolve() == src.resolve():
+                log(f"  OK (already linked): {dst} -> {src}")
+                return
+        except OSError:
+            pass
 
     if dry_run:
         log(f"  Would link: {dst} -> {src}")
@@ -81,6 +130,80 @@ def make_link(src: Path, dst: Path, dry_run: bool) -> None:
             )
         else:
             log(f"  ERROR: could not create symlink {dst} -> {src}: {exc}")
+
+
+def ensure_skills_link(repo_root: Path, src: Path, dst: Path, dry_run: bool) -> None:
+    """Ensure dst is a symlink to the canonical skills tree.
+
+    If dst is an existing real directory, preserve unique local entries by
+    migrating them into src, remove redundant per-skill symlinks that already
+    point into src, and then replace the directory with a top-level symlink.
+    Conflicting entries are left in place for manual resolution.
+    """
+    if dst.is_symlink() or not dst.exists():
+        make_link(src, dst, dry_run)
+        return
+
+    if not dst.is_dir():
+        log(f"  SKIP (already exists as real path, not a directory or symlink): {dst}")
+        return
+
+    entries = sorted(dst.iterdir(), key=lambda path: path.name)
+    if not entries:
+        if dry_run:
+            log(f"  Would replace empty skills directory with symlink: {dst} -> {src}")
+            return
+        dst.rmdir()
+        make_link(src, dst, dry_run=False)
+        return
+
+    redundant_entries: list[Path] = []
+    unique_entries: list[Path] = []
+    conflicts: list[str] = []
+
+    for entry in entries:
+        canonical_entry = src / entry.name
+        if not canonical_entry.exists():
+            unique_entries.append(entry)
+            continue
+        try:
+            if entry.resolve() == canonical_entry.resolve():
+                redundant_entries.append(entry)
+                continue
+        except OSError:
+            pass
+        conflicts.append(entry.name)
+
+    if conflicts:
+        log(f"  SKIP (skills directory has conflicting entries; resolve manually): {dst}")
+        for name in conflicts:
+            log(f"    CONFLICT: {name}")
+        return
+
+    if dry_run:
+        for entry in redundant_entries:
+            log(f"    Would remove redundant skill entry before linking: {entry.name}")
+        for entry in unique_entries:
+            log(f"    Would preserve local skill entry in canonical tree: {entry.name}")
+            record_local_skill_exclude(repo_root, entry.name, dry_run=True)
+        log(f"  Would replace migrated skills directory with symlink: {dst} -> {src}")
+        return
+
+    for entry in redundant_entries:
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+        log(f"    Removed redundant skill entry: {entry.name}")
+
+    for entry in unique_entries:
+        target = src / entry.name
+        shutil.move(str(entry), str(target))
+        log(f"    Preserved local skill entry: {entry.name} -> {target}")
+        record_local_skill_exclude(repo_root, entry.name, dry_run=False)
+
+    dst.rmdir()
+    make_link(src, dst, dry_run=False)
 
 
 def resolve_dir(tool: str, env_var: str, default: Path) -> Path:
@@ -114,6 +237,7 @@ def resolve_dir(tool: str, env_var: str, default: Path) -> Path:
 def run(
     *,
     home: Path | None = None,
+    repo_root: Path | None = None,
     claude_home: Path | None = None,
     codex_home: Path | None = None,
     do_claude: bool = True,
@@ -129,7 +253,7 @@ def run(
 
     # Repo root is three levels above this script:
     #   <repo>/skills/install-assistant-tools/scripts/setup_symlinks.py
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = repo_root or Path(__file__).resolve().parents[3]
     profiles_dir = repo_root / "profiles"
 
     # Resolve config dirs (auto-detect from env vars or common paths)
@@ -147,7 +271,7 @@ def run(
         log(f"Setting up Claude symlinks in {claude_home} ...")
         if not dry_run:
             claude_home.mkdir(parents=True, exist_ok=True)
-        make_link(repo_root / "skills",     claude_home / "skills",     dry_run)
+        ensure_skills_link(repo_root, repo_root / "skills", claude_home / "skills", dry_run)
         make_link(repo_root / "references", claude_home / "references", dry_run)
         make_link(repo_root / "agents",     claude_home / "agents",     dry_run)
         make_link(repo_root / "CLAUDE.md",  claude_home / "CLAUDE.md",  dry_run)
@@ -166,7 +290,7 @@ def run(
             log(f"Setting up Codex symlinks in {codex_home} ...")
             if not dry_run:
                 codex_home.mkdir(parents=True, exist_ok=True)
-            make_link(repo_root / "skills",     codex_home / "skills",     dry_run)
+            ensure_skills_link(repo_root, repo_root / "skills", codex_home / "skills", dry_run)
             make_link(repo_root / "references", codex_home / "references", dry_run)
             make_link(repo_root / "agents",     codex_home / "agents",     dry_run)
             # AGENTS.md is a tracked symlink to CLAUDE.md in the source repo.

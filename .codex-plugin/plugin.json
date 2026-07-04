@@ -18,6 +18,7 @@
     "automation"
   ],
   "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Moeen",
     "shortDescription": "Personal writing, math, and productivity skills",

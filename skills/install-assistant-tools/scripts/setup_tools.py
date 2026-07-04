@@ -873,6 +873,125 @@ def install_python_packages(dry_run: bool) -> None:
             log(f"  WARN: failed to install {package}: {result.stderr.strip()}")
 
 
+# ── Hook installation ─────────────────────────────────────────────────────────
+
+HOOKS_BLOCK_BEGIN = "# >>> skill-system-hooks >>>"
+HOOKS_BLOCK_END   = "# <<< skill-system-hooks <<<"
+
+
+def install_claude_hooks(claude_home: Path, repo_root: Path, dry_run: bool) -> None:
+    """Merge the SessionStart hook entry into ~/.claude/settings.local.json.
+
+    The hook command uses the absolute repo_root path so it works regardless of
+    whether the repo is installed as a plugin. Idempotent: replaces the existing
+    entry on re-run by matching the hook script filename.
+    """
+    hook_script = repo_root / "hooks" / "inject_dispatcher_context.py"
+    command = f"python3 \"{hook_script}\""
+    hook_entry = {
+        "matcher": "startup|clear|compact",
+        "hooks": [{"type": "command", "command": command}],
+    }
+
+    settings_file = claude_home / "settings.local.json"
+    log(f"\nInstalling Claude dev-mode hook: {settings_file}")
+
+    if dry_run:
+        log(f"  (dry-run) Would write SessionStart hook to {settings_file}")
+        return
+
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    settings: dict = {}
+    if settings_file.exists():
+        try:
+            settings = json.loads(settings_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            log(f"  WARN: {settings_file} is not valid JSON — skipping hook install")
+            return
+
+    hooks = settings.setdefault("hooks", {})
+    session_hooks: list[dict] = hooks.setdefault("SessionStart", [])
+
+    # Remove any existing entry that points at our hook script (idempotent).
+    session_hooks[:] = [
+        e for e in session_hooks
+        if not any(
+            "inject_dispatcher_context" in h.get("command", "")
+            for h in e.get("hooks", [])
+        )
+    ]
+    session_hooks.append(hook_entry)
+
+    fd, tmp = tempfile.mkstemp(dir=settings_file.parent, prefix=settings_file.name + ".tmp.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+            f.write("\n")
+        os.replace(tmp, settings_file)
+    except Exception:
+        os.unlink(tmp)
+        raise
+
+    log("  OK")
+
+
+def install_codex_hooks(codex_home: Path, repo_root: Path, dry_run: bool) -> None:
+    """Append (or replace) the SessionStart hook block in ~/.codex/config.toml.
+
+    Uses BEGIN/END marker comments so the block can be updated idempotently on
+    re-run without duplicating entries or touching other config.
+    """
+    hook_script = repo_root / "hooks" / "inject_dispatcher_context.py"
+    block = (
+        f"\n{HOOKS_BLOCK_BEGIN}\n"
+        f"[[hooks.SessionStart]]\n"
+        f'matcher = "startup|clear|compact"\n'
+        f"\n"
+        f"[[hooks.SessionStart.hooks]]\n"
+        f'type = "command"\n'
+        f'command = "python3 \\"{hook_script}\\""\n'
+        f"{HOOKS_BLOCK_END}\n"
+    )
+
+    config_file = codex_home / "config.toml"
+    log(f"\nInstalling Codex dev-mode hook: {config_file}")
+
+    if dry_run:
+        log(f"  (dry-run) Would write SessionStart hook block to {config_file}")
+        return
+
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.touch(exist_ok=True)
+    original = config_file.read_text(encoding="utf-8")
+
+    # Strip existing managed block (inclusive of markers).
+    lines = original.splitlines(keepends=True)
+    filtered: list[str] = []
+    inside = False
+    for line in lines:
+        stripped = line.rstrip("\n")
+        if stripped == HOOKS_BLOCK_BEGIN:
+            inside = True
+            continue
+        if stripped == HOOKS_BLOCK_END:
+            inside = False
+            continue
+        if not inside:
+            filtered.append(line)
+
+    fd, tmp = tempfile.mkstemp(dir=config_file.parent, prefix=config_file.name + ".tmp.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.writelines(filtered)
+            f.write(block)
+        os.replace(tmp, config_file)
+    except Exception:
+        os.unlink(tmp)
+        raise
+
+    log("  OK")
+
+
 # ── Core logic ────────────────────────────────────────────────────────────────
 
 def run(
@@ -936,6 +1055,8 @@ def run(
     install_profile_links(profiles_dir, codex_home, claude_home, dry_run)
     install_git_hooks(repo_root, hooks_dir, dry_run)
     remove_legacy_coder_links(source_bin_dir, profiles_dir, bin_dir, codex_home, claude_home, dry_run)
+    install_claude_hooks(claude_home, repo_root, dry_run)
+    install_codex_hooks(codex_home, repo_root, dry_run)
     install_recurring_tasks_env_script(repo_root, home, bin_dir, dry_run)
     install_ai_agent_env(home, dry_run)
     install_cloud_files_config(
