@@ -48,7 +48,8 @@ def _available(*, cli: bool = True, pkg: bool = True):
 
 def _platform(env: dict[str, str]):
     """Context manager patching os.environ for platform detection."""
-    clean = {"CURSOR_PLUGIN_ROOT": "", "CLAUDE_PLUGIN_ROOT": "", "COPILOT_CLI": ""}
+    # Clear all detection signals, then apply overrides.
+    clean = {"CURSOR_PLUGIN_ROOT": "", "CLAUDE_PLUGIN_ROOT": "", "COPILOT_CLI": "", "CLAUDECODE": ""}
     clean.update(env)
     return patch.dict(_mod.os.environ, clean, clear=False)
 
@@ -80,6 +81,11 @@ class TestPlatformDetection:
         with _available(), _platform({}):
             output = _mod.build_output("ctx", _mod.detect_platform())
         assert "additionalContext" in output
+
+    def test_claudecode_env_uses_hook_specific_output(self):
+        with _available(), _platform({"CLAUDECODE": "1"}):
+            output = _mod.build_output("ctx", _mod.detect_platform())
+        assert "hookSpecificOutput" in output
 
     def test_claude_root_takes_priority_over_sdk_when_copilot_absent(self):
         with _available(), _platform({"CLAUDE_PLUGIN_ROOT": "/p", "COPILOT_CLI": ""}):
@@ -237,12 +243,19 @@ class TestEntryPoint:
         output = self._run_script({"CLAUDE_PLUGIN_ROOT": "/tmp"})
         assert isinstance(output, dict)
 
-    def test_output_has_hook_specific_output_for_claude(self):
-        output = self._run_script({"CLAUDE_PLUGIN_ROOT": "/tmp"})
+    def test_output_has_hook_specific_output_for_claude_plugin_mode(self):
+        output = self._run_script({"CLAUDE_PLUGIN_ROOT": "/tmp", "CLAUDECODE": ""})
+        assert "hookSpecificOutput" in output or "systemMessage" in output
+
+    def test_output_has_hook_specific_output_for_claude_dev_mode(self):
+        # Dev mode: CLAUDE_PLUGIN_ROOT absent, CLAUDECODE=1 set by Claude Code itself.
+        output = self._run_script({"CLAUDE_PLUGIN_ROOT": "", "CLAUDECODE": "1"})
         assert "hookSpecificOutput" in output or "systemMessage" in output
 
     def test_output_has_additional_context_for_sdk(self):
+        # Simulate Copilot CLI / unknown context: clear all Claude Code signals.
         output = self._run_script(
-            {"CLAUDE_PLUGIN_ROOT": "", "CURSOR_PLUGIN_ROOT": "", "COPILOT_CLI": ""}
+            {"CLAUDE_PLUGIN_ROOT": "", "CURSOR_PLUGIN_ROOT": "", "COPILOT_CLI": "1",
+             "CLAUDECODE": ""}
         )
         assert "additionalContext" in output or "systemMessage" in output

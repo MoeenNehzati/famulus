@@ -84,10 +84,19 @@ def dispatcher_available() -> tuple[bool, list[str]]:
 
 
 def detect_platform() -> str:
-    """Return 'cursor', 'claude', or 'sdk'."""
+    """Return 'cursor', 'claude', or 'sdk'.
+
+    Detection order:
+    - CURSOR_PLUGIN_ROOT   → Cursor (plugin mode)
+    - CLAUDE_PLUGIN_ROOT   → Claude Code or Codex (plugin mode); skip if COPILOT_CLI
+    - CLAUDECODE=1         → Claude Code (dev/direct mode via settings.local.json)
+    - else                 → SDK / unknown (Copilot CLI, standalone)
+    """
     if os.environ.get("CURSOR_PLUGIN_ROOT"):
         return "cursor"
     if os.environ.get("CLAUDE_PLUGIN_ROOT") and not os.environ.get("COPILOT_CLI"):
+        return "claude"
+    if os.environ.get("CLAUDECODE"):
         return "claude"
     return "sdk"
 
