@@ -115,8 +115,8 @@ class SetupSymlinksTests(unittest.TestCase):
             claude_home.mkdir()
             codex_home.mkdir()
 
-            existing_skills = claude_home / "skills"
-            existing_skills.mkdir()
+            existing_references = claude_home / "references"
+            existing_references.mkdir()
             existing_profile = codex_home / "assistant.config.toml"
             existing_profile.write_text("machine-local", encoding="utf-8")
 
@@ -128,8 +128,8 @@ class SetupSymlinksTests(unittest.TestCase):
             )
 
             self.assertIn("SKIP (already exists as real path, not a symlink)", output)
-            self.assertTrue(existing_skills.is_dir())
-            self.assertFalse(existing_skills.is_symlink())
+            self.assertTrue(existing_references.is_dir())
+            self.assertFalse(existing_references.is_symlink())
             self.assertEqual(existing_profile.read_text(encoding="utf-8"), "machine-local")
             self.assertFalse(existing_profile.is_symlink())
 

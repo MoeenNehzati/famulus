@@ -172,29 +172,43 @@ Claude symlinks the shared directories directly:
 
 Before creating each symlink the installer inspects the destination.
 
-- Existing symlinks are replaced.
-- Existing real files or directories are skipped with a warning.
-- There is currently no interactive merge / backup / rollback flow.
+- Existing correct symlinks are kept as-is.
+- Existing wrong symlinks are replaced.
+- Existing real `skills/` directories are treated specially: unique local
+  entries are migrated into the canonical `skills/` tree, redundant per-skill
+  symlinks are removed, and then the user directory is replaced with a
+  top-level symlink.
+- Existing real files or directories at other destinations are skipped with a
+  warning.
+- `skills/` entries preserved from the user directories are added to the
+  repo-local Git exclude file when possible, so developer-only local skills do
+  not pollute `git status`.
+- There is currently no interactive merge / backup / rollback flow. Conflicting
+  `skills/` entry names are left for manual resolution.
 
 Run `python3 scripts/install.py --help` for flags, or see the
 `install-assistant-tools` skill for the current conflict-handling behavior.
 
-The installer also wires the Codex skill path:
+The installer wires both skill paths to the same canonical tree:
 
 ```text
+~/.claude/skills -> /home/moeen/Documents/AI/skills
 ~/.codex/skills -> /home/moeen/Documents/AI/skills
 ```
 
-If you need to repair that link manually, link `~/.codex/skills` to the
+If you need to repair those links manually, link both `~/.claude/skills` and
+`~/.codex/skills` to the
 canonical checkout:
 
 ```text
+~/.claude/skills -> /home/moeen/Documents/AI/skills
 ~/.codex/skills -> /home/moeen/Documents/AI/skills
 ```
 
 Create or repair the link with:
 
 ```bash
+ln -sfn /home/moeen/Documents/AI/skills ~/.claude/skills
 ln -sfn /home/moeen/Documents/AI/skills ~/.codex/skills
 ```
 
@@ -203,9 +217,9 @@ Codex must keep `~/.codex` itself as a real directory. Do not make
 Linux sandbox may reject read-only mounts that cross a writable symlink at the
 home-directory boundary.
 
-Inside that real `~/.codex` directory, keep Codex-managed state directly in
-place. Link only shared non-skill support files back to the canonical checkout
-as needed:
+Inside that real `~/.codex` directory, keep Codex-managed state other than
+`skills/` directly in place. Shared support files are linked back to the
+canonical checkout:
 
 ```text
 ~/.codex/references     -> /home/moeen/Documents/AI/references

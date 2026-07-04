@@ -70,7 +70,8 @@ scripts/
 Before running anything, summarize:
 
 - Claude and Codex config dirs will be wired back to this repo with symlinks.
-- Codex skills will be wired through `~/.codex/skills -> <repo>/skills` when that path can be created as a symlink.
+- Claude and Codex skills will both be wired through `~/.{claude,codex}/skills -> <repo>/skills`.
+- If either user `skills/` directory already exists as a real directory, the installer will preserve unique local entries by moving them into the canonical repo `skills/` tree before replacing the directory with a symlink.
 - Launcher scripts will be symlinked into a bin dir on `PATH`.
 - A managed rc block or Windows user-environment entry will set `PATH`,
   `ASSISTANT_DEFAULT`, and `$AI`.
@@ -139,8 +140,26 @@ This is important for reliable operator expectations.
   it and creates the new symlink.
 - There is no interactive prompt.
 
+#### Existing real `skills/` directory at destination
+
+- This case is special for developer-mode skill installs.
+- If the existing directory contains redundant per-skill symlinks that already
+  point into the canonical repo `skills/` tree, the installer removes those
+  redundant entries.
+- If it contains unique local entries, the installer moves them into the
+  canonical repo `skills/` tree, then replaces the user directory with a
+  top-level symlink.
+- When possible, preserved local entries are added to the repo-local Git
+  exclude file so they do not pollute `git status`.
+- If the existing directory contains a conflicting entry name that already
+  exists in the canonical repo `skills/` tree with different content/identity,
+  the installer leaves the directory in place and reports the conflict for
+  manual resolution.
+
 #### Existing real file or directory at destination
 
+- For destinations other than `skills/`, the installer does **not** overwrite
+  real files or directories.
 - The installer does **not** overwrite it.
 - It logs `SKIP (real path exists, not a symlink): ...` and leaves it alone.
 - There is no backup, merge, rollback, or conflict-resolution UI in the current
@@ -245,7 +264,8 @@ What they cover:
 - `test_claude_install.py`: isolated Claude marketplace install, installed
   package contents, and Claude's plugin inventory/details output.
 - `test_setup_symlinks.py`: dry-run behavior, conflict preservation,
-  symlink replacement, and symlinked-`CODEX_HOME` skipping.
+  `skills/` migration, symlink replacement, idempotent already-linked paths,
+  and symlinked-`CODEX_HOME` skipping.
 - `test_setup_tools_cloud_files.py`: cloud-files config writing and optional
   Google OAuth decision paths.
 

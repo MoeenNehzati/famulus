@@ -26,6 +26,12 @@ NOTE: ~/.codex itself must be a real directory, not a symlink. Codex's Linux
 sandbox may reject read-only mounts that cross a writable symlink at the
 home-directory boundary. The script detects and warns about this case.
 
+If an existing ~/.claude/skills or ~/.codex/skills directory already contains
+local skill entries, the script preserves unique entries by migrating them into
+the canonical repo skills tree before replacing the user directory with a
+top-level symlink. When possible, preserved local entries are recorded in the
+repo-local Git exclude file.
+
 On Windows, creating symlinks requires either Developer Mode or administrator
 privileges. The script will report a clear error if symlink creation fails.
 """
