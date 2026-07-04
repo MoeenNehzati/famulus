@@ -34,9 +34,12 @@ skills/recurring-tasks/logs/
 # Upstream plugin cache (not owned by us)
 plugins/
 
-# Python bytecode in skills/
-skills/**/__pycache__/
-skills/**/*.pyc
+# Python cache/build artifacts
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/*.egg-info/
 
 # Stray local copies of cloud-backed lists (source of truth is Drive, not the
 # skill dir). Leaving them here tempts edits to the wrong file. Keep blueprint.
