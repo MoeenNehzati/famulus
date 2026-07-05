@@ -61,6 +61,15 @@ scripts/
   install.py         Combined entry point — runs setup_symlinks then setup_tools
   setup_symlinks.py  Wires Claude and Codex config dirs to the repo
   setup_tools.py     Installs bin scripts, profiles, rc block, git hooks
+  uninstall.py       Reverses install side effects; best-effort with a final
+                     removed/skipped/left/FAILED report (exit 1 on failures).
+                     Leaves OAuth credentials unless --purge; supports
+                     --dry-run, --no-pip, --no-git-hooks.
+  install_manifest.py Home-scoped record of install side effects
+                     (~/.local/state/assistant-tools/install-manifest.json).
+                     install/setup_* record into it; uninstall.py replays it
+                     in reverse (exact even across plugin-cache version
+                     drift), falling back to heuristics when absent.
 ```
 
 ## Workflow

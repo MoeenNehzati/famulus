@@ -44,6 +44,10 @@ import shutil
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+
+from install_manifest import Manifest, manifest_path
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -91,13 +95,18 @@ def record_local_skill_exclude(repo_root: Path, entry_name: str, dry_run: bool) 
     log(f"    Added to repo-local Git exclude: {exclude_line}")
 
 
-def make_link(src: Path, dst: Path, dry_run: bool) -> None:
+def make_link(src: Path, dst: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
     """Create or replace the symlink at dst pointing to src.
 
     Skips with a warning when src does not exist (e.g. optional repo
     directory). On platforms where symlink creation requires elevated
-    privileges, reports a clear error instead of crashing.
+    privileges, reports a clear error instead of crashing. When a manifest is
+    given, successful (or already-correct) links are recorded in it.
     """
+    def record() -> None:
+        if manifest is not None:
+            manifest.record("symlink", path=str(dst), target=str(src))
+
     if not src.exists():
         log(f"  SKIP (missing source): {src}")
         return
@@ -106,6 +115,7 @@ def make_link(src: Path, dst: Path, dry_run: bool) -> None:
         try:
             if dst.resolve() == src.resolve():
                 log(f"  OK (already linked): {dst} -> {src}")
+                record()
                 return
         except OSError:
             pass
@@ -125,6 +135,7 @@ def make_link(src: Path, dst: Path, dry_run: bool) -> None:
     try:
         dst.symlink_to(src)
         log(f"  Linked: {dst} -> {src}")
+        record()
     except OSError as exc:
         # On Windows without Developer Mode / admin rights symlink creation
         # raises PermissionError. Give a useful hint rather than a traceback.
@@ -138,7 +149,7 @@ def make_link(src: Path, dst: Path, dry_run: bool) -> None:
             log(f"  ERROR: could not create symlink {dst} -> {src}: {exc}")
 
 
-def ensure_skills_link(repo_root: Path, src: Path, dst: Path, dry_run: bool) -> None:
+def ensure_skills_link(repo_root: Path, src: Path, dst: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
     """Ensure dst is a symlink to the canonical skills tree.
 
     If dst is an existing real directory, preserve unique local entries by
@@ -147,7 +158,7 @@ def ensure_skills_link(repo_root: Path, src: Path, dst: Path, dry_run: bool) -> 
     Conflicting entries are left in place for manual resolution.
     """
     if dst.is_symlink() or not dst.exists():
-        make_link(src, dst, dry_run)
+        make_link(src, dst, dry_run, manifest)
         return
 
     if not dst.is_dir():
@@ -160,7 +171,7 @@ def ensure_skills_link(repo_root: Path, src: Path, dst: Path, dry_run: bool) -> 
             log(f"  Would replace empty skills directory with symlink: {dst} -> {src}")
             return
         dst.rmdir()
-        make_link(src, dst, dry_run=False)
+        make_link(src, dst, dry_run=False, manifest=manifest)
         return
 
     redundant_entries: list[Path] = []
@@ -209,7 +220,7 @@ def ensure_skills_link(repo_root: Path, src: Path, dst: Path, dry_run: bool) -> 
         record_local_skill_exclude(repo_root, entry.name, dry_run=False)
 
     dst.rmdir()
-    make_link(src, dst, dry_run=False)
+    make_link(src, dst, dry_run=False, manifest=manifest)
 
 
 def resolve_dir(tool: str, env_var: str, default: Path) -> Path:
@@ -249,6 +260,7 @@ def run(
     do_claude: bool = True,
     do_codex: bool = True,
     dry_run: bool = False,
+    manifest: Manifest | None = None,
 ) -> None:
     """Create or repair Claude and Codex config dir symlinks.
 
@@ -256,6 +268,11 @@ def run(
     config locations; config dirs are auto-detected when not supplied.
     """
     home = home or Path.home()
+
+    if manifest is None and not dry_run:
+        manifest = Manifest(manifest_path(home))
+    if dry_run:
+        manifest = None
 
     # Repo root is three levels above this script:
     #   <repo>/skills/install-assistant-tools/scripts/setup_symlinks.py
@@ -277,10 +294,10 @@ def run(
         log(f"Setting up Claude symlinks in {claude_home} ...")
         if not dry_run:
             claude_home.mkdir(parents=True, exist_ok=True)
-        ensure_skills_link(repo_root, repo_root / "skills", claude_home / "skills", dry_run)
-        make_link(repo_root / "references", claude_home / "references", dry_run)
-        make_link(repo_root / "agents",     claude_home / "agents",     dry_run)
-        make_link(repo_root / "CLAUDE.md",  claude_home / "CLAUDE.md",  dry_run)
+        ensure_skills_link(repo_root, repo_root / "skills", claude_home / "skills", dry_run, manifest)
+        make_link(repo_root / "references", claude_home / "references", dry_run, manifest)
+        make_link(repo_root / "agents",     claude_home / "agents",     dry_run, manifest)
+        make_link(repo_root / "CLAUDE.md",  claude_home / "CLAUDE.md",  dry_run, manifest)
 
     # ── Codex symlinks ───────────────────────────────────────────────────────
     # codex_home itself must be a REAL directory (never a symlink). Codex's
@@ -296,9 +313,9 @@ def run(
             log(f"Setting up Codex symlinks in {codex_home} ...")
             if not dry_run:
                 codex_home.mkdir(parents=True, exist_ok=True)
-            ensure_skills_link(repo_root, repo_root / "skills", codex_home / "skills", dry_run)
-            make_link(repo_root / "references", codex_home / "references", dry_run)
-            make_link(repo_root / "agents",     codex_home / "agents",     dry_run)
+            ensure_skills_link(repo_root, repo_root / "skills", codex_home / "skills", dry_run, manifest)
+            make_link(repo_root / "references", codex_home / "references", dry_run, manifest)
+            make_link(repo_root / "agents",     codex_home / "agents",     dry_run, manifest)
             # AGENTS.md is a tracked symlink to CLAUDE.md in the source repo.
             # Some plugin packaging flows flatten or omit that symlink, so fall
             # back to the real CLAUDE.md file while still creating
@@ -306,16 +323,19 @@ def run(
             agents_md_source = repo_root / "AGENTS.md"
             if not agents_md_source.exists():
                 agents_md_source = repo_root / "CLAUDE.md"
-            make_link(agents_md_source, codex_home / "AGENTS.md", dry_run)
+            make_link(agents_md_source, codex_home / "AGENTS.md", dry_run, manifest)
 
             # Codex loads profiles from individual files directly under $CODEX_HOME.
             if profiles_dir.is_dir():
                 for profile in sorted(profiles_dir.glob("*.config.toml")):
-                    make_link(profile, codex_home / profile.name, dry_run)
+                    make_link(profile, codex_home / profile.name, dry_run, manifest)
             else:
                 log(f"  SKIP profiles (directory missing): {profiles_dir}")
 
     # ── Summary ──────────────────────────────────────────────────────────────
+
+    if manifest is not None:
+        manifest.save()
 
     log()
     log("Symlink setup complete.")

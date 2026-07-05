@@ -31,12 +31,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from install_manifest import Manifest, manifest_path
 
 # Cloud-files path normalization (inlined to avoid cross-skill imports)
 def normalize_llm_root(root: str) -> str:
@@ -124,7 +129,7 @@ def dispatch_skill_interface(
     )
 
 
-def make_link(src: Path, dst: Path, dry_run: bool) -> None:
+def make_link(src: Path, dst: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
     """Create or replace the symlink at dst pointing to src.
 
     - Skips with a warning if src does not exist.
@@ -149,6 +154,8 @@ def make_link(src: Path, dst: Path, dry_run: bool) -> None:
     try:
         dst.symlink_to(src)
         log(f"  Linked: {dst} -> {src}")
+        if manifest is not None:
+            manifest.record("symlink", path=str(dst), target=str(src))
     except OSError as exc:
         hint = (
             "\n  On Windows, symlinks require Developer Mode or administrator privileges."
@@ -200,22 +207,22 @@ def install_worker_dirs(repo_root: Path, dry_run: bool) -> None:
             wdir.mkdir(parents=True, exist_ok=True)
 
 
-def install_bin_scripts(source_bin_dir: Path, bin_dir: Path, dry_run: bool) -> None:
+def install_bin_scripts(source_bin_dir: Path, bin_dir: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
     """Symlink all bin scripts into bin_dir. tw is an alias for tmux-workspace."""
     if not dry_run:
         bin_dir.mkdir(parents=True, exist_ok=True)
 
     for name in BIN_SCRIPTS:
-        make_link(source_bin_dir / name, bin_dir / name, dry_run)
+        make_link(source_bin_dir / name, bin_dir / name, dry_run, manifest)
 
     # tw is a convenience alias for tmux-workspace
-    make_link(source_bin_dir / "tmux-workspace", bin_dir / "tw", dry_run)
+    make_link(source_bin_dir / "tmux-workspace", bin_dir / "tw", dry_run, manifest)
 
     # Windows .bat wrappers: installed on all platforms so the repo stays
     # consistent. On Windows, cmd/PowerShell finds 'assistant' via PATHEXT
     # because .bat is included by default. On Unix these files are ignored.
     for name in BAT_WRAPPERS:
-        make_link(source_bin_dir / name, bin_dir / name, dry_run)
+        make_link(source_bin_dir / name, bin_dir / name, dry_run, manifest)
 
 
 def remove_legacy_coder_links(
@@ -248,6 +255,7 @@ def install_profile_links(
     codex_home: Path,
     claude_home: Path,
     dry_run: bool,
+    manifest: Manifest | None = None,
 ) -> None:
     """Symlink repo-owned profiles into Codex and Claude config dirs."""
     if not profiles_dir.is_dir():
@@ -263,19 +271,19 @@ def install_profile_links(
     # .config.toml profiles go into both Codex and Claude homes
     for profile in sorted(profiles_dir.glob("*.config.toml")):
         linked_any = True
-        make_link(profile, codex_home  / profile.name, dry_run)
-        make_link(profile, claude_home / profile.name, dry_run)
+        make_link(profile, codex_home  / profile.name, dry_run, manifest)
+        make_link(profile, claude_home / profile.name, dry_run, manifest)
 
     # Claude settings files go into Claude home only
     for settings in sorted(profiles_dir.glob("*_claude_setting.json")):
         linked_any = True
-        make_link(settings, claude_home / settings.name, dry_run)
+        make_link(settings, claude_home / settings.name, dry_run, manifest)
 
     if not linked_any:
         log(f"Warning: no profile files found in {profiles_dir}")
 
 
-def install_git_hooks(repo_root: Path, hooks_dir: Path, dry_run: bool) -> None:
+def install_git_hooks(repo_root: Path, hooks_dir: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
     """Make all hook files executable and register the hooks directory with git."""
     if not hooks_dir.is_dir():
         log(f"ERROR: missing git hooks directory: {hooks_dir}", file=sys.stderr)
@@ -297,9 +305,11 @@ def install_git_hooks(repo_root: Path, hooks_dir: Path, dry_run: bool) -> None:
             ["git", "-C", str(repo_root), "config", "core.hooksPath", ".githooks"],
             check=True,
         )
+        if manifest is not None:
+            manifest.record("git_hooks_path", path=str(repo_root))
 
 
-def install_cloud_files_config(home: Path, remote_llm_root: str, dry_run: bool) -> None:
+def install_cloud_files_config(home: Path, remote_llm_root: str, dry_run: bool, manifest: Manifest | None = None) -> None:
     """Write the cloud-files config under ~/.config/cloud-files/."""
     config_dir = home / ".config" / "cloud-files"
     config_path = config_dir / "config.json"
@@ -329,6 +339,8 @@ def install_cloud_files_config(home: Path, remote_llm_root: str, dry_run: bool) 
 
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    if manifest is not None:
+        manifest.record("config_dir", path=str(config_dir), purge_only=True)
 
 
 def google_oauth_publish_guidance_lines() -> list[str]:
@@ -548,7 +560,7 @@ def maybe_run_optional_google_oauth_setups(
     return statuses
 
 
-def install_recurring_tasks_env_script(repo_root: Path, home: Path, bin_dir: Path, dry_run: bool) -> None:
+def install_recurring_tasks_env_script(repo_root: Path, home: Path, bin_dir: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
     """Write recurring-tasks/scripts/env.sh with the paths needed by jobs.
 
     This keeps recurring-task launcher PATH bootstrapping in sync with the
@@ -575,8 +587,10 @@ def install_recurring_tasks_env_script(repo_root: Path, home: Path, bin_dir: Pat
     env_script.parent.mkdir(parents=True, exist_ok=True)
     env_script.write_text(content)
     env_script.chmod(0o755)
+    if manifest is not None:
+        manifest.record("file", path=str(env_script))
 
-def install_ai_agent_env(home: Path, dry_run: bool) -> None:
+def install_ai_agent_env(home: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
     """Write the systemd user environment file for AI_AGENT_COMMAND_TEMPLATE.
 
     This tells automated skill jobs how to invoke Claude. Skipped on non-Linux
@@ -609,6 +623,8 @@ def install_ai_agent_env(home: Path, dry_run: bool) -> None:
 
     env_dir.mkdir(parents=True, exist_ok=True)
     env_file.write_text(content)
+    if manifest is not None:
+        manifest.record("file", path=str(env_file))
 
     is_real_home = home.expanduser().resolve() == Path.home().resolve()
     if not is_real_home:
@@ -634,7 +650,7 @@ def install_ai_agent_env(home: Path, dry_run: bool) -> None:
             )
 
 
-def ensure_rc_block(rc_file: Path, bin_dir: Path, default_llm: str, repo_root: Path, label: str, dry_run: bool) -> None:
+def ensure_rc_block(rc_file: Path, bin_dir: Path, default_llm: str, repo_root: Path, label: str, dry_run: bool, manifest: Manifest | None = None) -> None:
     """Write (or replace) the managed assistant-tools block in a shell rc file.
 
     Strips any existing block delimited by BLOCK_BEGIN/BLOCK_END, then appends
@@ -680,6 +696,8 @@ def ensure_rc_block(rc_file: Path, bin_dir: Path, default_llm: str, repo_root: P
             f.writelines(filtered)
             f.write(new_block)
         os.replace(tmp_path, rc_file)
+        if manifest is not None:
+            manifest.record("marker_block", path=str(rc_file), begin=BLOCK_BEGIN, end=BLOCK_END)
     except Exception:
         os.unlink(tmp_path)
         raise
@@ -692,6 +710,7 @@ def maybe_ensure_system_rc_block(
     repo_root: Path,
     update: bool,
     dry_run: bool,
+    manifest: Manifest | None = None,
 ) -> None:
     """Update the system shell rc block if allowed and writable."""
     if not update:
@@ -715,7 +734,7 @@ def maybe_ensure_system_rc_block(
         log("  Re-run with sudo, or pass --system-shell-rc FILE for another path.")
         return
 
-    ensure_rc_block(system_rc, bin_dir, default_llm, repo_root, "system", dry_run)
+    ensure_rc_block(system_rc, bin_dir, default_llm, repo_root, "system", dry_run, manifest)
 
 
 def verify_install(bin_dir: Path) -> bool:
@@ -786,6 +805,7 @@ def update_windows_user_env(
     default_llm: str,
     repo_root: Path,
     dry_run: bool,
+    manifest: Manifest | None = None,
 ) -> None:
     """Permanently add bin_dir to the user PATH via the Windows registry.
 
@@ -833,6 +853,10 @@ def update_windows_user_env(
         winreg.SetValueEx(key, "AI", 0, winreg.REG_SZ, str(repo_root))
         log(f"  Set AI={repo_root}")
 
+    if manifest is not None:
+        manifest.record(
+            "registry_env", path=str(bin_dir), names=["ASSISTANT_DEFAULT", "AI"]
+        )
     _broadcast_env_change_windows()
     log("  Environment updated. Open a new terminal to use the installed commands.")
 
@@ -852,7 +876,7 @@ REQUIRED_PYTHON_PACKAGES = [
 ]
 
 
-def install_python_packages(dry_run: bool) -> None:
+def install_python_packages(dry_run: bool, manifest: Manifest | None = None) -> None:
     """Ensure required Python packages are installed."""
     log("\nInstalling required Python packages...")
     local_packages = [
@@ -876,6 +900,8 @@ def install_python_packages(dry_run: bool) -> None:
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode == 0:
             log(f"  OK: {label}")
+            if manifest is not None:
+                manifest.record("pip_editable", path=label)
         else:
             log(f"  WARN: failed to install {label}: {result.stderr.strip()}")
 
@@ -900,25 +926,81 @@ HOOKS_BLOCK_BEGIN = "# >>> skill-system-hooks >>>"
 HOOKS_BLOCK_END   = "# <<< skill-system-hooks <<<"
 
 
-def install_claude_hooks(claude_home: Path, repo_root: Path, dry_run: bool) -> None:
-    """Merge the SessionStart hook entry into ~/.claude/settings.local.json.
+def _load_registered_hooks(repo_root: Path, host: str):
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    from llmhooks.registry import hooks_for_host
 
-    The hook command uses the absolute repo_root path so it works regardless of
-    whether the repo is installed as a plugin. Idempotent: replaces the existing
-    entry on re-run by matching the hook script filename.
+    return hooks_for_host(host)
+
+
+def _render_hook_command(argv: tuple[str, ...]) -> str:
+    return shlex.join(argv)
+
+
+def _legacy_managed_hook_commands(repo_root: Path) -> set[str]:
+    legacy_script = repo_root / "hooks" / "inject_dispatcher_context.py"
+    return {f'python3 "{legacy_script}"'}
+
+
+def _hook_bindings(repo_root: Path, host: str):
+    return [hook.install_binding(host, repo_root) for hook in _load_registered_hooks(repo_root, host)]
+
+
+def _hook_commands_to_replace(repo_root: Path, host: str) -> set[str]:
+    commands = {_render_hook_command(binding.argv) for binding in _hook_bindings(repo_root, host)}
+    commands.update(_legacy_managed_hook_commands(repo_root))
+    return commands
+
+
+def _claude_hook_entries(repo_root: Path) -> dict[str, list[dict]]:
+    entries: dict[str, list[dict]] = {}
+    for binding in _hook_bindings(repo_root, "claude"):
+        event_entries = entries.setdefault(binding.event, [])
+        entry = {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": _render_hook_command(binding.argv),
+                }
+            ]
+        }
+        if binding.matcher is not None:
+            entry["matcher"] = binding.matcher
+        event_entries.append(entry)
+    return entries
+
+
+def _codex_hooks_block(repo_root: Path) -> str:
+    lines = [f"\n{HOOKS_BLOCK_BEGIN}\n"]
+    for binding in _hook_bindings(repo_root, "codex"):
+        lines.append(f"[[hooks.{binding.event}]]\n")
+        if binding.matcher is not None:
+            lines.append(f"matcher = {json.dumps(binding.matcher)}\n")
+        lines.append("\n")
+        lines.append(f"[[hooks.{binding.event}.hooks]]\n")
+        lines.append('type = "command"\n')
+        lines.append(f"command = {json.dumps(_render_hook_command(binding.argv))}\n")
+    lines.append(f"{HOOKS_BLOCK_END}\n")
+    return "".join(lines)
+
+
+def install_claude_hooks(claude_home: Path, repo_root: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
+    """Merge all managed hook entries into ~/.claude/settings.local.json.
+
+    Commands use absolute repo_root paths so they work regardless of plugin
+    installation. Idempotent: re-runs replace any existing managed entries,
+    including legacy pre-registry commands.
     """
-    hook_script = repo_root / "hooks" / "inject_dispatcher_context.py"
-    command = f"python3 \"{hook_script}\""
-    hook_entry = {
-        "matcher": "startup|clear|compact",
-        "hooks": [{"type": "command", "command": command}],
-    }
+    managed_entries = _claude_hook_entries(repo_root)
+    commands_to_replace = _hook_commands_to_replace(repo_root, "claude")
 
     settings_file = claude_home / "settings.local.json"
     log(f"\nInstalling Claude dev-mode hook: {settings_file}")
 
     if dry_run:
-        log(f"  (dry-run) Would write SessionStart hook to {settings_file}")
+        for event, entries in managed_entries.items():
+            log(f"  (dry-run) Would write {event} hook(s) to {settings_file}: {len(entries)} entry(s)")
         return
 
     settings_file.parent.mkdir(parents=True, exist_ok=True)
@@ -931,17 +1013,25 @@ def install_claude_hooks(claude_home: Path, repo_root: Path, dry_run: bool) -> N
             return
 
     hooks = settings.setdefault("hooks", {})
-    session_hooks: list[dict] = hooks.setdefault("SessionStart", [])
+    for event_name in list(hooks.keys()):
+        event_hooks = hooks.get(event_name)
+        if not isinstance(event_hooks, list):
+            continue
+        filtered = [
+            entry for entry in event_hooks
+            if not any(
+                hook.get("command", "") in commands_to_replace
+                for hook in entry.get("hooks", [])
+                if isinstance(hook, dict)
+            )
+        ]
+        if filtered:
+            hooks[event_name] = filtered
+        else:
+            hooks.pop(event_name, None)
 
-    # Remove any existing entry that points at our hook script (idempotent).
-    session_hooks[:] = [
-        e for e in session_hooks
-        if not any(
-            "inject_dispatcher_context" in h.get("command", "")
-            for h in e.get("hooks", [])
-        )
-    ]
-    session_hooks.append(hook_entry)
+    for event_name, entries in managed_entries.items():
+        hooks.setdefault(event_name, []).extend(entries)
 
     fd, tmp = tempfile.mkstemp(dir=settings_file.parent, prefix=settings_file.name + ".tmp.")
     try:
@@ -949,6 +1039,16 @@ def install_claude_hooks(claude_home: Path, repo_root: Path, dry_run: bool) -> N
             json.dump(settings, f, indent=2)
             f.write("\n")
         os.replace(tmp, settings_file)
+        if manifest is not None:
+            managed_commands = sorted(
+                hook["command"]
+                for entries in managed_entries.values()
+                for entry in entries
+                for hook in entry["hooks"]
+            )
+            manifest.record(
+                "json_hook_commands", path=str(settings_file), commands=managed_commands
+            )
     except Exception:
         os.unlink(tmp)
         raise
@@ -956,29 +1056,19 @@ def install_claude_hooks(claude_home: Path, repo_root: Path, dry_run: bool) -> N
     log("  OK")
 
 
-def install_codex_hooks(codex_home: Path, repo_root: Path, dry_run: bool) -> None:
-    """Append (or replace) the SessionStart hook block in ~/.codex/config.toml.
+def install_codex_hooks(codex_home: Path, repo_root: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
+    """Append (or replace) the managed hook block in ~/.codex/config.toml.
 
     Uses BEGIN/END marker comments so the block can be updated idempotently on
     re-run without duplicating entries or touching other config.
     """
-    hook_script = repo_root / "hooks" / "inject_dispatcher_context.py"
-    block = (
-        f"\n{HOOKS_BLOCK_BEGIN}\n"
-        f"[[hooks.SessionStart]]\n"
-        f'matcher = "startup|clear|compact"\n'
-        f"\n"
-        f"[[hooks.SessionStart.hooks]]\n"
-        f'type = "command"\n'
-        f'command = "python3 \\"{hook_script}\\""\n'
-        f"{HOOKS_BLOCK_END}\n"
-    )
+    block = _codex_hooks_block(repo_root)
 
     config_file = codex_home / "config.toml"
     log(f"\nInstalling Codex dev-mode hook: {config_file}")
 
     if dry_run:
-        log(f"  (dry-run) Would write SessionStart hook block to {config_file}")
+        log(f"  (dry-run) Would write managed hook block to {config_file}")
         return
 
     config_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1006,6 +1096,11 @@ def install_codex_hooks(codex_home: Path, repo_root: Path, dry_run: bool) -> Non
             f.writelines(filtered)
             f.write(block)
         os.replace(tmp, config_file)
+        if manifest is not None:
+            manifest.record(
+                "marker_block", path=str(config_file),
+                begin=HOOKS_BLOCK_BEGIN, end=HOOKS_BLOCK_END,
+            )
     except Exception:
         os.unlink(tmp)
         raise
@@ -1027,6 +1122,9 @@ def run(
     cloud_files_remote_llm_root: str = "assistant/",
     update_system_shell_rc: bool = True,
     dry_run: bool = False,
+    install_packages: bool = True,
+    run_oauth_setups: bool = True,
+    manifest: Manifest | None = None,
 ) -> None:
     """Install or update assistant tools.
 
@@ -1070,20 +1168,27 @@ def run(
             log("Non-interactive mode: defaulting to 'claude'. Use --default-llm to override.")
             default_llm = "claude"
 
-    install_python_packages(dry_run)
+    if manifest is None and not dry_run:
+        manifest = Manifest(manifest_path(home))
+    if dry_run:
+        manifest = None
+
+    if install_packages:
+        install_python_packages(dry_run, manifest)
     install_worker_dirs(repo_root, dry_run)
-    install_bin_scripts(source_bin_dir, bin_dir, dry_run)
-    install_profile_links(profiles_dir, codex_home, claude_home, dry_run)
-    install_git_hooks(repo_root, hooks_dir, dry_run)
+    install_bin_scripts(source_bin_dir, bin_dir, dry_run, manifest)
+    install_profile_links(profiles_dir, codex_home, claude_home, dry_run, manifest)
+    install_git_hooks(repo_root, hooks_dir, dry_run, manifest)
     remove_legacy_coder_links(source_bin_dir, profiles_dir, bin_dir, codex_home, claude_home, dry_run)
-    install_claude_hooks(claude_home, repo_root, dry_run)
-    install_codex_hooks(codex_home, repo_root, dry_run)
-    install_recurring_tasks_env_script(repo_root, home, bin_dir, dry_run)
-    install_ai_agent_env(home, dry_run)
+    install_claude_hooks(claude_home, repo_root, dry_run, manifest)
+    install_codex_hooks(codex_home, repo_root, dry_run, manifest)
+    install_recurring_tasks_env_script(repo_root, home, bin_dir, dry_run, manifest)
+    install_ai_agent_env(home, dry_run, manifest)
     install_cloud_files_config(
         home,
         remote_llm_root=cloud_files_remote_llm_root,
         dry_run=dry_run,
+        manifest=manifest,
     )
 
     # Platform-specific PATH and environment variable setup.
@@ -1091,11 +1196,11 @@ def run(
         # Windows: write to the user environment registry block.
         # Shell rc files (bashrc/zshrc) don't apply here.
         log("\nUpdating Windows user environment variables...")
-        update_windows_user_env(bin_dir, default_llm, repo_root, dry_run)
+        update_windows_user_env(bin_dir, default_llm, repo_root, dry_run, manifest)
     else:
         # Unix: write a managed block to the user (and optionally system) shell rc.
-        ensure_rc_block(shell_rc, bin_dir, default_llm, repo_root, "user", dry_run)
-        maybe_ensure_system_rc_block(system_shell_rc, bin_dir, default_llm, repo_root, update_system_shell_rc, dry_run)
+        ensure_rc_block(shell_rc, bin_dir, default_llm, repo_root, "user", dry_run, manifest)
+        maybe_ensure_system_rc_block(system_shell_rc, bin_dir, default_llm, repo_root, update_system_shell_rc, dry_run, manifest)
 
     if not dry_run:
         verify_install(bin_dir)
@@ -1117,11 +1222,19 @@ def run(
         log(f"  User shell rc:  {shell_rc}")
         if update_system_shell_rc:
             log(f"  System rc:      {system_shell_rc}")
-    google_oauth_statuses = maybe_run_optional_google_oauth_setups(
-        home,
-        repo_root,
-        dry_run=dry_run,
-    )
+    google_oauth_statuses = {}
+    if run_oauth_setups:
+        google_oauth_statuses = maybe_run_optional_google_oauth_setups(
+            home,
+            repo_root,
+            dry_run=dry_run,
+        )
+    if manifest is not None:
+        for service_key in GOOGLE_OAUTH_SERVICE_ORDER:
+            service_dir = home / ".config" / GOOGLE_OAUTH_SERVICES[service_key]["config_dir"]
+            if service_dir.exists():
+                manifest.record("config_dir", path=str(service_dir), purge_only=True)
+        manifest.save()
     for service_key in GOOGLE_OAUTH_SERVICE_ORDER:
         status = google_oauth_statuses.get(service_key)
         if status is None:
