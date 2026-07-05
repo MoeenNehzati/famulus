@@ -1,11 +1,5 @@
-# Canonical contract for recurring-tasks.
-# This file was migrated from legacy skill metadata.
-# Tighten the placeholder script interfaces as each script contract becomes clearer.
-
 category: automation
 
-# Bump this major version whenever the exported contract changes in a
-# breaking way for dependent skills.
 interface_version: 1
 
 cross_platform: false
@@ -17,259 +11,182 @@ depends_on:
 suggested_permissions:
   bash:
     - command: ["scripts/setup.sh"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Initial setup: syncs unit files, installs healthcheck cron entry."
     - command: ["scripts/sync-units.py"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Write/remove systemd user unit files to match jobs.yaml."
     - command: ["scripts/enable-job.py"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Enable a recurring job in jobs.yaml."
     - command: ["scripts/disable-job.py"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Disable a recurring job in jobs.yaml."
     - command: ["scripts/test-job.py"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Trigger a job immediately via systemd and report pass/fail."
     - command: ["scripts/test-live-job.py"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "End-to-end live test through the real assistant backend."
     - command: ["scripts/view-logs.sh"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Tail run logs for a job."
     - command: ["scripts/status.sh"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "List active timers and service status."
+    - command: ["scripts/healthcheck.sh"]
+      reason: "Run pre-flight and per-job health checks."
     - command: ["systemctl"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Manage systemd user units."
     - command: ["journalctl"]
-      reason: "Migrated from legacy permissions.json."
-    - command: ["grep"]
-      reason: "Migrated from legacy permissions.json."
-    - command: ["tail"]
-      reason: "Migrated from legacy permissions.json."
-  network:
-    []
-
-skill_interface:
-  inputs:
-    - "User requests that match the SKILL.md description for this skill."
-  outputs:
-    - "Responses, artifacts, or side effects described by this skill's workflow."
-  side_effects:
-    - "May invoke local scripts or dependencies as described in SKILL.md."
+      reason: "Read systemd journal for job diagnostics."
 
 script_interfaces:
-  scripts-job-utils:
-    id: scripts-job-utils
-    description: "Shared helper library providing set_enabled() used by enable-job and disable-job; not a standalone CLI tool."
-    usage: "(internal library — not invoked directly)"
-    cwd: skill_root
-    command: ["python3", "scripts/_job_utils.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/_job_utils.py; tighten this contract when needed."
-    exported_interface: []
-  scripts-disable-job:
-    id: scripts-disable-job
-    description: "Disables a job by setting enabled: false in jobs.yaml and syncing unit files."
-    usage: "<name> [--jobs-file JOBS_FILE] [--no-sync]"
-    cwd: skill_root
-    command: ["python3", "scripts/disable-job.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/disable-job.py; tighten this contract when needed."
-    exported_interface: []
+  # ── Model-callable interfaces ──────────────────────────────────────────────
+
   scripts-enable-job:
     id: scripts-enable-job
-    description: "Enables a job by setting enabled: true in jobs.yaml and syncing unit files."
+    description: "Enable a job by setting enabled: true in jobs.yaml and syncing unit files."
     usage: "<name> [--jobs-file JOBS_FILE] [--no-sync]"
     cwd: skill_root
     command: ["python3", "scripts/enable-job.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/enable-job.py; tighten this contract when needed."
-    exported_interface: []
-  scripts-env:
-    id: scripts-env
-    description: "Exports PATH additions required by invoke-agent.sh in non-login contexts; intended to be sourced, not run directly."
-    usage: "(sourced by invoke-agent.sh — not invoked directly)"
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+
+  scripts-disable-job:
+    id: scripts-disable-job
+    description: "Disable a job by setting enabled: false in jobs.yaml and syncing unit files."
+    usage: "<name> [--jobs-file JOBS_FILE] [--no-sync]"
     cwd: skill_root
-    command: ["scripts/env.sh"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/env.sh; tighten this contract when needed."
-    exported_interface: []
-  scripts-healthcheck:
-    id: scripts-healthcheck
-    description: "Runs pre-flight and per-job health checks for all enabled recurring tasks and sends a desktop notification on any failure."
-    usage: ""
-    cwd: skill_root
-    command: ["scripts/healthcheck.sh"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/healthcheck.sh; tighten this contract when needed."
-    exported_interface: []
-  scripts-invoke-agent:
-    id: scripts-invoke-agent
-    description: "Invokes a skill via the assistant command using the backend set in $ASSISTANT_DEFAULT (claude or codex)."
-    usage: "<skill-name>"
-    cwd: skill_root
-    command: ["scripts/invoke-agent.sh"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/invoke-agent.sh; tighten this contract when needed."
-    exported_interface: []
-  scripts-run-skill:
-    id: scripts-run-skill
-    description: "Substitutes the skill name into $AI_AGENT_COMMAND_TEMPLATE and executes the resulting command in a login shell."
-    usage: "<skill-name>"
-    cwd: skill_root
-    command: ["scripts/run-skill.sh"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/run-skill.sh; tighten this contract when needed."
-    exported_interface: []
-  runners-daily-plan:
-    id: runners-daily-plan
-    description: "Systemd service entry point for the daily-plan job; sets DBUS environment and calls run-skill.sh."
-    usage: ""
-    cwd: skill_root
-    command: ["scripts/runners/daily-plan.sh"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/runners/daily-plan.sh; tighten this contract when needed."
-    exported_interface: []
-  runners-email-triage:
-    id: runners-email-triage
-    description: "Systemd service entry point for the email-triage job; sets DBUS environment and calls run-skill.sh."
-    usage: ""
-    cwd: skill_root
-    command: ["scripts/runners/email-triage.sh"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/runners/email-triage.sh; tighten this contract when needed."
-    exported_interface: []
-  scripts-setup:
-    id: scripts-setup
-    description: "Verifies prerequisites, syncs systemd unit files from jobs.yaml, installs the healthcheck cron entry, and lists active timers."
-    usage: "[--migrate-cron]"
-    cwd: skill_root
-    command: ["scripts/setup.sh"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/setup.sh; tighten this contract when needed."
-    exported_interface: []
+    command: ["python3", "scripts/disable-job.py"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+
   scripts-status:
     id: scripts-status
-    description: "Lists all active ai-* timers; with a job name also shows service status and recent journal entries."
+    description: "List all active ai-* timers; with a job name also shows service status and recent journal entries."
     usage: "[job-name]"
     cwd: skill_root
     command: ["scripts/status.sh"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/status.sh; tighten this contract when needed."
-    exported_interface: []
-  scripts-sync-units:
-    id: scripts-sync-units
-    description: "Writes, updates, or removes systemd user unit files and per-job runner scripts to match jobs.yaml."
-    usage: "[--unit-dir UNIT_DIR] [--jobs-file JOBS_FILE] [--migrate-cron]"
-    cwd: skill_root
-    command: ["python3", "scripts/sync-units.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/sync-units.py; tighten this contract when needed."
-    exported_interface: []
-  scripts-test-job:
-    id: scripts-test-job
-    description: "Triggers a job immediately via systemd, waits up to 6 minutes, and reports pass/fail with log and journal output."
-    usage: "<name> [--jobs-file JOBS_FILE]"
-    cwd: skill_root
-    command: ["python3", "scripts/test-job.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/test-job.py; tighten this contract when needed."
-    exported_interface: []
-  scripts-test-live-job:
-    id: scripts-test-live-job
-    description: "End-to-end live test that creates a temporary skill and job, runs it through the real assistant backend, verifies output, and restores the original schedule."
-    usage: "--backend {claude|codex} [--keep-artifacts]"
-    cwd: skill_root
-    command: ["python3", "scripts/test-live-job.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/test-live-job.py; tighten this contract when needed."
-    exported_interface: []
-  scripts-test-enable-disable:
-    id: scripts-test-enable-disable
-    description: "Test suite for the enable-job and disable-job scripts."
-    usage: ""
-    cwd: skill_root
-    command: ["python3", "scripts/test_enable_disable.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/test_enable_disable.py; tighten this contract when needed."
-    exported_interface: []
-  scripts-test-sync-units:
-    id: scripts-test-sync-units
-    description: "Test suite for the sync-units script."
-    usage: ""
-    cwd: skill_root
-    command: ["python3", "scripts/test_sync_units.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/test_sync_units.py; tighten this contract when needed."
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+
   scripts-view-logs:
     id: scripts-view-logs
-    description: "Tails the run log for a job in real time; pass 'healthcheck' as the job name to view the monitor log."
+    description: "Tail the run log for a job; pass 'healthcheck' as job name to view the monitor log."
     usage: "<job-name> [lines]"
     cwd: skill_root
     command: ["scripts/view-logs.sh"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/view-logs.sh; tighten this contract when needed."
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+
+  scripts-test-job:
+    id: scripts-test-job
+    description: "Trigger a job immediately via systemd, wait up to 6 minutes, and report pass/fail with log output."
+    usage: "<name> [--jobs-file JOBS_FILE]"
+    cwd: skill_root
+    command: ["python3", "scripts/test-job.py"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+
+  scripts-test-live-job:
+    id: scripts-test-live-job
+    description: "End-to-end live test: creates a temporary skill and job, runs it through the real assistant backend, verifies output."
+    usage: "--backend {claude|codex} [--keep-artifacts]"
+    cwd: skill_root
+    command: ["python3", "scripts/test-live-job.py"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+
+  scripts-healthcheck:
+    id: scripts-healthcheck
+    description: "Run pre-flight and per-job health checks for all enabled recurring tasks; sends a desktop notification on failure."
+    usage: ""
+    cwd: skill_root
+    command: ["scripts/healthcheck.sh"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: false
+
+  scripts-setup:
+    id: scripts-setup
+    description: "Verify prerequisites, sync systemd unit files from jobs.yaml, install the healthcheck cron entry, and list active timers."
+    usage: "[--migrate-cron]"
+    cwd: skill_root
+    command: ["scripts/setup.sh"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+
+  scripts-sync-units:
+    id: scripts-sync-units
+    description: "Write, update, or remove systemd user unit files and per-job runner scripts to match jobs.yaml."
+    usage: "[--unit-dir UNIT_DIR] [--jobs-file JOBS_FILE] [--migrate-cron]"
+    cwd: skill_root
+    command: ["python3", "scripts/sync-units.py"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+
+  # ── Internal interfaces (not model-callable; no description) ───────────────
+
+  scripts-job-utils:
+    id: scripts-job-utils
+    cwd: skill_root
+    command: ["python3", "scripts/_job_utils.py"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+
+  scripts-env:
+    id: scripts-env
+    cwd: skill_root
+    command: ["scripts/env.sh"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+
+  scripts-invoke-agent:
+    id: scripts-invoke-agent
+    cwd: skill_root
+    command: ["scripts/invoke-agent.sh"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+
+  scripts-run-skill:
+    id: scripts-run-skill
+    cwd: skill_root
+    command: ["scripts/run-skill.sh"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+
+  runners-daily-plan:
+    id: runners-daily-plan
+    cwd: skill_root
+    command: ["scripts/runners/daily-plan.sh"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: false
+
+  runners-email-triage:
+    id: runners-email-triage
+    cwd: skill_root
+    command: ["scripts/runners/email-triage.sh"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: false

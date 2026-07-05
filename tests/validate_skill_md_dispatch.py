@@ -24,7 +24,7 @@ def test_missing_interface_block_flagged(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     skill.mkdir(parents=True)
     (skill / "blueprint.yaml").write_text(
-        "script_interfaces:\n  run:\n    id: run\n    command: ['python3', 'scripts/run.py']\n",
+        "script_interfaces:\n  run:\n    id: run\n    description: 'Run the demo script.'\n    command: ['python3', 'scripts/run.py']\n",
         encoding="utf-8",
     )
     (skill / "SKILL.md").write_text("---\nname: demo-skill\n---\n", encoding="utf-8")
@@ -36,7 +36,7 @@ def test_raw_script_in_generated_block_flagged(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     skill.mkdir(parents=True)
     (skill / "blueprint.yaml").write_text(
-        "script_interfaces:\n  run:\n    id: run\n    command: ['python3', 'scripts/run.py']\n",
+        "script_interfaces:\n  run:\n    id: run\n    description: 'Run the demo script.'\n    command: ['python3', 'scripts/run.py']\n",
         encoding="utf-8",
     )
     (skill / "SKILL.md").write_text(
@@ -53,7 +53,7 @@ def test_dispatcher_command_required(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     skill.mkdir(parents=True)
     (skill / "blueprint.yaml").write_text(
-        "script_interfaces:\n  run:\n    id: run\n    command: ['python3', 'scripts/run.py']\n",
+        "script_interfaces:\n  run:\n    id: run\n    description: 'Run the demo script.'\n    command: ['python3', 'scripts/run.py']\n",
         encoding="utf-8",
     )
     (skill / "SKILL.md").write_text(
@@ -70,7 +70,7 @@ def test_valid_generated_block_passes(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     skill.mkdir(parents=True)
     (skill / "blueprint.yaml").write_text(
-        "script_interfaces:\n  run:\n    id: run\n    command: ['python3', 'scripts/run.py']\n",
+        "script_interfaces:\n  run:\n    id: run\n    description: 'Run the demo script.'\n    command: ['python3', 'scripts/run.py']\n",
         encoding="utf-8",
     )
     (skill / "SKILL.md").write_text(
@@ -86,7 +86,7 @@ def test_raw_script_in_body_flagged(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     skill.mkdir(parents=True)
     (skill / "blueprint.yaml").write_text(
-        "script_interfaces:\n  run:\n    id: run\n    command: ['python3', 'scripts/run.py']\n",
+        "script_interfaces:\n  run:\n    id: run\n    description: 'Run the demo script.'\n    command: ['python3', 'scripts/run.py']\n",
         encoding="utf-8",
     )
     (skill / "SKILL.md").write_text(
@@ -105,7 +105,7 @@ def test_raw_script_in_generated_block_only_not_flagged_by_body_check(tmp_path: 
     skill = tmp_path / "skills" / "demo-skill"
     skill.mkdir(parents=True)
     (skill / "blueprint.yaml").write_text(
-        "script_interfaces:\n  run:\n    id: run\n    command: ['python3', 'scripts/run.py']\n",
+        "script_interfaces:\n  run:\n    id: run\n    description: 'Run the demo script.'\n    command: ['python3', 'scripts/run.py']\n",
         encoding="utf-8",
     )
     (skill / "SKILL.md").write_text(
@@ -124,7 +124,7 @@ def test_dispatcher_invocation_in_body_flagged(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     skill.mkdir(parents=True)
     (skill / "blueprint.yaml").write_text(
-        "script_interfaces:\n  run:\n    id: run\n    command: ['python3', 'scripts/run.py']\n",
+        "script_interfaces:\n  run:\n    id: run\n    description: 'Run the demo script.'\n    command: ['python3', 'scripts/run.py']\n",
         encoding="utf-8",
     )
     (skill / "SKILL.md").write_text(
@@ -142,7 +142,7 @@ def test_dispatcher_prose_mention_in_body_passes(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     skill.mkdir(parents=True)
     (skill / "blueprint.yaml").write_text(
-        "script_interfaces:\n  run:\n    id: run\n    command: ['python3', 'scripts/run.py']\n",
+        "script_interfaces:\n  run:\n    id: run\n    description: 'Run the demo script.'\n    command: ['python3', 'scripts/run.py']\n",
         encoding="utf-8",
     )
     (skill / "SKILL.md").write_text(
@@ -159,7 +159,7 @@ def test_body_referencing_interface_name_passes(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     skill.mkdir(parents=True)
     (skill / "blueprint.yaml").write_text(
-        "script_interfaces:\n  run:\n    id: run\n    command: ['python3', 'scripts/run.py']\n",
+        "script_interfaces:\n  run:\n    id: run\n    description: 'Run the demo script.'\n    command: ['python3', 'scripts/run.py']\n",
         encoding="utf-8",
     )
     (skill / "SKILL.md").write_text(

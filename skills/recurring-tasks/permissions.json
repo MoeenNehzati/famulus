@@ -8,10 +8,9 @@
     "Bash(scripts/test-live-job.py:*)",
     "Bash(scripts/view-logs.sh:*)",
     "Bash(scripts/status.sh:*)",
+    "Bash(scripts/healthcheck.sh:*)",
     "Bash(systemctl:*)",
-    "Bash(journalctl:*)",
-    "Bash(grep:*)",
-    "Bash(tail:*)"
+    "Bash(journalctl:*)"
   ],
   "network": []
 }

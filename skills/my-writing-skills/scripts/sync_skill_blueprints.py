@@ -397,7 +397,13 @@ def owner_interfaces(
         description = spec.get("description")
         clean_description = description.strip() if isinstance(description, str) and description.strip() else None
         usage = spec.get("usage")
-        clean_usage = usage.strip() if isinstance(usage, str) and usage.strip() else None
+        # Preserve distinction: None = not set (render "..."); "" = explicitly no args (render nothing)
+        if usage is None:
+            clean_usage = None
+        elif isinstance(usage, str):
+            clean_usage = usage.strip()  # may be "" — intentionally kept as ""
+        else:
+            clean_usage = None
         result.append(
             (
                 interface_id(interface_name, spec, f"script_interfaces.{interface_name}"),
@@ -455,11 +461,12 @@ def generated_interface_block(skill_name: str, data: dict[str, Any]) -> str:
         "Use the installed `dispatcher` command for this skill's script interfaces:",
     ]
     for interface_name, description, usage, pattern_notes in interfaces:
-        if description:
-            lines.append(f"- `{interface_name}` — {description}")
-        else:
-            lines.append(f"- `{interface_name}`")
-        args = f" {usage}" if usage else " ..."
+        # Interfaces without a description are internal — omit from the generated block
+        if not description:
+            continue
+        lines.append(f"- `{interface_name}` — {description}")
+        # usage=None (not set) → show "..." stub; usage="" (set, no args) → no trailing args
+        args = f" {usage}" if usage else ("" if usage == "" else " ...")
         lines.append(
             f"  - `dispatcher --caller-skill {skill_name} {skill_name} {interface_name}{args}`"
         )

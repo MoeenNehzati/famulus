@@ -21,39 +21,23 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `runners-daily-plan` — Systemd service entry point for the daily-plan job; sets DBUS environment and calls run-skill.sh.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks runners-daily-plan ...`
-- `runners-email-triage` — Systemd service entry point for the email-triage job; sets DBUS environment and calls run-skill.sh.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks runners-email-triage ...`
-- `scripts-disable-job` — Disables a job by setting enabled: false in jobs.yaml and syncing unit files.
+- `scripts-disable-job` — Disable a job by setting enabled: false in jobs.yaml and syncing unit files.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-disable-job <name> [--jobs-file JOBS_FILE] [--no-sync]`
-- `scripts-enable-job` — Enables a job by setting enabled: true in jobs.yaml and syncing unit files.
+- `scripts-enable-job` — Enable a job by setting enabled: true in jobs.yaml and syncing unit files.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-enable-job <name> [--jobs-file JOBS_FILE] [--no-sync]`
-- `scripts-env` — Exports PATH additions required by invoke-agent.sh in non-login contexts; intended to be sourced, not run directly.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-env (sourced by invoke-agent.sh — not invoked directly)`
-- `scripts-healthcheck` — Runs pre-flight and per-job health checks for all enabled recurring tasks and sends a desktop notification on any failure.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-healthcheck ...`
-- `scripts-invoke-agent` — Invokes a skill via the assistant command using the backend set in $ASSISTANT_DEFAULT (claude or codex).
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-invoke-agent <skill-name>`
-- `scripts-job-utils` — Shared helper library providing set_enabled() used by enable-job and disable-job; not a standalone CLI tool.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-job-utils (internal library — not invoked directly)`
-- `scripts-run-skill` — Substitutes the skill name into $AI_AGENT_COMMAND_TEMPLATE and executes the resulting command in a login shell.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-run-skill <skill-name>`
-- `scripts-setup` — Verifies prerequisites, syncs systemd unit files from jobs.yaml, installs the healthcheck cron entry, and lists active timers.
+- `scripts-healthcheck` — Run pre-flight and per-job health checks for all enabled recurring tasks; sends a desktop notification on failure.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-healthcheck`
+- `scripts-setup` — Verify prerequisites, sync systemd unit files from jobs.yaml, install the healthcheck cron entry, and list active timers.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-setup [--migrate-cron]`
-- `scripts-status` — Lists all active ai-* timers; with a job name also shows service status and recent journal entries.
+- `scripts-status` — List all active ai-* timers; with a job name also shows service status and recent journal entries.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-status [job-name]`
-- `scripts-sync-units` — Writes, updates, or removes systemd user unit files and per-job runner scripts to match jobs.yaml.
+- `scripts-sync-units` — Write, update, or remove systemd user unit files and per-job runner scripts to match jobs.yaml.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-sync-units [--unit-dir UNIT_DIR] [--jobs-file JOBS_FILE] [--migrate-cron]`
-- `scripts-test-enable-disable` — Test suite for the enable-job and disable-job scripts.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-test-enable-disable ...`
-- `scripts-test-job` — Triggers a job immediately via systemd, waits up to 6 minutes, and reports pass/fail with log and journal output.
+- `scripts-test-job` — Trigger a job immediately via systemd, wait up to 6 minutes, and report pass/fail with log output.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-test-job <name> [--jobs-file JOBS_FILE]`
-- `scripts-test-live-job` — End-to-end live test that creates a temporary skill and job, runs it through the real assistant backend, verifies output, and restores the original schedule.
+- `scripts-test-live-job` — End-to-end live test: creates a temporary skill and job, runs it through the real assistant backend, verifies output.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-test-live-job --backend {claude|codex} [--keep-artifacts]`
-- `scripts-test-sync-units` — Test suite for the sync-units script.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-test-sync-units ...`
-- `scripts-view-logs` — Tails the run log for a job in real time; pass 'healthcheck' as the job name to view the monitor log.
+- `scripts-view-logs` — Tail the run log for a job; pass 'healthcheck' as job name to view the monitor log.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-view-logs <job-name> [lines]`
 <!-- END BLUEPRINT INTERFACES -->
 # Recurring Tasks
