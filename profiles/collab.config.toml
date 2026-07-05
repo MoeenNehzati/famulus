@@ -15,3 +15,8 @@ trust_level = "trusted"
 [tui]
 status_line = ["model-with-reasoning", "current-dir", "model", "reasoning", "context-remaining", "five-hour-limit"]
 status_line_use_colors = true
+
+[hooks.state]
+
+[hooks.state."/home/moeen/.codex/config.toml:session_start:0:0"]
+trusted_hash = "sha256:13c1852b455cafa514ee8b4ebfef7a0f50dd1598f52167c7acbf507612386e2a"
