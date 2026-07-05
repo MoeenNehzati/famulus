@@ -2,9 +2,9 @@
 """Account registry for email-client: nickname -> {email, IMAP/SMTP settings}.
 
 Lives at ~/.config/email-client/accounts.json — deliberately OUTSIDE the
-skills git repo (which may go public), alongside himalaya/msmtp configs it
-supersedes. Passwords are never stored here; they stay in the GNOME keyring
-via secret-tool, keyed by (account=<nickname>, service=<imap_service|smtp_service>).
+skills git repo (which may go public), alongside other local mail-client
+configs (e.g. msmtp's). Passwords are never stored here; they stay in the
+GNOME keyring via secret-tool, keyed by (account=<nickname>, service=<imap_service|smtp_service>).
 
 Subcommands:
   list                                        -> JSON {nickname: {email, display_name}}

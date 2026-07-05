@@ -18,7 +18,7 @@ depends_on:
 suggested_permissions:
   bash:
     - command: ["python3", "scripts/filter-envelopes.py"]
-      reason: "Filters email-client mail-list JSON to strictly-after-watermark envelopes; replaces the old himalaya-calling fetch-envelopes.py."
+      reason: "Filters email-client mail-list JSON to strictly-after-watermark envelopes."
     - command: ["scripts/get-cutoff.py"]
       reason: "Migrated from legacy permissions.json."
     - command: ["scripts/update-watermark.py"]

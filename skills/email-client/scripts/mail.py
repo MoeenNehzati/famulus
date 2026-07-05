@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Read-side email client: list/read/folders over IMAP, stdlib only.
 
-Replaces himalaya for reading. himalaya's SMTP is already bypassed (msmtp,
-see email-send.sh) due to upstream bugs; this does the same for the read
-path, using only imaplib/email/ssl from Python's standard library — no pip
-installs, no external binary, one less moving part to break.
+IMAP read client using only imaplib/email/ssl from Python's standard
+library — no pip installs, no external binary, one less moving part to
+break. Sending (see email-send.sh) uses msmtp the same way, directly.
 
 Accounts are resolved by nickname through accounts.py's registry
 (~/.config/email-client/accounts.json), not hardcoded here. Credentials come

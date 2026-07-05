@@ -68,7 +68,7 @@ Two shell invocations per account:
 
 Run this per account returned by `accounts-list`, in parallel across accounts.
 
-**Do not call himalaya** — reading goes through `email-client`'s `mail-list`/`mail-read`, not the old CLI.
+Reading always goes through `email-client`'s `mail-list`/`mail-read` interfaces — never call an IMAP CLI directly.
 
 If `scripts-filter-envelopes` prints `(no new emails for …)`, skip that account in later steps. If stderr contains a `WARNING:` line, include it in the Step 6 report.
 

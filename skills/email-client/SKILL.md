@@ -47,9 +47,7 @@ routing rules (e.g. "work stuff goes through the `work` account") live in the us
 own memory/preferences, not in this skill.
 
 Reading and sending both go through plain IMAP/SMTP via Python's standard library and
-msmtp — no himalaya, no pip installs. himalaya's SMTP path had unfixable upstream bugs
-(see Known Issues below); the read path had no such bugs but depended on the same
-binary, so it was replaced too for one less moving part.
+msmtp directly — no external mail-client binary, no pip installs.
 
 ## Reading — `mail-list` / `mail-read` / `mail-folders`
 
@@ -137,17 +135,10 @@ accounts-remove --nickname work --purge-credentials
 ```
 
 Each account gets its own keyring service names (`email-client-<nickname>-imap` /
-`-smtp`) so credentials never collide across accounts. Any account nickname migrated
-from an older himalaya-based setup can keep pointing at its original `himalaya-imap` /
-`himalaya-smtp` keyring entries by setting `imap_service`/`smtp_service` accordingly —
-no re-authentication needed.
-
-## Known Issues — himalaya (no longer used, kept for context)
-
-himalaya v1.2.0's SMTP backend hung after Gmail's `CertificateRequest` in TLS 1.3 (a
-rustls bug) and its sendmail backend never invoked the configured command at all. Both
-the read and send paths in this skill now bypass himalaya entirely, so these bugs are
-moot — noted here only so no one reintroduces himalaya expecting it to work.
+`-smtp`) so credentials never collide across accounts. An account migrated from a
+previous setup can keep pointing at its original keyring service names by setting
+`imap_service`/`smtp_service` in its registry entry accordingly — no re-authentication
+needed.
 
 ## Config Files
 

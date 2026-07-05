@@ -17,7 +17,7 @@ suggested_permissions:
     - command: ["scripts/email-send.sh"]
       reason: "Migrated from legacy permissions.json."
     - command: ["python3", "scripts/mail.py"]
-      reason: "Read-side IMAP client (list/read/folders), replaces himalaya for reading."
+      reason: "Read-side IMAP client (list/read/folders), stdlib-only, no external binary."
     - command: ["python3", "scripts/accounts.py"]
       reason: "Account registry: add/update/remove/list nicknames and set credentials."
   network:

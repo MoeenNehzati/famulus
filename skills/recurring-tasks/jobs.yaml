@@ -5,9 +5,10 @@ jobs:
     #   so ~/.local/bin must be set explicitly.
     #
     # DBUS_SESSION_BUS_ADDRESS: the systemd user session provides a persistent
-    #   D-Bus socket at /run/user/<UID>/bus. himalaya uses `secret-tool` to
-    #   fetch IMAP passwords from the GNOME keyring over D-Bus; pointing to
-    #   the socket ensures this works from non-interactive service contexts.
+    #   D-Bus socket at /run/user/<UID>/bus. email-triage/email-client use
+    #   `secret-tool` to fetch IMAP/SMTP passwords from the GNOME keyring over
+    #   D-Bus; pointing to the socket ensures this works from non-interactive
+    #   service contexts.
     #   UID 1000 is hardcoded; adjust if user changes.
     command: "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PATH=/home/moeen/.local/bin:$PATH {skill_dir}/scripts/run-skill.sh email-triage"
     schedule: "0 * * * *"
