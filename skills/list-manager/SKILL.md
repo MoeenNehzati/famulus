@@ -12,7 +12,7 @@ description: |
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: general-assistant
+Category: productivity-general-assistant
 
 Dependencies:
 - cloud-files

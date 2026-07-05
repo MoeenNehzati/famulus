@@ -6,7 +6,7 @@ description: Use when creating or editing a personal skill in the shared skills 
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: skill-making-assistant
+Category: skill-making-development-assistant
 
 Dependencies: none
 

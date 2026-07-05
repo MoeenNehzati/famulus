@@ -6,7 +6,7 @@ description: Use when working in any git repo — committing, staging, checking 
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: skill-making-assistant
+Category: development-assistant
 
 Dependencies: none
 

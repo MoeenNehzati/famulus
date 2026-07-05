@@ -8,7 +8,7 @@ tools:
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: research-assistant
+Category: system-assistant
 
 Dependencies: none
 

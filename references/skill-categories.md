@@ -1,69 +1,75 @@
 # Skill Categories
 
-Use this file as the canonical list of skill categories and the rules for declaring them.
+Canonical list of skill categories and declaration rules.
 
-All categories follow the `X-assistant` convention — every skill is a type of assistant,
-differentiated by the domain it assists with.
+## Taxonomy tree
+
+```
+assistant  (structural root — not a valid category value)
+├── research-assistant
+├── general-assistant  (structural)
+│   ├── productivity-general-assistant
+│   └── workflow-general-assistant
+├── development-assistant  (structural)
+│   ├── skill-making-development-assistant
+│   └── coding-development-assistant
+└── system-assistant
+```
+
+## Naming convention
+
+Category names encode their position in the tree via postfix:
+`workflow-general-assistant` ends with `-general-assistant`, so its parent is `general-assistant`.
+
+The rule: strip the shortest prefix (up to the first `-`) that yields a known category — that is the immediate parent. The validator enforces this mechanically.
 
 ## Declaration format
 
-Declare `category` in `blueprint.yaml`. A skill may belong to more than one category.
+Declare a single `category` value in `blueprint.yaml`.
 
-Do not invent ad hoc category names. If none of the existing categories fits, propose a new
-one here before using it.
-
-## Hierarchy
-
-`workflow-assistant` is a subset of `general-assistant`. A workflow skill is a general
-assistant skill that governs a recurring session ritual (opening the day, closing the session,
-managing modes) rather than responding to an ad-hoc user request.
+- A skill may be placed at any node — leaf or intermediate.
+- Use the most specific node that accurately describes the skill.
+- Do not invent new category names without updating this file and the schema enum.
 
 ## Categories
 
 ### `research-assistant`
 
-Skills that support academic and technical intellectual work: analysis, writing, review,
-and document preparation.
+Skills that support academic and technical intellectual work: analysis, proof auditing,
+writing review, and document preparation.
 
-Typical examples:
-- proof and argument auditing
-- notation and prose review
-- LaTeX editing and docstring creation
-- mathematical structure analysis
-- document conversion and bibliography auditing
+Typical skills: proof-audit, math-dependency-graph, notation-review, formal-prose-review,
+latex-workshop, make-tex-docstring, bib-audit, technical-flow-review.
 
 Implications:
-- if applied to a `.tex` file, check whether a suitable top-of-document profile comment
-  exists before proceeding; if not, use `make-tex-docstring` first
+- if applied to a `.tex` file, check whether a top-of-document profile comment exists;
+  if not, use `make-tex-docstring` first
 - prefer showing findings before proposing edits
 
 ---
 
-### `general-assistant`
+### `general-assistant` *(structural)*
 
-Skills that handle everyday personal management on behalf of the user.
-
-Typical examples:
-- email composition and inbox triage
-- calendar management
-- task list management
-- weather and context lookups
-
-Implications:
-- `workflow-assistant` is a subset of this category; see below
+Parent of `productivity-general-assistant` and `workflow-general-assistant`.
+Assign a skill here only if it genuinely spans both children.
 
 ---
 
-### `workflow-assistant`
+### `productivity-general-assistant`
+
+Skills that handle everyday personal management on behalf of the user.
+
+Typical skills: email-client, email-triage, g-calendar, get-weather, list-manager.
+
+---
+
+### `workflow-general-assistant`
 
 Skills that govern recurring session rituals — opening the day, closing the session,
 or adjusting how the assistant operates. Conceptually a subset of `general-assistant`.
 
-Typical examples:
-- daily plan generation and wrap-up
-- session handoff and continuity
-- mode switching (tight/loose)
-- tool-applicability assessment
+Typical skills: daily-plan, wrap-up, prepare-handoff, loose-mode, tight-mode,
+tool-applicability.
 
 Implications:
 - these skills run as structured rituals, not ad-hoc responses
@@ -71,42 +77,43 @@ Implications:
 
 ---
 
-### `skill-making-assistant`
+### `development-assistant` *(structural)*
 
-Skills that build, validate, refactor, or maintain other skills and the assistant
-infrastructure itself.
-
-Typical examples:
-- skill authoring and validation tooling
-- skill refactoring and guideline updates
-- git workflow for skill development
-- assistant tool installation
-
-Implications:
-- documentation, validation, and handoff quality are part of the skill's behavior
-- prefer preserving process invariants over adding new execution behavior
+Parent of `skill-making-development-assistant` and `coding-development-assistant`.
+Assign a skill here if it is general development tooling that spans both children
+(e.g. git workflow used across both skill and code development).
 
 ---
 
-### `coding-assistant`
+### `skill-making-development-assistant`
 
-Skills that assist with general software development work, independent of skill development.
+Skills that build, validate, refactor, or maintain other skills and assistant
+infrastructure.
 
-Typical examples:
-- TDD initialization
-- general code workflow tooling
+Typical skills: my-writing-skills, refactor-skills, update-skill-guidelines,
+install-assistant-tools.
+
+Implications:
+- documentation, validation, and handoff quality are part of the skill's behavior
+- prefer preserving process invariants over adding execution behavior
+
+---
+
+### `coding-development-assistant`
+
+Skills that assist with general software development work, independent of skill
+development.
+
+Typical skills: initialize-tdd.
 
 ---
 
 ### `system-assistant`
 
-Skills that manage system-level concerns: storage, scheduling, and sync pipelines.
-These are typically invoked by other skills rather than directly by the user.
+Skills that manage system-level concerns: file conversion, storage, scheduling,
+and sync pipelines. Typically invoked by other skills rather than directly by the user.
 
-Typical examples:
-- cloud file storage
-- systemd timer management
-- sync daemon repair
+Typical skills: cloud-files, fix-bisync, recurring-tasks, pdf-to-markdown.
 
 Implications:
 - inspect live configuration, logs, and state before proposing fixes
@@ -117,5 +124,5 @@ Implications:
 ## Notes
 
 - Keep this list small and stable.
-- Add a new category only when it carries real behavioral or organizational consequences.
-- Categories describe what the skill is for — they are not marketing labels.
+- Add a new category only when it carries real organizational or behavioral consequences.
+- Categories describe what the skill is for, not how it is implemented.

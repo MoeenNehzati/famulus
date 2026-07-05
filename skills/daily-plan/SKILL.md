@@ -9,7 +9,7 @@ description: |
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: workflow-assistant
+Category: workflow-general-assistant
 
 Dependencies:
 - cloud-files

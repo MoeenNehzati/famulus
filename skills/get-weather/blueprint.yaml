@@ -1,6 +1,6 @@
 # Canonical contract for get-weather.
 
-category: general-assistant
+category: productivity-general-assistant
 interface_version: 1
 
 cross_platform: false

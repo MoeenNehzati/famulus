@@ -6,7 +6,7 @@ description: Use when reading, listing, searching, or sending email for the user
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: general-assistant
+Category: productivity-general-assistant
 
 Dependencies: none
 

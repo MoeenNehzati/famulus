@@ -8,34 +8,17 @@
   "properties": {
     "category": {
       "title": "Skill Category",
-      "description": "One or more categories from references/skill-categories.md. workflow-assistant is a subset of general-assistant.",
-      "oneOf": [
-        {
-          "type": "string",
-          "enum": [
-            "research-assistant",
-            "general-assistant",
-            "workflow-assistant",
-            "skill-making-assistant",
-            "coding-assistant",
-            "system-assistant"
-          ]
-        },
-        {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": [
-              "research-assistant",
-              "general-assistant",
-              "workflow-assistant",
-              "skill-making-assistant",
-              "coding-assistant",
-              "system-assistant"
-            ]
-          },
-          "minItems": 1
-        }
+      "description": "A single category node from the assistant taxonomy tree in references/skill-categories.md. Names encode hierarchy via postfix: 'workflow-general-assistant' is a child of 'general-assistant'. Skills may be placed at any node (leaf or intermediate). The root 'assistant' is structural and may not be used.",
+      "type": "string",
+      "enum": [
+        "research-assistant",
+        "general-assistant",
+        "productivity-general-assistant",
+        "workflow-general-assistant",
+        "development-assistant",
+        "skill-making-development-assistant",
+        "coding-development-assistant",
+        "system-assistant"
       ]
     },
     "interface_version": {

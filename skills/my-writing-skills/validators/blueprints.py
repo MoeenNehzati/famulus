@@ -46,6 +46,49 @@ def _validate_blueprint_schema(
     return errors
 
 
+# All valid category nodes (excluding structural root 'assistant').
+# Must stay in sync with references/blueprint/schema.json enum and skill-categories.md.
+_CATEGORY_NODES: frozenset[str] = frozenset({
+    "research-assistant",
+    "general-assistant",
+    "productivity-general-assistant",
+    "workflow-general-assistant",
+    "development-assistant",
+    "skill-making-development-assistant",
+    "coding-development-assistant",
+    "system-assistant",
+})
+_CATEGORY_ROOT = "assistant"
+
+
+def _validate_category_hierarchy(
+    blueprint_path: Path,
+    blueprint: dict[str, Any],
+) -> list[str]:
+    """Enforce the postfix hierarchy rule: every non-root category must end with
+    '-{parent}' where parent is a known category node or the structural root.
+
+    Uses longest-suffix match to find the immediate parent.
+    """
+    errors: list[str] = []
+    cat = blueprint.get("category")
+    if not isinstance(cat, str):
+        return errors  # schema validation handles type/enum errors
+    all_nodes = _CATEGORY_NODES | {_CATEGORY_ROOT}
+    # Find longest known suffix of the form '-<node>'
+    parent = max(
+        (node for node in all_nodes if cat != node and cat.endswith(f"-{node}")),
+        key=len,
+        default=None,
+    )
+    if parent is None:
+        errors.append(
+            f"{blueprint_path}: category '{cat}' has no valid parent in the taxonomy tree "
+            f"(expected name ending with '-assistant' or '-<parent-node>')"
+        )
+    return errors
+
+
 def _validate_interface_cross_fields(
     blueprint_path: Path,
     blueprint: dict[str, Any],
@@ -109,6 +152,7 @@ def validate(repo_root: Path) -> list[str]:
 
         # ── Cross-field checks (Python only) ─────────────────────────────────
         if isinstance(blueprint, dict):
+            errors.extend(_validate_category_hierarchy(blueprint_path, blueprint))
             errors.extend(_validate_interface_cross_fields(blueprint_path, blueprint))
 
         # ── SKILL.md marker checks ────────────────────────────────────────────

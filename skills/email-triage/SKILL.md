@@ -6,7 +6,7 @@ description: Use when asked to triage email, process the inbox, or surface actio
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: general-assistant
+Category: productivity-general-assistant
 
 Dependencies:
 - email-client

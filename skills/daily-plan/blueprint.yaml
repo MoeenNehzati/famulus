@@ -1,6 +1,6 @@
 # Canonical contract for daily-plan.
 
-category: workflow-assistant
+category: workflow-general-assistant
 interface_version: 1
 
 cross_platform: false
