@@ -4,7 +4,7 @@ import importlib.util, subprocess, tempfile, os
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).parent.parent
-SCRIPT    = Path(__file__).parent / "sync-units.py"
+SCRIPT    = SKILL_DIR / "scripts" / "sync-units.py"
 
 
 def _load():
