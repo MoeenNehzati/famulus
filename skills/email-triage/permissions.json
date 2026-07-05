@@ -4,7 +4,8 @@
     "Bash(scripts/get-cutoff.py:*)",
     "Bash(scripts/update-watermark.py:*)",
     "Bash(scripts/log-decision.sh:*)",
-    "Bash(python3 scripts/prune-log.py:*)"
+    "Bash(python3 scripts/prune-log.py:*)",
+    "Bash(python3 scripts/mark-failure.py:*)"
   ],
   "network": []
 }

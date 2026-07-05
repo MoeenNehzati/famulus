@@ -27,6 +27,8 @@ suggested_permissions:
       reason: "Migrated from legacy permissions.json."
     - command: ["python3", "scripts/prune-log.py"]
       reason: "Migrated from legacy permissions.json."
+    - command: ["python3", "scripts/mark-failure.py"]
+      reason: "Records a failed triage run so update-watermark refuses to advance and the scheduled health check can report it."
   network:
     []
 
@@ -81,10 +83,20 @@ script_interfaces:
           allow_extra_positionals: true
   scripts-update-watermark:
     id: scripts-update-watermark
-    description: "Advance the triage watermark to the current timestamp."
+    description: "Advance the triage watermark to the current timestamp. Refuses if scripts-mark-failure was called earlier in this run."
     usage: ""
     cwd: skill_root
     command: ["python3", "scripts/update-watermark.py"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+  scripts-mark-failure:
+    id: scripts-mark-failure
+    description: "Record that this triage run failed, so update-watermark refuses to advance and the scheduled health check reports it."
+    usage: "<reason>"
+    cwd: skill_root
+    command: ["python3", "scripts/mark-failure.py"]
     default:
       patterns:
         - name: owner

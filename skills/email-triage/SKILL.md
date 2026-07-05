@@ -28,9 +28,11 @@ Use the installed `dispatcher` command for this skill's script interfaces:
   - `dispatcher --caller-skill email-triage email-triage scripts-get-cutoff`
 - `scripts-log-decision` — Append a triage classification decision for one email to triage.log.
   - `dispatcher --caller-skill email-triage email-triage scripts-log-decision <account> <id> <from> <subject> <DECISION> <reason>`
+- `scripts-mark-failure` — Record that this triage run failed, so update-watermark refuses to advance and the scheduled health check reports it.
+  - `dispatcher --caller-skill email-triage email-triage scripts-mark-failure <reason>`
 - `scripts-prune-log` — Drop triage.log entries older than 30 days and print a one-line summary.
   - `dispatcher --caller-skill email-triage email-triage scripts-prune-log`
-- `scripts-update-watermark` — Advance the triage watermark to the current timestamp.
+- `scripts-update-watermark` — Advance the triage watermark to the current timestamp. Refuses if scripts-mark-failure was called earlier in this run.
   - `dispatcher --caller-skill email-triage email-triage scripts-update-watermark`
 <!-- END BLUEPRINT INTERFACES -->
 # Email Triage
@@ -144,9 +146,11 @@ Summarize concisely:
 
 ## Step 7 — Update watermark and prune log
 
-After a successful run, invoke both interfaces:
+If any `list-manager` add/update in Step 5 failed (e.g. a validation error), invoke `scripts-mark-failure "<reason>"` and stop — do not call `scripts-update-watermark`. This keeps next run's lookback window covering the emails that didn't get filed, and surfaces the failure as a desktop notification via the scheduled health check.
+
+Otherwise, after a successful run, invoke both interfaces:
 
 - `scripts-update-watermark`
 - `scripts-prune-log`
 
-Skip both if the run failed or was aborted mid-way. `scripts-prune-log` drops entries older than 30 days and prints a one-line summary.
+`scripts-prune-log` drops entries older than 30 days and prints a one-line summary.

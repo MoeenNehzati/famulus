@@ -18,7 +18,7 @@ settings.local.json
 settings.json
 
 # Skill runtime state
-skills/email-triage/last_run
+skills/email-triage/state/
 skills/email-triage/triage.log
 
 # recurring-tasks: generated at setup time, not source-controlled

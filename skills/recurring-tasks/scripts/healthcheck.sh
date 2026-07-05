@@ -29,6 +29,9 @@ LOG_BASE="$SKILL_DIR/logs"
 LOG_FILE="$LOG_BASE/healthcheck/run.log"
 INVOKE_AGENT="$SKILL_DIR/scripts/invoke-agent.sh"
 SYSTEMD_UNIT_DIR="$HOME/.config/systemd/user"
+# Peer skills directory (recurring-tasks lives alongside the skills it monitors,
+# e.g. ~/.claude/skills/recurring-tasks and ~/.claude/skills/email-triage).
+SKILLS_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
 
 UID_="$(id -u)"
 XDG_RUNTIME_DIR_="/run/user/${UID_}"
@@ -205,6 +208,31 @@ while read -r name interval_minutes; do
     else
       log "    log age: ${age_min}m — OK"
     fi
+  fi
+
+  # 8. Self-reported status (opt-in convention: a job may write
+  #    SKILLS_ROOT/<name>/state/status.json with {"result": "ok"|"warning"|"error", "message": "..."}
+  #    to surface problems that aren't process crashes — e.g. a skipped write,
+  #    a missing precondition, a degraded fallback. Skills that don't use this
+  #    convention simply have no such file and are skipped here.
+  status_file="$SKILLS_ROOT/$name/state/status.json"
+  if [[ -f "$status_file" ]]; then
+    result="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('result','?'))" "$status_file" 2>/dev/null || echo "unreadable")"
+    message="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('message',''))" "$status_file" 2>/dev/null || echo "")"
+    case "$result" in
+      ok)
+        log "    self-reported status: OK"
+        ;;
+      warning|error)
+        record_problem "$name: self-reported $result — $message"
+        ;;
+      unreadable)
+        record_problem "$name: status.json at $status_file could not be parsed"
+        ;;
+      *)
+        record_problem "$name: status.json has unrecognized result '$result'"
+        ;;
+    esac
   fi
 
 done < <(list_enabled_jobs)

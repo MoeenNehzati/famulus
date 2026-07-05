@@ -14,20 +14,35 @@ himalaya only supports date-level `after` filtering, so this script:
 
 Filtering in this script keeps old emails out of the LLM's context entirely.
 """
+import json
 import re
 import subprocess
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-WATERMARK = Path("last_run").expanduser()
+# State lives next to this script (SKILL_DIR/state), matching get-cutoff.py and
+# update-watermark.py, so it stays portable across machines regardless of
+# $HOME layout or the caller's cwd.
+SKILL_DIR = Path(__file__).resolve().parent.parent
+STATE_DIR = SKILL_DIR / "state"
+WATERMARK = STATE_DIR / "last_run"
+STATUS_FILE = STATE_DIR / "status.json"
+
+
+def record_warning(message: str) -> None:
+    """Surface a problem to the recurring-tasks healthcheck via status.json."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    STATUS_FILE.write_text(json.dumps({"result": "warning", "message": message}, indent=2))
 
 
 def load_cutoff():
     """Return (cutoff_datetime, warning_message|None)."""
     if not WATERMARK.exists():
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-        return cutoff, "WARNING: No watermark found — defaulting to 24h lookback."
+        msg = "No watermark found — defaulting to 24h lookback."
+        record_warning(msg)
+        return cutoff, f"WARNING: {msg}"
     raw = WATERMARK.read_text().strip()
     try:
         dt = datetime.fromisoformat(raw)
@@ -82,12 +97,27 @@ def filter_table(output, cutoff_dt):
     return "\n".join(result)
 
 
+def clear_stale_error():
+    """Reset a leftover result=error from a previously-failed, already-reported
+    run. Runs at the start of every triage cycle so a stale failure can't block
+    update-watermark.py forever once the underlying problem is fixed — this
+    run's own mark-failure.py call (if any) will set it again before Step 7."""
+    if STATUS_FILE.exists():
+        try:
+            status = json.loads(STATUS_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            status = {}
+        if status.get("result") == "error":
+            STATUS_FILE.write_text(json.dumps({"result": "ok", "message": "reset at start of new run"}, indent=2))
+
+
 def main():
     if "-a" not in sys.argv:
         print("Usage: fetch-envelopes.py -a <account>", file=sys.stderr)
         sys.exit(1)
     account = sys.argv[sys.argv.index("-a") + 1]
 
+    clear_stale_error()
     cutoff_dt, warning = load_cutoff()
     if warning:
         print(warning, file=sys.stderr)
