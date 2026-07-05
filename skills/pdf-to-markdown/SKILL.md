@@ -24,7 +24,7 @@ Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
 - `scripts-check-marker-models` — Check whether required Marker/Surya models are downloaded and cached locally.
-  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown scripts-check-marker-models ...`
+  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown scripts-check-marker-models`
 - `scripts-fetch-arxiv-source` — Download and extract the LaTeX source tarball for a paper from arXiv.
   - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown scripts-fetch-arxiv-source <arxiv-id> <output-dir>`
 <!-- END BLUEPRINT INTERFACES -->

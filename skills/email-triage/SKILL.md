@@ -25,13 +25,13 @@ Use the installed `dispatcher` command for this skill's script interfaces:
 - `scripts-fetch-envelopes` — Fetch email envelope metadata for a given account since the last watermark.
   - `dispatcher --caller-skill email-triage email-triage scripts-fetch-envelopes -a <account>`
 - `scripts-get-cutoff` — Return the cutoff date for the current triage run, with a fallback if no watermark exists.
-  - `dispatcher --caller-skill email-triage email-triage scripts-get-cutoff ...`
+  - `dispatcher --caller-skill email-triage email-triage scripts-get-cutoff`
 - `scripts-log-decision` — Append a triage classification decision for one email to triage.log.
   - `dispatcher --caller-skill email-triage email-triage scripts-log-decision <account> <id> <from> <subject> <DECISION> <reason>`
 - `scripts-prune-log` — Drop triage.log entries older than 30 days and print a one-line summary.
-  - `dispatcher --caller-skill email-triage email-triage scripts-prune-log ...`
+  - `dispatcher --caller-skill email-triage email-triage scripts-prune-log`
 - `scripts-update-watermark` — Advance the triage watermark to the current timestamp.
-  - `dispatcher --caller-skill email-triage email-triage scripts-update-watermark ...`
+  - `dispatcher --caller-skill email-triage email-triage scripts-update-watermark`
 <!-- END BLUEPRINT INTERFACES -->
 # Email Triage
 
