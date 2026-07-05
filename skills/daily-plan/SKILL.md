@@ -29,27 +29,18 @@ Owner-Facing Script Interfaces:
 Use the installed `dispatcher` command for this skill's script interfaces:
 - `mutate-plan` — Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to today's plan and display the refreshed result.
   - `dispatcher --caller-skill daily-plan daily-plan mutate-plan {hide,show,keep,remove,mark-done,reject,set-deadline,add} ...`
-- `orchestrate` — Generate or display today's daily plan, optionally forcing regeneration.
+- `orchestrate` — Generate today's plan (or show the existing one, refreshing its Actions/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists.
   - `dispatcher --caller-skill daily-plan daily-plan orchestrate [--forced]`
-  - Generate today's plan, or refresh and show the existing one.
-  - Regenerate today's plan even if one already exists.
 - `plan-storage` — Read, write, check existence of, or delete a plan file in cloud storage by date.
   - `dispatcher --caller-skill daily-plan daily-plan plan-storage read|write|exists|delete <date>`
 - `render-plan` — Extract or reassemble sections of a plan file for rendering.
   - `dispatcher --caller-skill daily-plan daily-plan render-plan <extract|reassemble> <plan-file> <dir>`
 <!-- END BLUEPRINT INTERFACES -->
-When this skill is used, invoke the `orchestrate` interface to generate or display today's plan.
+When this skill is used, invoke `orchestrate`. To force regeneration of an existing plan, pass `--forced`.
 
-This skill gathers data from list-manager, g-calendar, get-weather, and cloud-files, then assembles them into a plan.
+Data sources: `g-calendar` (schedule), `get-weather` (forecast), `list-manager` (todo/triage), `cloud-files` (plan persistence).
 
-The `orchestrate` interface:
-1. Checks if a plan already exists for today
-2. If it exists: refreshes the injected Actions/Triage blocks from current list state, saves, and shows it
-3. If it doesn't exist: generates the base plan, stores selected action/triage ids, injects current rendered list blocks, saves, and displays
-
-To regenerate the plan even if one exists, invoke `orchestrate` with `--forced`.
-
-This skill persists two files per day in cloud storage:
+Two files per day in cloud storage:
 - `plans/M-D-YY.md` - human-readable rendered plan with injected list sections
 - `plans/M-D-YY.meta.json` - JSON metadata of the form
   `{"actions": [[id, situation], ...], "triage": [[id, situation], ...]}`
