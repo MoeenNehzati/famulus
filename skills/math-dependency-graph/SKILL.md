@@ -33,12 +33,12 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `scripts-build-math-dependency-graph`
-  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph scripts-build-math-dependency-graph ...`
-- `scripts-extract-mathjax-macros`
-  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph scripts-extract-mathjax-macros ...`
-- `scripts-serve-graph`
-  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph scripts-serve-graph ...`
+- `scripts-build-math-dependency-graph` — Render an interactive standalone HTML math dependency graph from canonical JSON.
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph scripts-build-math-dependency-graph <source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file <path>] [--refresh-macros] [--reduce-transitive-edges]`
+- `scripts-extract-mathjax-macros` — Extract MathJax macro definitions from a TeX entrypoint, recursively following \input/\include.
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph scripts-extract-mathjax-macros <entrypoint.tex> [--out <path>]`
+- `scripts-serve-graph` — Serve graph HTML from a local directory with no-cache headers for repeated browser inspection.
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph scripts-serve-graph [--directory <path>] [--host <host>] [--port <port>]`
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 
@@ -110,27 +110,17 @@ Then report briefly:
 2. Construct the canonical JSON directly by understanding the mathematical structure.
 3. Add only direct dependencies with descriptions and evidence.
 4. Write or propose that JSON first.
-5. If the document uses local TeX macros, give the active TeX entrypoint to the
-   macro extractor:
-   ```
-   python scripts/extract_mathjax_macros.py <entrypoint.tex>
-   ```
-   This writes `_build/<entrypoint>-mathjax-macros.json` by default. The
-   extractor recursively follows `\input`/`\include`, scans macro definitions
-   throughout the reachable TeX source, and writes the transitive closure needed
-   by MathJax.
-6. Once the JSON is written, invoke the renderer:
-   ```
-   python scripts/build_math_dependency_graph.py <source.json> --tex-entry <entrypoint.tex>
-   ```
-   Output defaults to `_build/<name>.html` next to the JSON. Use `--html-out <path>` to override.
-7. For repeated browser inspection after rerenders, run the no-cache local
-   server from the document workspace:
-   ```
-   python scripts/serve_graph.py --directory <document-workspace> --port 8765
-   ```
-   The server binds to `127.0.0.1` by default and keeps running until stopped.
-   Open `http://127.0.0.1:8765/<graph>.html`.
+5. If the document uses local TeX macros, use `scripts-extract-mathjax-macros` on
+   the active TeX entrypoint. This writes `_build/<entrypoint>-mathjax-macros.json`
+   by default. The extractor recursively follows `\input`/`\include`, scans macro
+   definitions throughout the reachable TeX source, and writes the transitive
+   closure needed by MathJax.
+6. Once the JSON is written, use `scripts-build-math-dependency-graph` with the
+   canonical JSON and the TeX entrypoint. Output defaults to `_build/<name>.html`
+   next to the JSON. Pass `--html-out <path>` to override.
+7. For repeated browser inspection after rerenders, use `scripts-serve-graph` from
+   the document workspace with `--port 8765`. The server binds to `127.0.0.1` by
+   default and keeps running until stopped. Open `http://127.0.0.1:8765/<graph>.html`.
 8. Flag uncertain or heuristic edges explicitly.
 
 ## 6. Canonical fields

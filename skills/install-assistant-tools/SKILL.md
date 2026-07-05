@@ -22,12 +22,12 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `scripts-install`
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-install ...`
-- `scripts-setup-symlinks`
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-setup-symlinks ...`
-- `scripts-setup-tools`
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-setup-tools ...`
+- `scripts-install` — Run the combined installer — wires config dirs to the repo, then installs bin scripts, rc block, and git hooks.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-install [--dry-run] [--no-claude] [--no-codex] [--bin-dir DIR] [--shell-rc FILE] [--system-shell-rc FILE] [--no-system-shell-rc] [--default-llm {claude,codex}] [--cloud-files-remote-llm-root PATH] [--home DIR] [--claude-home DIR] [--codex-home DIR]`
+- `scripts-setup-symlinks` — Wire Claude and Codex config dirs to the canonical AI repo with symlinks, preserving any unique local skill entries.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-setup-symlinks [--dry-run] [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR]`
+- `scripts-setup-tools` — Install or update bin launchers, worker dirs, profile symlinks, git hooks, and the managed shell rc block.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-setup-tools [--dry-run] [--no-system-shell-rc] [--bin-dir DIR] [--shell-rc FILE] [--system-shell-rc FILE] [--default-llm {claude,codex}] [--cloud-files-remote-llm-root PATH] [--home DIR] [--codex-home DIR] [--claude-home DIR]`
 <!-- END BLUEPRINT INTERFACES -->
 # Install Assistant Tools
 
@@ -90,27 +90,14 @@ Ask for confirmation before proceeding.
 
 ### 2. Run the combined installer
 
-| Platform | Command |
-|---|---|
-| Linux / macOS | `python3 scripts/install.py` |
-| Windows | `py scripts\install.py` |
+Use the `scripts-install` interface. On an unfamiliar machine, pass `--dry-run`
+to preview without writing anything. Other commonly used flags:
 
-Use `--dry-run` on an unfamiliar machine to preview without writing:
+- `--no-claude` / `--no-codex` — skip symlinks for one tool
+- `--bin-dir DIR` / `--shell-rc FILE` — override default paths
+- `--default-llm {claude,codex}` — set the default backend non-interactively
 
-```bash
-python3 scripts/install.py --dry-run   # Linux/macOS
-py scripts\install.py --dry-run        # Windows
-```
-
-Useful flags:
-
-```bash
-python3 scripts/install.py --help
-python3 scripts/install.py --no-claude
-python3 scripts/install.py --no-codex
-python3 scripts/install.py --bin-dir /custom/bin --shell-rc /custom/rc
-python3 scripts/install.py --default-llm codex
-```
+See the `scripts-install` usage string for the full flag list.
 
 The installer auto-detects the user's shell on Unix (`zsh` → `.zshrc`, else
 `.bashrc`). On Windows it writes PATH and env vars to the user registry
@@ -231,7 +218,7 @@ Do not modify scripts speculatively.
 | Claude session hook | entry merged into `<claude-home>/settings.local.json` |
 | Codex session hook | managed block appended to `<codex-home>/config.toml` |
 
-All targets can be overridden with flags — run `python3 scripts/install.py --help`
+All targets can be overridden with flags — see the `scripts-install` usage string
 for the full list.
 
 ## Updating Scripts

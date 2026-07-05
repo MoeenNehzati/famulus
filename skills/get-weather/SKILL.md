@@ -23,8 +23,8 @@ Exported Script Interfaces:
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `scripts-weather`
-  - `dispatcher --caller-skill get-weather get-weather scripts-weather ...`
+- `scripts-weather` — Fetch weather data for a location and date range, returning hourly forecast JSON.
+  - `dispatcher --caller-skill get-weather get-weather scripts-weather [--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]`
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 
@@ -32,16 +32,16 @@ Skill: get-weather
 
 ## Workflow
 
-Invoke `scripts/weather.sh` with the requested `--date`, `--end-date`, and
-`--location` arguments. The script resolves the location, fetches hourly
-Open-Meteo data, and prints one JSON object to stdout.
+Invoke the `scripts-weather` interface with the requested `--date`,
+`--end-date`, and `--location` arguments. The interface resolves the location,
+fetches hourly Open-Meteo data, and prints one JSON object to stdout.
 
 Translate natural-language requests such as "tomorrow", "next week", or
-"this weekend" into concrete dates before invoking the script. When the date
+"this weekend" into concrete dates before invoking the interface. When the date
 arithmetic is simple, do it directly instead of invoking an extra tool just to
 add days.
 
-If the script exits nonzero, report the error plainly and stop. Do not retry
+If the interface exits nonzero, report the error plainly and stop. Do not retry
 with guessed dates or locations.
 
 ## Route by user intent

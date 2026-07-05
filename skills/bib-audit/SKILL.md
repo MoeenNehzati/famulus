@@ -20,10 +20,10 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `scripts-bib-similarity`
-  - `dispatcher --caller-skill bib-audit bib-audit scripts-bib-similarity ...`
-- `scripts-bib-validate-bibtex`
-  - `dispatcher --caller-skill bib-audit bib-audit scripts-bib-validate-bibtex ...`
+- `scripts-bib-similarity` — Detect duplicate and version-pair candidates in a .bib file by scoring all entry pairs.
+  - `dispatcher --caller-skill bib-audit bib-audit scripts-bib-similarity <file.bib> [--threshold 0.3]`
+- `scripts-bib-validate-bibtex` — Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects).
+  - `dispatcher --caller-skill bib-audit bib-audit scripts-bib-validate-bibtex <file.bib>`
 <!-- END BLUEPRINT INTERFACES -->
 # Bibliography Audit
 
@@ -89,11 +89,7 @@ Produces `<basename>_bibertool.bib` (normalized output) and `<basename>.blg` (lo
 
 Do not run `biber --tool` — it uses biblatex field names (`journaltitle`, `date`) and will spuriously flag valid BibTeX fields (`journal`, `year`).
 
-```
-python3 scripts/bib-validate-bibtex.py <file.bib>
-```
-
-Output is JSON. Read `parse_errors` first (file-level failures), then `entries[*].issues`. Each issue has `level` (ERROR/WARNING/INFO), `field`, and `message`.
+Use `scripts-bib-validate-bibtex` to validate the file. Output is JSON. Read `parse_errors` first (file-level failures), then `entries[*].issues`. Each issue has `level` (ERROR/WARNING/INFO), `field`, and `message`.
 
 **1a.** Report all ERRORs and WARNINGs. Required fields are checked against the BibTeX spec (e.g. `@article` needs `author`, `title`, `journal`, `year` — not `journaltitle`/`date`).
 
@@ -138,13 +134,7 @@ Do not treat UNVERIFIED as fake. Books, unpublished manuscripts, lecture notes, 
 
 ### Step 3 — Duplicate and version audit
 
-Run the similarity script to get a ranked candidate list:
-
-```
-python3 scripts/bib-similarity.py <file.bib> [--threshold 0.3]
-```
-
-Output JSON: each pair has `score` (0–1), `confidence` (EXACT/HIGH/MEDIUM/LOW), and per-field signals (`doi`/`eprint`/`isbn` identifier match, `title`/`author`/`year`/`venue` soft scores). `EXACT` = shared identifier; treat as definite duplicate. Threshold 0.3 is loose by design — use the list as a checklist, not a verdict.
+Use `scripts-bib-similarity` to get a ranked candidate list. Output JSON: each pair has `score` (0–1), `confidence` (EXACT/HIGH/MEDIUM/LOW), and per-field signals (`doi`/`eprint`/`isbn` identifier match, `title`/`author`/`year`/`venue` soft scores). `EXACT` = shared identifier; treat as definite duplicate. Threshold 0.3 is loose by design — use the list as a checklist, not a verdict.
 
 Known limitation: arXiv IDs in `howpublished`/`note`/`url` free text are extracted as a fallback, but prefer `eprint` field for reliable identifier matching.
 

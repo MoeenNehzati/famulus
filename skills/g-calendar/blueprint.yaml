@@ -27,6 +27,8 @@ skill_interface:
 script_interfaces:
   scripts-gcal:
     id: scripts-gcal
+    description: "Query or modify Google Calendar events via the gcal.sh CLI (agenda, search, create, update, delete, etc.)."
+    usage: "<command> [options]"
     cwd: skill_root
     command: ["scripts/gcal.sh"]
     default:
@@ -41,6 +43,8 @@ script_interfaces:
 
   setup-oauth:
     id: setup-oauth
+    description: "Run the OAuth setup flow to generate or refresh Google Calendar credentials."
+    usage: "[--from-json /path/to/client.json]"
     cwd: skill_root
     command: ["python3", "scripts/setup_oauth.py"]
     default:

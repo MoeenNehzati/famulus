@@ -54,6 +54,8 @@ skill_interface:
 script_interfaces:
   scripts-job-utils:
     id: scripts-job-utils
+    description: "Shared helper library providing set_enabled() used by enable-job and disable-job; not a standalone CLI tool."
+    usage: "(internal library — not invoked directly)"
     cwd: skill_root
     command: ["python3", "scripts/_job_utils.py"]
     interface:
@@ -65,6 +67,8 @@ script_interfaces:
     exported_interface: []
   scripts-disable-job:
     id: scripts-disable-job
+    description: "Disables a job by setting enabled: false in jobs.yaml and syncing unit files."
+    usage: "<name> [--jobs-file JOBS_FILE] [--no-sync]"
     cwd: skill_root
     command: ["python3", "scripts/disable-job.py"]
     interface:
@@ -76,6 +80,8 @@ script_interfaces:
     exported_interface: []
   scripts-enable-job:
     id: scripts-enable-job
+    description: "Enables a job by setting enabled: true in jobs.yaml and syncing unit files."
+    usage: "<name> [--jobs-file JOBS_FILE] [--no-sync]"
     cwd: skill_root
     command: ["python3", "scripts/enable-job.py"]
     interface:
@@ -87,6 +93,8 @@ script_interfaces:
     exported_interface: []
   scripts-env:
     id: scripts-env
+    description: "Exports PATH additions required by invoke-agent.sh in non-login contexts; intended to be sourced, not run directly."
+    usage: "(sourced by invoke-agent.sh — not invoked directly)"
     cwd: skill_root
     command: ["scripts/env.sh"]
     interface:
@@ -98,6 +106,8 @@ script_interfaces:
     exported_interface: []
   scripts-healthcheck:
     id: scripts-healthcheck
+    description: "Runs pre-flight and per-job health checks for all enabled recurring tasks and sends a desktop notification on any failure."
+    usage: ""
     cwd: skill_root
     command: ["scripts/healthcheck.sh"]
     interface:
@@ -109,6 +119,8 @@ script_interfaces:
     exported_interface: []
   scripts-invoke-agent:
     id: scripts-invoke-agent
+    description: "Invokes a skill via the assistant command using the backend set in $ASSISTANT_DEFAULT (claude or codex)."
+    usage: "<skill-name>"
     cwd: skill_root
     command: ["scripts/invoke-agent.sh"]
     interface:
@@ -120,6 +132,8 @@ script_interfaces:
     exported_interface: []
   scripts-run-skill:
     id: scripts-run-skill
+    description: "Substitutes the skill name into $AI_AGENT_COMMAND_TEMPLATE and executes the resulting command in a login shell."
+    usage: "<skill-name>"
     cwd: skill_root
     command: ["scripts/run-skill.sh"]
     interface:
@@ -131,6 +145,8 @@ script_interfaces:
     exported_interface: []
   runners-daily-plan:
     id: runners-daily-plan
+    description: "Systemd service entry point for the daily-plan job; sets DBUS environment and calls run-skill.sh."
+    usage: ""
     cwd: skill_root
     command: ["scripts/runners/daily-plan.sh"]
     interface:
@@ -142,6 +158,8 @@ script_interfaces:
     exported_interface: []
   runners-email-triage:
     id: runners-email-triage
+    description: "Systemd service entry point for the email-triage job; sets DBUS environment and calls run-skill.sh."
+    usage: ""
     cwd: skill_root
     command: ["scripts/runners/email-triage.sh"]
     interface:
@@ -153,6 +171,8 @@ script_interfaces:
     exported_interface: []
   scripts-setup:
     id: scripts-setup
+    description: "Verifies prerequisites, syncs systemd unit files from jobs.yaml, installs the healthcheck cron entry, and lists active timers."
+    usage: "[--migrate-cron]"
     cwd: skill_root
     command: ["scripts/setup.sh"]
     interface:
@@ -164,6 +184,8 @@ script_interfaces:
     exported_interface: []
   scripts-status:
     id: scripts-status
+    description: "Lists all active ai-* timers; with a job name also shows service status and recent journal entries."
+    usage: "[job-name]"
     cwd: skill_root
     command: ["scripts/status.sh"]
     interface:
@@ -175,6 +197,8 @@ script_interfaces:
     exported_interface: []
   scripts-sync-units:
     id: scripts-sync-units
+    description: "Writes, updates, or removes systemd user unit files and per-job runner scripts to match jobs.yaml."
+    usage: "[--unit-dir UNIT_DIR] [--jobs-file JOBS_FILE] [--migrate-cron]"
     cwd: skill_root
     command: ["python3", "scripts/sync-units.py"]
     interface:
@@ -186,6 +210,8 @@ script_interfaces:
     exported_interface: []
   scripts-test-job:
     id: scripts-test-job
+    description: "Triggers a job immediately via systemd, waits up to 6 minutes, and reports pass/fail with log and journal output."
+    usage: "<name> [--jobs-file JOBS_FILE]"
     cwd: skill_root
     command: ["python3", "scripts/test-job.py"]
     interface:
@@ -197,6 +223,8 @@ script_interfaces:
     exported_interface: []
   scripts-test-live-job:
     id: scripts-test-live-job
+    description: "End-to-end live test that creates a temporary skill and job, runs it through the real assistant backend, verifies output, and restores the original schedule."
+    usage: "--backend {claude|codex} [--keep-artifacts]"
     cwd: skill_root
     command: ["python3", "scripts/test-live-job.py"]
     interface:
@@ -208,6 +236,8 @@ script_interfaces:
     exported_interface: []
   scripts-test-enable-disable:
     id: scripts-test-enable-disable
+    description: "Test suite for the enable-job and disable-job scripts."
+    usage: ""
     cwd: skill_root
     command: ["python3", "scripts/test_enable_disable.py"]
     interface:
@@ -219,6 +249,8 @@ script_interfaces:
     exported_interface: []
   scripts-test-sync-units:
     id: scripts-test-sync-units
+    description: "Test suite for the sync-units script."
+    usage: ""
     cwd: skill_root
     command: ["python3", "scripts/test_sync_units.py"]
     interface:
@@ -230,6 +262,8 @@ script_interfaces:
     exported_interface: []
   scripts-view-logs:
     id: scripts-view-logs
+    description: "Tails the run log for a job in real time; pass 'healthcheck' as the job name to view the monitor log."
+    usage: "<job-name> [lines]"
     cwd: skill_root
     command: ["scripts/view-logs.sh"]
     interface:

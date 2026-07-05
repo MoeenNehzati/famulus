@@ -37,6 +37,8 @@ skill_interface:
 script_interfaces:
   scripts-bib-similarity:
     id: scripts-bib-similarity
+    description: "Detect duplicate and version-pair candidates in a .bib file by scoring all entry pairs."
+    usage: "<file.bib> [--threshold 0.3]"
     cwd: skill_root
     command: ["python3", "scripts/bib-similarity.py"]
     interface:
@@ -48,6 +50,8 @@ script_interfaces:
     exported_interface: []
   scripts-bib-validate-bibtex:
     id: scripts-bib-validate-bibtex
+    description: "Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects)."
+    usage: "<file.bib>"
     cwd: skill_root
     command: ["python3", "scripts/bib-validate-bibtex.py"]
     interface:

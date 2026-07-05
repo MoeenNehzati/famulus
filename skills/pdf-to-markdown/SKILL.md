@@ -23,10 +23,10 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `scripts-check-marker-models`
+- `scripts-check-marker-models` — Check whether required Marker/Surya models are downloaded and cached locally.
   - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown scripts-check-marker-models ...`
-- `scripts-fetch-arxiv-source`
-  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown scripts-fetch-arxiv-source ...`
+- `scripts-fetch-arxiv-source` — Download and extract the LaTeX source tarball for a paper from arXiv.
+  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown scripts-fetch-arxiv-source <arxiv-id> <output-dir>`
 <!-- END BLUEPRINT INTERFACES -->
 # PDF to Markdown
 
@@ -41,7 +41,7 @@ Convert a research paper to LLM-readable text. Prefer LaTeX source over PDF conv
 ### arXiv (check first — highest hit rate for CS/math/econ)
 
 1. No arXiv ID? Search `arxiv [title] [authors]` via WebSearch to find one.
-2. Run `scripts/fetch-arxiv-source.sh <arxiv-id> <output-dir>`.
+2. Run the `scripts-fetch-arxiv-source` interface with `<arxiv-id> <output-dir>`.
    - Script downloads `arxiv.org/src/<id>`, extracts, lists `.tex` files found.
    - If arXiv returns HTML instead of a tarball, the paper has no source — move on.
 3. Root file is usually `main.tex`; if absent, scan for the file that `\begin{document}`.
@@ -60,10 +60,7 @@ If LaTeX source found anywhere: download, extract, done.
 
 If no LaTeX source found, convert the PDF directly.
 
-**Before running:** check whether models are cached:
-```
-scripts/check-marker-models.sh
-```
+**Before running:** check whether models are cached using the `scripts-check-marker-models` interface.
 If any models are missing, warn the user: "Running marker will download missing models (~3GB total to `~/.cache/datalab/models/`). Proceed?" Do not run `marker_single` until confirmed.
 
 **Standard invocation** (good typeset PDF, no extra cost):

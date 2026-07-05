@@ -14,24 +14,6 @@ INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
 CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
 CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
 
-# Skills with pre-existing body violations that predate this check.
-# Each entry needs a follow-up pass to move raw-script invocations into
-# blueprint.yaml (description + usage) and strip them from the skill body.
-# Do not add new skills here — fix them at the source instead.
-_LEGACY_BODY_VIOLATIONS: frozenset[str] = frozenset({
-    "bib-audit",
-    "cloud-files",
-    "daily-plan",
-    "email-client",
-    "email-triage",
-    "g-calendar",
-    "get-weather",
-    "install-assistant-tools",
-    "math-dependency-graph",
-    "pdf-to-markdown",
-    "recurring-tasks",
-})
-
 
 def _expect_mapping(value: Any) -> dict[str, Any]:
     if value is None:
@@ -70,6 +52,19 @@ def _body_text(text: str) -> str:
     return body
 
 
+def _body_for_invocation_check(text: str) -> str:
+    """Strip generated blocks and code fences before checking for invocation violations.
+
+    Code fences are excluded because architecture diagrams and directory listings
+    may reference scripts/ paths structurally (e.g. showing what systemd calls)
+    without being executable invocations. Absolute paths (e.g. $HOME/.../scripts/)
+    are also excluded via the caller's regex.
+    """
+    body = _body_text(text)
+    # Remove all fenced code blocks (```...```)
+    return re.sub(r"```.*?```", "", body, flags=re.DOTALL)
+
+
 def _interface_block(text: str) -> str | None:
     match = re.search(
         rf"{re.escape(INTERFACES_START)}(.*?){re.escape(INTERFACES_END)}",
@@ -103,17 +98,18 @@ def validate(repo_root: Path) -> list[str]:
         text = skill_md.read_text(encoding="utf-8")
 
         body = _body_text(text)
-        if skill_name not in _LEGACY_BODY_VIOLATIONS:
-            if "scripts/" in body:
-                errors.append(
-                    f"{skill_md}: skill body must not invoke scripts directly; "
-                    "reference dispatcher interface names instead"
-                )
-            if "dispatcher --caller-skill" in body:
-                errors.append(
-                    f"{skill_md}: skill body must not invoke dispatcher directly; "
-                    "interface invocations belong in the generated block (blueprint.yaml owns them)"
-                )
+        invocation_body = _body_for_invocation_check(text)
+        # Match `scripts/` not preceded by `/` (to allow absolute paths like $HOME/.../scripts/foo)
+        if re.search(r"(?<!/)scripts/", invocation_body):
+            errors.append(
+                f"{skill_md}: skill body must not invoke scripts directly; "
+                "reference dispatcher interface names instead"
+            )
+        if "dispatcher --caller-skill" in body:
+            errors.append(
+                f"{skill_md}: skill body must not invoke dispatcher directly; "
+                "interface invocations belong in the generated block (blueprint.yaml owns them)"
+            )
 
         block = _interface_block(text)
         if block is None:

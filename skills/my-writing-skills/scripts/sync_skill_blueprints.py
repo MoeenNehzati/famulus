@@ -497,7 +497,7 @@ def sync_interface_block(text: str, interface_block: str) -> str:
             rf"{re.escape(INTERFACES_START)}.*?{re.escape(INTERFACES_END)}\n?",
             re.DOTALL,
         )
-        text = pattern.sub(interface_block, text, count=1)
+        text = pattern.sub(lambda _: interface_block, text, count=1)
         return re.sub(r"\n{3,}", "\n\n", text)
 
     if not interface_block:

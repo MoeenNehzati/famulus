@@ -42,6 +42,8 @@ skill_interface:
 script_interfaces:
   scripts-fetch-envelopes:
     id: scripts-fetch-envelopes
+    description: "Fetch email envelope metadata for a given account since the last watermark."
+    usage: "-a <account>"
     cwd: skill_root
     command: ["python3", "scripts/fetch-envelopes.py"]
     interface:
@@ -53,6 +55,8 @@ script_interfaces:
     exported_interface: []
   scripts-get-cutoff:
     id: scripts-get-cutoff
+    description: "Return the cutoff date for the current triage run, with a fallback if no watermark exists."
+    usage: ""
     cwd: skill_root
     command: ["python3", "scripts/get-cutoff.py"]
     interface:
@@ -64,6 +68,8 @@ script_interfaces:
     exported_interface: []
   scripts-log-decision:
     id: scripts-log-decision
+    description: "Append a triage classification decision for one email to triage.log."
+    usage: "<account> <id> <from> <subject> <DECISION> <reason>"
     cwd: skill_root
     command: ["scripts/log-decision.sh"]
     interface:
@@ -75,6 +81,8 @@ script_interfaces:
     exported_interface: []
   scripts-prune-log:
     id: scripts-prune-log
+    description: "Drop triage.log entries older than 30 days and print a one-line summary."
+    usage: ""
     cwd: skill_root
     command: ["python3", "scripts/prune-log.py"]
     interface:
@@ -86,6 +94,8 @@ script_interfaces:
     exported_interface: []
   scripts-update-watermark:
     id: scripts-update-watermark
+    description: "Advance the triage watermark to the current timestamp."
+    usage: ""
     cwd: skill_root
     command: ["python3", "scripts/update-watermark.py"]
     interface:

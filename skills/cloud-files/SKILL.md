@@ -24,26 +24,26 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `lists-delete`
-  - `dispatcher --caller-skill cloud-files cloud-files lists-delete ...`
+- `lists-delete` — Delete a file from cloud storage under the lists/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files lists-delete lists/<path>`
   - Delete list files from cloud storage. Restricted to lists/ directory.
-- `lists-read`
-  - `dispatcher --caller-skill cloud-files cloud-files lists-read ...`
+- `lists-read` — Read a file from cloud storage under the lists/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files lists-read lists/<path>`
   - Read list files from cloud storage. Restricted to lists/ directory.
-- `lists-write`
-  - `dispatcher --caller-skill cloud-files cloud-files lists-write ...`
+- `lists-write` — Write content (from stdin) to a file in cloud storage under the lists/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files lists-write lists/<path>`
   - Write list files to cloud storage. Restricted to lists/ directory.
-- `plans-delete`
-  - `dispatcher --caller-skill cloud-files cloud-files plans-delete ...`
+- `plans-delete` — Delete a file from cloud storage under the plans/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files plans-delete plans/<path>`
   - Delete plan files from cloud storage. Restricted to plans/ directory.
-- `plans-read`
-  - `dispatcher --caller-skill cloud-files cloud-files plans-read ...`
+- `plans-read` — Read a file from cloud storage under the plans/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files plans-read plans/<path>`
   - Read plan files from cloud storage. Restricted to plans/ directory.
-- `plans-write`
-  - `dispatcher --caller-skill cloud-files cloud-files plans-write ...`
+- `plans-write` — Write content (from stdin) to a file in cloud storage under the plans/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files plans-write plans/<path>`
   - Write plan files to cloud storage. Restricted to plans/ directory.
-- `setup-oauth`
-  - `dispatcher --caller-skill cloud-files cloud-files setup-oauth ...`
+- `setup-oauth` — Run one-time OAuth2 setup for Google Drive access.
+  - `dispatcher --caller-skill cloud-files cloud-files setup-oauth [--from-json <client_json_path>] [--client-id <id> --client-secret <secret>] [--port <port>]`
   - OAuth setup for Google Drive access.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
@@ -58,44 +58,19 @@ scripts rather than speaking to the Drive API directly.
 Install-time config lives at `~/.config/cloud-files/config.json`.
 OAuth credentials live at `~/.config/cloud-files/credentials.json`.
 
-If credentials are missing, place your Google OAuth client JSON at `~/.config/cloud-files/client.json` and run `scripts/setup_oauth.py`. This one-time setup is intentionally outside `permissions.json`.
+If credentials are missing, place your Google OAuth client JSON at `~/.config/cloud-files/client.json` and run the one-time `setup-oauth` interface. This setup step is intentionally outside the dispatcher's normal skill access control.
 
-If the OAuth app stays in Google Cloud **Testing**, Google may expire refresh tokens after about 7 days. If you do not want repeated re-authorization, use **OAuth -> Audience** and click **Publish app** / move the app to **In production** before running `scripts/setup_oauth.py`.
+If the OAuth app stays in Google Cloud **Testing**, Google may expire refresh tokens after about 7 days. If you do not want repeated re-authorization, use **OAuth -> Audience** and click **Publish app** / move the app to **In production** before running the setup.
 
 ## 1. Preapproved LLM-root operations
 
-Use these scripts for routine LLM storage:
+Use `lists-read`, `lists-write`, `lists-delete` for routine list storage and `plans-read`, `plans-write`, `plans-delete` for plan storage within their respective directories.
 
-```bash
-scripts/cp_llm.py <src>... <dst>
-scripts/ls_llm.py [llm:pattern...]
-scripts/rm_llm.py llm:pattern...
-```
-
-`cp_llm.py` is the canonical transfer interface. Exactly one side must be
-remote and use the `llm:` prefix:
-
-```bash
-scripts/cp_llm.py llm:lists/todo.md /tmp/todo.md
-scripts/cp_llm.py /tmp/todo.md llm:lists/todo.md
-```
-
-`ls_llm.py` and `rm_llm.py` interpret their `llm:` arguments as remote paths or
-remote glob patterns under the configured `remote_llm_root`.
-
-Legacy `read_llm_file.py`, `write_llm_file.py`, and `delete_llm_file.py`
-remain in the skill directory for compatibility, but `cp_llm.py`, `ls_llm.py`,
-and `rm_llm.py` are the preferred interface.
+Each interface takes a single positional path argument constrained to its directory prefix (`lists/` or `plans/`). Write interfaces read file content from stdin.
 
 ## 2. Separately prompted broader reads
 
-For a broader read from Google Drive root, use:
-
-```bash
-scripts/read_remote.py [--list] [path]
-```
-
-It is intentionally not listed in `permissions.json`.
+A broader read from the Google Drive root is available via a script not registered as a dispatcher interface. It is intentionally not listed in `permissions.json`.
 
 If a script exits nonzero, report the visible error and do not infer remote
 state beyond what the successful output established.

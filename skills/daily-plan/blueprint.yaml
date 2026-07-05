@@ -58,6 +58,8 @@ script_interfaces:
   # to generate and persist the daily plan without LLM involvement.
   orchestrate:
     id: orchestrate
+    description: "Generate or display today's daily plan, optionally forcing regeneration."
+    usage: "[--forced]"
     cwd: skill_root
     command: ["python3", "scripts/orchestrate.py"]
     default:
@@ -76,6 +78,8 @@ script_interfaces:
 
   plan-storage:
     id: plan-storage
+    description: "Read, write, check existence of, or delete a plan file in cloud storage by date."
+    usage: "read|write|exists|delete <date>"
     cwd: skill_root
     command: ["scripts/plans.sh"]
     default:
@@ -100,6 +104,8 @@ script_interfaces:
 
   render-plan:
     id: render-plan
+    description: "Extract or reassemble sections of a plan file for rendering."
+    usage: "<extract|reassemble> <plan-file> <dir>"
     cwd: skill_root
     command: ["python3", "scripts/render-plan.py"]
     default:
@@ -111,6 +117,8 @@ script_interfaces:
 
   mutate-plan:
     id: mutate-plan
+    description: "Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to today's plan and display the refreshed result."
+    usage: "{hide,show,keep,remove,mark-done,reject,set-deadline,add} ..."
     cwd: skill_root
     command: ["python3", "scripts/mutate_plan.py"]
     default:

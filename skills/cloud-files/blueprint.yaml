@@ -40,6 +40,8 @@ script_interfaces:
   #
   lists-read:
     id: lists-read
+    description: "Read a file from cloud storage under the lists/ directory."
+    usage: "lists/<path>"
     cwd: skill_root
     command: ["python3", "scripts/read_llm_file.py"]
     default:
@@ -58,6 +60,8 @@ script_interfaces:
 
   lists-write:
     id: lists-write
+    description: "Write content (from stdin) to a file in cloud storage under the lists/ directory."
+    usage: "lists/<path>"
     cwd: skill_root
     command: ["python3", "scripts/write_llm_file.py"]
     default:
@@ -76,6 +80,8 @@ script_interfaces:
 
   lists-delete:
     id: lists-delete
+    description: "Delete a file from cloud storage under the lists/ directory."
+    usage: "lists/<path>"
     cwd: skill_root
     command: ["python3", "scripts/delete_llm_file.py"]
     default:
@@ -99,6 +105,8 @@ script_interfaces:
   #
   plans-read:
     id: plans-read
+    description: "Read a file from cloud storage under the plans/ directory."
+    usage: "plans/<path>"
     cwd: skill_root
     command: ["python3", "scripts/read_llm_file.py"]
     default:
@@ -116,6 +124,8 @@ script_interfaces:
 
   plans-write:
     id: plans-write
+    description: "Write content (from stdin) to a file in cloud storage under the plans/ directory."
+    usage: "plans/<path>"
     cwd: skill_root
     command: ["python3", "scripts/write_llm_file.py"]
     default:
@@ -133,6 +143,8 @@ script_interfaces:
 
   plans-delete:
     id: plans-delete
+    description: "Delete a file from cloud storage under the plans/ directory."
+    usage: "plans/<path>"
     cwd: skill_root
     command: ["python3", "scripts/delete_llm_file.py"]
     default:
@@ -150,6 +162,8 @@ script_interfaces:
 
   setup-oauth:
     id: setup-oauth
+    description: "Run one-time OAuth2 setup for Google Drive access."
+    usage: "[--from-json <client_json_path>] [--client-id <id> --client-secret <secret>] [--port <port>]"
     cwd: skill_root
     command: ["python3", "scripts/setup_oauth.py"]
     default:

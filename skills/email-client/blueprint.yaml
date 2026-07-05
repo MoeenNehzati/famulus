@@ -29,25 +29,27 @@ skill_interface:
     - "May invoke local scripts or dependencies as described in SKILL.md."
 
 script_interfaces:
-  scripts-email-get-message-id:
-    id: scripts-email-get-message-id
+  get-message-id:
+    id: get-message-id
+    description: "Fetch the raw Message-ID header of an IMAP envelope by its numeric ID."
+    usage: "[-a nyu|personal] [--folder <folder>] <envelope-id>"
     cwd: skill_root
     command: ["scripts/email-get-message-id.sh"]
     interface:
       default:
-        min_positionals: 0
-        allow_extra_positionals: true
+        min_positionals: 1
+        allow_extra_positionals: false
         allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/email-get-message-id.sh; tighten this contract when needed."
     exported_interface: []
-  scripts-email-send:
-    id: scripts-email-send
+  send-email:
+    id: send-email
+    description: "Send an email via msmtp; body comes from stdin."
+    usage: "--from nyu|personal --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]"
     cwd: skill_root
     command: ["scripts/email-send.sh"]
     interface:
       default:
         min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/email-send.sh; tighten this contract when needed."
+        allow_extra_positionals: false
+        allow_stdin: true
     exported_interface: []

@@ -25,10 +25,10 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `scripts-gcal`
-  - `dispatcher --caller-skill g-calendar g-calendar scripts-gcal ...`
-- `setup-oauth`
-  - `dispatcher --caller-skill g-calendar g-calendar setup-oauth ...`
+- `scripts-gcal` — Query or modify Google Calendar events via the gcal.sh CLI (agenda, search, create, update, delete, etc.).
+  - `dispatcher --caller-skill g-calendar g-calendar scripts-gcal <command> [options]`
+- `setup-oauth` — Run the OAuth setup flow to generate or refresh Google Calendar credentials.
+  - `dispatcher --caller-skill g-calendar g-calendar setup-oauth [--from-json /path/to/client.json]`
   - OAuth setup for Google Calendar access.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
@@ -37,13 +37,12 @@ Skill: g-calendar
 
 ## 0. Read this first
 
-- **Only invoke `gcal.sh`.** Every Bash call must be exactly
-  `scripts/gcal.sh <command> [options]`
-  - the entire command, nothing else on the line. No `cd`, `python3`, `date`,
-  variable assignments, `&&`/`;`/pipes/loops. This is the only allow-listed
-  pattern (`Bash(scripts/gcal.sh:*)`);
-  anything else triggers a permission prompt. For N operations, issue N
-  separate calls, one `gcal.sh` invocation each.
+- **Only use the `scripts-gcal` interface.** Every calendar operation must go
+  through `scripts-gcal` with the appropriate subcommand — the entire call,
+  nothing else on the line. No `cd`, `python3`, `date`, variable assignments,
+  `&&`/`;`/pipes/loops. This is the only allow-listed pattern; anything else
+  triggers a permission prompt. For N operations, issue N separate calls, one
+  `scripts-gcal` invocation each.
 - **Minimize invocations, then parallelize what's left.** Each call is a slow
   network round-trip. Prefer `--all-calendars` over looping per calendar.
   When you do need multiple independent calls (e.g. `get` on several event
@@ -60,7 +59,7 @@ Skill: g-calendar
 
 ## 1. What this is
 
-`scripts/gcal.sh` talks directly to the Google Calendar API v3 over curl,
+The `scripts-gcal` interface talks directly to the Google Calendar API v3 over curl,
 using a locally stored refresh token. It replaces the broken
 `calendarmcp.googleapis.com` MCP connector (see project memory
 `calendar-mcp-broken` - that connector's `tools/call` permanently fails with
@@ -68,8 +67,8 @@ using a locally stored refresh token. It replaces the broken
 
 ## 2. Commands
 
-All commands: `scripts/gcal.sh <command> [options]`. Run `gcal.sh --help` for
-the full reference. Calendar IDs default to `primary`; run `gcal.sh calendars`
+All subcommands are invoked via the `scripts-gcal` interface. Run `scripts-gcal --help` for
+the full reference. Calendar IDs default to `primary`; use the `calendars` subcommand
 for other IDs (e.g. shared calendars).
 
 - `calendars` - list calendars (id, access role, name).
@@ -102,17 +101,16 @@ CLI (`create`/`update`'s `--start`/`--end`, and `agenda`/`search`'s
 `2026-06-15T10:00:00-04:00`. A bare date (`2026-06-15`) or an offset-less
 datetime returns `HTTP 400 Bad Request` with no more specific message.
 
-Examples:
-- "what's on my calendar today" -> `gcal.sh agenda`
-- "what's on my NYU calendar this week" -> `gcal.sh calendars` (find the id),
-  then `gcal.sh agenda --calendar <id> --days 7`
+Examples (use the `scripts-gcal` interface for each):
+- "what's on my calendar today" -> `agenda`
+- "what's on my NYU calendar this week" -> `calendars` (find the id),
+  then `agenda --calendar <id> --days 7`
 - "what's my busiest day next week" / "what's on my schedule this week"
-  (spans *all* calendars) -> one call:
-  `gcal.sh agenda --all-calendars --from <ISO-with-offset> --days 7`
+  (spans *all* calendars) -> one call: `agenda --all-calendars --from <ISO-with-offset> --days 7`
 
 ## 2a. Which calendar to use for `create`
 
-Before creating an event, run `gcal.sh calendars` to see available calendars,
+Before creating an event, use `scripts-gcal` with the `calendars` subcommand to see available calendars,
 then match the event content against calendar names:
 
 - Pick the calendar whose name best fits the event type (e.g. "Medical" for
@@ -155,11 +153,12 @@ For anything not covered above (recurring events / RRULEs, attendees,
 free-busy queries, etc.) - last resort, since it requires a shell pipeline
 (`TOKEN=$(...) && curl ...`) that doesn't match the allow-listed Bash pattern
 and triggers a permission prompt every time. If a capability is needed
-repeatedly, add a small subcommand to `scripts/gcal.sh` instead (as was done
-for `get`, `create-calendar`, `move`). For genuine one-offs:
+repeatedly, add a small subcommand to `gcal.sh` instead (as was done
+for `get`, `create-calendar`, `move`). For genuine one-offs, use `scripts-gcal`
+with the `token` subcommand to obtain a bearer token, then call the API directly:
 
 ```bash
-TOKEN=$(scripts/gcal.sh token)
+# Obtain a bearer token via scripts-gcal token, then:
 curl -s -H "Authorization: Bearer $TOKEN" \
   "https://www.googleapis.com/calendar/v3/calendars/primary/events" \
   -d '...' # see https://developers.google.com/calendar/api/v3/reference
@@ -171,7 +170,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 - Only single (non-recurring) events; no attendee management via the CLI
   subcommands (use the raw-API fallback).
 - If the OAuth consent screen is "Testing", the refresh token expires after 7
-  days - `gcal.sh` fails with `invalid_grant`; see section 6 to fix.
+  days - `scripts-gcal` fails with `invalid_grant`; see section 6 to fix.
 
 ## 6. Private config files
 
@@ -192,7 +191,7 @@ outside any git repo and never committed.
 
 ## 7. First-time / repeat setup
 
-If `gcal.sh` reports `invalid_grant` or `invalid_client`, (re)do this:
+If `scripts-gcal` reports `invalid_grant` or `invalid_client`, (re)do this:
 
 ### First time only: create the Google OAuth client
 
@@ -222,24 +221,17 @@ as smnehzati@gmail.com:
 
 ### Every time: run setup to (re)generate credentials.json
 
-```bash
-python scripts/setup_oauth.py
-```
+Use the `setup-oauth` interface (no arguments needed) — it reads
+`~/.config/g-calendar/client.json` automatically and writes
+`~/.config/g-calendar/credentials.json`.
 
-No arguments needed — it reads `~/.config/g-calendar/client.json`
-automatically and writes `~/.config/g-calendar/credentials.json`.
-
-To use a different client JSON explicitly:
-```bash
-python scripts/setup_oauth.py --from-json /path/to/other.json
-```
+To use a different client JSON explicitly, pass `--from-json /path/to/other.json`
+to the `setup-oauth` interface.
 
 ### Verify
 
-```bash
-scripts/gcal.sh calendars
-scripts/gcal.sh agenda
-```
+Use `scripts-gcal` with `calendars`, then with `agenda`, to confirm the
+credentials are working.
 
 If Google omits `refresh_token` from the response (because access was already
 granted without revoking), revoke prior access at

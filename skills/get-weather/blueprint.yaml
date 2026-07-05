@@ -25,6 +25,8 @@ skill_interface:
 script_interfaces:
   scripts-weather:
     id: scripts-weather
+    description: "Fetch weather data for a location and date range, returning hourly forecast JSON."
+    usage: "[--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]"
     cwd: skill_root
     command: ["scripts/weather.sh"]
     default:

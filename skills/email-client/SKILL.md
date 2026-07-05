@@ -20,10 +20,10 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `scripts-email-get-message-id`
-  - `dispatcher --caller-skill email-client email-client scripts-email-get-message-id ...`
-- `scripts-email-send`
-  - `dispatcher --caller-skill email-client email-client scripts-email-send ...`
+- `get-message-id` — Fetch the raw Message-ID header of an IMAP envelope by its numeric ID.
+  - `dispatcher --caller-skill email-client email-client get-message-id [-a nyu|personal] [--folder <folder>] <envelope-id>`
+- `send-email` — Send an email via msmtp; body comes from stdin.
+  - `dispatcher --caller-skill email-client email-client send-email --from nyu|personal --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]`
 <!-- END BLUEPRINT INTERFACES -->
 # Email
 
@@ -55,50 +55,22 @@ himalaya folder list -a nyu
 
 Gmail folder names: `INBOX`, `[Gmail]/Sent Mail`, `[Gmail]/Drafts`, `[Gmail]/Trash`, `[Gmail]/All Mail`.
 
-## Sending — email-send.sh
+## Sending — `send-email`
 
 **Never use `himalaya message send` or `himalaya template send` — both are broken** (v1.2.0 bugs; see below).
 
-Use `scripts/email-send.sh`. Body comes from stdin.
+Use the `send-email` interface. Body comes from stdin.
 
-```bash
-# Plain text
-echo "Hi there." | scripts/email-send.sh \
-  --from nyu \
-  --to recipient@example.com \
-  --subject "Hello"
-
-# Multiple recipients + attachments (path:DisplayName — DisplayName optional)
-cat <<'EOF' | scripts/email-send.sh \
-  --from nyu \
-  --to alice@example.com \
-  --to bob@example.com \
-  --subject "Papers" \
-  --attach /path/to/file.pdf:"paper.pdf" \
-  --attach /path/to/slides.pdf
-Body text here.
-EOF
-```
+Flags: `--from nyu|personal` (required), `--to <addr>` (repeatable, required), `--subject <subject>` (required), `--attach /path[:DisplayName]` (repeatable, optional), `--in-reply-to <msg-id>` (optional), `--references <refs>` (optional).
 
 **Accounts:** `--from nyu` or `--from personal`.
 
 ## Replying to a thread
 
-Himalaya's formatted output omits `Message-ID`. Use `email-get-message-id.sh` to fetch it, then pass it to `email-send.sh`:
+Himalaya's formatted output omits `Message-ID`. Use `get-message-id` to fetch it, then pass it to `send-email`:
 
-```bash
-# 1. Get the Message-ID of the message being replied to
-MSG_ID=$(scripts/email-get-message-id.sh -a nyu --folder "[Gmail]/All Mail" <envelope-id>)
-
-# 2. Send the threaded reply
-cat <<'BODY' | scripts/email-send.sh \
-  --from nyu \
-  --to sender@example.com \
-  --subject "Re: Original Subject" \
-  --in-reply-to "$MSG_ID"
-Reply body here.
-BODY
-```
+1. Call `get-message-id` with `-a nyu|personal`, `--folder <folder>`, and the envelope ID to obtain the raw `Message-ID`.
+2. Call `send-email` with `--in-reply-to <msg-id>` set to that value; body from stdin.
 
 - `--in-reply-to <message-id>` — sets `In-Reply-To`; `References` defaults to the same value
 - `--references <refs>` — override `References` explicitly (deep threads with multiple ancestors)

@@ -22,15 +22,15 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `scripts-fetch-envelopes`
-  - `dispatcher --caller-skill email-triage email-triage scripts-fetch-envelopes ...`
-- `scripts-get-cutoff`
+- `scripts-fetch-envelopes` — Fetch email envelope metadata for a given account since the last watermark.
+  - `dispatcher --caller-skill email-triage email-triage scripts-fetch-envelopes -a <account>`
+- `scripts-get-cutoff` — Return the cutoff date for the current triage run, with a fallback if no watermark exists.
   - `dispatcher --caller-skill email-triage email-triage scripts-get-cutoff ...`
-- `scripts-log-decision`
-  - `dispatcher --caller-skill email-triage email-triage scripts-log-decision ...`
-- `scripts-prune-log`
+- `scripts-log-decision` — Append a triage classification decision for one email to triage.log.
+  - `dispatcher --caller-skill email-triage email-triage scripts-log-decision <account> <id> <from> <subject> <DECISION> <reason>`
+- `scripts-prune-log` — Drop triage.log entries older than 30 days and print a one-line summary.
   - `dispatcher --caller-skill email-triage email-triage scripts-prune-log ...`
-- `scripts-update-watermark`
+- `scripts-update-watermark` — Advance the triage watermark to the current timestamp.
   - `dispatcher --caller-skill email-triage email-triage scripts-update-watermark ...`
 <!-- END BLUEPRINT INTERFACES -->
 # Email Triage
@@ -39,12 +39,12 @@ Scans emails received since the last triage run. Extracts action items and route
 
 Use the `email-client` skill to read and send email. Use the `list-manager` skill to read and update destination lists.
 
-**IMPORTANT: Never ask the user for a lookback period or watermark date. The date always comes from `get-cutoff.py`. If that script emits a warning or fails, report it to the user — but do not ask them to supply a date instead.**
+**IMPORTANT: Never ask the user for a lookback period or watermark date. The date always comes from the `scripts-get-cutoff` interface. If that interface emits a warning or fails, report it to the user — but do not ask them to supply a date instead.**
 
-**Decision logging:** After every classification, call:
-```bash
-scripts/log-decision.sh <account> <id> "<from>" "<subject>" <DECISION> "<reason>"
-```
+**Decision logging:** After every classification, invoke the `scripts-log-decision` interface:
+
+`scripts-log-decision <account> <id> "<from>" "<subject>" <DECISION> "<reason>"`
+
 `DECISION` values: `SKIP` (subject-only skip) · `NO_ACTION` (body read, nothing to do) · `TODO` (added to todo) · `POTENTIAL` (added to potential-actions) · `DEDUP` (already exists in destination)  
 `reason` = one sentence explaining the classification. Log: `triage.log`
 
@@ -56,14 +56,14 @@ scripts/log-decision.sh <account> <id> "<from>" "<subject>" <DECISION> "<reason>
 
 ## Step 1 — Fetch new envelopes (run in parallel)
 
-```bash
-scripts/fetch-envelopes.py -a nyu
-scripts/fetch-envelopes.py -a personal
-```
+Invoke the `scripts-fetch-envelopes` interface for each account:
 
-The script handles all date/time filtering internally — it reads the watermark datetime, calls himalaya, and returns only emails received since the last run. **Do not call himalaya directly for envelope listing.**
+- `scripts-fetch-envelopes -a nyu`
+- `scripts-fetch-envelopes -a personal`
 
-If either script prints `(no new emails for …)`, skip that account in later steps. If stderr contains a `WARNING:` line, include it in the Step 6 report.
+The interface handles all date/time filtering internally — it reads the watermark datetime, calls himalaya, and returns only emails received since the last run. **Do not call himalaya directly for envelope listing.**
+
+If either invocation prints `(no new emails for …)`, skip that account in later steps. If stderr contains a `WARNING:` line, include it in the Step 6 report.
 
 Note FLAGS per row: `*` = unread · `R` = replied · blank = read, not replied.
 
@@ -99,7 +99,7 @@ Batch up to 10 reads in parallel. Classify each email by sender type and targeti
 
 **Follow-up commitments** (any type): if a prior reply contains an explicit promise (e.g. "I'll send you X in July"), add to `todo` regardless of type.
 
-**Log every email read at this step** — one `log-decision.sh` call per email with its classification (`NO_ACTION`, `TODO`, `POTENTIAL`) and one sentence why. Log `NO_ACTION` even when nothing is added.
+**Log every email read at this step** — one `scripts-log-decision` call per email with its classification (`NO_ACTION`, `TODO`, `POTENTIAL`) and one sentence why. Log `NO_ACTION` even when nothing is added.
 
 ---
 
@@ -144,11 +144,9 @@ Summarize concisely:
 
 ## Step 7 — Update watermark and prune log
 
-After a successful run:
+After a successful run, invoke both interfaces:
 
-```bash
-scripts/update-watermark.py
-python3 scripts/prune-log.py
-```
+- `scripts-update-watermark`
+- `scripts-prune-log`
 
-Skip both if the run failed or was aborted mid-way. `prune-log.py` drops entries older than 30 days and prints a one-line summary.
+Skip both if the run failed or was aborted mid-way. `scripts-prune-log` drops entries older than 30 days and prints a one-line summary.

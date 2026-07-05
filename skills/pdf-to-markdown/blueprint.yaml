@@ -39,23 +39,27 @@ skill_interface:
 script_interfaces:
   scripts-check-marker-models:
     id: scripts-check-marker-models
+    description: "Check whether required Marker/Surya models are downloaded and cached locally."
+    usage: ""
     cwd: skill_root
     command: ["scripts/check-marker-models.sh"]
     interface:
       default:
         min_positionals: 0
-        allow_extra_positionals: true
+        allow_extra_positionals: false
         allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/check-marker-models.sh; tighten this contract when needed."
+        notes: "Takes no arguments. Exits 0 if all models are cached, 1 if any are missing, 2 if marker-pdf is not installed."
     exported_interface: []
   scripts-fetch-arxiv-source:
     id: scripts-fetch-arxiv-source
+    description: "Download and extract the LaTeX source tarball for a paper from arXiv."
+    usage: "<arxiv-id> <output-dir>"
     cwd: skill_root
     command: ["scripts/fetch-arxiv-source.sh"]
     interface:
       default:
-        min_positionals: 0
-        allow_extra_positionals: true
+        min_positionals: 2
+        allow_extra_positionals: false
         allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/fetch-arxiv-source.sh; tighten this contract when needed."
+        notes: "Positional 1: arXiv paper ID (e.g. 2301.07041). Positional 2: directory to extract into. Exits 1 if arXiv returns HTML (no source available)."
     exported_interface: []
