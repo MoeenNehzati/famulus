@@ -18,7 +18,7 @@ description: |
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: mathematical-analysis
+Category: research-assistant
 
 Dependencies: none
 

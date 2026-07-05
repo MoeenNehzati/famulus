@@ -6,7 +6,7 @@ description: Install or update the assistant, collab, coauthor, and tw/tmux-work
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: automation
+Category: skill-making-assistant
 
 Dependencies:
 - cloud-files

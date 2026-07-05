@@ -1,7 +1,6 @@
 # Canonical contract for g-calendar.
 
-category: automation
-
+category: general-assistant
 interface_version: 1
 
 cross_platform: false

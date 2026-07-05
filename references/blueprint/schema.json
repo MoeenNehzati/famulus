@@ -8,17 +8,31 @@
   "properties": {
     "category": {
       "title": "Skill Category",
-      "description": "One or more categories from references/skill-categories.md",
+      "description": "One or more categories from references/skill-categories.md. workflow-assistant is a subset of general-assistant.",
       "oneOf": [
         {
           "type": "string",
-          "minLength": 1
+          "enum": [
+            "research-assistant",
+            "general-assistant",
+            "workflow-assistant",
+            "skill-making-assistant",
+            "coding-assistant",
+            "system-assistant"
+          ]
         },
         {
           "type": "array",
           "items": {
             "type": "string",
-            "minLength": 1
+            "enum": [
+              "research-assistant",
+              "general-assistant",
+              "workflow-assistant",
+              "skill-making-assistant",
+              "coding-assistant",
+              "system-assistant"
+            ]
           },
           "minItems": 1
         }

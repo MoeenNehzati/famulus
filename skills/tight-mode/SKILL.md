@@ -6,7 +6,7 @@ description: Use when the user invokes "tight mode" or asks for rigorous, exact,
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: workflow
+Category: workflow-assistant
 
 Dependencies: none
 

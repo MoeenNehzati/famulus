@@ -2,8 +2,7 @@
 # This file is hand-authored and comment-rich on purpose. Sync tooling may read
 # and validate it, but must not rewrite it in ways that destroy comments.
 
-category: automation
-
+category: general-assistant
 # Bump this major version whenever the exported script contract changes in a
 # breaking way.
 interface_version: 1

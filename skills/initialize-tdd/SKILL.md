@@ -6,7 +6,7 @@ description: Use when starting a brand new project that should follow a staged, 
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: automation
+Category: coding-assistant
 
 Dependencies: none
 

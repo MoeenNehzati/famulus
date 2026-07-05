@@ -2,8 +2,7 @@
 # Implements directory-based resource ownership: each skill owns specific paths
 # and only that skill (via allowed_callers) can read/write those paths.
 
-category: automation
-
+category: system-assistant
 interface_version: 1
 
 depends_on: {}

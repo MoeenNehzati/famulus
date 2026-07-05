@@ -6,7 +6,7 @@ description: Use when the user explicitly invokes this skill to prepare a handof
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: workflow
+Category: workflow-assistant
 
 Dependencies: none
 

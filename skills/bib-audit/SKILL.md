@@ -6,7 +6,7 @@ description: Use when auditing a .bib bibliography file for syntactic validity, 
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: document-oriented
+Category: research-assistant
 
 Dependencies: none
 

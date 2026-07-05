@@ -2,8 +2,7 @@
 # This file was migrated from legacy skill metadata.
 # Tighten the placeholder script interfaces as each script contract becomes clearer.
 
-category: automation
-
+category: system-assistant
 # Bump this major version whenever the exported contract changes in a
 # breaking way for dependent skills.
 interface_version: 1

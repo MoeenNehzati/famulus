@@ -6,7 +6,7 @@ description: Update the shared skill-writing standards and keep their mechanical
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: automation
+Category: skill-making-assistant
 
 Dependencies: none
 

@@ -8,7 +8,7 @@ description: |
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: automation
+Category: general-assistant
 
 Dependencies: none
 

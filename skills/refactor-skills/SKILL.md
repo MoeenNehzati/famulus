@@ -6,7 +6,7 @@ description: Use when auditing or refactoring an existing skill for convention c
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: workflow
+Category: skill-making-assistant
 
 Dependencies: none
 

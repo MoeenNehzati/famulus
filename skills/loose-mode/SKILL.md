@@ -6,7 +6,7 @@ description: Use when the user invokes "loose mode" or asks for broad exploratio
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: workflow
+Category: workflow-assistant
 
 Dependencies: none
 

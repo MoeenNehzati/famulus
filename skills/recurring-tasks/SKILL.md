@@ -6,7 +6,7 @@ description: Use when setting up, enabling, disabling, testing, viewing logs, or
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: automation
+Category: system-assistant
 
 Dependencies:
 - install-assistant-tools
