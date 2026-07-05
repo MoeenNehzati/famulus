@@ -161,6 +161,49 @@ def gen_ids(existing_ids: set[str], count: int = 1) -> list[str]:
 
 # ── Validation ───────────────────────────────────────────────────────────────
 
+def validate_entries_before_insert(entries: list, schema_name: str) -> None:
+    """Check that each entry has all required fields before insertion.
+
+    This prevents the mistake of inventing missing required fields. If any entry
+    is missing a required field, fail loudly so the caller is forced to ask for
+    the value instead of guessing.
+
+    Auto-generated fields (id, created, state) are not required in the input.
+    """
+    if not HAS_JSONSCHEMA:
+        return  # Skip if jsonschema not available; full validation will happen later
+
+    # Determine which fields are required and which are auto-generated
+    schema_path = SCHEMAS_DIR / "lists" / f"{schema_name}.json"
+    if not schema_path.exists():
+        return  # Schema unknown; let full validation handle it
+
+    auto_generated = {"id", "created", "state"}
+
+    # For todo/potential-actions, load the action schema to find required fields
+    user_required = set()
+    if schema_name in ("todo", "potential-actions"):
+        action_schema_path = SCHEMAS_DIR / "types" / "action.json"
+        if action_schema_path.exists():
+            with open(action_schema_path) as f:
+                action_schema = json.load(f)
+            if "required" in action_schema:
+                user_required = set(action_schema["required"]) - auto_generated
+
+    # Check each entry for missing user-provided required fields
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue  # Let full validation handle type errors
+
+        missing = user_required - set(entry.keys())
+        if missing:
+            title = entry.get("title", "(no title)")
+            die(
+                f"entry '{title}' is missing required field(s): {', '.join(sorted(missing))}. "
+                f"Provide {missing.pop() if len(missing) == 1 else 'these fields'} instead of inventing them."
+            )
+
+
 def validate_list(data: dict) -> None:
     """Validate data against its declared schema. Calls die() on failure."""
     # Patch inputs (create-entry/update) may carry date objects from YAML; coerce
@@ -424,6 +467,11 @@ def cmd_create_entry(args: argparse.Namespace) -> None:
 
     if not isinstance(new_entries, list):
         die("entries input must be a YAML list")
+
+    # Validate required fields before adding to list. This fails fast and forces
+    # the caller to ask for missing values instead of inventing them.
+    schema_name = data.get("schema")
+    validate_entries_before_insert(new_entries, schema_name)
 
     existing_ids = collect_ids(data)
     today = datetime.date.today().isoformat()

@@ -75,7 +75,7 @@ Skill: list-manager
 
 - **Show to user:** use `cloud-read-beautify`; relay stdout **verbatim** — it is pre-fenced and id-annotated. Do not reformat.
 - **Ids:** every rendered row ends with `#id`. Use ids for all mutations — never row numbers. If ids aren't in context, run `cloud-read-beautify` first.
-- **Required fields:** if the schema requires a field the user didn't provide, ask — do not invent it. For example, `todo` entries require `deadline`.
+- **Required fields:** if the schema requires a field the user didn't provide, ask — do not invent it. For example, `todo` entries require `deadline`. The script validates this on create-entry and rejects entries with missing required fields; this prevents silently inventing values.
 - **Creating entries:** if the target category path is not already in context, run `cloud-read-beautify` first to see the list structure. Do not guess category paths.
 - **Missing categories:** do not invent; fail and report available categories.
 - **Transport:** cloud operations go through cloud-files's `lists-*` interfaces; never bypass them.
