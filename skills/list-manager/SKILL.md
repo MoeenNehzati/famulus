@@ -27,43 +27,43 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `beautify-list`
+- `beautify-list` — Render YAML list entries from stdin (diff-fenced). Pass YAML via stdin using `dispatcher --stdin`.
   - `dispatcher --caller-skill list-manager list-manager beautify-list ...`
   - Reads YAML from stdin and renders user-facing list output.
-- `cloud-create-entry`
-  - `dispatcher --caller-skill list-manager list-manager cloud-create-entry ...`
-- `cloud-delete`
-  - `dispatcher --caller-skill list-manager list-manager cloud-delete ...`
+- `cloud-create-entry` — Add entries to a cloud list under a category path.
+  - `dispatcher --caller-skill list-manager list-manager cloud-create-entry <name> <category/path> --cloud --entries /tmp/entry.yaml`
+- `cloud-delete` — Delete one or more entries by id from a cloud list. Ids come after --cloud.
+  - `dispatcher --caller-skill list-manager list-manager cloud-delete <name> --cloud <id> [<id>...]`
   - Delete one or more entries by ID from a cloud list.
-- `cloud-init`
-  - `dispatcher --caller-skill list-manager list-manager cloud-init ...`
+- `cloud-init` — Create a new list in cloud storage.
+  - `dispatcher --caller-skill list-manager list-manager cloud-init <name> --cloud --schema <schema>`
   - Create a new list in cloud storage.
-- `cloud-read`
-  - `dispatcher --caller-skill list-manager list-manager cloud-read ...`
+- `cloud-read` — Read a cloud list by name (raw YAML), optionally filtered.
+  - `dispatcher --caller-skill list-manager list-manager cloud-read <name> [filters] --cloud`
   - Read cloud list by name (raw YAML), optionally filtered.
-- `cloud-read-beautify`
-  - `dispatcher --caller-skill list-manager list-manager cloud-read-beautify ...`
+- `cloud-read-beautify` — Read a cloud list by name and render it (diff-fenced, id-annotated). Relay stdout verbatim.
+  - `dispatcher --caller-skill list-manager list-manager cloud-read-beautify <name> [filters] --cloud`
   - Read a cloud list by name and render it (diff-fenced), optionally filtered.
-- `cloud-update`
-  - `dispatcher --caller-skill list-manager list-manager cloud-update ...`
+- `cloud-update` — Update entries in a cloud list from a patch file (keyed by id).
+  - `dispatcher --caller-skill list-manager list-manager cloud-update <name> --cloud --file /tmp/patch.yaml`
   - file-mode: Update cloud list entries from a patch file.
   - stdin-mode: Update cloud list entries from a stdin patch.
-- `create-entry`
-  - `dispatcher --caller-skill list-manager list-manager create-entry ...`
-- `generate-id`
-  - `dispatcher --caller-skill list-manager list-manager generate-id ...`
-- `init-list`
-  - `dispatcher --caller-skill list-manager list-manager init-list ...`
-- `migrate-markdown`
-  - `dispatcher --caller-skill list-manager list-manager migrate-markdown ...`
-- `read-beautify`
-  - `dispatcher --caller-skill list-manager list-manager read-beautify ...`
+- `create-entry` — Add entries to a local YAML list under a category path.
+  - `dispatcher --caller-skill list-manager list-manager create-entry <file> <category/path> --entries /tmp/entry.yaml`
+- `generate-id` — Generate one or more collision-free 6-char entry IDs against a local list file.
+  - `dispatcher --caller-skill list-manager list-manager generate-id <file> [--count N]`
+- `init-list` — Create a new empty local YAML list file.
+  - `dispatcher --caller-skill list-manager list-manager init-list <file> [--schema <name>]`
+- `migrate-markdown` — Migrate a legacy Markdown list to YAML format.
+  - `dispatcher --caller-skill list-manager list-manager migrate-markdown <source.md> <dest.yaml> --schema <schema>`
+- `read-beautify` — Read a local YAML list file and render it for display (diff-fenced).
+  - `dispatcher --caller-skill list-manager list-manager read-beautify <file> [filters]`
   - Read a local YAML list file and immediately return pretty output.
-- `read-list`
-  - `dispatcher --caller-skill list-manager list-manager read-list ...`
+- `read-list` — Read a local YAML list file, optionally filtered (raw YAML output).
+  - `dispatcher --caller-skill list-manager list-manager read-list <file> [filters]`
   - First positional is the local YAML file; remaining positionals are filters.
-- `update-list`
-  - `dispatcher --caller-skill list-manager list-manager update-list ...`
+- `update-list` — Update entries in a local YAML list file from a patch file (keyed by id) or stdin.
+  - `dispatcher --caller-skill list-manager list-manager update-list <file> --file /tmp/patch.yaml`
   - file-mode: Externally supported update mode; caller prepares the patch file.
   - stdin-batch: Internal convenience mode for the owning skill when feeding YAML directly.
 <!-- END BLUEPRINT INTERFACES -->
@@ -71,108 +71,14 @@ When this skill is used, begin with:
 
 Skill: list-manager
 
-## Workflow
+## Rules
 
-This skill manages YAML lists stored under `lists/` in cloud storage.
-
-**Cloud is the store.** Pass `--cloud` and give the list NAME as the first
-positional; the script downloads, operates, and (for mutations) uploads:
-```bash
-lists.py read todo [filters...] --cloud
-read_beautify.py todo [filters...] --cloud        # rendered, diff-fenced
-lists.py create-entry todo Research/Writing --cloud
-lists.py update todo --file patch.yaml --cloud
-lists.py init groceries --schema default --cloud
-```
-Without `--cloud` the first positional is a local file path — that is the
-engine used internally and by tests; not the user path.
-
-Cloud transport goes through cloud-files's restricted `lists-*` interfaces,
-which constrain access to the `lists/` directory. Validation runs before every
-write; never bypass it.
-
-## Showing a list to the user
-
-For any human-facing read ("show my …", "what's on …", "what's left") run
-`read_beautify <name> [filters] --cloud` and relay its stdout **verbatim** — it
-comes wrapped in a ` ```diff ` fence, grouped, numbered, deadline-annotated, and
-each row ends with its `#id` (ids are on by default). Do not re-number,
-re-group, summarize, drop the ids, or rebuild it as your own bullets.
-
-## Filtering: fields first
-
-Choose which rows to show in this order:
-
-1. **Field filter (preferred).** Express the request as `read`/`read_beautify`
-   filters — one call, done in-script:
-   - `key=v1,v2` — exact match, comma = OR (e.g. `state=incomplete`)
-   - `key~=regex` — regex search on the field, case-insensitive
-     (e.g. `title~=^Reply`, `deadline~=^2026-07`)
-   Most requests ("what's not done", "replies", "due in July") are field filters.
-2. **Semantic selection** (e.g. "the apartment ones") — render with ids
-   (default), read the matching `#id`s from the output, and act on those. You
-   pick which rows; the script still owns formatting. Never hand-format rows.
-
-## Editing items the user points to
-
-The rendered list already shows each row's `#id`, so a follow-up like "mark 66
-done", "push the apartment ones to Friday", or "delete the dentist entry"
-resolves to ids **already in your context** — no counting, no re-reading, no
-mapping row numbers. For updates, write the patch to a temp file and apply it in
-one call keyed by id:
-
-```yaml
-# /tmp/patch.yaml
-- id: 1ce1a7
-  state: done
-- id: a3aaba
-  state: done
-```
-```
-lists.py update todo --cloud --file /tmp/patch.yaml
-```
-
-For deletions, pass the ids directly:
-```
-lists.py delete todo --cloud c3d1e5
-lists.py delete todo --cloud c3d1e5 a3f2b9   # bulk
-```
-
-If the list is not already shown with ids in context, first
-`read_beautify <name> [filters] --cloud` (ids on), then update. Do not grep the
-raw YAML to hand-map numbers to ids.
-
-## Other operations
-
-- Add entries → `create-entry`; edit / check off / set deadline → `update`.
-- Delete entries → `delete <name> <id> [<id>...] --cloud`; each `#id` shown in
-  rendered output resolves directly. Deleting a parent removes its whole
-  subtree. All ids must exist; any missing id aborts with a nonzero exit and no
-  upload.
-- Create a new list → `init`; generate fresh ids → `gen-id`.
-- Migrate a legacy Markdown list → `migrate-markdown`.
-- `beautify-list` (stdin) renders entries a caller already holds in memory;
-  used by other skills, not the user path.
-
-For exact calling conventions, use `blueprint.yaml` and the script `--help`.
-For the live data contract, use `schemas/`.
-
-## Semantic invariants
-
-Keep these rules even if the scripts are obvious:
-
-- Never upload a file after any local validation or mutation failure.
-- Do not invent missing categories automatically; fail and report available
-  categories instead.
-- Before adding to `potential-actions`, verify there is no existing entry with
-  the same title in any state.
-- Accepting a `potential-actions` item also creates a matching `todo` entry
-  with state `incomplete` and today's date.
-- Rejecting a `potential-actions` item only changes its state there; the item
-  remains as audit trail.
-
-## Economy
-
-- Prefer filtered reads over full reads.
-- Use file/stdin batch modes for bulk mutations instead of exposing whole lists.
-- After a write, re-read only the affected portion and beautify that output.
+- **Show to user:** use `cloud-read-beautify`; relay stdout **verbatim** — it is pre-fenced and id-annotated. Do not reformat.
+- **Ids:** every rendered row ends with `#id`. Use ids for all mutations — never row numbers. If ids aren't in context, run `cloud-read-beautify` first.
+- **Required fields:** if the schema requires a field the user didn't provide, ask — do not invent it. For example, `todo` entries require `deadline`.
+- **Creating entries:** if the target category path is not already in context, run `cloud-read-beautify` first to see the list structure. Do not guess category paths.
+- **Missing categories:** do not invent; fail and report available categories.
+- **Transport:** cloud operations go through cloud-files's `lists-*` interfaces; never bypass them.
+- **Validation:** never upload after a local validation or mutation failure.
+- **`potential-actions`:** accepting an item also creates a matching `todo` (state `incomplete`, today's date); rejecting only changes state in `potential-actions`.
+- **Economy:** prefer filtered reads; after a write re-read only the affected portion.

@@ -172,6 +172,23 @@ description: Use when the user asks to plan their day, check their schedule, or 
 
 **6. Terse writing** — every line earns its place. No restatements, no motivation paragraphs. Long skills burn context on every invocation.
 
+**6. blueprint.yaml owns all interface definitions** — the generated interface block in `SKILL.md` (between `<!-- BEGIN/END BLUEPRINT INTERFACES -->`) is the single source of truth for interface names, invocation forms, and descriptions. The skill body must not restate, re-explain, or re-invoke any interface. Specifically:
+
+- The `description` field on each `script_interfaces` entry describes what the interface does.
+- The `usage` field provides the complete invocation argument template (positionals, required flags, optional flags). The sync script renders this into a ready-to-run `dispatcher` invocation in the generated block.
+- The `notes` field on each pattern gives mode-specific detail where multiple calling modes exist.
+- The skill body references interface names only — it never shows `dispatcher --caller-skill` invocations or `scripts/` paths. Behavioral rules (what to do with output, ordering, invariants) belong in the body; invocation mechanics belong in the blueprint.
+
+This separation is enforced by `skills/my-writing-skills/validators/skill_md_dispatch.py`, which fails the build if `dispatcher --caller-skill` invocations or `scripts/` paths appear in the hand-authored skill body. Prose references to the word "dispatcher" are allowed.
+
+**The generated block must be sufficient for a first-attempt correct invocation.** A model reading SKILL.md must be able to construct and execute a valid call without consulting blueprint.yaml, running `--help`, or trial-and-error. Test against this standard when authoring interfaces:
+
+- If `description` is missing, the model cannot reason about which interface to use.
+- If `usage` is missing or shows `...`, the model cannot construct the call correctly.
+- If `notes` omit mode-specific constraints, the model will guess wrong flags or ordering.
+
+**Interfaces that require runtime state should say so explicitly in the skill body.** When an operation depends on information only available at call time (e.g., category structure in a list, available ids, existing entries), the skill body must instruct the model to read that state first — before attempting the operation. Discovering required state through failure is a skill design defect. Example: "if the target category is not already in context, run `cloud-read-beautify` first."
+
 **7. Commit and push after every skill change** — when a skill is created or modified and the result is complete, **show the user the diff and ask for confirmation before committing**. Once confirmed, stage the changed files, commit, and push to `origin`. Skills are versioned in the shared skills repository; an unpushed change is not backed up and not portable.
 
 **8. Skills are components in an evolving system — design accordingly.**

@@ -11,6 +11,26 @@ import yaml
 
 INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
+CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
+CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
+
+# Skills with pre-existing body violations that predate this check.
+# Each entry needs a follow-up pass to move raw-script invocations into
+# blueprint.yaml (description + usage) and strip them from the skill body.
+# Do not add new skills here — fix them at the source instead.
+_LEGACY_BODY_VIOLATIONS: frozenset[str] = frozenset({
+    "bib-audit",
+    "cloud-files",
+    "daily-plan",
+    "email-client",
+    "email-triage",
+    "g-calendar",
+    "get-weather",
+    "install-assistant-tools",
+    "math-dependency-graph",
+    "pdf-to-markdown",
+    "recurring-tasks",
+})
 
 
 def _expect_mapping(value: Any) -> dict[str, Any]:
@@ -31,6 +51,23 @@ def _interface_ids(blueprint: dict[str, Any]) -> list[str]:
         if isinstance(interface_id, str) and interface_id.strip():
             result.append(interface_id.strip())
     return result
+
+
+def _body_text(text: str) -> str:
+    """Return SKILL.md content with all generated blueprint blocks stripped out."""
+    body = re.sub(
+        rf"{re.escape(CONTRACT_START)}.*?{re.escape(CONTRACT_END)}",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
+    body = re.sub(
+        rf"{re.escape(INTERFACES_START)}.*?{re.escape(INTERFACES_END)}",
+        "",
+        body,
+        flags=re.DOTALL,
+    )
+    return body
 
 
 def _interface_block(text: str) -> str | None:
@@ -64,6 +101,20 @@ def validate(repo_root: Path) -> list[str]:
             continue
 
         text = skill_md.read_text(encoding="utf-8")
+
+        body = _body_text(text)
+        if skill_name not in _LEGACY_BODY_VIOLATIONS:
+            if "scripts/" in body:
+                errors.append(
+                    f"{skill_md}: skill body must not invoke scripts directly; "
+                    "reference dispatcher interface names instead"
+                )
+            if "dispatcher --caller-skill" in body:
+                errors.append(
+                    f"{skill_md}: skill body must not invoke dispatcher directly; "
+                    "interface invocations belong in the generated block (blueprint.yaml owns them)"
+                )
+
         block = _interface_block(text)
         if block is None:
             errors.append(f"{skill_md}: missing generated blueprint interface block")

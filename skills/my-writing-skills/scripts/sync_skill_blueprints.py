@@ -387,19 +387,22 @@ def interface_pattern_notes(spec: dict[str, Any]) -> list[tuple[str | None, str 
 
 def owner_interfaces(
     data: dict[str, Any],
-) -> list[tuple[str, str | None, list[tuple[str | None, str | None]]]]:
-    """Return (id, description, pattern_notes) for each interface, sorted by id."""
+) -> list[tuple[str, str | None, str | None, list[tuple[str | None, str | None]]]]:
+    """Return (id, description, usage, pattern_notes) for each interface, sorted by id."""
     interfaces = expect_mapping(data.get("script_interfaces"), "script_interfaces")
-    result: list[tuple[str, str | None, list[tuple[str | None, str | None]]]] = []
+    result: list[tuple[str, str | None, str | None, list[tuple[str | None, str | None]]]] = []
     for interface_name, spec in sorted(interfaces.items()):
         if not isinstance(spec, dict):
             continue
         description = spec.get("description")
         clean_description = description.strip() if isinstance(description, str) and description.strip() else None
+        usage = spec.get("usage")
+        clean_usage = usage.strip() if isinstance(usage, str) and usage.strip() else None
         result.append(
             (
                 interface_id(interface_name, spec, f"script_interfaces.{interface_name}"),
                 clean_description,
+                clean_usage,
                 interface_pattern_notes(spec),
             )
         )
@@ -451,13 +454,14 @@ def generated_interface_block(skill_name: str, data: dict[str, Any]) -> str:
         "",
         "Use the installed `dispatcher` command for this skill's script interfaces:",
     ]
-    for interface_name, description, pattern_notes in interfaces:
+    for interface_name, description, usage, pattern_notes in interfaces:
         if description:
             lines.append(f"- `{interface_name}` — {description}")
         else:
             lines.append(f"- `{interface_name}`")
+        args = f" {usage}" if usage else " ..."
         lines.append(
-            f"  - `dispatcher --caller-skill {skill_name} {skill_name} {interface_name} ...`"
+            f"  - `dispatcher --caller-skill {skill_name} {skill_name} {interface_name}{args}`"
         )
         for pat_name, pat_notes in pattern_notes:
             if pat_name and pat_notes:

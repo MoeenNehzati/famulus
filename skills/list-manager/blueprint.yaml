@@ -46,6 +46,8 @@ script_interfaces:
   # The primary local CLI for structured list operations.
   read-list:
     id: read-list
+    description: "Read a local YAML list file, optionally filtered (raw YAML output)."
+    usage: "<file> [filters]"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "read"]
     default:
@@ -60,6 +62,8 @@ script_interfaces:
 
   update-list:
     id: update-list
+    description: "Update entries in a local YAML list file from a patch file (keyed by id) or stdin."
+    usage: "<file> --file /tmp/patch.yaml"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "update"]
     default:
@@ -83,6 +87,8 @@ script_interfaces:
 
   read-beautify:
     id: read-beautify
+    description: "Read a local YAML list file and render it for display (diff-fenced)."
+    usage: "<file> [filters]"
     cwd: skill_root
     command: ["python3", "scripts/read_beautify.py"]
     default:
@@ -97,6 +103,7 @@ script_interfaces:
 
   beautify-list:
     id: beautify-list
+    description: "Render YAML list entries from stdin (diff-fenced). Pass YAML via stdin using `dispatcher --stdin`."
     cwd: skill_root
     command: ["python3", "scripts/beautify.py"]
     default:
@@ -110,6 +117,8 @@ script_interfaces:
 
   init-list:
     id: init-list
+    description: "Create a new empty local YAML list file."
+    usage: "<file> [--schema <name>]"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "init"]
     default:
@@ -122,6 +131,8 @@ script_interfaces:
 
   create-entry:
     id: create-entry
+    description: "Add entries to a local YAML list under a category path."
+    usage: "<file> <category/path> --entries /tmp/entry.yaml"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "create-entry"]
     default:
@@ -142,6 +153,8 @@ script_interfaces:
 
   generate-id:
     id: generate-id
+    description: "Generate one or more collision-free 6-char entry IDs against a local list file."
+    usage: "<file> [--count N]"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "gen-id"]
     default:
@@ -154,6 +167,8 @@ script_interfaces:
 
   migrate-markdown:
     id: migrate-markdown
+    description: "Migrate a legacy Markdown list to YAML format."
+    usage: "<source.md> <dest.yaml> --schema <schema>"
     cwd: skill_root
     command: ["python3", "scripts/migrate_md.py"]
     default:
@@ -174,6 +189,8 @@ script_interfaces:
   #
   cloud-read:
     id: cloud-read
+    description: "Read a cloud list by name (raw YAML), optionally filtered."
+    usage: "<name> [filters] --cloud"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "read"]
     default:
@@ -191,6 +208,8 @@ script_interfaces:
 
   cloud-create-entry:
     id: cloud-create-entry
+    description: "Add entries to a cloud list under a category path."
+    usage: "<name> <category/path> --cloud --entries /tmp/entry.yaml"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "create-entry"]
     default:
@@ -218,6 +237,8 @@ script_interfaces:
 
   cloud-update:
     id: cloud-update
+    description: "Update entries in a cloud list from a patch file (keyed by id)."
+    usage: "<name> --cloud --file /tmp/patch.yaml"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "update"]
     default:
@@ -245,6 +266,8 @@ script_interfaces:
 
   cloud-init:
     id: cloud-init
+    description: "Create a new list in cloud storage."
+    usage: "<name> --cloud --schema <schema>"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "init"]
     default:
@@ -262,6 +285,8 @@ script_interfaces:
 
   cloud-delete:
     id: cloud-delete
+    description: "Delete one or more entries by id from a cloud list. Ids come after --cloud."
+    usage: "<name> --cloud <id> [<id>...]"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "delete"]
     default:
@@ -280,6 +305,8 @@ script_interfaces:
 
   cloud-read-beautify:
     id: cloud-read-beautify
+    description: "Read a cloud list by name and render it (diff-fenced, id-annotated). Relay stdout verbatim."
+    usage: "<name> [filters] --cloud"
     cwd: skill_root
     command: ["python3", "scripts/read_beautify.py"]
     default:

@@ -116,11 +116,19 @@ script_interfaces:
     id: read-data
 
     # Optional human-facing summary for the owner-facing/default interface.
-    # If present, the sync tool injects this interface into SKILL.md so the
-    # skill can see why the script is useful without loading blueprint.yaml.
-    # Omit this field for narrow machine-facing interfaces that should stay out
-    # of SKILL.md.
+    # If present, the sync tool injects this into SKILL.md so the skill can
+    # see what the interface does without loading blueprint.yaml.
+    # Omit for narrow machine-facing interfaces that should stay out of SKILL.md.
     description: "Read an input file and optionally apply extra filters."
+
+    # Optional complete invocation argument template. The sync tool renders this
+    # into the dispatcher invocation in SKILL.md, replacing the bare "..." stub.
+    # Write it as the argument string after the interface name, e.g.:
+    #   usage: "<file> [filters] --cloud [--sort FIELD]"
+    # This is what makes the generated block actionable without consulting
+    # blueprint.yaml. The skill body must not repeat or re-explain this —
+    # blueprint.yaml owns the interface definition; SKILL.md body uses it.
+    usage: "<file> [filters]"
 
     # Working directory where the command runs. Default: skill_root.
     # - skill_root: run in skills/<skill-name>/
@@ -275,6 +283,7 @@ script_interfaces:
   update-data:
     id: update-data
     description: "Update a target resource from file or stdin input."
+    usage: "<target> --file /tmp/patch.yaml"
     cwd: skill_root
     command: ["python3", "scripts/example.py", "update"]
 
@@ -423,10 +432,15 @@ script_interfaces:
 #    - daily-plan owns plans/ directory via allowed_callers
 #    - Prevents cross-contamination and enforces ownership at compile-time
 #
-# 4. Always include 'notes' on every pattern. Notes are injected into SKILL.md
-#    and are the only documentation a dependent skill sees when calling through
-#    the dispatcher — blueprint.yaml is not consulted at call time. Write notes
-#    so a caller can invoke the interface correctly without reading anything else.
+# 4. Always set 'description' and 'usage' on every interface. The sync tool
+#    injects these into the generated SKILL.md interface block, making it the
+#    single actionable reference for callers. 'description' says what the
+#    interface does; 'usage' is the complete argument template (positionals +
+#    required flags + optional flags). The skill body must not re-explain or
+#    re-invoke interfaces — blueprint.yaml owns the definition, the generated
+#    block exposes it, and the body only names interfaces and states rules.
+#    Use 'notes' on individual patterns for mode-specific detail when multiple
+#    calling conventions exist (file-mode vs stdin-mode, etc.).
 #
 # 5. Version your interface_version. When you add a new pattern or change
 #    existing constraints in a breaking way, bump interface_version.

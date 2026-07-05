@@ -177,6 +177,11 @@
           "minLength": 1,
           "description": "Optional human-facing owner summary. When present, the sync tool injects this interface into SKILL.md. Omit it for narrow machine-facing subinterfaces that should stay out of the skill body."
         },
+        "usage": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional complete invocation argument template (positionals, required flags, optional flags). The sync tool renders this into the dispatcher invocation in the generated SKILL.md block, replacing the bare '...' stub. Write it as the argument string after the interface name, e.g. '<name> [filters] --cloud'. Required whenever description is set."
+        },
         "cwd": {
           "enum": ["skill_root", "repo_root"],
           "default": "skill_root"
