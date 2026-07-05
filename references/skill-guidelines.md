@@ -59,7 +59,7 @@ Dependencies authorize skill invocation and, for blueprint-migrated dependencies
 
 **Blueprint authoring notes**
 
-- `category`: required string, or a list of strings for a genuinely multi-category skill. Values from `references/skill-categories.md`.
+- `category`: required single string from the typed enum in `references/blueprint/schema.json`. The taxonomy is a tree; names encode hierarchy via postfix (`workflow-general-assistant` ⊂ `general-assistant`). A skill may sit at any node — leaf or intermediate.
 - `interface_version`: required positive integer. Bump only when exported contract changes in a breaking way.
 - `depends_on`: mapping from skill name to dependency contract. Use `major_version` for blueprint dependencies and `{}` only for legacy non-blueprint dependencies. Include `exports` list to name which interfaces this skill is allowed to use.
 - `suggested_permissions`: mapping with `bash` and `network` lists. Every entry must include a `reason` explaining why it's safe to pre-approve.
@@ -126,7 +126,9 @@ That generated block is not user-authored. Do not edit it by hand. These checks 
 
 Regression tests for the blueprint dispatcher and sync script live in `skills/my-writing-skills/tests/test_blueprint_tools.py`.
 
-**2. Skill categories** — declare `Category: <name>` near the top of `SKILL.md`. Valid values: top-level `references/skill-categories.md`. Omit only if no existing category fits.
+**2. Skill categories** — declare `category` in `blueprint.yaml`. Must be one of the typed enum values in `references/blueprint/schema.json`. The taxonomy is a tree encoded by postfix; see the `category` section in `references/blueprint/guide.md` for the full tree. Do not invent new category names; update the schema enum and the `_CATEGORY_NODES` set in `skills/my-writing-skills/validators/blueprints.py` first.
+
+For `research-assistant` skills applied to `.tex` files: check whether a top-of-document profile comment exists before proceeding; if not, use `make-tex-docstring` first.
 
 **3. `my-X` naming and structure** — a personal override of upstream skill `X` is named `my-X`. Every `my-X` skill must follow this layout:
 - Personal overrides and additions at the top (what's different or added).

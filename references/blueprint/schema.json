@@ -8,7 +8,7 @@
   "properties": {
     "category": {
       "title": "Skill Category",
-      "description": "A single category node from the assistant taxonomy tree in references/skill-categories.md. Names encode hierarchy via postfix: 'workflow-general-assistant' is a child of 'general-assistant'. Skills may be placed at any node (leaf or intermediate). The root 'assistant' is structural and may not be used.",
+      "description": "A single category node from the assistant taxonomy tree. Names encode hierarchy via postfix: 'workflow-general-assistant' is a child of 'general-assistant'. Skills may be placed at any node (leaf or intermediate). The root 'assistant' is structural and may not be used. Full tree in references/blueprint/guide.md.",
       "type": "string",
       "enum": [
         "research-assistant",

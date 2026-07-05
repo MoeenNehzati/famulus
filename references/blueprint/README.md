@@ -37,12 +37,16 @@ Blueprints define the contract of skills: dependencies, interfaces, and invocati
 | Layer | Tool | When | What |
 |-------|------|------|------|
 | Schema | `schema.json` + IDE | Edit time | YAML structure (types, enums, constraints) |
-| Relationships | `tools/validate_blueprint_relationships.py` | Commit time | Cross-blueprint constraints (versions, access control) |
+| Python validators | `skills/my-writing-skills/validators/` | Commit time | Cross-field rules, sync drift, dependency constraints |
 
-**Both run together:**
+**Run validators manually:**
 ```bash
-python3 tools/check_skill_blueprints.py
+python3 skills/my-writing-skills/validators/blueprints.py
+python3 skills/my-writing-skills/validators/skill_md_dispatch.py
+python3 skills/my-writing-skills/validators/dependencies.py
 ```
+
+All validators run automatically at commit via `validators/runner.py` (`.githooks/pre-commit`).
 
 ## Key Concept: `allow_all_skills`
 
@@ -59,9 +63,3 @@ allowed_callers: [daily-plan, email-triage]
 ```
 
 **Constraint:** If `allow_all_skills: true`, `allowed_callers` must be empty.
-
-## Recent Change
-
-`exported` field renamed to `allow_all_skills` (v2.0). See `guide.md` → "Migration" section.
-
-All existing blueprints migrated. Old field name will fail validation.

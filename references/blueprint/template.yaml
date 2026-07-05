@@ -4,9 +4,12 @@
 # This file is intentionally comment-heavy. The sync tooling must treat comments
 # as user-owned authoring guidance and must not rewrite this file in place.
 
-# Required string, or list of strings for a genuinely multi-category skill.
-# Values should come from references/skill-categories.md.
-category: automation
+# Required single string. Must be one of the typed enum values in
+# references/blueprint/schema.json. The taxonomy is a tree; names encode their
+# position via postfix (e.g. 'workflow-general-assistant' is a child of
+# 'general-assistant'). A skill may be placed at any node — leaf or intermediate.
+# Full tree in references/blueprint/guide.md under "category".
+category: research-assistant
 
 # Required positive integer. Bump this major version only when the exported
 # contract changes in a breaking way for dependent skills.

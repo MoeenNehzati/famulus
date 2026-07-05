@@ -17,7 +17,7 @@ Rewrite the YAML `description` field to state only trigger conditions ("Use when
 **Risk:** None if triggers are preserved.
 
 ### Declare/fix Category
-Add or correct the `Category:` line using `references/skill-categories.md`.
+Set or correct `category` in `blueprint.yaml`. Must be one of the typed enum values in `references/blueprint/schema.json`. See the taxonomy tree in `references/blueprint/guide.md`.
 **Risk:** None.
 
 ### Sync generated contract artifacts

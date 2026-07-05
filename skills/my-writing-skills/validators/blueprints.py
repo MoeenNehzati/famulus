@@ -47,7 +47,7 @@ def _validate_blueprint_schema(
 
 
 # All valid category nodes (excluding structural root 'assistant').
-# Must stay in sync with references/blueprint/schema.json enum and skill-categories.md.
+# Must stay in sync with references/blueprint/schema.json enum.
 _CATEGORY_NODES: frozenset[str] = frozenset({
     "research-assistant",
     "general-assistant",

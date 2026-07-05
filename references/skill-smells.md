@@ -40,7 +40,7 @@ Visible symptoms that signal a skill needs refactoring. Each smell maps to one o
 **Moves:** Clarify Interface.
 
 ## Wrong or missing Category
-**Signal:** No `Category:` line, or the declared category doesn't match `references/skill-categories.md`.
+**Signal:** `category` missing from `blueprint.yaml`, or the value is not in the typed enum in `references/blueprint/schema.json`.
 **Moves:** Declare/fix Category.
 
 ## State in wrong location

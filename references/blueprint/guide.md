@@ -19,7 +19,7 @@ Validation is split into two independent layers:
 
 Validates individual blueprint files in isolation:
 - Is `interface_version` a positive integer?
-- Is `category` a string or list?
+- Is `category` a known value from the taxonomy tree?
 - Are patterns well-formed?
 - **If `allow_all_skills: true`, is `allowed_callers` empty?**
 
@@ -58,7 +58,7 @@ touch skills/<skill-name>/blueprint.yaml
 Copy the structure from `blueprint/template.yaml`:
 
 ```yaml
-category: automation
+category: research-assistant
 interface_version: 1
 cross_platform: true
 
@@ -102,7 +102,21 @@ script_interfaces:
 ### Step 3: Understand key fields
 
 #### `category`
-String or list of categories from `references/skill-categories.md`. Describes what the skill does.
+Required single string from the typed enum in `schema.json`. The taxonomy is a tree; names encode hierarchy via postfix — `workflow-general-assistant` is a child of `general-assistant`. A skill may be placed at any node (leaf or intermediate).
+
+```
+assistant  (structural root — not a valid value)
+├── research-assistant
+├── general-assistant
+│   ├── productivity-general-assistant
+│   └── workflow-general-assistant
+├── development-assistant
+│   ├── skill-making-development-assistant
+│   └── coding-development-assistant
+└── system-assistant
+```
+
+To add a new node: update the `category` enum in `schema.json` and the `_CATEGORY_NODES` set in `skills/my-writing-skills/validators/blueprints.py`.
 
 #### `interface_version`
 Positive integer. Increment when breaking changes occur. Dependents must match this version in their `depends_on.X.major_version`.
@@ -304,20 +318,14 @@ script_interfaces:
 
 ### Running Validation
 
-**Schema validation (individual blueprints):**
+**All validators (run individually or together):**
 ```bash
-jsonschema validate skills/my-skill/blueprint.yaml references/blueprint/schema.json
+python3 skills/my-writing-skills/validators/blueprints.py
+python3 skills/my-writing-skills/validators/skill_md_dispatch.py
+python3 skills/my-writing-skills/validators/dependencies.py
 ```
 
-**Relationship validation (across blueprints):**
-```bash
-python3 tools/validate_blueprint_relationships.py
-```
-
-**Both (automatic at commit):**
-```bash
-python3 tools/check_skill_blueprints.py
-```
+**All validators automatically at commit** — run by `validators/runner.py` via `.githooks/pre-commit`.
 
 ### Common Errors
 
@@ -392,8 +400,7 @@ To enable schema validation in your editor:
 
 - **Schema:** `blueprint/schema.json` — Full JSON Schema validation rules
 - **Template:** `blueprint/template.yaml` — Annotated examples of all features
-- **Validator (relationships):** `tools/validate_blueprint_relationships.py`
-- **Validator (integration):** `tools/check_skill_blueprints.py`
+- **Validators:** `skills/my-writing-skills/validators/` — `blueprints.py`, `skill_md_dispatch.py`, `dependencies.py`, and others
 
 ---
 
