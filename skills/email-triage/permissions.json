@@ -1,6 +1,6 @@
 {
   "bash": [
-    "Bash(scripts/fetch-envelopes.py:*)",
+    "Bash(python3 scripts/filter-envelopes.py:*)",
     "Bash(scripts/get-cutoff.py:*)",
     "Bash(scripts/update-watermark.py:*)",
     "Bash(scripts/log-decision.sh:*)",

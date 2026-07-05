@@ -5,7 +5,7 @@
 category: productivity-general-assistant
 # Bump this major version whenever the exported contract changes in a
 # breaking way for dependent skills.
-interface_version: 1
+interface_version: 2
 
 cross_platform: false
 
@@ -16,6 +16,10 @@ suggested_permissions:
   bash:
     - command: ["scripts/email-send.sh"]
       reason: "Migrated from legacy permissions.json."
+    - command: ["python3", "scripts/mail.py"]
+      reason: "Read-side IMAP client (list/read/folders), replaces himalaya for reading."
+    - command: ["python3", "scripts/accounts.py"]
+      reason: "Account registry: add/update/remove/list nicknames and set credentials."
   network:
     []
 
@@ -28,21 +32,103 @@ skill_interface:
     - "May invoke local scripts or dependencies as described in SKILL.md."
 
 script_interfaces:
-  get-message-id:
-    id: get-message-id
-    description: "Fetch the raw Message-ID header of an IMAP envelope by its numeric ID."
-    usage: "[-a nyu|personal] [--folder <folder>] <envelope-id>"
-    cwd: skill_root
-    command: ["scripts/email-get-message-id.sh"]
-    default:
-      patterns:
-        - name: owner
   send-email:
     id: send-email
     description: "Send an email via msmtp; body comes from stdin."
-    usage: "--from nyu|personal --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]"
+    usage: "--from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]"
     cwd: skill_root
     command: ["scripts/email-send.sh"]
+    default:
+      patterns:
+        - name: owner
+          allow_stdin: true
+  mail-list:
+    id: mail-list
+    description: >-
+      List email envelopes for an account as JSON (fields: id, flags, subject, from,
+      date, message_id). --folder accepts aliases inbox|sent|drafts|trash|all or any
+      literal IMAP folder name (default inbox). --after narrows server-side by day
+      (IMAP SINCE). Filters are key=value (exact, comma-separated=OR) or key~=value
+      (regex, case-insensitive) over id/subject/from/date/message_id/flags, ANDed
+      across distinct keys, applied client-side after fetch. Unfiltered + undated
+      scans the whole folder (slow on large mailboxes) — pair filters with --after.
+    usage: "-a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] [--after YYYY-MM-DD] [key=value|key~=value ...] [--limit N]"
+    cwd: skill_root
+    command: ["python3", "scripts/mail.py", "list"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+  mail-read:
+    id: mail-read
+    description: >-
+      Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/
+      Date/Message-ID, then In-Reply-To/References only if the message is a reply,
+      then a blank line, then the decoded body (text/plain preferred; falls back to
+      HTML with tags stripped; attachments are skipped, not shown).
+    usage: "-a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>"
+    cwd: skill_root
+    command: ["python3", "scripts/mail.py", "read"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+  mail-folders:
+    id: mail-folders
+    description: "List IMAP folders for an account (JSON)."
+    usage: "-a <nickname>"
+    cwd: skill_root
+    command: ["python3", "scripts/mail.py", "folders"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+  accounts-list:
+    id: accounts-list
+    description: "List registered account nicknames with their email/display name (no secrets)."
+    usage: ""
+    cwd: skill_root
+    command: ["python3", "scripts/accounts.py", "list"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+  accounts-add:
+    id: accounts-add
+    description: "Register a new account nickname. Gmail IMAP/SMTP settings are the default; pass explicit host/port flags for other providers. Follow with accounts-set-password for imap and smtp."
+    usage: "--nickname <nick> --email <addr> [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls]"
+    cwd: skill_root
+    command: ["python3", "scripts/accounts.py", "add"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+  accounts-update:
+    id: accounts-update
+    description: "Update fields on an existing account nickname."
+    usage: "--nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P]"
+    cwd: skill_root
+    command: ["python3", "scripts/accounts.py", "update"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+  accounts-remove:
+    id: accounts-remove
+    description: "Remove an account nickname from the registry; optionally purge its keyring credentials too."
+    usage: "--nickname <nick> [--purge-credentials]"
+    cwd: skill_root
+    command: ["python3", "scripts/accounts.py", "remove"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+  accounts-set-password:
+    id: accounts-set-password
+    description: "Store the IMAP or SMTP credential for an account in the GNOME keyring. The secret is read from stdin, never a CLI argument."
+    usage: "--nickname <nick> --purpose imap|smtp"
+    cwd: skill_root
+    command: ["python3", "scripts/accounts.py", "set-password"]
     default:
       patterns:
         - name: owner

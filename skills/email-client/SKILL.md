@@ -1,6 +1,6 @@
 ---
 name: email-client
-description: Use when reading, listing, searching, or sending email for the user. Covers both nyu (sn3379@nyu.edu) and personal (smnehzati@gmail.com) Gmail accounts.
+description: Use when reading, listing, searching, or sending email for the user. Covers any account nickname registered in the account registry (run accounts-list to see what's configured).
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
@@ -10,7 +10,7 @@ Category: productivity-general-assistant
 
 Dependencies: none
 
-Interface Version: 1
+Interface Version: 2
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
@@ -20,77 +20,137 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `get-message-id` — Fetch the raw Message-ID header of an IMAP envelope by its numeric ID.
-  - `dispatcher --caller-skill email-client email-client get-message-id [-a nyu|personal] [--folder <folder>] <envelope-id>`
+- `accounts-add` — Register a new account nickname. Gmail IMAP/SMTP settings are the default; pass explicit host/port flags for other providers. Follow with accounts-set-password for imap and smtp.
+  - `dispatcher --caller-skill email-client email-client accounts-add --nickname <nick> --email <addr> [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls]`
+- `accounts-list` — List registered account nicknames with their email/display name (no secrets).
+  - `dispatcher --caller-skill email-client email-client accounts-list`
+- `accounts-remove` — Remove an account nickname from the registry; optionally purge its keyring credentials too.
+  - `dispatcher --caller-skill email-client email-client accounts-remove --nickname <nick> [--purge-credentials]`
+- `accounts-set-password` — Store the IMAP or SMTP credential for an account in the GNOME keyring. The secret is read from stdin, never a CLI argument.
+  - `dispatcher --caller-skill email-client email-client accounts-set-password --nickname <nick> --purpose imap|smtp`
+- `accounts-update` — Update fields on an existing account nickname.
+  - `dispatcher --caller-skill email-client email-client accounts-update --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P]`
+- `mail-folders` — List IMAP folders for an account (JSON).
+  - `dispatcher --caller-skill email-client email-client mail-folders -a <nickname>`
+- `mail-list` — List email envelopes for an account as JSON (fields: id, flags, subject, from, date, message_id). --folder accepts aliases inbox|sent|drafts|trash|all or any literal IMAP folder name (default inbox). --after narrows server-side by day (IMAP SINCE). Filters are key=value (exact, comma-separated=OR) or key~=value (regex, case-insensitive) over id/subject/from/date/message_id/flags, ANDed across distinct keys, applied client-side after fetch. Unfiltered + undated scans the whole folder (slow on large mailboxes) — pair filters with --after.
+  - `dispatcher --caller-skill email-client email-client mail-list -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] [--after YYYY-MM-DD] [key=value|key~=value ...] [--limit N]`
+- `mail-read` — Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/ Date/Message-ID, then In-Reply-To/References only if the message is a reply, then a blank line, then the decoded body (text/plain preferred; falls back to HTML with tags stripped; attachments are skipped, not shown).
+  - `dispatcher --caller-skill email-client email-client mail-read -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>`
 - `send-email` — Send an email via msmtp; body comes from stdin.
-  - `dispatcher --caller-skill email-client email-client send-email --from nyu|personal --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]`
+  - `dispatcher --caller-skill email-client email-client send-email --from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]`
 <!-- END BLUEPRINT INTERFACES -->
 # Email
 
-Two Gmail accounts: **nyu** (`sn3379@nyu.edu`) and **personal** (`smnehzati@gmail.com`).
+Accounts are nicknames registered in a small local registry, not hardcoded in this
+skill. Run `accounts-list` to see what's configured — nicknames and their default
+routing rules (e.g. "work stuff goes through the `work` account") live in the user's
+own memory/preferences, not in this skill.
 
-**Default account by context:**
-- `nyu` — anything academic: research, professors, coursework, NYU/university contacts, conference emails
-- `personal` — everything else: personal correspondence, shopping, services, non-academic contacts
+Reading and sending both go through plain IMAP/SMTP via Python's standard library and
+msmtp — no himalaya, no pip installs. himalaya's SMTP path had unfixable upstream bugs
+(see Known Issues below); the read path had no such bugs but depended on the same
+binary, so it was replaced too for one less moving part.
 
-## Reading — himalaya (IMAP only)
+## Reading — `mail-list` / `mail-read` / `mail-folders`
 
-himalaya v1.2.0 IMAP works correctly. **SMTP/send is broken** — see Known Bugs.
+All return JSON (except `mail-read`, which prints headers + decoded body as text).
 
 ```bash
-# List recent envelopes (default account = personal)
-himalaya envelope list
-himalaya envelope list -a nyu
-himalaya envelope list -a nyu --folder "[Gmail]/Sent Mail"
+# List recent envelopes (folder defaults to inbox)
+mail-list -a work
+mail-list -a work --folder sent
+mail-list -a work --after 2026-07-01
+mail-list -a work 'subject~=meeting'
+mail-list -a work --limit 20
 
-# Read a message by ID
-himalaya message read -a nyu 42
-
-# Search
-himalaya envelope list --query "subject:\"meeting\""
+# Read a message by UID (the "id" field from mail-list output)
+mail-read -a work 42
 
 # List folders
-himalaya folder list -a nyu
+mail-folders -a work
 ```
 
-Gmail folder names: `INBOX`, `[Gmail]/Sent Mail`, `[Gmail]/Drafts`, `[Gmail]/Trash`, `[Gmail]/All Mail`.
+Folder aliases: `inbox`, `sent`, `drafts`, `trash`, `all` map to the right Gmail
+special-use folder; any other string is passed through as a literal IMAP folder name
+(e.g. a Gmail label like `github`).
+
+**Filters** use the same `key=value`/`key~=value` DSL as other list-filtering interfaces
+in this toolkit — one filtering language, not a second one just for mail: `key=value`
+(exact, comma-separated = OR) or `key~=value` (regex search, case-insensitive), multiple
+filters ANDed together. Fields: `id`, `subject`, `from`, `date`, `message_id`, `flags`.
+
+```bash
+mail-list -a work 'subject~=ICML 2026'                    # phrase, quote it
+mail-list -a work 'from~=icml\.cc' 'subject~=CHECKIN'      # AND across fields
+mail-list -a work 'flags~=Answered'                        # already-replied messages
+```
+
+IMAP `SEARCH` itself can't do regex, so filters are applied client-side in Python
+against fetched headers — `--after` still narrows the candidate set on the server first
+(day-level, via IMAP `SINCE`), so pair a filter with `--after` when you can; an unfiltered,
+un-dated `mail-list` scans the whole folder (tens of seconds on a large mailbox).
+
+Every envelope from `mail-list` includes `message_id` — no separate lookup needed for
+replies (see below).
 
 ## Sending — `send-email`
 
-**Never use `himalaya message send` or `himalaya template send` — both are broken** (v1.2.0 bugs; see below).
-
 Use the `send-email` interface. Body comes from stdin.
 
-Flags: `--from nyu|personal` (required), `--to <addr>` (repeatable, required), `--subject <subject>` (required), `--attach /path[:DisplayName]` (repeatable, optional), `--in-reply-to <msg-id>` (optional), `--references <refs>` (optional).
-
-**Accounts:** `--from nyu` or `--from personal`.
+Flags: `--from <nickname>` (required), `--to <addr>` (repeatable, required), `--subject <subject>` (required), `--attach /path[:DisplayName]` (repeatable, optional), `--in-reply-to <msg-id>` (optional), `--references <refs>` (optional).
 
 ## Replying to a thread
 
-Himalaya's formatted output omits `Message-ID`. Use `get-message-id` to fetch it, then pass it to `send-email`:
+`mail-list` already returns `message_id` for every envelope — grab it from there and pass
+straight to `send-email`, no extra lookup:
 
-1. Call `get-message-id` with `-a nyu|personal`, `--folder <folder>`, and the envelope ID to obtain the raw `Message-ID`.
+1. Find the envelope in `mail-list` output; take its `message_id`.
 2. Call `send-email` with `--in-reply-to <msg-id>` set to that value; body from stdin.
 
 - `--in-reply-to <message-id>` — sets `In-Reply-To`; `References` defaults to the same value
 - `--references <refs>` — override `References` explicitly (deep threads with multiple ancestors)
 - Subject should be `Re: <original subject>` to match the thread in Gmail
 
-Passwords come from GNOME keyring via `secret-tool`. Keys:
-- `secret-tool lookup account nyu service himalaya-smtp`
-- `secret-tool lookup account personal service himalaya-smtp`
-- `secret-tool lookup account nyu service himalaya-imap`
-- `secret-tool lookup account personal service himalaya-imap`
+## Managing accounts — `accounts-list` / `accounts-add` / `accounts-update` / `accounts-remove` / `accounts-set-password`
 
-## Known Bugs — himalaya v1.2.0
+The registry lives at `~/.config/email-client/accounts.json` (outside the skill
+directory — it's per-machine and not source-controlled, same tier as the msmtp config
+it replaces). Passwords are never stored there; they stay in the GNOME keyring.
 
-1. **SMTP backend hangs** after Gmail's `CertificateRequest` in TLS 1.3 (rustls bug). msmtp/curl handle it fine.
-2. **Sendmail backend hangs** at "building new sendmail context" — never calls the external command. Affects even trivially configured commands like `cat`. No workaround; use email-send.sh directly.
+```bash
+accounts-list
 
-These bugs apply regardless of how himalaya is configured. Do not attempt to fix by reconfiguring himalaya.
+# Add a Gmail account (IMAP/SMTP settings default to Gmail's)
+accounts-add --nickname work --email me@company.com --display-name "Me at Work"
+
+# Add a non-Gmail account — pass explicit host/port
+accounts-add --nickname other --email me@example.com \
+  --imap-host imap.example.com --imap-port 993 \
+  --smtp-host smtp.example.com --smtp-port 587 --starttls
+
+# Set the credential for each purpose (secret read from stdin, never a CLI arg)
+echo -n '<app-password>' | accounts-set-password --nickname work --purpose imap
+echo -n '<app-password>' | accounts-set-password --nickname work --purpose smtp
+
+accounts-update --nickname work --display-name "New Display Name"
+accounts-remove --nickname work --purge-credentials
+```
+
+Each account gets its own keyring service names (`email-client-<nickname>-imap` /
+`-smtp`) so credentials never collide across accounts. Any account nickname migrated
+from an older himalaya-based setup can keep pointing at its original `himalaya-imap` /
+`himalaya-smtp` keyring entries by setting `imap_service`/`smtp_service` accordingly —
+no re-authentication needed.
+
+## Known Issues — himalaya (no longer used, kept for context)
+
+himalaya v1.2.0's SMTP backend hung after Gmail's `CertificateRequest` in TLS 1.3 (a
+rustls bug) and its sendmail backend never invoked the configured command at all. Both
+the read and send paths in this skill now bypass himalaya entirely, so these bugs are
+moot — noted here only so no one reintroduces himalaya expecting it to work.
 
 ## Config Files
 
-- himalaya: `~/.config/himalaya/config.toml`
-- msmtp: `~/.config/msmtp/config` (accounts: `nyu`, `personal`)
-- App Passwords stored in GNOME keyring via `secret-tool`
+- Account registry: `~/.config/email-client/accounts.json`
+- msmtp trust file: `/etc/ssl/certs/ca-certificates.crt` (hardcoded in `email-send.sh`; Gmail SMTP only needs the system CA bundle)
+- App passwords stored in GNOME keyring via `secret-tool`

@@ -1,6 +1,8 @@
 {
   "bash": [
-    "Bash(scripts/email-send.sh:*)"
+    "Bash(scripts/email-send.sh:*)",
+    "Bash(python3 scripts/mail.py:*)",
+    "Bash(python3 scripts/accounts.py:*)"
   ],
   "network": []
 }

@@ -2,8 +2,8 @@
 # Append one triage decision line to triage.log.
 #
 # Usage: log-decision.sh ACCOUNT ID FROM SUBJECT DECISION REASON
-#   ACCOUNT:  nyu | personal
-#   ID:       himalaya message ID
+#   ACCOUNT:  account nickname (see email-client's accounts-list)
+#   ID:       IMAP UID (the "id" field from email-client's mail-list)
 #   FROM:     sender display string (quote it)
 #   SUBJECT:  email subject (quote it)
 #   DECISION: SKIP | NO_ACTION | TODO | POTENTIAL | DEDUP

@@ -13,9 +13,12 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
+import os
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
-STATE_DIR = SKILL_DIR / "state"
+# Overridable via env var so tests can point at a tmp_path instead of the
+# real state/ directory.
+STATE_DIR = Path(os.environ["EMAIL_TRIAGE_STATE_DIR"]) if os.environ.get("EMAIL_TRIAGE_STATE_DIR") else SKILL_DIR / "state"
 WATERMARK = STATE_DIR / "last_run"
 STATUS_FILE = STATE_DIR / "status.json"
 

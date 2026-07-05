@@ -11,14 +11,14 @@ cross_platform: false
 
 depends_on:
   email-client:
-    major_version: 1
+    major_version: 2
   list-manager:
     major_version: 1
 
 suggested_permissions:
   bash:
-    - command: ["scripts/fetch-envelopes.py"]
-      reason: "Migrated from legacy permissions.json."
+    - command: ["python3", "scripts/filter-envelopes.py"]
+      reason: "Filters email-client mail-list JSON to strictly-after-watermark envelopes; replaces the old himalaya-calling fetch-envelopes.py."
     - command: ["scripts/get-cutoff.py"]
       reason: "Migrated from legacy permissions.json."
     - command: ["scripts/update-watermark.py"]
@@ -41,16 +41,17 @@ skill_interface:
     - "May invoke local scripts or dependencies as described in SKILL.md."
 
 script_interfaces:
-  scripts-fetch-envelopes:
-    id: scripts-fetch-envelopes
-    description: "Fetch email envelope metadata for a given account since the last watermark."
-    usage: "-a <account>"
+  scripts-filter-envelopes:
+    id: scripts-filter-envelopes
+    description: "Filter JSON envelopes (from email-client's mail-list, piped via stdin) to those strictly after the triage watermark."
+    usage: "-a <account>   < envelopes.json"
     cwd: skill_root
-    command: ["python3", "scripts/fetch-envelopes.py"]
+    command: ["python3", "scripts/filter-envelopes.py"]
     default:
       patterns:
         - name: owner
           allow_extra_positionals: true
+          allow_stdin: true
   scripts-get-cutoff:
     id: scripts-get-cutoff
     description: "Return the cutoff date for the current triage run, with a fallback if no watermark exists."

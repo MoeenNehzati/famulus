@@ -22,8 +22,8 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `scripts-fetch-envelopes` — Fetch email envelope metadata for a given account since the last watermark.
-  - `dispatcher --caller-skill email-triage email-triage scripts-fetch-envelopes -a <account>`
+- `scripts-filter-envelopes` — Filter JSON envelopes (from email-client's mail-list, piped via stdin) to those strictly after the triage watermark.
+  - `dispatcher --caller-skill email-triage email-triage scripts-filter-envelopes -a <account>   < envelopes.json`
 - `scripts-get-cutoff` — Return the cutoff date for the current triage run, with a fallback if no watermark exists.
   - `dispatcher --caller-skill email-triage email-triage scripts-get-cutoff`
 - `scripts-log-decision` — Append a triage classification decision for one email to triage.log.
@@ -56,18 +56,23 @@ Use the `email-client` skill to read and send email. Use the `list-manager` skil
 
 ---
 
-## Step 1 — Fetch new envelopes (run in parallel)
+## Step 1 — Fetch new envelopes (run in parallel per account)
 
-Invoke the `scripts-fetch-envelopes` interface for each account:
+First, call `email-client`'s `accounts-list` to get the configured account nicknames —
+do not assume or hardcode which ones exist. Triage every account it returns.
 
-- `scripts-fetch-envelopes -a nyu`
-- `scripts-fetch-envelopes -a personal`
+Two shell invocations per account:
 
-The interface handles all date/time filtering internally — it reads the watermark datetime, calls himalaya, and returns only emails received since the last run. **Do not call himalaya directly for envelope listing.**
+1. `scripts-get-cutoff` — the coarse lookback date (day-level; IMAP can't filter finer than a day). Its own call — the date is short, fine to see.
+2. **A single piped shell command**: `mail-list -a <account> --after <that date> | scripts-filter-envelopes -a <account>`. **Do not split this into two separate tool calls.** `mail-list`'s raw output is the full (unfiltered-by-time) envelope set for that lookback window — an interim result that gets narrowed by `scripts-filter-envelopes` to strictly-after-watermark. Piped as one shell command, that interim JSON flows process-to-process and never enters your context; only the filtered result (what `scripts-filter-envelopes` prints) does. Two separate tool calls would put the unfiltered set in your context first, which is what the pipe exists to avoid.
 
-If either invocation prints `(no new emails for …)`, skip that account in later steps. If stderr contains a `WARNING:` line, include it in the Step 6 report.
+Run this per account returned by `accounts-list`, in parallel across accounts.
 
-Note FLAGS per row: `*` = unread · `R` = replied · blank = read, not replied.
+**Do not call himalaya** — reading goes through `email-client`'s `mail-list`/`mail-read`, not the old CLI.
+
+If `scripts-filter-envelopes` prints `(no new emails for …)`, skip that account in later steps. If stderr contains a `WARNING:` line, include it in the Step 6 report.
+
+Each envelope is JSON: `id`, `flags` (IMAP flags — absence of `\Seen` means unread, `\Answered` means replied), `subject`, `from`, `date`, `message_id`.
 
 **Skip immediately** (don't read body) when the subject alone makes it unambiguous: sales/discount offers, newsletter digests, GitHub notifications, delivery confirmations, social media digests, referral bonuses. For financial senders (banks, SoFi, Spotify, utilities): read the subject — skip if promotional, read the body if it could be a statement, payment due, or alert. **Log each skip with `SKIP` and one sentence why.**
 
@@ -78,7 +83,7 @@ Note FLAGS per row: `*` = unread · `R` = replied · blank = read, not replied.
 ## Step 3 — Read email bodies in batches
 
 ```bash
-himalaya message read -a <account> <ID>
+mail-read -a <account> <ID>
 ```
 
 Batch up to 10 reads in parallel. Classify each email by sender type and targeting:
@@ -90,7 +95,7 @@ Batch up to 10 reads in parallel. Classify each email by sender type and targeti
 
 **Routing:**
 - **Types 1 & 3** always surface:
-  - Reply expected (no `R` flag, asks a question or expects a response) → `todo`
+  - Reply expected (no `\Answered` in `flags`, asks a question or expects a response) → `todo`
   - Informational → `potential-actions` if there's something to act on, otherwise `NO_ACTION`
 - **Type 2** — treat like Type 4
 - **Type 4** — route by new-information criterion:

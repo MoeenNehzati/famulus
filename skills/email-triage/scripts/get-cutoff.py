@@ -1,23 +1,28 @@
 #!/usr/bin/env python3
 """
-Print the himalaya `after` cutoff date for email triage.
+Print the coarse `--after` cutoff date for email triage.
 
 Usage:
-  get-cutoff.py            — print watermark date (or 1-day default with warning if none exists)
+  get-cutoff.py            — print watermark date (or 2-day default with warning if none exists)
   get-cutoff.py --days N   — compute cutoff for N days back (ignores watermark)
 
-The printed date is meant to be passed directly to `himalaya envelope list after <date>`.
-himalaya's `after` is strictly after, so the cutoff is already offset by 1 day.
+The printed date is meant to be passed directly to email-client's
+`mail-list --after <date>`. IMAP's SINCE (which --after maps to) is a
+day-level filter, so the cutoff here is offset by 1 day for safety; the
+precise sub-day cutoff is applied afterward by filter-envelopes.py.
 """
 import json
 import sys
 from datetime import date, timedelta
 from pathlib import Path
+import os
 
 # State lives next to this script (SKILL_DIR/state), matching update-watermark.py,
 # so it stays portable across machines regardless of $HOME layout or caller cwd.
 SKILL_DIR = Path(__file__).resolve().parent.parent
-STATE_DIR = SKILL_DIR / "state"
+# Overridable via env var so tests can point at a tmp_path instead of the
+# real state/ directory.
+STATE_DIR = Path(os.environ["EMAIL_TRIAGE_STATE_DIR"]) if os.environ.get("EMAIL_TRIAGE_STATE_DIR") else SKILL_DIR / "state"
 WATERMARK = STATE_DIR / "last_run"
 STATUS_FILE = STATE_DIR / "status.json"
 
