@@ -46,62 +46,47 @@ script_interfaces:
     usage: "-a <account>"
     cwd: skill_root
     command: ["python3", "scripts/fetch-envelopes.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/fetch-envelopes.py; tighten this contract when needed."
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
   scripts-get-cutoff:
     id: scripts-get-cutoff
     description: "Return the cutoff date for the current triage run, with a fallback if no watermark exists."
     usage: ""
     cwd: skill_root
     command: ["python3", "scripts/get-cutoff.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/get-cutoff.py; tighten this contract when needed."
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
   scripts-log-decision:
     id: scripts-log-decision
     description: "Append a triage classification decision for one email to triage.log."
     usage: "<account> <id> <from> <subject> <DECISION> <reason>"
     cwd: skill_root
     command: ["scripts/log-decision.sh"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/log-decision.sh; tighten this contract when needed."
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
   scripts-prune-log:
     id: scripts-prune-log
     description: "Drop triage.log entries older than 30 days and print a one-line summary."
     usage: ""
     cwd: skill_root
     command: ["python3", "scripts/prune-log.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/prune-log.py; tighten this contract when needed."
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
   scripts-update-watermark:
     id: scripts-update-watermark
     description: "Advance the triage watermark to the current timestamp."
     usage: ""
     cwd: skill_root
     command: ["python3", "scripts/update-watermark.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/update-watermark.py; tighten this contract when needed."
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true

@@ -43,23 +43,15 @@ script_interfaces:
     usage: ""
     cwd: skill_root
     command: ["scripts/check-marker-models.sh"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: false
-        allow_stdin: false
-        notes: "Takes no arguments. Exits 0 if all models are cached, 1 if any are missing, 2 if marker-pdf is not installed."
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
   scripts-fetch-arxiv-source:
     id: scripts-fetch-arxiv-source
     description: "Download and extract the LaTeX source tarball for a paper from arXiv."
     usage: "<arxiv-id> <output-dir>"
     cwd: skill_root
     command: ["scripts/fetch-arxiv-source.sh"]
-    interface:
-      default:
-        min_positionals: 2
-        allow_extra_positionals: false
-        allow_stdin: false
-        notes: "Positional 1: arXiv paper ID (e.g. 2301.07041). Positional 2: directory to extract into. Exits 1 if arXiv returns HTML (no source available)."
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner

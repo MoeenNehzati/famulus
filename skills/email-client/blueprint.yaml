@@ -35,21 +35,16 @@ script_interfaces:
     usage: "[-a nyu|personal] [--folder <folder>] <envelope-id>"
     cwd: skill_root
     command: ["scripts/email-get-message-id.sh"]
-    interface:
-      default:
-        min_positionals: 1
-        allow_extra_positionals: false
-        allow_stdin: false
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
   send-email:
     id: send-email
     description: "Send an email via msmtp; body comes from stdin."
     usage: "--from nyu|personal --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]"
     cwd: skill_root
     command: ["scripts/email-send.sh"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: false
-        allow_stdin: true
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
+          allow_stdin: true

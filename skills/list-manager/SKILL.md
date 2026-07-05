@@ -28,7 +28,7 @@ Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
 - `beautify-list` — Render YAML list entries from stdin (diff-fenced). Pass YAML via stdin using `dispatcher --stdin`.
-  - `dispatcher --caller-skill list-manager list-manager beautify-list ...`
+  - `dispatcher --caller-skill list-manager list-manager beautify-list`
   - Reads YAML from stdin and renders user-facing list output.
 - `cloud-create-entry` — Add entries to a cloud list under a category path.
   - `dispatcher --caller-skill list-manager list-manager cloud-create-entry <name> <category/path> --cloud --entries /tmp/entry.yaml`

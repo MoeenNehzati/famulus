@@ -39,33 +39,24 @@ script_interfaces:
     usage: "[--dry-run] [--no-claude] [--no-codex] [--bin-dir DIR] [--shell-rc FILE] [--system-shell-rc FILE] [--no-system-shell-rc] [--default-llm {claude,codex}] [--cloud-files-remote-llm-root PATH] [--home DIR] [--claude-home DIR] [--codex-home DIR]"
     cwd: skill_root
     command: ["python3", "scripts/install.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: false
-        allow_stdin: false
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
   scripts-setup-symlinks:
     id: scripts-setup-symlinks
     description: "Wire Claude and Codex config dirs to the canonical AI repo with symlinks, preserving any unique local skill entries."
     usage: "[--dry-run] [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR]"
     cwd: skill_root
     command: ["python3", "scripts/setup_symlinks.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: false
-        allow_stdin: false
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
   scripts-setup-tools:
     id: scripts-setup-tools
     description: "Install or update bin launchers, worker dirs, profile symlinks, git hooks, and the managed shell rc block."
     usage: "[--dry-run] [--no-system-shell-rc] [--bin-dir DIR] [--shell-rc FILE] [--system-shell-rc FILE] [--default-llm {claude,codex}] [--cloud-files-remote-llm-root PATH] [--home DIR] [--codex-home DIR] [--claude-home DIR]"
     cwd: skill_root
     command: ["python3", "scripts/setup_tools.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: false
-        allow_stdin: false
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner

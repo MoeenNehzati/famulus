@@ -1,16 +1,75 @@
-"""Validate blueprint presence and contract-block sync rules for local skills."""
+"""Validate blueprint presence, schema correctness, and contract-block sync rules."""
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
+
+import yaml
+
+try:
+    import jsonschema
+    _HAS_JSONSCHEMA = True
+except ImportError:
+    _HAS_JSONSCHEMA = False
 
 _SYNC_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "sync_skill_blueprints.py"
+_SCHEMA_PATH = Path(__file__).resolve().parents[3] / "references" / "blueprint" / "schema.json"
 
 CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
 CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
 INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
+
+
+def _load_schema() -> dict[str, Any] | None:
+    if not _SCHEMA_PATH.exists():
+        return None
+    return json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
+def _validate_blueprint_schema(
+    blueprint_path: Path,
+    blueprint: dict[str, Any],
+    schema: dict[str, Any],
+) -> list[str]:
+    """Run jsonschema validation; return error strings."""
+    errors: list[str] = []
+    if not _HAS_JSONSCHEMA:
+        return errors
+    validator = jsonschema.Draft7Validator(schema)
+    for error in sorted(validator.iter_errors(blueprint), key=lambda e: list(e.absolute_path)):
+        path = ".".join(str(p) for p in error.absolute_path) or "(root)"
+        errors.append(f"{blueprint_path}: schema error at {path}: {error.message}")
+    return errors
+
+
+def _validate_interface_cross_fields(
+    blueprint_path: Path,
+    blueprint: dict[str, Any],
+) -> list[str]:
+    """Python-only checks that jsonschema cannot express.
+
+    Currently enforces: if an interface has description, it must also have usage.
+    (jsonschema marks both as optional individually; the pairing rule requires Python.)
+    """
+    errors: list[str] = []
+    interfaces = blueprint.get("script_interfaces") or {}
+    if not isinstance(interfaces, dict):
+        return errors
+    for iface_name, spec in interfaces.items():
+        if not isinstance(spec, dict):
+            continue
+        has_desc = bool((spec.get("description") or "").strip())
+        has_usage = spec.get("usage") is not None  # "" is valid (no-arg interface)
+        if has_desc and not has_usage:
+            errors.append(
+                f"{blueprint_path}: interface '{iface_name}' has description but no usage field "
+                "(add usage: \"\" for no-arg interfaces, or the full arg template)"
+            )
+    return errors
 
 
 def validate(repo_root: Path) -> list[str]:
@@ -24,6 +83,10 @@ def validate(repo_root: Path) -> list[str]:
     if not blueprint_template.exists():
         errors.append(f"{blueprint_template}: missing blueprint template reference file")
 
+    schema = _load_schema()
+    if schema is None:
+        errors.append(f"{_SCHEMA_PATH}: missing blueprint schema file")
+
     for skill_dir in sorted(p for p in skills_root.iterdir() if p.is_dir()):
         skill_file = skill_dir / "SKILL.md"
         blueprint_path = skill_dir / "blueprint.yaml"
@@ -34,6 +97,21 @@ def validate(repo_root: Path) -> list[str]:
             errors.append(f"{skill_dir}: missing blueprint.yaml")
             continue
 
+        # ── Schema validation (jsonschema) ───────────────────────────────────
+        try:
+            blueprint = yaml.safe_load(blueprint_path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:
+            errors.append(f"{blueprint_path}: YAML parse error: {exc}")
+            continue
+
+        if schema is not None and isinstance(blueprint, dict):
+            errors.extend(_validate_blueprint_schema(blueprint_path, blueprint, schema))
+
+        # ── Cross-field checks (Python only) ─────────────────────────────────
+        if isinstance(blueprint, dict):
+            errors.extend(_validate_interface_cross_fields(blueprint_path, blueprint))
+
+        # ── SKILL.md marker checks ────────────────────────────────────────────
         text = skill_file.read_text(encoding="utf-8")
         start_count = text.count(CONTRACT_START)
         end_count = text.count(CONTRACT_END)
@@ -57,6 +135,7 @@ def validate(repo_root: Path) -> list[str]:
     if errors:
         return errors
 
+    # ── Sync drift check ─────────────────────────────────────────────────────
     result = subprocess.run(
         [sys.executable, str(_SYNC_SCRIPT), "--check"],
         cwd=repo_root,

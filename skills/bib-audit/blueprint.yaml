@@ -41,23 +41,17 @@ script_interfaces:
     usage: "<file.bib> [--threshold 0.3]"
     cwd: skill_root
     command: ["python3", "scripts/bib-similarity.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/bib-similarity.py; tighten this contract when needed."
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
   scripts-bib-validate-bibtex:
     id: scripts-bib-validate-bibtex
     description: "Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects)."
     usage: "<file.bib>"
     cwd: skill_root
     command: ["python3", "scripts/bib-validate-bibtex.py"]
-    interface:
-      default:
-        min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: "Auto-migrated placeholder interface for scripts/bib-validate-bibtex.py; tighten this contract when needed."
-    exported_interface: []
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true

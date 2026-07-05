@@ -104,6 +104,7 @@ script_interfaces:
   beautify-list:
     id: beautify-list
     description: "Render YAML list entries from stdin (diff-fenced). Pass YAML via stdin using `dispatcher --stdin`."
+    usage: ""
     cwd: skill_root
     command: ["python3", "scripts/beautify.py"]
     default:
