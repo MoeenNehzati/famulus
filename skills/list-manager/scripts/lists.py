@@ -484,7 +484,8 @@ def cmd_create_entry(args: argparse.Namespace) -> None:
         # to supply them; these are only required by todo/potential-actions schemas
         # but are harmless on others.
         if "state" not in entry:
-            entry["state"] = "incomplete"
+            # Use schema-aware defaults: potential-actions uses "undecided", todo uses "incomplete"
+            entry["state"] = "undecided" if schema_name == "potential-actions" else "incomplete"
         if "created" not in entry:
             entry["created"] = today
 
