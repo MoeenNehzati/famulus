@@ -581,6 +581,17 @@ def install_ai_agent_env(home: Path, dry_run: bool) -> None:
 
     This tells automated skill jobs how to invoke Claude. Skipped on non-Linux
     systems where systemd user sessions don't exist.
+
+    Safety: `systemctl --user set-environment` mutates the caller's *live*
+    systemd user session — it is not scoped to `home` at all. If this
+    function runs with an overridden --home (e.g. a sandboxed or ephemeral
+    install for testing, as opposed to a real install onto this machine),
+    blindly calling set-environment would overwrite the real session's
+    AI_AGENT_COMMAND_TEMPLATE with a path inside that temporary home, which
+    then breaks every scheduled job as soon as the temporary directory is
+    cleaned up. So: always write the environment.d file scoped to `home`
+    (harmless either way), but only touch the live systemd session when
+    `home` actually resolves to the real $HOME of the user running this.
     """
     if sys.platform == "win32":
         log("Note: skipping systemd environment setup (not supported on Windows).")
@@ -598,6 +609,16 @@ def install_ai_agent_env(home: Path, dry_run: bool) -> None:
 
     env_dir.mkdir(parents=True, exist_ok=True)
     env_file.write_text(content)
+
+    is_real_home = home.expanduser().resolve() == Path.home().resolve()
+    if not is_real_home:
+        log(
+            f"Note: --home {home} is not this user's real $HOME "
+            f"({Path.home()}) — skipping live systemd session update to avoid "
+            "overwriting the real AI_AGENT_COMMAND_TEMPLATE with a path that "
+            "won't outlive this install."
+        )
+        return
 
     # Also apply to the live systemd user session if one is running
     if shutil.which("systemctl"):

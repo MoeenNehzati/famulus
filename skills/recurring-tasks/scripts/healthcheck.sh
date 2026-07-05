@@ -126,15 +126,38 @@ case "$state" in
     ;;
 esac
 
-# 2. AI_AGENT_COMMAND_TEMPLATE set in systemd environment
+# 2. AI_AGENT_COMMAND_TEMPLATE set in systemd environment, AND its {skill}
+#    placeholder actually resolves to something runnable. Just checking
+#    "is it set" previously missed a template pointing at a since-deleted
+#    /tmp install path — jobs silently failed to invoke the agent at all
+#    while this check reported OK.
 log "Pre-flight: checking AI_AGENT_COMMAND_TEMPLATE in systemd env..."
-if systemctl --user show-environment 2>/dev/null | grep -q "^AI_AGENT_COMMAND_TEMPLATE="; then
-  log "  OK: AI_AGENT_COMMAND_TEMPLATE is set"
+# systemctl show-environment ANSI-C-quotes values (wraps in $'...'); unwrap
+# that before parsing, or the leading $' ends up glued onto the command path.
+template_raw="$(systemctl --user show-environment 2>/dev/null | sed -n 's/^AI_AGENT_COMMAND_TEMPLATE=//p')"
+if [[ "$template_raw" == \$\'*\' ]]; then
+  template="${template_raw#\$\'}"
+  template="${template%\'}"
 else
+  template="$template_raw"
+fi
+if [[ -z "$template" ]]; then
   record_problem "AI_AGENT_COMMAND_TEMPLATE is not set in systemd user environment — all AI jobs will fail to invoke the assistant (re-run install-assistant-tools or set it via: systemctl --user set-environment AI_AGENT_COMMAND_TEMPLATE=...)"
+else
+  # Substitute a dummy skill name and take the first whitespace-separated
+  # token as the command to check — good enough for the common case of
+  # "/path/to/invoke-agent.sh {skill}".
+  resolved="${template//\{skill\}/healthcheck-probe}"
+  cmd="${resolved%% *}"
+  if command -v "$cmd" >/dev/null 2>&1 || [[ -x "$cmd" ]]; then
+    log "  OK: AI_AGENT_COMMAND_TEMPLATE is set and resolves to an executable ($cmd)"
+  else
+    record_problem "AI_AGENT_COMMAND_TEMPLATE is set but its command does not exist or is not executable: '$cmd' (from template: $template) — jobs will fail to invoke the assistant. Fix with: systemctl --user set-environment AI_AGENT_COMMAND_TEMPLATE='$INVOKE_AGENT {skill}'"
+  fi
 fi
 
-# 3. invoke-agent.sh exists and is executable
+# 3. invoke-agent.sh (this skill's own copy) exists and is executable —
+#    separate from check 2, since the template could point elsewhere.
 log "Pre-flight: checking invoke-agent.sh..."
 if [[ -x "$INVOKE_AGENT" ]]; then
   log "  OK: invoke-agent.sh exists and is executable"
