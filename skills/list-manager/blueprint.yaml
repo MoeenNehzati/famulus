@@ -59,6 +59,21 @@ script_interfaces:
       allowed_callers:
         - daily-plan
 
+  describe-schema:
+    id: describe-schema
+    description: "Describe entry-level fields (types/required/enums) for a list schema."
+    usage: "<schema> [field]"
+    cwd: skill_root
+    command: ["python3", "scripts/lists.py", "describe-schema"]
+    default:
+      patterns:
+        - min_positionals: 1
+          max_positionals: 2
+          allow_stdin: false
+          notes: "First positional is the schema name (todo, potential-actions, default); optional second positional is a field name, or '*'/omitted for all fields. Purely local and read-only -- no cloud variant needed."
+      allow_all_skills: false
+      allowed_callers: []
+
   update-list:
     id: update-list
     description: "Update entries in a local YAML list file from a patch file (keyed by id) or stdin."

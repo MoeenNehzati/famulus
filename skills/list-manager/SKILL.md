@@ -50,6 +50,9 @@ Use the installed `dispatcher` command for this skill's script interfaces:
   - stdin-mode: Update cloud list entries from a stdin patch.
 - `create-entry` — Add entries to a local YAML list under a category path.
   - `dispatcher --caller-skill list-manager list-manager create-entry <file> <category/path> --entries /tmp/entry.yaml`
+- `describe-schema` — Describe entry-level fields (types/required/enums) for a list schema.
+  - `dispatcher --caller-skill list-manager list-manager describe-schema <schema> [field]`
+  - First positional is the schema name (todo, potential-actions, default); optional second positional is a field name, or '*'/omitted for all fields. Purely local and read-only -- no cloud variant needed.
 - `generate-id` — Generate one or more collision-free 6-char entry IDs against a local list file.
   - `dispatcher --caller-skill list-manager list-manager generate-id <file> [--count N]`
 - `init-list` — Create a new empty local YAML list file.
@@ -82,3 +85,4 @@ Skill: list-manager
 - **Validation:** never upload after a local validation or mutation failure.
 - **`potential-actions`:** accepting an item also creates a matching `todo` (state `incomplete`, today's date); rejecting only changes state in `potential-actions`.
 - **Economy:** prefer filtered reads; after a write re-read only the affected portion.
+- **Unsure what a field allows?** Use `describe-schema` instead of guessing — e.g. `describe-schema todo state` for just that field's spec, or `describe-schema todo` (or `describe-schema todo '*'`) for every field's type/required/enum. A filter or entry value outside a schema's enum is rejected with the valid values listed, but don't wait to be told — check first when unsure.

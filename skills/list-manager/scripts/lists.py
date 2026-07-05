@@ -2,21 +2,23 @@
 """list-manager: pure local YAML file operator.
 
 Subcommands:
-  init          <file> --schema <name> [--name <list-name>]
-  read          <file> [key=value | key~=value ...]
-  create-entry  <file> <target> [--entries <file>]
-  update        <file> [--file <file>]
-  delete        <file> <id> [<id>...]
-  gen-id        <file> [--count <n>]
+  describe-schema  <schema> [field]
+  init             <file> --schema <name> [--name <list-name>]
+  read             <file> [key=value | key~=value ...]
+  create-entry     <file> <target> [--entries <file>]
+  update           <file> [--file <file>]
+  delete           <file> <id> [<id>...]
+  gen-id           <file> [--count <n>]
+
+Every subcommand except describe-schema also accepts --cloud, treating the
+`file` positional as a cloud list name instead of a local path (see main()).
 """
 
 import argparse
 import datetime
-import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import warnings
@@ -24,18 +26,18 @@ from pathlib import Path
 
 import yaml
 
+import cloud_transport
+import get_schema
+
 try:
     import jsonschema
-    from jsonschema import FormatChecker
     HAS_JSONSCHEMA = True
 except ImportError:
     HAS_JSONSCHEMA = False
-    FormatChecker = None
 
 if HAS_JSONSCHEMA:
     warnings.filterwarnings("ignore", category=DeprecationWarning, module="jsonschema")
 
-SCHEMAS_DIR = Path(__file__).parent.parent / "schemas"
 IMMUTABLE_FIELDS = frozenset({"id", "created"})
 HEX6_RE = re.compile(r"^[0-9a-f]{6}$")
 
@@ -82,55 +84,21 @@ def die(msg: str) -> None:
 
 
 # ── Cloud transport ───────────────────────────────────────────────────────────
-
-def run_cloud_dispatch(interface_id: str, remote_path: str, *, stdin: str | None = None) -> tuple[int, str, str]:
-    try:
-        from script_dispatcher import InvocationError, dispatch
-    except ImportError:
-        die(
-            "script_dispatcher is not installed. Re-run install-assistant-tools to install the shared dispatcher package."
-        )
-
-    try:
-        result = dispatch(
-            caller_skill="list-manager",
-            target_skill="cloud-files",
-            script_interface=interface_id,
-            args=[remote_path],
-            stdin=stdin,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-    except InvocationError as exc:
-        die(f"invalid dispatcher request for cloud-files:{interface_id}: {exc}")
-    except subprocess.TimeoutExpired:
-        die(f"{interface_id} timed out")
-    except Exception as exc:
-        die(f"{interface_id} failed: {exc}")
-
-    return result.returncode, result.stdout, result.stderr
-
+# See cloud_transport.py -- shared with read_beautify.py so there's exactly
+# one implementation of "talk to cloud-files' lists-read/lists-write".
 
 def download_list(list_name: str, dest_path: Path) -> None:
-    """Download list from cloud storage via cloud-files lists-read interface."""
-    remote_path = f"lists/{list_name}.yaml"
-    returncode, stdout, stderr = run_cloud_dispatch("lists-read", remote_path)
-    if returncode != 0:
-        die(f"failed to download {remote_path}: {stderr}")
-    with open(dest_path, "w", encoding="utf-8") as f:
-        f.write(stdout)
+    try:
+        cloud_transport.download_list(list_name, dest_path)
+    except cloud_transport.CloudTransportError as exc:
+        die(str(exc))
 
 
 def upload_list(list_name: str, src_path: Path) -> None:
-    """Upload list to cloud storage via cloud-files lists-write interface."""
-    remote_path = f"lists/{list_name}.yaml"
-    with open(src_path, "r", encoding="utf-8") as f:
-        content = f.read()
-    returncode, _stdout, stderr = run_cloud_dispatch("lists-write", remote_path, stdin=content)
-    if returncode != 0:
-        die(f"failed to upload {remote_path}: {stderr}")
+    try:
+        cloud_transport.upload_list(list_name, src_path)
+    except cloud_transport.CloudTransportError as exc:
+        die(str(exc))
 
 
 # ── ID generation ─────────────────────────────────────────────────────────────
@@ -161,6 +129,9 @@ def gen_ids(existing_ids: set[str], count: int = 1) -> list[str]:
 
 # ── Validation ───────────────────────────────────────────────────────────────
 
+_AUTO_GENERATED_FIELDS = {"id", "created", "state"}
+
+
 def validate_entries_before_insert(entries: list, schema_name: str) -> None:
     """Check that each entry has all required fields before insertion.
 
@@ -173,22 +144,11 @@ def validate_entries_before_insert(entries: list, schema_name: str) -> None:
     if not HAS_JSONSCHEMA:
         return  # Skip if jsonschema not available; full validation will happen later
 
-    # Determine which fields are required and which are auto-generated
-    schema_path = SCHEMAS_DIR / "lists" / f"{schema_name}.json"
-    if not schema_path.exists():
+    if not get_schema.list_schema_exists(schema_name):
         return  # Schema unknown; let full validation handle it
 
-    auto_generated = {"id", "created", "state"}
-
-    # For todo/potential-actions, load the action schema to find required fields
-    user_required = set()
-    if schema_name in ("todo", "potential-actions"):
-        action_schema_path = SCHEMAS_DIR / "types" / "action.json"
-        if action_schema_path.exists():
-            with open(action_schema_path) as f:
-                action_schema = json.load(f)
-            if "required" in action_schema:
-                user_required = set(action_schema["required"]) - auto_generated
+    whole = get_schema.get_schema(schema_name, "*")
+    user_required = set(whole["required"]) - _AUTO_GENERATED_FIELDS
 
     # Check each entry for missing user-provided required fields
     for entry in entries:
@@ -213,9 +173,8 @@ def validate_list(data: dict) -> None:
     if not schema_name:
         die("list file missing 'schema' field")
 
-    schema_path = SCHEMAS_DIR / "lists" / f"{schema_name}.json"
-    if not schema_path.exists():
-        die(f"unknown schema '{schema_name}' (no file at {schema_path})")
+    if not get_schema.list_schema_exists(schema_name):
+        die(f"unknown schema '{schema_name}' (no file at {get_schema.list_schema_path(schema_name)})")
 
     if not HAS_JSONSCHEMA:
         print(
@@ -225,17 +184,8 @@ def validate_list(data: dict) -> None:
         )
         die("cannot write: jsonschema is required for mutating operations but is not installed")
 
-    with open(schema_path) as f:
-        schema = json.load(f)
-
-    resolver = jsonschema.RefResolver(
-        base_uri=schema_path.resolve().as_uri(), referrer=schema
-    )
-
     try:
-        jsonschema.validate(
-            data, schema, resolver=resolver, format_checker=FormatChecker()
-        )
+        get_schema.validate_document(data, schema_name)
     except jsonschema.ValidationError as e:
         die(f"validation failed: {describe_validation_error(data, e)}")
 
@@ -280,6 +230,30 @@ def parse_filters(filter_args: list[str]) -> list[tuple[str, str, str]]:
             die(f"invalid filter '{f}': expected key=value or key~=value")
         filters.append((m.group(1), m.group(2), m.group(3)))
     return filters
+
+
+def validate_filter_values(filters: list[tuple[str, str, str]], schema_name: str) -> None:
+    """Reject exact-match (`=`) filters whose value isn't a valid enum member
+    for that field, instead of silently matching zero entries.
+
+    Only applies to `=` filters on fields with a known enum (currently just
+    `state`, per schema). `~=` (regex) filters are intentionally exempt since
+    partial/pattern matches aren't a fixed-value comparison.
+    """
+    for key, op, val in filters:
+        if op != "=":
+            continue
+        spec = get_schema.get_schema(schema_name, key)
+        if not isinstance(spec, dict) or "enum" not in spec:
+            continue
+        allowed = spec["enum"]
+        values = [v.strip() for v in val.split(",")]
+        bad = [v for v in values if v not in allowed]
+        if bad:
+            die(
+                f"invalid value(s) for filter '{key}': {', '.join(bad)}. "
+                f"Valid values are: {', '.join(allowed)}."
+            )
 
 
 def entry_matches(entry: dict, filters: list[tuple[str, str, str]]) -> bool:
@@ -375,6 +349,33 @@ def find_entry_by_id(node, target_id: str) -> dict | None:
 
 # ── Subcommands ───────────────────────────────────────────────────────────────
 
+def cmd_describe_schema(args: argparse.Namespace) -> None:
+    """Answer "what fields/values does this schema allow" without reading raw
+    JSON Schema. Purely local and read-only -- no --cloud, no file/list arg.
+    """
+    if not get_schema.list_schema_exists(args.schema):
+        die(f"unknown schema '{args.schema}' (no file at {get_schema.list_schema_path(args.schema)})")
+
+    if args.field == "*":
+        whole = get_schema.get_schema(args.schema, "*")
+        required = set(whole["required"]) - _AUTO_GENERATED_FIELDS
+        out = {
+            "entry_fields": whole["properties"],
+            "required_fields": sorted(required),
+            "auto_generated_fields": sorted(_AUTO_GENERATED_FIELDS & set(whole["required"])),
+        }
+    else:
+        spec = get_schema.get_schema(args.schema, args.field)
+        if spec is None:
+            die(
+                f"field '{args.field}' is not defined for schema '{args.schema}' "
+                f"(run with field '*' to see all fields)"
+            )
+        out = {args.field: spec}
+
+    print(yaml.dump(out, allow_unicode=True, default_flow_style=False, sort_keys=False), end="")
+
+
 def cmd_init(args: argparse.Namespace) -> None:
     file = Path(args.file)
     if file.exists():
@@ -417,6 +418,7 @@ def cmd_read(args: argparse.Namespace) -> None:
         return
 
     filters = parse_filters(args.filters)
+    validate_filter_values(filters, data.get("schema", ""))
     matches = collect_matching_entries(data, filters)
 
     # Sort if requested
@@ -599,6 +601,18 @@ def build_parser() -> argparse.ArgumentParser:
             help="Treat the source as a cloud list name; download, operate, and upload",
         )
 
+    p_describe = sub.add_parser(
+        "describe-schema",
+        help="Describe entry-level fields (types/required/enums) for a list schema",
+    )
+    p_describe.add_argument("schema", help="Schema name (todo, potential-actions, default)")
+    p_describe.add_argument(
+        "field",
+        nargs="?",
+        default="*",
+        help="Field name to describe, or omit / pass '*' for all fields",
+    )
+
     p_init = sub.add_parser("init", help="Create a new empty list file")
     p_init.add_argument("file", help="Path to create, or cloud list name with --cloud")
     p_init.add_argument("--schema", required=True, help="Schema name (todo, potential-actions, default)")
@@ -647,6 +661,7 @@ def main() -> None:
         "update": cmd_update,
         "delete": cmd_delete,
         "gen-id": cmd_gen_id,
+        "describe-schema": cmd_describe_schema,
     }
 
     # Cloud mode: the source positional is a list NAME. For reads we download →

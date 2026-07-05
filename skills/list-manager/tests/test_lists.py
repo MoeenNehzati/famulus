@@ -251,8 +251,18 @@ def test_validation_error_names_offending_entry(tmp_path):
     assert "Reply to Diego" in result.stderr, result.stderr
 
 
-def test_read_filter_no_matches(todo_file):
+def test_read_filter_invalid_enum_value_errors(todo_file):
+    """state=cancelled isn't a valid state (incomplete/inprogress/done) -- this
+    must be a hard error, not a silent empty result, so a typo'd filter value
+    can't be misread as "nothing matches"."""
     result = run(["read", str(todo_file), "state=cancelled"])
+    assert result.returncode != 0
+    assert "cancelled" in result.stderr
+    assert "incomplete" in result.stderr and "done" in result.stderr
+
+
+def test_read_filter_no_matches_non_enum_field(todo_file):
+    result = run(["read", str(todo_file), "location=nowhere"])
     assert result.returncode == 0, result.stderr
     entries = yaml.safe_load(result.stdout)
     assert entries == [] or entries is None
@@ -508,3 +518,32 @@ def test_create_entry_unquoted_date_is_coerced(todo_file):
     assert isinstance(new_entry["deadline"], str)
     assert new_entry["deadline"] == "2026-08-15"
 
+
+
+def test_describe_schema_whole():
+    result = run(["describe-schema", "todo"])
+    assert result.returncode == 0, result.stderr
+    out = yaml.safe_load(result.stdout)
+    assert "state" in out["entry_fields"]
+    assert out["entry_fields"]["state"]["enum"] == ["incomplete", "inprogress", "done"]
+    assert "deadline" in out["required_fields"]
+    assert "state" in out["auto_generated_fields"]
+
+
+def test_describe_schema_single_field():
+    result = run(["describe-schema", "todo", "state"])
+    assert result.returncode == 0, result.stderr
+    out = yaml.safe_load(result.stdout)
+    assert out == {"state": {"enum": ["incomplete", "inprogress", "done"]}}
+
+
+def test_describe_schema_unknown_field_errors():
+    result = run(["describe-schema", "todo", "not_a_field"])
+    assert result.returncode != 0
+    assert "not_a_field" in result.stderr
+
+
+def test_describe_schema_unknown_schema_errors():
+    result = run(["describe-schema", "not-a-schema"])
+    assert result.returncode != 0
+    assert "not-a-schema" in result.stderr

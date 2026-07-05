@@ -8,6 +8,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import cloud_transport
+
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 LISTS_PY = SKILL_ROOT / "scripts" / "lists.py"
 BEAUTIFY_PY = SKILL_ROOT / "scripts" / "beautify.py"
@@ -15,43 +17,10 @@ BEAUTIFY_PY = SKILL_ROOT / "scripts" / "beautify.py"
 
 def download_list(list_name: str, dest_path: Path) -> None:
     """Download list from cloud storage via cloud-files lists-read interface."""
-    remote_path = f"lists/{list_name}.yaml"
     try:
-        from script_dispatcher import InvocationError, dispatch
-    except ImportError:
-        print(
-            "error: script_dispatcher is not installed. Re-run install-assistant-tools to install the shared dispatcher package.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    try:
-        result = dispatch(
-            caller_skill="list-manager",
-            target_skill="cloud-files",
-            script_interface="lists-read",
-            args=[remote_path],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-    except InvocationError as exc:
-        print(f"error: invalid dispatcher request for cloud-files:lists-read: {exc}", file=sys.stderr)
-        sys.exit(1)
-    except subprocess.TimeoutExpired:
-        print("error: download timed out", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"error: download failed: {e}", file=sys.stderr)
-        sys.exit(1)
-    try:
-        if result.returncode != 0:
-            print(f"error: failed to download {remote_path}: {result.stderr}", file=sys.stderr)
-            sys.exit(1)
-        with open(dest_path, "w", encoding="utf-8") as f:
-            f.write(result.stdout)
-    except Exception as e:
-        print(f"error: download failed: {e}", file=sys.stderr)
+        cloud_transport.download_list(list_name, dest_path)
+    except cloud_transport.CloudTransportError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
 
 

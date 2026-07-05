@@ -16,7 +16,6 @@ Usage:
 
 import argparse
 import datetime
-import json
 import os
 import re
 import sys
@@ -25,11 +24,11 @@ from pathlib import Path
 
 import yaml
 import jsonschema
-from jsonschema import FormatChecker
+
+import get_schema
 
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="jsonschema")
 
-SCHEMAS_DIR = Path(__file__).parent.parent / "schemas"
 today = datetime.date.today().isoformat()
 
 
@@ -40,16 +39,10 @@ def die(msg: str) -> None:
 
 def validate_list(data: dict) -> None:
     schema_name = data.get("schema")
-    schema_path = SCHEMAS_DIR / "lists" / f"{schema_name}.json"
-    if not schema_path.exists():
+    if not get_schema.list_schema_exists(schema_name):
         die(f"unknown schema '{schema_name}'")
-    with open(schema_path) as f:
-        schema = json.load(f)
-    resolver = jsonschema.RefResolver(
-        base_uri=schema_path.resolve().as_uri(), referrer=schema
-    )
     try:
-        jsonschema.validate(data, schema, resolver=resolver, format_checker=FormatChecker())
+        get_schema.validate_document(data, schema_name)
     except jsonschema.ValidationError as e:
         die(f"validation failed: {e.message}")
 
