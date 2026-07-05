@@ -26,7 +26,7 @@ Prioritize strategy, decomposition, and options over rigor. Move fast, cover gro
 - Emphasize structure: what the subproblems are, what could address each, how the pieces fit together.
 - Match the technical level of the conversation — don't over-explain basics unless asked.
 - Distinguish `Verified` / `Likely` / `Speculative` when proposing approaches.
-- If constructing a new argument, plan, or design, use a planning skill if available (e.g. `superpowers:brainstorming`, `superpowers:writing-plans`).
+- If constructing a new argument, plan, or design, use a planning skill if available.
 
 ## Output style
 

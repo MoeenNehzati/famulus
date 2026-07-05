@@ -1,6 +1,6 @@
 ---
 name: initialize-tdd
-description: Use when starting a brand new project that should follow a staged, approval-gated TDD workflow (design -> tests -> implementation -> docs). Scaffolds a new project directory with CLAUDE.md, README, .gitignore, git init, the superpowers skills plugin, and (for Python) a venv + centralized logger/config modules + a starter test suite.
+description: Use when starting a brand new project that should follow a staged, approval-gated TDD workflow (design -> tests -> implementation -> docs). Scaffolds a new project directory with CLAUDE.md, README, .gitignore, git init, and (for Python) a venv + centralized logger/config modules + a starter test suite.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
@@ -30,7 +30,7 @@ gates between steps.
   - (Python) the `name` field in `pyproject.toml` (slugified form)
 - **language**: `python` gets the full scaffold (venv, logger, config,
   starter tests). Anything else gets the generic scaffold (CLAUDE.md,
-  README, .gitignore, git init, superpowers) with no language-specific
+  README, .gitignore, git init) with no language-specific
   tooling — note this to the user so they know logger/config/tests aren't
   included.
 
@@ -67,7 +67,7 @@ If either input is missing, ask the user before proceeding.
    Regardless, surface a clear warning to the user: this skill is designed
    for Python (full scaffold with venv, logger, config, starter tests); for
    `<language>` it only did a best-effort generic scaffold (agent instructions,
-   README, .gitignore, git init, superpowers) — logger/config modules and a
+   README, .gitignore, git init) — logger/config modules and a
    starter test suite were not created.
 
 4. **Fill in placeholders**
@@ -78,16 +78,7 @@ If either input is missing, ask the user before proceeding.
 5. **Initialize git**
    - `git init` in the project directory.
 
-6. **Install superpowers skills**
-   - Use the active agent's plugin manager, if available, to check whether
-     `superpowers-marketplace` and the `superpowers` plugin are already
-     installed.
-   - If either is absent, install it using that agent's documented plugin
-     marketplace commands.
-   - These are user-level/global, so skip entirely if already present from a
-     prior project.
-
-7. **Bootstrap and verify (Python only)**
+6. **Bootstrap and verify (Python only)**
    - Run `./install.sh` to create `.venv` and install dependencies. This is
      a starting-point script — if the environment differs from what it
      assumes (e.g. `python3` not on PATH, a different interpreter needed),
@@ -98,7 +89,7 @@ If either input is missing, ask the user before proceeding.
    - If anything fails, fix it before reporting success — don't claim the
      scaffold works without fresh verification output.
 
-8. **Report, don't commit**
+7. **Report, don't commit**
    - Summarize what was created and confirm tests pass (with output).
    - Do NOT create a git commit — that's a separate step the user asks for
      explicitly.

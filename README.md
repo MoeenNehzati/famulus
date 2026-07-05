@@ -2,9 +2,9 @@
 
 Personal skill library and agent configuration for Claude Code and Codex.
 
-The repository follows the same broad design as Superpowers: keep one canonical
-`skills/` tree and expose it through thin platform-specific plugin manifests.
-There is no Claude-to-Codex skill-body conversion step.
+The repository keeps one canonical `skills/` tree and exposes it through thin
+platform-specific plugin manifests. There is no Claude-to-Codex skill-body
+conversion step.
 
 ## Layout
 
@@ -452,21 +452,6 @@ TODO for future cleanup:
 - We are intentionally **not** changing it yet because current install/runtime
   behavior is acceptable, and the stronger Python install test now checks the
   installed cache contents directly.
-
-## Superpowers Dependency
-
-Several skills extend or expect skills from the
-[superpowers-marketplace](https://github.com/obra/superpowers-marketplace)
-plugin. Install it for Claude before relying on those overrides:
-
-```bash
-claude plugin marketplace add obra/superpowers-marketplace
-claude plugin install superpowers@superpowers-marketplace
-```
-
-For Codex, install the corresponding Superpowers plugin/marketplace if you want
-skills such as `my-writing-skills` to invoke their upstream Superpowers
-counterparts.
 
 ## Development Checks
 
