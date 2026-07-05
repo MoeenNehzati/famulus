@@ -24,7 +24,7 @@ import yaml
 STATE_SYMBOL = {
     "incomplete": "☐",
     "inprogress": "▷",
-    "done":       "✓",
+    "complete":   "✓",
     "undecided":  "?",
     "accepted":   "✓",
     "rejected":   "✗",
@@ -82,7 +82,7 @@ def _rich_render(data, show_desc: bool, relative_deadlines: bool) -> None:
     STATE_RICH_STYLE = {
         "incomplete": "",
         "inprogress": "bold blue",
-        "done":       "dim",
+        "complete":   "dim",
         "undecided":  "yellow",
         "accepted":   "green",
         "rejected":   "dim red",
@@ -95,7 +95,7 @@ def _rich_render(data, show_desc: bool, relative_deadlines: bool) -> None:
         deadline = entry.get("deadline", "")
         location = entry.get("location", "")
         base_style = STATE_RICH_STYLE.get(state, "")
-        is_finished = state in ("done", "accepted", "rejected")
+        is_finished = state in ("complete", "accepted", "rejected")
 
         t = Text()
         t.append(f"{counter[0]}. ", style="dim")
@@ -147,7 +147,7 @@ def _rich_render(data, show_desc: bool, relative_deadlines: bool) -> None:
 # White: space prefix
 
 def _diff_marker(state):
-    if state in ("accepted", "inprogress", "done"):
+    if state in ("accepted", "inprogress", "complete"):
         return "+"
     if state == "rejected":
         return "-"
@@ -229,7 +229,7 @@ def _format_entry_md(entry, indent, counter, show_desc, relative_deadlines):
     deadline = entry.get("deadline", "")
     location = entry.get("location", "")
     description = entry.get("description", "")
-    is_done = state in ("done", "accepted", "rejected")
+    is_done = state in ("complete", "accepted", "rejected")
     meta_parts = []
     if deadline:
         meta_parts.append(_deadline_label(deadline, relative_deadlines))

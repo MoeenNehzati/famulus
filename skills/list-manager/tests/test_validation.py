@@ -162,7 +162,7 @@ class TestActionSchema:
                     "id": "b2c3d4",
                     "title": "Subtask",
                     "created": "2026-06-01",
-                    "state": "done",
+                    "state": "complete",
                     "deadline": "2026-06-15",
                 }
             ],

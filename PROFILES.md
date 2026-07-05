@@ -18,4 +18,4 @@ Generated from:
 
 **To update:** Run `bash scripts/generate-settings-table.sh` after modifying profile configs.
 
-_Last generated: 2026-07-05 21:08:32 UTC_
+_Last generated: 2026-07-05 21:43:47 UTC_

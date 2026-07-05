@@ -45,7 +45,7 @@ categories:
     entries:
     - id: c3d1e5
       title: Book dentist
-      state: done
+      state: complete
       created: '2026-06-20'
       deadline: '2026-06-30'
   - name: Misc
@@ -244,7 +244,7 @@ def test_validation_error_names_offending_entry(tmp_path):
     f = tmp_path / "todo.yaml"
     f.write_text(TODO_YAML.replace("      state: incomplete\n", "", 1))
     patch = tmp_path / "p.yaml"
-    patch.write_text("- id: b7c1e2\n  state: done\n")
+    patch.write_text("- id: b7c1e2\n  state: complete\n")
     result = run(["update", str(f), "--file", str(patch)])
     assert result.returncode != 0
     assert "a3f2b9" in result.stderr, result.stderr
@@ -252,13 +252,13 @@ def test_validation_error_names_offending_entry(tmp_path):
 
 
 def test_read_filter_invalid_enum_value_errors(todo_file):
-    """state=cancelled isn't a valid state (incomplete/inprogress/done) -- this
+    """state=cancelled isn't a valid state (incomplete/inprogress/complete) -- this
     must be a hard error, not a silent empty result, so a typo'd filter value
     can't be misread as "nothing matches"."""
     result = run(["read", str(todo_file), "state=cancelled"])
     assert result.returncode != 0
     assert "cancelled" in result.stderr
-    assert "incomplete" in result.stderr and "done" in result.stderr
+    assert "incomplete" in result.stderr and "complete" in result.stderr
 
 
 def test_read_filter_no_matches_non_enum_field(todo_file):
@@ -268,8 +268,8 @@ def test_read_filter_no_matches_non_enum_field(todo_file):
     assert entries == [] or entries is None
 
 
-def test_read_filter_done(todo_file):
-    result = run(["read", str(todo_file), "state=done"])
+def test_read_filter_complete(todo_file):
+    result = run(["read", str(todo_file), "state=complete"])
     assert result.returncode == 0, result.stderr
     entries = yaml.safe_load(result.stdout)
     assert len(entries) == 1
@@ -381,18 +381,18 @@ def test_create_entry_bulk(todo_file):
 # ── update ────────────────────────────────────────────────────────────────────
 
 def test_update_changes_state(todo_file):
-    update_yaml = "- id: a3f2b9\n  state: done\n"
+    update_yaml = "- id: a3f2b9\n  state: complete\n"
     result = run(["update", str(todo_file)], stdin=update_yaml)
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
     entry = data["categories"][0]["categories"][3]["entries"][0]
-    assert entry["state"] == "done"
+    assert entry["state"] == "complete"
 
 
 def test_update_multiple_entries(todo_file):
     update_yaml = """\
 - id: a3f2b9
-  state: done
+  state: complete
 - id: b7c1e2
   deadline: '2026-07-20'
 """
@@ -400,7 +400,7 @@ def test_update_multiple_entries(todo_file):
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
     entries = data["categories"][0]["categories"][3]["entries"]
-    assert entries[0]["state"] == "done"
+    assert entries[0]["state"] == "complete"
     assert entries[1]["deadline"] == "2026-07-20"
 
 
@@ -412,7 +412,7 @@ def test_update_immutable_created_rejected(todo_file):
 
 
 def test_update_unknown_id_fails(todo_file):
-    update_yaml = "- id: ffffff\n  state: done\n"
+    update_yaml = "- id: ffffff\n  state: complete\n"
     result = run(["update", str(todo_file)], stdin=update_yaml)
     assert result.returncode != 0
 
@@ -425,12 +425,12 @@ def test_update_invalid_state_fails(todo_file):
 
 def test_update_from_file(todo_file, tmp_path):
     updates_file = tmp_path / "updates.yaml"
-    updates_file.write_text("- id: a3f2b9\n  state: done\n")
+    updates_file.write_text("- id: a3f2b9\n  state: complete\n")
     result = run(["update", str(todo_file), "--file", str(updates_file)])
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
     entry = data["categories"][0]["categories"][3]["entries"][0]
-    assert entry["state"] == "done"
+    assert entry["state"] == "complete"
 
 
 # ── delete ────────────────────────────────────────────────────────────────────
@@ -525,7 +525,7 @@ def test_describe_schema_whole():
     assert result.returncode == 0, result.stderr
     out = yaml.safe_load(result.stdout)
     assert "state" in out["entry_fields"]
-    assert out["entry_fields"]["state"]["enum"] == ["incomplete", "inprogress", "done"]
+    assert out["entry_fields"]["state"]["enum"] == ["incomplete", "inprogress", "complete"]
     assert "deadline" in out["required_fields"]
     assert "state" in out["auto_generated_fields"]
 
@@ -534,7 +534,7 @@ def test_describe_schema_single_field():
     result = run(["describe-schema", "todo", "state"])
     assert result.returncode == 0, result.stderr
     out = yaml.safe_load(result.stdout)
-    assert out == {"state": {"enum": ["incomplete", "inprogress", "done"]}}
+    assert out == {"state": {"enum": ["incomplete", "inprogress", "complete"]}}
 
 
 def test_describe_schema_unknown_field_errors():

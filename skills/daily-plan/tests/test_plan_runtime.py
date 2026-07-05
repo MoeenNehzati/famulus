@@ -15,7 +15,7 @@ def test_initial_meta_filters_and_sorts():
         "categories": [{"name": "Work", "entries": [
             {"id": "b", "title": "later", "state": "incomplete", "deadline": "2026-07-04", "created": "2026-07-01"},
             {"id": "a", "title": "earlier", "state": "inprogress", "deadline": "2026-07-02", "created": "2026-07-01"},
-            {"id": "c", "title": "done", "state": "done", "deadline": "2026-07-01", "created": "2026-07-01"},
+            {"id": "c", "title": "done", "state": "complete", "deadline": "2026-07-01", "created": "2026-07-01"},
         ]}]}
     assert plan_runtime.initial_meta_for_section("actions", todo) == [["a", "shown"], ["b", "shown"]]
 
@@ -115,5 +115,5 @@ def test_mutate_plan_mark_done_updates_master_list_and_hides_item(monkeypatch):
     monkeypatch.setattr(plan_runtime, "refresh_rendered_plan", lambda date_key, meta=None, plan_text=None: meta)
 
     result = plan_runtime.mutate_plan("7-2-26", "mark-done", section="actions", indices=[2])
-    assert calls == [("todo", [{"id": "b", "state": "done"}])]
+    assert calls == [("todo", [{"id": "b", "state": "complete"}])]
     assert result == {"actions": [["a", "shown"], ["b", "hidden"]], "triage": []}

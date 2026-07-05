@@ -39,7 +39,7 @@ categories:
     deadline: '{due_today}'
   - id: cccccc
     title: Tomorrow task
-    state: done
+    state: complete
     created: '{today.isoformat()}'
     deadline: '{tomorrow}'
 """

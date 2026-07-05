@@ -86,7 +86,7 @@ def map_state(marker: str, schema: str) -> str:
         return {"x": "accepted", "X": "accepted", "+": "accepted",
                 "-": "rejected"}.get(marker, "undecided")
     else:
-        return "done" if marker.lower() == "x" else "incomplete"
+        return "complete" if marker.lower() == "x" else "incomplete"
 
 
 def parse_entry_line(line: str, schema_name: str, existing_ids: set[str]) -> tuple[int, dict] | None:

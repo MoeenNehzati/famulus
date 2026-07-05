@@ -20,7 +20,7 @@ def test_get_schema_whole_returns_properties_and_required():
 
 def test_get_schema_field_returns_just_that_fields_spec():
     state_spec = get_schema.get_schema("todo", "state")
-    assert state_spec == {"enum": ["incomplete", "inprogress", "done"]}
+    assert state_spec == {"enum": ["incomplete", "inprogress", "complete"]}
 
 
 def test_get_schema_field_differs_by_list_schema():

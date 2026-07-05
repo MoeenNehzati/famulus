@@ -114,7 +114,7 @@ def get_schema(schema_name: str, field: str = "*") -> dict | None:
     get_schema(schema_name, "*")      -> whole resolved entry-level schema:
                                           {"properties": {...}, "required": [...]}
     get_schema(schema_name, "state")  -> just that field's spec, e.g.
-                                          {"enum": ["incomplete", "inprogress", "done"]}
+                                          {"enum": ["incomplete", "inprogress", "complete"]}
                                           (or None if the field is unconstrained/unknown)
 
     Resolves the type schema's allOf/$ref chain (e.g. action.json ->

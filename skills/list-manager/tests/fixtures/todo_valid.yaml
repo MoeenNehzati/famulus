@@ -23,7 +23,7 @@ categories:
           - id: "7a8b9c"
             title: Schedule 1:1s
             created: "2026-06-20"
-            state: done
+            state: complete
             deadline: "2026-06-25"
       - name: Misc
   - name: Personal
@@ -44,7 +44,7 @@ categories:
               - id: "4d5e6f"
                 title: Find dentist number
                 created: "2026-06-15"
-                state: done
+                state: complete
                 deadline: "2026-06-20"
       - name: Misc
       - name: Shop

@@ -39,7 +39,7 @@
       "enum": [
         "incomplete",
         "inprogress",
-        "done"
+        "complete"
       ]
     },
     "deadline": {

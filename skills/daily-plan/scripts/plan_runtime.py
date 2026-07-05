@@ -460,7 +460,7 @@ def mutate_plan(
             if section != "actions":
                 raise PlanError("mark-done only applies to actions")
             id_map = visible_id_map(visible, indices)
-            update_master_list("todo", [{"id": id_map[idx], "state": "done"} for idx in indices])
+            update_master_list("todo", [{"id": id_map[idx], "state": "complete"} for idx in indices])
             meta[section] = apply_local_mutation(section_meta, visible, "hide", indices)
         elif command == "reject":
             if section != "triage":
