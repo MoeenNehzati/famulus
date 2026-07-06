@@ -40,7 +40,11 @@ rejects a call, accept the rejection and report back to the user. \
 Do not attempt to work around it.
 
 Example:
-  dispatcher --caller-skill daily-plan list-manager read-list /tmp/todo.yaml\
+  dispatcher --caller-skill daily-plan list-manager read-list /tmp/todo.yaml
+
+For both creating a new skill and updating an existing one, prefer the \
+`skill-maker` skill — it applies this repository's skill-writing guideline \
+and conformance checks. Do not load it until skill work actually begins.\
 """
 
 CONTEXT_DISPATCHER_MISSING = """\
@@ -63,8 +67,12 @@ def dispatcher_available() -> tuple[bool, list[str]]:
     missing = []
     if shutil.which("dispatcher") is None:
         missing.append("dispatcher CLI not on PATH")
-    if importlib.util.find_spec("script_dispatcher") is None:
-        missing.append("script_dispatcher Python package not importable")
+    # The package is provided by the generated launcher from the repo source
+    # ($AI); it is deliberately not pip-installed, so importability in the
+    # ambient interpreter is not required — source presence is.
+    package_src = _REPO_ROOT / "script_dispatcher" / "src" / "script_dispatcher"
+    if not package_src.is_dir() and importlib.util.find_spec("script_dispatcher") is None:
+        missing.append("script_dispatcher source not found in repo")
     return len(missing) == 0, missing
 
 
@@ -83,7 +91,8 @@ class InjectDispatcherContextHook(CrossHostHook):
         system_message = (
             f"⚠️ Skill dispatcher not fully installed ({details}) — "
             "dynamic permission checks are inactive. "
-            "To restore enforcement: pip install -e $AI/script_dispatcher"
+            "To restore enforcement: re-run the install-assistant-tools skill "
+            "(it generates the dispatcher launcher)"
         )
         return HookResult(
             additional_context=CONTEXT_DISPATCHER_MISSING,
