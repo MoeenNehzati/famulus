@@ -1,4 +1,4 @@
-"""Smoke tests for skills/my-writing-skills/validators/dependencies.py."""
+"""Smoke tests for skills/skill-maker/validators/dependencies.py."""
 from __future__ import annotations
 
 import importlib.util
@@ -6,7 +6,7 @@ from pathlib import Path
 
 _VALIDATOR = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "my-writing-skills" / "validators" / "dependencies.py"
+    / "skills" / "skill-maker" / "validators" / "dependencies.py"
 )
 _spec = importlib.util.spec_from_file_location("dependencies", _VALIDATOR)
 _mod = importlib.util.module_from_spec(_spec)

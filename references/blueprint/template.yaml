@@ -115,7 +115,7 @@ script_interfaces:
   read-data:
     # Required stable id of the owner-facing/default subinterface.
     # This must be unique within the skill. That uniqueness is enforced by
-    # skills/my-writing-skills/validators/interface_ids.py.
+    # skills/skill-maker/validators/interface_ids.py.
     id: read-data
 
     # Optional human-facing summary for the owner-facing/default interface.

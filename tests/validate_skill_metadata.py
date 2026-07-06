@@ -1,4 +1,4 @@
-"""Tests for skills/my-writing-skills/validators/skill_metadata.py."""
+"""Tests for skills/skill-maker/validators/skill_metadata.py."""
 from __future__ import annotations
 
 import importlib.util
@@ -7,7 +7,7 @@ from pathlib import Path
 
 _VALIDATOR = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "my-writing-skills" / "validators" / "skill_metadata.py"
+    / "skills" / "skill-maker" / "validators" / "skill_metadata.py"
 )
 _spec = importlib.util.spec_from_file_location("skill_metadata", _VALIDATOR)
 _mod = importlib.util.module_from_spec(_spec)

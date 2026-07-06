@@ -37,13 +37,13 @@ Blueprints define the contract of skills: dependencies, interfaces, and invocati
 | Layer | Tool | When | What |
 |-------|------|------|------|
 | Schema | `schema.json` + IDE | Edit time | YAML structure (types, enums, constraints) |
-| Python validators | `skills/my-writing-skills/validators/` | Commit time | Cross-field rules, sync drift, dependency constraints |
+| Python validators | `skills/skill-maker/validators/` | Commit time | Cross-field rules, sync drift, dependency constraints |
 
 **Run validators manually:**
 ```bash
-python3 skills/my-writing-skills/validators/blueprints.py
-python3 skills/my-writing-skills/validators/skill_md_dispatch.py
-python3 skills/my-writing-skills/validators/dependencies.py
+python3 skills/skill-maker/validators/blueprints.py
+python3 skills/skill-maker/validators/skill_md_dispatch.py
+python3 skills/skill-maker/validators/dependencies.py
 ```
 
 All validators run automatically at commit via `validators/runner.py` (`.githooks/pre-commit`).

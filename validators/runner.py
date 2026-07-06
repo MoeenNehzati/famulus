@@ -5,12 +5,12 @@ Each validator module must export:
 
 Validator packages:
   - validators/  (repo-wide checks)
-  - skills/my-writing-skills/validators/  (skill-system checks)
+  - skills/skill-maker/validators/  (skill-system checks)
 
 Validator discovery and validator input come from different places:
 
 - discovery loads live `.py` modules from the real `validators/` and
-  `skills/my-writing-skills/validators/` directories
+  `skills/skill-maker/validators/` directories
 - validation passes those modules a *mirror* of the repo containing only
   git-tracked (indexed) file content, not the real working tree
 
@@ -39,7 +39,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 _VALIDATOR_PACKAGES = [
     REPO_ROOT / "validators",
-    REPO_ROOT / "skills" / "my-writing-skills" / "validators",
+    REPO_ROOT / "skills" / "skill-maker" / "validators",
 ]
 
 _SKIP = {"__init__.py", "runner.py"}

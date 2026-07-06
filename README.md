@@ -201,8 +201,8 @@ run automatically by the pre-commit hook — it cannot go stale.
 | Skill | What it does |
 |---|---|
 | `install-assistant-tools` | Install or update launchers, wiring, hooks, and environment on a machine |
-| `my-writing-skills` | Author new skills that conform to the repo's skill-writing guideline |
 | `refactor-skills` | Audit and refactor existing skills against local conventions |
+| `skill-maker` | Author new skills that conform to the repo's skill-writing guideline |
 | `update-skill-guidelines` | Change the skill-writing standard and its mechanical checks in lockstep |
 <!-- END SKILLS TABLE -->
 
@@ -244,7 +244,12 @@ contract: category, interface version, declared dependencies, and the script
 interfaces it exports. From that contract, sync tooling generates
 `depends_on_skills`, `permissions.json`, and the contract block at the top of
 `SKILL.md` (see `references/blueprint/template.yaml` and
-`references/blueprint/guide.md`).
+`references/blueprint/guide.md`). After editing any blueprint, refresh the
+generated artifacts with:
+
+```bash
+python3 skills/skill-maker/scripts/sync_skill_blueprints.py
+```
 
 Cross-skill access is allowed in exactly two forms, and blocked in every
 other:
@@ -293,9 +298,9 @@ skill in this framework looks like — structure, naming, dependency rules,
 dispatcher usage, documentation conventions. It is machine-consumed, not just
 documentation:
 
-- **`my-writing-skills`** reads the guideline when creating or editing a
+- **`skill-maker`** reads the guideline when creating or editing a
   skill, so new skills conform by construction; its validator package
-  (`skills/my-writing-skills/validators/`) is where most of the mechanical
+  (`skills/skill-maker/validators/`) is where most of the mechanical
   enforcement above lives.
 - **`refactor-skills`** audits existing skills against the same guideline.
 - **`update-skill-guidelines`** is the change-management skill: any edit to

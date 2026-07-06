@@ -11,7 +11,7 @@ python3 -m pytest
 Collection is configured in `pytest.ini`:
 - `testpaths`: `tests/`, `hooks/tests/`, `skills/*/tests/`
 - `python_files = test_*.py validate_*.py` — the `tests/validate_*.py` smoke
-  tests for `skills/my-writing-skills/validators/` are collected too.
+  tests for `skills/skill-maker/validators/` are collected too.
 - `skills/initialize-tdd/` is excluded: its `assets/python/tests/` is a
   scaffold template for new projects, not this repo's tests.
 

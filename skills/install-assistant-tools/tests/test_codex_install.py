@@ -52,7 +52,7 @@ class CodexInstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix=f"{plugin_name}-codex-install-") as tmp:
             tmp_root = Path(tmp)
             env = python_test_env(tmp_root)
-            run_command([sys.executable, str(REPO_ROOT / "skills" / "my-writing-skills" / "validators" / "skill_metadata.py")], env=env)
+            run_command([sys.executable, str(REPO_ROOT / "skills" / "skill-maker" / "validators" / "skill_metadata.py")], env=env)
             run_command([sys.executable, str(REPO_ROOT / "validators" / "platform_neutral.py")], env=env)
 
             marketplace_root = tmp_root / "marketplace"

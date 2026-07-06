@@ -1,8 +1,9 @@
 jobs:
   - name: email-triage
     description: "Triage new emails into todo and potential-actions lists"
-    # PATH: systemd user units do not inherit the interactive shell's PATH,
-    #   so ~/.local/bin must be set explicitly.
+    # PATH: systemd user units do not inherit the interactive shell's PATH.
+    # We include the managed bin dir (for invoke-skill launcher), ~/.local/bin,
+    # and other standard locations.
     #
     # DBUS_SESSION_BUS_ADDRESS: the systemd user session provides a persistent
     #   D-Bus socket at /run/user/<UID>/bus. email-triage/email-client use
@@ -10,12 +11,12 @@ jobs:
     #   D-Bus; pointing to the socket ensures this works from non-interactive
     #   service contexts.
     #   UID 1000 is hardcoded; adjust if user changes.
-    command: "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PATH=$HOME/.local/bin:$PATH {skill_dir}/scripts/run-skill.sh email-triage"
+    command: "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PATH=$HOME/Documents/scripts/bin:$HOME/.npm-global/bin:$HOME/.local/bin:$PATH {skill_dir}/scripts/run-skill.sh email-triage"
     schedule: "0 * * * *"
     enabled: true
 
   - name: daily-plan
     description: "Generate or show today's daily plan, including potential-actions triage"
-    command: "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PATH=$HOME/.local/bin:$PATH {skill_dir}/scripts/run-skill.sh daily-plan"
+    command: "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PATH=$HOME/Documents/scripts/bin:$HOME/.npm-global/bin:$HOME/.local/bin:$PATH {skill_dir}/scripts/run-skill.sh daily-plan"
     schedule: "0 * * * *"
     enabled: true

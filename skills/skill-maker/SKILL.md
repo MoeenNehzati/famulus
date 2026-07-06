@@ -1,5 +1,5 @@
 ---
-name: my-writing-skills
+name: skill-maker
 description: Use when creating or editing a personal skill in the shared skills directory
 ---
 

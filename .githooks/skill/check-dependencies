@@ -6,4 +6,4 @@
 set -uo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
-python3 "$repo_root/skills/my-writing-skills/validators/dependencies.py"
+python3 "$repo_root/skills/skill-maker/validators/dependencies.py"

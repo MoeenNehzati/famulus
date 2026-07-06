@@ -53,7 +53,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         )
 
     def test_blueprints_are_in_sync(self) -> None:
-        result = self.run_cmd("skills/my-writing-skills/scripts/sync_skill_blueprints.py", "--check")
+        result = self.run_cmd("skills/skill-maker/scripts/sync_skill_blueprints.py", "--check")
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
 
     def test_blueprint_template_exists_and_is_comment_rich(self) -> None:
@@ -67,20 +67,20 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
     def test_readme_covers_blueprint_handoff_basics(self) -> None:
         text = README.read_text(encoding="utf-8")
-        self.assertIn("## Blueprint Migration", text)
+        self.assertIn("### Blueprints and the dispatcher", text)
         self.assertIn("references/blueprint", text)
         self.assertIn("dispatcher", text)
-        self.assertIn("python3 skills/my-writing-skills/scripts/sync_skill_blueprints.py", text)
+        self.assertIn("python3 skills/skill-maker/scripts/sync_skill_blueprints.py", text)
         self.assertIn(".githooks/pre-commit", text)
         self.assertIn("list-manager", text)
         self.assertIn("daily-plan", text)
 
     def test_blueprint_hook_check_passes(self) -> None:
-        result = self.run_cmd("skills/my-writing-skills/validators/blueprints.py")
+        result = self.run_cmd("skills/skill-maker/validators/blueprints.py")
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
 
     def test_boundary_hook_check_passes(self) -> None:
-        result = self.run_cmd("skills/my-writing-skills/validators/boundaries.py")
+        result = self.run_cmd("skills/skill-maker/validators/boundaries.py")
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
 
     def test_dispatcher_allows_declared_export(self) -> None:
@@ -230,7 +230,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertIn("does not match any declared pattern", result.stderr)
 
     def test_contract_block_is_injected_after_frontmatter(self) -> None:
-        sync_module = load_module("sync_skill_blueprints", REPO_ROOT / "skills" / "my-writing-skills" / "scripts" / "sync_skill_blueprints.py")
+        sync_module = load_module("sync_skill_blueprints", REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py")
         contract_block = "<!-- BEGIN BLUEPRINT CONTRACT -->\nInjected\n<!-- END BLUEPRINT CONTRACT -->\n"
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -249,7 +249,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertEqual(updated, expected)
 
     def test_contract_block_is_replaced_in_place(self) -> None:
-        sync_module = load_module("sync_skill_blueprints", REPO_ROOT / "skills" / "my-writing-skills" / "scripts" / "sync_skill_blueprints.py")
+        sync_module = load_module("sync_skill_blueprints", REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py")
         contract_block = "<!-- BEGIN BLUEPRINT CONTRACT -->\nNew\n<!-- END BLUEPRINT CONTRACT -->\n"
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -269,7 +269,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
     def test_interface_block_is_injected_after_contract_block(self) -> None:
         sync_module = load_module(
             "sync_skill_blueprints",
-            REPO_ROOT / "skills" / "my-writing-skills" / "scripts" / "sync_skill_blueprints.py",
+            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
         )
         interface_block = (
             "<!-- BEGIN BLUEPRINT INTERFACES -->\nInjected\n<!-- END BLUEPRINT INTERFACES -->\n"
@@ -293,7 +293,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
     def test_generated_interface_block_uses_owner_interface_ids(self) -> None:
         sync_module = load_module(
             "sync_skill_blueprints",
-            REPO_ROOT / "skills" / "my-writing-skills" / "scripts" / "sync_skill_blueprints.py",
+            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
         )
         block = sync_module.generated_interface_block(
             "demo-skill",

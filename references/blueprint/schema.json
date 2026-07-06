@@ -167,7 +167,7 @@
         "id": {
           "type": "string",
           "minLength": 1,
-          "description": "Stable id of the owner-facing/default subinterface. This id must be unique within the skill. Uniqueness is enforced by skills/my-writing-skills/validators/interface_ids.py."
+          "description": "Stable id of the owner-facing/default subinterface. This id must be unique within the skill. Uniqueness is enforced by skills/skill-maker/validators/interface_ids.py."
         },
         "description": {
           "type": "string",
@@ -267,7 +267,7 @@
         "id": {
           "type": "string",
           "minLength": 1,
-          "description": "Stable id of this named subinterface. Must be unique within the skill. Uniqueness is enforced by skills/my-writing-skills/validators/interface_ids.py."
+          "description": "Stable id of this named subinterface. Must be unique within the skill. Uniqueness is enforced by skills/skill-maker/validators/interface_ids.py."
         },
         "patterns": {
           "type": "array",

@@ -626,7 +626,7 @@ def main() -> int:
             print(f"  {error}", file=sys.stderr)
         if args.check:
             print(
-                "Run `python3 skills/my-writing-skills/scripts/sync_skill_blueprints.py` to refresh generated artifacts.",
+                "Run `python3 skills/skill-maker/scripts/sync_skill_blueprints.py` to refresh generated artifacts.",
                 file=sys.stderr,
             )
         return 1

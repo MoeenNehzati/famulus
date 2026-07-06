@@ -30,7 +30,7 @@ Validates individual blueprint files in isolation:
 **Files checked:** Each `skills/<name>/blueprint.yaml`
 
 ### Layer 2: Relationships (Python Validator)
-**Files:** `skills/my-writing-skills/validators/blueprint_relationships.py` and `skills/my-writing-skills/validators/interface_ids.py`
+**Files:** `skills/skill-maker/validators/blueprint_relationships.py` and `skills/skill-maker/validators/interface_ids.py`
 
 Validates constraints that span multiple blueprints:
 1. No skill depends on itself
@@ -116,7 +116,7 @@ assistant  (structural root — not a valid value)
 └── system-assistant
 ```
 
-To add a new node: update the `category` enum in `schema.json` and the `_CATEGORY_NODES` set in `skills/my-writing-skills/validators/blueprints.py`.
+To add a new node: update the `category` enum in `schema.json` and the `_CATEGORY_NODES` set in `skills/skill-maker/validators/blueprints.py`.
 
 #### `interface_version`
 Positive integer. Increment when breaking changes occur. Dependents must match this version in their `depends_on.X.major_version`.
@@ -140,7 +140,7 @@ High-level contract in plain language. Lists inputs, outputs, side effects.
 #### `script_interfaces`
 Map of interface-group name → invocation contract. Each group defines one owner-facing default id plus optional named subinterfaces for narrower external views.
 
-**`id`** — required stable id of the owner-facing/default subinterface. This id is what the dispatcher resolves for the top/default surface. Ids must be unique within the skill; that uniqueness is enforced by `skills/my-writing-skills/validators/interface_ids.py`.
+**`id`** — required stable id of the owner-facing/default subinterface. This id is what the dispatcher resolves for the top/default surface. Ids must be unique within the skill; that uniqueness is enforced by `skills/skill-maker/validators/interface_ids.py`.
 
 **`description`** — optional human-facing owner summary. If present, the sync tool injects this top/default interface into `SKILL.md` so the skill can see the useful owner-facing script surface without loading the full blueprint. Narrow named subinterfaces are not injected.
 
@@ -320,9 +320,9 @@ script_interfaces:
 
 **All validators (run individually or together):**
 ```bash
-python3 skills/my-writing-skills/validators/blueprints.py
-python3 skills/my-writing-skills/validators/skill_md_dispatch.py
-python3 skills/my-writing-skills/validators/dependencies.py
+python3 skills/skill-maker/validators/blueprints.py
+python3 skills/skill-maker/validators/skill_md_dispatch.py
+python3 skills/skill-maker/validators/dependencies.py
 ```
 
 **All validators automatically at commit** — run by `validators/runner.py` via `.githooks/pre-commit`.
@@ -400,7 +400,7 @@ To enable schema validation in your editor:
 
 - **Schema:** `blueprint/schema.json` — Full JSON Schema validation rules
 - **Template:** `blueprint/template.yaml` — Annotated examples of all features
-- **Validators:** `skills/my-writing-skills/validators/` — `blueprints.py`, `skill_md_dispatch.py`, `dependencies.py`, and others
+- **Validators:** `skills/skill-maker/validators/` — `blueprints.py`, `skill_md_dispatch.py`, `dependencies.py`, and others
 
 ---
 

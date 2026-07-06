@@ -72,7 +72,7 @@ SUMMARY_OVERRIDES = {
     "list-manager": "Manage personal YAML lists (todo, shopping, reading, …) in cloud storage",
     "loose-mode": "Broad, fast exploration mode — breadth over certainty",
     "math-dependency-graph": "Extract an assumptions-to-results dependency graph from a LaTeX document",
-    "my-writing-skills": "Author new skills that conform to the repo's skill-writing guideline",
+    "skill-maker": "Author new skills that conform to the repo's skill-writing guideline",
     "pdf-to-markdown": "Convert a research-paper PDF into LLM-readable text",
     "prepare-handoff": "Prepare a clean handoff: workflow updates, doc updates, residual lessons",
     "recurring-tasks": "Manage AI-driven recurring jobs as systemd user timers, with healthcheck",

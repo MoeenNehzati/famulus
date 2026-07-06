@@ -1,4 +1,4 @@
-"""Smoke tests for skills/my-writing-skills/validators/blueprint_relationships.py."""
+"""Smoke tests for skills/skill-maker/validators/blueprint_relationships.py."""
 from __future__ import annotations
 
 import importlib.util
@@ -8,7 +8,7 @@ import yaml
 
 _VALIDATOR = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "my-writing-skills" / "validators" / "blueprint_relationships.py"
+    / "skills" / "skill-maker" / "validators" / "blueprint_relationships.py"
 )
 _spec = importlib.util.spec_from_file_location("blueprint_relationships", _VALIDATOR)
 _mod = importlib.util.module_from_spec(_spec)
