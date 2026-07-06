@@ -8,6 +8,7 @@ On Windows, runs the command as a subprocess and forwards the exit code.
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import subprocess
 from pathlib import Path
@@ -78,7 +79,13 @@ Claude settings: $CLAUDE_HOME/{agent}_claude_setting.json""")
     # On Unix, exec replaces the current process for clean signal handling.
     # On Windows, subprocess + forwarded exit code is the safe equivalent.
     if sys.platform == "win32":
-        result = subprocess.run(cmd)
+        # npm installs claude/codex as .cmd shims, which CreateProcess
+        # cannot spawn from a bare name — resolve through PATH first.
+        resolved = shutil.which(cmd[0])
+        if resolved is None:
+            print(f"{agent}: '{cmd[0]}' not found on PATH", file=sys.stderr)
+            sys.exit(1)
+        result = subprocess.run([resolved, *cmd[1:]])
         sys.exit(result.returncode)
     else:
         os.execvp(cmd[0], cmd)
