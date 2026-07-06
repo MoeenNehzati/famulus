@@ -41,11 +41,13 @@ python3 -m pytest tests            # validator smoke tests
   dir that runs from the repo (`$AI`), so test installs can no longer
   clobber it. A stale pip copy in an env can shadow nothing (the bin dir
   precedes it on PATH) and may be `pip uninstall`ed.
-- `skills/install-assistant-tools/tests/test_uninstall.py` runs the real
-  `uninstall.py` with sandboxed homes but the REAL repo root, which deletes
-  the live generated `skills/recurring-tasks/scripts/env.sh` (breaks all
-  recurring jobs until reinstalled). TODO (#ca609b): give uninstall.py a
-  --repo-root override and point the tests at a throwaway copy.
+- (Resolved 2026-07-06) install/uninstall tests used to run against the REAL
+  repo root, repeatedly deleting or overwriting the live generated
+  `skills/recurring-tasks/scripts/env.sh` (breaking all recurring jobs).
+  Now: `test_uninstall.py` builds a fake repo and passes `--repo-root`;
+  `setup_tools.run()` takes a `repo_root` parameter that in-process tests
+  MUST pass (see its docstring). A regression test asserts the real env.sh
+  survives an uninstall run.
 - Some list-manager/daily-plan integration paths touch real cloud lists if
   run without sandboxing; a stray "Test: valid entry with deadline" entry
   appeared on the live todo list on 2026-07-04.

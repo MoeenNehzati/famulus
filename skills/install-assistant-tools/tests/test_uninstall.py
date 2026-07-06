@@ -27,8 +27,38 @@ HOOKS_BLOCK_END = "# <<< skill-system-hooks <<<"
 pytestmark = pytest.mark.skipif(not can_create_symlink(), reason="symlinks unavailable")
 
 
+def make_fake_repo(root: Path) -> Path:
+    """Build a minimal fake repo so uninstall never touches the real one.
+
+    uninstall.py deletes repo-scoped artifacts (recurring-tasks env.sh, git
+    hooksPath). Pointing tests at the real repo root repeatedly deleted the
+    live generated env.sh and broke all recurring jobs (see TESTING.md).
+    """
+    repo = root / "repo"
+    for d in ("skills", "references", "agents"):
+        (repo / d).mkdir(parents=True)
+    (repo / "CLAUDE.md").write_text("# fake\n", encoding="utf-8")
+
+    profiles = repo / "profiles"
+    profiles.mkdir()
+    (profiles / "assistant.config.toml").write_text('model = "a"\n', encoding="utf-8")
+    (profiles / "collab.config.toml").write_text('model = "b"\n', encoding="utf-8")
+
+    src_bin = repo / "skills" / "install-assistant-tools" / "bin"
+    src_bin.mkdir(parents=True)
+    (src_bin / "assistant").write_text("#!/bin/bash\n", encoding="utf-8")
+    (src_bin / "tmux-workspace").write_text("#!/bin/bash\n", encoding="utf-8")
+
+    rt_scripts = repo / "skills" / "recurring-tasks" / "scripts"
+    rt_scripts.mkdir(parents=True)
+    (rt_scripts / "env.sh").write_text("export PATH=fake:$PATH\n", encoding="utf-8")
+
+    return repo
+
+
 def make_installed_state(root: Path) -> dict[str, Path]:
-    """Build a realistic installed layout under root, linked to the real repo."""
+    """Build a realistic installed layout under root, linked to a fake repo."""
+    repo = make_fake_repo(root)
     home = root / "home"
     claude_home = home / ".claude"
     codex_home = home / ".codex"
@@ -37,15 +67,15 @@ def make_installed_state(root: Path) -> dict[str, Path]:
         d.mkdir(parents=True)
 
     # Claude/Codex symlinks into repo
-    (claude_home / "skills").symlink_to(REPO_ROOT / "skills")
-    (claude_home / "references").symlink_to(REPO_ROOT / "references")
-    (claude_home / "agents").symlink_to(REPO_ROOT / "agents")
-    (claude_home / "CLAUDE.md").symlink_to(REPO_ROOT / "CLAUDE.md")
-    (codex_home / "skills").symlink_to(REPO_ROOT / "skills")
-    (codex_home / "AGENTS.md").symlink_to(REPO_ROOT / "CLAUDE.md")
+    (claude_home / "skills").symlink_to(repo / "skills")
+    (claude_home / "references").symlink_to(repo / "references")
+    (claude_home / "agents").symlink_to(repo / "agents")
+    (claude_home / "CLAUDE.md").symlink_to(repo / "CLAUDE.md")
+    (codex_home / "skills").symlink_to(repo / "skills")
+    (codex_home / "AGENTS.md").symlink_to(repo / "CLAUDE.md")
 
     # profile links (legacy install style: symlinks)
-    profiles = sorted((REPO_ROOT / "profiles").glob("*.config.toml"))
+    profiles = sorted((repo / "profiles").glob("*.config.toml"))
     profile = profiles[0]
     (claude_home / profile.name).symlink_to(profile)
     (codex_home / profile.name).symlink_to(profile)
@@ -68,7 +98,7 @@ def make_installed_state(root: Path) -> dict[str, Path]:
     (claude_home / "foreign-link").symlink_to(foreign_target)
 
     # bin symlinks
-    src_bin = REPO_ROOT / "skills" / "install-assistant-tools" / "bin"
+    src_bin = repo / "skills" / "install-assistant-tools" / "bin"
     (bin_dir / "assistant").symlink_to(src_bin / "assistant")
     (bin_dir / "tw").symlink_to(src_bin / "tmux-workspace")
 
@@ -102,7 +132,9 @@ def make_installed_state(root: Path) -> dict[str, Path]:
     )
 
     # claude settings.local.json: one managed hook entry + one user entry
-    managed_cmd = f"python3 {REPO_ROOT}/llmhooks/inject_dispatcher_context.py --claude"
+    # the fake repo has no llmhooks registry, so uninstall falls back to the
+    # legacy managed command form (quoted hooks/ path)
+    managed_cmd = f'python3 "{repo}/hooks/inject_dispatcher_context.py"'
     settings = {
         "hooks": {
             "SessionStart": [
@@ -131,6 +163,7 @@ def make_installed_state(root: Path) -> dict[str, Path]:
         "codex_home": codex_home,
         "bin_dir": bin_dir,
         "shell_rc": shell_rc,
+        "repo": repo,
     }
 
 
@@ -143,6 +176,9 @@ def run_uninstall(paths: dict[str, Path], *extra: str, check: bool = True):
         "--codex-home", str(paths["codex_home"]),
         "--bin-dir", str(paths["bin_dir"]),
         "--shell-rc", str(paths["shell_rc"]),
+        # never point uninstall at the real repo: it removes repo-scoped
+        # artifacts (recurring-tasks env.sh, git hooksPath)
+        "--repo-root", str(paths["repo"]),
         "--no-system-shell-rc",
         "--no-pip",
         "--no-git-hooks",
@@ -197,6 +233,16 @@ def test_removes_bin_links(installed):
 def test_removes_generated_dispatcher_launcher(installed):
     run_uninstall(installed)
     assert not (installed["bin_dir"] / "dispatcher").exists()
+
+
+def test_removes_fake_repo_env_sh_not_real_one(installed):
+    real_env_sh = REPO_ROOT / "skills" / "recurring-tasks" / "scripts" / "env.sh"
+    existed_before = real_env_sh.exists()
+    run_uninstall(installed)
+    fake_env_sh = installed["repo"] / "skills" / "recurring-tasks" / "scripts" / "env.sh"
+    assert not fake_env_sh.exists()
+    # the live machine's generated env.sh must never be touched by tests
+    assert real_env_sh.exists() == existed_before
 
 
 def test_preserves_foreign_dispatcher_file(installed):

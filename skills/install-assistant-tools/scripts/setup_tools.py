@@ -1188,18 +1188,24 @@ def run(
     install_packages: bool = True,
     run_oauth_setups: bool = True,
     manifest: Manifest | None = None,
+    repo_root: Path | None = None,
 ) -> None:
     """Install or update assistant tools.
 
     All arguments are optional; paths default to platform home and standard
     locations. default_llm is prompted interactively when not supplied.
+
+    repo_root defaults to the repo containing this script. Tests calling
+    run() in-process MUST pass a throwaway repo_root: several steps write
+    into the repo (recurring-tasks env.sh, git hooksPath, worker dirs), and
+    the default would mutate the live checkout.
     """
     home = home or Path.home()
 
     # Script is at <repo>/skills/install-assistant-tools/scripts/install_assistant_tools.py
     script_path    = Path(__file__).resolve()
     skill_dir      = script_path.parents[1]
-    repo_root      = script_path.parents[3]
+    repo_root      = repo_root or script_path.parents[3]
     source_bin_dir = skill_dir / "bin"
     profiles_dir   = repo_root / "profiles"
     hooks_dir      = repo_root / ".githooks"

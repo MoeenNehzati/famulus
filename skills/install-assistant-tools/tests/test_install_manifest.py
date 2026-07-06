@@ -197,22 +197,52 @@ def test_uninstall_keeps_failed_entries_in_manifest(tmp_path: Path):
 
 def test_full_install_writes_manifest(tmp_path: Path):
     """setup_tools.run records its side effects in the home-scoped manifest."""
+    import subprocess
+
     import setup_tools
+
+    # In-process run() MUST get a throwaway repo_root: several install steps
+    # write into the repo (recurring-tasks env.sh, git hooksPath, worker
+    # dirs), and the default would mutate the live checkout.
+    repo = tmp_path / "repo"
+    (repo / ".githooks").mkdir(parents=True)
+    (repo / ".githooks" / "pre-commit").write_text("#!/bin/bash\n", encoding="utf-8")
+    (repo / "profiles").mkdir()
+    (repo / "llmhooks").mkdir()
+    (repo / "llmhooks" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "llmhooks" / "registry.py").write_text(
+        "def hooks_for_host(host):\n    return []\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
 
     home = tmp_path / "home"
     home.mkdir()
-    setup_tools.run(
-        home=home,
-        bin_dir=home / "bin",
-        shell_rc=home / ".bashrc",
-        claude_home=home / ".claude",
-        codex_home=home / ".codex",
-        default_llm="claude",
-        update_system_shell_rc=False,
-        dry_run=False,
-        install_packages=False,
-        run_oauth_setups=False,
-    )
+    # run() imports llmhooks from the fake repo; snapshot import state so the
+    # stub doesn't stay cached and poison later tests in the same process.
+    saved_path = list(sys.path)
+    saved_llmhooks = {
+        name: mod for name, mod in sys.modules.items()
+        if name == "llmhooks" or name.startswith("llmhooks.")
+    }
+    try:
+        setup_tools.run(
+            home=home,
+            bin_dir=home / "bin",
+            shell_rc=home / ".bashrc",
+            claude_home=home / ".claude",
+            codex_home=home / ".codex",
+            default_llm="claude",
+            update_system_shell_rc=False,
+            dry_run=False,
+            install_packages=False,
+            run_oauth_setups=False,
+            repo_root=repo,
+        )
+    finally:
+        sys.path[:] = saved_path
+        for name in [n for n in sys.modules if n == "llmhooks" or n.startswith("llmhooks.")]:
+            del sys.modules[name]
+        sys.modules.update(saved_llmhooks)
     mpath = manifest_path(home)
     assert mpath.exists()
     entries = json.loads(mpath.read_text())["entries"]
