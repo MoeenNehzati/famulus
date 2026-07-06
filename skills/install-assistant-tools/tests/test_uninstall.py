@@ -44,10 +44,23 @@ def make_installed_state(root: Path) -> dict[str, Path]:
     (codex_home / "skills").symlink_to(REPO_ROOT / "skills")
     (codex_home / "AGENTS.md").symlink_to(REPO_ROOT / "CLAUDE.md")
 
-    # profile links
-    profile = sorted((REPO_ROOT / "profiles").glob("*.config.toml"))[0]
+    # profile links (legacy install style: symlinks)
+    profiles = sorted((REPO_ROOT / "profiles").glob("*.config.toml"))
+    profile = profiles[0]
     (claude_home / profile.name).symlink_to(profile)
     (codex_home / profile.name).symlink_to(profile)
+
+    # profile copies (current install style: copied, may carry local state)
+    profile_copy = profiles[1]
+    for home_dir in (claude_home, codex_home):
+        (home_dir / profile_copy.name).write_text(
+            profile_copy.read_text(encoding="utf-8") + "\n# machine-local state\n",
+            encoding="utf-8",
+        )
+
+    # a user-owned config that matches the profile glob but has no repo
+    # counterpart — must NOT be removed
+    (claude_home / "personal.config.toml").write_text("mine\n", encoding="utf-8")
 
     # a user-owned symlink that must NOT be removed (points outside repo)
     foreign_target = root / "foreign"
@@ -81,7 +94,7 @@ def make_installed_state(root: Path) -> dict[str, Path]:
     )
 
     # claude settings.local.json: one managed hook entry + one user entry
-    managed_cmd = f'python3 "{REPO_ROOT}/hooks/inject_dispatcher_context.py"'
+    managed_cmd = f"python3 {REPO_ROOT}/llmhooks/inject_dispatcher_context.py --claude"
     settings = {
         "hooks": {
             "SessionStart": [
@@ -147,8 +160,19 @@ def test_removes_repo_symlinks_from_homes(installed):
 
 def test_removes_profile_links(installed):
     run_uninstall(installed)
-    assert not list(installed["claude_home"].glob("*.config.toml"))
+    # symlinked (legacy) and copied (current) profiles both removed;
+    # the user's own config with no repo counterpart is preserved
+    assert list(installed["claude_home"].glob("*.config.toml")) == [
+        installed["claude_home"] / "personal.config.toml"
+    ]
     assert not list(installed["codex_home"].glob("*.config.toml"))
+
+
+def test_preserves_user_config_matching_glob(installed):
+    run_uninstall(installed)
+    assert (installed["claude_home"] / "personal.config.toml").read_text(
+        encoding="utf-8"
+    ) == "mine\n"
 
 
 def test_preserves_foreign_symlink(installed):

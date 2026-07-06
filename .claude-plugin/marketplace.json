@@ -6,7 +6,7 @@
   "description": "Moeen's personal Claude Code plugin marketplace",
   "plugins": [
     {
-      "name": "moeen",
+      "name": "nullkit",
       "source": "./",
       "description": "Personal productivity skills — daily planning, calendar, lists, writing, and math tooling"
     }

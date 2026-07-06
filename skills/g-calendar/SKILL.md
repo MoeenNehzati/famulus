@@ -196,7 +196,7 @@ If `scripts-gcal` reports `invalid_grant` or `invalid_client`, (re)do this:
 ### First time only: create the Google OAuth client
 
 In an existing Google Cloud project (console.cloud.google.com), signed in
-as smnehzati@gmail.com:
+as the Google account whose calendar will be used:
 - **Enable the API**: APIs & Services -> Library -> "Google Calendar API"
   -> Enable (skip if already enabled).
 - **OAuth consent screen**: User type External. Add scope
@@ -208,7 +208,7 @@ as smnehzati@gmail.com:
     verified this app" - click Advanced -> "Go to <app name> (unsafe)".
     Expected for a personal single-user app.
   - If publishing is blocked or undesired, staying in "Testing" works
-    too - add smnehzati@gmail.com as a test user, and just re-run setup
+    too - add the account as a test user, and just re-run setup
     whenever the refresh token expires.
 - **Credentials**: Create Credentials -> OAuth client ID.
   - Application type **Desktop app** (Google auto-allows any

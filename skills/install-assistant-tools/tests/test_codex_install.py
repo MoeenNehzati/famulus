@@ -209,23 +209,39 @@ class CodexInstallTests(unittest.TestCase):
                 self.assertTrue(path.is_symlink(), f"Expected symlink: {path}")
                 self.assertEqual(path.resolve(), target.resolve(), f"Wrong target for {path}")
 
+            def expect_copy(path: Path, source: Path) -> None:
+                # Profiles are copied, not symlinked: the tool writes
+                # machine-local state back into its config file.
+                self.assertTrue(path.is_file(), f"Expected file: {path}")
+                self.assertFalse(path.is_symlink(), f"Expected copy, got symlink: {path}")
+                self.assertEqual(
+                    path.read_text(encoding="utf-8"),
+                    source.read_text(encoding="utf-8"),
+                    f"Copy content mismatch for {path}",
+                )
+
+            codex_copies = {
+                install_codex_home / "assistant.config.toml": installed_path / "profiles" / "assistant.config.toml",
+                install_codex_home / "collab.config.toml": installed_path / "profiles" / "collab.config.toml",
+                install_codex_home / "coauthor.config.toml": installed_path / "profiles" / "coauthor.config.toml",
+            }
+            claude_copies = {
+                install_claude_home / "assistant.config.toml": installed_path / "profiles" / "assistant.config.toml",
+                install_claude_home / "collab.config.toml": installed_path / "profiles" / "collab.config.toml",
+                install_claude_home / "coauthor.config.toml": installed_path / "profiles" / "coauthor.config.toml",
+            }
+
             codex_links = {
                 install_codex_home / "skills": installed_path / "skills",
                 install_codex_home / "references": installed_path / "references",
                 install_codex_home / "agents": installed_path / "agents",
                 install_codex_home / "AGENTS.md": (installed_path / "AGENTS.md") if (installed_path / "AGENTS.md").exists() else (installed_path / "CLAUDE.md"),
-                install_codex_home / "assistant.config.toml": installed_path / "profiles" / "assistant.config.toml",
-                install_codex_home / "collab.config.toml": installed_path / "profiles" / "collab.config.toml",
-                install_codex_home / "coauthor.config.toml": installed_path / "profiles" / "coauthor.config.toml",
             }
             claude_links = {
                 install_claude_home / "skills": installed_path / "skills",
                 install_claude_home / "references": installed_path / "references",
                 install_claude_home / "agents": installed_path / "agents",
                 install_claude_home / "CLAUDE.md": installed_path / "CLAUDE.md",
-                install_claude_home / "assistant.config.toml": installed_path / "profiles" / "assistant.config.toml",
-                install_claude_home / "collab.config.toml": installed_path / "profiles" / "collab.config.toml",
-                install_claude_home / "coauthor.config.toml": installed_path / "profiles" / "coauthor.config.toml",
                 install_claude_home / "assistant_claude_setting.json": installed_path / "profiles" / "assistant_claude_setting.json",
                 install_claude_home / "collab_claude_setting.json": installed_path / "profiles" / "collab_claude_setting.json",
                 install_claude_home / "coauthor_claude_setting.json": installed_path / "profiles" / "coauthor_claude_setting.json",
@@ -245,6 +261,10 @@ class CodexInstallTests(unittest.TestCase):
             for mapping in (codex_links, claude_links, bin_links):
                 for path, target in mapping.items():
                     expect_symlink(path, target)
+
+            for mapping in (codex_copies, claude_copies):
+                for path, source in mapping.items():
+                    expect_copy(path, source)
 
             if sys.platform != "win32":
                 shell_text = install_shell_rc.read_text(encoding="utf-8")

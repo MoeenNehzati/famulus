@@ -56,7 +56,7 @@ def build_temp_job(job_name: str, skill_name: str, backend: str) -> dict:
         'description': f'Temporary recurring-tasks selftest via {backend}',
         'command': (
             f'DBUS_SESSION_BUS_ADDRESS=unix:path={bus} '
-            f'PATH=/home/moeen/.local/bin:$PATH '
+            f'PATH=$HOME/.local/bin:$PATH '
             f'ASSISTANT_DEFAULT={backend} '
             f'{{skill_dir}}/scripts/run-skill.sh {skill_name}'
         ),

@@ -199,11 +199,21 @@ def uninstall_home_links(
         remove_repo_link(claude_home / name, repo_root, report, dry_run)
     for name in CODEX_LINK_NAMES:
         remove_repo_link(codex_home / name, repo_root, report, dry_run)
-    # profile links (both homes) and Claude settings profile links
+    # profile links (both homes) and Claude settings profile links.
+    # .config.toml profiles are COPIES since the installer stopped
+    # symlinking them (the tool writes machine-local state back into the
+    # file); legacy installs may still have symlinks. Handle both: a
+    # non-symlink file is treated as an installed copy iff a profile of
+    # the same name exists in the repo.
     for home in (claude_home, codex_home):
         for pattern in ("*.config.toml", "*_claude_setting.json"):
-            for link in sorted(home.glob(pattern)):
-                remove_repo_link(link, repo_root, report, dry_run)
+            for entry in sorted(home.glob(pattern)):
+                if entry.is_symlink():
+                    remove_repo_link(entry, repo_root, report, dry_run)
+                elif (repo_root / "profiles" / entry.name).exists():
+                    remove_file(entry, "profile copy", report, dry_run)
+                else:
+                    report.add("skipped", str(entry), "no matching repo profile; not ours")
 
 
 def uninstall_bin_links(bin_dir: Path, repo_root: Path, report: Report, dry_run: bool) -> None:

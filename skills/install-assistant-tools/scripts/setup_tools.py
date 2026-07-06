@@ -165,6 +165,40 @@ def make_link(src: Path, dst: Path, dry_run: bool, manifest: Manifest | None = N
         log(f"  ERROR: could not create symlink {dst} -> {src}: {exc}{hint}")
 
 
+def make_copy(src: Path, dst: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
+    """Copy src to dst instead of symlinking.
+
+    Used for files the consuming tool WRITES BACK to (e.g. Codex records
+    machine-local state — project trust levels, trusted hook hashes, with
+    absolute paths — directly into its config file). A symlink would let
+    those writes land in the tracked repo file, leaking machine-local
+    personal paths into git. A copy keeps runtime state on the machine.
+
+    - Skips with a warning if src does not exist.
+    - Replaces an existing symlink (legacy install) with a copy.
+    - Leaves an existing regular file alone: it holds machine-local state
+      accumulated since install; overwriting would discard it.
+    """
+    if not src.exists():
+        log(f"  SKIP (missing source): {src}")
+        return
+
+    if dry_run:
+        log(f"  Would copy: {src} -> {dst}")
+        return
+
+    if dst.is_symlink():
+        dst.unlink()
+    elif dst.exists():
+        log(f"  SKIP (exists, keeping machine-local state): {dst}")
+        return
+
+    shutil.copyfile(src, dst)
+    log(f"  Copied: {src} -> {dst}")
+    if manifest is not None:
+        manifest.record("file", path=str(dst))
+
+
 # ── Argument parsing ───────────────────────────────────────────────────────────
 
 def parse_args() -> argparse.Namespace:
@@ -257,7 +291,14 @@ def install_profile_links(
     dry_run: bool,
     manifest: Manifest | None = None,
 ) -> None:
-    """Symlink repo-owned profiles into Codex and Claude config dirs."""
+    """Install repo-owned profiles into Codex and Claude config dirs.
+
+    .config.toml profiles are COPIED, not symlinked: Codex writes
+    machine-local state (project trust levels, trusted hook hashes — keyed
+    by absolute paths) back into its config file. Through a symlink those
+    writes would land in the tracked repo file and leak personal paths
+    into git. See make_copy.
+    """
     if not profiles_dir.is_dir():
         log(f"Warning: profiles directory is missing: {profiles_dir}")
         return
@@ -268,11 +309,12 @@ def install_profile_links(
 
     linked_any = False
 
-    # .config.toml profiles go into both Codex and Claude homes
+    # .config.toml profiles are copied into both Codex and Claude homes
+    # (copy, not symlink: the tool writes machine-local state back)
     for profile in sorted(profiles_dir.glob("*.config.toml")):
         linked_any = True
-        make_link(profile, codex_home  / profile.name, dry_run, manifest)
-        make_link(profile, claude_home / profile.name, dry_run, manifest)
+        make_copy(profile, codex_home  / profile.name, dry_run, manifest)
+        make_copy(profile, claude_home / profile.name, dry_run, manifest)
 
     # Claude settings files go into Claude home only
     for settings in sorted(profiles_dir.glob("*_claude_setting.json")):

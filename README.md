@@ -1,4 +1,4 @@
-# Moeen Skills Config
+# Skills Config
 
 Personal skill library and agent configuration for Claude Code and Codex.
 
@@ -155,7 +155,7 @@ user-level runtime skill path is `~/.codex/skills`.
 On this machine, the canonical checkout lives at:
 
 ```text
-/home/moeen/Documents/AI
+$AI
 ```
 
 Claude and Codex are wired to this checkout with symlinks, so both tools use the
@@ -164,10 +164,10 @@ same skill files.
 Claude symlinks the shared directories directly:
 
 ```text
-~/.claude/skills     -> /home/moeen/Documents/AI/skills
-~/.claude/references -> /home/moeen/Documents/AI/references
-~/.claude/agents     -> /home/moeen/Documents/AI/agents
-~/.claude/CLAUDE.md  -> /home/moeen/Documents/AI/CLAUDE.md
+~/.claude/skills     -> $AI/skills
+~/.claude/references -> $AI/references
+~/.claude/agents     -> $AI/agents
+~/.claude/CLAUDE.md  -> $AI/CLAUDE.md
 ```
 
 Before creating each symlink the installer inspects the destination.
@@ -192,8 +192,8 @@ Run `python3 scripts/install.py --help` for flags, or see the
 The installer wires both skill paths to the same canonical tree:
 
 ```text
-~/.claude/skills -> /home/moeen/Documents/AI/skills
-~/.codex/skills -> /home/moeen/Documents/AI/skills
+~/.claude/skills -> $AI/skills
+~/.codex/skills -> $AI/skills
 ```
 
 If you need to repair those links manually, link both `~/.claude/skills` and
@@ -201,15 +201,15 @@ If you need to repair those links manually, link both `~/.claude/skills` and
 canonical checkout:
 
 ```text
-~/.claude/skills -> /home/moeen/Documents/AI/skills
-~/.codex/skills -> /home/moeen/Documents/AI/skills
+~/.claude/skills -> $AI/skills
+~/.codex/skills -> $AI/skills
 ```
 
 Create or repair the link with:
 
 ```bash
-ln -sfn /home/moeen/Documents/AI/skills ~/.claude/skills
-ln -sfn /home/moeen/Documents/AI/skills ~/.codex/skills
+ln -sfn $AI/skills ~/.claude/skills
+ln -sfn $AI/skills ~/.codex/skills
 ```
 
 Codex must keep `~/.codex` itself as a real directory. Do not make
@@ -222,9 +222,9 @@ Inside that real `~/.codex` directory, keep Codex-managed state other than
 canonical checkout:
 
 ```text
-~/.codex/references     -> /home/moeen/Documents/AI/references
-~/.codex/agents         -> /home/moeen/Documents/AI/agents
-~/.codex/AGENTS.md      -> /home/moeen/Documents/AI/AGENTS.md
+~/.codex/references     -> $AI/references
+~/.codex/agents         -> $AI/agents
+~/.codex/AGENTS.md      -> $AI/AGENTS.md
 ```
 
 Codex profile files are loaded only when they live directly under
@@ -233,13 +233,13 @@ profile sources under `profiles/`; to use them in Codex, copy or symlink them
 into the root of `~/.codex`:
 
 ```text
-~/.codex/assistant.config.toml -> /home/moeen/Documents/AI/profiles/assistant.config.toml
+~/.codex/assistant.config.toml -> $AI/profiles/assistant.config.toml
 ```
 
 Create or repair links for all repo-owned profiles with:
 
 ```bash
-for f in /home/moeen/Documents/AI/profiles/*.config.toml; do
+for f in $AI/profiles/*.config.toml; do
   ln -sfn "$f" ~/.codex/"$(basename "$f")"
 done
 ```
@@ -249,29 +249,48 @@ panel/thread if the skills do not appear.
 
 With this direct user-level setup, Codex skills are invoked by bare skill name
 such as `$proof-audit`. When installed through the Codex plugin manifest instead,
-the same skills are namespaced as `moeen:proof-audit`.
+the same skills are namespaced as `nullkit:proof-audit`.
 
 ## Session Hooks
 
-The `hooks/` directory contains LLM `SessionStart` hooks injected at the start
-of every session. The primary hook (`inject_dispatcher_context.py`) checks
-whether the dispatcher is installed and injects context into the session about
-the blueprint contract system — specifically that blueprint-managed skills must
-be invoked through `dispatcher`, not directly via their `scripts/` directories.
+Cross-host LLM hook logic now lives under `llmhooks/`.
+
+- `llmhooks/lib/cross_host.py` — shared scaffold for hook input parsing,
+  host-specific output shaping, and install metadata
+- `llmhooks/registry.py` — canonical list of installable hooks
+- `llmhooks/inject_dispatcher_context.py` — the live dispatcher-context hook
+
+The dispatcher-context hook checks whether the dispatcher is installed and
+injects context into the session about the blueprint contract system —
+specifically that blueprint-managed skills must be invoked through
+`dispatcher`, not directly via their `scripts/` directories.
+
+The `hooks/` directory remains as plugin/compatibility glue:
+
+- `hooks/hooks.json` — shared plugin hook registration file
+- `hooks/inject_dispatcher_context.py` — thin shim used by plugin installs to
+  route to the correct host adapter
 
 Hooks are registered through two independent paths:
 
 | Mode | Mechanism | When it applies |
 |------|-----------|----------------|
-| Plugin | `hooks/hooks.json` (read by the platform) | Repo installed as a plugin; `CLAUDE_PLUGIN_ROOT` or `CODEX_PLUGIN_ROOT` is set by the host |
-| Dev / direct | `~/.claude/settings.local.json` and `~/.codex/config.toml` (written by installer) | Repo symlinked to `~/.claude` / `~/.codex`; platform variables are not set |
+| Plugin | `hooks/hooks.json` + `hooks/inject_dispatcher_context.py` shim | Repo installed as a plugin; one shared hook file serves multiple hosts |
+| Dev / direct | `~/.claude/settings.local.json` and `~/.codex/config.toml` (written by installer) | Repo symlinked to `~/.claude` / `~/.codex`; installer writes explicit host commands |
 
-The installer (`install-assistant-tools`) handles dev-mode registration automatically.
-Both paths call the same script via absolute path.
+The installer (`install-assistant-tools`) handles dev-mode registration
+automatically from `llmhooks/registry.py`.
 
-To add a new hook, update all three together: `hooks/hooks.json`,
-`install_claude_hooks()`, and `install_codex_hooks()` in
-`skills/install-assistant-tools/scripts/setup_tools.py`.
+In dev mode, installed commands are explicit:
+
+- Claude: `python3 .../llmhooks/inject_dispatcher_context.py --claude`
+- Codex: `python3 .../llmhooks/inject_dispatcher_context.py --codex`
+
+To add a new installable hook:
+
+1. implement it under `llmhooks/`
+2. register it in `llmhooks/registry.py`
+3. update `hooks/hooks.json` only if plugin-mode glue must change too
 
 ## Skills
 
@@ -321,9 +340,9 @@ Codex uses `.codex-plugin/plugin.json`, which points directly at:
 Installed skills are namespaced by plugin name, for example:
 
 ```text
-moeen:proof-audit
-moeen:latex-workshop
-moeen:technical-flow-review
+nullkit:proof-audit
+nullkit:latex-workshop
+nullkit:technical-flow-review
 ```
 
 No generated Codex copy is committed. Platform-specific Codex behavior belongs
@@ -376,21 +395,21 @@ Add the marketplace and install the plugin:
 
 ```bash
 /plugin marketplace add MoeenNehzati/claude-config
-/plugin install moeen@nullmarket
+/plugin install nullkit@nullmarket
 ```
 
-Skills are namespaced under `/moeen:` when installed as a plugin, for example:
+Skills are namespaced under `/nullkit:` when installed as a plugin, for example:
 
 ```text
-/moeen:daily-plan
-/moeen:wrap-up
+/nullkit:daily-plan
+/nullkit:wrap-up
 ```
 
 To update after a push:
 
 ```bash
 /plugin marketplace update
-/plugin update moeen@nullmarket
+/plugin update nullkit@nullmarket
 ```
 
 ### Via Direct Load
@@ -398,14 +417,14 @@ To update after a push:
 Clone anywhere and load for one Claude session:
 
 ```bash
-git clone git@github.com:MoeenNehzati/claude-config.git ~/moeen-claude
-claude --plugin-dir ~/moeen-claude
+git clone git@github.com:MoeenNehzati/claude-config.git ~/claude-config
+claude --plugin-dir ~/claude-config
 ```
 
 Or update the clone and reload plugins:
 
 ```bash
-cd ~/moeen-claude
+cd ~/claude-config
 git pull
 # then inside Claude:
 /reload-plugins

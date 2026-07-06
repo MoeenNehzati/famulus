@@ -52,7 +52,7 @@ script_interfaces:
         - name: owner
   scripts-setup-tools:
     id: scripts-setup-tools
-    description: "Install or update bin launchers, worker dirs, profile symlinks, git hooks, and the managed shell rc block."
+    description: "Install or update bin launchers, worker dirs, profile copies, git hooks, and the managed shell rc block."
     usage: "[--dry-run] [--no-system-shell-rc] [--bin-dir DIR] [--shell-rc FILE] [--system-shell-rc FILE] [--default-llm {claude,codex}] [--cloud-files-remote-llm-root PATH] [--home DIR] [--codex-home DIR] [--claude-home DIR]"
     cwd: skill_root
     command: ["python3", "scripts/setup_tools.py"]

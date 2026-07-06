@@ -10,12 +10,12 @@ jobs:
     #   D-Bus; pointing to the socket ensures this works from non-interactive
     #   service contexts.
     #   UID 1000 is hardcoded; adjust if user changes.
-    command: "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PATH=/home/moeen/.local/bin:$PATH {skill_dir}/scripts/run-skill.sh email-triage"
+    command: "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PATH=$HOME/.local/bin:$PATH {skill_dir}/scripts/run-skill.sh email-triage"
     schedule: "0 * * * *"
     enabled: true
 
   - name: daily-plan
     description: "Generate or show today's daily plan, including potential-actions triage"
-    command: "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PATH=/home/moeen/.local/bin:$PATH {skill_dir}/scripts/run-skill.sh daily-plan"
+    command: "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PATH=$HOME/.local/bin:$PATH {skill_dir}/scripts/run-skill.sh daily-plan"
     schedule: "0 * * * *"
     enabled: true

@@ -26,7 +26,7 @@ Use the installed `dispatcher` command for this skill's script interfaces:
   - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-install [--dry-run] [--no-claude] [--no-codex] [--bin-dir DIR] [--shell-rc FILE] [--system-shell-rc FILE] [--no-system-shell-rc] [--default-llm {claude,codex}] [--cloud-files-remote-llm-root PATH] [--home DIR] [--claude-home DIR] [--codex-home DIR]`
 - `scripts-setup-symlinks` — Wire Claude and Codex config dirs to the canonical AI repo with symlinks, preserving any unique local skill entries.
   - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-setup-symlinks [--dry-run] [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR]`
-- `scripts-setup-tools` — Install or update bin launchers, worker dirs, profile symlinks, git hooks, and the managed shell rc block.
+- `scripts-setup-tools` — Install or update bin launchers, worker dirs, profile copies, git hooks, and the managed shell rc block.
   - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-setup-tools [--dry-run] [--no-system-shell-rc] [--bin-dir DIR] [--shell-rc FILE] [--system-shell-rc FILE] [--default-llm {claude,codex}] [--cloud-files-remote-llm-root PATH] [--home DIR] [--codex-home DIR] [--claude-home DIR]`
 <!-- END BLUEPRINT INTERFACES -->
 # Install Assistant Tools
@@ -82,11 +82,18 @@ Before running anything, summarize:
 - Claude and Codex skills will both be wired through `~/.{claude,codex}/skills -> <repo>/skills`.
 - If either user `skills/` directory already exists as a real directory, the installer will preserve unique local entries by moving them into the canonical repo `skills/` tree before replacing the directory with a symlink.
 - Launcher scripts will be symlinked into a bin dir on `PATH`.
+- Profile `.config.toml` files are **copied** (not symlinked) into the Codex
+  and Claude homes: Codex writes machine-local state (project trust levels,
+  trusted hook hashes, keyed by absolute personal paths) back into its config
+  file, and a symlink would leak that state into the tracked repo. Existing
+  copies are kept as-is to preserve accumulated local state; legacy symlinks
+  are replaced by copies.
 - A managed rc block or Windows user-environment entry will set `PATH`,
   `ASSISTANT_DEFAULT`, and `$AI`.
 - Worker directories will be created if absent.
 - Git hooks will be configured.
-- LLM session hooks (`hooks/inject_dispatcher_context.py`) will be registered in `~/.claude/settings.local.json` and `~/.codex/config.toml` for dev-mode operation.
+- LLM session hooks will be registered in `~/.claude/settings.local.json` and `~/.codex/config.toml` for dev-mode operation.
+- The live cross-host hook logic lives under `llmhooks/`; plugin installs still use `hooks/` as a compatibility shim.
 - `~/.config/cloud-files/config.json` will be written or updated.
 - After the core install, the installer can optionally walk through Google
   Drive (`cloud-files`) and Google Calendar (`g-calendar`) OAuth setup.
@@ -229,6 +236,25 @@ Do not modify scripts speculatively.
 
 All targets can be overridden with flags — see the `scripts-install` usage string
 for the full list.
+
+## Hook Architecture Notes
+
+- Dev-mode hook installation is registry-driven from `llmhooks/registry.py`.
+- The shared hook base class is `llmhooks/lib/cross_host.py`.
+- The current dispatcher-context hook is `llmhooks/inject_dispatcher_context.py`.
+- Dev-mode install writes explicit host selectors such as `--claude` and `--codex`.
+- Plugin-mode installs still go through `hooks/hooks.json` and `hooks/inject_dispatcher_context.py`, because one shared plugin hook file serves multiple hosts.
+
+## Uninstall
+
+The uninstall entry point removes the current managed hook registrations too:
+
+- the managed Codex marker block in `config.toml`
+- managed Claude hook commands in `settings.local.json`
+
+It understands both the legacy `hooks/inject_dispatcher_context.py` command and
+the current explicit `llmhooks/inject_dispatcher_context.py --claude/--codex`
+commands.
 
 ## Updating Scripts
 

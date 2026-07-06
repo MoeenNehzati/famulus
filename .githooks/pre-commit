@@ -19,4 +19,12 @@ if [ -f "$REPO_ROOT/scripts/generate-settings-table.sh" ]; then
     fi
 fi
 
+# Secret scan on staged changes
+if command -v gitleaks >/dev/null 2>&1; then
+    gitleaks protect --staged --redact
+else
+    echo "error: gitleaks not installed; refusing to commit without secret scan." >&2
+    exit 1
+fi
+
 python3 "$REPO_ROOT/validators/runner.py"

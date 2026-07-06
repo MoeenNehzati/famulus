@@ -1,5 +1,5 @@
 {
-  "name": "moeen",
+  "name": "nullkit",
   "version": "0.1.0",
   "description": "Personal productivity, writing, math, and automation skills",
   "author": {
@@ -20,7 +20,7 @@
   "skills": "./skills/",
   "hooks": "./hooks/hooks.json",
   "interface": {
-    "displayName": "Moeen",
+    "displayName": "Nullkit",
     "shortDescription": "Personal writing, math, and productivity skills",
     "longDescription": "Personal skill library for technical writing, mathematical review, LaTeX workflows, planning, lists, calendar, email, weather, and local automation.",
     "developerName": "Moeen Nehzati",
