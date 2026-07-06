@@ -158,6 +158,38 @@ class ClaudeInstallTests(unittest.TestCase):
                 "Expected dispatcher-context payload in Claude plugin hook response",
             )
 
+            # ── Uninstall phase: plugin removal must clean up completely ──
+            run_command(
+                ["claude", "plugins", "uninstall", f"{plugin_name}@{marketplace_name}"],
+                env=plugin_env,
+            )
+            after_uninstall = run_command(["claude", "plugins", "list"], env=plugin_env)
+            self.assertNotIn(f"{plugin_name}@{marketplace_name}", after_uninstall.stdout)
+
+            installed_plugins = json.loads(
+                (claude_home / "plugins" / "installed_plugins.json").read_text(encoding="utf-8")
+            )
+            self.assertNotIn(
+                f"{plugin_name}@{marketplace_name}", installed_plugins.get("plugins", {})
+            )
+            # Note: Claude Code deliberately RETAINS the plugin cache dir after
+            # uninstall (and even after marketplace removal) — verified against
+            # the real CLI. Deregistration is the cleanup contract; the cache
+            # is inert upstream-owned data, so we do not assert its absence.
+
+            run_command(
+                ["claude", "plugins", "marketplace", "remove", marketplace_name],
+                env=plugin_env,
+            )
+            after_marketplace = run_command(
+                ["claude", "plugins", "marketplace", "list"], env=plugin_env
+            )
+            self.assertNotIn(marketplace_name, after_marketplace.stdout)
+            known_marketplaces = json.loads(
+                (claude_home / "plugins" / "known_marketplaces.json").read_text(encoding="utf-8")
+            )
+            self.assertNotIn(marketplace_name, known_marketplaces)
+
 
 if __name__ == "__main__":
     unittest.main()

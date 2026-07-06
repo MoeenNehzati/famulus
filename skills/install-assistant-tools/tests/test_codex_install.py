@@ -306,6 +306,38 @@ class CodexInstallTests(unittest.TestCase):
                 self.assertIn(f"{plugin_name}:daily-plan", visible_text)
                 self.assertIn(str(installed_path / "workers" / agent), visible_text)
 
+            # ── Uninstall phase: plugin removal must clean up completely ──
+            run_command(
+                ["codex", "plugin", "remove", f"{plugin_name}@{marketplace_name}", "--json"],
+                env=plugin_env,
+            )
+            self.assertFalse(
+                installed_path.exists(),
+                f"plugin cache dir left behind after removal: {installed_path}",
+            )
+            # skills must no longer be visible to codex
+            post_remove = run_command(
+                ["codex", "debug", "prompt-input", "List available skills."],
+                env=plugin_env,
+                cwd=workdir,
+            )
+            post_text = json.dumps(json.loads(post_remove.stdout))
+            still_visible = [
+                name
+                for name in expected
+                if f"{plugin_name}:{name}" in post_text
+            ]
+            self.assertEqual(still_visible, [], f"skills visible after removal: {still_visible}")
+
+            run_command(
+                ["codex", "plugin", "marketplace", "remove", marketplace_name, "--json"],
+                env=plugin_env,
+            )
+            marketplace_list = run_command(
+                ["codex", "plugin", "marketplace", "list", "--json"], env=plugin_env
+            )
+            self.assertNotIn(marketplace_name, marketplace_list.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
