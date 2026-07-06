@@ -15,6 +15,13 @@ def _python_files(skill_dir: Path) -> list[Path]:
     return paths
 
 
+# Skills exempt from these rules (see skill-guidelines.md, installer-bootstrap
+# exception): install-assistant-tools generates and removes the dispatcher
+# launcher itself, and must bootstrap script_dispatcher imports from the repo
+# before any launcher exists.
+_EXCLUDED_SKILLS = {"install-assistant-tools"}
+
+
 def validate(repo_root: Path) -> list[str]:
     errors: list[str] = []
     skills_root = repo_root / "skills"
@@ -23,6 +30,8 @@ def validate(repo_root: Path) -> list[str]:
 
     for blueprint_path in sorted(skills_root.glob("*/blueprint.yaml")):
         skill_dir = blueprint_path.parent
+        if skill_dir.name in _EXCLUDED_SKILLS:
+            continue
         for path in _python_files(skill_dir):
             try:
                 lines = path.read_text(encoding="utf-8").splitlines()
@@ -45,7 +54,7 @@ def validate(repo_root: Path) -> list[str]:
                 if "sys.path" in line and "script_dispatcher" in line:
                     errors.append(
                         f"{rel}:{lineno}: do not modify sys.path to reach script_dispatcher; "
-                        "install the package and import it normally"
+                        "import it normally"
                     )
 
     return errors

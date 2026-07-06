@@ -266,6 +266,16 @@ class CodexInstallTests(unittest.TestCase):
                 for path, source in mapping.items():
                     expect_copy(path, source)
 
+            # dispatcher launcher: generated file (not symlink), runs
+            # script_dispatcher from the repo with an install-time fallback path
+            launcher = install_bin / "dispatcher"
+            self.assertTrue(launcher.is_file(), "dispatcher launcher missing")
+            self.assertFalse(launcher.is_symlink(), "dispatcher must be a generated file")
+            self.assertTrue(os.access(launcher, os.X_OK), "dispatcher launcher not executable")
+            launcher_text = launcher.read_text(encoding="utf-8")
+            self.assertIn(f'AI="${{AI:-{installed_path}}}"', launcher_text)
+            self.assertIn("script_dispatcher.cli", launcher_text)
+
             if sys.platform != "win32":
                 shell_text = install_shell_rc.read_text(encoding="utf-8")
                 self.assertIn(f'export PATH="{install_bin}:$PATH"', shell_text)

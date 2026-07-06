@@ -34,17 +34,18 @@ python3 -m pytest tests            # validator smoke tests
 
 ## Known hazards
 
-- `skills/install-assistant-tools/tests/test_codex_install.py` performs a
-  real `pip install -e` of `script_dispatcher` from a temp dir into the
-  active Python environment. After the temp dir is cleaned up, the installed
-  `dispatcher` breaks (`ModuleNotFoundError`). Repair:
-
-  ```
-  python3 -m pip install -e /path/to/repo/script_dispatcher
-  ```
-
-  TODO: isolate this test (venv or mock pip) so it can't clobber the live
-  environment.
+- (Resolved 2026-07-05) `test_codex_install.py` used to `pip install -e`
+  `script_dispatcher` from a temp dir into the live Python environment,
+  breaking `dispatcher` after cleanup. The installer no longer pip-installs
+  first-party code: `dispatcher` is a generated launcher in the managed bin
+  dir that runs from the repo (`$AI`), so test installs can no longer
+  clobber it. A stale pip copy in an env can shadow nothing (the bin dir
+  precedes it on PATH) and may be `pip uninstall`ed.
+- `skills/install-assistant-tools/tests/test_uninstall.py` runs the real
+  `uninstall.py` with sandboxed homes but the REAL repo root, which deletes
+  the live generated `skills/recurring-tasks/scripts/env.sh` (breaks all
+  recurring jobs until reinstalled). TODO (#ca609b): give uninstall.py a
+  --repo-root override and point the tests at a throwaway copy.
 - Some list-manager/daily-plan integration paths touch real cloud lists if
   run without sandboxing; a stray "Test: valid entry with deadline" entry
   appeared on the live todo list on 2026-07-04.
