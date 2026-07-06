@@ -30,7 +30,7 @@ This skill separates four outputs that are easy to conflate:
 
 ## Invocation Rules
 
-If the user explicitly invokes `$prepare-handoff` or a namespaced equivalent such as `$nullkit:prepare-handoff`, run the skill on the available current context. Do not refuse merely because an automatic trigger heuristic is not met. If the usable work segment is thin or unclear, say that you are not sure what should be preserved, ask for one or two concrete pointers, and try again after the user responds.
+If the user explicitly invokes `$prepare-handoff` or a namespaced equivalent such as `$famulus:prepare-handoff`, run the skill on the available current context. Do not refuse merely because an automatic trigger heuristic is not met. If the usable work segment is thin or unclear, say that you are not sure what should be preserved, ask for one or two concrete pointers, and try again after the user responds.
 
 Automatically invoke this skill when the user's latest message is primarily a transition, pause, end-of-session, or track-switch request and the recent work produced project-continuity knowledge worth preserving.
 

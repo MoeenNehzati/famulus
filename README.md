@@ -255,7 +255,7 @@ panel/thread if the skills do not appear.
 
 With this direct user-level setup, Codex skills are invoked by bare skill name
 such as `$proof-audit`. When installed through the Codex plugin manifest instead,
-the same skills are namespaced as `nullkit:proof-audit`.
+the same skills are namespaced as `famulus:proof-audit`.
 
 ## Session Hooks
 
@@ -346,9 +346,9 @@ Codex uses `.codex-plugin/plugin.json`, which points directly at:
 Installed skills are namespaced by plugin name, for example:
 
 ```text
-nullkit:proof-audit
-nullkit:latex-workshop
-nullkit:technical-flow-review
+famulus:proof-audit
+famulus:latex-workshop
+famulus:technical-flow-review
 ```
 
 No generated Codex copy is committed. Platform-specific Codex behavior belongs
@@ -401,21 +401,21 @@ Add the marketplace and install the plugin:
 
 ```bash
 /plugin marketplace add MoeenNehzati/claude-config
-/plugin install nullkit@nullmarket
+/plugin install famulus@nullkit
 ```
 
-Skills are namespaced under `/nullkit:` when installed as a plugin, for example:
+Skills are namespaced under `/famulus:` when installed as a plugin, for example:
 
 ```text
-/nullkit:daily-plan
-/nullkit:wrap-up
+/famulus:daily-plan
+/famulus:wrap-up
 ```
 
 To update after a push:
 
 ```bash
 /plugin marketplace update
-/plugin update nullkit@nullmarket
+/plugin update famulus@nullkit
 ```
 
 ### Via Direct Load

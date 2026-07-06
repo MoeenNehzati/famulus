@@ -1,12 +1,12 @@
 {
-  "name": "nullmarket",
+  "name": "nullkit",
   "owner": {
     "name": "Moeen Nehzati"
   },
   "description": "Moeen's personal Claude Code plugin marketplace",
   "plugins": [
     {
-      "name": "nullkit",
+      "name": "famulus",
       "source": "./",
       "description": "Personal productivity skills — daily planning, calendar, lists, writing, and math tooling"
     }
