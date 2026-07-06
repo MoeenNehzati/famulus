@@ -203,7 +203,7 @@ def _home_snapshot(home: Path) -> dict[str, str]:
     if not home.exists():
         return snap
     for path in sorted(home.rglob("*")):
-        rel = str(path.relative_to(home))
+        rel = path.relative_to(home).as_posix()  # separator-stable keys
         if path.is_symlink():
             snap[rel] = f"symlink:{path.readlink()}"
         elif path.is_file():

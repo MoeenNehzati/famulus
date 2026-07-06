@@ -208,6 +208,7 @@ def test_preserves_foreign_symlink(installed):
     assert (installed["claude_home"] / "foreign-link").is_symlink()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="dispatcher launcher is POSIX-only by design; Windows uses .bat wrappers + registry PATH")
 def test_removes_bin_links_and_launcher(installed):
     assert (installed["bin_dir"] / "assistant").exists()
     assert (installed["bin_dir"] / "dispatcher").is_file()
@@ -216,6 +217,7 @@ def test_removes_bin_links_and_launcher(installed):
     assert leftovers == [], f"bin dir not emptied: {leftovers}"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="recurring-tasks env.sh is POSIX-only by design")
 def test_removes_fake_repo_env_sh_not_real_one(installed):
     real_env_sh = REPO_ROOT / "skills" / "recurring-tasks" / "scripts" / "env.sh"
     existed_before = real_env_sh.exists()
@@ -226,6 +228,7 @@ def test_removes_fake_repo_env_sh_not_real_one(installed):
     assert real_env_sh.exists() == existed_before
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows installs manage PATH via registry, not shell rc")
 def test_strips_rc_block_preserving_user_lines(installed):
     text = installed["shell_rc"].read_text(encoding="utf-8")
     assert BLOCK_BEGIN in text  # install really wrote the block

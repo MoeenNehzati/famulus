@@ -112,21 +112,23 @@ def launcher_path(bin_dir: Path, agent: str) -> Path:
     return bin_dir / agent
 
 
+def _home_env(home: Path) -> dict[str, str]:
+    env = {"HOME": str(home)}
+    if os.name == "nt":
+        # Windows tools resolve the home dir via USERPROFILE, not HOME
+        env["USERPROFILE"] = str(home)
+    return env
+
+
 def codex_env(home: Path, codex_home: Path, tmp_root: Path) -> dict[str, str]:
     return python_test_env(
         tmp_root,
-        {
-            "HOME": str(home),
-            "CODEX_HOME": str(codex_home),
-        },
+        {**_home_env(home), "CODEX_HOME": str(codex_home)},
     )
 
 
 def claude_env(home: Path, claude_home: Path, tmp_root: Path) -> dict[str, str]:
     return python_test_env(
         tmp_root,
-        {
-            "HOME": str(home),
-            "CLAUDE_HOME": str(claude_home),
-        },
+        {**_home_env(home), "CLAUDE_HOME": str(claude_home)},
     )

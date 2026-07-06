@@ -52,8 +52,12 @@ class Manifest:
         for i, existing in enumerate(self.entries):
             if existing.get("kind") == kind and existing.get("path") == path:
                 self.entries[i] = entry
-                return
-        self.entries.append(entry)
+                break
+        else:
+            self.entries.append(entry)
+        # Persist immediately: a mid-install crash must not lose the record
+        # of side effects already applied (uninstall depends on it).
+        self.save()
 
     def remove(self, entry: dict) -> None:
         self.entries = [e for e in self.entries if e is not entry]

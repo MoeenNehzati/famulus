@@ -538,27 +538,33 @@ def choose_optional_google_services(
         log(f'  - {GOOGLE_OAUTH_SERVICES[service_key]["label"]}')
     log('  Keeping an OAuth app in "Testing" may cause repeated re-authorization; publish it if you want longer-lived access.')
 
-    if pending_services == ["cloud-files"]:
-        reply = input_func("Connect Google Drive for cloud-files now? [y/N]: ").strip().lower()
-        return {"cloud-files"} if reply in {"y", "yes"} else set()
+    # EOF while prompting means stdin is not really interactive (e.g. Windows
+    # CI consoles report isatty()=True with no input attached) — treat as skip.
+    try:
+        if pending_services == ["cloud-files"]:
+            reply = input_func("Connect Google Drive for cloud-files now? [y/N]: ").strip().lower()
+            return {"cloud-files"} if reply in {"y", "yes"} else set()
 
-    if pending_services == ["g-calendar"]:
-        reply = input_func("Connect Google Calendar for g-calendar now? [y/N]: ").strip().lower()
-        return {"g-calendar"} if reply in {"y", "yes"} else set()
+        if pending_services == ["g-calendar"]:
+            reply = input_func("Connect Google Calendar for g-calendar now? [y/N]: ").strip().lower()
+            return {"g-calendar"} if reply in {"y", "yes"} else set()
 
-    while True:
-        reply = input_func(
-            "Connect optional Google services now? [b]oth / [d]rive / [c]alendar / [s]kip [s]: "
-        ).strip().lower()
-        if reply in {"", "s", "skip"}:
-            return set()
-        if reply in {"b", "both"}:
-            return set(pending_services)
-        if reply in {"d", "drive"}:
-            return {"cloud-files"}
-        if reply in {"c", "calendar"}:
-            return {"g-calendar"}
-        log("Please answer with b, d, c, or s.")
+        while True:
+            reply = input_func(
+                "Connect optional Google services now? [b]oth / [d]rive / [c]alendar / [s]kip [s]: "
+            ).strip().lower()
+            if reply in {"", "s", "skip"}:
+                return set()
+            if reply in {"b", "both"}:
+                return set(pending_services)
+            if reply in {"d", "drive"}:
+                return {"cloud-files"}
+            if reply in {"c", "calendar"}:
+                return {"g-calendar"}
+            log("Please answer with b, d, c, or s.")
+    except EOFError:
+        log("Optional Google service setup skipped (stdin closed).")
+        return set()
 
 
 def maybe_run_optional_google_oauth_setups(
@@ -1240,7 +1246,10 @@ def run(
             log("(dry-run) Would prompt for default LLM; using 'claude' as placeholder")
             default_llm = "claude"
         elif sys.stdin.isatty():
-            reply = input("Default assistant backend [claude/codex] (default: claude): ").strip()
+            try:
+                reply = input("Default assistant backend [claude/codex] (default: claude): ").strip()
+            except EOFError:  # isatty() can lie (e.g. Windows CI consoles)
+                reply = ""
             default_llm = reply if reply in ("claude", "codex") else "claude"
             if reply and reply not in ("claude", "codex"):
                 log(f"Invalid choice '{reply}'; defaulting to claude.")
