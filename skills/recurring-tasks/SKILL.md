@@ -241,6 +241,8 @@ Multi-turn reasoning loop — do not script this:
 | Healthcheck reports stale log | Timer missed fires or job produced no output | Test manually; check `Persistent=true` is set (re-run setup.sh) |
 | Healthcheck never sends notifications | `notify-send` can't reach D-Bus from cron | Check `XDG_RUNTIME_DIR=/run/user/<uid>` and `DBUS_SESSION_BUS_ADDRESS` in healthcheck env |
 | systemd user manager "degraded" alert | Some unit failed | Run `systemctl --user list-units --state=failed`; if not an AI unit, it's unrelated |
+| Log shows `invoke-agent.sh: line N: .../scripts/env.sh: No such file or directory` | Generated `env.sh` (next to `invoke-agent.sh`) deleted or overwritten (historically: install/uninstall tests run against the real repo root) | Re-run `install-assistant-tools` to regenerate the `env.sh` PATH bootstrap (managed bin dir, `~/.npm-global/bin`, `~/.local/bin`) |
+| Jobs "succeed" but the log shows the assistant complaining pip/dispatcher is unavailable; list/plan skills degrade | `dispatcher` not reachable from the job PATH — jobs run under non-interactive `bash -lc`, which does NOT load conda/anaconda from `.bashrc` | Ensure the generated `dispatcher` launcher exists in the managed bin dir (re-run `install-assistant-tools`); it runs script_dispatcher from `$AI` with system `python3` |
 
 ---
 

@@ -82,6 +82,10 @@ Before running anything, summarize:
 - Claude and Codex skills will both be wired through `~/.{claude,codex}/skills -> <repo>/skills`.
 - If either user `skills/` directory already exists as a real directory, the installer will preserve unique local entries by moving them into the canonical repo `skills/` tree before replacing the directory with a symlink.
 - Launcher scripts will be symlinked into a bin dir on `PATH`.
+- A `dispatcher` launcher is **generated** into the managed bin dir: it runs
+  `script_dispatcher` directly from the repo (`$AI`, with the install-time
+  path baked in as fallback for systemd/cron). First-party code is never
+  pip-installed — no second copy to drift or break.
 - Profile `.config.toml` files are **copied** (not symlinked) into the Codex
   and Claude homes: Codex writes machine-local state (project trust levels,
   trusted hook hashes, keyed by absolute personal paths) back into its config
