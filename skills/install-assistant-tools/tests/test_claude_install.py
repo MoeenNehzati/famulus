@@ -87,7 +87,13 @@ class ClaudeInstallTests(unittest.TestCase):
             installs = installed_plugins["plugins"][f"{plugin_name}@{marketplace_name}"]
             self.assertEqual(len(installs), 1)
             installed_path = Path(installs[0]["installPath"])
-            self.assertTrue(str(installed_path).startswith(str(claude_home / "plugins" / "cache")))
+            # resolve both sides: on macOS /var/folders tempdirs are symlinks
+            # into /private/var, and the CLI may report the resolved path
+            self.assertTrue(
+                str(installed_path.resolve()).startswith(
+                    str((claude_home / "plugins" / "cache").resolve())
+                )
+            )
             self.assertNotEqual(installed_path.resolve(), REPO_ROOT.resolve())
 
             missing_skills = [

@@ -117,7 +117,13 @@ class CodexInstallTests(unittest.TestCase):
                 env=plugin_env,
             )
             installed_path = Path(json.loads(install_result.stdout)["installedPath"])
-            self.assertTrue(str(installed_path).startswith(str(codex_home / "plugins" / "cache")))
+            # resolve both sides: on macOS /var/folders tempdirs are symlinks
+            # into /private/var, and codex reports the resolved path
+            self.assertTrue(
+                str(installed_path.resolve()).startswith(
+                    str((codex_home / "plugins" / "cache").resolve())
+                )
+            )
             self.assertNotEqual(installed_path.resolve(), repo_copy_root.resolve())
 
             self.assertTrue((installed_path / "skills").is_dir())
