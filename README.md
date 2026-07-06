@@ -8,22 +8,45 @@
 keeps the notebooks, and runs the lab while you think.*
 
 [![Install Tests](https://github.com/MoeenNehzati/famulus/actions/workflows/test-install.yml/badge.svg)](https://github.com/MoeenNehzati/famulus/actions/workflows/test-install.yml)
+![Claude Code](https://img.shields.io/badge/Claude%20Code-supported-c76f4a)
+![Codex](https://img.shields.io/badge/Codex-supported-10a37f)
+![Python](https://img.shields.io/badge/python-3.10%2B-3776ab)
+![Platforms](https://img.shields.io/badge/linux%20%7C%20macos%20%7C%20windows-tested%20in%20CI-555)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
 </div>
 
 Daily planning · calendar & email automation · mathematical writing and
 review · LaTeX tooling · recurring background jobs — plus the framework that
-keeps all of it consistent. One repository serves both hosts: the same
-skills, agents, and hooks work in Claude Code and Codex, installed as a
-plugin or wired directly into a development checkout.
+keeps all of it consistent.
+
+- **One repo, two hosts.** The same skills, agents, and hooks work in both
+  **Claude Code** and **Codex** — install as a plugin in either, or wire one
+  checkout into both at once. Host-specific differences live in thin
+  adapters, never in the skills themselves (a validator rejects
+  host-specific references in shared content).
+- **Pure Python, cross-platform.** All framework code — installer,
+  dispatcher, validators, generators, hooks — is Python (stdlib + PyYAML
+  only, no compiled dependencies), and the full install/uninstall/e2e suite
+  runs in CI on **Linux, macOS, and Windows** with real `claude` and `codex`
+  CLIs.
 
 **Contents:** [Installation](#-installation) ·
 [Skills](#-skills) ·
-[Design](#-design)
+[Design](#-design) ·
+[License](#-license)
 
 ---
 
 ## 📦 Installation
+
+**Requirements:** Python ≥ 3.10 with PyYAML; git; at least one of the
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code) or Codex CLIs.
+Contributors additionally need [gitleaks](https://github.com/gitleaks/gitleaks)
+(the pre-commit hook fails closed without it) and `pytest`. Linux, macOS, and
+Windows are all supported; a few skills use platform services (e.g.
+`recurring-tasks` uses systemd user timers) and are POSIX/Linux-only — the
+framework itself is not.
 
 There are three ways to use this repository. All of them expose the same
 skills; they differ in isolation and update mechanics.
@@ -318,3 +341,16 @@ matrix with real `claude` and `codex` CLIs — plugin install/uninstall on both
 hosts, dev-mode skill accessibility, launcher execution, user-skill survival,
 and a byte-exact install→uninstall round trip. See `TESTING.md` for suite
 layout and known hazards.
+
+Cross-platform is a design constraint, not an afterthought: framework code is
+pure Python and the Windows path is genuinely exercised — the CI matrix has
+caught Windows-only defects (symlink target normalization, `.cmd` shim
+resolution, console-EOF prompt handling) that never surface on a POSIX dev
+machine.
+
+---
+
+## 📄 License
+
+[MIT](LICENSE). This is a personal toolkit published in the open — issues
+and ideas are welcome, but expect it to evolve around its author's workflow.
