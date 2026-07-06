@@ -29,5 +29,8 @@ jobs:
       - name: Install test dependencies
         run: python3 -m pip install pytest pyyaml
 
-      - name: Run install/uninstall test suite
+      - name: Install Claude and Codex CLIs
+        run: npm install -g @anthropic-ai/claude-code @openai/codex
+
+      - name: Run install/uninstall/e2e test suite
         run: python3 -m pytest skills/install-assistant-tools/tests -v
