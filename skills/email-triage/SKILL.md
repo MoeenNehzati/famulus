@@ -123,6 +123,9 @@ skill to infer title, optional description, and optional deadline. Do not
 manually format list storage lines here; pass the freeform action content and
 destination list to the `list-manager` skill.
 
+For every item added to `triage`, include the source email id in the description
+so the originating message can be found again later.
+
 **Format by category:**
 - Bill: `Pay [Sender]; amount/context $[amount]; deadline [date]` → `todo`
 - Reply: `Reply to [Name] re: [subject]` → `todo`
