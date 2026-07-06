@@ -193,6 +193,133 @@ def test_user_skill_survives_install_and_uninstall(homes):
     assert persisted.read_text(encoding="utf-8") == user_content
 
 
+def _home_snapshot(home: Path) -> dict[str, str]:
+    """Map of relpath -> content fingerprint for every file/symlink under home.
+
+    Directories are ignored: empty leftover dirs are harmless and platform
+    cleanup behavior differs.
+    """
+    snap: dict[str, str] = {}
+    if not home.exists():
+        return snap
+    for path in sorted(home.rglob("*")):
+        rel = str(path.relative_to(home))
+        if path.is_symlink():
+            snap[rel] = f"symlink:{path.readlink()}"
+        elif path.is_file():
+            snap[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return snap
+
+
+# Paths (relative to home) uninstall DELIBERATELY leaves behind without
+# --purge. Every entry must be justified; anything else left over is a bug.
+_ALLOWED_LEFTOVERS = {
+    # OAuth/service configs are user credentials-adjacent; kept unless --purge
+    ".config/cloud-files/config.json",
+    # the manifest correctly stays while it still tracks kept artifacts
+    # (the cloud-files config above); it is removed on a fully clean run
+    ".local/state/assistant-tools/install-manifest.json",
+}
+
+
+def test_install_uninstall_roundtrip_restores_home(homes, tmp_path: Path):
+    """Full install then uninstall must return the home to its pristine state,
+    modulo the explicit _ALLOWED_LEFTOVERS list. This catches any future
+    install side effect that uninstall forgets to reverse."""
+    repo = _make_fake_repo(homes["root"])
+    # extras setup_tools.run() needs: git hooks dir + repo, llmhooks registry
+    (repo / ".githooks").mkdir()
+    (repo / ".githooks" / "pre-commit").write_text("#!/bin/bash\n", encoding="utf-8")
+    (repo / "llmhooks").mkdir()
+    (repo / "llmhooks" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "llmhooks" / "registry.py").write_text(
+        "def hooks_for_host(host):\n    return []\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+
+    home = homes["home"]
+    bin_dir = homes["root"] / "bin"
+    shell_rc = home / ".bashrc"
+    shell_rc.parent.mkdir(parents=True, exist_ok=True)
+    shell_rc.write_text("# user line\n", encoding="utf-8")
+
+    before = _home_snapshot(home)
+
+    # full install (symlink wiring + tools), sandbox-scoped
+    saved_path = list(sys.path)
+    saved_llmhooks = {
+        name: mod for name, mod in sys.modules.items()
+        if name == "llmhooks" or name.startswith("llmhooks.")
+    }
+    buf = io.StringIO()
+    try:
+        with redirect_stdout(buf):
+            setup_symlinks.run(
+                home=home,
+                repo_root=repo,
+                claude_home=homes["claude"],
+                codex_home=homes["codex"],
+            )
+            setup_tools.run(
+                home=home,
+                bin_dir=bin_dir,
+                shell_rc=shell_rc,
+                claude_home=homes["claude"],
+                codex_home=homes["codex"],
+                default_llm="claude",
+                update_system_shell_rc=False,
+                dry_run=False,
+                install_packages=False,
+                run_oauth_setups=False,
+                repo_root=repo,
+            )
+    finally:
+        sys.path[:] = saved_path
+        for name in [n for n in sys.modules if n == "llmhooks" or n.startswith("llmhooks.")]:
+            del sys.modules[name]
+        sys.modules.update(saved_llmhooks)
+
+    installed = _home_snapshot(home)
+    assert installed != before, "install produced no observable change — test is vacuous"
+
+    cmd = [
+        sys.executable,
+        str(UNINSTALL),
+        "--home", str(home),
+        "--claude-home", str(homes["claude"]),
+        "--codex-home", str(homes["codex"]),
+        "--bin-dir", str(bin_dir),
+        "--shell-rc", str(shell_rc),
+        "--repo-root", str(repo),
+        "--no-system-shell-rc",
+        "--no-pip",
+        "--no-git-hooks",
+    ]
+    env = python_test_env(homes["root"])
+    env["HOME"] = str(home)
+    run_command(cmd, env=env)
+
+    after = _home_snapshot(home)
+
+    added = {
+        rel for rel in after
+        if rel not in before and rel not in _ALLOWED_LEFTOVERS
+    }
+    changed = {
+        rel for rel in after
+        if rel in before and after[rel] != before[rel] and rel not in _ALLOWED_LEFTOVERS
+    }
+    removed = {rel for rel in before if rel not in after}
+
+    assert added == set(), f"uninstall left behind unreversed install artifacts: {sorted(added)}"
+    assert changed == set(), f"uninstall did not restore modified files: {sorted(changed)}"
+    assert removed == set(), f"uninstall deleted pre-existing user files: {sorted(removed)}"
+
+    # bin dir lives outside home; it must be emptied of installed launchers too
+    leftover_bin = [p.name for p in bin_dir.iterdir()] if bin_dir.exists() else []
+    assert leftover_bin == [], f"launchers left in bin dir: {leftover_bin}"
+
+
 def test_conflicting_user_skill_is_never_clobbered(homes):
     """If the user's skill name collides with a repo skill, neither install
     nor uninstall may overwrite or delete the user's version."""

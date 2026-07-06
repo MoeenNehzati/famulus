@@ -144,6 +144,10 @@ def strip_marker_block(
         stripped = line.rstrip("\n")
         if stripped == begin:
             inside = True
+            # the installer writes a blank separator line before the block;
+            # drop it too so stripping restores the file exactly
+            if filtered and not filtered[-1].strip():
+                filtered.pop()
             continue
         if stripped == end:
             inside = False
@@ -279,6 +283,12 @@ def uninstall_claude_hooks(claude_home: Path, repo_root: Path, report: Report, d
     if not hooks:
         settings.pop("hooks", None)
 
+    # If nothing but empty structure remains, the file is only a husk of our
+    # managed entries — remove it entirely (whether emptied by this run or
+    # already empty from an install with no registered hooks).
+    if not settings or settings == {"hooks": {}}:
+        remove_file(settings_file, "claude settings (emptied)", report, dry_run)
+        return
     if not changed:
         report.add("skipped", f"claude hooks: {settings_file}", "no managed entries found")
         return
@@ -443,6 +453,13 @@ def remove_manifest_json_hooks(entry: dict, report: Report, dry_run: bool) -> bo
                 hooks.pop(event_name)
     if not hooks:
         settings.pop("hooks", None)
+    # If nothing but empty structure remains, the file is only a husk of our
+    # managed entries — remove it entirely (whether emptied by this run or
+    # already empty from an install with no registered hooks).
+    if not settings or settings == {"hooks": {}}:
+        before = report.failed
+        remove_file(settings_file, "claude settings (emptied)", report, dry_run)
+        return report.failed == before
     if not changed:
         report.add("skipped", f"claude hooks: {settings_file}", "no managed entries found")
         return True
@@ -519,6 +536,15 @@ def replay_manifest(
                 Path(path), entry.get("begin", BLOCK_BEGIN), entry.get("end", BLOCK_END),
                 "managed block", report, dry_run,
             )
+            # If stripping leaves the file blank, it existed only for our
+            # block — remove the husk (e.g. codex config.toml we created).
+            stripped_file = Path(path)
+            if (
+                not dry_run
+                and stripped_file.is_file()
+                and not stripped_file.read_text(encoding="utf-8").strip()
+            ):
+                remove_file(stripped_file, "managed block file (emptied)", report, dry_run)
             settled = report.failed == before
         elif kind == "json_hook_commands":
             settled = remove_manifest_json_hooks(entry, report, dry_run)
@@ -643,6 +669,15 @@ def main() -> None:
         codex_home / "config.toml", HOOKS_BLOCK_BEGIN, HOOKS_BLOCK_END,
         "codex hooks", report, dry_run,
     )
+    # If stripping the managed block leaves the codex config empty, the file
+    # existed only for our block — remove the husk.
+    codex_config = codex_home / "config.toml"
+    if (
+        not dry_run
+        and codex_config.is_file()
+        and not codex_config.read_text(encoding="utf-8").strip()
+    ):
+        remove_file(codex_config, "codex config (emptied)", report, dry_run)
     uninstall_claude_hooks(claude_home, repo_root, report, dry_run)
     if not args.no_git_hooks:
         uninstall_git_hooks(repo_root, report, dry_run)
