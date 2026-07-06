@@ -321,7 +321,10 @@ class CodexInstallTests(unittest.TestCase):
                 prompt = json.loads(prompt_result.stdout)
                 visible_text = json.dumps(prompt)
                 self.assertIn(f"{plugin_name}:daily-plan", visible_text)
-                self.assertIn(str(installed_path / "workers" / agent), visible_text)
+                # visible_text is json.dumps output: backslashes in Windows
+                # paths are escaped, so compare in JSON-escaped space
+                worker_dir_json = json.dumps(str(installed_path / "workers" / agent))[1:-1]
+                self.assertIn(worker_dir_json, visible_text)
 
             # ── Uninstall phase: plugin removal must clean up completely ──
             run_command(
