@@ -15,6 +15,16 @@ Interface Version: 1
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 
+## Research option when creating a skill
+
+When creating a new skill, before writing it, ask the user whether they want
+you to pull up online resources (documentation, comparable tools, domain
+references, best practices) to guide writing the most comprehensive skill —
+or to work from the conversation and repo context alone. Respect the answer:
+if yes, research first and fold what you learn into the skill's instructions
+and edge cases; if no, do not browse. Skip the question only when the user
+has already stated a preference in the current conversation.
+
 ## Git Safety
 
 Before editing any skill file, verify the repo containing that file is on a
