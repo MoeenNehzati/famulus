@@ -102,6 +102,9 @@ class ClaudeInstallTests(unittest.TestCase):
                 installed_path / ".claude-plugin" / "marketplace.json",
                 installed_path / "CLAUDE.md",
                 installed_path / "references",
+                installed_path / "hooks" / "hooks.json",
+                installed_path / "hooks" / "inject_dispatcher_context.py",
+                installed_path / "llmhooks" / "inject_dispatcher_context.py",
                 installed_path / "agents" / "assistant.md",
                 installed_path / "agents" / "collab.md",
                 installed_path / "agents" / "coauthor.md",
@@ -120,6 +123,40 @@ class ClaudeInstallTests(unittest.TestCase):
                 self.assertIn(skill_name, details_text)
             for agent_name in ("assistant", "collab", "coauthor"):
                 self.assertIn(agent_name, details_text)
+
+            # Claude plugin mode should fire SessionStart and emit our hook context
+            session = run_command(
+                [
+                    "claude",
+                    "-p",
+                    "hello",
+                    "--output-format",
+                    "stream-json",
+                    "--include-hook-events",
+                    "--verbose",
+                    "--allowedTools",
+                    "",
+                ],
+                env=plugin_env,
+                check=False,
+            )
+            self.assertNotEqual(session.returncode, 0)  # temp HOME is unauthenticated
+            lines = [json.loads(line) for line in session.stdout.splitlines() if line.strip()]
+            hook_started = [
+                item for item in lines
+                if item.get("type") == "system" and item.get("subtype") == "hook_started"
+            ]
+            hook_responses = [
+                item for item in lines
+                if item.get("type") == "system" and item.get("subtype") == "hook_response"
+            ]
+            self.assertTrue(hook_started, "Expected SessionStart hook_started event in Claude plugin mode")
+            self.assertTrue(hook_responses, "Expected SessionStart hook_response event in Claude plugin mode")
+            self.assertTrue(any(item.get("hook_event") == "SessionStart" for item in hook_started))
+            self.assertTrue(
+                any("Skill System" in json.dumps(item) for item in hook_responses),
+                "Expected dispatcher-context payload in Claude plugin hook response",
+            )
 
 
 if __name__ == "__main__":

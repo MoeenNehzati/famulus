@@ -1,0 +1,30 @@
+# Canonical contract for hook-maker.
+# This skill has no script interfaces; it provides design guidance and a hook scaffold reference.
+
+category: coding-development-assistant
+# Bump this major version whenever the exported skill contract changes in a
+# breaking way for dependent skills.
+interface_version: 1
+
+cross_platform: true
+
+depends_on:
+  {}
+
+suggested_permissions:
+  bash:
+    []
+  network:
+    []
+
+skill_interface:
+  inputs:
+    - "User requests to design, create, install, debug, or refactor cross-host assistant hooks."
+    - "Existing host hook configs, installer code, hook modules, and tests when present."
+  outputs:
+    - "A host-aware hook design, scaffold, patch, or review that separates purpose, lifecycle binding, and output adapter."
+  side_effects:
+    - "May create or modify hook modules, host registration code, and tests when the user asks for implementation."
+
+script_interfaces:
+  {}
