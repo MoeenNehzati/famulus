@@ -30,7 +30,7 @@ class SetupToolsHooksTests(unittest.TestCase):
 
             self.assertTrue(commands)
             self.assertTrue(any("--claude" in command for command in commands))
-            self.assertTrue(any("/llmhooks/inject_dispatcher_context.py" in command for command in commands))
+            self.assertTrue(any("inject_dispatcher_context.py" in command and "llmhooks" in command for command in commands))
 
     def test_install_claude_hooks_replaces_legacy_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -69,7 +69,8 @@ class SetupToolsHooksTests(unittest.TestCase):
             self.assertIn(setup_tools.HOOKS_BLOCK_BEGIN, config_text)
             self.assertIn("[[hooks.SessionStart]]", config_text)
             self.assertIn("--codex", config_text)
-            self.assertIn("/llmhooks/inject_dispatcher_context.py", config_text)
+            self.assertIn("inject_dispatcher_context.py", config_text)
+            self.assertIn("llmhooks", config_text)
 
     def test_install_codex_hooks_replaces_existing_managed_block(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

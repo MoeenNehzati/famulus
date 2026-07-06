@@ -223,7 +223,16 @@ def remove_manifest_symlink(entry: dict, report: Report, dry_run: bool) -> bool:
     except OSError as exc:
         report.add("FAILED", str(link), f"could not readlink: {exc}")
         return False
-    if str(Path(actual_target)) != str(Path(recorded_target)):
+    # Normalize before comparing: on Windows os.readlink() returns
+    # \\?\-prefixed extended paths, which would never string-match the
+    # recorded target and wrongly preserve every installed symlink.
+    def _norm(p: str) -> str:
+        text = str(p)
+        if text.startswith("\\\\?\\"):
+            text = text[4:]
+        return os.path.normcase(os.path.normpath(text))
+
+    if _norm(actual_target) != _norm(recorded_target):
         report.add("skipped", str(link), "re-pointed since install; preserved")
         return True
     if dry_run:

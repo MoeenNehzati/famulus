@@ -38,6 +38,11 @@ def run_command(
     timeout: int = 120,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
+    # Windows: npm installs CLIs as .cmd shims, which CreateProcess won't
+    # find from a bare name — resolve through PATH explicitly.
+    resolved = shutil.which(cmd[0])
+    if resolved is not None:
+        cmd = [resolved, *cmd[1:]]
     result = subprocess.run(
         cmd,
         env=env,

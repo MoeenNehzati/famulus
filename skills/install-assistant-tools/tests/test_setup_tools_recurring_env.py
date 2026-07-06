@@ -11,6 +11,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import setup_tools  # noqa: E402
 
 
+@unittest.skipIf(sys.platform == "win32", "env.sh generation is POSIX-only by design")
 class RecurringEnvScriptTests(unittest.TestCase):
     def test_writes_recurring_env_script_with_required_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -53,6 +54,7 @@ class RecurringEnvScriptTests(unittest.TestCase):
             self.assertFalse(env_script.exists())
 
 
+@unittest.skipIf(sys.platform == "win32", "systemd environment is Linux-only by design")
 class AiAgentEnvLiveSessionGuardTests(unittest.TestCase):
     """install_ai_agent_env writes its environment.d file scoped to whatever
     `home` it's given, but must only mutate the *live* systemd user session
