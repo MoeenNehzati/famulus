@@ -19,6 +19,15 @@ if [ -f "$REPO_ROOT/scripts/generate-settings-table.sh" ]; then
     fi
 fi
 
+# Regenerate the README skills table from skills/*/ metadata
+if [ -f "$REPO_ROOT/scripts/generate-skills-table.py" ]; then
+    python3 "$REPO_ROOT/scripts/generate-skills-table.py" >/dev/null
+    if ! git diff --quiet "$REPO_ROOT/README.md" 2>/dev/null; then
+        echo "✓ Updated README.md skills table from skills/ metadata"
+        git add "$REPO_ROOT/README.md"
+    fi
+fi
+
 # Secret scan on staged changes
 if command -v gitleaks >/dev/null 2>&1; then
     gitleaks protect --staged --redact

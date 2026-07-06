@@ -1,518 +1,309 @@
-# Skills Config
+<div align="center">
 
-Personal skill library and agent configuration for Claude Code and Codex.
+# 🧙 Famulus
 
-The repository keeps one canonical `skills/` tree and exposes it through thin
-platform-specific plugin manifests. There is no Claude-to-Codex skill-body
-conversion step.
+**A research-assistant skill library for Claude Code and Codex.**
 
-## Layout
+*A famulus is the scholar's assistant of old — it does the prep work,
+keeps the notebooks, and runs the lab while you think.*
 
-```text
-skills/                 # canonical skill source, one directory per skill
-profiles/               # optional Codex profile files, one file per profile
-references/             # shared support docs used by multiple skills
-validators/             # repo-wide conformance validators (Python); run by pre-commit
-scripts/                # repo-wide utility scripts (blueprint sync, skill dispatch, etc.)
-tests/                  # unit tests for validators in validators/
-.claude/                # repo-local Claude mirrors and ignored local settings
-.codex/                 # repo-local Codex mirrors
-.claude-plugin/         # Claude plugin metadata
-.codex-plugin/          # Codex plugin metadata
-hooks/                  # SessionStart hooks injected into every LLM session
-CLAUDE.md               # shared repo instructions
-AGENTS.md -> CLAUDE.md  # symlink for agents that read AGENTS.md
-.githooks/              # local Git hooks (pre-commit delegates to validators/runner.py)
-```
+[![Install Tests](https://github.com/MoeenNehzati/famulus/actions/workflows/test-install.yml/badge.svg)](https://github.com/MoeenNehzati/famulus/actions/workflows/test-install.yml)
 
-Each skill lives at `skills/<name>/SKILL.md` and may include local
-`scripts/`, `references/`, `assets/`, tests, `permissions.json`, and for
-blueprint-migrated skills a `blueprint.yaml`.
-`permissions.json` is repo metadata for expected runtime needs; it is kept with
-the skill and copied by plugin installation, but it is not a Codex permission
-grant.
+</div>
 
-Shared reference material that is not itself a skill lives in top-level
-`references/`. This keeps `skills/` compatible with Codex plugin validation,
-which treats every immediate child of `skills/` as a skill directory.
+Daily planning · calendar & email automation · mathematical writing and
+review · LaTeX tooling · recurring background jobs — plus the framework that
+keeps all of it consistent. One repository serves both hosts: the same
+skills, agents, and hooks work in Claude Code and Codex, installed as a
+plugin or wired directly into a development checkout.
 
-## Blueprint Migration
+**Contents:** [Installation](#-installation) ·
+[Skills](#-skills) ·
+[Design](#-design)
 
-This repository now uses a blueprint-based contract system for all local
-skills.
+---
 
-- Every local skill has a hand-authored `blueprint.yaml` as the canonical
-  contract.
-- Generated artifacts for blueprint skills are:
-  - `depends_on_skills`
-  - `permissions.json`
-  - the generated contract block injected near the top of `SKILL.md`
+## 📦 Installation
 
-The reference starting point for a new migrated skill is:
+There are three ways to use this repository. All of them expose the same
+skills; they differ in isolation and update mechanics.
+
+### 1 · Plugin — *recommended for consumption*
+
+Install through the built-in plugin managers. Skills are namespaced
+(`famulus:proof-audit`), content is copied into the host's plugin cache, and
+updates are explicit.
+
+Claude Code:
 
 ```text
-references/blueprint/template.yaml
-```
-
-Copy that file into `skills/<name>/blueprint.yaml` and edit it in place. The
-template is intentionally comment-heavy and explains what each field means and
-what kind of input it accepts.
-
-For a complete guide on blueprints, including examples, patterns, and the
-two-layer validation approach, see:
-
-```text
-references/blueprint/guide.md
-```
-
-### Dispatcher
-
-Blueprint-migrated skills may depend on other skills at two levels:
-
-- skill-to-skill invocation
-- exported script-interface invocation through:
-
-`dispatcher`
-
-That dispatcher reads the callee's `blueprint.yaml`, validates the requested
-interface and mode, checks dependency/version/export declarations, and only then
-executes the concrete command.
-
-### Current Migration Status
-
-All local skills under `skills/` are expected to be blueprint-migrated. If a
-new local skill appears without `blueprint.yaml`, the tracked hooks should fail.
-
-### Maintainer Workflow
-
-For a new blueprint-migrated skill or an interface change:
-
-1. Copy `references/skill-blueprint-template.yaml` to `skills/<name>/blueprint.yaml`.
-2. Edit the blueprint and keep its comments unless they are no longer accurate.
-3. Run:
-
-```bash
-python3 skills/my-writing-skills/scripts/sync_skill_blueprints.py
-```
-
-4. Review the generated updates to `depends_on_skills`, `permissions.json`, and
-   the injected contract block in `SKILL.md`.
-5. Run:
-
-```bash
-python3 skills/my-writing-skills/tests/test_blueprint_tools.py
-bash .githooks/pre-commit
-```
-
-### Hook Coverage
-
-`.githooks/pre-commit` runs `validators/runner.py`, which auto-discovers and runs every module in:
-
-- `validators/` — repo-wide checks (platform neutrality)
-- `skills/my-writing-skills/validators/` — skill-system checks (names, metadata, blueprints, boundaries, dependencies, blueprint relationships)
-
-Each validator module exports `validate(repo_root: Path) -> list[str]`. Adding a new `.py` file to either package with that signature is enough to have it enforced on every commit. Unit tests for validators live in `tests/validate_*.py`.
-
-Important nuance: validator modules are discovered from the live `validators/`
-directories in your working tree, but each validator's `validate(...)` runs
-against a temporary mirror containing only git-tracked content. That means a
-new local validator module can affect commit behavior before it is committed,
-while ordinary repo scans inside that validator still ignore untracked files.
-
-## Shared Instructions
-
-`AGENTS.md` is a tracked symlink to `CLAUDE.md`:
-
-```bash
-AGENTS.md -> CLAUDE.md
-```
-
-This keeps Claude-facing and Codex-facing repository instructions mechanically
-identical. On Unix-like systems Git tracks the symlink directly. On systems
-without symlink support, Git may check out `AGENTS.md` as a text file containing
-`CLAUDE.md`.
-
-## Repo-Local Mirrors
-
-This checkout also exposes the canonical top-level directories through thin
-repo-local mirrors:
-
-```text
-.claude/agents      -> ../agents
-.claude/references  -> ../references
-.claude/skills      -> ../skills
-.codex/agents       -> ../agents
-.codex/references   -> ../references
-.codex/skills       -> ../skills
-```
-
-These mirrors are a convenience layer for agents or tools that look for
-repo-local `.claude/` or `.codex/` context. They are not the canonical source
-of truth; the real content still lives in top-level `skills/`, `references/`,
-`agents/`, and `CLAUDE.md` / `AGENTS.md`.
-
-For Codex in particular, `.codex/skills` is only a repo-local mirror. The
-user-level runtime skill path is `~/.codex/skills`.
-
-`.claude/settings.local.json` is machine-local state and is ignored by Git.
-
-## Systemwide Local Setup
-
-On this machine, the canonical checkout lives at:
-
-```text
-$AI
-```
-
-Claude and Codex are wired to this checkout with symlinks, so both tools use the
-same skill files.
-
-Claude symlinks the shared directories directly:
-
-```text
-~/.claude/skills     -> $AI/skills
-~/.claude/references -> $AI/references
-~/.claude/agents     -> $AI/agents
-~/.claude/CLAUDE.md  -> $AI/CLAUDE.md
-```
-
-Before creating each symlink the installer inspects the destination.
-
-- Existing correct symlinks are kept as-is.
-- Existing wrong symlinks are replaced.
-- Existing real `skills/` directories are treated specially: unique local
-  entries are migrated into the canonical `skills/` tree, redundant per-skill
-  symlinks are removed, and then the user directory is replaced with a
-  top-level symlink.
-- Existing real files or directories at other destinations are skipped with a
-  warning.
-- `skills/` entries preserved from the user directories are added to the
-  repo-local Git exclude file when possible, so developer-only local skills do
-  not pollute `git status`.
-- There is currently no interactive merge / backup / rollback flow. Conflicting
-  `skills/` entry names are left for manual resolution.
-
-Run `python3 scripts/install.py --help` for flags, or see the
-`install-assistant-tools` skill for the current conflict-handling behavior.
-
-The installer wires both skill paths to the same canonical tree:
-
-```text
-~/.claude/skills -> $AI/skills
-~/.codex/skills -> $AI/skills
-```
-
-If you need to repair those links manually, link both `~/.claude/skills` and
-`~/.codex/skills` to the
-canonical checkout:
-
-```text
-~/.claude/skills -> $AI/skills
-~/.codex/skills -> $AI/skills
-```
-
-Create or repair the link with:
-
-```bash
-ln -sfn $AI/skills ~/.claude/skills
-ln -sfn $AI/skills ~/.codex/skills
-```
-
-Codex must keep `~/.codex` itself as a real directory. Do not make
-`~/.codex` a symlink to this repository or to another writable tree: Codex's
-Linux sandbox may reject read-only mounts that cross a writable symlink at the
-home-directory boundary.
-
-Inside that real `~/.codex` directory, keep Codex-managed state other than
-`skills/` directly in place. Shared support files are linked back to the
-canonical checkout:
-
-```text
-~/.codex/references     -> $AI/references
-~/.codex/agents         -> $AI/agents
-~/.codex/AGENTS.md      -> $AI/AGENTS.md
-```
-
-Codex profile files are loaded only when they live directly under
-`$CODEX_HOME` as `<profile-name>.config.toml`. This repository keeps canonical
-profile sources under `profiles/`; to use them in Codex, copy or symlink them
-into the root of `~/.codex`:
-
-```text
-~/.codex/assistant.config.toml -> $AI/profiles/assistant.config.toml
-```
-
-Create or repair links for all repo-owned profiles with:
-
-```bash
-for f in $AI/profiles/*.config.toml; do
-  ln -sfn "$f" ~/.codex/"$(basename "$f")"
-done
-```
-
-After changing `~/.codex/skills`, restart Codex or open a new Codex
-panel/thread if the skills do not appear.
-
-With this direct user-level setup, Codex skills are invoked by bare skill name
-such as `$proof-audit`. When installed through the Codex plugin manifest instead,
-the same skills are namespaced as `famulus:proof-audit`.
-
-## Session Hooks
-
-Cross-host LLM hook logic now lives under `llmhooks/`.
-
-- `llmhooks/lib/cross_host.py` — shared scaffold for hook input parsing,
-  host-specific output shaping, and install metadata
-- `llmhooks/registry.py` — canonical list of installable hooks
-- `llmhooks/inject_dispatcher_context.py` — the live dispatcher-context hook
-
-The dispatcher-context hook checks whether the dispatcher is installed and
-injects context into the session about the blueprint contract system —
-specifically that blueprint-managed skills must be invoked through
-`dispatcher`, not directly via their `scripts/` directories.
-
-The `hooks/` directory remains as plugin/compatibility glue:
-
-- `hooks/hooks.json` — shared plugin hook registration file
-- `hooks/inject_dispatcher_context.py` — thin shim used by plugin installs to
-  route to the correct host adapter
-
-Hooks are registered through two independent paths:
-
-| Mode | Mechanism | When it applies |
-|------|-----------|----------------|
-| Plugin | `hooks/hooks.json` + `hooks/inject_dispatcher_context.py` shim | Repo installed as a plugin; one shared hook file serves multiple hosts |
-| Dev / direct | `~/.claude/settings.local.json` and `~/.codex/config.toml` (written by installer) | Repo symlinked to `~/.claude` / `~/.codex`; installer writes explicit host commands |
-
-The installer (`install-assistant-tools`) handles dev-mode registration
-automatically from `llmhooks/registry.py`.
-
-In dev mode, installed commands are explicit:
-
-- Claude: `python3 .../llmhooks/inject_dispatcher_context.py --claude`
-- Codex: `python3 .../llmhooks/inject_dispatcher_context.py --codex`
-
-To add a new installable hook:
-
-1. implement it under `llmhooks/`
-2. register it in `llmhooks/registry.py`
-3. update `hooks/hooks.json` only if plugin-mode glue must change too
-
-## Skills
-
-Skills are on-demand instruction sets loaded when invoked. They cover:
-
-**Personal assistant & automation**
-- `daily-plan` — generate a daily plan from calendar, todos, and weather
-- `g-calendar` — read and write Google Calendar via a local OAuth CLI
-- `list-manager` — manage personal structured YAML lists stored in assistant cloud storage
-- `get-weather` — fetch weather for a day or date range with a planning summary
-- `fix-bisync` — diagnose and repair rclone bisync failures
-
-**Writing & documents**
-- `formal-prose-review` — polish grammar, tone, and clarity in technical prose
-- `technical-flow-review` — review structure, flow, and readability
-- `notation-review` — audit and unify mathematical notation
-- `proof-audit` — audit a proof for soundness, coherence, and redundancy
-- `tool-applicability` — check whether a mathematical tool applies
-- `math-dependency-graph` — extract a dependency graph from a LaTeX document
-- `make-tex-docstring` — propose a top-of-document profile comment
-- `latex-workshop` — compile LaTeX matching VS Code LaTeX Workshop settings
-- `bib-audit` — audit a `.bib` file for syntax, style, and duplicate issues
-
-**Meta**
-- `my-writing-skills` — personal conventions for writing and maintaining skills
-- `refactor-skills` — audit/refactor skills against local conventions
-- `initialize-tdd` — scaffold a staged TDD project
-
-## Profiles & Agent Configuration
-
-Three agent profiles are configured for both Claude and Codex. See [PROFILES.md](PROFILES.md) for a complete comparison of model selection and capability levels.
-
-Profile-specific settings are stored in:
-- **Codex**: `profiles/*.config.toml`
-- **Claude**: `profiles/*_claude_setting.json`
-
-The `PROFILES.md` comparison table is auto-generated from these source files and updated automatically before each commit by the pre-commit hook.
-
-## Codex
-
-Codex uses `.codex-plugin/plugin.json`, which points directly at:
-
-```json
-"skills": "./skills/"
-```
-
-Installed skills are namespaced by plugin name, for example:
-
-```text
-famulus:proof-audit
-famulus:latex-workshop
-famulus:technical-flow-review
-```
-
-No generated Codex copy is committed. Platform-specific Codex behavior belongs
-in `.codex-plugin/plugin.json`, optional Codex hooks, or skill-local
-`agents/openai.yaml` files if added later.
-
-### Codex Local Install Test
-
-Run:
-
-```bash
-python3 skills/install-assistant-tools/tests/test_codex_install.py
-```
-
-The test creates an isolated temporary `CODEX_HOME`, a temporary local
-marketplace, and an empty work directory. It first confirms that this repo's
-skills are not visible before installation. It then installs the plugin,
-checks every packaged skill and key shared assets, and runs the packaged
-`install-assistant-tools` installer into a fresh temporary home to verify the
-installed launchers, profiles, and symlink wiring.
-
-The test uses `codex debug prompt-input`; it does not call a model.
-
-### Metadata Guard
-
-Codex rejects skill descriptions longer than 1024 characters. The `skill_metadata`
-validator enforces this on every commit via `validators/runner.py`. To run it manually:
-
-```bash
-python3 skills/my-writing-skills/validators/skill_metadata.py
-```
-
-The `install-assistant-tools` skill configures the tracked hook path. To set it
-manually:
-
-```bash
-git config core.hooksPath .githooks
-```
-
-The tracked `.githooks/pre-commit` hook blocks commits in detached HEAD state
-and runs all conformance validators through `validators/runner.py`.
-
-## Claude
-
-Claude uses `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
-
-### Via Marketplace
-
-Add the marketplace and install the plugin:
-
-```bash
 /plugin marketplace add MoeenNehzati/famulus
 /plugin install famulus@nullkit
-```
-
-Skills are namespaced under `/famulus:` when installed as a plugin, for example:
-
-```text
-/famulus:daily-plan
-/famulus:wrap-up
-```
-
-To update after a push:
-
-```bash
-/plugin marketplace update
+# later:
 /plugin update famulus@nullkit
 ```
 
-### Via Direct Load
+Codex: add the repo as a plugin marketplace snapshot and `codex plugin add
+famulus@<marketplace>`.
 
-Clone anywhere and load for one Claude session:
+Uninstalling is host-managed (`/plugin uninstall`, `codex plugin remove`).
+Note an asymmetry verified against both CLIs: Codex removes its cache
+directory; Claude deregisters the plugin but deliberately retains the cache.
+
+### 2 · Developer install — *a full workstation setup*
+
+The `install-assistant-tools` skill (or `python3
+skills/install-assistant-tools/scripts/install.py`) wires a checkout into
+both hosts and sets up the surrounding machinery:
+
+- **Symlinks** for read-only shared content: `~/.claude/{skills,references,agents,CLAUDE.md}`
+  and `~/.codex/{skills,references,agents,AGENTS.md}` point into the checkout.
+- **Copies** for files the hosts write back to: `profiles/*.config.toml` are
+  copied (not symlinked) into both homes, because Codex records machine-local
+  state (project trust, hook hashes) into its config file — a symlink would
+  leak that state into git.
+- **Generated launchers**: `assistant`, `collab`, `coauthor`, `tw` are linked
+  into a bin dir on `PATH`; `dispatcher` is generated to run the shared
+  dispatcher package directly from the repo (`$AI`) — first-party code is
+  never pip-installed, so there is no second copy to drift or break.
+- **Session hooks** registered for both hosts (see Hook system below).
+- **Shell environment**: a managed rc block exports `PATH`,
+  `ASSISTANT_DEFAULT`, and `$AI` (on Windows, the user registry is used
+  instead of an rc file).
+- **Git hooks**: `core.hooksPath` is set to `.githooks` (skipped when the
+  install source is not a git checkout, e.g. a plugin cache).
+- An **install manifest** recording every side effect, persisted after each
+  step so even an interrupted install can be cleanly reversed.
+
+Key options (`install.py --help` for the full list): `--home`, `--bin-dir`,
+`--claude-home`, `--codex-home`, `--shell-rc`, `--default-llm claude|codex`,
+`--no-claude` / `--no-codex`, `--dry-run`. Optional Google Drive / Calendar
+OAuth setup is offered interactively and skipped in non-interactive runs.
+
+Pre-existing user content is never clobbered: real files are skipped with a
+warning, and an existing real `~/.claude/skills` directory has its unique
+entries migrated into the repo tree before the directory is replaced by a
+symlink (name conflicts are left in place for manual resolution).
+
+**Uninstall** is manifest-based only: `uninstall.py` replays the recorded
+side effects in reverse and reports every action. If the manifest is missing
+(pre-manifest install, or deleted by hand), it refuses and asks for one
+idempotent re-run of the installer to regenerate it — guessing at installed
+artifacts by pattern is deliberately not supported. OAuth/service configs
+survive unless `--purge` is passed. An install→uninstall round trip is tested
+to restore the home byte-for-byte.
+
+<details>
+<summary><b>Codex wiring notes</b></summary>
+
+`~/.codex` itself must stay a real directory (Codex's sandbox may reject a
+symlinked home boundary); only its contents are linked. After changing
+`~/.codex/skills`, restart Codex if skills do not appear. In dev mode skills
+are invoked by bare name (`$proof-audit`); in plugin mode they are namespaced
+(`famulus:proof-audit`).
+
+</details>
+
+### 3 · Direct plugin dir — *just trying it out*
 
 ```bash
 git clone git@github.com:MoeenNehzati/famulus.git ~/famulus
 claude --plugin-dir ~/famulus
 ```
 
-Or update the clone and reload plugins:
+No installation, no wiring; skills load for that session only.
 
-```bash
-cd ~/famulus
-git pull
-# then inside Claude:
-/reload-plugins
+---
+
+## 🛠 Skills
+
+The table below is generated from `skills/*/blueprint.yaml` (category) and
+each skill's `SKILL.md` description by `scripts/generate-skills-table.py`,
+run automatically by the pre-commit hook — it cannot go stale.
+
+<!-- BEGIN SKILLS TABLE (generated by scripts/generate-skills-table.py) -->
+### Productivity
+
+| Skill | What it does |
+|---|---|
+| `email-client` | Read, search, and send email across configured accounts |
+| `email-triage` | Triage the inbox into todo and potential-action lists since the last run |
+| `g-calendar` | Read and modify Google Calendar via a local OAuth CLI |
+| `get-weather` | Fetch weather for a location, day, or date range |
+| `list-manager` | Manage personal YAML lists (todo, shopping, reading, …) in cloud storage |
+
+### Workflow
+
+| Skill | What it does |
+|---|---|
+| `daily-plan` | Generate today's plan from calendar, todos, and weather |
+| `loose-mode` | Broad, fast exploration mode — breadth over certainty |
+| `prepare-handoff` | Prepare a clean handoff: workflow updates, doc updates, residual lessons |
+| `tight-mode` | Rigorous, verified output mode — certainty over speed |
+| `tool-applicability` | Check whether a theorem or framework achieves a target in the current setting |
+| `wrap-up` | End-of-day wrap-up: review the plan, record completions, capture new items |
+
+### Research & Writing
+
+| Skill | What it does |
+|---|---|
+| `bib-audit` | Audit a `.bib` file for validity, style, external metadata, and duplicates |
+| `formal-prose-review` | Polish grammar, tone, and concision in technical prose without touching the math |
+| `latex-workshop` | Follow VS Code LaTeX Workshop build behavior for TeX/LaTeX documents |
+| `make-tex-docstring` | Create or propose a top-of-document TeX comment block that records the document profile and intended use |
+| `math-dependency-graph` | Extract an assumptions-to-results dependency graph from a LaTeX document |
+| `notation-review` | Audit and improve mathematical notation for lightness, unification, reuse across scopes, and semantic transparency |
+| `proof-audit` | Audit a proof for soundness, coherence, hidden assumptions, and redundancy |
+| `technical-flow-review` | Review flow, structure, motivation, and readability of a technical document |
+
+### System & Automation
+
+| Skill | What it does |
+|---|---|
+| `cloud-files` | Bounded read/write of plain files under a configured Google Drive root |
+| `fix-bisync` | Diagnose and repair rclone bisync failures |
+| `pdf-to-markdown` | Convert a research-paper PDF into LLM-readable text |
+| `recurring-tasks` | Manage AI-driven recurring jobs as systemd user timers, with healthcheck |
+
+### Development
+
+| Skill | What it does |
+|---|---|
+| `git-workflow` | Branch-safety checks and commit hygiene for any repo |
+| `hook-maker` | Design cross-host assistant hooks: one purpose, per-host bindings |
+| `initialize-tdd` | Scaffold a staged, approval-gated TDD project |
+
+### Skill Framework
+
+| Skill | What it does |
+|---|---|
+| `install-assistant-tools` | Install or update launchers, wiring, hooks, and environment on a machine |
+| `my-writing-skills` | Author new skills that conform to the repo's skill-writing guideline |
+| `refactor-skills` | Audit and refactor existing skills against local conventions |
+| `update-skill-guidelines` | Change the skill-writing standard and its mechanical checks in lockstep |
+<!-- END SKILLS TABLE -->
+
+---
+
+## 🏛 Design
+
+### Layout
+
+```text
+skills/        one directory per skill: SKILL.md + blueprint.yaml + scripts/ + tests/
+agents/        agent definitions (assistant, collab, coauthor)
+profiles/      per-agent host configs (see PROFILES.md for the comparison table)
+references/    shared reference documents, including the skill-writing guideline
+llmhooks/      cross-host session-hook implementations + registry
+hooks/         plugin-mode hook glue (thin shims around llmhooks)
+script_dispatcher/  the shared dispatcher package (run from the repo, never installed)
+validators/    repo-wide pre-commit validators
+.githooks/     the pre-commit entrypoint
+scripts/       repo maintenance generators (PROFILES.md, skills table)
+tests/         smoke tests for the validators
 ```
 
-### As Full `~/.claude`
+### Blueprints and the dispatcher: the access model
 
-Use this only on a fresh machine or when intentionally replacing the full
-Claude config:
+Every skill carries a hand-authored `blueprint.yaml` — its canonical
+contract: category, interface version, declared dependencies, and the script
+interfaces it exports. From that contract, sync tooling generates
+`depends_on_skills`, `permissions.json`, and the contract block at the top of
+`SKILL.md` (see `references/blueprint/template.yaml` and
+`references/blueprint/guide.md`).
+
+Cross-skill access is allowed in exactly two forms, and blocked in every
+other:
+
+1. **Skill invocation** — one skill invoking another as a skill, if declared
+   in `depends_on`.
+2. **Exported script interfaces via the dispatcher** — `dispatcher
+   --caller-skill <caller> <callee> <interface> ...` (CLI) or
+   `script_dispatcher.dispatch()` (Python). The dispatcher reads the
+   *callee's* blueprint, validates that the caller declares the dependency,
+   that the interface is exported at a compatible version, and only then
+   executes the underlying command.
+
+What is blocked — mechanically, not by convention: a skill reaching into
+another skill's `scripts/` directory, sourcing its files, adding it to
+`sys.path`, or invoking the dispatcher CLI from Python code (the library call
+carries the caller identity; the CLI from Python would launder it). The
+pre-commit validators reject all of these.
+
+### Pre-commit gates
+
+`.githooks/pre-commit` runs on every commit (and CI re-runs the same
+validators on every push, so `--no-verify` buys nothing):
+
+- **gitleaks** scans staged changes for secrets; the commit is blocked
+  fail-closed if gitleaks is missing.
+- **`validators/runner.py`** executes every validator module against a mirror
+  of *tracked* files only (untracked local clutter is invisible), including:
+  - `personal_info` — no personal name tokens or home paths anywhere in
+    tracked content (a small documented allowlist covers author signatures in
+    plugin manifests and the repo's public GitHub handle)
+  - `platform_neutral` — shared content stays host-agnostic
+  - `blueprints` / `blueprint_relationships` / `dependencies` /
+    `interface_ids` — blueprint contracts are valid, in sync with generated
+    artifacts, and dependency declarations match reality
+  - `dispatcher_usage` / `dispatch_caller_skill` / `boundaries` /
+    `skill_md_dispatch` — the access model above, enforced
+  - `names` / `skill_metadata` — naming and frontmatter conventions
+- **Generators** — `PROFILES.md` and the README skills table are regenerated
+  and auto-staged if their sources changed.
+
+### Skill guidelines and the skill-making skills
+
+`references/skill-guidelines.md` is the single written standard for what a
+skill in this framework looks like — structure, naming, dependency rules,
+dispatcher usage, documentation conventions. It is machine-consumed, not just
+documentation:
+
+- **`my-writing-skills`** reads the guideline when creating or editing a
+  skill, so new skills conform by construction; its validator package
+  (`skills/my-writing-skills/validators/`) is where most of the mechanical
+  enforcement above lives.
+- **`refactor-skills`** audits existing skills against the same guideline.
+- **`update-skill-guidelines`** is the change-management skill: any edit to
+  the guideline must keep the mechanical checks in lockstep — a rule that is
+  added gets a check, a rule that is removed loses its stale check. The
+  standard and its enforcement cannot drift apart silently.
+
+### Cross-host hooks and hook-maker
+
+Session hooks live under `llmhooks/` as host-neutral implementations with a
+shared scaffold (`llmhooks/lib/cross_host.py`) that handles input parsing,
+host-specific output shaping, and install metadata. `llmhooks/registry.py` is
+the canonical list; the installer registers dev-mode hooks from it
+(`~/.claude/settings.local.json`, `~/.codex/config.toml`), while plugin
+installs use the `hooks/hooks.json` glue. The live example is
+`inject_dispatcher_context`, which tells every session that blueprint skills
+must be called through the dispatcher.
+
+The **`hook-maker`** skill is how new hooks get written: it separates a
+hook's *purpose* (the semantic action) from its per-host *bindings*
+(lifecycle event, invocation, output schema), so one implementation serves
+Claude, Codex, and future hosts without forking logic.
+
+### Profiles and agents
+
+Three agents — `assistant` (day-to-day productivity), `collab` (long project
+sessions), `coauthor` (writing) — each with a Claude settings file and a
+Codex profile under `profiles/`. `PROFILES.md` (generated) compares model and
+capability settings across them. Launchers of the same names start the right
+agent with the right profile on either backend (`ASSISTANT_DEFAULT` picks the
+backend; `--claude` / `--codex` override).
+
+### Testing and CI
 
 ```bash
-git clone git@github.com:MoeenNehzati/famulus.git ~/.claude
+python3 -m pytest            # everything collected per pytest.ini
+python3 validators/runner.py # the pre-commit battery, standalone
 ```
 
-In this layout, skills load without plugin namespacing.
-
-### Claude Install Test
-
-Run:
-
-```bash
-python3 skills/install-assistant-tools/tests/test_claude_install.py
-```
-
-The test creates an isolated temporary Claude home, validates the local plugin
-and marketplace manifests, installs the plugin from the local marketplace, and
-checks that the installed cache contains every packaged skill plus the expected
-agents and shared files. It also verifies Claude's local `plugins details`
-inventory for the full packaged skill and agent set.
-
-The test uses Claude's local plugin-management commands only; it does not call
-a model.
-
-Note: `claude plugins validate --strict` still warns because the repository root
-contains `CLAUDE.md`; Claude's validator treats that as plugin-root context that
-is packaged but not loaded as project context. The install test therefore runs
-non-strict validation and then asserts the installed cache contents directly.
-
-TODO for future cleanup:
-
-- Decide whether plugin-root `CLAUDE.md` should remain packaged.
-- If we want `claude plugins validate --strict` to pass cleanly, restructure or
-  relocate that context instead of relying on plugin-root `CLAUDE.md`.
-- We are intentionally **not** changing it yet because current install/runtime
-  behavior is acceptable, and the stronger Python install test now checks the
-  installed cache contents directly.
-
-## Development Checks
-
-Validate the Codex plugin manifest:
-
-```bash
-python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
-```
-
-Run the isolated install tests:
-
-```bash
-python3 skills/install-assistant-tools/tests/test_codex_install.py
-python3 skills/install-assistant-tools/tests/test_claude_install.py
-```
-
-Run focused installer unit tests:
-
-```bash
-python3 skills/install-assistant-tools/tests/test_setup_symlinks.py
-python3 skills/install-assistant-tools/tests/test_setup_tools_cloud_files.py
-```
-
-Run blueprint tooling regression tests:
-
-```bash
-python3 skills/my-writing-skills/tests/test_blueprint_tools.py
-python3 skills/my-writing-skills/validators/blueprints.py
-python3 skills/my-writing-skills/validators/boundaries.py
-```
-
-Check Python syntax for install tests:
-
-```bash
-python3 -m py_compile skills/install-assistant-tools/tests/test_codex_install.py skills/install-assistant-tools/tests/test_claude_install.py
-```
-
-After a coherent skill or plugin change, review the diff and commit so the
-cross-LLM configuration remains reproducible.
+GitHub Actions runs on every push across ubuntu, macOS, and Windows: the
+validators, the hermetic unit suites, and the full install/uninstall/e2e
+matrix with real `claude` and `codex` CLIs — plugin install/uninstall on both
+hosts, dev-mode skill accessibility, launcher execution, user-skill survival,
+and a byte-exact install→uninstall round trip. See `TESTING.md` for suite
+layout and known hazards.
