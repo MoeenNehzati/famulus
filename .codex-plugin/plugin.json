@@ -6,8 +6,8 @@
     "name": "Moeen Nehzati",
     "url": "https://github.com/MoeenNehzati"
   },
-  "homepage": "https://github.com/MoeenNehzati/claude-config",
-  "repository": "https://github.com/MoeenNehzati/claude-config",
+  "homepage": "https://github.com/MoeenNehzati/famulus",
+  "repository": "https://github.com/MoeenNehzati/famulus",
   "license": "MIT",
   "keywords": [
     "skills",
@@ -30,7 +30,7 @@
       "Read",
       "Write"
     ],
-    "websiteURL": "https://github.com/MoeenNehzati/claude-config",
+    "websiteURL": "https://github.com/MoeenNehzati/famulus",
     "defaultPrompt": [
       "Use my personal skills for this task.",
       "Review this technical document.",

@@ -400,7 +400,7 @@ Claude uses `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 Add the marketplace and install the plugin:
 
 ```bash
-/plugin marketplace add MoeenNehzati/claude-config
+/plugin marketplace add MoeenNehzati/famulus
 /plugin install famulus@nullkit
 ```
 
@@ -423,14 +423,14 @@ To update after a push:
 Clone anywhere and load for one Claude session:
 
 ```bash
-git clone git@github.com:MoeenNehzati/claude-config.git ~/claude-config
-claude --plugin-dir ~/claude-config
+git clone git@github.com:MoeenNehzati/famulus.git ~/famulus
+claude --plugin-dir ~/famulus
 ```
 
 Or update the clone and reload plugins:
 
 ```bash
-cd ~/claude-config
+cd ~/famulus
 git pull
 # then inside Claude:
 /reload-plugins
@@ -442,7 +442,7 @@ Use this only on a fresh machine or when intentionally replacing the full
 Claude config:
 
 ```bash
-git clone git@github.com:MoeenNehzati/claude-config.git ~/.claude
+git clone git@github.com:MoeenNehzati/famulus.git ~/.claude
 ```
 
 In this layout, skills load without plugin namespacing.
