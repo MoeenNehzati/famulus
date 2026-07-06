@@ -57,7 +57,7 @@ script_interfaces:
   # to generate and persist the daily plan without LLM involvement.
   orchestrate:
     id: orchestrate
-    description: "Generate today's plan (or show the existing one, refreshing its Actions/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists."
+    description: "Generate today's plan (or show the existing one, refreshing its Todo/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists."
     usage: "[--forced]"
     cwd: skill_root
     command: ["python3", "scripts/orchestrate.py"]

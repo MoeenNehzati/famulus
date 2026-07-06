@@ -3,7 +3,7 @@
   "type": "object",
   "required": ["schema", "name", "categories"],
   "properties": {
-    "schema": {"type": "string", "const": "potential-actions"},
+    "schema": {"type": "string", "const": "triage"},
     "name": {"type": "string", "minLength": 1},
     "categories": {
       "type": "array",
@@ -58,7 +58,7 @@
         },
         "entries": {
           "type": "array",
-          "items": {"$ref": "../types/potential_action.json"}
+          "items": {"$ref": "../types/triage_action.json"}
         }
       },
       "additionalProperties": false

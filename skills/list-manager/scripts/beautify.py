@@ -4,7 +4,7 @@
 Reads YAML from stdin and prints a formatted view.
 
 Default behaviour:
-  - todo / potential-actions schemas → diff renderer (for LLM diff code blocks)
+  - todo / triage schemas → diff renderer (for LLM diff code blocks)
   - all other schemas               → rich terminal renderer
 
 Usage:
@@ -30,7 +30,7 @@ STATE_SYMBOL = {
     "rejected":   "✗",
 }
 
-DIFF_SCHEMAS = {"todo", "potential-actions", "default"}
+DIFF_SCHEMAS = {"todo", "triage", "default"}
 
 # Render-scoped toggle: when true, entry lines carry a trailing `#<id>` so a
 # reader (human or LLM) can act on a specific row by id without counting.
@@ -141,7 +141,7 @@ def _rich_render(data, show_desc: bool, relative_deadlines: bool) -> None:
             console.print(branch)
 
 
-# ── Diff renderer (todo / potential-actions) ──────────────────────────────────
+# ── Diff renderer (todo / triage) ─────────────────────────────────────────────
 # Green: +, lines containing =
 # Red:   - (single dash prefix)
 # White: space prefix
@@ -283,7 +283,7 @@ def main() -> None:
     parser.add_argument("-D", "--no-descriptions", action="store_true",
                         help="Hide entry descriptions (shown by default)")
     parser.add_argument("--diff", action="store_true",
-                        help="Force diff renderer (auto for todo/potential-actions)")
+                        help="Force diff renderer (auto for todo/triage)")
     parser.add_argument("--markdown", action="store_true",
                         help="Output markdown (for LLM markdown blocks)")
     parser.add_argument("--relative-deadlines", action="store_true",

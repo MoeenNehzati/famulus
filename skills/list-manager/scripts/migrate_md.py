@@ -82,7 +82,7 @@ def parse_deadline(raw: str, relative_to: str | None = None) -> str | None:
 
 def map_state(marker: str, schema: str) -> str:
     """Map a Markdown checkbox marker to the appropriate schema state."""
-    if schema == "potential-actions":
+    if schema == "triage":
         return {"x": "accepted", "X": "accepted", "+": "accepted",
                 "-": "rejected"}.get(marker, "undecided")
     else:
@@ -263,7 +263,7 @@ def migrate(src: Path, dst: Path, schema_name: str, name: str) -> None:
     def assign_missing_deadlines(node) -> None:
         if isinstance(node, dict):
             if "title" in node and "state" in node and "deadline" not in node:
-                if schema_name in ("todo", "potential-actions"):
+                if schema_name in ("todo", "triage"):
                     node["deadline"] = node.get("created", today)
                     no_deadline.append(node["title"])
             for v in node.values():
@@ -297,7 +297,7 @@ def main() -> None:
     parser.add_argument("src", help="Source Markdown file")
     parser.add_argument("dst", help="Destination YAML file")
     parser.add_argument("--schema", required=True,
-                        help="Target schema (todo, potential-actions, default)")
+                        help="Target schema (todo, triage, default)")
     parser.add_argument("--name", help="List name (defaults to dst stem)")
     args = parser.parse_args()
 

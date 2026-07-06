@@ -24,13 +24,13 @@ def test_get_schema_field_returns_just_that_fields_spec():
 
 
 def test_get_schema_field_differs_by_list_schema():
-    """potential-actions has a different state enum than todo -- the resolver
+    """triage has a different state enum than todo -- the resolver
     must pick the right entry type per list schema, not share one cached
     result across schema names."""
     todo_state = get_schema.get_schema("todo", "state")
-    pa_state = get_schema.get_schema("potential-actions", "state")
-    assert todo_state != pa_state
-    assert pa_state == {"enum": ["undecided", "accepted", "rejected"]}
+    triage_state = get_schema.get_schema("triage", "state")
+    assert todo_state != triage_state
+    assert triage_state == {"enum": ["undecided", "accepted", "rejected"]}
 
 
 def test_get_schema_unknown_field_returns_none():

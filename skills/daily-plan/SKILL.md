@@ -29,7 +29,7 @@ Owner-Facing Script Interfaces:
 Use the installed `dispatcher` command for this skill's script interfaces:
 - `mutate-plan` — Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to today's plan and display the refreshed result.
   - `dispatcher --caller-skill daily-plan daily-plan mutate-plan {hide,show,keep,remove,mark-done,reject,set-deadline,add} ...`
-- `orchestrate` — Generate today's plan (or show the existing one, refreshing its Actions/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists.
+- `orchestrate` — Generate today's plan (or show the existing one, refreshing its Todo/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists.
   - `dispatcher --caller-skill daily-plan daily-plan orchestrate [--forced]`
 - `plan-storage` — Read, write, check existence of, or delete a plan file in cloud storage by date.
   - `dispatcher --caller-skill daily-plan daily-plan plan-storage read|write|exists|delete <date>`
@@ -46,8 +46,8 @@ Two files per day in cloud storage:
   `{"actions": [[id, situation], ...], "triage": [[id, situation], ...]}`
   where `situation` is `shown` or `hidden`
 
-When showing an existing plan, the skill re-reads the current master lists,
-rebuilds the visible Actions/Triage blocks, injects them between the HTML
+When showing an existing plan, the skill re-reads the current todo and triage master lists,
+rebuilds the visible Todo/Triage blocks, injects them between the HTML
 markers in the stored plan, saves the refreshed rendering, and prints it.
 
 Plan-local edits (`hide`, `show`, `keep`, `remove`, `add`) only change the

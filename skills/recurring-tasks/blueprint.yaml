@@ -13,19 +13,9 @@ suggested_permissions:
       reason: "Initial setup: syncs unit files, installs healthcheck cron entry."
     - command: ["scripts/sync-units.py"]
       reason: "Write/remove systemd user unit files to match jobs.yaml."
-    - command: ["scripts/enable-job.py"]
-      reason: "Enable a recurring job in jobs.yaml."
-    - command: ["scripts/disable-job.py"]
-      reason: "Disable a recurring job in jobs.yaml."
-    - command: ["scripts/test-job.py"]
-      reason: "Trigger a job immediately via systemd and report pass/fail."
-    - command: ["scripts/test-live-job.py"]
-      reason: "End-to-end live test through the real assistant backend."
-    - command: ["scripts/view-logs.sh"]
-      reason: "Tail run logs for a job."
-    - command: ["scripts/status.sh"]
-      reason: "List active timers and service status."
-    - command: ["scripts/healthcheck.sh"]
+    - command: ["scripts/manage-job.py"]
+      reason: "Consolidated interface: enable/disable/test/view-logs jobs."
+    - command: ["scripts/healthcheck.py"]
       reason: "Run pre-flight and per-job health checks."
     - command: ["systemctl"]
       reason: "Manage systemd user units."
@@ -35,34 +25,34 @@ suggested_permissions:
 script_interfaces:
   # ── Model-callable interfaces ──────────────────────────────────────────────
 
-  scripts-enable-job:
-    id: scripts-enable-job
+  scripts-enable:
+    id: scripts-enable
     description: "Enable a job by setting enabled: true in jobs.yaml and syncing unit files."
-    usage: "<name> [--jobs-file JOBS_FILE] [--no-sync]"
+    usage: "<name>"
     cwd: skill_root
-    command: ["python3", "scripts/enable-job.py"]
+    command: ["python3", "scripts/manage-job.py", "enable"]
     default:
       patterns:
         - name: owner
           allow_extra_positionals: true
 
-  scripts-disable-job:
-    id: scripts-disable-job
+  scripts-disable:
+    id: scripts-disable
     description: "Disable a job by setting enabled: false in jobs.yaml and syncing unit files."
-    usage: "<name> [--jobs-file JOBS_FILE] [--no-sync]"
+    usage: "<name>"
     cwd: skill_root
-    command: ["python3", "scripts/disable-job.py"]
+    command: ["python3", "scripts/manage-job.py", "disable"]
     default:
       patterns:
         - name: owner
           allow_extra_positionals: true
 
-  scripts-status:
-    id: scripts-status
-    description: "List all active ai-* timers; with a job name also shows service status and recent journal entries."
-    usage: "[job-name]"
+  scripts-test:
+    id: scripts-test
+    description: "Trigger a job immediately via systemd, show output and status."
+    usage: "<name>"
     cwd: skill_root
-    command: ["scripts/status.sh"]
+    command: ["python3", "scripts/manage-job.py", "test"]
     default:
       patterns:
         - name: owner
@@ -70,43 +60,43 @@ script_interfaces:
 
   scripts-view-logs:
     id: scripts-view-logs
-    description: "Tail the run log for a job; pass 'healthcheck' as job name to view the monitor log."
-    usage: "<job-name> [lines]"
+    description: "Tail the run log for a job (default 50 lines)."
+    usage: "<job-name> [--lines N]"
     cwd: skill_root
-    command: ["scripts/view-logs.sh"]
+    command: ["python3", "scripts/manage-job.py", "view-logs"]
     default:
       patterns:
         - name: owner
           allow_extra_positionals: true
 
-  scripts-test-job:
-    id: scripts-test-job
-    description: "Trigger a job immediately via systemd, wait up to 6 minutes, and report pass/fail with log output."
-    usage: "<name> [--jobs-file JOBS_FILE]"
+  scripts-status:
+    id: scripts-status
+    description: "List all active ai-* timers, next fire times, and service status."
+    usage: ""
     cwd: skill_root
-    command: ["python3", "scripts/test-job.py"]
+    command: ["python3", "scripts/manage-job.py", "status"]
     default:
       patterns:
         - name: owner
-          allow_extra_positionals: true
+          allow_extra_positionals: false
 
-  scripts-test-live-job:
-    id: scripts-test-live-job
-    description: "End-to-end live test: creates a temporary skill and job, runs it through the real assistant backend, verifies output."
-    usage: "--backend {claude|codex} [--keep-artifacts]"
+  scripts-sync:
+    id: scripts-sync
+    description: "Regenerate systemd unit files from jobs.yaml."
+    usage: ""
     cwd: skill_root
-    command: ["python3", "scripts/test-live-job.py"]
+    command: ["python3", "scripts/sync-units.py"]
     default:
       patterns:
         - name: owner
-          allow_extra_positionals: true
+          allow_extra_positionals: false
 
   scripts-healthcheck:
     id: scripts-healthcheck
     description: "Run pre-flight and per-job health checks for all enabled recurring tasks; sends a desktop notification on failure."
     usage: ""
     cwd: skill_root
-    command: ["scripts/healthcheck.sh"]
+    command: ["python3", "scripts/healthcheck.py"]
     default:
       patterns:
         - name: owner
@@ -115,24 +105,13 @@ script_interfaces:
   scripts-setup:
     id: scripts-setup
     description: "Verify prerequisites, sync systemd unit files from jobs.yaml, install the healthcheck cron entry, and list active timers."
-    usage: "[--migrate-cron]"
+    usage: ""
     cwd: skill_root
     command: ["scripts/setup.sh"]
     default:
       patterns:
         - name: owner
-          allow_extra_positionals: true
-
-  scripts-sync-units:
-    id: scripts-sync-units
-    description: "Write, update, or remove systemd user unit files and per-job runner scripts to match jobs.yaml."
-    usage: "[--unit-dir UNIT_DIR] [--jobs-file JOBS_FILE] [--migrate-cron]"
-    cwd: skill_root
-    command: ["python3", "scripts/sync-units.py"]
-    default:
-      patterns:
-        - name: owner
-          allow_extra_positionals: true
+          allow_extra_positionals: false
 
   # ── Internal interfaces (not model-callable; no description) ───────────────
 
@@ -162,30 +141,3 @@ script_interfaces:
       patterns:
         - name: owner
           allow_extra_positionals: true
-
-  scripts-run-skill:
-    id: scripts-run-skill
-    cwd: skill_root
-    command: ["scripts/run-skill.sh"]
-    default:
-      patterns:
-        - name: owner
-          allow_extra_positionals: true
-
-  runners-daily-plan:
-    id: runners-daily-plan
-    cwd: skill_root
-    command: ["scripts/runners/daily-plan.sh"]
-    default:
-      patterns:
-        - name: owner
-          allow_extra_positionals: false
-
-  runners-email-triage:
-    id: runners-email-triage
-    cwd: skill_root
-    command: ["scripts/runners/email-triage.sh"]
-    default:
-      patterns:
-        - name: owner
-          allow_extra_positionals: false

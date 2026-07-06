@@ -483,11 +483,12 @@ def cmd_create_entry(args: argparse.Namespace) -> None:
             entry["id"] = new_id
             existing_ids.add(new_id)
         # Default state and created so callers (e.g. email-triage) don't need
-        # to supply them; these are only required by todo/potential-actions schemas
-        # but are harmless on others.
+        # to supply them; these are only required by todo/triage schemas but
+        # are harmless on others.
         if "state" not in entry:
-            # Use schema-aware defaults: potential-actions uses "undecided", todo uses "incomplete"
-            entry["state"] = "undecided" if schema_name == "potential-actions" else "incomplete"
+            # Use schema-aware defaults: triage uses "undecided", todo uses
+            # "incomplete".
+            entry["state"] = "undecided" if schema_name == "triage" else "incomplete"
         if "created" not in entry:
             entry["created"] = today
 
@@ -605,7 +606,7 @@ def build_parser() -> argparse.ArgumentParser:
         "describe-schema",
         help="Describe entry-level fields (types/required/enums) for a list schema",
     )
-    p_describe.add_argument("schema", help="Schema name (todo, potential-actions, default)")
+    p_describe.add_argument("schema", help="Schema name (todo, triage, default)")
     p_describe.add_argument(
         "field",
         nargs="?",
@@ -615,7 +616,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_init = sub.add_parser("init", help="Create a new empty list file")
     p_init.add_argument("file", help="Path to create, or cloud list name with --cloud")
-    p_init.add_argument("--schema", required=True, help="Schema name (todo, potential-actions, default)")
+    p_init.add_argument("--schema", required=True, help="Schema name (todo, triage, default)")
     p_init.add_argument("--name", help="List name (defaults to filename stem)")
     add_cloud_arg(p_init)
 

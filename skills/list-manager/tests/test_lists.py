@@ -103,12 +103,12 @@ def test_init_unknown_schema_fails(tmp_path):
     assert result.returncode != 0
 
 
-def test_init_potential_actions_schema(tmp_path):
+def test_init_triage_schema(tmp_path):
     f = tmp_path / "pa.yaml"
-    result = run(["init", str(f), "--schema", "potential-actions"])
+    result = run(["init", str(f), "--schema", "triage"])
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(f.read_text())
-    assert data["schema"] == "potential-actions"
+    assert data["schema"] == "triage"
 
 
 def test_init_default_schema(tmp_path):

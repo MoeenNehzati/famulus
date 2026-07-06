@@ -1,5 +1,5 @@
-schema: potential-actions
-name: Potential Actions
+schema: triage
+name: Triage
 categories:
   - name: Research
     categories:

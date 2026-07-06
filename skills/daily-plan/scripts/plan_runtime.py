@@ -42,7 +42,7 @@ SECTION_SPECS = {
         "none": "(nothing selected for actions)",
     },
     "triage": {
-        "list": "potential-actions",
+        "list": "triage",
         "marker": "TRIAGE",
         "header": "## Triage",
         "none": "(nothing selected for triage)",
@@ -332,7 +332,7 @@ def generate_plan(date_key: str, forced_today: str | None = None) -> str:
         "calendar_week": get_calendar_week,
         "weather": get_weather,
         "todo": lambda: load_list_doc("todo"),
-        "potential": lambda: load_list_doc("potential-actions"),
+        "triage": lambda: load_list_doc("triage"),
     }
     results: dict[str, Any] = {}
     with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
@@ -351,7 +351,7 @@ def generate_plan(date_key: str, forced_today: str | None = None) -> str:
     today_label = forced_today or datetime.now().strftime("%B %d, %Y")
     meta = {
         "actions": initial_meta_for_section("actions", results.get("todo") or {}),
-        "triage": initial_meta_for_section("triage", results.get("potential") or {}),
+        "triage": initial_meta_for_section("triage", results.get("triage") or {}),
     }
     base_plan = build_base_plan(
         today_label,
@@ -466,7 +466,7 @@ def mutate_plan(
             if section != "triage":
                 raise PlanError("reject only applies to triage")
             id_map = visible_id_map(visible, indices)
-            update_master_list("potential-actions", [{"id": id_map[idx], "state": "rejected"} for idx in indices])
+            update_master_list("triage", [{"id": id_map[idx], "state": "rejected"} for idx in indices])
             meta[section] = apply_local_mutation(section_meta, visible, "hide", indices)
         elif command == "set-deadline":
             if not value:

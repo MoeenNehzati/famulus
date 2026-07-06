@@ -10,7 +10,7 @@
 #               SKIP       — skipped without reading body (subject alone sufficient)
 #               NO_ACTION  — body read; nothing actionable
 #               TODO       — item added to todo list
-#               POTENTIAL  — item added to potential-actions list
+#               POTENTIAL  — item added to triage list
 #               DEDUP      — would have added but already present in destination list
 #   REASON:   one sentence explaining the classification (quote it)
 #

@@ -2,13 +2,8 @@
   "bash": [
     "Bash(scripts/setup.sh:*)",
     "Bash(scripts/sync-units.py:*)",
-    "Bash(scripts/enable-job.py:*)",
-    "Bash(scripts/disable-job.py:*)",
-    "Bash(scripts/test-job.py:*)",
-    "Bash(scripts/test-live-job.py:*)",
-    "Bash(scripts/view-logs.sh:*)",
-    "Bash(scripts/status.sh:*)",
-    "Bash(scripts/healthcheck.sh:*)",
+    "Bash(scripts/manage-job.py:*)",
+    "Bash(scripts/healthcheck.py:*)",
     "Bash(systemctl:*)",
     "Bash(journalctl:*)"
   ],

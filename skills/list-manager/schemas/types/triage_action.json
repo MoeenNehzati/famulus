@@ -32,7 +32,7 @@
     "children": {
       "type": "array",
       "items": {
-        "$ref": "potential_action.json"
+        "$ref": "triage_action.json"
       }
     },
     "state": {

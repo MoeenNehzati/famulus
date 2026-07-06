@@ -32,7 +32,7 @@ SCHEMAS_DIR = Path(__file__).parent.parent / "schemas"
 # Falls back to entry.json (no state/enum fields) for anything not listed.
 _ENTRY_TYPE_SCHEMA_BY_LIST_SCHEMA = {
     "todo": "action.json",
-    "potential-actions": "potential_action.json",
+    "triage": "triage_action.json",
 }
 
 

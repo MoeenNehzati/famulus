@@ -1,38 +1,34 @@
 #!/usr/bin/env python3
 """
 Regenerate systemd user timer/service units from jobs.yaml.
-Usage:
-  sync-units.py                     # live system
-  sync-units.py --unit-dir PATH     # override unit dir (testing; skips systemctl)
-  sync-units.py --jobs-file PATH    # override jobs.yaml location
-  sync-units.py --migrate-cron      # also remove old crontab block
+
+Simplified architecture:
+- One service template per job (embedded command)
+- No per-job runner scripts (command runs via bash -c)
+- Direct invocation: invoke-skill <name>
 """
-import re, subprocess, sys, yaml
+import re
+import subprocess
+import sys
+import yaml
 from pathlib import Path
 from argparse import ArgumentParser
 
-SKILL_DIR        = Path(__file__).parent.parent
-DEFAULT_JOBS     = SKILL_DIR / "jobs.yaml"
-LOG_DIR          = SKILL_DIR / "logs"
-RUNNER_DIR       = SKILL_DIR / "scripts" / "runners"
+SKILL_DIR = Path(__file__).parent.parent
+DEFAULT_JOBS = SKILL_DIR / "jobs.yaml"
+LOG_DIR = SKILL_DIR / "logs"
 DEFAULT_UNIT_DIR = Path.home() / ".config/systemd/user"
-PREFIX           = "ai-"
-CRON_BEGIN = "# --- ai-recurring BEGIN (managed by recurring-tasks skill - do not edit manually) ---"
-CRON_END   = "# --- ai-recurring END ---"
+PREFIX = "ai-"
 
 
 def cron_to_systemd_calendar(cron: str) -> str:
-    """Convert a 5-field cron expression to systemd OnCalendar= format.
-
-    Supports exact values, * wildcards, and */N step syntax.
-    dom and month must be *.
-    """
+    """Convert 5-field cron to systemd OnCalendar format."""
     parts = cron.split()
     if len(parts) != 5:
-        raise ValueError(f"Expected 5-field cron expression, got: {cron!r}")
+        raise ValueError(f"Expected 5-field cron: {cron!r}")
     minute, hour, dom, month, dow = parts
     if dom != '*' or month != '*':
-        raise ValueError(f"dom and month must be '*' (got: {cron!r})")
+        raise ValueError(f"dom and month must be '*': {cron!r}")
 
     DOW_NAMES = {
         '0': 'Sun', '7': 'Sun', '1': 'Mon', '2': 'Tue',
@@ -44,49 +40,49 @@ def cron_to_systemd_calendar(cron: str) -> str:
             return '*'
         if re.fullmatch(r'\*/\d+', v):
             step = v[2:]
-            if step_base is not None:
-                return f"{step_base}/{step}"
-            return v
+            return f"{step_base}/{step}" if step_base else v
         if re.fullmatch(r'\d+', v):
             return v.zfill(2) if pad else v
-        raise ValueError(f"Unsupported cron field: {v!r}")
+        raise ValueError(f"Unsupported field: {v!r}")
 
-    if dow == '*':
-        dow_prefix = ''
-    elif re.fullmatch(r'[0-9]', dow):
+    dow_prefix = ''
+    if dow != '*':
         if dow not in DOW_NAMES:
-            raise ValueError(f"Unknown day of week: {dow!r}")
+            raise ValueError(f"Invalid day of week: {dow!r}")
         dow_prefix = DOW_NAMES[dow] + ' '
-    else:
-        raise ValueError(f"Unsupported dow pattern: {dow!r}")
 
     return f'{dow_prefix}*-*-* {field(hour, pad=True)}:{field(minute, pad=True, step_base="00")}:00'
 
 
-def write_runner(job: dict, log: Path, runner_dir: Path) -> Path:
-    runner_dir.mkdir(parents=True, exist_ok=True)
-    path = runner_dir / f"{job['name']}.sh"
-    command = job["command"].replace("{skill_dir}", str(SKILL_DIR))
-    path.write_text(f"#!/bin/bash\n{command} >> {log} 2>&1\n")
-    path.chmod(0o755)
-    return path
+def service_content(job_name: str, description: str, command: str, log_file: Path) -> str:
+    """Generate systemd service unit for a job.
 
+    Explicitly set PATH so invoke-skill (managed by install-assistant-tools) is found.
+    Systemd ExecStart does NOT load shell rc files, so we must set PATH directly in the
+    command rather than relying on bash -lc. This avoids dependency on shell environment
+    and makes the unit portable across different login shell configurations.
 
-def service_content(description: str, runner: Path) -> str:
+    Log via shell redirection (not systemd StandardOutput) to avoid systemd append-mode issues.
+    """
+    # Export PATH explicitly since systemd does not load ~/.bashrc or ~/.zshrc
+    # invoke-skill launcher is on PATH: $HOME/Documents/scripts/bin (managed bin dir)
+    path_setup = "export PATH=$HOME/Documents/scripts/bin:$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
+    full_cmd = f"{path_setup} && {command}"
     return (
         "[Unit]\n"
-        f"Description=AI recurring job: {description}\n"
+        f"Description=AI job: {description}\n"
         "\n"
         "[Service]\n"
         "Type=oneshot\n"
-        f"ExecStart=/bin/bash {runner}\n"
+        f"ExecStart=/bin/bash -c '{full_cmd} >> {log_file} 2>&1'\n"
     )
 
 
 def timer_content(description: str, calendar: str, service_name: str) -> str:
+    """Generate systemd timer unit for a job."""
     return (
         "[Unit]\n"
-        f"Description=Timer for AI recurring job: {description}\n"
+        f"Description=Timer for AI job: {description}\n"
         "\n"
         "[Timer]\n"
         f"OnCalendar={calendar}\n"
@@ -98,44 +94,48 @@ def timer_content(description: str, calendar: str, service_name: str) -> str:
     )
 
 
-def sync_units(
-    jobs: list,
-    unit_dir: Path,
-    log_dir: Path,
-    runner_dir: Path,
-    live: bool = True,
-) -> None:
+def sync_units(jobs: list, unit_dir: Path, log_dir: Path, live: bool = True) -> None:
+    """Generate or update systemd units to match jobs.yaml."""
     unit_dir.mkdir(parents=True, exist_ok=True)
     enabled_names: set[str] = set()
 
     for job in jobs:
         if not job.get('enabled', False):
             continue
+
         name = job['name']
         enabled_names.add(name)
-        log = log_dir / name / 'run.log'
-        log.parent.mkdir(parents=True, exist_ok=True)
-        calendar   = cron_to_systemd_calendar(job['schedule'])
-        runner     = write_runner(job, log, runner_dir)
-        svc_name   = f"{PREFIX}{name}.service"
-        (unit_dir / svc_name).write_text(service_content(job['description'], runner))
-        (unit_dir / f"{PREFIX}{name}.timer").write_text(timer_content(job['description'], calendar, svc_name))
-        print(f"Wrote unit files for '{name}' (OnCalendar={calendar})")
+        log_file = log_dir / name / 'run.log'
+        log_file.parent.mkdir(parents=True, exist_ok=True)
 
+        # Command: substitute {skill_dir} and escape shell special chars
+        command = job["command"].replace("{skill_dir}", str(SKILL_DIR))
+        # Escape single quotes in command for bash -c
+        command = command.replace("'", "'\\''")
+
+        calendar = cron_to_systemd_calendar(job['schedule'])
+        svc_name = f"{PREFIX}{name}.service"
+
+        (unit_dir / svc_name).write_text(
+            service_content(name, job['description'], command, log_file)
+        )
+        (unit_dir / f"{PREFIX}{name}.timer").write_text(
+            timer_content(job['description'], calendar, svc_name)
+        )
+        print(f"Synced '{name}' (OnCalendar={calendar})")
+
+    # Remove disabled jobs' units
     for tmr in sorted(unit_dir.glob(f"{PREFIX}*.timer")):
         n = tmr.stem[len(PREFIX):]
         if n not in enabled_names:
             if live:
-                r = subprocess.run(
+                subprocess.run(
                     ["systemctl", "--user", "disable", "--now", tmr.name],
                     capture_output=True,
                 )
-                if r.returncode != 0:
-                    print(f"Warning: failed to disable {tmr.name} (already disabled?)")
             tmr.unlink(missing_ok=True)
             (unit_dir / f"{PREFIX}{n}.service").unlink(missing_ok=True)
-            (runner_dir / f"{n}.sh").unlink(missing_ok=True)
-            print(f"Removed units for disabled job: '{n}'")
+            print(f"Removed disabled job: '{n}'")
 
     if live:
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
@@ -144,48 +144,22 @@ def sync_units(
                 ["systemctl", "--user", "enable", "--now", f"{PREFIX}{name}.timer"],
                 check=True,
             )
-            print(f"Enabled timer: {PREFIX}{name}.timer")
-
-
-def remove_cron_block() -> None:
-    r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
-    if r.returncode != 0:
-        print("No crontab found; nothing to migrate.")
-        return
-    lines = r.stdout.splitlines(keepends=True)
-    try:
-        i = next(n for n, l in enumerate(lines) if l.rstrip() == CRON_BEGIN)
-        j = next(n for n, l in enumerate(lines) if l.rstrip() == CRON_END)
-        if j <= i:
-            print("Warning: crontab block markers are in wrong order — skipping removal.")
-            return
-        new = "".join(lines[:i] + lines[j + 1:])
-        subprocess.run(["crontab", "-"], input=new, text=True, check=True)
-        print("Removed old crontab block.")
-    except StopIteration:
-        print("No ai-recurring crontab block found; nothing to migrate.")
+            print(f"Enabled {PREFIX}{name}.timer")
 
 
 def main() -> None:
-    p = ArgumentParser()
-    p.add_argument("--unit-dir", default=None,
-                   help="Override unit dir (testing; skips systemctl)")
-    p.add_argument("--jobs-file", default=str(DEFAULT_JOBS))
-    p.add_argument("--migrate-cron", action="store_true",
-                   help="Remove old ai-recurring crontab block before syncing")
+    p = ArgumentParser(description=__doc__)
+    p.add_argument("--unit-dir", default=None, help="Override unit dir (testing; skips systemctl)")
+    p.add_argument("--jobs-file", default=str(DEFAULT_JOBS), help="Override jobs.yaml location")
     args = p.parse_args()
 
-    if args.migrate_cron:
-        remove_cron_block()
-
-    live       = args.unit_dir is None
-    unit_dir   = Path(args.unit_dir) if args.unit_dir else DEFAULT_UNIT_DIR
-    runner_dir = RUNNER_DIR if live else unit_dir / "runners"
+    live = args.unit_dir is None
+    unit_dir = Path(args.unit_dir) if args.unit_dir else DEFAULT_UNIT_DIR
 
     with open(args.jobs_file) as f:
         jobs = (yaml.safe_load(f) or {}).get("jobs", [])
 
-    sync_units(jobs, unit_dir, LOG_DIR, runner_dir, live=live)
+    sync_units(jobs, unit_dir, LOG_DIR, live=live)
     if live:
         print("Done.")
 

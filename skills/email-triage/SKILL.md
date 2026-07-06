@@ -1,6 +1,6 @@
 ---
 name: email-triage
-description: Use when asked to triage email, process the inbox, or surface action items from recent emails. Reads emails since the last triage run (watermark) and syncs with the todo list and potential-actions list.
+description: Use when asked to triage email, process the inbox, or surface action items from recent emails. Reads emails since the last triage run (watermark) and syncs with the todo list and triage list.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
@@ -47,12 +47,12 @@ Use the `email-client` skill to read and send email. Use the `list-manager` skil
 
 `scripts-log-decision <account> <id> "<from>" "<subject>" <DECISION> "<reason>"`
 
-`DECISION` values: `SKIP` (subject-only skip) · `NO_ACTION` (body read, nothing to do) · `TODO` (added to todo) · `POTENTIAL` (added to potential-actions) · `DEDUP` (already exists in destination)  
+`DECISION` values: `SKIP` (subject-only skip) · `NO_ACTION` (body read, nothing to do) · `TODO` (added to todo) · `POTENTIAL` (added to triage) · `DEDUP` (already exists in destination)  
 `reason` = one sentence explaining the classification. Log: `triage.log`
 
 **Two destination lists:**
 - `todo` — directed, personal actions: bills to pay, replies owed, explicit follow-up commitments
-- `potential-actions` — anything the user may or may not act on: events, seminars, CFPs, summer schools, workshops, fellowship applications, optional signups
+- `triage` — anything the user may or may not act on: events, seminars, CFPs, summer schools, workshops, fellowship applications, optional signups
 
 ---
 
@@ -96,12 +96,12 @@ Batch up to 10 reads in parallel. Classify each email by sender type and targeti
 **Routing:**
 - **Types 1 & 3** always surface:
   - Reply expected (no `\Answered` in `flags`, asks a question or expects a response) → `todo`
-  - Informational → `potential-actions` if there's something to act on, otherwise `NO_ACTION`
+  - Informational → `triage` if there's something to act on, otherwise `NO_ACTION`
 - **Type 2** — treat like Type 4
 - **Type 4** — route by new-information criterion:
   - Bill / payment due → `todo`
-  - Payment received (someone sent you money) → `potential-actions` (you may have a corresponding debt to mark off)
-  - New event or opportunity → `potential-actions`
+  - Payment received (someone sent you money) → `triage` (you may have a corresponding debt to mark off)
+  - New event or opportunity → `triage`
   - Record of past activity or information you already have → `NO_ACTION`
 
 **Follow-up commitments** (any type): if a prior reply contains an explicit promise (e.g. "I'll send you X in July"), add to `todo` regardless of type.
@@ -112,7 +112,7 @@ Batch up to 10 reads in parallel. Classify each email by sender type and targeti
 
 ## Step 4 — Read both destination lists via `list-manager` skill
 
-Invoke the `list-manager` skill to read `todo` and `potential-actions`.
+Invoke the `list-manager` skill to read `todo` and `triage`.
 
 ---
 
@@ -127,15 +127,15 @@ destination list to the `list-manager` skill.
 - Bill: `Pay [Sender]; amount/context $[amount]; deadline [date]` → `todo`
 - Reply: `Reply to [Name] re: [subject]` → `todo`
 - Follow-up: `[action verb] [target]; deadline [timeframe]` → `todo`
-- Portal / institution message (Type 3, informational): `Check message on [portal/system]` → `potential-actions`
-- Payment received: `Review: [Name] paid you $[amount]` → `potential-actions`
-- Event: `Attend [event name]; [date/time/location]` → `potential-actions`
-- CFP / application: `Submit to [name]; deadline [deadline]` or `Apply to [name]; deadline [deadline]` → `potential-actions`
-- Optional signup: `Sign up for [name]; deadline/date [date or deadline]` → `potential-actions`
+- Portal / institution message (Type 3, informational): `Check message on [portal/system]` → `triage`
+- Payment received: `Review: [Name] paid you $[amount]` → `triage`
+- Event: `Attend [event name]; [date/time/location]` → `triage`
+- CFP / application: `Submit to [name]; deadline [deadline]` or `Apply to [name]; deadline [deadline]` → `triage`
+- Optional signup: `Sign up for [name]; deadline/date [date or deadline]` → `triage`
 
 If deadline or date is unknown, omit rather than guess.
 
-**Dedup:** before adding to `potential-actions`, scan for a case-insensitive substring match on the key noun (sender name, event name, program name). If a match exists in any state (`[ ]`, `[+]`, or `[-]`), skip — the item has already been triaged. Log with `DEDUP` and note the matched item. Use the `list-manager` skill to add new items.
+**Dedup:** before adding to `triage`, scan for a case-insensitive substring match on the key noun (sender name, event name, program name). If a match exists in any state (`[ ]`, `[+]`, or `[-]`), skip — the item has already been triaged. Log with `DEDUP` and note the matched item. Use the `list-manager` skill to add new items.
 
 ---
 
@@ -144,7 +144,7 @@ If deadline or date is unknown, omit rather than guess.
 Summarize concisely:
 - N emails scanned across both accounts
 - Items added to `todo` (list them)
-- Items added to `potential-actions` (list them)
+- Items added to `triage` (list them)
 - Items skipped (already listed / no action / promotional)
 
 ---

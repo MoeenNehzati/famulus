@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
 """
-Enable/disable/test/status operations for recurring jobs.
-Refactored to be simpler and cross-platform.
+Manage recurring jobs: enable, disable, test, view logs, and check status.
+
+Usage:
+  python3 manage-job.py enable <name>          # Enable a job (sets enabled: true, syncs units)
+  python3 manage-job.py disable <name>         # Disable a job (sets enabled: false, syncs units)
+  python3 manage-job.py test <name>            # Run a job immediately, show output
+  python3 manage-job.py view-logs <name>       # Tail job logs (default 50 lines)
+  python3 manage-job.py view-logs <name> --lines 100
+  python3 manage-job.py status                 # Show all timers and next fire times
+  python3 manage-job.py sync                   # Regenerate systemd units from jobs.yaml
+
+All operations sync systemd units after modifying jobs.yaml.
 """
 import json
 import subprocess
@@ -32,7 +42,7 @@ def save_jobs(jobs: list, jobs_file: Path = JOBS_FILE) -> None:
 def sync_units() -> None:
     """Regenerate systemd units."""
     subprocess.run(
-        [sys.executable, str(SKILL_DIR / "scripts" / "sync-units-refactored.py")],
+        [sys.executable, str(SKILL_DIR / "scripts" / "sync-units.py")],
         check=True,
     )
 
@@ -95,7 +105,7 @@ def view_logs(name: str, lines: int = 50) -> None:
 def status() -> None:
     """Show status of all timers."""
     result = subprocess.run(
-        ["systemctl", "--user", "list-timers", f"{SKILL_DIR.parent.name}*", "--no-pager"],
+        ["systemctl", "--user", "list-timers", "ai-*.timer", "--no-pager"],
         capture_output=True,
         text=True,
     )
@@ -109,8 +119,9 @@ def main() -> None:
     subparsers.add_parser("enable", help="Enable a job").add_argument("name")
     subparsers.add_parser("disable", help="Disable a job").add_argument("name")
     subparsers.add_parser("test", help="Test a job").add_argument("name")
-    subparsers.add_parser("view-logs", help="View job logs").add_argument("name")
-    subparsers.add_parser("view-logs").add_argument("--lines", type=int, default=50)
+    view_logs_parser = subparsers.add_parser("view-logs", help="View job logs")
+    view_logs_parser.add_argument("name")
+    view_logs_parser.add_argument("--lines", type=int, default=50)
     subparsers.add_parser("status", help="Show timer status")
     subparsers.add_parser("sync", help="Sync units")
 

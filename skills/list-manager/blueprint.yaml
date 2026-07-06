@@ -70,7 +70,7 @@ script_interfaces:
         - min_positionals: 1
           max_positionals: 2
           allow_stdin: false
-          notes: "First positional is the schema name (todo, potential-actions, default); optional second positional is a field name, or '*'/omitted for all fields. Purely local and read-only -- no cloud variant needed."
+          notes: "First positional is the schema name (todo, triage, default); optional second positional is a field name, or '*'/omitted for all fields. Purely local and read-only -- no cloud variant needed."
       allow_all_skills: false
       allowed_callers: []
 

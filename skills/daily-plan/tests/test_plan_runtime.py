@@ -65,7 +65,7 @@ old triage
     meta = {"actions": [["a", "shown"], ["gone", "hidden"]], "triage": [["t", "shown"]]}
     docs = {
         "todo": {"categories": [{"name": "Work", "entries": [{"id": "a", "title": "A"}]}]},
-        "potential-actions": {"categories": [{"name": "Work", "entries": [{"id": "t", "title": "T"}]}]},
+        "triage": {"categories": [{"name": "Work", "entries": [{"id": "t", "title": "T"}]}]},
     }
     written = {}
 
@@ -85,7 +85,7 @@ def test_mutate_plan_add_only_changes_plan_metadata(monkeypatch):
     meta = {"actions": [], "triage": []}
     docs = {
         "todo": {"categories": [{"name": "Work", "entries": [{"id": "a", "title": "A"}]}]},
-        "potential-actions": {"categories": []},
+        "triage": {"categories": []},
     }
     calls = []
 
@@ -104,7 +104,7 @@ def test_mutate_plan_mark_done_updates_master_list_and_hides_item(monkeypatch):
     meta = {"actions": [["a", "shown"], ["b", "shown"]], "triage": []}
     docs = {
         "todo": {"categories": [{"name": "Work", "entries": [{"id": "a", "title": "A"}, {"id": "b", "title": "B"}]}]},
-        "potential-actions": {"categories": []},
+        "triage": {"categories": []},
     }
     calls = []
 

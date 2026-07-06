@@ -2,8 +2,8 @@
 Tests for JSONSchema validation of list YAML files.
 
 These tests exercise the schema hierarchy:
-  entry → task_entry → action / potential_action
-and the per-list schemas (todo, potential-actions, default).
+  entry → task_entry → action / triage_action
+and the per-list schemas (todo, triage, default).
 
 No cloud calls, no subprocess — pure schema + YAML.
 """
@@ -171,7 +171,7 @@ class TestActionSchema:
         assert errors == []
 
     def test_invalid_state_for_action(self):
-        """'undecided' is valid for potential_action but not action."""
+        """'undecided' is valid for triage_action but not action."""
         schema, resolver = self._load()
         data = {
             "id": "a1b2c3",
@@ -221,11 +221,11 @@ class TestActionSchema:
 
 
 # ---------------------------------------------------------------------------
-# Type schema: potential_action
+# Type schema: triage_action
 # ---------------------------------------------------------------------------
 
-class TestPotentialActionSchema:
-    schema_path = SCHEMAS_DIR / "types" / "potential_action.json"
+class TestTriageActionSchema:
+    schema_path = SCHEMAS_DIR / "types" / "triage_action.json"
 
     def _load(self):
         with self.schema_path.open() as f:
@@ -236,7 +236,7 @@ class TestPotentialActionSchema:
         )
         return schema, resolver
 
-    def test_valid_potential_action(self):
+    def test_valid_triage_action(self):
         schema, resolver = self._load()
         data = {
             "id": "a1b2c3",
@@ -262,7 +262,7 @@ class TestPotentialActionSchema:
             assert errors == [], f"state={state!r} should be valid"
 
     def test_action_state_rejected(self):
-        """'incomplete' is valid for action but not potential_action."""
+        """'incomplete' is valid for action but not triage_action."""
         schema, resolver = self._load()
         data = {
             "id": "a1b2c3",
@@ -308,7 +308,7 @@ class TestTodoListSchema:
         """A todo list schema must have schema: 'todo'."""
         schema, resolver = load_list_schema("todo")
         data = {
-            "schema": "potential-actions",
+            "schema": "triage",
             "name": "Wrong",
             "categories": [],
         }
@@ -457,20 +457,20 @@ class TestTodoListSchema:
 
 
 # ---------------------------------------------------------------------------
-# Per-list schema: potential-actions
+# Per-list schema: triage
 # ---------------------------------------------------------------------------
 
-class TestPotentialActionsListSchema:
+class TestTriageListSchema:
     def test_valid_fixture(self):
-        schema, resolver = load_list_schema("potential-actions")
-        data = load_yaml(FIXTURES_DIR / "potential_actions_valid.yaml")
+        schema, resolver = load_list_schema("triage")
+        data = load_yaml(FIXTURES_DIR / "triage_valid.yaml")
         errors = validate(schema, resolver, data)
         assert errors == []
 
     def test_action_state_rejected(self):
-        schema, resolver = load_list_schema("potential-actions")
+        schema, resolver = load_list_schema("triage")
         data = {
-            "schema": "potential-actions",
+            "schema": "triage",
             "name": "My Options",
             "categories": [
                 {
@@ -486,7 +486,7 @@ class TestPotentialActionsListSchema:
                                     "id": "a1b2c3",
                                     "title": "Apply somewhere",
                                     "created": "2026-06-01",
-                                    "state": "incomplete",  # invalid for potential-actions
+                                    "state": "incomplete",  # invalid for triage
                                     "deadline": "2026-09-01",
                                 }
                             ],
