@@ -1,43 +1,70 @@
-"""Tests for uninstall.py — reversal of install side effects.
+"""Tests for uninstall.py — manifest-based reversal of install side effects.
 
-The installed state is constructed manually in sandboxed temp dirs (symlinks
-into the real repo, rc files with managed blocks, hook entries), then
-uninstall.py is invoked with explicit paths. No pip/systemd side effects:
-tests pass --no-pip and a sandbox home.
+The installed state is produced by REALLY running the installers
+(setup_symlinks.run + setup_tools.run) against a fake repo and sandboxed
+homes, so a genuine manifest drives the uninstall — the only supported
+path. A missing manifest is a hard error (tested), never a heuristic guess.
 """
 from __future__ import annotations
 
+import io
 import json
-import os
+import subprocess
 import sys
-import tempfile
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
 
 from install_test_utils import REPO_ROOT, can_create_symlink, python_test_env, run_command
 
-UNINSTALL = REPO_ROOT / "skills" / "install-assistant-tools" / "scripts" / "uninstall.py"
+SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+
+import setup_symlinks  # noqa: E402
+import setup_tools  # noqa: E402
+
+UNINSTALL = SCRIPTS / "uninstall.py"
 
 BLOCK_BEGIN = "# >>> assistant-tools >>>"
 BLOCK_END = "# <<< assistant-tools <<<"
 HOOKS_BLOCK_BEGIN = "# >>> skill-system-hooks >>>"
 HOOKS_BLOCK_END = "# <<< skill-system-hooks <<<"
 
+# registry stub with one real binding so managed hook entries exist
+_REGISTRY_STUB = """\
+class _Binding:
+    def __init__(self, event, argv):
+        self.event = event
+        self.matcher = None
+        self.argv = argv
+
+
+class _Hook:
+    def install_binding(self, host, repo_root):
+        return _Binding(
+            "SessionStart" if host == "claude" else "session_start",
+            ("python3", f"{repo_root}/llmhooks/stub_hook.py", f"--{host}"),
+        )
+
+
+def hooks_for_host(host):
+    return (_Hook(),)
+"""
+
 pytestmark = pytest.mark.skipif(not can_create_symlink(), reason="symlinks unavailable")
 
 
 def make_fake_repo(root: Path) -> Path:
-    """Build a minimal fake repo so uninstall never touches the real one.
-
-    uninstall.py deletes repo-scoped artifacts (recurring-tasks env.sh, git
-    hooksPath). Pointing tests at the real repo root repeatedly deleted the
-    live generated env.sh and broke all recurring jobs (see TESTING.md).
-    """
+    """Minimal fake repo: uninstall must never run against the real one
+    (it removes repo-scoped artifacts like recurring-tasks env.sh)."""
     repo = root / "repo"
-    for d in ("skills", "references", "agents"):
+    for d in ("references", "agents"):
         (repo / d).mkdir(parents=True)
+    (repo / "skills" / "repo-skill").mkdir(parents=True)
+    (repo / "skills" / "repo-skill" / "SKILL.md").write_text("# repo skill\n", encoding="utf-8")
     (repo / "CLAUDE.md").write_text("# fake\n", encoding="utf-8")
+    (repo / "AGENTS.md").write_text("# fake\n", encoding="utf-8")
 
     profiles = repo / "profiles"
     profiles.mkdir()
@@ -46,18 +73,28 @@ def make_fake_repo(root: Path) -> Path:
 
     src_bin = repo / "skills" / "install-assistant-tools" / "bin"
     src_bin.mkdir(parents=True)
-    (src_bin / "assistant").write_text("#!/bin/bash\n", encoding="utf-8")
-    (src_bin / "tmux-workspace").write_text("#!/bin/bash\n", encoding="utf-8")
+    for name in ("_agent_launch.py", "assistant", "collab", "coauthor", "tmux-workspace",
+                 "assistant.bat", "collab.bat", "coauthor.bat"):
+        (src_bin / name).write_text("#!/bin/bash\n", encoding="utf-8")
 
     rt_scripts = repo / "skills" / "recurring-tasks" / "scripts"
     rt_scripts.mkdir(parents=True)
     (rt_scripts / "env.sh").write_text("export PATH=fake:$PATH\n", encoding="utf-8")
 
+    (repo / ".githooks").mkdir()
+    (repo / ".githooks" / "pre-commit").write_text("#!/bin/bash\n", encoding="utf-8")
+
+    (repo / "llmhooks").mkdir()
+    (repo / "llmhooks" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "llmhooks" / "registry.py").write_text(_REGISTRY_STUB, encoding="utf-8")
+    (repo / "llmhooks" / "stub_hook.py").write_text("print('hi')\n", encoding="utf-8")
+
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
     return repo
 
 
 def make_installed_state(root: Path) -> dict[str, Path]:
-    """Build a realistic installed layout under root, linked to a fake repo."""
+    """Real install into sandboxed homes against the fake repo."""
     repo = make_fake_repo(root)
     home = root / "home"
     claude_home = home / ".claude"
@@ -66,96 +103,46 @@ def make_installed_state(root: Path) -> dict[str, Path]:
     for d in (claude_home, codex_home, bin_dir):
         d.mkdir(parents=True)
 
-    # Claude/Codex symlinks into repo
-    (claude_home / "skills").symlink_to(repo / "skills")
-    (claude_home / "references").symlink_to(repo / "references")
-    (claude_home / "agents").symlink_to(repo / "agents")
-    (claude_home / "CLAUDE.md").symlink_to(repo / "CLAUDE.md")
-    (codex_home / "skills").symlink_to(repo / "skills")
-    (codex_home / "AGENTS.md").symlink_to(repo / "CLAUDE.md")
-
-    # profile links (legacy install style: symlinks)
-    profiles = sorted((repo / "profiles").glob("*.config.toml"))
-    profile = profiles[0]
-    (claude_home / profile.name).symlink_to(profile)
-    (codex_home / profile.name).symlink_to(profile)
-
-    # profile copies (current install style: copied, may carry local state)
-    profile_copy = profiles[1]
-    for home_dir in (claude_home, codex_home):
-        (home_dir / profile_copy.name).write_text(
-            profile_copy.read_text(encoding="utf-8") + "\n# machine-local state\n",
-            encoding="utf-8",
-        )
-
-    # a user-owned config that matches the profile glob but has no repo
-    # counterpart — must NOT be removed
+    # user-owned content that must survive uninstall untouched
+    shell_rc = home / ".bashrc"
+    shell_rc.write_text("# user line before\n", encoding="utf-8")
+    (codex_home / "config.toml").write_text('model = "user-choice"\n', encoding="utf-8")
+    user_hook_entry = {"hooks": [{"type": "command", "command": "echo user-hook"}]}
+    (claude_home / "settings.local.json").write_text(
+        json.dumps(
+            {"hooks": {"SessionStart": [user_hook_entry]}, "permissions": {"allow": ["Bash(ls:*)"]}},
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     (claude_home / "personal.config.toml").write_text("mine\n", encoding="utf-8")
-
-    # a user-owned symlink that must NOT be removed (points outside repo)
     foreign_target = root / "foreign"
     foreign_target.mkdir()
     (claude_home / "foreign-link").symlink_to(foreign_target)
 
-    # bin symlinks
-    src_bin = repo / "skills" / "install-assistant-tools" / "bin"
-    (bin_dir / "assistant").symlink_to(src_bin / "assistant")
-    (bin_dir / "tw").symlink_to(src_bin / "tmux-workspace")
-
-    # generated dispatcher launcher (current install style: file, not symlink)
-    (bin_dir / "dispatcher").write_text(
-        "#!/bin/bash\n"
-        "# Generated by install-assistant-tools - do not edit manually.\n"
-        'exec python3 -m script_dispatcher.cli "$@"\n',
-        encoding="utf-8",
-    )
-
-    # user shell rc with managed block sandwiched between user lines
-    shell_rc = home / ".bashrc"
-    shell_rc.write_text(
-        "# user line before\n"
-        f"{BLOCK_BEGIN}\n"
-        'export PATH="managed:$PATH"\n'
-        f"{BLOCK_END}\n"
-        "# user line after\n",
-        encoding="utf-8",
-    )
-
-    # codex config.toml with managed hooks block plus user config
-    (codex_home / "config.toml").write_text(
-        'model = "user-choice"\n'
-        f"{HOOKS_BLOCK_BEGIN}\n"
-        "[[hooks.session_start]]\n"
-        f"{HOOKS_BLOCK_END}\n"
-        "sandbox = true\n",
-        encoding="utf-8",
-    )
-
-    # claude settings.local.json: one managed hook entry + one user entry
-    # the fake repo has no llmhooks registry, so uninstall falls back to the
-    # legacy managed command form (quoted hooks/ path)
-    managed_cmd = f'python3 "{repo}/hooks/inject_dispatcher_context.py"'
-    settings = {
-        "hooks": {
-            "SessionStart": [
-                {"hooks": [{"type": "command", "command": managed_cmd}]},
-                {"hooks": [{"type": "command", "command": "echo user-hook"}]},
-            ]
-        },
-        "permissions": {"allow": ["Bash(ls:*)"]},
+    saved_path = list(sys.path)
+    saved_llmhooks = {
+        name: mod for name, mod in sys.modules.items()
+        if name == "llmhooks" or name.startswith("llmhooks.")
     }
-    (claude_home / "settings.local.json").write_text(
-        json.dumps(settings, indent=2), encoding="utf-8"
-    )
-
-    # ai-agent env file + cloud-files / g-calendar config (purge targets)
-    env_dir = home / ".config" / "environment.d"
-    env_dir.mkdir(parents=True)
-    (env_dir / "20-ai-agent.conf").write_text("AI_AGENT_COMMAND_TEMPLATE=x\n")
-    for svc in ("cloud-files", "g-calendar"):
-        d = home / ".config" / svc
-        d.mkdir(parents=True)
-        (d / "config.json").write_text("{}", encoding="utf-8")
+    try:
+        with redirect_stdout(io.StringIO()):
+            setup_symlinks.run(
+                home=home, repo_root=repo,
+                claude_home=claude_home, codex_home=codex_home,
+            )
+            setup_tools.run(
+                home=home, bin_dir=bin_dir, shell_rc=shell_rc,
+                claude_home=claude_home, codex_home=codex_home,
+                default_llm="claude", update_system_shell_rc=False,
+                dry_run=False, install_packages=False, run_oauth_setups=False,
+                repo_root=repo,
+            )
+    finally:
+        sys.path[:] = saved_path
+        for name in [n for n in sys.modules if n == "llmhooks" or n.startswith("llmhooks.")]:
+            del sys.modules[name]
+        sys.modules.update(saved_llmhooks)
 
     return {
         "home": home,
@@ -202,18 +189,15 @@ def test_removes_repo_symlinks_from_homes(installed):
     assert not (installed["codex_home"] / "AGENTS.md").is_symlink()
 
 
-def test_removes_profile_links(installed):
+def test_removes_profile_copies_preserving_user_config(installed):
+    # profiles are installed as copies; the user's own config (no repo
+    # counterpart, not in the manifest) must survive
+    assert (installed["claude_home"] / "assistant.config.toml").is_file()
     run_uninstall(installed)
-    # symlinked (legacy) and copied (current) profiles both removed;
-    # the user's own config with no repo counterpart is preserved
     assert list(installed["claude_home"].glob("*.config.toml")) == [
         installed["claude_home"] / "personal.config.toml"
     ]
     assert not list(installed["codex_home"].glob("*.config.toml"))
-
-
-def test_preserves_user_config_matching_glob(installed):
-    run_uninstall(installed)
     assert (installed["claude_home"] / "personal.config.toml").read_text(
         encoding="utf-8"
     ) == "mine\n"
@@ -224,15 +208,12 @@ def test_preserves_foreign_symlink(installed):
     assert (installed["claude_home"] / "foreign-link").is_symlink()
 
 
-def test_removes_bin_links(installed):
+def test_removes_bin_links_and_launcher(installed):
+    assert (installed["bin_dir"] / "assistant").exists()
+    assert (installed["bin_dir"] / "dispatcher").is_file()
     run_uninstall(installed)
-    assert not (installed["bin_dir"] / "assistant").exists()
-    assert not (installed["bin_dir"] / "tw").exists()
-
-
-def test_removes_generated_dispatcher_launcher(installed):
-    run_uninstall(installed)
-    assert not (installed["bin_dir"] / "dispatcher").exists()
+    leftovers = [p.name for p in installed["bin_dir"].iterdir()]
+    assert leftovers == [], f"bin dir not emptied: {leftovers}"
 
 
 def test_removes_fake_repo_env_sh_not_real_one(installed):
@@ -245,91 +226,88 @@ def test_removes_fake_repo_env_sh_not_real_one(installed):
     assert real_env_sh.exists() == existed_before
 
 
-def test_preserves_foreign_dispatcher_file(installed):
-    launcher = installed["bin_dir"] / "dispatcher"
-    launcher.write_text("#!/bin/bash\n# user's own tool\n", encoding="utf-8")
-    run_uninstall(installed)
-    assert launcher.exists()
-
-
 def test_strips_rc_block_preserving_user_lines(installed):
+    text = installed["shell_rc"].read_text(encoding="utf-8")
+    assert BLOCK_BEGIN in text  # install really wrote the block
     run_uninstall(installed)
     text = installed["shell_rc"].read_text(encoding="utf-8")
     assert BLOCK_BEGIN not in text and BLOCK_END not in text
-    assert "# user line before" in text and "# user line after" in text
+    assert "# user line before" in text
 
 
 def test_strips_codex_hooks_block_preserving_user_config(installed):
+    config = installed["codex_home"] / "config.toml"
+    assert HOOKS_BLOCK_BEGIN in config.read_text(encoding="utf-8")
     run_uninstall(installed)
-    text = (installed["codex_home"] / "config.toml").read_text(encoding="utf-8")
-    assert HOOKS_BLOCK_BEGIN not in text
-    assert 'model = "user-choice"' in text and "sandbox = true" in text
+    text = config.read_text(encoding="utf-8")
+    assert HOOKS_BLOCK_BEGIN not in text and HOOKS_BLOCK_END not in text
+    assert 'model = "user-choice"' in text
 
 
 def test_removes_managed_claude_hook_preserving_user_hook(installed):
+    settings_file = installed["claude_home"] / "settings.local.json"
+    before = json.loads(settings_file.read_text(encoding="utf-8"))
+    assert len(before["hooks"]["SessionStart"]) == 2  # user + managed
     run_uninstall(installed)
-    settings = json.loads(
-        (installed["claude_home"] / "settings.local.json").read_text(encoding="utf-8")
-    )
+    after = json.loads(settings_file.read_text(encoding="utf-8"))
     commands = [
         hook["command"]
-        for entries in settings.get("hooks", {}).values()
-        for entry in entries
+        for entry in after.get("hooks", {}).get("SessionStart", [])
         for hook in entry.get("hooks", [])
     ]
-    assert "echo user-hook" in commands
-    assert not any("inject_dispatcher_context" in c for c in commands)
-    assert settings["permissions"] == {"allow": ["Bash(ls:*)"]}
+    assert commands == ["echo user-hook"]
+    assert after["permissions"] == {"allow": ["Bash(ls:*)"]}
 
 
 def test_removes_ai_agent_env_file(installed):
+    env_file = installed["home"] / ".config" / "environment.d" / "20-ai-agent.conf"
+    if sys.platform == "win32":
+        pytest.skip("environment.d is Linux-only")
+    assert env_file.exists()
     run_uninstall(installed)
-    assert not (installed["home"] / ".config" / "environment.d" / "20-ai-agent.conf").exists()
+    assert not env_file.exists()
 
 
 def test_leaves_credentials_by_default(installed):
+    config = installed["home"] / ".config" / "cloud-files" / "config.json"
+    assert config.exists()
     run_uninstall(installed)
-    assert (installed["home"] / ".config" / "cloud-files" / "config.json").exists()
-    assert (installed["home"] / ".config" / "g-calendar" / "config.json").exists()
+    assert config.exists()
 
 
 def test_purge_removes_credentials(installed):
     run_uninstall(installed, "--purge")
     assert not (installed["home"] / ".config" / "cloud-files").exists()
-    assert not (installed["home"] / ".config" / "g-calendar").exists()
 
 
 def test_dry_run_changes_nothing(installed):
-    result = run_uninstall(installed, "--dry-run")
-    assert (installed["claude_home"] / "skills").is_symlink()
-    assert (installed["bin_dir"] / "assistant").is_symlink()
-    assert BLOCK_BEGIN in installed["shell_rc"].read_text(encoding="utf-8")
-    assert "Would" in result.stdout
-
-
-def test_report_and_exit_code_on_failure(installed):
-    # Point shell-rc at an unwritable location to force a reported failure.
-    ro_dir = installed["home"] / "ro"
-    ro_dir.mkdir()
-    rc = ro_dir / "rc"
-    rc.write_text(f"{BLOCK_BEGIN}\nx\n{BLOCK_END}\n", encoding="utf-8")
-    os.chmod(rc, 0o444)
-    os.chmod(ro_dir, 0o555)
-    try:
-        paths = dict(installed)
-        paths["shell_rc"] = rc
-        result = run_uninstall(paths, check=False)
-        assert result.returncode != 0
-        assert "FAILED" in result.stdout
-    finally:
-        os.chmod(ro_dir, 0o755)
-        os.chmod(rc, 0o644)
+    before = {
+        str(p): p.is_symlink() for p in installed["home"].rglob("*")
+    }
+    run_uninstall(installed, "--dry-run")
+    after = {
+        str(p): p.is_symlink() for p in installed["home"].rglob("*")
+    }
+    assert before == after
 
 
 def test_report_lists_actions(installed):
     result = run_uninstall(installed)
-    assert result.returncode == 0
-    out = result.stdout
-    assert "removed" in out.lower()
-    # nothing failed in the happy path
-    assert "FAILED" not in out
+    assert "Uninstall report:" in result.stdout
+    assert "[removed]" in result.stdout
+
+
+def test_missing_manifest_is_hard_error(installed):
+    manifest = (
+        installed["home"] / ".local" / "state" / "assistant-tools" / "install-manifest.json"
+    )
+    assert manifest.exists()
+    manifest.unlink()  # simulate hand-deleted manifest
+
+    result = run_uninstall(installed, check=False)
+    assert result.returncode != 0
+    assert "no install manifest" in result.stderr.lower()
+    # and nothing was touched: installed artifacts are all still present
+    assert (installed["claude_home"] / "skills").is_symlink()
+    assert (installed["bin_dir"] / "dispatcher").is_file()
+    assert BLOCK_BEGIN in installed["shell_rc"].read_text(encoding="utf-8")

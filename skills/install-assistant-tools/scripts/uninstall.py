@@ -1,24 +1,22 @@
 #!/usr/bin/env python3
 """
-uninstall.py — Reverse the side effects of install.py.
+uninstall.py — Reverse the side effects of install.py by replaying the
+install manifest.
 
-Best-effort: attempts every reversal, never aborts on failure, and prints a
-final report of what was removed, skipped, left behind, or FAILED (with the
-reason). Exits non-zero if anything failed.
+Manifest-based only: every install records its side effects in a manifest
+under the home's state dir, and uninstall undoes exactly those entries.
+If the manifest is missing (pre-manifest install, or deleted by hand),
+uninstall refuses and asks for one idempotent re-run of the installer to
+regenerate it — guessing at artifacts by pattern is how live generated
+files were deleted in the past.
 
-Reverses:
-  - Claude/Codex config-dir symlinks into the repo (skills, references,
-    agents, CLAUDE.md/AGENTS.md, profile links)
-  - bin symlinks (assistant, collab, coauthor, tmux-workspace, tw, .bat)
-  - managed shell-rc blocks (user and system)
-  - managed Codex hooks block in config.toml
-  - managed Claude hook entries in settings.local.json
-  - git core.hooksPath registration
-  - recurring-tasks env.sh and the systemd AI-agent environment file
-  - editable script_dispatcher pip install
+Best-effort within the replay: attempts every reversal, never aborts on
+failure, and prints a final report of what was removed, skipped, left
+behind, or FAILED (with the reason). Exits non-zero if anything failed.
 
 Left alone unless --purge: OAuth credentials and service configs under
-~/.config/cloud-files and ~/.config/g-calendar.
+~/.config/cloud-files and ~/.config/g-calendar (their manifest entries are
+kept for a future --purge run).
 
 Never reversed (reported): local skills previously migrated into the repo's
 skills tree, worker dirs (may contain data), installed Python dependencies.
@@ -39,19 +37,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from install_manifest import Manifest, manifest_path  # noqa: E402
 from setup_tools import (  # noqa: E402
-    BAT_WRAPPERS,
-    BIN_SCRIPTS,
     BLOCK_BEGIN,
     BLOCK_END,
-    GOOGLE_OAUTH_SERVICE_ORDER,
-    HOOKS_BLOCK_BEGIN,
-    HOOKS_BLOCK_END,
 )
 
 REPO_ROOT_DEFAULT = Path(__file__).resolve().parents[3]
-
-CLAUDE_LINK_NAMES = ["skills", "references", "agents", "CLAUDE.md"]
-CODEX_LINK_NAMES = ["skills", "references", "agents", "AGENTS.md"]
 
 
 # ── Reporting ─────────────────────────────────────────────────────────────────
@@ -88,34 +78,6 @@ class Report:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def points_into(link: Path, root: Path) -> bool:
-    """True if symlink `link` resolves to a path inside `root`."""
-    try:
-        return link.resolve().is_relative_to(root.resolve())
-    except OSError:
-        return False
-
-
-def remove_repo_link(link: Path, repo_root: Path, report: Report, dry_run: bool) -> None:
-    """Remove `link` if it is a symlink into the repo; otherwise leave and note."""
-    if not link.is_symlink():
-        if link.exists():
-            report.add("skipped", str(link), "exists but is not a symlink")
-        return
-    if not points_into(link, repo_root):
-        report.add("skipped", str(link), "symlink does not point into repo")
-        return
-    if dry_run:
-        print(f"Would remove symlink {link}")
-        report.add("removed", str(link), "(dry-run)")
-        return
-    try:
-        link.unlink()
-        report.add("removed", str(link))
-    except OSError as exc:
-        report.add("FAILED", str(link), f"could not unlink: {exc}")
-
 
 def strip_marker_block(
     path: Path, begin: str, end: str, label: str, report: Report, dry_run: bool
@@ -196,117 +158,6 @@ def remove_tree(path: Path, label: str, report: Report, dry_run: bool) -> None:
 
 # ── Steps ─────────────────────────────────────────────────────────────────────
 
-def uninstall_home_links(
-    claude_home: Path, codex_home: Path, repo_root: Path, report: Report, dry_run: bool
-) -> None:
-    for name in CLAUDE_LINK_NAMES:
-        remove_repo_link(claude_home / name, repo_root, report, dry_run)
-    for name in CODEX_LINK_NAMES:
-        remove_repo_link(codex_home / name, repo_root, report, dry_run)
-    # profile links (both homes) and Claude settings profile links.
-    # .config.toml profiles are COPIES since the installer stopped
-    # symlinking them (the tool writes machine-local state back into the
-    # file); legacy installs may still have symlinks. Handle both: a
-    # non-symlink file is treated as an installed copy iff a profile of
-    # the same name exists in the repo.
-    for home in (claude_home, codex_home):
-        for pattern in ("*.config.toml", "*_claude_setting.json"):
-            for entry in sorted(home.glob(pattern)):
-                if entry.is_symlink():
-                    remove_repo_link(entry, repo_root, report, dry_run)
-                elif (repo_root / "profiles" / entry.name).exists():
-                    remove_file(entry, "profile copy", report, dry_run)
-                else:
-                    report.add("skipped", str(entry), "no matching repo profile; not ours")
-
-
-def uninstall_bin_links(bin_dir: Path, repo_root: Path, report: Report, dry_run: bool) -> None:
-    for name in BIN_SCRIPTS + BAT_WRAPPERS + ["tw"]:
-        remove_repo_link(bin_dir / name, repo_root, report, dry_run)
-    # dispatcher is a GENERATED launcher, not a symlink (first-party code
-    # runs from the repo; see setup_tools.install_dispatcher_launcher).
-    # Identify it by its generation marker before removing.
-    launcher = bin_dir / "dispatcher"
-    if launcher.is_file() and not launcher.is_symlink():
-        try:
-            generated = "Generated by install-assistant-tools" in launcher.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            generated = False
-        if generated:
-            remove_file(launcher, "dispatcher launcher", report, dry_run)
-        else:
-            report.add("skipped", str(launcher), "not our generated launcher")
-
-
-def uninstall_claude_hooks(claude_home: Path, repo_root: Path, report: Report, dry_run: bool) -> None:
-    settings_file = claude_home / "settings.local.json"
-    if not settings_file.exists():
-        report.add("skipped", f"claude hooks: {settings_file}", "does not exist")
-        return
-    try:
-        settings = json.loads(settings_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        report.add("FAILED", f"claude hooks: {settings_file}", f"could not parse: {exc}")
-        return
-
-    # Managed commands: registry bindings when importable, plus legacy command.
-    commands: set[str] = {f'python3 "{repo_root / "hooks" / "inject_dispatcher_context.py"}"'}
-    try:
-        from setup_tools import _hook_commands_to_replace
-        commands |= _hook_commands_to_replace(repo_root, "claude")
-    except Exception as exc:  # registry import may fail on partial installs
-        report.add("skipped", "claude hook registry", f"using legacy command only: {exc}")
-
-    hooks = settings.get("hooks")
-    if not isinstance(hooks, dict):
-        report.add("skipped", f"claude hooks: {settings_file}", "no hooks section")
-        return
-
-    changed = False
-    for event_name in list(hooks.keys()):
-        entries = hooks.get(event_name)
-        if not isinstance(entries, list):
-            continue
-        kept = [
-            entry for entry in entries
-            if not any(
-                isinstance(hook, dict) and hook.get("command", "") in commands
-                for hook in entry.get("hooks", [])
-            )
-        ]
-        if len(kept) != len(entries):
-            changed = True
-            if kept:
-                hooks[event_name] = kept
-            else:
-                hooks.pop(event_name)
-    if not hooks:
-        settings.pop("hooks", None)
-
-    # If nothing but empty structure remains, the file is only a husk of our
-    # managed entries — remove it entirely (whether emptied by this run or
-    # already empty from an install with no registered hooks).
-    if not settings or settings == {"hooks": {}}:
-        remove_file(settings_file, "claude settings (emptied)", report, dry_run)
-        return
-    if not changed:
-        report.add("skipped", f"claude hooks: {settings_file}", "no managed entries found")
-        return
-    if dry_run:
-        print(f"Would remove managed hook entries from {settings_file}")
-        report.add("removed", f"claude hooks: {settings_file}", "(dry-run)")
-        return
-    try:
-        fd, tmp = tempfile.mkstemp(dir=settings_file.parent, prefix=settings_file.name + ".tmp.")
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=2)
-            f.write("\n")
-        os.replace(tmp, settings_file)
-        report.add("removed", f"claude hooks: {settings_file}", "managed entries removed")
-    except OSError as exc:
-        report.add("FAILED", f"claude hooks: {settings_file}", f"could not write: {exc}")
-
-
 def uninstall_git_hooks(repo_root: Path, report: Report, dry_run: bool) -> None:
     try:
         result = subprocess.run(
@@ -333,24 +184,6 @@ def uninstall_git_hooks(repo_root: Path, report: Report, dry_run: bool) -> None:
         report.add("FAILED", "git core.hooksPath", unset.stderr.strip())
 
 
-def uninstall_systemd_env(home: Path, report: Report, dry_run: bool) -> None:
-    if sys.platform == "win32":
-        return
-    remove_file(
-        home / ".config" / "environment.d" / "20-ai-agent.conf",
-        "ai-agent env", report, dry_run,
-    )
-    # Only touch the live systemd session for the real $HOME (mirror of install).
-    if dry_run or home.expanduser().resolve() != Path.home().resolve():
-        return
-    if shutil.which("systemctl"):
-        subprocess.run(
-            ["systemctl", "--user", "unset-environment", "AI_AGENT_COMMAND_TEMPLATE"],
-            check=False, capture_output=True,
-        )
-        report.add("removed", "systemd AI_AGENT_COMMAND_TEMPLATE", "best-effort unset")
-
-
 def uninstall_pip_package(report: Report, dry_run: bool) -> None:
     if dry_run:
         print("Would pip uninstall script_dispatcher")
@@ -370,18 +203,6 @@ def uninstall_pip_package(report: Report, dry_run: bool) -> None:
         "left", "other pip dependencies",
         "shared packages are not uninstalled; remove manually if unwanted",
     )
-
-
-def purge_service_configs(home: Path, purge: bool, report: Report, dry_run: bool) -> None:
-    for svc in GOOGLE_OAUTH_SERVICE_ORDER:
-        config_dir = home / ".config" / svc
-        if purge:
-            remove_tree(config_dir, f"{svc} config/credentials", report, dry_run)
-        elif config_dir.exists():
-            report.add(
-                "left", f"{svc} config/credentials: {config_dir}",
-                "user data; re-run with --purge to remove",
-            )
 
 
 # ── Manifest replay ───────────────────────────────────────────────────────────
@@ -656,48 +477,17 @@ def main() -> None:
         report.print()
         sys.exit(1 if report.failed else 0)
 
-    print("No install manifest found — falling back to heuristic uninstall.")
-    uninstall_home_links(claude_home, codex_home, repo_root, report, dry_run)
-    uninstall_bin_links(bin_dir, repo_root, report, dry_run)
-    if shell_rc is not None:
-        strip_marker_block(shell_rc, BLOCK_BEGIN, BLOCK_END, "shell rc", report, dry_run)
-    if not args.no_system_shell_rc and sys.platform != "win32":
-        strip_marker_block(
-            Path(args.system_shell_rc), BLOCK_BEGIN, BLOCK_END, "system rc", report, dry_run
-        )
-    strip_marker_block(
-        codex_home / "config.toml", HOOKS_BLOCK_BEGIN, HOOKS_BLOCK_END,
-        "codex hooks", report, dry_run,
+    # No heuristic fallback: guessing at installed artifacts by pattern is
+    # how live generated files got deleted in the past. The installer is
+    # idempotent and always writes a manifest, so the fix is one re-run —
+    # this also covers a manifest that was deleted by hand.
+    print(
+        f"error: no install manifest found at {manifest.path}.\n"
+        "Uninstall is manifest-based. Re-run install-assistant-tools once to\n"
+        "regenerate the manifest (the install is idempotent), then uninstall.",
+        file=sys.stderr,
     )
-    # If stripping the managed block leaves the codex config empty, the file
-    # existed only for our block — remove the husk.
-    codex_config = codex_home / "config.toml"
-    if (
-        not dry_run
-        and codex_config.is_file()
-        and not codex_config.read_text(encoding="utf-8").strip()
-    ):
-        remove_file(codex_config, "codex config (emptied)", report, dry_run)
-    uninstall_claude_hooks(claude_home, repo_root, report, dry_run)
-    if not args.no_git_hooks:
-        uninstall_git_hooks(repo_root, report, dry_run)
-    # recurring-tasks env.sh is generated by the installer inside the repo
-    remove_file(
-        repo_root / "skills" / "recurring-tasks" / "scripts" / "env.sh",
-        "recurring-tasks env.sh", report, dry_run,
-    )
-    uninstall_systemd_env(home, report, dry_run)
-    if not args.no_pip:
-        uninstall_pip_package(report, dry_run)
-    purge_service_configs(home, args.purge, report, dry_run)
-
-    report.add(
-        "left", f"worker dirs: {repo_root / 'workers'}",
-        "may contain session data; remove manually if unwanted",
-    )
-
-    report.print()
-    sys.exit(1 if report.failed else 0)
+    sys.exit(1)
 
 
 if __name__ == "__main__":
