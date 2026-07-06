@@ -187,6 +187,17 @@ run automatically by the pre-commit hook — it cannot go stale.
 
 ## 🏛 Design
 
+The organizing principle is **maximal static checking against coupling**. A
+skill library only stays maintainable if adding skill #31 cannot quietly
+entangle it with the other 30 — so every relationship between skills must be
+*declared* in a contract, every access channel is *narrow* and validated, and
+everything declarable is *checked at commit time* rather than discovered at
+runtime. The pieces below implement that one idea: blueprints declare the
+contracts, the dispatcher is the sole gated channel between skills, interface
+versions make breaking changes explicit, and the validator battery rejects
+any commit where declaration and reality disagree — undeclared dependencies,
+back-door file access, out-of-sync generated artifacts, or convention drift.
+
 ### Layout
 
 ```text
