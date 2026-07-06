@@ -312,5 +312,6 @@ def test_missing_manifest_is_hard_error(installed):
     assert "no install manifest" in result.stderr.lower()
     # and nothing was touched: installed artifacts are all still present
     assert (installed["claude_home"] / "skills").is_symlink()
-    assert (installed["bin_dir"] / "dispatcher").is_file()
-    assert BLOCK_BEGIN in installed["shell_rc"].read_text(encoding="utf-8")
+    if sys.platform != "win32":  # launcher and rc block are POSIX-only
+        assert (installed["bin_dir"] / "dispatcher").is_file()
+        assert BLOCK_BEGIN in installed["shell_rc"].read_text(encoding="utf-8")
