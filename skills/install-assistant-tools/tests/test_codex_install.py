@@ -149,9 +149,8 @@ class CodexInstallTests(unittest.TestCase):
                 installed_path / "profiles" / "collab_claude_setting.json",
                 installed_path / "profiles" / "coauthor_claude_setting.json",
                 installed_path / "skills" / "install-assistant-tools" / "scripts" / "install.py",
-                installed_path / "workers" / "assistant",
-                installed_path / "workers" / "collab",
-                installed_path / "workers" / "coauthor",
+                # workers/ are deliberately NOT here: they are runtime dirs
+                # created by the installer bootstrap, never plugin content
             ]
             missing_paths = [
                 str(path.relative_to(installed_path)) for path in required_paths if not path.exists()
@@ -210,6 +209,14 @@ class CodexInstallTests(unittest.TestCase):
                 },
             )
             run_command(install_cmd, env=install_env)
+
+            # workers are created at install time by the bootstrap (runtime
+            # dirs, not plugin content)
+            for agent in ("assistant", "collab", "coauthor"):
+                self.assertTrue(
+                    (installed_path / "workers" / agent).is_dir(),
+                    f"worker dir not created by installer bootstrap: {agent}",
+                )
 
             def expect_symlink(path: Path, target: Path) -> None:
                 self.assertTrue(path.is_symlink(), f"Expected symlink: {path}")

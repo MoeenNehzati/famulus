@@ -80,7 +80,25 @@ def can_create_symlink() -> bool:
 
 
 def copy_repo_tree(destination: Path, repo_root: Path = REPO_ROOT) -> None:
-    shutil.copytree(repo_root, destination, symlinks=False)
+    """Copy only git-tracked content, so tests see exactly what a fresh
+    checkout (e.g. CI) sees — not untracked runtime artifacts (workers/,
+    generated env.sh, logs) that happen to exist in a local working tree."""
+    result = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=repo_root,
+        capture_output=True,
+        check=True,
+    )
+    for rel in result.stdout.decode("utf-8", errors="surrogateescape").split("\0"):
+        if not rel:
+            continue
+        src = repo_root / rel
+        if not src.is_file():
+            continue
+        dst = destination / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dst)
+        shutil.copymode(src, dst)
 
 
 def launcher_path(bin_dir: Path, agent: str) -> Path:

@@ -345,6 +345,17 @@ def install_git_hooks(repo_root: Path, hooks_dir: Path, dry_run: bool, manifest:
         else:
             hook.chmod(hook.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
+    # Git hooks only apply to a development checkout. A plugin-cache install
+    # (or any non-git copy of the repo) has no git dir — skip with a note
+    # instead of crashing the whole install.
+    probe = subprocess.run(
+        ["git", "-C", str(repo_root), "rev-parse", "--git-dir"],
+        capture_output=True,
+    )
+    if probe.returncode != 0:
+        log(f"Note: {repo_root} is not a git checkout; skipping git hooks setup.")
+        return
+
     if dry_run:
         log(f"Would set git -C {repo_root} config core.hooksPath .githooks")
     else:
