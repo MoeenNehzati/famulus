@@ -113,6 +113,12 @@ bash .githooks/pre-commit
 
 Each validator module exports `validate(repo_root: Path) -> list[str]`. Adding a new `.py` file to either package with that signature is enough to have it enforced on every commit. Unit tests for validators live in `tests/validate_*.py`.
 
+Important nuance: validator modules are discovered from the live `validators/`
+directories in your working tree, but each validator's `validate(...)` runs
+against a temporary mirror containing only git-tracked content. That means a
+new local validator module can affect commit behavior before it is committed,
+while ordinary repo scans inside that validator still ignore untracked files.
+
 ## Shared Instructions
 
 `AGENTS.md` is a tracked symlink to `CLAUDE.md`:

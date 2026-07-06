@@ -7,15 +7,24 @@ Validator packages:
   - validators/  (repo-wide checks)
   - skills/my-writing-skills/validators/  (skill-system checks)
 
-Validators are handed a *mirror* of the repo containing only git-tracked
-(indexed) file content, not the real working tree. This is the single choke
-point that keeps every validator's filesystem walk (`iterdir`, `rglob`,
+Validator discovery and validator input come from different places:
+
+- discovery loads live `.py` modules from the real `validators/` and
+  `skills/my-writing-skills/validators/` directories
+- validation passes those modules a *mirror* of the repo containing only
+  git-tracked (indexed) file content, not the real working tree
+
+This separation keeps every validator's filesystem walk (`iterdir`, `rglob`,
 `glob`, ...) insensitive to local, gitignored clutter under skills/ — a
 personal scratch skill, a platform's own bundled built-ins, an editor cache,
 etc. Individual validators don't need their own git-awareness; they just
-walk `repo_root` like normal and get the filtered view for free. If git is
-unavailable for some reason, we fall back to the real repo root so
-validation still runs (matching prior behavior).
+walk `repo_root` like normal and get the filtered view for free.
+
+Consequence: an untracked validator module in one of the live validator
+packages still gets discovered and can affect commit-time validation, even
+though ordinary file scanning inside `validate(...)` sees only tracked repo
+content. If git is unavailable for some reason, we fall back to the real
+repo root so validation still runs (matching prior behavior).
 """
 from __future__ import annotations
 
