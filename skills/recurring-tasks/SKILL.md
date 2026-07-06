@@ -1,6 +1,6 @@
 ---
 name: recurring-tasks
-description: Use when setting up, enabling, disabling, testing, viewing logs, or debugging recurring tasks managed as systemd user timers. Also use when the healthcheck monitor reports a problem, or when adding a new automated job.
+description: Manage recurring AI job automation via systemd timers. Define jobs in jobs.yaml, enable/disable/test them, and monitor health.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
@@ -15,243 +15,163 @@ Interface Version: 1
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
+
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `scripts-disable-job` — Disable a job by setting enabled: false in jobs.yaml and syncing unit files.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-disable-job <name> [--jobs-file JOBS_FILE] [--no-sync]`
-- `scripts-enable-job` — Enable a job by setting enabled: true in jobs.yaml and syncing unit files.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-enable-job <name> [--jobs-file JOBS_FILE] [--no-sync]`
+- `scripts-disable` — Disable a job by setting enabled: false in jobs.yaml and syncing unit files.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-disable <name>`
+- `scripts-enable` — Enable a job by setting enabled: true in jobs.yaml and syncing unit files.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-enable <name>`
 - `scripts-healthcheck` — Run pre-flight and per-job health checks for all enabled recurring tasks; sends a desktop notification on failure.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-healthcheck`
 - `scripts-setup` — Verify prerequisites, sync systemd unit files from jobs.yaml, install the healthcheck cron entry, and list active timers.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-setup [--migrate-cron]`
-- `scripts-status` — List all active ai-* timers; with a job name also shows service status and recent journal entries.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-status [job-name]`
-- `scripts-sync-units` — Write, update, or remove systemd user unit files and per-job runner scripts to match jobs.yaml.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-sync-units [--unit-dir UNIT_DIR] [--jobs-file JOBS_FILE] [--migrate-cron]`
-- `scripts-test-job` — Trigger a job immediately via systemd, wait up to 6 minutes, and report pass/fail with log output.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-test-job <name> [--jobs-file JOBS_FILE]`
-- `scripts-test-live-job` — End-to-end live test: creates a temporary skill and job, runs it through the real assistant backend, verifies output.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-test-live-job --backend {claude|codex} [--keep-artifacts]`
-- `scripts-view-logs` — Tail the run log for a job; pass 'healthcheck' as job name to view the monitor log.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-view-logs <job-name> [lines]`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-setup`
+- `scripts-status` — List all active ai-* timers, next fire times, and service status.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-status`
+- `scripts-sync` — Regenerate systemd unit files from jobs.yaml.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-sync`
+- `scripts-test` — Trigger a job immediately via systemd, show output and status.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-test <name>`
+- `scripts-view-logs` — Tail the run log for a job (default 50 lines).
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-view-logs <job-name> [--lines N]`
 <!-- END BLUEPRINT INTERFACES -->
+
 # Recurring Tasks
 
-Manages AI-driven recurring jobs as **systemd user timers**. `jobs.yaml` is the
-source of truth. Each enabled job invokes a skill non-interactively via assistant on a
-cron-like schedule.
+Manages AI-driven recurring job automation using **systemd user timers**. 
+Jobs are defined in `jobs.yaml`, which is the single source of truth.
 
-A separate **cron-based healthcheck** (`scripts-healthcheck`) runs every 4
-hours to verify jobs are healthy and sends a desktop notification on failure. It
-uses cron (not systemd) so it stays alive even if the systemd user session is the
-thing that breaks.
+## Quick Start
 
-Timers use `Persistent=true`: missed fires (machine off or asleep) run immediately
-on the next wake or boot.
+The skill provides dispatcher interfaces for all operations:
 
-**Design principle:** Job-specific artifacts and success indicators are never
-stored in `jobs.yaml` — derive them at runtime from `description` and `command`.
+- Enable/disable jobs
+- Test jobs immediately
+- View job logs
+- Check status and health
+- Sync systemd units
 
----
+See the **Owner-Facing Script Interfaces** block above for the exact dispatcher commands.
 
-## Architecture
-
-### Job invocation chain
+## Architecture (Simplified)
 
 ```
-jobs.yaml
-  └─ sync-units.py
-       ├─ ~/.config/systemd/user/ai-<name>.timer   (schedule + Persistent=true)
-       ├─ ~/.config/systemd/user/ai-<name>.service  (ExecStart = runner)
-       └─ scripts/runners/<name>.sh                 (sets env, calls run-skill.sh)
-
-[on schedule] systemd fires ai-<name>.timer
-  └─ ai-<name>.service starts scripts/runners/<name>.sh
-       └─ scripts/run-skill.sh <name>
-            └─ reads $AI_AGENT_COMMAND_TEMPLATE from systemd user environment
-                 └─ scripts/invoke-agent.sh <name>
-                      └─ backend-aware assistant launcher
-                           ├─ Claude: assistant --local --claude -p "/<name>"
-                           └─ Codex:  assistant --local --codex exec "$<name>"
-                         output → logs/<name>/run.log
+jobs.yaml (source of truth)
+    ↓
+sync-units.py (generates systemd units)
+    ↓
+systemd timer fires on schedule
+    ↓
+systemd service runs: bash -c "<command from jobs.yaml>"
+    ↓
+Command typically: invoke-skill <job-name>
+    ↓
+Logs to: logs/<job-name>/run.log
 ```
 
-### Healthcheck monitoring chain
+**Key simplifications:**
+- ✓ No per-job runner scripts (command runs directly via bash -c)
+- ✓ No invoke-agent.sh/run-skill.sh layers (invoke-skill is on PATH)
+- ✓ Direct command invocation from systemd unit
+- ✓ Environment inherited from systemd user session (AI_AGENT_COMMAND_TEMPLATE already set)
 
-```
-cron (every 4 hours, installed by setup.sh)
-  └─ scripts/healthcheck.sh
-       ├─ PRE-FLIGHT
-       │    ├─ systemd user manager reachable? (state = running or degraded-unrelated)
-       │    ├─ AI_AGENT_COMMAND_TEMPLATE set in systemd environment?
-       │    └─ scripts/invoke-agent.sh exists and is executable?
-       └─ PER ENABLED JOB
-            ├─ unit files exist in ~/.config/systemd/user/?
-            ├─ timer is active?
-            ├─ last run Result = success?
-            └─ log fresh? (mtime < 2 × scheduled interval)
-       ├─ all pass → log "All checks passed"
-       └─ any fail → log problems + notify-send desktop alert (-u critical)
-       all outcomes logged to logs/healthcheck/run.log
-```
+## Configuration
 
-### Key dependency: `AI_AGENT_COMMAND_TEMPLATE`
-
-Every runner calls `run-skill.sh`, which substitutes `{skill}` in this variable
-and runs the result. If the variable is absent from the systemd user environment,
-every job fails immediately with:
-
-```
-AI_AGENT_COMMAND_TEMPLATE is not set.
-```
-
-It is set persistently in `~/.config/environment.d/20-ai-agent.conf` by
-`install-assistant-tools`. If it disappears (e.g. file deleted), use the
-`install-assistant-tools` skill to restore it.
-
----
-
-## Files
-
-### Generated per job
-
-```
-~/.config/systemd/user/
-  ai-<name>.timer      # OnCalendar from jobs.yaml schedule; Persistent=true
-  ai-<name>.service    # ExecStart = scripts/runners/<name>.sh
-
-scripts/runners/
-  <name>.sh            # sets PATH + DBUS env vars; calls run-skill.sh; redirects to run.log
-
-logs/<name>/
-  run.log              # all stdout/stderr from every run (appended)
-```
-
-### Monitoring
-
-```
-logs/healthcheck/
-  run.log              # timestamped record of every healthcheck run, pass and fail
-```
-
----
-
-## Scripts
-
-| Interface | Purpose |
-|-----------|---------|
-| `scripts-setup` | **Run on first install or after any change.** Syncs unit files from `jobs.yaml`, installs healthcheck cron entry, lists active timers. |
-| `scripts-sync-units` | Writes/updates/removes systemd unit files and runner scripts to match `jobs.yaml`. Called by `scripts-setup`. |
-| `scripts-run-skill` | Reads `$AI_AGENT_COMMAND_TEMPLATE`, substitutes `{skill}` → `<name>`, executes via `bash -lc`. Called by every runner. |
-| `scripts-invoke-agent` | Backend-aware agent invoker. Claude uses `assistant --local --claude -p "/<name>"`; Codex uses `assistant --local --codex exec "$<name>"`. This is what `AI_AGENT_COMMAND_TEMPLATE` points to. |
-| `scripts-healthcheck` | Cron-based monitor. Checks all enabled jobs; sends desktop notification on any failure. Logs every run to `logs/healthcheck/run.log`. |
-| `scripts-enable-job` | Sets `enabled: true` in `jobs.yaml` and syncs. |
-| `scripts-disable-job` | Sets `enabled: false` in `jobs.yaml` and syncs. |
-| `scripts-test-job` | Starts the service immediately via systemd, waits up to 6 min, reports pass/fail with log and journal tail. |
-| `scripts-test-live-job` | Creates a temporary skill + scheduled job, runs it through the real backend, verifies output, then restores the original schedule. |
-| `scripts-view-logs` | Tails the run log live (Ctrl-C to stop; default 50 lines). Pass `healthcheck` to view the monitor log. |
-| `scripts-status` | Lists all active timers. With a job name, also shows service status and recent journal entries. |
-
----
-
-## `jobs.yaml` format
+### jobs.yaml
 
 ```yaml
 jobs:
-  - name: <job-name>       # used for unit filenames, runner name, and log directory
-    description: "..."     # human-readable; also set as systemd unit Description=
-    command: "..."         # shell command run by the runner; {skill_dir} is substituted
-    schedule: "M H * * *" # 5-field cron expression; dom and month must be *
-    enabled: true          # false = unit files removed, timer stopped
+  - name: example-job
+    description: "Example: what this job does"
+    command: "invoke-skill example-job"  # Can include env vars: VAR=value invoke-skill ...
+    schedule: "0 * * * *"                # 5-field cron expression
+    enabled: true
 ```
 
-**`{skill_dir}`** in `command` is replaced with the absolute path to this skill's
-directory at sync time.
-
-**Schedule format:** standard 5-field cron. `*/N` works in minutes and hours.
-Day-of-week (0–6) is supported. `dom` and `month` must be `*`.
-
----
+**Fields:**
+- `name` — unique identifier (used for timer/service names, logs)
+- `description` — human-readable purpose
+- `command` — shell command to execute (can include environment variables)
+- `schedule` — cron expression (minute hour * * day-of-week)
+- `enabled` — whether the timer is active
 
 ## Operations
 
-### First-time setup (new machine)
+Use the dispatcher interfaces listed in the **Owner-Facing Script Interfaces** block above. Key operations:
 
-Use the `scripts-setup` interface (pass `--migrate-cron` when migrating from a
-cron-based install to also remove the old crontab block).
+- **Setup (first time):** `scripts-sync` generates systemd units from jobs.yaml and enables all enabled jobs.
+- **Enable/Disable:** `scripts-enable` and `scripts-disable` modify jobs.yaml and resync systemd units.
+- **Test:** `scripts-test` runs a job immediately and shows output.
+- **View logs:** `scripts-view-logs` tails job logs (default 50 lines).
+- **Check health:** `scripts-healthcheck` verifies all jobs are running and logs are fresh. Sends a desktop notification on failure.
 
-This syncs all unit files, enables all timers, and installs the healthcheck cron
-entry. Run once after cloning on a new machine.
+## Design Principles
 
-### Enable / disable a job
-
-Use the `scripts-enable-job` or `scripts-disable-job` interface with `<name>`.
-
-### Add a new job
-
-1. Add an entry to `jobs.yaml` with `enabled: true`.
-2. Run the `scripts-setup` interface.
-3. Test: use the `scripts-test-job` interface with `<name>`.
-
-### View logs
-
-Use the `scripts-view-logs` interface: pass `<name>` for a job run log, or
-`healthcheck` to view the monitor log.
-
-### Test a job immediately
-
-Use the `scripts-test-job` interface with `<name>`.
-
-### Run a live backend self-test
-
-Use the `scripts-test-live-job` interface with `--backend claude` or
-`--backend codex`.
-
-### Run the healthcheck manually
-
-Use the `scripts-healthcheck` interface.
-
-### Debug a job
-
-Multi-turn reasoning loop — do not script this:
-
-1. Check recent output: use the `scripts-view-logs` interface with `<name>`.
-2. Check timer, service, journal: use the `scripts-status` interface with `<name>`.
-3. Infer expected behavior from `description` and `command` in `jobs.yaml` only.
-4. Summarize: did systemd launch the job? Did it error? What is the most likely cause?
-5. Propose a specific fix. Wait for user approval.
-6. Apply fix; re-sync if unit files changed (use the `scripts-sync-units` interface).
-7. Use the `scripts-test-job` interface with `<name>`.
-8. Pass → done. Fail → return to step 1.
-
----
-
-## Common failure modes
-
-| Symptom | Likely cause | Fix |
-|---------|-------------|-----|
-| All jobs log "AI_AGENT_COMMAND_TEMPLATE is not set" | Variable missing from systemd user environment | Use the `install-assistant-tools` skill, or restore `~/.config/environment.d/20-ai-agent.conf` and run `systemctl --user set-environment ...` |
-| Timer shows "not active" / unit not found | `setup.sh` never run, or units deleted | Use the `scripts-setup` interface |
-| Job fails but timer is active | Job-level error (script bug, missing dependency, auth issue) | Check `logs/<name>/run.log`; use `scripts-status` with `<name>` |
-| Healthcheck reports stale log | Timer missed fires or job produced no output | Test manually; check `Persistent=true` is set (re-run setup.sh) |
-| Healthcheck never sends notifications | `notify-send` can't reach D-Bus from cron | Check `XDG_RUNTIME_DIR=/run/user/<uid>` and `DBUS_SESSION_BUS_ADDRESS` in healthcheck env |
-| systemd user manager "degraded" alert | Some unit failed | Run `systemctl --user list-units --state=failed`; if not an AI unit, it's unrelated |
-| Log shows `invoke-agent.sh: line N: .../scripts/env.sh: No such file or directory` | Generated `env.sh` (next to `invoke-agent.sh`) deleted or overwritten (historically: install/uninstall tests run against the real repo root) | Re-run `install-assistant-tools` to regenerate the `env.sh` PATH bootstrap (managed bin dir, `~/.npm-global/bin`, `~/.local/bin`) |
-| Jobs "succeed" but the log shows the assistant complaining pip/dispatcher is unavailable; list/plan skills degrade | `dispatcher` not reachable from the job PATH — jobs run under non-interactive `bash -lc`, which does NOT load conda/anaconda from `.bashrc` | Ensure the generated `dispatcher` launcher exists in the managed bin dir (re-run `install-assistant-tools`); it runs script_dispatcher from `$AI` with system `python3` |
-
----
+1. **No hardcoded paths** — Commands use `invoke-skill` which is on PATH (managed by install-assistant-tools)
+2. **jobs.yaml is source of truth** — All state comes from here, nothing else
+3. **Minimal layers** — Direct bash command execution, no intermediate scripts
+4. **Environment-based** — Uses systemd user environment for AI_AGENT_COMMAND_TEMPLATE
+5. **Cross-platform** — Core logic in Python, minimal shell usage
 
 ## Logs
 
+All logs go to `logs/<name>/run.log`. Logs are appended, never rotated (manage manually or with logrotate).
+
+### Healthcheck log
+
 ```
-logs/
-  <name>/run.log        # appended by the runner on every job run
-  healthcheck/run.log   # appended by healthcheck.sh on every 4-hour check
+logs/healthcheck/run.log
 ```
 
-Logs are not automatically rotated. Trim manually or add logrotate if they grow.
+One entry per check run (typically every 4 hours via cron).
+
+## Common Tasks
+
+### Add a new job
+
+1. Add entry to `jobs.yaml`
+2. Run `scripts-sync`
+3. Test with `scripts-test <name>`
+
+### Modify a job's schedule
+
+1. Edit `jobs.yaml`
+2. Run `scripts-sync`
+
+### Investigate a job failure
+
+1. Check logs: `scripts-view-logs <name>`
+2. Test manually: `scripts-test <name>`
+3. Check systemd status: `systemctl --user status ai-<name>.service`
+
+### View systemd journal for a job
+
+```bash
+journalctl --user -u ai-<name>.service -n 50 --no-pager
+```
+
+## Files
+
+```
+recurring-tasks/
+  SKILL.md                    Documentation (this file)
+  blueprint.yaml              Skill definition and interfaces
+  jobs.yaml                   Job definitions (edit here)
+  scripts/
+    sync-units.py             Generate systemd units from jobs.yaml
+    healthcheck.py            Monitor job health
+    manage-job.py             CLI for enable/disable/test/view-logs
+    invoke-agent.sh           Shell wrapper (called by invoke-skill)
+    env.sh                    PATH setup (generated by install-assistant-tools)
+  lessons/
+    2026-07-06.md             Design decisions and lessons learned
+  logs/
+    <name>/run.log            Job execution logs
+    healthcheck/run.log       Health check logs
+```
+
+Note: Systemd units are generated in `~/.config/systemd/user/ai-<name>.{service,timer}`. Do not edit these manually — they're regenerated from jobs.yaml.
