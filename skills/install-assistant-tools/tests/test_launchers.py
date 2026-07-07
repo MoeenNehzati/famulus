@@ -1,0 +1,92 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+import launchers
+
+
+def _make_repo(tmp_path: Path) -> Path:
+    repo_root = tmp_path / "repo"
+    skill_dir = repo_root / "skills" / "install-assistant-tools"
+    source_bin = skill_dir / "bin"
+    source_bin.mkdir(parents=True)
+    for name in ["assistant", "collab", "coauthor", "tmux-workspace", "_agent_launch.py",
+                 "assistant.bat", "collab.bat", "coauthor.bat"]:
+        (source_bin / name).write_text("#!/bin/sh\necho stub\n")
+        (source_bin / name).chmod(0o755)
+    profiles_dir = repo_root / "profiles"
+    profiles_dir.mkdir()
+    (profiles_dir / "assistant.config.toml").write_text("[profile]\n")
+    (profiles_dir / "assistant_claude_setting.json").write_text("{}")
+    return repo_root
+
+
+def test_run_installs_only_selected_agents(tmp_path):
+    repo_root = _make_repo(tmp_path)
+    bin_dir = tmp_path / "bin"
+    codex_home = tmp_path / "codex"
+    claude_home = tmp_path / "claude"
+    rc_file = tmp_path / ".bashrc"
+    rc_file.write_text("")
+
+    launchers.run(
+        repo_root=repo_root,
+        agents=["assistant"],
+        bin_dir=bin_dir,
+        codex_home=codex_home,
+        claude_home=claude_home,
+        shell_rc=rc_file,
+        default_llm="claude",
+        dry_run=False,
+    )
+
+    assert (bin_dir / "assistant").is_symlink()
+    assert (repo_root / "workers" / "assistant").is_dir()
+    assert not (repo_root / "workers" / "collab").exists()
+    assert (codex_home / "assistant.config.toml").is_file()
+    assert not (codex_home / "assistant.config.toml").is_symlink()
+
+
+def test_run_sets_assistant_default_in_rc(tmp_path):
+    repo_root = _make_repo(tmp_path)
+    bin_dir = tmp_path / "bin"
+    codex_home = tmp_path / "codex"
+    claude_home = tmp_path / "claude"
+    rc_file = tmp_path / ".bashrc"
+    rc_file.write_text("")
+
+    launchers.run(
+        repo_root=repo_root,
+        agents=["assistant"],
+        bin_dir=bin_dir,
+        codex_home=codex_home,
+        claude_home=claude_home,
+        shell_rc=rc_file,
+        default_llm="codex",
+        dry_run=False,
+    )
+
+    content = rc_file.read_text()
+    assert "export ASSISTANT_DEFAULT=codex" in content
+    assert 'export PATH="' not in content  # launchers does not own PATH
+
+
+def test_run_with_no_agents_installs_nothing(tmp_path):
+    repo_root = _make_repo(tmp_path)
+    bin_dir = tmp_path / "bin"
+
+    launchers.run(
+        repo_root=repo_root,
+        agents=[],
+        bin_dir=bin_dir,
+        codex_home=tmp_path / "codex",
+        claude_home=tmp_path / "claude",
+        shell_rc=tmp_path / ".bashrc",
+        default_llm="claude",
+        dry_run=False,
+    )
+
+    assert not (bin_dir / "assistant").exists()
