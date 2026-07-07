@@ -1,12 +1,19 @@
-"""Unit tests for setup_symlinks.py using isolated temp directories.
+"""Unit tests for dev_link.py using isolated temp directories.
 
 These tests are meant to catch real behavioral regressions: dry-run semantics,
 conflict preservation, symlink replacement, and the codex-home symlink guard.
+
+Every test builds its own throwaway repo_root (via make_repo_root) rather
+than using the live checkout this test file lives in — dev_link.run() now
+also writes `git config core.hooksPath` and dev-mode hook registrations,
+and running that against the real repo during a test run would mutate live
+repo state.
 """
 
 from __future__ import annotations
 
 import io
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -17,7 +24,7 @@ ROOT_DIR = Path(__file__).resolve().parents[3]
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(ROOT_DIR / "tests"))
-import setup_symlinks  # noqa: E402
+import dev_link  # noqa: E402
 from install_test_utils import can_create_symlink  # noqa: E402
 
 
@@ -27,13 +34,10 @@ class SetupSymlinksTests(unittest.TestCase):
         if not can_create_symlink():
             raise unittest.SkipTest("symlink creation is unavailable on this machine")
 
-    def setUp(self) -> None:
-        self.repo_root = Path(setup_symlinks.__file__).resolve().parents[3]
-
     def capture_run(self, **kwargs: object) -> str:
         buf = io.StringIO()
         with redirect_stdout(buf):
-            setup_symlinks.run(**kwargs)
+            dev_link.run(**kwargs)
         return buf.getvalue()
 
     def make_repo_root(self, base: Path) -> Path:
@@ -42,23 +46,30 @@ class SetupSymlinksTests(unittest.TestCase):
         (repo_root / "references").mkdir()
         (repo_root / "agents").mkdir()
         (repo_root / "profiles").mkdir()
-        (repo_root / ".git" / "info").mkdir(parents=True)
+        (repo_root / ".githooks").mkdir()
+        (repo_root / "llmhooks").mkdir()
+        (repo_root / "llmhooks" / "registry.py").write_text(
+            "def hooks_for_host(host):\n    return []\n", encoding="utf-8"
+        )
         (repo_root / "CLAUDE.md").write_text("repo instructions\n", encoding="utf-8")
-        (repo_root / "AGENTS.md").write_text("repo instructions\n", encoding="utf-8")
+        (repo_root / "AGENTS.md").symlink_to(repo_root / "CLAUDE.md")
         for name in ("assistant", "collab", "coauthor"):
             (repo_root / "profiles" / f"{name}.config.toml").write_text(
                 f"name = {name!r}\n",
                 encoding="utf-8",
             )
+        subprocess.run(["git", "init", "-q"], cwd=repo_root, check=True)
         return repo_root
 
     def test_creates_expected_links_in_empty_directories(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
+            repo_root = self.make_repo_root(Path(tmp))
+            home = Path(tmp) / "home"
             claude_home = home / "claude"
             codex_home = home / "codex"
 
             self.capture_run(
+                repo_root=repo_root,
                 home=home,
                 claude_home=claude_home,
                 codex_home=codex_home,
@@ -66,19 +77,19 @@ class SetupSymlinksTests(unittest.TestCase):
             )
 
             claude_expected = {
-                claude_home / "skills": self.repo_root / "skills",
-                claude_home / "references": self.repo_root / "references",
-                claude_home / "agents": self.repo_root / "agents",
-                claude_home / "CLAUDE.md": self.repo_root / "CLAUDE.md",
+                claude_home / "skills": repo_root / "skills",
+                claude_home / "references": repo_root / "references",
+                claude_home / "agents": repo_root / "agents",
+                claude_home / "CLAUDE.md": repo_root / "CLAUDE.md",
             }
             codex_expected = {
-                codex_home / "skills": self.repo_root / "skills",
-                codex_home / "references": self.repo_root / "references",
-                codex_home / "agents": self.repo_root / "agents",
-                codex_home / "AGENTS.md": (self.repo_root / "CLAUDE.md").resolve(),
-                codex_home / "assistant.config.toml": self.repo_root / "profiles" / "assistant.config.toml",
-                codex_home / "collab.config.toml": self.repo_root / "profiles" / "collab.config.toml",
-                codex_home / "coauthor.config.toml": self.repo_root / "profiles" / "coauthor.config.toml",
+                codex_home / "skills": repo_root / "skills",
+                codex_home / "references": repo_root / "references",
+                codex_home / "agents": repo_root / "agents",
+                codex_home / "AGENTS.md": (repo_root / "CLAUDE.md").resolve(),
+                codex_home / "assistant.config.toml": repo_root / "profiles" / "assistant.config.toml",
+                codex_home / "collab.config.toml": repo_root / "profiles" / "collab.config.toml",
+                codex_home / "coauthor.config.toml": repo_root / "profiles" / "coauthor.config.toml",
             }
 
             for path, target in claude_expected.items():
@@ -92,11 +103,13 @@ class SetupSymlinksTests(unittest.TestCase):
 
     def test_dry_run_does_not_create_any_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
+            repo_root = self.make_repo_root(Path(tmp))
+            home = Path(tmp) / "home"
             claude_home = home / "claude"
             codex_home = home / "codex"
 
             output = self.capture_run(
+                repo_root=repo_root,
                 home=home,
                 claude_home=claude_home,
                 codex_home=codex_home,
@@ -109,11 +122,12 @@ class SetupSymlinksTests(unittest.TestCase):
 
     def test_existing_real_paths_are_preserved_and_skipped(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
+            repo_root = self.make_repo_root(Path(tmp))
+            home = Path(tmp) / "home"
             claude_home = home / "claude"
             codex_home = home / "codex"
-            claude_home.mkdir()
-            codex_home.mkdir()
+            claude_home.mkdir(parents=True)
+            codex_home.mkdir(parents=True)
 
             existing_references = claude_home / "references"
             existing_references.mkdir()
@@ -121,6 +135,7 @@ class SetupSymlinksTests(unittest.TestCase):
             existing_profile.write_text("machine-local", encoding="utf-8")
 
             output = self.capture_run(
+                repo_root=repo_root,
                 home=home,
                 claude_home=claude_home,
                 codex_home=codex_home,
@@ -135,15 +150,17 @@ class SetupSymlinksTests(unittest.TestCase):
 
     def test_existing_symlink_is_replaced(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
+            repo_root = self.make_repo_root(Path(tmp))
+            home = Path(tmp) / "home"
             claude_home = home / "claude"
-            claude_home.mkdir()
+            claude_home.mkdir(parents=True)
             old_target = home / "old-skills"
             old_target.mkdir()
             skills_link = claude_home / "skills"
             skills_link.symlink_to(old_target)
 
             self.capture_run(
+                repo_root=repo_root,
                 home=home,
                 claude_home=claude_home,
                 do_claude=True,
@@ -152,17 +169,19 @@ class SetupSymlinksTests(unittest.TestCase):
             )
 
             self.assertTrue(skills_link.is_symlink())
-            self.assertEqual(skills_link.resolve(), (self.repo_root / "skills").resolve())
+            self.assertEqual(skills_link.resolve(), (repo_root / "skills").resolve())
 
     def test_existing_correct_symlink_is_kept(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
+            repo_root = self.make_repo_root(Path(tmp))
+            home = Path(tmp) / "home"
             claude_home = home / "claude"
-            claude_home.mkdir()
+            claude_home.mkdir(parents=True)
             skills_link = claude_home / "skills"
-            skills_link.symlink_to(self.repo_root / "skills")
+            skills_link.symlink_to(repo_root / "skills")
 
             output = self.capture_run(
+                repo_root=repo_root,
                 home=home,
                 claude_home=claude_home,
                 do_claude=True,
@@ -172,7 +191,7 @@ class SetupSymlinksTests(unittest.TestCase):
 
             self.assertIn("OK (already linked)", output)
             self.assertTrue(skills_link.is_symlink())
-            self.assertEqual(skills_link.resolve(), (self.repo_root / "skills").resolve())
+            self.assertEqual(skills_link.resolve(), (repo_root / "skills").resolve())
 
     def test_existing_skills_directory_is_migrated_and_linked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -237,13 +256,15 @@ class SetupSymlinksTests(unittest.TestCase):
 
     def test_codex_home_symlink_boundary_is_skipped(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
+            repo_root = self.make_repo_root(Path(tmp))
+            home = Path(tmp) / "home"
             real_target = home / "real-codex-home"
-            real_target.mkdir()
+            real_target.mkdir(parents=True)
             codex_home = home / "codex-home"
             codex_home.symlink_to(real_target)
 
             output = self.capture_run(
+                repo_root=repo_root,
                 home=home,
                 codex_home=codex_home,
                 do_claude=False,
@@ -254,6 +275,55 @@ class SetupSymlinksTests(unittest.TestCase):
             self.assertIn("is a symlink, not a real directory", output)
             self.assertFalse((real_target / "references").exists())
             self.assertFalse((real_target / "agents").exists())
+
+    def test_run_requires_explicit_repo_root(self) -> None:
+        # repo_root is now a required kwarg — calling without it must fail
+        # loudly rather than silently deriving a path from this script's own
+        # location.
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(TypeError):
+                dev_link.run(home=Path(tmp))  # missing required repo_root
+
+    def test_run_installs_git_hooks_when_repo_is_git_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = self.make_repo_root(Path(tmp))
+            home = Path(tmp) / "home"
+
+            self.capture_run(repo_root=repo_root, home=home, dry_run=False)
+
+            result = subprocess.run(
+                ["git", "-C", str(repo_root), "config", "core.hooksPath"],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.stdout.strip(), ".githooks")
+
+    def test_run_skips_git_hooks_when_repo_root_is_not_a_git_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp) / "repo"
+            (repo_root / ".githooks").mkdir(parents=True)
+            (repo_root / "llmhooks").mkdir()
+            (repo_root / "llmhooks" / "registry.py").write_text(
+                "def hooks_for_host(host):\n    return []\n", encoding="utf-8"
+            )
+            home = Path(tmp) / "home"
+
+            output = self.capture_run(repo_root=repo_root, home=home, dry_run=False)
+
+            self.assertIn("not a git checkout; skipping git hooks setup", output)
+
+    def test_run_sets_ai_in_rc_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = self.make_repo_root(Path(tmp))
+            home = Path(tmp) / "home"
+            home.mkdir()
+            rc_file = home / ".bashrc"
+            rc_file.write_text("")
+
+            self.capture_run(repo_root=repo_root, home=home, shell_rc=rc_file, dry_run=False)
+
+            content = rc_file.read_text()
+            self.assertIn(f'export AI="{repo_root}"', content)
+            self.assertNotIn("ASSISTANT_DEFAULT", content)  # dev_link does not own this var
 
 
 if __name__ == "__main__":

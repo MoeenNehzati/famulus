@@ -53,36 +53,85 @@ def test_manifest_path_is_under_home_state(tmp_path: Path):
 
 # ── Install-side recording ────────────────────────────────────────────────────
 
-def test_setup_symlinks_records_links(tmp_path: Path):
-    import setup_symlinks
+def _make_repo_for_manifest_tests(tmp_path: Path) -> Path:
+    """Throwaway repo with the .githooks/llmhooks layout dev_link.run() needs.
 
+    In-process run() MUST get a throwaway repo_root: dev_link now also writes
+    into the repo (git hooksPath) and imports llmhooks from it — the default
+    (or the real live repo) must never be used here.
+    """
+    import subprocess
+
+    repo = tmp_path / "repo"
+    (repo / "skills").mkdir(parents=True)
+    (repo / "references").mkdir()
+    (repo / "agents").mkdir()
+    (repo / ".githooks").mkdir()
+    (repo / "llmhooks").mkdir()
+    (repo / "llmhooks" / "registry.py").write_text(
+        "def hooks_for_host(host):\n    return []\n", encoding="utf-8"
+    )
+    (repo / "CLAUDE.md").write_text("repo instructions\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    return repo
+
+
+def test_setup_symlinks_records_links(tmp_path: Path):
+    import dev_link
+
+    repo = _make_repo_for_manifest_tests(tmp_path)
     claude_home = tmp_path / ".claude"
     manifest = Manifest(tmp_path / "manifest.json")
-    setup_symlinks.run(
-        home=tmp_path,
-        claude_home=claude_home,
-        do_claude=True,
-        do_codex=False,
-        dry_run=False,
-        manifest=manifest,
-    )
+    saved_path = list(sys.path)
+    saved_llmhooks = {
+        name: mod for name, mod in sys.modules.items()
+        if name == "llmhooks" or name.startswith("llmhooks.")
+    }
+    try:
+        dev_link.run(
+            repo_root=repo,
+            home=tmp_path,
+            claude_home=claude_home,
+            do_claude=True,
+            do_codex=False,
+            dry_run=False,
+            manifest=manifest,
+        )
+    finally:
+        sys.path[:] = saved_path
+        for name in [n for n in sys.modules if n == "llmhooks" or n.startswith("llmhooks.")]:
+            del sys.modules[name]
+        sys.modules.update(saved_llmhooks)
     recorded = {e["path"] for e in manifest.entries if e["kind"] == "symlink"}
     assert str(claude_home / "skills") in recorded
     assert str(claude_home / "CLAUDE.md") in recorded
 
 
 def test_setup_symlinks_dry_run_records_nothing(tmp_path: Path):
-    import setup_symlinks
+    import dev_link
 
+    repo = _make_repo_for_manifest_tests(tmp_path)
     manifest = Manifest(tmp_path / "manifest.json")
-    setup_symlinks.run(
-        home=tmp_path,
-        claude_home=tmp_path / ".claude",
-        do_claude=True,
-        do_codex=False,
-        dry_run=True,
-        manifest=manifest,
-    )
+    saved_path = list(sys.path)
+    saved_llmhooks = {
+        name: mod for name, mod in sys.modules.items()
+        if name == "llmhooks" or name.startswith("llmhooks.")
+    }
+    try:
+        dev_link.run(
+            repo_root=repo,
+            home=tmp_path,
+            claude_home=tmp_path / ".claude",
+            do_claude=True,
+            do_codex=False,
+            dry_run=True,
+            manifest=manifest,
+        )
+    finally:
+        sys.path[:] = saved_path
+        for name in [n for n in sys.modules if n == "llmhooks" or n.startswith("llmhooks.")]:
+            del sys.modules[name]
+        sys.modules.update(saved_llmhooks)
     assert manifest.entries == []
 
 
@@ -196,7 +245,12 @@ def test_uninstall_keeps_failed_entries_in_manifest(tmp_path: Path):
 
 
 def test_full_install_writes_manifest(tmp_path: Path):
-    """setup_tools.run records its side effects in the home-scoped manifest."""
+    """setup_tools.run records its side effects in the home-scoped manifest.
+
+    Hook installation (json_hook_commands) has moved to dev_link.py — see
+    test_dev_link.py / test_setup_tools_hooks.py for that coverage. This
+    test only covers what setup_tools.run() itself still does.
+    """
     import subprocess
 
     import setup_tools
@@ -249,4 +303,3 @@ def test_full_install_writes_manifest(tmp_path: Path):
     kinds = {e["kind"] for e in entries}
     assert "symlink" in kinds
     assert "marker_block" in kinds
-    assert "json_hook_commands" in kinds

@@ -261,43 +261,6 @@ def install_profile_links(
         log(f"Warning: no profile files found in {profiles_dir}")
 
 
-def install_git_hooks(repo_root: Path, hooks_dir: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
-    """Make all hook files executable and register the hooks directory with git."""
-    if not hooks_dir.is_dir():
-        log(f"ERROR: missing git hooks directory: {hooks_dir}", file=sys.stderr)
-        sys.exit(1)
-
-    # Make every file in the hooks dir executable
-    for hook in hooks_dir.iterdir():
-        if not hook.is_file():
-            continue
-        if dry_run:
-            log(f"Would chmod +x {hook}")
-        else:
-            hook.chmod(hook.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-    # Git hooks only apply to a development checkout. A plugin-cache install
-    # (or any non-git copy of the repo) has no git dir — skip with a note
-    # instead of crashing the whole install.
-    probe = subprocess.run(
-        ["git", "-C", str(repo_root), "rev-parse", "--git-dir"],
-        capture_output=True,
-    )
-    if probe.returncode != 0:
-        log(f"Note: {repo_root} is not a git checkout; skipping git hooks setup.")
-        return
-
-    if dry_run:
-        log(f"Would set git -C {repo_root} config core.hooksPath .githooks")
-    else:
-        subprocess.run(
-            ["git", "-C", str(repo_root), "config", "core.hooksPath", ".githooks"],
-            check=True,
-        )
-        if manifest is not None:
-            manifest.record("git_hooks_path", path=str(repo_root))
-
-
 def install_cloud_files_config(home: Path, remote_llm_root: str, dry_run: bool, manifest: Manifest | None = None) -> None:
     """Write the cloud-files config under ~/.config/cloud-files/."""
     config_dir = home / ".config" / "cloud-files"
@@ -759,7 +722,11 @@ def ensure_rc_block(rc_file: Path, bin_dir: Path, default_llm: str, repo_root: P
 
     original = rc_file.read_text(encoding="utf-8")
 
-    # Strip the existing managed block (inclusive of delimiters)
+    # Strip the existing managed block (inclusive of delimiters). Also drop
+    # the blank separator line immediately before it (written by this same
+    # function, and by rc_block.ensure_rc_vars) so repeated writes — from
+    # this function or from another writer sharing the same managed block —
+    # don't accumulate extra blank lines.
     lines = original.splitlines(keepends=True)
     filtered: list[str] = []
     inside = False
@@ -767,6 +734,8 @@ def ensure_rc_block(rc_file: Path, bin_dir: Path, default_llm: str, repo_root: P
         stripped = line.rstrip("\n")
         if stripped == BLOCK_BEGIN:
             inside = True
+            if filtered and not filtered[-1].strip():
+                filtered.pop()
             continue
         if stripped == BLOCK_END:
             inside = False
@@ -990,194 +959,6 @@ def install_python_packages(dry_run: bool, manifest: Manifest | None = None) -> 
             log(f"  WARN: failed to install {package}: {result.stderr.strip()}")
 
 
-# ── Hook installation ─────────────────────────────────────────────────────────
-
-HOOKS_BLOCK_BEGIN = "# >>> skill-system-hooks >>>"
-HOOKS_BLOCK_END   = "# <<< skill-system-hooks <<<"
-
-
-def _load_registered_hooks(repo_root: Path, host: str):
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
-    from llmhooks.registry import hooks_for_host
-
-    return hooks_for_host(host)
-
-
-def _render_hook_command(argv: tuple[str, ...]) -> str:
-    return shlex.join(argv)
-
-
-def _legacy_managed_hook_commands(repo_root: Path) -> set[str]:
-    legacy_script = repo_root / "hooks" / "inject_dispatcher_context.py"
-    return {f'python3 "{legacy_script}"'}
-
-
-def _hook_bindings(repo_root: Path, host: str):
-    return [hook.install_binding(host, repo_root) for hook in _load_registered_hooks(repo_root, host)]
-
-
-def _hook_commands_to_replace(repo_root: Path, host: str) -> set[str]:
-    commands = {_render_hook_command(binding.argv) for binding in _hook_bindings(repo_root, host)}
-    commands.update(_legacy_managed_hook_commands(repo_root))
-    return commands
-
-
-def _claude_hook_entries(repo_root: Path) -> dict[str, list[dict]]:
-    entries: dict[str, list[dict]] = {}
-    for binding in _hook_bindings(repo_root, "claude"):
-        event_entries = entries.setdefault(binding.event, [])
-        entry = {
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": _render_hook_command(binding.argv),
-                }
-            ]
-        }
-        if binding.matcher is not None:
-            entry["matcher"] = binding.matcher
-        event_entries.append(entry)
-    return entries
-
-
-def _codex_hooks_block(repo_root: Path) -> str:
-    lines = [f"\n{HOOKS_BLOCK_BEGIN}\n"]
-    for binding in _hook_bindings(repo_root, "codex"):
-        lines.append(f"[[hooks.{binding.event}]]\n")
-        if binding.matcher is not None:
-            lines.append(f"matcher = {json.dumps(binding.matcher)}\n")
-        lines.append("\n")
-        lines.append(f"[[hooks.{binding.event}.hooks]]\n")
-        lines.append('type = "command"\n')
-        lines.append(f"command = {json.dumps(_render_hook_command(binding.argv))}\n")
-    lines.append(f"{HOOKS_BLOCK_END}\n")
-    return "".join(lines)
-
-
-def install_claude_hooks(claude_home: Path, repo_root: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
-    """Merge all managed hook entries into ~/.claude/settings.local.json.
-
-    Commands use absolute repo_root paths so they work regardless of plugin
-    installation. Idempotent: re-runs replace any existing managed entries,
-    including legacy pre-registry commands.
-    """
-    managed_entries = _claude_hook_entries(repo_root)
-    commands_to_replace = _hook_commands_to_replace(repo_root, "claude")
-
-    settings_file = claude_home / "settings.local.json"
-    log(f"\nInstalling Claude dev-mode hook: {settings_file}")
-
-    if dry_run:
-        for event, entries in managed_entries.items():
-            log(f"  (dry-run) Would write {event} hook(s) to {settings_file}: {len(entries)} entry(s)")
-        return
-
-    settings_file.parent.mkdir(parents=True, exist_ok=True)
-    settings: dict = {}
-    if settings_file.exists():
-        try:
-            settings = json.loads(settings_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            log(f"  WARN: {settings_file} is not valid JSON — skipping hook install")
-            return
-
-    hooks = settings.setdefault("hooks", {})
-    for event_name in list(hooks.keys()):
-        event_hooks = hooks.get(event_name)
-        if not isinstance(event_hooks, list):
-            continue
-        filtered = [
-            entry for entry in event_hooks
-            if not any(
-                hook.get("command", "") in commands_to_replace
-                for hook in entry.get("hooks", [])
-                if isinstance(hook, dict)
-            )
-        ]
-        if filtered:
-            hooks[event_name] = filtered
-        else:
-            hooks.pop(event_name, None)
-
-    for event_name, entries in managed_entries.items():
-        hooks.setdefault(event_name, []).extend(entries)
-
-    fd, tmp = tempfile.mkstemp(dir=settings_file.parent, prefix=settings_file.name + ".tmp.")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=2)
-            f.write("\n")
-        os.replace(tmp, settings_file)
-        if manifest is not None:
-            managed_commands = sorted(
-                hook["command"]
-                for entries in managed_entries.values()
-                for entry in entries
-                for hook in entry["hooks"]
-            )
-            manifest.record(
-                "json_hook_commands", path=str(settings_file), commands=managed_commands
-            )
-    except Exception:
-        os.unlink(tmp)
-        raise
-
-    log("  OK")
-
-
-def install_codex_hooks(codex_home: Path, repo_root: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
-    """Append (or replace) the managed hook block in ~/.codex/config.toml.
-
-    Uses BEGIN/END marker comments so the block can be updated idempotently on
-    re-run without duplicating entries or touching other config.
-    """
-    block = _codex_hooks_block(repo_root)
-
-    config_file = codex_home / "config.toml"
-    log(f"\nInstalling Codex dev-mode hook: {config_file}")
-
-    if dry_run:
-        log(f"  (dry-run) Would write managed hook block to {config_file}")
-        return
-
-    config_file.parent.mkdir(parents=True, exist_ok=True)
-    config_file.touch(exist_ok=True)
-    original = config_file.read_text(encoding="utf-8")
-
-    # Strip existing managed block (inclusive of markers).
-    lines = original.splitlines(keepends=True)
-    filtered: list[str] = []
-    inside = False
-    for line in lines:
-        stripped = line.rstrip("\n")
-        if stripped == HOOKS_BLOCK_BEGIN:
-            inside = True
-            continue
-        if stripped == HOOKS_BLOCK_END:
-            inside = False
-            continue
-        if not inside:
-            filtered.append(line)
-
-    fd, tmp = tempfile.mkstemp(dir=config_file.parent, prefix=config_file.name + ".tmp.")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.writelines(filtered)
-            f.write(block)
-        os.replace(tmp, config_file)
-        if manifest is not None:
-            manifest.record(
-                "marker_block", path=str(config_file),
-                begin=HOOKS_BLOCK_BEGIN, end=HOOKS_BLOCK_END,
-            )
-    except Exception:
-        os.unlink(tmp)
-        raise
-
-    log("  OK")
-
-
 # ── Core logic ────────────────────────────────────────────────────────────────
 
 def run(
@@ -1215,7 +996,6 @@ def run(
     repo_root      = repo_root or script_path.parents[3]
     source_bin_dir = skill_dir / "bin"
     profiles_dir   = repo_root / "profiles"
-    hooks_dir      = repo_root / ".githooks"
 
     bin_dir    = bin_dir or home / "Documents" / "scripts" / "bin"
     codex_home = codex_home  or Path(os.environ.get("CODEX_HOME",  str(home / ".codex")))
@@ -1257,10 +1037,7 @@ def run(
     install_worker_dirs(repo_root, dry_run)
     install_bin_scripts(source_bin_dir, bin_dir, dry_run, manifest)
     install_profile_links(profiles_dir, codex_home, claude_home, dry_run, manifest)
-    install_git_hooks(repo_root, hooks_dir, dry_run, manifest)
     remove_legacy_coder_links(source_bin_dir, profiles_dir, bin_dir, codex_home, claude_home, dry_run)
-    install_claude_hooks(claude_home, repo_root, dry_run, manifest)
-    install_codex_hooks(codex_home, repo_root, dry_run, manifest)
     install_recurring_tasks_env_script(repo_root, home, bin_dir, dry_run, manifest)
     install_dispatcher_launcher(repo_root, bin_dir, dry_run, manifest)
     install_invoke_skill_launcher(bin_dir, dry_run, manifest)
@@ -1294,7 +1071,6 @@ def run(
     log(f"  Source bin:     {source_bin_dir}")
     log(f"  Codex home:     {codex_home}")
     log(f"  Claude home:    {claude_home}")
-    log(f"  Git hooks:      {hooks_dir}")
     log(f"  AI root:        {repo_root}")
     log(f"  Default LLM:    {default_llm}")
     if sys.platform == "win32":

@@ -12,7 +12,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-import setup_tools  # noqa: E402
+import dev_link  # noqa: E402
 
 
 class SetupToolsHooksTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class SetupToolsHooksTests(unittest.TestCase):
     def test_install_claude_hooks_installs_registered_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             claude_home = Path(tmp) / ".claude"
-            setup_tools.install_claude_hooks(claude_home, self.repo_root, dry_run=False)
+            dev_link.install_claude_hooks(claude_home, self.repo_root, dry_run=False)
 
             settings = json.loads((claude_home / "settings.local.json").read_text(encoding="utf-8"))
             session_start = settings["hooks"]["SessionStart"]
@@ -53,7 +53,7 @@ class SetupToolsHooksTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            setup_tools.install_claude_hooks(claude_home, self.repo_root, dry_run=False)
+            dev_link.install_claude_hooks(claude_home, self.repo_root, dry_run=False)
 
             settings = json.loads(settings_file.read_text(encoding="utf-8"))
             commands = [hook["command"] for entry in settings["hooks"]["SessionStart"] for hook in entry["hooks"]]
@@ -63,10 +63,10 @@ class SetupToolsHooksTests(unittest.TestCase):
     def test_install_codex_hooks_writes_managed_block_for_registered_hooks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             codex_home = Path(tmp) / ".codex"
-            setup_tools.install_codex_hooks(codex_home, self.repo_root, dry_run=False)
+            dev_link.install_codex_hooks(codex_home, self.repo_root, dry_run=False)
 
             config_text = (codex_home / "config.toml").read_text(encoding="utf-8")
-            self.assertIn(setup_tools.HOOKS_BLOCK_BEGIN, config_text)
+            self.assertIn(dev_link.HOOKS_BLOCK_BEGIN, config_text)
             self.assertIn("[[hooks.SessionStart]]", config_text)
             self.assertIn("--codex", config_text)
             self.assertIn("inject_dispatcher_context.py", config_text)
@@ -79,17 +79,17 @@ class SetupToolsHooksTests(unittest.TestCase):
             config_file = codex_home / "config.toml"
             config_file.write_text(
                 "user = 'keep'\n"
-                f"{setup_tools.HOOKS_BLOCK_BEGIN}\n"
+                f"{dev_link.HOOKS_BLOCK_BEGIN}\n"
                 "[[hooks.SessionStart]]\n"
                 'matcher = "startup|clear|compact"\n'
                 "[[hooks.SessionStart.hooks]]\n"
                 'type = "command"\n'
                 f'command = "{self.repo_root / "hooks" / "inject_dispatcher_context.py"}"\n'
-                f"{setup_tools.HOOKS_BLOCK_END}\n",
+                f"{dev_link.HOOKS_BLOCK_END}\n",
                 encoding="utf-8",
             )
 
-            setup_tools.install_codex_hooks(codex_home, self.repo_root, dry_run=False)
+            dev_link.install_codex_hooks(codex_home, self.repo_root, dry_run=False)
 
             config_text = config_file.read_text(encoding="utf-8")
             self.assertIn("user = 'keep'", config_text)

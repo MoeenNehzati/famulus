@@ -3,11 +3,16 @@
 install.py — Full installation of assistant tools on a new machine.
 
 Runs both setup steps in order:
-  1. setup_symlinks — wire Claude and Codex config dirs to the repo
-  2. setup_tools    — install bin scripts, rc block, git hooks
+  1. dev_link    — wire Claude and Codex config dirs to the repo
+  2. setup_tools — install bin scripts, rc block, git hooks
+
+NOTE: this is a stopgap wiring fix only (repo_root is still auto-derived
+from this script's own location, same as the old behavior) — the full
+Phase-1 orchestrator rewrite (explicit dev-mode question, scaffold/
+dev-link/launchers split) is a separate, later change.
 
 Run individual scripts directly for targeted repairs:
-  python3 scripts/setup_symlinks.py --help
+  python3 scripts/dev_link.py --help
   python3 scripts/setup_tools.py --help
 """
 
@@ -20,7 +25,7 @@ from pathlib import Path
 # Make the scripts directory importable regardless of working directory
 sys.path.insert(0, str(Path(__file__).parent))
 
-import setup_symlinks
+import dev_link
 import setup_tools
 
 
@@ -42,9 +47,9 @@ def parse_args() -> argparse.Namespace:
 
     # ── Symlink step ─────────────────────────────────────────────────────────
     parser.add_argument("--no-claude", action="store_true",
-        help="Skip Claude symlinks (setup_symlinks step)")
+        help="Skip Claude symlinks (dev_link step)")
     parser.add_argument("--no-codex",  action="store_true",
-        help="Skip Codex symlinks (setup_symlinks step)")
+        help="Skip Codex symlinks (dev_link step)")
 
     # ── Install step ─────────────────────────────────────────────────────────
     parser.add_argument("--bin-dir",         metavar="DIR",
@@ -70,8 +75,13 @@ def main() -> None:
     claude_home = Path(args.claude_home) if args.claude_home else None
     codex_home  = Path(args.codex_home)  if args.codex_home  else None
 
+    # Repo root is three levels above this script:
+    #   <repo>/skills/install-assistant-tools/scripts/install.py
+    repo_root = Path(__file__).resolve().parents[3]
+
     # Step 1: wire config dirs to the repo
-    setup_symlinks.run(
+    dev_link.run(
+        repo_root=repo_root,
         home=home,
         claude_home=claude_home,
         codex_home=codex_home,

@@ -34,7 +34,7 @@ from install_test_utils import (  # noqa: E402
     run_command,
 )
 
-import setup_symlinks  # noqa: E402
+import dev_link  # noqa: E402
 import setup_tools  # noqa: E402
 
 UNINSTALL = SCRIPT_DIR.parent / "scripts" / "uninstall.py"
@@ -57,14 +57,36 @@ def _tree_hash(root: Path) -> str:
 
 
 def _dev_install(home: Path, claude_home: Path, codex_home: Path, repo_root: Path) -> str:
+    # dev_link.run() now also writes `git config core.hooksPath` on repo_root.
+    # When repo_root is the real live checkout (as in the dev-mode-against-
+    # real-repo tests below), save and restore that value so this test run
+    # never leaves a lasting side effect on the real repo's git config.
+    probe = subprocess.run(
+        ["git", "-C", str(repo_root), "config", "--local", "--get", "core.hooksPath"],
+        capture_output=True, text=True,
+    )
+    original_hooks_path = probe.stdout.strip() if probe.returncode == 0 else None
+
     buf = io.StringIO()
-    with redirect_stdout(buf):
-        setup_symlinks.run(
-            home=home,
-            repo_root=repo_root,
-            claude_home=claude_home,
-            codex_home=codex_home,
-        )
+    try:
+        with redirect_stdout(buf):
+            dev_link.run(
+                home=home,
+                repo_root=repo_root,
+                claude_home=claude_home,
+                codex_home=codex_home,
+            )
+    finally:
+        if original_hooks_path is not None:
+            subprocess.run(
+                ["git", "-C", str(repo_root), "config", "core.hooksPath", original_hooks_path],
+                check=True,
+            )
+        else:
+            subprocess.run(
+                ["git", "-C", str(repo_root), "config", "--unset", "core.hooksPath"],
+                capture_output=True,
+            )
     return buf.getvalue()
 
 
@@ -143,9 +165,14 @@ def _make_fake_repo(root: Path) -> Path:
     )
     for d in ("references", "agents", "profiles"):
         (repo / d).mkdir()
-    (repo / ".git" / "info").mkdir(parents=True)
+    (repo / ".githooks").mkdir()
+    (repo / "llmhooks").mkdir()
+    (repo / "llmhooks" / "registry.py").write_text(
+        "def hooks_for_host(host):\n    return []\n", encoding="utf-8"
+    )
     (repo / "CLAUDE.md").write_text("repo instructions\n", encoding="utf-8")
     (repo / "AGENTS.md").write_text("repo instructions\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
     return repo
 
 
@@ -227,15 +254,7 @@ def test_install_uninstall_roundtrip_restores_home(homes, tmp_path: Path):
     modulo the explicit _ALLOWED_LEFTOVERS list. This catches any future
     install side effect that uninstall forgets to reverse."""
     repo = _make_fake_repo(homes["root"])
-    # extras setup_tools.run() needs: git hooks dir + repo, llmhooks registry
-    (repo / ".githooks").mkdir()
     (repo / ".githooks" / "pre-commit").write_text("#!/bin/bash\n", encoding="utf-8")
-    (repo / "llmhooks").mkdir()
-    (repo / "llmhooks" / "__init__.py").write_text("", encoding="utf-8")
-    (repo / "llmhooks" / "registry.py").write_text(
-        "def hooks_for_host(host):\n    return []\n", encoding="utf-8"
-    )
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
 
     home = homes["home"]
     bin_dir = homes["root"] / "bin"
@@ -254,7 +273,7 @@ def test_install_uninstall_roundtrip_restores_home(homes, tmp_path: Path):
     buf = io.StringIO()
     try:
         with redirect_stdout(buf):
-            setup_symlinks.run(
+            dev_link.run(
                 home=home,
                 repo_root=repo,
                 claude_home=homes["claude"],

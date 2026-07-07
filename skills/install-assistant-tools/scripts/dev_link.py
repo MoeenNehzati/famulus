@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
-setup_symlinks.py — Wire Claude and Codex to the canonical AI config repo.
+dev_link.py — Wire Claude and Codex to a live AI repo checkout (dev mode).
 
 Instead of maintaining duplicate copies of skills, references, and agents
 across Claude and Codex config directories, this script creates symlinks so
 both tools read from the same checkout. Changes to the repo take effect
-everywhere without any copy step.
+everywhere without any copy step. Also registers dev-mode hooks, sets
+git core.hooksPath, and exports $AI — all dev-mode-only concerns, distinct
+from the plugin-mode-safe scaffold.py/launchers.py subcommands.
+
+repo_root is a required argument: dev mode is an explicit user choice with
+an explicit repo path, never inferred from this script's own location.
 
 Links created (documented in README.md § Systemwide Local Setup):
 
@@ -39,21 +44,26 @@ privileges. The script will report a clear error if symlink creation fails.
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import shlex
 import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 from install_manifest import Manifest, manifest_path
 from link_utils import make_link
+from rc_block import ensure_rc_vars
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def log(msg: str = "") -> None:
-    print(msg, flush=True)
+def log(msg: str = "", **kwargs) -> None:
+    print(msg, flush=True, **kwargs)
 
 
 def git_exclude_path(repo_root: Path) -> Path | None:
@@ -94,60 +104,6 @@ def record_local_skill_exclude(repo_root: Path, entry_name: str, dry_run: bool) 
     with exclude_path.open("a", encoding="utf-8") as fh:
         fh.write(f"{prefix}{exclude_line}\n")
     log(f"    Added to repo-local Git exclude: {exclude_line}")
-
-
-def make_link(src: Path, dst: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
-    """Create or replace the symlink at dst pointing to src.
-
-    Skips with a warning when src does not exist (e.g. optional repo
-    directory). On platforms where symlink creation requires elevated
-    privileges, reports a clear error instead of crashing. When a manifest is
-    given, successful (or already-correct) links are recorded in it.
-    """
-    def record() -> None:
-        if manifest is not None:
-            manifest.record("symlink", path=str(dst), target=str(src))
-
-    if not src.exists():
-        log(f"  SKIP (missing source): {src}")
-        return
-
-    if dst.is_symlink():
-        try:
-            if dst.resolve() == src.resolve():
-                log(f"  OK (already linked): {dst} -> {src}")
-                record()
-                return
-        except OSError:
-            pass
-
-    if dry_run:
-        log(f"  Would link: {dst} -> {src}")
-        return
-
-    # Remove an existing symlink so ln -sfn semantics are preserved.
-    # Never remove a real file or directory — that would be destructive.
-    if dst.is_symlink():
-        dst.unlink()
-    elif dst.exists():
-        log(f"  SKIP (already exists as real path, not a symlink): {dst}")
-        return
-
-    try:
-        dst.symlink_to(src)
-        log(f"  Linked: {dst} -> {src}")
-        record()
-    except OSError as exc:
-        # On Windows without Developer Mode / admin rights symlink creation
-        # raises PermissionError. Give a useful hint rather than a traceback.
-        if sys.platform == "win32":
-            log(
-                f"  ERROR: could not create symlink {dst} -> {src}\n"
-                f"  On Windows, symlinks require Developer Mode or administrator"
-                f" privileges.\n  ({exc})"
-            )
-        else:
-            log(f"  ERROR: could not create symlink {dst} -> {src}: {exc}")
 
 
 def ensure_skills_link(repo_root: Path, src: Path, dst: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
@@ -224,6 +180,229 @@ def ensure_skills_link(repo_root: Path, src: Path, dst: Path, dry_run: bool, man
     make_link(src, dst, dry_run=False, manifest=manifest)
 
 
+def install_git_hooks(repo_root: Path, hooks_dir: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
+    """Make all hook files executable and register the hooks directory with git."""
+    if not hooks_dir.is_dir():
+        log(f"ERROR: missing git hooks directory: {hooks_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    for hook in hooks_dir.iterdir():
+        if not hook.is_file():
+            continue
+        if dry_run:
+            log(f"Would chmod +x {hook}")
+        else:
+            import stat
+            hook.chmod(hook.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    # Git hooks only apply to a development checkout. A plugin-cache install
+    # (or any non-git copy of the repo) has no git dir — skip with a note
+    # instead of crashing the whole install.
+    probe = subprocess.run(
+        ["git", "-C", str(repo_root), "rev-parse", "--git-dir"],
+        capture_output=True,
+    )
+    if probe.returncode != 0:
+        log(f"Note: {repo_root} is not a git checkout; skipping git hooks setup.")
+        return
+
+    if dry_run:
+        log(f"Would set git -C {repo_root} config core.hooksPath .githooks")
+    else:
+        subprocess.run(
+            ["git", "-C", str(repo_root), "config", "core.hooksPath", ".githooks"],
+            check=True,
+        )
+        if manifest is not None:
+            manifest.record("git_hooks_path", path=str(repo_root))
+
+
+HOOKS_BLOCK_BEGIN = "# >>> skill-system-hooks >>>"
+HOOKS_BLOCK_END = "# <<< skill-system-hooks <<<"
+
+
+def _load_registered_hooks(repo_root: Path, host: str):
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    from llmhooks.registry import hooks_for_host
+
+    return hooks_for_host(host)
+
+
+def _render_hook_command(argv: tuple[str, ...]) -> str:
+    return shlex.join(argv)
+
+
+def _legacy_managed_hook_commands(repo_root: Path) -> set[str]:
+    legacy_script = repo_root / "hooks" / "inject_dispatcher_context.py"
+    return {f'python3 "{legacy_script}"'}
+
+
+def _hook_bindings(repo_root: Path, host: str):
+    return [hook.install_binding(host, repo_root) for hook in _load_registered_hooks(repo_root, host)]
+
+
+def _hook_commands_to_replace(repo_root: Path, host: str) -> set[str]:
+    commands = {_render_hook_command(binding.argv) for binding in _hook_bindings(repo_root, host)}
+    commands.update(_legacy_managed_hook_commands(repo_root))
+    return commands
+
+
+def _claude_hook_entries(repo_root: Path) -> dict[str, list[dict]]:
+    entries: dict[str, list[dict]] = {}
+    for binding in _hook_bindings(repo_root, "claude"):
+        event_entries = entries.setdefault(binding.event, [])
+        entry = {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": _render_hook_command(binding.argv),
+                }
+            ]
+        }
+        if binding.matcher is not None:
+            entry["matcher"] = binding.matcher
+        event_entries.append(entry)
+    return entries
+
+
+def _codex_hooks_block(repo_root: Path) -> str:
+    lines = [f"\n{HOOKS_BLOCK_BEGIN}\n"]
+    for binding in _hook_bindings(repo_root, "codex"):
+        lines.append(f"[[hooks.{binding.event}]]\n")
+        if binding.matcher is not None:
+            lines.append(f"matcher = {json.dumps(binding.matcher)}\n")
+        lines.append("\n")
+        lines.append(f"[[hooks.{binding.event}.hooks]]\n")
+        lines.append('type = "command"\n')
+        lines.append(f"command = {json.dumps(_render_hook_command(binding.argv))}\n")
+    lines.append(f"{HOOKS_BLOCK_END}\n")
+    return "".join(lines)
+
+
+def install_claude_hooks(claude_home: Path, repo_root: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
+    """Merge all managed hook entries into ~/.claude/settings.local.json.
+
+    Commands use absolute repo_root paths so they work regardless of plugin
+    installation. Idempotent: re-runs replace any existing managed entries,
+    including legacy pre-registry commands.
+    """
+    managed_entries = _claude_hook_entries(repo_root)
+    commands_to_replace = _hook_commands_to_replace(repo_root, "claude")
+
+    settings_file = claude_home / "settings.local.json"
+    log(f"\nInstalling Claude dev-mode hook: {settings_file}")
+
+    if dry_run:
+        for event, entries in managed_entries.items():
+            log(f"  (dry-run) Would write {event} hook(s) to {settings_file}: {len(entries)} entry(s)")
+        return
+
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    settings: dict = {}
+    if settings_file.exists():
+        try:
+            settings = json.loads(settings_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            log(f"  WARN: {settings_file} is not valid JSON — skipping hook install")
+            return
+
+    hooks = settings.setdefault("hooks", {})
+    for event_name in list(hooks.keys()):
+        event_hooks = hooks.get(event_name)
+        if not isinstance(event_hooks, list):
+            continue
+        filtered = [
+            entry for entry in event_hooks
+            if not any(
+                hook.get("command", "") in commands_to_replace
+                for hook in entry.get("hooks", [])
+                if isinstance(hook, dict)
+            )
+        ]
+        if filtered:
+            hooks[event_name] = filtered
+        else:
+            hooks.pop(event_name, None)
+
+    for event_name, entries in managed_entries.items():
+        hooks.setdefault(event_name, []).extend(entries)
+
+    fd, tmp = tempfile.mkstemp(dir=settings_file.parent, prefix=settings_file.name + ".tmp.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+            f.write("\n")
+        os.replace(tmp, settings_file)
+        if manifest is not None:
+            managed_commands = sorted(
+                hook["command"]
+                for entries in managed_entries.values()
+                for entry in entries
+                for hook in entry["hooks"]
+            )
+            manifest.record(
+                "json_hook_commands", path=str(settings_file), commands=managed_commands
+            )
+    except Exception:
+        os.unlink(tmp)
+        raise
+
+    log("  OK")
+
+
+def install_codex_hooks(codex_home: Path, repo_root: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
+    """Append (or replace) the managed hook block in ~/.codex/config.toml.
+
+    Uses BEGIN/END marker comments so the block can be updated idempotently on
+    re-run without duplicating entries or touching other config.
+    """
+    block = _codex_hooks_block(repo_root)
+
+    config_file = codex_home / "config.toml"
+    log(f"\nInstalling Codex dev-mode hook: {config_file}")
+
+    if dry_run:
+        log(f"  (dry-run) Would write managed hook block to {config_file}")
+        return
+
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.touch(exist_ok=True)
+    original = config_file.read_text(encoding="utf-8")
+
+    # Strip existing managed block (inclusive of markers).
+    lines = original.splitlines(keepends=True)
+    filtered: list[str] = []
+    inside = False
+    for line in lines:
+        stripped = line.rstrip("\n")
+        if stripped == HOOKS_BLOCK_BEGIN:
+            inside = True
+            continue
+        if stripped == HOOKS_BLOCK_END:
+            inside = False
+            continue
+        if not inside:
+            filtered.append(line)
+
+    fd, tmp = tempfile.mkstemp(dir=config_file.parent, prefix=config_file.name + ".tmp.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.writelines(filtered)
+            f.write(block)
+        os.replace(tmp, config_file)
+        if manifest is not None:
+            manifest.record(
+                "marker_block", path=str(config_file),
+                begin=HOOKS_BLOCK_BEGIN, end=HOOKS_BLOCK_END,
+            )
+    except Exception:
+        os.unlink(tmp)
+        raise
+
+    log("  OK")
+
+
 def resolve_dir(tool: str, env_var: str, default: Path) -> Path:
     """Return the config directory for a tool.
 
@@ -254,19 +433,24 @@ def resolve_dir(tool: str, env_var: str, default: Path) -> Path:
 
 def run(
     *,
+    repo_root: Path,
     home: Path | None = None,
-    repo_root: Path | None = None,
     claude_home: Path | None = None,
     codex_home: Path | None = None,
+    shell_rc: Path | None = None,
     do_claude: bool = True,
     do_codex: bool = True,
     dry_run: bool = False,
     manifest: Manifest | None = None,
 ) -> None:
-    """Create or repair Claude and Codex config dir symlinks.
+    """Create or repair Claude and Codex config dir symlinks, dev-mode hooks,
+    git hooksPath, and the $AI env var.
 
-    All arguments are optional. Paths default to platform home and standard
-    config locations; config dirs are auto-detected when not supplied.
+    repo_root is required and must be supplied explicitly by the caller (the
+    install.py orchestrator asks the user for it) — it is never derived from
+    this script's own location. All other arguments are optional; paths
+    default to platform home and standard config locations, and config dirs
+    are auto-detected when not supplied.
     """
     home = home or Path.home()
 
@@ -275,10 +459,8 @@ def run(
     if dry_run:
         manifest = None
 
-    # Repo root is three levels above this script:
-    #   <repo>/skills/install-assistant-tools/scripts/setup_symlinks.py
-    repo_root = repo_root or Path(__file__).resolve().parents[3]
     profiles_dir = repo_root / "profiles"
+    hooks_dir = repo_root / ".githooks"
 
     # Resolve config dirs (auto-detect from env vars or common paths)
     if do_claude:
@@ -333,6 +515,35 @@ def run(
             else:
                 log(f"  SKIP profiles (directory missing): {profiles_dir}")
 
+    install_git_hooks(repo_root, hooks_dir, dry_run, manifest)
+    if do_claude:
+        install_claude_hooks(claude_home, repo_root, dry_run, manifest)
+    if do_codex:
+        install_codex_hooks(codex_home, repo_root, dry_run, manifest)
+
+    if sys.platform == "win32":
+        if dry_run:
+            log(f"  Would set AI={repo_root}")
+        else:
+            import winreg
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, "Environment", 0,
+                winreg.KEY_READ | winreg.KEY_WRITE,
+            ) as key:
+                winreg.SetValueEx(key, "AI", 0, winreg.REG_SZ, str(repo_root))
+            log(f"  Set AI={repo_root}")
+    else:
+        if shell_rc is None:
+            detected_shell = os.environ.get("SHELL", "")
+            shell_rc = home / (".zshrc" if "zsh" in detected_shell else ".bashrc")
+        ensure_rc_vars(
+            shell_rc,
+            {"AI": f'export AI="{repo_root}"'},
+            dry_run,
+            manifest,
+            label="user",
+        )
+
     # ── Summary ──────────────────────────────────────────────────────────────
 
     if manifest is not None:
@@ -354,9 +565,11 @@ def parse_args() -> argparse.Namespace:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--repo-root",   metavar="DIR", required=True, help="Path to the AI repo checkout")
     parser.add_argument("--home",        metavar="DIR", help="Home directory")
     parser.add_argument("--claude-home", metavar="DIR", help="Override Claude config dir")
     parser.add_argument("--codex-home",  metavar="DIR", help="Override Codex config dir")
+    parser.add_argument("--shell-rc",    metavar="FILE", help="Shell rc file (auto-detected on Unix)")
     parser.add_argument("--no-claude",   action="store_true", help="Skip Claude symlinks")
     parser.add_argument("--no-codex",    action="store_true", help="Skip Codex symlinks")
     parser.add_argument("--dry-run",     action="store_true", help="Print planned actions without writing")
@@ -366,9 +579,11 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     run(
+        repo_root=Path(args.repo_root),
         home=Path(args.home) if args.home else None,
         claude_home=Path(args.claude_home) if args.claude_home else None,
         codex_home=Path(args.codex_home) if args.codex_home else None,
+        shell_rc=Path(args.shell_rc) if args.shell_rc else None,
         do_claude=not args.no_claude,
         do_codex=not args.no_codex,
         dry_run=args.dry_run,

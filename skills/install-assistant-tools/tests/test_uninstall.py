@@ -1,7 +1,7 @@
 """Tests for uninstall.py — manifest-based reversal of install side effects.
 
 The installed state is produced by REALLY running the installers
-(setup_symlinks.run + setup_tools.run) against a fake repo and sandboxed
+(dev_link.run + setup_tools.run) against a fake repo and sandboxed
 homes, so a genuine manifest drives the uninstall — the only supported
 path. A missing manifest is a hard error (tested), never a heuristic guess.
 """
@@ -21,7 +21,7 @@ from install_test_utils import REPO_ROOT, can_create_symlink, python_test_env, r
 SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-import setup_symlinks  # noqa: E402
+import dev_link  # noqa: E402
 import setup_tools  # noqa: E402
 
 UNINSTALL = SCRIPTS / "uninstall.py"
@@ -127,7 +127,7 @@ def make_installed_state(root: Path) -> dict[str, Path]:
     }
     try:
         with redirect_stdout(io.StringIO()):
-            setup_symlinks.run(
+            dev_link.run(
                 home=home, repo_root=repo,
                 claude_home=claude_home, codex_home=codex_home,
             )
