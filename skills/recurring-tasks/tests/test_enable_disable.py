@@ -3,6 +3,7 @@ import subprocess, tempfile, os
 from pathlib import Path
 
 SCRIPTS = Path(__file__).parent.parent / "scripts"
+MANAGE_JOB = SCRIPTS / "manage-job.py"
 
 JOBS_YAML = """\
 jobs:
@@ -13,9 +14,9 @@ jobs:
     enabled: true
 """
 
-def run_script(script: str, name: str, jobs_path: str):
+def run_script(command: str, name: str, jobs_path: str):
     subprocess.run(
-        ["python3", str(SCRIPTS / script), name, "--jobs-file", jobs_path, "--no-sync"],
+        ["python3", str(MANAGE_JOB), command, name, "--jobs-file", jobs_path, "--no-sync"],
         check=True
     )
 
@@ -24,7 +25,7 @@ def test_disable():
         f.write(JOBS_YAML)
         path = f.name
     try:
-        run_script("disable-job.py", "email-triage", path)
+        run_script("disable", "email-triage", path)
         content = Path(path).read_text()
         assert "enabled: false" in content, f"Expected 'enabled: false', got:\n{content}"
         print("PASS: disable sets enabled: false")
@@ -37,7 +38,7 @@ def test_enable():
         f.write(disabled)
         path = f.name
     try:
-        run_script("enable-job.py", "email-triage", path)
+        run_script("enable", "email-triage", path)
         content = Path(path).read_text()
         assert "enabled: true" in content, f"Expected 'enabled: true', got:\n{content}"
         print("PASS: enable sets enabled: true")
@@ -50,7 +51,7 @@ def test_unknown_job_errors():
         path = f.name
     try:
         r = subprocess.run(
-            ["python3", str(SCRIPTS / "enable-job.py"), "no-such-job", "--jobs-file", path, "--no-sync"],
+            ["python3", str(MANAGE_JOB), "enable", "no-such-job", "--jobs-file", path, "--no-sync"],
             capture_output=True, text=True
         )
         assert r.returncode != 0
@@ -77,7 +78,7 @@ def test_disable_does_not_affect_other_jobs():
         f.write(JOBS_TWO)
         path = f.name
     try:
-        run_script("disable-job.py", "email-triage", path)
+        run_script("disable", "email-triage", path)
         content = Path(path).read_text()
         lines = content.splitlines()
         triage_idx = next(i for i, l in enumerate(lines) if "email-triage" in l)
@@ -96,7 +97,7 @@ def test_prefix_name_no_cross_match():
         path = f.name
     try:
         r = subprocess.run(
-            ["python3", str(SCRIPTS / "disable-job.py"), "email", "--jobs-file", path, "--no-sync"],
+            ["python3", str(MANAGE_JOB), "disable", "email", "--jobs-file", path, "--no-sync"],
             capture_output=True, text=True
         )
         assert r.returncode != 0, "Prefix name 'email' should not match 'email-triage'"

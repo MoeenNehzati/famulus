@@ -5,6 +5,7 @@ Manage recurring jobs: enable, disable, test, view logs, and check status.
 Usage:
   python3 manage-job.py enable <name>          # Enable a job (sets enabled: true, syncs units)
   python3 manage-job.py disable <name>         # Disable a job (sets enabled: false, syncs units)
+  python3 manage-job.py enable <name> --jobs-file FILE --no-sync   # test/dry-run against a different jobs.yaml
   python3 manage-job.py test <name>            # Run a job immediately, show output
   python3 manage-job.py view-logs <name>       # Tail job logs (default 50 lines)
   python3 manage-job.py view-logs <name> --lines 100
@@ -39,35 +40,37 @@ def save_jobs(jobs: list, jobs_file: Path = JOBS_FILE) -> None:
         yaml.safe_dump({"jobs": jobs}, f, sort_keys=False)
 
 
-def sync_units() -> None:
+def sync_units(jobs_file: Path | None = None) -> None:
     """Regenerate systemd units."""
-    subprocess.run(
-        [sys.executable, str(SKILL_DIR / "scripts" / "sync-units.py")],
-        check=True,
-    )
+    cmd = [sys.executable, str(SKILL_DIR / "scripts" / "sync-units.py")]
+    if jobs_file is not None:
+        cmd += ["--jobs-file", str(jobs_file)]
+    subprocess.run(cmd, check=True)
 
 
-def enable_job(name: str) -> None:
+def enable_job(name: str, jobs_file: Path = JOBS_FILE, sync: bool = True) -> None:
     """Enable a job."""
-    jobs = load_jobs()
+    jobs = load_jobs(jobs_file)
     for job in jobs:
         if job["name"] == name:
             job["enabled"] = True
-            save_jobs(jobs)
-            sync_units()
+            save_jobs(jobs, jobs_file)
+            if sync:
+                sync_units(jobs_file if jobs_file != JOBS_FILE else None)
             print(f"Enabled: {name}")
             return
     raise ValueError(f"Job not found: {name}")
 
 
-def disable_job(name: str) -> None:
+def disable_job(name: str, jobs_file: Path = JOBS_FILE, sync: bool = True) -> None:
     """Disable a job."""
-    jobs = load_jobs()
+    jobs = load_jobs(jobs_file)
     for job in jobs:
         if job["name"] == name:
             job["enabled"] = False
-            save_jobs(jobs)
-            sync_units()
+            save_jobs(jobs, jobs_file)
+            if sync:
+                sync_units(jobs_file if jobs_file != JOBS_FILE else None)
             print(f"Disabled: {name}")
             return
     raise ValueError(f"Job not found: {name}")
@@ -116,8 +119,20 @@ def main() -> None:
     p = ArgumentParser()
     subparsers = p.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("enable", help="Enable a job").add_argument("name")
-    subparsers.add_parser("disable", help="Disable a job").add_argument("name")
+    enable_parser = subparsers.add_parser("enable", help="Enable a job")
+    enable_parser.add_argument("name")
+    enable_parser.add_argument("--jobs-file", type=Path, default=JOBS_FILE,
+                                help="jobs.yaml to modify (default: this skill's jobs.yaml)")
+    enable_parser.add_argument("--no-sync", action="store_true",
+                                help="Skip regenerating systemd units after modifying jobs.yaml")
+
+    disable_parser = subparsers.add_parser("disable", help="Disable a job")
+    disable_parser.add_argument("name")
+    disable_parser.add_argument("--jobs-file", type=Path, default=JOBS_FILE,
+                                 help="jobs.yaml to modify (default: this skill's jobs.yaml)")
+    disable_parser.add_argument("--no-sync", action="store_true",
+                                 help="Skip regenerating systemd units after modifying jobs.yaml")
+
     subparsers.add_parser("test", help="Test a job").add_argument("name")
     view_logs_parser = subparsers.add_parser("view-logs", help="View job logs")
     view_logs_parser.add_argument("name")
@@ -129,9 +144,9 @@ def main() -> None:
 
     try:
         if args.command == "enable":
-            enable_job(args.name)
+            enable_job(args.name, jobs_file=args.jobs_file, sync=not args.no_sync)
         elif args.command == "disable":
-            disable_job(args.name)
+            disable_job(args.name, jobs_file=args.jobs_file, sync=not args.no_sync)
         elif args.command == "test":
             test_job(args.name)
         elif args.command == "view-logs":

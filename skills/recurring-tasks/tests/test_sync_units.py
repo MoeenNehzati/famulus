@@ -143,23 +143,24 @@ def test_two_enabled_jobs_each_get_units():
         print("PASS: two enabled jobs each get unit files")
 
 
-def test_runner_script_written_with_command():
+def test_no_per_job_runner_scripts_written():
+    """Simplified architecture: the command is embedded directly in the
+    service's ExecStart via bash -c; no per-job runner .sh script is
+    generated (see sync-units.py's module docstring)."""
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
         runners = list(Path(d).rglob("*.sh"))
-        assert len(runners) == 1, f"Expected 1 runner, got: {runners}"
-        content = runners[0].read_text()
-        assert "/usr/bin/echo hello" in content
-        print("PASS: runner script written with command")
+        assert runners == [], f"Expected no runner scripts, got: {runners}"
+        print("PASS: no per-job runner scripts written")
 
 
-def test_service_references_runner():
+def test_service_embeds_command_directly():
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
         content = (Path(d) / "ai-test-job.service").read_text()
-        assert "ExecStart=/bin/bash" in content
-        assert "test-job.sh" in content
-        print("PASS: service ExecStart references runner script")
+        assert "ExecStart=/bin/bash -c '" in content
+        assert "/usr/bin/echo hello" in content
+        print("PASS: service ExecStart embeds the job command directly")
 
 
 def test_orphaned_units_removed_when_job_disabled():
@@ -195,8 +196,8 @@ if __name__ == "__main__":
     test_timer_has_correct_oncalendar()
     test_disabled_job_produces_no_unit_files()
     test_two_enabled_jobs_each_get_units()
-    test_runner_script_written_with_command()
-    test_service_references_runner()
+    test_no_per_job_runner_scripts_written()
+    test_service_embeds_command_directly()
     test_orphaned_units_removed_when_job_disabled()
     test_idempotent()
     print("\nAll tests passed.")

@@ -109,11 +109,17 @@ class AiAgentEnvLiveSessionGuardTests(unittest.TestCase):
                 "must not touch the live systemd session when home != real $HOME",
             )
 
-            # The environment.d file itself should still be written, scoped
-            # to the sandbox home — only the live-session mutation is guarded.
+            # The environment.d file itself should still be written under the
+            # given home — only the live-session mutation is guarded. Its
+            # content now points at the invoke-skill launcher (resolved via
+            # PATH at runtime) rather than an absolute path scoped to `home`,
+            # so it's identical regardless of which home wrote it.
             env_file = sandbox_home / ".config" / "environment.d" / "20-ai-agent.conf"
             self.assertTrue(env_file.is_file())
-            self.assertIn(str(sandbox_home), env_file.read_text(encoding="utf-8"))
+            self.assertEqual(
+                env_file.read_text(encoding="utf-8"),
+                "AI_AGENT_COMMAND_TEMPLATE=invoke-skill {skill}\n",
+            )
 
 
 if __name__ == "__main__":

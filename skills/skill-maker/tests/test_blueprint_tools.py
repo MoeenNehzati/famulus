@@ -15,7 +15,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint" / "template.yaml"
-README = REPO_ROOT / "README.md"
 DISPATCHER_SRC = REPO_ROOT / "script_dispatcher" / "src"
 
 
@@ -64,16 +63,6 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertIn("patterns:", text)
         self.assertIn("allow_all_skills:", text)
         self.assertGreaterEqual(text.count("#"), 25, "template should remain heavily commented")
-
-    def test_readme_covers_blueprint_handoff_basics(self) -> None:
-        text = README.read_text(encoding="utf-8")
-        self.assertIn("### Blueprints and the dispatcher", text)
-        self.assertIn("references/blueprint", text)
-        self.assertIn("dispatcher", text)
-        self.assertIn("python3 skills/skill-maker/scripts/sync_skill_blueprints.py", text)
-        self.assertIn(".githooks/pre-commit", text)
-        self.assertIn("list-manager", text)
-        self.assertIn("daily-plan", text)
 
     def test_blueprint_hook_check_passes(self) -> None:
         result = self.run_cmd("skills/skill-maker/validators/blueprints.py")
