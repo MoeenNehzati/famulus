@@ -42,6 +42,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from install_manifest import Manifest, manifest_path
+from link_utils import make_copy, make_link
 
 # Cloud-files path normalization (inlined to avoid cross-skill imports)
 def normalize_llm_root(root: str) -> str:
@@ -132,76 +133,6 @@ def dispatch_skill_interface(
         capture_output=True,
         check=False,
     )
-
-
-def make_link(src: Path, dst: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
-    """Create or replace the symlink at dst pointing to src.
-
-    - Skips with a warning if src does not exist.
-    - Replaces an existing symlink atomically.
-    - Skips with a warning if dst exists as a real file/directory (won't clobber).
-    - Reports a clear error on Windows if symlink creation fails due to permissions.
-    """
-    if not src.exists():
-        log(f"  SKIP (missing source): {src}")
-        return
-
-    if dry_run:
-        log(f"  Would link: {dst} -> {src}")
-        return
-
-    if dst.is_symlink():
-        dst.unlink()
-    elif dst.exists():
-        log(f"  SKIP (real path exists, not a symlink): {dst}")
-        return
-
-    try:
-        dst.symlink_to(src)
-        log(f"  Linked: {dst} -> {src}")
-        if manifest is not None:
-            manifest.record("symlink", path=str(dst), target=str(src))
-    except OSError as exc:
-        hint = (
-            "\n  On Windows, symlinks require Developer Mode or administrator privileges."
-            if sys.platform == "win32"
-            else ""
-        )
-        log(f"  ERROR: could not create symlink {dst} -> {src}: {exc}{hint}")
-
-
-def make_copy(src: Path, dst: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
-    """Copy src to dst instead of symlinking.
-
-    Used for files the consuming tool WRITES BACK to (e.g. Codex records
-    machine-local state — project trust levels, trusted hook hashes, with
-    absolute paths — directly into its config file). A symlink would let
-    those writes land in the tracked repo file, leaking machine-local
-    personal paths into git. A copy keeps runtime state on the machine.
-
-    - Skips with a warning if src does not exist.
-    - Replaces an existing symlink (legacy install) with a copy.
-    - Leaves an existing regular file alone: it holds machine-local state
-      accumulated since install; overwriting would discard it.
-    """
-    if not src.exists():
-        log(f"  SKIP (missing source): {src}")
-        return
-
-    if dry_run:
-        log(f"  Would copy: {src} -> {dst}")
-        return
-
-    if dst.is_symlink():
-        dst.unlink()
-    elif dst.exists():
-        log(f"  SKIP (exists, keeping machine-local state): {dst}")
-        return
-
-    shutil.copyfile(src, dst)
-    log(f"  Copied: {src} -> {dst}")
-    if manifest is not None:
-        manifest.record("file", path=str(dst))
 
 
 # ── Argument parsing ───────────────────────────────────────────────────────────

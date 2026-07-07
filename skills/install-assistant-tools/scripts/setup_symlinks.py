@@ -47,6 +47,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from install_manifest import Manifest, manifest_path
+from link_utils import make_link
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
