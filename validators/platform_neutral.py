@@ -1,4 +1,21 @@
-"""Validate that shared content contains no platform-specific references."""
+"""Validate that shared content contains no platform-specific references.
+
+A file whose own filename names a host (case-insensitive substring match,
+e.g. ``codex_parser.py`` or ``claude_parser.py``) is allowed to mention that
+host's forbidden terms -- the filename itself is the visible signal that
+this one file is intentionally host-specific, while every other shared file
+must stay generic. Both the filename check and the content check are
+case-insensitive (``CLAUDE_HOME`` is treated the same as ``claude_home`` or
+``Claude Code``). ``__init__.py`` is always exempt too: it is the
+conventional aggregation seam that statically imports the host-specific
+files and re-exports a generic collection (e.g. ``parsers = [...]``) for
+everything else to consume without naming any host itself.
+
+This lets a skill hold real per-host logic without a blanket per-skill
+exemption: put host-specific parts in a file named after that host (plus
+the __init__.py that wires them together), keep everything else (SKILL.md,
+blueprint.yaml, and any generically-named script) free of host references.
+"""
 from __future__ import annotations
 
 import re
@@ -6,7 +23,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-FORBIDDEN = re.compile(r"(\.claude|\.codex|Claude|Codex|claude|codex)")
+_FORBIDDEN_TERMS: dict[str, re.Pattern[str]] = {
+    "claude": re.compile(r"(\.claude|claude)", re.IGNORECASE),
+    "codex": re.compile(r"(\.codex|codex)", re.IGNORECASE),
+}
+
+_ALWAYS_EXEMPT_FILENAMES = {"__init__.py"}
 
 _CHECK_ROOTS = ["skills", "references", "agents", "CLAUDE.md"]
 _EXCLUDED_PARTS = {"tests", "validators", ".git", ".claude-plugin", ".codex-plugin"}
@@ -14,6 +36,19 @@ _EXCLUDED_PATHS = {
     Path("skills/install-assistant-tools"),
     Path("skills/recurring-tasks"),
 }
+
+
+def _forbidden_pattern_for(path: Path) -> re.Pattern[str] | None:
+    """Forbidden-term pattern for this file, exempting any host named in
+    the file's own filename, and exempting __init__.py unconditionally.
+    Returns None if nothing is left to forbid for this file."""
+    name_lower = path.name.lower()
+    if name_lower in _ALWAYS_EXEMPT_FILENAMES:
+        return None
+    active = [p for host, p in _FORBIDDEN_TERMS.items() if host not in name_lower]
+    if not active:
+        return None
+    return re.compile("|".join(p.pattern for p in active), re.IGNORECASE)
 
 
 def _tracked_files(repo_root: Path) -> set[Path] | None:
@@ -58,12 +93,15 @@ def validate(repo_root: Path) -> list[str]:
     """Return error strings for every platform-specific reference found in shared content."""
     errors: list[str] = []
     for path in _iter_files(repo_root):
+        pattern = _forbidden_pattern_for(path)
+        if pattern is None:
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
-            if FORBIDDEN.search(line):
+            if pattern.search(line):
                 rel = path.relative_to(repo_root)
                 errors.append(f"{rel}:{lineno}: {line.strip()}")
     return errors

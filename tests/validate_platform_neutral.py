@@ -82,3 +82,59 @@ def test_runner_exits_nonzero_on_violation(tmp_path: Path) -> None:
         text=True,
     )
     assert result.returncode == 1
+
+
+def test_claude_named_file_may_mention_claude(tmp_path: Path) -> None:
+    d = tmp_path / "skills" / "a-skill" / "scripts"
+    d.mkdir(parents=True)
+    (d / "claude_parser.py").write_text("# Handles Claude Code's transcript format.\n")
+    assert validate(tmp_path) == []
+
+
+def test_codex_named_file_may_mention_codex(tmp_path: Path) -> None:
+    d = tmp_path / "skills" / "a-skill" / "scripts"
+    d.mkdir(parents=True)
+    (d / "codex_parser.py").write_text("# Handles Codex's transcript format.\n")
+    assert validate(tmp_path) == []
+
+
+def test_claude_named_file_may_not_mention_codex(tmp_path: Path) -> None:
+    d = tmp_path / "skills" / "a-skill" / "scripts"
+    d.mkdir(parents=True)
+    (d / "claude_parser.py").write_text("# Also handles Codex, oddly.\n")
+    errors = validate(tmp_path)
+    assert len(errors) == 1
+    assert "Codex" in errors[0]
+
+
+def test_generically_named_file_may_not_mention_either_host(tmp_path: Path) -> None:
+    d = tmp_path / "skills" / "a-skill" / "scripts"
+    d.mkdir(parents=True)
+    (d / "scan.py").write_text("# Scans Claude transcripts.\n# Scans Codex transcripts.\n")
+    errors = validate(tmp_path)
+    assert len(errors) == 2
+
+
+def test_init_py_always_exempt(tmp_path: Path) -> None:
+    d = tmp_path / "skills" / "a-skill" / "scripts"
+    d.mkdir(parents=True)
+    (d / "__init__.py").write_text(
+        "from claude_parser import ClaudeParser\nfrom codex_parser import CodexParser\n"
+    )
+    assert validate(tmp_path) == []
+
+
+def test_content_match_is_case_insensitive(tmp_path: Path) -> None:
+    d = tmp_path / "skills" / "a-skill" / "scripts"
+    d.mkdir(parents=True)
+    (d / "scan.py").write_text('home = os.environ.get("CLAUDE_HOME")\n')
+    errors = validate(tmp_path)
+    assert len(errors) == 1
+    assert "CLAUDE_HOME" in errors[0]
+
+
+def test_filename_match_is_case_insensitive(tmp_path: Path) -> None:
+    d = tmp_path / "skills" / "a-skill" / "scripts"
+    d.mkdir(parents=True)
+    (d / "Claude_Parser.py").write_text("# Handles Claude Code's transcript format.\n")
+    assert validate(tmp_path) == []

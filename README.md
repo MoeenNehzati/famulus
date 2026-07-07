@@ -1,95 +1,44 @@
 # Famulus
 
-Famulus is a personal and research assistant skillset compatible with both Claude and GPT(here in refered to as the **hosts**). It includes
-skills for day-to-day planning, automation, research and writing, auditing and dicomposing complicate math, and skill development.
-The repo also ships agent configurations of varying complexities for different tasks.
+Famulus is a personal and research assistant skillset compatible with both Claude Code and Codex (here referred to as the **hosts**). It includes
+skills for day-to-day planning, automation, research and writing, auditing and decomposing complex math, and skill development.
+The repo also ships three agent configurations for different kinds of sessions — `assistant`, `collab`, and `coauthor` (see [Agents and launchers](#agents-and-launchers) below).
+
+The package has mainly been tested on Linux, but CI runs end-to-end tests on macOS and Windows as well.
 
 ## Overview
 
-What is included:
+At a glance — each of these is expanded with skill names and diagrams in [What is included](#what-is-included) below:
 
-- **General assistant skills:** This suite is supposed to play the role of a secratary. It connects to your email, calendar and cloud file system. Each morning, you can ask it to plan your day, it will tell you what you should dress for, fetch you calendar for the day, remind you of the incoming events(birthdays and more), based on your free time suggest on actions from your todo list you can take, and present you with potential actionables from the incoming emails.
+- **General assistant skills:** plays the role of a personal secretary, connected to your email, calendar, and cloud file system. Each morning it can:
+  - check the weather and suggest what to wear;
+  - fetch the day's calendar and upcoming events (birthdays and more);
+  - suggest todo-list actions that fit your free time;
+  - surface actionable items from incoming email.
 
-- **Research and writing skills:** This suite it meant to help with writing/understanding academic research. It's mostly geared towards math heavy papers. It can check your proofs(much better than llms do out of the box), review the notation, assess applicability of a theorem or tool to the setting, plot the dependency graph of the results, audit the bibliography for hallucinations/newer versions/duplications and review the prose and flow of the document.
+- **Research and writing skills:** meant to help with writing and understanding academic research, mostly math-heavy papers. It can check proofs (more rigorously than LLMs do out of the box), review notation, assess whether a theorem or tool applies to a given setting, plot the dependency graph of a paper's results, audit a bibliography for hallucinations, newer versions, or duplicates, and review the prose and flow of a document.
 
-- **Workflow skills:** This suite is to improve daily interactions with the llm. It involves git hygiene, modes for different explore vs accuracy trade off, hand-off preperation(making sure all that's learned in the session is written down for future use), and tracing sessions that need hand-off at the end of the day.
+- **Workflow skills:** improves day-to-day interaction with the LLM: git hygiene, explore-vs-accuracy modes, handoff preparation (making sure everything learned in a session is written down for future use), and tracing sessions that need a handoff at day's end.
 
-- **System and automation skills:** recurring_tasks skill will schedule the scanning emails and making daily plans on systemd and continuously monitors it's health.
+- **System and automation skills:** `recurring-tasks` schedules email scans and daily-plan generation as systemd timers and continuously monitors its own health.
 
-- **Skill-development tools:** skill authoring, skill refactoring, guideline
-  updates, hook creation, blueprint contracts, dispatcher enforcement, and
-  pre-commit validators.
+- **Skill-development tools:** tooling for LLM-assisted skill development — mainly pre-commit hooks and validators that keep skills small and their coupling explicit.
+
 - **Installed command-line tools:** the workstation installer installs
   `assistant`, `collab`, `coauthor`, and `tw`/`tmux-workspace` launchers, plus a
-  generated `dispatcher` launcher used for approved skill-to-skill script calls.
-
-The repo is meant to be usable in two ways:
-
-1. **Plugin mode:** install the skillset into Claude Code or Codex as a plugin.
-   Skills are namespaced, for example `famulus:proof-audit`.
-2. **Workstation mode:** run `install-assistant-tools` to wire one checkout into
-   both hosts, install launchers, register hooks, configure shell environment,
-   and set up optional Google Drive / Calendar OAuth.
+  generated `dispatcher` launcher skills use to invoke their scripts.
 
 ### Runtime map
+The diagrams below are rendered PNGs. Their Graphviz sources live under
+`graphs/`; regenerate them with `python3 graphs/render-graphs.py`.
 
-The diagrams below are Mermaid diagrams. Their source files live under
-`graphs/` and are synced into this README with
-`python3 graphs/sync-readme-graphs.py`.
-
-<!-- BEGIN GRAPH: graphs/runtime-map.mmd -->
-```mermaid
-%%{init: {"theme": "base", "htmlLabels": true, "themeVariables": {"fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif", "primaryTextColor": "#172033", "lineColor": "#64748b", "clusterBkg": "#ffffff", "clusterBorder": "#cbd5e1"}, "flowchart": {"defaultRenderer": "elk", "curve": "basis", "nodeSpacing": 86, "rankSpacing": 100, "diagramPadding": 24, "subGraphTitleMargin": {"top": 10, "bottom": 20}, "wrappingWidth": 140}}}%%
-flowchart LR
-  Repo[Repo<br/>checkout]
-
-  subgraph Plugin[Plugin mode]
-    direction TB
-    PluginCache[Host plugin<br/>cache]
-    Namespaced[Namespaced<br/>skills]
-  end
-
-  subgraph Workstation[Workstation mode]
-    direction TB
-    Installer[install-assistant<br/>tools]
-    Homes[Claude + Codex<br/>homes]
-    Agents[agents:<br/>assistant / collab / coauthor<br/>worker dirs]
-    Tmux[custom tmux<br/>tw + tmux-workspace]
-    Profiles[profile config<br/>copies]
-    Hooks[session<br/>hooks]
-    Dispatcher[generated<br/>dispatcher]
-  end
-
-  Repo --> PluginCache --> Namespaced
-  Repo --> Installer
-  Installer --> Homes
-  Installer --> Agents
-  Installer --> Tmux
-  Installer --> Profiles
-  Installer --> Hooks
-  Installer --> Dispatcher
-
-  classDef repo fill:#eef2ff,stroke:#4f46e5,stroke-width:1.8px,color:#1e1b4b;
-  classDef plugin fill:#ecfeff,stroke:#0891b2,stroke-width:1.8px,color:#164e63;
-  classDef installer fill:#fff7ed,stroke:#ea580c,stroke-width:1.8px,color:#7c2d12;
-  classDef agent fill:#f0fdf4,stroke:#16a34a,stroke-width:1.8px,color:#14532d;
-  classDef host fill:#eff6ff,stroke:#2563eb,stroke-width:1.8px,color:#1e3a8a;
-  classDef hook fill:#fdf2f8,stroke:#db2777,stroke-width:1.8px,color:#831843;
-  classDef dispatch fill:#f5f3ff,stroke:#7c3aed,stroke-width:1.8px,color:#3b0764;
-  class Repo repo;
-  class PluginCache,Namespaced plugin;
-  class Installer installer;
-  class Homes,Profiles host;
-  class Agents,Tmux agent;
-  class Hooks hook;
-  class Dispatcher dispatch;
-  style Plugin fill:#ecfeff,stroke:#0891b2,stroke-width:1.5px
-  style Workstation fill:#f8fafc,stroke:#64748b,stroke-width:1.5px
-  linkStyle default stroke:#64748b,stroke-width:2px
-```
-<!-- END GRAPH: graphs/runtime-map.mmd -->
+<img src="graphs/runtime-map.png" alt="Runtime map" style="max-width: 100%; width: auto; height: auto; display: block; margin: 1rem auto;">
 
 ## Install, update, and uninstall
+
+Choose one install path: plugin mode for a host-managed install, or workstation
+mode for one local checkout with launchers, hooks, profiles, OAuth helpers, and
+recurring-task support.
 
 Requirements:
 
@@ -193,7 +142,7 @@ python3 skills/install-assistant-tools/scripts/uninstall.py --dry-run
 python3 skills/install-assistant-tools/scripts/uninstall.py
 ```
 
-It removes the managed Codex and Claude hook registrations, unlinks managed
+It removes the managed Codex and Claude Code hook registrations, unlinks managed
 launchers and symlinks, and uses the install manifest when available. OAuth
 credentials are left in place unless `--purge` is passed.
 
@@ -227,156 +176,14 @@ through local logs and healthchecks. This scheduled layer is
 Linux/systemd-specific; the rest of the repo's framework is tested
 cross-platform.
 
-<!-- BEGIN GRAPH: graphs/daily-assistant-loop.mmd -->
-```mermaid
-%%{init: {"theme": "base", "htmlLabels": true, "themeVariables": {"fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif", "primaryTextColor": "#172033", "lineColor": "#64748b", "clusterBkg": "#ffffff", "clusterBorder": "#cbd5e1"}, "flowchart": {"defaultRenderer": "elk", "curve": "basis", "nodeSpacing": 86, "rankSpacing": 100, "diagramPadding": 24, "subGraphTitleMargin": {"top": 10, "bottom": 20}, "wrappingWidth": 140}}}%%
-flowchart LR
-  subgraph Remote[Remote data<br/>and state]
-    direction TB
-    Mail[Email<br/>accounts]
-    Calendar[Google<br/>Calendar]
-    Weather[Weather<br/>forecast]
-    subgraph Drive[Google Drive<br/>LLM root]
-      direction TB
-      RemoteLists[Cloud lists<br/>todo + triage]
-      RemotePlans[Cloud<br/>plans]
-    end
-  end
-
-  subgraph Skills[Skills]
-    direction TB
-    subgraph Connectors[Remote-facing<br/>skills]
-      direction TB
-      EmailClient[email-<br/>client]
-      GCal[g-<br/>calendar]
-      GetWeather[get-<br/>weather]
-      CloudFiles[cloud-<br/>files]
-    end
-    subgraph Workflow[Workflow<br/>skills]
-      direction TB
-      EmailTriage[email-<br/>triage]
-      ListManager[list-<br/>manager]
-      DailyPlan[daily-<br/>plan]
-      WrapUp[wrap-<br/>up]
-      Recurring[recurring-<br/>tasks]
-    end
-  end
-
-  subgraph System[Local<br/>system]
-    direction TB
-    Systemd[systemd user<br/>timers]
-    Logs[logs +<br/>healthcheck]
-  end
-
-  Mail <--> EmailClient
-  EmailClient --> EmailTriage
-  EmailTriage --> ListManager
-  Calendar --> GCal --> DailyPlan
-  Weather --> GetWeather --> DailyPlan
-  ListManager <--> CloudFiles
-  CloudFiles <--> RemoteLists
-  DailyPlan <--> CloudFiles
-  CloudFiles <--> RemotePlans
-  WrapUp --> DailyPlan
-  WrapUp --> ListManager
-  Recurring --> Systemd
-  Systemd --> EmailTriage
-  Systemd --> DailyPlan
-  Systemd --> Logs
-  Logs --> Recurring
-
-  classDef remote fill:#eff6ff,stroke:#2563eb,stroke-width:1.8px,color:#1e3a8a;
-  classDef drive fill:#ecfdf5,stroke:#059669,stroke-width:1.8px,color:#064e3b;
-  classDef connector fill:#ecfeff,stroke:#0891b2,stroke-width:1.8px,color:#164e63;
-  classDef workflow fill:#fff7ed,stroke:#ea580c,stroke-width:1.8px,color:#7c2d12;
-  classDef system fill:#fef2f2,stroke:#dc2626,stroke-width:1.8px,color:#7f1d1d;
-  class Mail,Calendar,Weather remote;
-  class RemoteLists,RemotePlans drive;
-  class EmailClient,GCal,GetWeather,CloudFiles connector;
-  class EmailTriage,ListManager,DailyPlan,WrapUp,Recurring workflow;
-  class Systemd,Logs system;
-  style Remote fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px
-  style Drive fill:#ecfdf5,stroke:#059669,stroke-width:1.5px
-  style Skills fill:#fffbeb,stroke:#d97706,stroke-width:1.5px
-  style Connectors fill:#ecfeff,stroke:#0891b2,stroke-width:1.5px
-  style Workflow fill:#fff7ed,stroke:#ea580c,stroke-width:1.5px
-  style System fill:#fef2f2,stroke:#dc2626,stroke-width:1.5px
-  linkStyle default stroke:#64748b,stroke-width:2px
-```
-<!-- END GRAPH: graphs/daily-assistant-loop.mmd -->
+<img src="graphs/daily-assistant-loop.png" alt="Daily assistant loop" style="max-width: 100%; width: auto; height: auto; display: block; margin: 1rem auto;">
 
 ### Research and writing
 
 The research skills are mostly independent tools rather than one tightly coupled
 workflow:
 
-<!-- BEGIN GRAPH: graphs/research-writing.mmd -->
-```mermaid
-%%{init: {"theme": "base", "htmlLabels": true, "themeVariables": {"fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif", "primaryTextColor": "#172033", "lineColor": "#64748b", "clusterBkg": "#ffffff", "clusterBorder": "#cbd5e1"}, "flowchart": {"defaultRenderer": "elk", "curve": "basis", "nodeSpacing": 86, "rankSpacing": 100, "diagramPadding": 24, "subGraphTitleMargin": {"top": 10, "bottom": 20}, "wrappingWidth": 140}}}%%
-flowchart LR
-  subgraph Inputs[Research<br/>artifacts]
-    direction TB
-    Tex[TeX<br/>project]
-    Pdf[Research<br/>PDF]
-    Bib[BibTeX<br/>file]
-    ProofText[proof / theorem<br/>text]
-    Draft[paper<br/>draft]
-  end
-
-  subgraph Skills[Research and<br/>writing skills]
-    direction TB
-    subgraph Structural[Structural<br/>tools]
-      direction TB
-      Latex[latex-<br/>workshop]
-      DepGraph[math-dependency<br/>graph]
-      TexDoc[make-tex<br/>docstring]
-      PdfMd[pdf-to<br/>markdown]
-      BibAudit[bib-<br/>audit]
-    end
-
-    subgraph Mathier[Math-focused<br/>review]
-      direction TB
-      ProofAudit[proof-<br/>audit]
-      ToolApp[tool<br/>applicability]
-      Notation[notation-<br/>review]
-    end
-
-    subgraph Text[Text and<br/>presentation review]
-      direction TB
-      Flow[technical-flow<br/>review]
-      Prose[formal-prose<br/>review]
-    end
-  end
-
-  Tex --> Latex
-  Tex --> DepGraph
-  Tex --> TexDoc
-  Pdf --> PdfMd
-  Bib --> BibAudit
-  ProofText --> ProofAudit
-  ProofText --> ToolApp
-  ProofText --> Notation
-  Draft --> Flow
-  Draft --> Prose
-  PdfMd --> ProofAudit
-  PdfMd --> Flow
-
-  classDef input fill:#f8fafc,stroke:#64748b,stroke-width:1.8px,color:#334155;
-  classDef structural fill:#eff6ff,stroke:#2563eb,stroke-width:1.8px,color:#1e3a8a;
-  classDef math fill:#fff7ed,stroke:#ea580c,stroke-width:1.8px,color:#7c2d12;
-  classDef text fill:#f0fdf4,stroke:#16a34a,stroke-width:1.8px,color:#14532d;
-  class Tex,Pdf,Bib,ProofText,Draft input;
-  class Latex,DepGraph,TexDoc,PdfMd,BibAudit structural;
-  class ProofAudit,ToolApp,Notation math;
-  class Flow,Prose text;
-  style Inputs fill:#f8fafc,stroke:#64748b,stroke-width:1.5px
-  style Skills fill:#faf5ff,stroke:#9333ea,stroke-width:1.5px
-  style Structural fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px
-  style Mathier fill:#fff7ed,stroke:#ea580c,stroke-width:1.5px
-  style Text fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px
-  linkStyle default stroke:#64748b,stroke-width:2px
-```
-<!-- END GRAPH: graphs/research-writing.mmd -->
+<img src="graphs/research-writing.png" alt="Research and writing skills" style="max-width: 100%; width: auto; height: auto; display: block; margin: 1rem auto;">
 
 - `proof-audit` checks mathematical arguments for gaps, hidden assumptions,
   invalid theorem use, and redundancy.
@@ -402,72 +209,7 @@ flowchart LR
 The skill-development part of the repo is about keeping skills small and their
 coupling explicit.
 
-<!-- BEGIN GRAPH: graphs/skill-development-framework.mmd -->
-```mermaid
-%%{init: {"theme": "base", "htmlLabels": true, "themeVariables": {"fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif", "primaryTextColor": "#172033", "lineColor": "#64748b", "clusterBkg": "#ffffff", "clusterBorder": "#cbd5e1"}, "flowchart": {"defaultRenderer": "elk", "curve": "basis", "nodeSpacing": 86, "rankSpacing": 100, "diagramPadding": 24, "subGraphTitleMargin": {"top": 10, "bottom": 20}, "wrappingWidth": 140}}}%%
-flowchart LR
-  Guidelines[references/<br/>skill-guidelines.md]
-
-  subgraph Authoring[Skill authoring<br/>and maintenance]
-    direction TB
-    SkillMaker[skill-<br/>maker]
-    Refactor[refactor-<br/>skills]
-    UpdateGuidelines[update-skill<br/>guidelines]
-    HookMaker[hook-<br/>maker]
-  end
-
-  subgraph SkillDir[One skill<br/>directory]
-    direction TB
-    SkillFile[SKILL.md<br/>instructions]
-    Blueprint[blueprint.yaml<br/>contract]
-    Scripts[scripts/<br/>implementation]
-  end
-
-  subgraph Checks[Mechanical<br/>checks]
-    direction TB
-    Validators[validators]
-    PreCommit[pre-commit<br/>hook]
-    CI[CI<br/>checks]
-  end
-
-  Sync[blueprint sync<br/>tooling]
-  Generated[generated SKILL.md<br/>blocks + permissions]
-  Dispatcher[dispatcher]
-  Hooks[llmhooks + plugin<br/>hook glue]
-
-  Guidelines --> SkillMaker
-  Guidelines --> Refactor
-  Guidelines --> UpdateGuidelines
-  SkillMaker --> SkillFile
-  SkillMaker --> Blueprint
-  SkillMaker --> Scripts
-  Refactor --> SkillFile
-  Refactor --> Blueprint
-  Refactor --> Scripts
-  UpdateGuidelines --> Guidelines
-  UpdateGuidelines --> Validators
-  Blueprint --> Sync --> Generated --> SkillFile
-  Blueprint --> Dispatcher --> Scripts
-  SkillDir --> Validators
-  Validators --> PreCommit --> CI
-  HookMaker --> Hooks --> Validators
-
-  classDef guideline fill:#eef2ff,stroke:#4f46e5,stroke-width:1.8px,color:#1e1b4b;
-  classDef author fill:#ecfeff,stroke:#0891b2,stroke-width:1.8px,color:#164e63;
-  classDef artifact fill:#fff7ed,stroke:#ea580c,stroke-width:1.8px,color:#7c2d12;
-  classDef check fill:#fef2f2,stroke:#dc2626,stroke-width:1.8px,color:#7f1d1d;
-  classDef infra fill:#f5f3ff,stroke:#7c3aed,stroke-width:1.8px,color:#3b0764;
-  class Guidelines guideline;
-  class SkillMaker,Refactor,UpdateGuidelines,HookMaker author;
-  class SkillFile,Blueprint,Scripts artifact;
-  class Validators,PreCommit,CI check;
-  class Sync,Generated,Dispatcher,Hooks infra;
-  style Authoring fill:#ecfeff,stroke:#0891b2,stroke-width:1.5px
-  style SkillDir fill:#fff7ed,stroke:#ea580c,stroke-width:1.5px
-  style Checks fill:#fef2f2,stroke:#dc2626,stroke-width:1.5px
-  linkStyle default stroke:#64748b,stroke-width:2px
-```
-<!-- END GRAPH: graphs/skill-development-framework.mmd -->
+<img src="graphs/skill-development-framework.png" alt="Skill development framework" style="max-width: 100%; width: auto; height: auto; display: block; margin: 1rem auto;">
 
 - Each skill has a `blueprint.yaml` contract: category, dependencies, interface
   version, and exported script interfaces.
@@ -507,7 +249,7 @@ The installer provides three agent launchers:
 - `collab` — long project sessions with continuity and handoff behavior.
 - `coauthor` — writing-focused sessions.
 
-Each has Claude and Codex profile/config files under `profiles/`, and each gets
+Each has Claude Code and Codex profile/config files under `profiles/`, and each gets
 a worker directory under `workers/`. `PROFILES.md` is generated from those
 profile files and summarizes the differences.
 
@@ -589,7 +331,7 @@ profiles/             host profile/config files for those agents
 workers/              default local working directories for installed agents
 references/           shared standards and blueprint references
 script_dispatcher/    dispatcher package used by generated launcher
-graphs/               Mermaid diagram sources and README sync script
+graphs/               Graphviz DOT sources and rendered PNG/SVG diagrams
 llmhooks/             cross-host hook implementations and registry
 hooks/                plugin-mode hook glue
 validators/           repo-wide validators
@@ -604,7 +346,7 @@ PROFILES.md           generated profile comparison
 Useful checks:
 
 ```bash
-python3 graphs/sync-readme-graphs.py --check
+python3 graphs/render-graphs.py --check
 python3 validators/runner.py
 python3 -m pytest
 ```

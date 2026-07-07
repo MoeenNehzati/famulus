@@ -22,7 +22,7 @@ pytest
 
 ```
 {{PROJECT_NAME}}/
-├── CLAUDE.md          # development workflow & conventions
+├── AGENTS.md          # development workflow & conventions
 ├── src/project/       # application source
 │   ├── config.py      # loads .env / .testenv
 │   └── logger.py      # centralized logging (get_logger)
@@ -47,5 +47,5 @@ Configure via `.env`:
 
 ## Development workflow
 
-See [CLAUDE.md](CLAUDE.md) for the staged TDD workflow used for all new
+See [AGENTS.md](AGENTS.md) for the staged TDD workflow used for all new
 functionality (design → tests → implementation → docs).

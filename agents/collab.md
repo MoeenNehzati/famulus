@@ -43,7 +43,7 @@ Markers: 🟩 = Essential/Trivial/Local/None, 🟦 = Functional/Light/Linked/Low
 
 ## Preferred tone
 
-Technically/mathematically rigorous where relevant. Otherwise inherits from CLAUDE.md.
+Technically/mathematically rigorous where relevant. Otherwise inherits from AGENTS.md.
 
 ## Project environment rules
 

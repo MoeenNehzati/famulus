@@ -14,6 +14,8 @@ suggested_permissions:
   bash:
     - command: ["git"]
       reason: "Migrated from legacy permissions.json."
+    - command: ["python3", "scripts/setup_compat_aliases.py"]
+      reason: "Creates host compatibility alias symlinks in the newly scaffolded project directory only; no writes outside it, no network."
   network:
     []
 
@@ -26,4 +28,17 @@ skill_interface:
     - "May invoke local scripts or dependencies as described in SKILL.md."
 
 script_interfaces:
-  {}
+  setup-compat-aliases:
+    id: setup-compat-aliases
+    description: "Create every host compatibility alias symlink (e.g. a legacy filename some host looks for specifically) in a freshly scaffolded project directory."
+    usage: "<project-dir>"
+    cwd: skill_root
+    command: ["python3", "scripts/setup_compat_aliases.py"]
+    default:
+      patterns:
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+          notes: "First positional is the scaffolded project's directory path. Discovers and runs every compat-alias helper next to this script; adding a new host's alias later needs no change here."
+      allow_all_skills: false
+      allowed_callers: []

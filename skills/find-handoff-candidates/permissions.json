@@ -1,0 +1,7 @@
+{
+  "bash": [
+    "Bash(python3 scripts/scan.py:*)",
+    "Bash(python3 scripts/calibrate.py:*)"
+  ],
+  "network": []
+}

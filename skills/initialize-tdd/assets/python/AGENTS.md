@@ -62,7 +62,7 @@ next one.
 
 ```
 {{PROJECT_NAME}}/
-├── CLAUDE.md
+├── AGENTS.md          # a compatibility symlink alongside this file also exists
 ├── README.md
 ├── .env
 ├── .testenv

@@ -235,6 +235,13 @@ What **may** appear inline for a declared tool: installation instructions, flags
 
 **12. Prefer widely available, cross-platform tools at every layer — language, runtime, and any external tools invoked.** Skills must work out of the box across operating systems (Linux, macOS, Windows) and on machines other than your own. Ask: *would this run without installing anything extra on a typical Linux, macOS, or Windows machine belonging to someone else?*
 
+**13. Shared skill content must stay neutral about which specific AI-assistant host it runs under.** Enforced by `validators/platform_neutral.py` (see that module's own docstring for the exact forbidden terms — deliberately not repeated here, to avoid this guideline itself tripping the check it describes). Both filename and content matching are case-insensitive.
+
+- `SKILL.md`, `blueprint.yaml`, and any generically-named script must not name a specific host, even indirectly (an env var or path that embeds the host's name, a prose mention of the product name, etc.).
+- If a skill genuinely needs host-specific logic (different storage paths, different data formats, different CLI behavior per host), put that logic in a file whose own filename names the host — e.g. a file named after "Host A" may say "Host A" freely, a file named after "Host B" may say "Host B" freely. The filename is the visible signal that this one file is intentionally host-bound; every other file in the skill stays generic.
+- `__init__.py` is always exempt, regardless of its content — it is the conventional aggregation seam: it statically imports the host-specific files and re-exports a generic collection (e.g. `parsers = [HostAParser(), HostBParser()]`) for the rest of the skill to consume without ever naming a host itself.
+- Because the dispatcher invokes scripts directly (`python3 scripts/foo.py`, not as an installed package), a generic script cannot use `from . import parsers` to reach a sibling `__init__.py` — that fails with "attempted relative import with no known parent package" since the script runs as `__main__` with no parent package context. Load it by path instead: `importlib.util.spec_from_file_location(name, path_to_init)`, then `module_from_spec` + `exec_module`. See `skills/find-handoff-candidates/scripts/scan.py` for a working example. (A cleaner fix — teaching `script_dispatcher` to invoke scripts as `python3 -m scripts.foo` so real relative imports work, or providing a shared loader helper — is tracked as a follow-up; check the `todo` list before re-deriving this from scratch.)
+
 ---
 
 ## Validator and test conventions

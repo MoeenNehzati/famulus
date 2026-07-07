@@ -13,7 +13,9 @@ Category: workflow-general-assistant
 
 Dependencies:
 - daily-plan
+- find-handoff-candidates
 - list-manager
+- prepare-handoff
 
 Interface Version: 1
 
@@ -105,11 +107,25 @@ marking the action done or leaving it untouched:
 For each new item the user provided, use the `list-manager` skill (§3.4) to add it
 to the appropriate list. Infer the list from context; default to `todo`.
 
-## 7. Confirm
+## 7. Flag sessions needing handoff
+
+Use `find-handoff-candidates`'s `scan` interface (default: trailing 2 days, so a session touched yesterday still surfaces even if this didn't run yesterday) to get a JSON array of session records. Every record returned already needs attention — `scan` itself decides this via the gap-since-last-handoff threshold, including sessions with `handoff_status: complete` that had substantial new work afterward. Do not re-filter by `handoff_status`, and do not open, read, or summarize any flagged session's transcript content; this step is a pure relay of the script's structured output, not an LLM judgment call.
+
+Before adding anything, use the `list-manager` skill to read the current `triage` list and collect every `session_id` already present in an existing entry's description (any state — undecided, accepted, or rejected). Because the scan window overlaps across days, the same session can appear in more than one day's scan; skip any record whose `session_id` is already in that set — do not create a second triage entry for a session already tracked there.
+
+For each remaining record, use the `list-manager` skill to add a `triage` entry:
+- `title`: a short pointer, e.g. `"handoff check: <source> session <session_id> (<project>)"`.
+- `deadline`: tomorrow's local date.
+- `description`: every field from the record, plainly listed (session_id, source, project, start_time, last_activity, line_count, gap_net_chars, handoff_status, handoff_started_at, resume_hint) — do not summarize or drop fields; the description is the only place this information persists, and it must be enough for whoever reviews the triage item to resume the session and invoke `prepare-handoff` there without re-scanning. Always include `session_id` even though it's also in the title, since the dedup check above depends on finding it in the description.
+
+If nothing remains after dedup, skip this step silently — do not create empty or placeholder triage entries.
+
+## 8. Confirm
 
 Reply with a brief summary:
 - Which actions were checked off (and which todo items matched).
 - Any items that couldn't be matched (if any).
 - Which new items were added and to which list.
+- How many triage entries were added in step 7 (if none, omit this line).
 
 Do not redisplay the full plan unless asked.

@@ -73,6 +73,12 @@ Then ask for the user's opinion on the plan and wait for explicit approval befor
 
 If a repo-structure issue affects where lessons would be written — for example, a root-level file named `lessons` blocks creation of a `lessons/` directory — include that in the proposal and ask how to handle it before writing.
 
+Immediately after presenting the plan, emit this exact line on its own, verbatim:
+
+`<!-- HANDOFF-SENTINEL: STARTED -->`
+
+This is a machine-readable marker consumed by an external session scanner (to detect that a handoff was attempted for this session) — not a user-facing note. Do not paraphrase or alter its spacing/punctuation.
+
 ### 3. Apply Workflow and Documentation Updates After Approval
 
 After the user approves the plan, update workflow/spec files and documentation first. This is the functional step — it changes how future agents and contributors behave, and it should encode as much of the needed handoff context as possible directly into the repo.
@@ -157,5 +163,11 @@ End with a concise report:
 - workflow or documentation files changed, or why none were needed
 - lesson entries added, or why none were needed
 - memory candidates proposed, if any
+
+Immediately after this report (i.e. once workflow/doc updates and lesson writes from step 3-4 are done, and memory candidates from step 5 have been listed), emit this exact line on its own, verbatim:
+
+`<!-- HANDOFF-SENTINEL: COMPLETE -->`
+
+This is a machine-readable completion marker consumed by an external session scanner — not a user-facing note. Do not paraphrase or alter its spacing/punctuation. Do not emit it if the handoff plan was never approved (thin/unclear context, or the user declined) — an unapproved or abandoned handoff should stay at `STARTED`, not `COMPLETE`.
 
 Do not commit unless the user explicitly asks.

@@ -2,7 +2,6 @@
 .DS_Store
 *.swp
 
-# Editor / assistant settings (local, not part of the project)
+# Editor settings (local, not part of the project)
 .vscode/
 *.code-workspace
-CLAUDE.md

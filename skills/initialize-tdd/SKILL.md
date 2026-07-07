@@ -1,6 +1,6 @@
 ---
 name: initialize-tdd
-description: Use when starting a brand new project that should follow a staged, approval-gated TDD workflow (design -> tests -> implementation -> docs). Scaffolds a new project directory with CLAUDE.md, README, .gitignore, git init, and (for Python) a venv + centralized logger/config modules + a starter test suite.
+description: Use when starting a brand new project that should follow a staged, approval-gated TDD workflow (design -> tests -> implementation -> docs). Scaffolds a new project directory with AGENTS.md (plus host compatibility aliases), README, .gitignore, git init, and (for Python) a venv + centralized logger/config modules + a starter test suite.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
@@ -15,9 +15,19 @@ Interface Version: 1
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Script Interfaces:
+
+Use the installed `dispatcher` command for this skill's script interfaces:
+- `setup-compat-aliases` — Create every host compatibility alias symlink (e.g. a legacy filename some host looks for specifically) in a freshly scaffolded project directory.
+  - `dispatcher --caller-skill initialize-tdd initialize-tdd setup-compat-aliases <project-dir>`
+  - First positional is the scaffolded project's directory path. Discovers and runs every compat-alias helper next to this script; adding a new host's alias later needs no change here.
+<!-- END BLUEPRINT INTERFACES -->
 # Initialize TDD Project
 
-Scaffolds a new project set up the way described in CLAUDE.md's staged TDD
+Scaffolds a new project set up the way described in AGENTS.md's staged TDD
 workflow: design+stubs -> tests -> implementation -> docs, with approval
 gates between steps.
 
@@ -26,10 +36,10 @@ gates between steps.
 - **name**: human-readable project name (e.g. "Jarvis"). Used for:
   - the new directory name (slugified: lowercase, spaces/underscores -> `-`,
     strip anything outside `[a-z0-9-]`)
-  - the `# {{PROJECT_NAME}}` title in CLAUDE.md / README.md
+  - the `# {{PROJECT_NAME}}` title in AGENTS.md / README.md
   - (Python) the `name` field in `pyproject.toml` (slugified form)
 - **language**: `python` gets the full scaffold (venv, logger, config,
-  starter tests). Anything else gets the generic scaffold (CLAUDE.md,
+  starter tests). Anything else gets the generic scaffold (AGENTS.md,
   README, .gitignore, git init) with no language-specific
   tooling — note this to the user so they know logger/config/tests aren't
   included.
@@ -46,11 +56,11 @@ If either input is missing, ask the user before proceeding.
 
 2. **Copy common assets**
    - Copy everything from `assets/common/` into the project dir:
-     `CLAUDE.md`, `README.md`, `.gitignore`.
+     `AGENTS.md`, `README.md`, `.gitignore`.
 
 3. **Copy language-specific assets (if `language == python`)**
    - Copy everything from `assets/python/` into the project dir:
-     `requirements.txt`, `install.sh`, `pyproject.toml`, `CLAUDE.md`,
+     `requirements.txt`, `install.sh`, `pyproject.toml`, `AGENTS.md`,
      `README.md` (these overwrite the common versions — they're
      Python-specific supersets), `src/project/`, `tests/`, `logs/.gitkeep`.
    - Append `assets/python/.gitignore` to the `.gitignore` already copied
@@ -75,10 +85,15 @@ If either input is missing, ask the user before proceeding.
      - `{{PROJECT_NAME}}` -> `name` (human-readable, as given)
      - `{{PACKAGE_DIST_NAME}}` -> `slug` (only present in `pyproject.toml`)
 
-5. **Initialize git**
+5. **Create host compatibility aliases**
+   - Call the `setup-compat-aliases` interface with the project directory,
+     so any host that looks for a differently-named instructions file
+     (rather than `AGENTS.md`) still finds the same content.
+
+6. **Initialize git**
    - `git init` in the project directory.
 
-6. **Bootstrap and verify (Python only)**
+7. **Bootstrap and verify (Python only)**
    - Run `./install.sh` to create `.venv` and install dependencies. This is
      a starting-point script — if the environment differs from what it
      assumes (e.g. `python3` not on PATH, a different interpreter needed),
@@ -89,7 +104,7 @@ If either input is missing, ask the user before proceeding.
    - If anything fails, fix it before reporting success — don't claim the
      scaffold works without fresh verification output.
 
-7. **Report, don't commit**
+8. **Report, don't commit**
    - Summarize what was created and confirm tests pass (with output).
    - Do NOT create a git commit — that's a separate step the user asks for
      explicitly.
@@ -99,7 +114,7 @@ If either input is missing, ask the user before proceeding.
 - The Python package is generically named `project` (`src/project/`,
   `from project.logger import get_logger`, etc.) on purpose — the
   human-readable project name lives in `pyproject.toml`'s `name` field and
-  in CLAUDE.md/README titles, not in the package/import paths. Don't rename
+  in AGENTS.md/README titles, not in the package/import paths. Don't rename
   the package per-project.
 - `.env` / `.testenv` are intentionally not created by this skill (they're
   gitignored and project-specific) — modules read sensible defaults
