@@ -4,10 +4,6 @@
 
 This page is the complete skill inventory. For walkthroughs and examples, start from the user docs or contributor docs linked from [README.md](../README.md).
 
-![Skill taxonomy](../graphs/skill-taxonomy.svg)
-
-The graph gives a visual overview of the live skill set. The sections below are the complete text inventory.
-
 ## General Assistant
 
 ### Productivity
@@ -18,7 +14,7 @@ The graph gives a visual overview of the live skill set. The sections below are 
 - `get-weather` — Fetch weather for a location, day, or date range
 - `list-manager` — Manage personal YAML lists in cloud storage
 
-### Coordination
+### Workflow
 
 - `daily-plan` — Generate today's plan from calendar, todos, and weather
 - `find-handoff-candidates` — You need a mechanical, non-interpretive scan of today's (or another day's) work sessions to find ones that had substantial activity but no completed handoff
