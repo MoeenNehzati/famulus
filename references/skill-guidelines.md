@@ -27,7 +27,7 @@ Dependencies:
 
 Use `Dependencies: none` when the skill must not invoke other skills. List only skill names, not paths, scripts, or implementation details.
 
-In this repository, local skills use a canonical `blueprint.yaml` next to `SKILL.md`. Initialize a new blueprint by copying `references/skill-blueprint-template.yaml` into the skill directory as your base, then customize it in place. The blueprint is hand-authored and comment-rich. It is the source of truth for:
+In this repository, local skills use a canonical `blueprint.yaml` next to `SKILL.md`. Initialize a new blueprint by copying `references/blueprint/template.yaml` into the skill directory as your base, then customize it in place. The blueprint is hand-authored and comment-rich. It is the source of truth for:
 
 - `category`
 - `interface_version`
@@ -45,12 +45,12 @@ Dependencies authorize skill invocation and, for blueprint-migrated dependencies
 
 **Blueprint authoring — REQUIRED: Initialize by copying the template**
 
-**Always initialize a new blueprint by copying `references/skill-blueprint-template.yaml` to `skills/<skill-name>/blueprint.yaml`.** Do not create a blueprint from scratch; start with the template as your base. The template includes:
+**Always initialize a new blueprint by copying `references/blueprint/template.yaml` to `skills/<skill-name>/blueprint.yaml`.** Do not create a blueprint from scratch; start with the template as your base. The template includes:
 
 - Complete documentation on all blueprint fields and concepts
 - Detailed explanation of the pattern-based invocation system
 - Examples of single-pattern and multi-pattern interfaces
-- Access control patterns (`exported`, `allowed_callers`)
+- Access control patterns (`allow_all_skills`, `allowed_callers`)
 - Constraint validation via regex (`positional_patterns`, `flag_patterns`)
 - Best practices for blueprint design
 - Regex syntax guide with common examples
