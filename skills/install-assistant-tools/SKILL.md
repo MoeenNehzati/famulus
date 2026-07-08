@@ -8,8 +8,7 @@ description: Install or update the assistant, collab, coauthor, and tw/tmux-work
 
 Category: skill-making-development-assistant
 
-Dependencies:
-- g-calendar
+Dependencies: none
 
 Interface Version: 1
 
@@ -97,9 +96,6 @@ Before running anything, summarize:
 - Git hooks will be configured.
 - LLM session hooks will be registered in `~/.claude/settings.local.json` and `~/.codex/config.toml` for dev-mode operation.
 - The live cross-host hook logic lives under `llmhooks/`; plugin installs still use `hooks/` as a compatibility shim.
-- The installer can still optionally walk through Google Calendar (g-calendar)
-  OAuth setup for now — this is mid-migration to g-calendar's own
-  conversational setup flow.
 - Existing symlinks may be replaced if they already point somewhere else.
 - Existing real files or directories are **not** overwritten; they are skipped
   with a warning.

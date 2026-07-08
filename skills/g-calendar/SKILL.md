@@ -25,6 +25,9 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
+- `ensure-oauth` — Check g-calendar OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill g-calendar) as part of connecting remotes.
+  - `dispatcher --caller-skill g-calendar g-calendar ensure-oauth --home <dir> [--dry-run]`
+  - Check OAuth status and guide setup for g-calendar.
 - `scripts-gcal` — Query or modify Google Calendar events via the gcal.sh CLI (agenda, search, create, update, delete, etc.).
   - `dispatcher --caller-skill g-calendar g-calendar scripts-gcal <command> [options]`
 - `setup-oauth` — Run the OAuth setup flow to generate or refresh Google Calendar credentials.

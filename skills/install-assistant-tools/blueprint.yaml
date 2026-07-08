@@ -7,11 +7,7 @@ category: skill-making-development-assistant
 # breaking way for dependent skills.
 interface_version: 1
 
-depends_on:
-  g-calendar:
-    major_version: 1
-    exports:
-      - setup-oauth
+depends_on: {}
 
 suggested_permissions:
   bash:

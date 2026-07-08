@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
 """
-setup_tools.py — Install or update assistant, collab, coauthor, and tw.
+setup_tools.py — LEGACY, superseded by scaffold.py + launchers.py + dev_link.py.
 
-Installs or updates:
+install.py no longer calls this file at all; it remains only as the
+standalone `scripts-setup-tools` interface for targeted repairs during the
+transition, and is slated for deletion once nothing else depends on it.
+
+What it still does:
   - Bin symlinks: assistant, collab, coauthor, _agent_launch, tmux-workspace, tw
   - Worker directories for each agent (assistant, collab, coauthor)
   - Profile symlinks (profiles/*.config.toml -> Codex and Claude homes)
   - Claude settings symlinks (profiles/*_claude_setting.json -> Claude home)
-  - Git hook path for this repository (.githooks)
-  - AI agent environment file (~/.config/environment.d/20-ai-agent.conf)
-  - Managed PATH/env block in the user (and optionally system) shell rc
+  - dispatcher/invoke-skill launchers
+  - Managed PATH/ASSISTANT_DEFAULT block in the user (and optionally system) shell rc
+
+What it used to do but no longer does (moved elsewhere):
+  - git hooks / dev-mode hook registration / $AI export -> dev_link.py
+  - recurring-tasks env.sh / systemd AI_AGENT_COMMAND_TEMPLATE -> recurring-tasks/scripts/ensure_agent_env.py
+  - cloud-files config.json + OAuth guidance -> cloud-files/scripts/ensure_oauth.py
+  - g-calendar OAuth guidance -> g-calendar/scripts/ensure_oauth.py
 
 The managed block written to shell rc files looks like:
 
@@ -19,19 +28,19 @@ The managed block written to shell rc files looks like:
     export AI="/path/to/repo"
     # <<< assistant-tools <<<
 
-Re-running is safe: symlinks are replaced, the rc block is replaced in-place,
-and the git hook path is idempotent.
+(This file's own rc-block writer is untouched legacy code, still writing all
+three vars in one shot — unlike scaffold.py/launchers.py/dev_link.py, which
+each own exactly one via the shared rc_block.py merge writer.)
 
-Shell rc management and the systemd environment file are Linux/macOS features.
-On Windows these steps are skipped with a note.
+Re-running is safe: symlinks are replaced, the rc block is replaced in-place.
+
+Shell rc management is a Linux/macOS feature. On Windows it's skipped with a note.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import shlex
 import shutil
 import stat
 import subprocess
@@ -43,23 +52,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from install_manifest import Manifest, manifest_path
 from link_utils import make_copy, make_link
-
-# Cloud-files path normalization (inlined to avoid cross-skill imports)
-def normalize_llm_root(root: str) -> str:
-    raw = root.strip()
-    if not raw:
-        return ""
-    if raw.startswith("/") or "\\" in raw:
-        raise ValueError(f"invalid remote_llm_root: {root}")
-    parts: list[str] = []
-    for part in raw.split("/"):
-        if part in {"", "."}:
-            continue
-        if part == "..":
-            raise ValueError(f"invalid remote_llm_root: {root}")
-        parts.append(part)
-    return "/".join(parts) if parts else ""
-
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -82,57 +74,10 @@ AGENTS = ["assistant", "collab", "coauthor"]
 # Legacy symlink targets to clean up (filenames only, checked in bin and homes).
 LEGACY_NAMES = ["coder", "coder.config.toml"]
 
-GOOGLE_OAUTH_SERVICE_ORDER = ["cloud-files", "g-calendar"]
-
-GOOGLE_OAUTH_SERVICES: dict[str, dict[str, str]] = {
-    "cloud-files": {
-        "label": "Google Drive (cloud-files)",
-        "status_label": "Cloud-files OAuth",
-        "config_dir": "cloud-files",
-        "skill_dir": "cloud-files",
-    },
-    "g-calendar": {
-        "label": "Google Calendar (g-calendar)",
-        "status_label": "g-calendar OAuth",
-        "config_dir": "g-calendar",
-        "skill_dir": "g-calendar",
-    },
-}
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def log(msg: str = "") -> None:
     print(msg, flush=True)
-
-
-def dispatch_skill_interface(
-    *,
-    target_skill: str,
-    script_interface: str,
-    args: list[str] | None = None,
-    stdin: str | bytes | None = None,
-):
-    try:
-        from script_dispatcher import dispatch
-    except ImportError:
-        # First-party code is never pip-installed; it runs from the repo.
-        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "script_dispatcher" / "src"))
-        try:
-            from script_dispatcher import dispatch
-        except ImportError as exc:
-            raise RuntimeError(
-                "script_dispatcher source not found next to this repo checkout."
-            ) from exc
-    return dispatch(
-        caller_skill="install-assistant-tools",
-        target_skill=target_skill,
-        script_interface=script_interface,
-        args=args or [],
-        stdin=stdin,
-        capture_output=True,
-        check=False,
-    )
 
 
 # ── Argument parsing ───────────────────────────────────────────────────────────
@@ -156,8 +101,6 @@ def parse_args() -> argparse.Namespace:
         help="Claude config dir for profile symlinks (default: $CLAUDE_HOME or ~/.claude)")
     parser.add_argument("--default-llm", choices=["claude", "codex"],
         help="Default backend for assistant (prompted if omitted)")
-    parser.add_argument("--cloud-files-remote-llm-root", metavar="PATH", default="assistant/",
-        help="Path under the Drive root reserved for LLM files (default: assistant/)")
     parser.add_argument("--no-system-shell-rc", action="store_true",
         help="Do not update the system shell rc file")
     parser.add_argument("--dry-run", action="store_true",
@@ -259,263 +202,6 @@ def install_profile_links(
 
     if not linked_any:
         log(f"Warning: no profile files found in {profiles_dir}")
-
-
-def install_cloud_files_config(home: Path, remote_llm_root: str, dry_run: bool, manifest: Manifest | None = None) -> None:
-    """Write the cloud-files config under ~/.config/cloud-files/."""
-    config_dir = home / ".config" / "cloud-files"
-    config_path = config_dir / "config.json"
-
-    existing: dict[str, object] = {}
-    if config_path.exists():
-        try:
-            existing = json.loads(config_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            existing = {}
-
-    try:
-        normalized_llm_root = normalize_llm_root(remote_llm_root)
-    except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
-
-    payload: dict[str, object] = {
-        "remote_llm_root": normalized_llm_root,
-        "timeout_seconds": int(existing.get("timeout_seconds", 45)),
-    }
-    if "credentials_path" in existing:
-        payload["credentials_path"] = existing["credentials_path"]
-
-    if dry_run:
-        log(f"Would write cloud-files config {config_path}")
-        return
-
-    config_dir.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    if manifest is not None:
-        manifest.record("config_dir", path=str(config_dir), purge_only=True)
-
-
-def google_oauth_publish_guidance_lines() -> list[str]:
-    return [
-        '  If the app stays in Google OAuth "Testing", Google may require repeated re-authorization again after about 7 days.',
-        '  If you do not want repeated re-authorization, use Google Cloud OAuth -> Audience and click "Publish app" / move it to "In production".',
-    ]
-
-
-def google_service_client_setup_lines(home: Path, *, service_key: str) -> list[str]:
-    spec = GOOGLE_OAUTH_SERVICES[service_key]
-    client_json = home / ".config" / spec["config_dir"] / "client.json"
-    lines = [
-        f'{spec["label"]} OAuth client setup still needed.',
-        "  In Google Cloud Console, create or download an OAuth client JSON for a Desktop app.",
-        f"  Save that file as: {client_json}",
-    ]
-    lines.extend(google_oauth_publish_guidance_lines())
-    return lines
-
-
-def cloud_files_client_setup_lines(home: Path) -> list[str]:
-    return google_service_client_setup_lines(home, service_key="cloud-files")
-
-
-def g_calendar_client_setup_lines(home: Path) -> list[str]:
-    return google_service_client_setup_lines(home, service_key="g-calendar")
-
-
-def maybe_run_google_oauth_setup(
-    home: Path,
-    repo_root: Path,
-    *,
-    service_key: str,
-    dry_run: bool,
-    stdin_isatty: bool | None = None,
-) -> str:
-    spec = GOOGLE_OAUTH_SERVICES[service_key]
-    credentials_path = home / ".config" / spec["config_dir"] / "credentials.json"
-    if credentials_path.exists():
-        return "already_configured"
-
-    client_json = home / ".config" / spec["config_dir"] / "client.json"
-    setup_script = repo_root / "skills" / spec["skill_dir"] / "scripts" / "setup_oauth.py"
-    setup_lines = google_service_client_setup_lines(home, service_key=service_key)
-
-    if dry_run:
-        if client_json.exists():
-            log(f'Would run {spec["status_label"]}: {sys.executable} {setup_script}')
-            return "would_run"
-        for line in setup_lines:
-            log(line)
-        log("  Then re-run the installer or choose this service in the optional Google setup step to launch browser authorization.")
-        return "needs_client_json"
-
-    if not client_json.exists():
-        for line in setup_lines:
-            log(line)
-        if stdin_isatty is None:
-            stdin_isatty = sys.stdin.isatty()
-        if not stdin_isatty:
-            log(f'  {spec["status_label"]} skipped for now: client.json is still missing.')
-            return "needs_client_json"
-        reply = input(
-            f'Press Enter after saving {client_json.name} to launch browser authorization for {spec["label"]}, '
-            "or type 'skip' to continue without it: "
-        ).strip().lower()
-        if reply == "skip":
-            log(f'  {spec["status_label"]} skipped.')
-            return "skipped"
-        if not client_json.exists():
-            log(f'  {spec["status_label"]} skipped: client.json is still missing.')
-            return "needs_client_json"
-
-    log(f'Launching {spec["label"]} browser authorization...')
-    result = dispatch_skill_interface(
-        target_skill=spec["skill_dir"],
-        script_interface="setup-oauth",
-    )
-    if result.returncode == 0:
-        return "configured"
-
-    log(f'Warning: {spec["status_label"]} exited {result.returncode}.')
-    return "failed"
-
-
-def maybe_run_cloud_files_oauth_setup(
-    home: Path,
-    repo_root: Path,
-    *,
-    dry_run: bool,
-    stdin_isatty: bool | None = None,
-) -> str:
-    return maybe_run_google_oauth_setup(
-        home,
-        repo_root,
-        service_key="cloud-files",
-        dry_run=dry_run,
-        stdin_isatty=stdin_isatty,
-    )
-
-
-def maybe_run_g_calendar_oauth_setup(
-    home: Path,
-    repo_root: Path,
-    *,
-    dry_run: bool,
-    stdin_isatty: bool | None = None,
-) -> str:
-    return maybe_run_google_oauth_setup(
-        home,
-        repo_root,
-        service_key="g-calendar",
-        dry_run=dry_run,
-        stdin_isatty=stdin_isatty,
-    )
-
-
-def choose_optional_google_services(
-    pending_services: list[str],
-    *,
-    stdin_isatty: bool | None = None,
-    input_func=input,
-) -> set[str]:
-    if not pending_services:
-        return set()
-
-    if stdin_isatty is None:
-        stdin_isatty = sys.stdin.isatty()
-    if not stdin_isatty:
-        log("Optional Google service setup skipped in non-interactive mode.")
-        return set()
-
-    log("")
-    log("Optional Google services step:")
-    for service_key in pending_services:
-        log(f'  - {GOOGLE_OAUTH_SERVICES[service_key]["label"]}')
-    log('  Keeping an OAuth app in "Testing" may cause repeated re-authorization; publish it if you want longer-lived access.')
-
-    # EOF while prompting means stdin is not really interactive (e.g. Windows
-    # CI consoles report isatty()=True with no input attached) — treat as skip.
-    try:
-        if pending_services == ["cloud-files"]:
-            reply = input_func("Connect Google Drive for cloud-files now? [y/N]: ").strip().lower()
-            return {"cloud-files"} if reply in {"y", "yes"} else set()
-
-        if pending_services == ["g-calendar"]:
-            reply = input_func("Connect Google Calendar for g-calendar now? [y/N]: ").strip().lower()
-            return {"g-calendar"} if reply in {"y", "yes"} else set()
-
-        while True:
-            reply = input_func(
-                "Connect optional Google services now? [b]oth / [d]rive / [c]alendar / [s]kip [s]: "
-            ).strip().lower()
-            if reply in {"", "s", "skip"}:
-                return set()
-            if reply in {"b", "both"}:
-                return set(pending_services)
-            if reply in {"d", "drive"}:
-                return {"cloud-files"}
-            if reply in {"c", "calendar"}:
-                return {"g-calendar"}
-            log("Please answer with b, d, c, or s.")
-    except EOFError:
-        log("Optional Google service setup skipped (stdin closed).")
-        return set()
-
-
-def maybe_run_optional_google_oauth_setups(
-    home: Path,
-    repo_root: Path,
-    *,
-    dry_run: bool,
-    stdin_isatty: bool | None = None,
-    input_func=input,
-) -> dict[str, str]:
-    statuses: dict[str, str] = {}
-    pending_services: list[str] = []
-
-    for service_key in GOOGLE_OAUTH_SERVICE_ORDER:
-        spec = GOOGLE_OAUTH_SERVICES[service_key]
-        credentials_path = home / ".config" / spec["config_dir"] / "credentials.json"
-        if credentials_path.exists():
-            statuses[service_key] = "already_configured"
-        else:
-            pending_services.append(service_key)
-
-    if not pending_services:
-        return statuses
-
-    if dry_run:
-        log("")
-        log("Optional Google services step:")
-        log("  Would ask whether to connect Google Drive (cloud-files) and Google Calendar (g-calendar).")
-        for service_key in pending_services:
-            spec = GOOGLE_OAUTH_SERVICES[service_key]
-            client_json = home / ".config" / spec["config_dir"] / "client.json"
-            if client_json.exists():
-                log(f'  {spec["label"]}: would launch browser authorization if selected.')
-            else:
-                for line in google_service_client_setup_lines(home, service_key=service_key):
-                    log(line)
-        return statuses
-
-    chosen_services = choose_optional_google_services(
-        pending_services,
-        stdin_isatty=stdin_isatty,
-        input_func=input_func,
-    )
-
-    for service_key in pending_services:
-        if service_key not in chosen_services:
-            statuses[service_key] = "skipped"
-            continue
-        statuses[service_key] = maybe_run_google_oauth_setup(
-            home,
-            repo_root,
-            service_key=service_key,
-            dry_run=dry_run,
-            stdin_isatty=stdin_isatty,
-        )
-
-    return statuses
 
 
 def install_dispatcher_launcher(repo_root: Path, bin_dir: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
@@ -879,11 +565,9 @@ def run(
     codex_home: Path | None = None,
     claude_home: Path | None = None,
     default_llm: str | None = None,
-    cloud_files_remote_llm_root: str = "assistant/",
     update_system_shell_rc: bool = True,
     dry_run: bool = False,
     install_packages: bool = True,
-    run_oauth_setups: bool = True,
     manifest: Manifest | None = None,
     repo_root: Path | None = None,
 ) -> None:
@@ -949,12 +633,6 @@ def run(
     remove_legacy_coder_links(source_bin_dir, profiles_dir, bin_dir, codex_home, claude_home, dry_run)
     install_dispatcher_launcher(repo_root, bin_dir, dry_run, manifest)
     install_invoke_skill_launcher(bin_dir, dry_run, manifest)
-    install_cloud_files_config(
-        home,
-        remote_llm_root=cloud_files_remote_llm_root,
-        dry_run=dry_run,
-        manifest=manifest,
-    )
 
     # Platform-specific PATH and environment variable setup.
     if sys.platform == "win32":
@@ -986,34 +664,8 @@ def run(
         log(f"  User shell rc:  {shell_rc}")
         if update_system_shell_rc:
             log(f"  System rc:      {system_shell_rc}")
-    google_oauth_statuses = {}
-    if run_oauth_setups:
-        google_oauth_statuses = maybe_run_optional_google_oauth_setups(
-            home,
-            repo_root,
-            dry_run=dry_run,
-        )
     if manifest is not None:
-        for service_key in GOOGLE_OAUTH_SERVICE_ORDER:
-            service_dir = home / ".config" / GOOGLE_OAUTH_SERVICES[service_key]["config_dir"]
-            if service_dir.exists():
-                manifest.record("config_dir", path=str(service_dir), purge_only=True)
         manifest.save()
-    for service_key in GOOGLE_OAUTH_SERVICE_ORDER:
-        status = google_oauth_statuses.get(service_key)
-        if status is None:
-            continue
-        label = GOOGLE_OAUTH_SERVICES[service_key]["status_label"]
-        if status == "already_configured":
-            log(f"{label} already configured.")
-        elif status == "configured":
-            log(f"{label} configured.")
-        elif status == "skipped":
-            log(f"{label} skipped.")
-        elif status == "needs_client_json":
-            log(f"{label} still needs client.json.")
-        elif status == "failed":
-            log(f"{label} failed.")
     log("")
     if sys.platform == "win32":
         log("Open a new terminal to use the installed commands.")
@@ -1034,7 +686,6 @@ def main() -> None:
         codex_home=Path(args.codex_home)  if args.codex_home  else None,
         claude_home=Path(args.claude_home) if args.claude_home else None,
         default_llm=args.default_llm,
-        cloud_files_remote_llm_root=args.cloud_files_remote_llm_root,
         update_system_shell_rc=not args.no_system_shell_rc,
         dry_run=args.dry_run,
     )

@@ -21,6 +21,7 @@ from install_test_utils import REPO_ROOT, can_create_symlink, python_test_env, r
 SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+from install_manifest import Manifest, manifest_path  # noqa: E402
 import dev_link  # noqa: E402
 import setup_tools  # noqa: E402
 
@@ -135,7 +136,7 @@ def make_installed_state(root: Path) -> dict[str, Path]:
                 home=home, bin_dir=bin_dir, shell_rc=shell_rc,
                 claude_home=claude_home, codex_home=codex_home,
                 default_llm="claude", update_system_shell_rc=False,
-                dry_run=False, install_packages=False, run_oauth_setups=False,
+                dry_run=False, install_packages=False,
                 repo_root=repo,
             )
     finally:
@@ -251,16 +252,35 @@ def test_removes_managed_claude_hook_preserving_user_hook(installed):
     assert after["permissions"] == {"allow": ["Bash(ls:*)"]}
 
 
+def _seed_legacy_config_dir_entry(installed: dict[str, Path]) -> Path:
+    """Simulate a pre-migration manifest entry: cloud-files config.json used
+    to be written (and manifest-tracked) by install-assistant-tools itself.
+    That responsibility has moved to cloud-files/scripts/ensure_oauth.py, but
+    uninstall.py must still correctly purge/leave entries recorded by an
+    older install for users upgrading across the migration.
+    """
+    config_dir = installed["home"] / ".config" / "cloud-files"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "config.json").write_text('{"remote_llm_root": "assistant"}\n', encoding="utf-8")
+
+    manifest = Manifest(manifest_path(installed["home"]))
+    manifest.record("config_dir", path=str(config_dir), purge_only=True)
+    manifest.save()
+    return config_dir
+
+
 def test_leaves_credentials_by_default(installed):
-    config = installed["home"] / ".config" / "cloud-files" / "config.json"
+    config_dir = _seed_legacy_config_dir_entry(installed)
+    config = config_dir / "config.json"
     assert config.exists()
     run_uninstall(installed)
     assert config.exists()
 
 
 def test_purge_removes_credentials(installed):
+    config_dir = _seed_legacy_config_dir_entry(installed)
     run_uninstall(installed, "--purge")
-    assert not (installed["home"] / ".config" / "cloud-files").exists()
+    assert not config_dir.exists()
 
 
 def test_dry_run_changes_nothing(installed):

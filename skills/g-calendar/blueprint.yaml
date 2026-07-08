@@ -13,6 +13,8 @@ suggested_permissions:
       reason: "Calendar query tool."
     - command: ["python3", "scripts/setup_oauth.py"]
       reason: "OAuth setup tool."
+    - command: ["python3", "scripts/ensure_oauth.py"]
+      reason: "Check OAuth status and guide setup (relocated from install-assistant-tools)."
   network: []
 
 skill_interface:
@@ -52,7 +54,20 @@ script_interfaces:
           max_positionals: 0
           allow_stdin: false
           notes: "OAuth setup for Google Calendar access."
-      # Restricted to install-assistant-tools; not publicly exported.
+      # Not publicly exported; invoked internally by ensure-oauth (as a
+      # subprocess, not a dispatcher call) and directly by the owning skill.
       allow_all_skills: false
-      allowed_callers:
-        - install-assistant-tools
+
+  ensure-oauth:
+    id: ensure-oauth
+    description: "Check g-calendar OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill g-calendar) as part of connecting remotes."
+    usage: "--home <dir> [--dry-run]"
+    cwd: skill_root
+    command: ["python3", "scripts/ensure_oauth.py"]
+    default:
+      patterns:
+        - min_positionals: 0
+          allow_extra_positionals: true
+          allow_stdin: false
+          notes: "Check OAuth status and guide setup for g-calendar."
+      allow_all_skills: false

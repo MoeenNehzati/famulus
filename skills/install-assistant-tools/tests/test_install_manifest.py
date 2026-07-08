@@ -289,7 +289,6 @@ def test_full_install_writes_manifest(tmp_path: Path):
             update_system_shell_rc=False,
             dry_run=False,
             install_packages=False,
-            run_oauth_setups=False,
             repo_root=repo,
         )
     finally:
