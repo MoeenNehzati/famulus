@@ -309,13 +309,13 @@ hook regenerates it when sources change.
 | Skill | What it does |
 |---|---|
 | `git-workflow` | Branch-safety checks and commit hygiene for any repo |
+| `hook-maker` | Design cross-host assistant hooks: one purpose, per-host bindings |
 | `initialize-tdd` | Scaffold a staged, approval-gated TDD project |
 
 ### Skill Framework
 
 | Skill | What it does |
 |---|---|
-| `hook-maker` | Design cross-host assistant hooks: one purpose, per-host bindings |
 | `install-assistant-tools` | Install or update launchers, wiring, hooks, and environment on a machine |
 | `refactor-skills` | Audit and refactor existing skills against local conventions |
 | `skill-maker` | Author new skills that conform to the repo's skill-writing guideline |

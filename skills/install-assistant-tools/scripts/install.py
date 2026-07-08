@@ -1,109 +1,188 @@
 #!/usr/bin/env python3
 """
-install.py — Full installation of assistant tools on a new machine.
+install.py — Phase-1 orchestrator: scaffold, then optionally dev-link, then
+launchers.
 
-Runs both setup steps in order:
-  1. dev_link    — wire Claude and Codex config dirs to the repo
-  2. setup_tools — install bin scripts, rc block, git hooks
+Asks explicitly whether the user wants development mode (never inferred from
+filesystem probes) and, if so, asks for the repo path directly rather than
+deriving it from this script's own location. Plugin-mode installs use the
+repo root implied by wherever this script itself is running from (the
+plugin-cache checkout), which is a reasonable default there because there is
+no separate "live checkout" concept to get wrong in plugin mode.
 
-NOTE: this is a stopgap wiring fix only (repo_root is still auto-derived
-from this script's own location, same as the old behavior) — the full
-Phase-1 orchestrator rewrite (explicit dev-mode question, scaffold/
-dev-link/launchers split) is a separate, later change.
+Does NOT handle connecting remotes (cloud-files/g-calendar/email-client) or
+recurring-tasks automation — see SKILL.md for that conversational Phase 2,
+which happens after this script exits successfully.
 
 Run individual scripts directly for targeted repairs:
+  python3 scripts/scaffold.py --help
   python3 scripts/dev_link.py --help
-  python3 scripts/setup_tools.py --help
+  python3 scripts/launchers.py --help
 """
-
 from __future__ import annotations
 
 import argparse
 import sys
 from pathlib import Path
 
-# Make the scripts directory importable regardless of working directory
 sys.path.insert(0, str(Path(__file__).parent))
 
 import dev_link
-import setup_tools
+import launchers
+import scaffold
+
+ALL_AGENTS = launchers.ALL_AGENTS
+
+
+def log(msg: str = "") -> None:
+    print(msg, flush=True)
+
+
+def _prompt_yes_no(question: str, default: bool = False) -> bool:
+    suffix = "[Y/n]" if default else "[y/N]"
+    try:
+        reply = input(f"{question} {suffix} ").strip().lower()
+    except EOFError:
+        reply = ""
+    if not reply:
+        return default
+    return reply in ("y", "yes")
+
+
+def _prompt_repo_path() -> Path:
+    while True:
+        reply = input("Path to your repo checkout: ").strip()
+        if reply:
+            return Path(reply).expanduser()
+        log("A repo path is required for development mode.")
+
+
+def _prompt_agents() -> list[str]:
+    log(f"Which agent launchers do you want? Available: {', '.join(ALL_AGENTS)}")
+    reply = input("Comma-separated list (blank for none): ").strip()
+    if not reply:
+        return []
+    chosen = [a.strip() for a in reply.split(",") if a.strip()]
+    invalid = set(chosen) - set(ALL_AGENTS)
+    if invalid:
+        log(f"Ignoring unknown agent(s): {', '.join(sorted(invalid))}")
+    return [a for a in chosen if a in ALL_AGENTS]
+
+
+def _prompt_default_llm() -> str:
+    reply = input("Default backend for launchers [claude/codex] (default: claude): ").strip().lower()
+    return reply if reply in ("claude", "codex") else "claude"
+
+
+def run(
+    *,
+    home: Path | None = None,
+    bin_dir: Path | None = None,
+    shell_rc: Path | None = None,
+    codex_home: Path | None = None,
+    claude_home: Path | None = None,
+    dry_run: bool = False,
+    non_interactive: bool = False,
+    dev_mode: bool | None = None,
+    repo_path: Path | None = None,
+    agents: list[str] | None = None,
+    default_llm: str | None = None,
+) -> None:
+    home = home or Path.home()
+
+    if dev_mode is None:
+        if non_interactive:
+            dev_mode = False
+        else:
+            dev_mode = _prompt_yes_no(
+                "Do you want development mode? This wires ~/.claude/~/.codex to a "
+                "live repo checkout so skill/hook edits take effect immediately, "
+                "instead of a static plugin install.",
+                default=False,
+            )
+
+    if dev_mode:
+        if repo_path is None:
+            if non_interactive:
+                raise SystemExit("--repo-path is required with --dev-mode in non-interactive mode")
+            repo_path = _prompt_repo_path()
+        repo_root = Path(repo_path)
+    else:
+        # Plugin mode: derive from this script's own location, same as the
+        # pre-redesign behavior. <repo>/skills/install-assistant-tools/scripts/install.py
+        repo_root = Path(__file__).resolve().parents[3]
+
+    scaffold.run(repo_root=repo_root, home=home, bin_dir=bin_dir, shell_rc=shell_rc, dry_run=dry_run)
+
+    log()
+
+    if dev_mode:
+        dev_link.run(
+            repo_root=repo_root, home=home,
+            claude_home=claude_home, codex_home=codex_home,
+            shell_rc=shell_rc, dry_run=dry_run,
+        )
+        log()
+
+    if agents is None:
+        agents = [] if non_interactive else _prompt_agents()
+
+    if default_llm is None:
+        default_llm = "claude" if non_interactive else _prompt_default_llm()
+
+    launchers.run(
+        repo_root=repo_root, agents=agents, home=home,
+        bin_dir=bin_dir, codex_home=codex_home, claude_home=claude_home,
+        shell_rc=shell_rc, default_llm=default_llm, dry_run=dry_run,
+    )
+
+    log()
+    log("Installation complete.")
+    if not dry_run:
+        log(
+            "Next: connect your remotes (cloud-files, g-calendar, email-client) "
+            "and set up recurring triage/planning — ask your assistant to walk "
+            "you through it."
+        )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-
-    # ── Common ────────────────────────────────────────────────────────────────
-    parser.add_argument("--home",        metavar="DIR",
-        help="Home directory (default: platform home)")
-    parser.add_argument("--claude-home", metavar="DIR",
-        help="Claude config dir (auto-detected from $CLAUDE_HOME or ~/.claude)")
-    parser.add_argument("--codex-home",  metavar="DIR",
-        help="Codex config dir (auto-detected from $CODEX_HOME or ~/.codex)")
-    parser.add_argument("--dry-run",     action="store_true",
-        help="Print planned actions without writing files")
-
-    # ── Symlink step ─────────────────────────────────────────────────────────
-    parser.add_argument("--no-claude", action="store_true",
-        help="Skip Claude symlinks (dev_link step)")
-    parser.add_argument("--no-codex",  action="store_true",
-        help="Skip Codex symlinks (dev_link step)")
-
-    # ── Install step ─────────────────────────────────────────────────────────
-    parser.add_argument("--bin-dir",         metavar="DIR",
-        help="Directory for installed bin symlinks (default: ~/Documents/scripts/bin)")
-    parser.add_argument("--shell-rc",        metavar="FILE",
-        help="Shell rc file to update (auto-detected: ~/.zshrc for zsh, ~/.bashrc otherwise; Windows uses registry)")
-    parser.add_argument("--system-shell-rc", metavar="FILE", default="/etc/bash.bashrc",
-        help="System shell rc file (default: /etc/bash.bashrc)")
-    parser.add_argument("--no-system-shell-rc", action="store_true",
-        help="Skip updating the system shell rc")
-    parser.add_argument("--default-llm",    choices=["claude", "codex"],
-        help="Default assistant backend (prompted if omitted)")
-    parser.add_argument("--cloud-files-remote-llm-root", metavar="PATH", default="assistant/",
-        help="Path under the Drive root reserved for LLM files (default: assistant/)")
-
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--home", metavar="DIR")
+    parser.add_argument("--bin-dir", metavar="DIR")
+    parser.add_argument("--shell-rc", metavar="FILE")
+    parser.add_argument("--codex-home", metavar="DIR")
+    parser.add_argument("--claude-home", metavar="DIR")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--non-interactive", action="store_true",
+        help="Never prompt; requires --dev-mode/--no-dev-mode and, if dev mode, --repo-path")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dev-mode", dest="dev_mode", action="store_true", default=None)
+    mode.add_argument("--no-dev-mode", dest="dev_mode", action="store_false")
+    parser.add_argument("--repo-path", metavar="DIR")
+    parser.add_argument("--agents", metavar="LIST",
+        help="Comma-separated subset of: " + ",".join(ALL_AGENTS))
+    parser.add_argument("--default-llm", choices=["claude", "codex"])
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-
-    home        = Path(args.home)        if args.home        else None
-    claude_home = Path(args.claude_home) if args.claude_home else None
-    codex_home  = Path(args.codex_home)  if args.codex_home  else None
-
-    # Repo root is three levels above this script:
-    #   <repo>/skills/install-assistant-tools/scripts/install.py
-    repo_root = Path(__file__).resolve().parents[3]
-
-    # Step 1: wire config dirs to the repo
-    dev_link.run(
-        repo_root=repo_root,
-        home=home,
-        claude_home=claude_home,
-        codex_home=codex_home,
-        do_claude=not args.no_claude,
-        do_codex=not args.no_codex,
+    agents = None
+    if args.agents is not None:
+        agents = [a.strip() for a in args.agents.split(",") if a.strip()]
+    run(
+        home=Path(args.home) if args.home else None,
+        bin_dir=Path(args.bin_dir) if args.bin_dir else None,
+        shell_rc=Path(args.shell_rc) if args.shell_rc else None,
+        codex_home=Path(args.codex_home) if args.codex_home else None,
+        claude_home=Path(args.claude_home) if args.claude_home else None,
         dry_run=args.dry_run,
-    )
-
-    print()  # visual separator between the two steps
-
-    # Step 2: install bin scripts, profiles, rc block, git hooks
-    setup_tools.run(
-        home=home,
-        bin_dir=Path(args.bin_dir)   if args.bin_dir   else None,
-        shell_rc=Path(args.shell_rc) if args.shell_rc  else None,
-        system_shell_rc=Path(args.system_shell_rc),
-        claude_home=claude_home,
-        codex_home=codex_home,
+        non_interactive=args.non_interactive,
+        dev_mode=args.dev_mode,
+        repo_path=Path(args.repo_path) if args.repo_path else None,
+        agents=agents,
         default_llm=args.default_llm,
-        cloud_files_remote_llm_root=args.cloud_files_remote_llm_root,
-        update_system_shell_rc=not args.no_system_shell_rc,
-        dry_run=args.dry_run,
     )
 
 

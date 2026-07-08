@@ -8,20 +8,31 @@ creates its worker directory, and links its Claude settings file. Also sets
 ASSISTANT_DEFAULT (this subcommand's one rc-block var — PATH belongs to
 scaffold.py, AI belongs to dev_link.py).
 
+The copied .config.toml's `model_instructions_file` is rewritten to an
+absolute path pointing at the repo's own agents/<agent>.md, instead of the
+relative "agents/<agent>.md" Codex would otherwise resolve against
+$CODEX_HOME. This means Codex agent launches work in plugin mode without
+needing $CODEX_HOME/agents wired at all (that wiring is dev_link.py's
+concern, not a launcher requirement) — confirmed by testing that
+model_instructions_file accepts an absolute path.
+
 No agents are preselected: pass --agents explicitly.
 """
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from install_manifest import Manifest, manifest_path
-from link_utils import log, make_copy, make_link
+from link_utils import log, make_link
 from rc_block import ensure_rc_vars
+
+_MODEL_INSTRUCTIONS_RE = re.compile(r'^model_instructions_file\s*=\s*".*"$', re.MULTILINE)
 
 ALL_AGENTS = ["assistant", "collab", "coauthor", "tw"]
 
@@ -34,6 +45,8 @@ def install_bin_for_agent(source_bin_dir: Path, bin_dir: Path, agent: str, dry_r
     if not dry_run:
         bin_dir.mkdir(parents=True, exist_ok=True)
     if agent == "tw":
+        # tw is a convenience alias for tmux-workspace; link both names.
+        make_link(source_bin_dir / "tmux-workspace", bin_dir / "tmux-workspace", dry_run, manifest)
         make_link(source_bin_dir / "tmux-workspace", bin_dir / "tw", dry_run, manifest)
         return
     make_link(source_bin_dir / agent, bin_dir / agent, dry_run, manifest)
@@ -53,7 +66,44 @@ def install_worker_dir(repo_root: Path, agent: str, dry_run: bool) -> None:
         wdir.mkdir(parents=True, exist_ok=True)
 
 
-def install_profile_for_agent(profiles_dir: Path, codex_home: Path, claude_home: Path, agent: str, dry_run: bool, manifest: Manifest | None) -> None:
+def write_config_toml_with_absolute_agent_path(
+    src: Path, dst: Path, agent_md_path: Path, dry_run: bool, manifest: Manifest | None = None
+) -> None:
+    """Copy src (a profile .config.toml) to dst, rewriting model_instructions_file
+    to an absolute path pointing at agent_md_path.
+
+    Same skip semantics as make_copy: leaves an existing regular file alone
+    (machine-local state), replaces a legacy symlink with a real file.
+    """
+    if not src.exists():
+        log(f"  SKIP (missing source): {src}")
+        return
+
+    if dst.is_symlink():
+        if dry_run:
+            log(f"  Would replace legacy symlink with file: {dst}")
+        else:
+            dst.unlink()
+    elif dst.exists():
+        log(f"  SKIP (exists, keeping machine-local state): {dst}")
+        return
+
+    if dry_run:
+        log(f"  Would write (absolute agent path): {dst}")
+        return
+
+    content = src.read_text(encoding="utf-8")
+    content = _MODEL_INSTRUCTIONS_RE.sub(
+        f'model_instructions_file = "{agent_md_path}"', content
+    )
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text(content, encoding="utf-8")
+    log(f"  Wrote (absolute agent path): {dst}")
+    if manifest is not None:
+        manifest.record("file", path=str(dst))
+
+
+def install_profile_for_agent(repo_root: Path, profiles_dir: Path, codex_home: Path, claude_home: Path, agent: str, dry_run: bool, manifest: Manifest | None) -> None:
     if agent not in WORKER_AGENTS:
         return
     if not profiles_dir.is_dir():
@@ -64,9 +114,10 @@ def install_profile_for_agent(profiles_dir: Path, codex_home: Path, claude_home:
         claude_home.mkdir(parents=True, exist_ok=True)
 
     config = profiles_dir / f"{agent}.config.toml"
+    agent_md = repo_root / "agents" / f"{agent}.md"
     if config.exists():
-        make_copy(config, codex_home / config.name, dry_run, manifest)
-        make_copy(config, claude_home / config.name, dry_run, manifest)
+        write_config_toml_with_absolute_agent_path(config, codex_home / config.name, agent_md, dry_run, manifest)
+        write_config_toml_with_absolute_agent_path(config, claude_home / config.name, agent_md, dry_run, manifest)
 
     settings = profiles_dir / f"{agent}_claude_setting.json"
     if settings.exists():
@@ -133,7 +184,7 @@ def run(
     for agent in agents:
         install_bin_for_agent(source_bin_dir, bin_dir, agent, dry_run, manifest)
         install_worker_dir(repo_root, agent, dry_run)
-        install_profile_for_agent(profiles_dir, codex_home, claude_home, agent, dry_run, manifest)
+        install_profile_for_agent(repo_root, profiles_dir, codex_home, claude_home, agent, dry_run, manifest)
 
     remove_legacy_coder_links(source_bin_dir, profiles_dir, bin_dir, codex_home, claude_home, dry_run)
 

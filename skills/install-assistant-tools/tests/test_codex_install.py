@@ -196,9 +196,16 @@ class CodexInstallTests(unittest.TestCase):
                 str(install_bin),
                 "--default-llm",
                 "codex",
+                # This exercises plugin-mode install.py (no --dev-mode): only
+                # scaffold + launchers run, not dev_link. --non-interactive is
+                # required since this subprocess has no attached stdin.
+                "--non-interactive",
+                "--no-dev-mode",
+                "--agents",
+                "assistant,collab,coauthor,tw",
             ]
             if sys.platform != "win32":
-                install_cmd.extend(["--shell-rc", str(install_shell_rc), "--no-system-shell-rc"])
+                install_cmd.extend(["--shell-rc", str(install_shell_rc)])
 
             install_env = python_test_env(
                 tmp_root,
@@ -222,39 +229,45 @@ class CodexInstallTests(unittest.TestCase):
                 self.assertTrue(path.is_symlink(), f"Expected symlink: {path}")
                 self.assertEqual(path.resolve(), target.resolve(), f"Wrong target for {path}")
 
-            def expect_copy(path: Path, source: Path) -> None:
-                # Profiles are copied, not symlinked: the tool writes
-                # machine-local state back into its config file.
+            def expect_copy(path: Path, source: Path, agent: str) -> None:
+                # Profiles are copied (not symlinked: the tool writes
+                # machine-local state back into its config file), but
+                # model_instructions_file is rewritten to an absolute path
+                # pointing at the plugin's own bundled agents/<agent>.md —
+                # so the copy is not byte-identical to the source on that
+                # one line. This means Codex agent launches work in plugin
+                # mode without needing $CODEX_HOME/agents wired at all.
                 self.assertTrue(path.is_file(), f"Expected file: {path}")
                 self.assertFalse(path.is_symlink(), f"Expected copy, got symlink: {path}")
+                expected_agent_md = installed_path / "agents" / f"{agent}.md"
+                expected = source.read_text(encoding="utf-8").replace(
+                    f'model_instructions_file = "agents/{agent}.md"',
+                    f'model_instructions_file = "{expected_agent_md}"',
+                )
                 self.assertEqual(
                     path.read_text(encoding="utf-8"),
-                    source.read_text(encoding="utf-8"),
+                    expected,
                     f"Copy content mismatch for {path}",
                 )
 
             codex_copies = {
-                install_codex_home / "assistant.config.toml": installed_path / "profiles" / "assistant.config.toml",
-                install_codex_home / "collab.config.toml": installed_path / "profiles" / "collab.config.toml",
-                install_codex_home / "coauthor.config.toml": installed_path / "profiles" / "coauthor.config.toml",
+                install_codex_home / "assistant.config.toml": (installed_path / "profiles" / "assistant.config.toml", "assistant"),
+                install_codex_home / "collab.config.toml": (installed_path / "profiles" / "collab.config.toml", "collab"),
+                install_codex_home / "coauthor.config.toml": (installed_path / "profiles" / "coauthor.config.toml", "coauthor"),
             }
             claude_copies = {
-                install_claude_home / "assistant.config.toml": installed_path / "profiles" / "assistant.config.toml",
-                install_claude_home / "collab.config.toml": installed_path / "profiles" / "collab.config.toml",
-                install_claude_home / "coauthor.config.toml": installed_path / "profiles" / "coauthor.config.toml",
+                install_claude_home / "assistant.config.toml": (installed_path / "profiles" / "assistant.config.toml", "assistant"),
+                install_claude_home / "collab.config.toml": (installed_path / "profiles" / "collab.config.toml", "collab"),
+                install_claude_home / "coauthor.config.toml": (installed_path / "profiles" / "coauthor.config.toml", "coauthor"),
             }
 
-            codex_links = {
-                install_codex_home / "skills": installed_path / "skills",
-                install_codex_home / "references": installed_path / "references",
-                install_codex_home / "agents": installed_path / "agents",
-                install_codex_home / "AGENTS.md": (installed_path / "AGENTS.md") if (installed_path / "AGENTS.md").exists() else (installed_path / "CLAUDE.md"),
-            }
+            # NOTE: skills/references/agents/CLAUDE.md/AGENTS.md symlinks are
+            # dev_link.py's job, not run here — this install_cmd uses
+            # --no-dev-mode (plugin mode), and plugin-mode skill/reference
+            # visibility already comes from the plugin loader itself (already
+            # confirmed above via `codex debug prompt-input`, before install.py
+            # ever ran). Only scaffold + launchers run in this test.
             claude_links = {
-                install_claude_home / "skills": installed_path / "skills",
-                install_claude_home / "references": installed_path / "references",
-                install_claude_home / "agents": installed_path / "agents",
-                install_claude_home / "CLAUDE.md": installed_path / "CLAUDE.md",
                 install_claude_home / "assistant_claude_setting.json": installed_path / "profiles" / "assistant_claude_setting.json",
                 install_claude_home / "collab_claude_setting.json": installed_path / "profiles" / "collab_claude_setting.json",
                 install_claude_home / "coauthor_claude_setting.json": installed_path / "profiles" / "coauthor_claude_setting.json",
@@ -271,13 +284,13 @@ class CodexInstallTests(unittest.TestCase):
                 install_bin / "coauthor.bat": installed_path / "skills" / "install-assistant-tools" / "bin" / "coauthor.bat",
             }
 
-            for mapping in (codex_links, claude_links, bin_links):
+            for mapping in (claude_links, bin_links):
                 for path, target in mapping.items():
                     expect_symlink(path, target)
 
             for mapping in (codex_copies, claude_copies):
-                for path, source in mapping.items():
-                    expect_copy(path, source)
+                for path, (source, agent) in mapping.items():
+                    expect_copy(path, source, agent)
 
             # dispatcher launcher: generated file (not symlink), runs
             # script_dispatcher from the repo with an install-time fallback
@@ -297,7 +310,10 @@ class CodexInstallTests(unittest.TestCase):
                 shell_text = install_shell_rc.read_text(encoding="utf-8")
                 self.assertIn(f'export PATH="{install_bin}:$PATH"', shell_text)
                 self.assertIn("export ASSISTANT_DEFAULT=codex", shell_text)
-                self.assertIn(f'export AI="{installed_path}"', shell_text)
+                # $AI is dev_link.py's export, not run here (--no-dev-mode) —
+                # plugin-mode dispatcher already has its own baked-in
+                # repo_root fallback (asserted above), so it doesn't need it.
+                self.assertNotIn("export AI=", shell_text)
 
             launcher_env = python_test_env(
                 tmp_root,

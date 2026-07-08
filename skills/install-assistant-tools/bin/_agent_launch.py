@@ -3,15 +3,49 @@
 
 On Unix, replaces the current process with exec so signal handling is clean.
 On Windows, runs the command as a subprocess and forwards the exit code.
+
+Resolves its own repo root via Path(__file__).resolve() rather than relying
+on $AI: this script is only ever reached through a symlink at
+<repo>/skills/install-assistant-tools/bin/_agent_launch.py, so resolving the
+symlink always finds the real repo root regardless of plugin vs dev mode.
+$AI (when set — a dev-mode convenience, see dev_link.py) overrides this.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
 import subprocess
 from pathlib import Path
+
+
+def _repo_root() -> Path:
+    # This file lives at <repo>/skills/install-assistant-tools/bin/_agent_launch.py
+    return Path(__file__).resolve().parents[3]
+
+
+def _parse_agent_md(repo_root: Path, agent: str) -> tuple[str, str]:
+    """Return (description, prompt) parsed from agents/<agent>.md.
+
+    Frontmatter is a small fixed set of `key: value` lines between `---`
+    markers (see agents/*.md) — a full YAML parser isn't needed for this.
+    """
+    agent_md = repo_root / "agents" / f"{agent}.md"
+    text = agent_md.read_text(encoding="utf-8")
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        # No frontmatter: treat the whole file as the prompt body.
+        return "", text.strip()
+    frontmatter, body = parts[1], parts[2]
+    description = ""
+    for line in frontmatter.splitlines():
+        line = line.strip()
+        if line.startswith("description:"):
+            description = line.split(":", 1)[1].strip()
+            break
+    return description, body.strip()
 
 
 def launch(agent: str, default_backend: str, args: list[str]) -> None:
@@ -55,18 +89,21 @@ Claude settings: $CLAUDE_HOME/{agent}_claude_setting.json""")
         else:
             break   # first non-flag arg: stop consuming
 
+    # $AI (set by dev_link.py) overrides; otherwise resolve from this
+    # script's own symlinked location, which works regardless of mode.
+    ai_root = os.environ.get("AI") or str(_repo_root())
+
     if not use_local:
-        ai_root = os.environ.get("AI")
-        if not ai_root:
-            print(f"{agent}: AI is not set — re-run the installer", file=sys.stderr)
-            sys.exit(1)
         os.chdir(Path(ai_root) / "workers" / agent)
 
     claude_home = os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude"))
 
     if backend == "claude":
+        description, prompt = _parse_agent_md(Path(ai_root), agent)
+        agents_json = json.dumps({agent: {"description": description, "prompt": prompt}})
         cmd = [
             "claude", "--agent", agent,
+            "--agents", agents_json,
             "--settings", str(Path(claude_home) / f"{agent}_claude_setting.json"),
             *args,
         ]
