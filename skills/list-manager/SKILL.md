@@ -27,9 +27,9 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `beautify-list` — Render YAML list entries from stdin (diff-fenced). Pass YAML via stdin using `dispatcher --stdin`.
-  - `dispatcher --caller-skill list-manager list-manager beautify-list`
-  - Reads YAML from stdin and renders user-facing list output.
+- `beautify-list` — Render YAML list entries from stdin (nested bullet-list markdown by default for todo/triage; --table for a flat GFM table, --diff for the legacy diff-fenced view). Pass YAML via stdin using `dispatcher --stdin`.
+  - `dispatcher --caller-skill list-manager list-manager beautify-list [-D|--no-descriptions] [--markdown|--table|--diff] [--relative-deadlines] [--ids]`
+  - Reads YAML from stdin and renders user-facing list output. No allowed_flags restriction: -D/--markdown/--table/--diff/--relative-deadlines/--ids all pass through.
 - `cloud-create-entry` — Add entries to a cloud list under a category path.
   - `dispatcher --caller-skill list-manager list-manager cloud-create-entry <name> <category/path> --cloud --entries /tmp/entry.yaml`
 - `cloud-delete` — Delete one or more entries by id from a cloud list. Ids come after --cloud.
@@ -38,12 +38,12 @@ Use the installed `dispatcher` command for this skill's script interfaces:
 - `cloud-init` — Create a new list in cloud storage.
   - `dispatcher --caller-skill list-manager list-manager cloud-init <name> --cloud --schema <schema>`
   - Create a new list in cloud storage.
-- `cloud-read` — Read a cloud list by name (raw YAML), optionally filtered.
+- `cloud-read` — Read a cloud list by name (raw YAML), optionally filtered. A filtered read preserves structure: same shape as the full doc, pruned to only branches containing a match -- ancestor categories/parent entries are kept, and a match is never duplicated as both a nested child and a top-level result.
   - `dispatcher --caller-skill list-manager list-manager cloud-read <name> [filters] --cloud`
-  - Read cloud list by name (raw YAML), optionally filtered.
-- `cloud-read-beautify` — Read a cloud list by name and render it (diff-fenced, id-annotated). Relay stdout verbatim.
+  - Read cloud list by name (raw YAML), optionally filtered. Filtered output is a pruned tree, not a flat list of matches -- do not assume flat-list shape.
+- `cloud-read-beautify` — Read a cloud list by name and render it (nested bullet-list markdown by default, id-annotated; --table for a flat GFM table, --diff for the legacy diff-fenced view). Relay stdout verbatim.
   - `dispatcher --caller-skill list-manager list-manager cloud-read-beautify <name> [filters] --cloud`
-  - Read a cloud list by name and render it (diff-fenced), optionally filtered.
+  - Read a cloud list by name and render it as nested bullet-list markdown by default, optionally filtered.
 - `cloud-update` — Update entries in a cloud list from a patch file (keyed by id).
   - `dispatcher --caller-skill list-manager list-manager cloud-update <name> --cloud --file /tmp/patch.yaml`
   - file-mode: Update cloud list entries from a patch file.
@@ -59,12 +59,12 @@ Use the installed `dispatcher` command for this skill's script interfaces:
   - `dispatcher --caller-skill list-manager list-manager init-list <file> [--schema <name>]`
 - `migrate-markdown` — Migrate a legacy Markdown list to YAML format.
   - `dispatcher --caller-skill list-manager list-manager migrate-markdown <source.md> <dest.yaml> --schema <schema>`
-- `read-beautify` — Read a local YAML list file and render it for display (diff-fenced).
-  - `dispatcher --caller-skill list-manager list-manager read-beautify <file> [filters]`
-  - Read a local YAML list file and immediately return pretty output.
-- `read-list` — Read a local YAML list file, optionally filtered (raw YAML output).
+- `read-beautify` — Read a local YAML list file and render it for display (nested bullet-list markdown by default; --table for a flat GFM table, --diff for the legacy diff-fenced view).
+  - `dispatcher --caller-skill list-manager list-manager read-beautify <file> [filters] [--sort FIELD] [-D|--no-descriptions] [--markdown|--table|--diff] [--no-ids] [-o FILE]`
+  - Read a local YAML list file and immediately return pretty output. No allowed_flags restriction: --sort/-D/--markdown/--table/--diff/--no-ids/-o all pass through.
+- `read-list` — Read a local YAML list file, optionally filtered (raw YAML output). A filtered read preserves structure: it returns the same shape as the input (full doc with categories, or a bare list) pruned to only branches containing a match -- every ancestor category and parent entry of a match is kept for context, and a match is never duplicated as both a nested child and an independent top-level result.
   - `dispatcher --caller-skill list-manager list-manager read-list <file> [filters]`
-  - First positional is the local YAML file; remaining positionals are filters.
+  - First positional is the local YAML file; remaining positionals are filters. Filtered output is a pruned tree (or pruned list, if the input itself was a bare list), not a flat list of matches -- do not assume flat-list shape.
 - `update-list` — Update entries in a local YAML list file from a patch file (keyed by id) or stdin.
   - `dispatcher --caller-skill list-manager list-manager update-list <file> --file /tmp/patch.yaml`
   - file-mode: Externally supported update mode; caller prepares the patch file.
@@ -76,7 +76,7 @@ Skill: list-manager
 
 ## Rules
 
-- **Show to user:** use `cloud-read-beautify`; relay stdout **verbatim** — it is pre-fenced and id-annotated. Do not reformat.
+- **Show to user:** use `cloud-read-beautify`; relay stdout **verbatim** — it is pre-formatted nested bullet-list markdown, id-annotated. Do not reformat.
 - **Ids:** every rendered row ends with `#id`. Use ids for all mutations — never row numbers. If ids aren't in context, run `cloud-read-beautify` first.
 - **Required fields:** if the schema requires a field the user didn't provide, ask — do not invent it. For example, `todo` entries require `deadline`. The script validates this on create-entry and rejects entries with missing required fields; this prevents silently inventing values.
 - **Creating entries:** if the target category path is not already in context, run `cloud-read-beautify` first to see the list structure. Do not guess category paths.
@@ -86,3 +86,5 @@ Skill: list-manager
 - **`triage`:** accepting an item also creates a matching `todo` (state `incomplete`, today's date); rejecting only changes state in `triage`.
 - **Economy:** prefer filtered reads; after a write re-read only the affected portion.
 - **Unsure what a field allows?** Use `describe-schema` instead of guessing — e.g. `describe-schema todo state` for just that field's spec, or `describe-schema todo` (or `describe-schema todo '*'`) for every field's type/required/enum. A filter or entry value outside a schema's enum is rejected with the valid values listed, but don't wait to be told — check first when unsure.
+- **Ambiguous values:** when a field value is genuinely ambiguous, offer a few short, concrete options to pick from rather than guessing or asking an open-ended question. Keep options terse so the choice is quick to read and answer. E.g. a relative deadline ("end of the week"), or a task that implies a physical place (pick up/drop off/visit) with no `location` given.
+- **`completed` / `modified`:** both are auto-stamped by `update-list`/`cloud-update` — never set them yourself or invent a value. `completed` is set once, the first time a patch itself transitions `state` into a finished value (`complete`/`accepted`/`rejected`); later unrelated edits never overwrite it. `modified` is a debugging aid only, stamped on every touch, and is never shown by any renderer. Pre-existing entries finished before these fields existed have no `completed` recorded and nothing backfills it — they render with no date badge until next explicitly touched.

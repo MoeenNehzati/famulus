@@ -287,22 +287,91 @@ def entry_matches(entry: dict, filters: list[tuple[str, str, str]]) -> bool:
     return True
 
 
-def collect_matching_entries(node, filters: list[tuple[str, str, str]]) -> list[dict]:
-    """Walk the document tree; return flat list of entries matching all filters."""
-    results: list[dict] = []
+def _prune_entry(entry: dict, filters: list[tuple[str, str, str]]) -> dict | None:
+    """Prune one entry (and its children) to only what matches or has a matching
+    descendant. Returns None if neither the entry nor any descendant matches.
+
+    A matching entry is never duplicated: it appears exactly once, in place,
+    with its children pruned to just the matching branches -- an ancestor of a
+    match is always included (so context is never lost), but a match is not
+    also promoted to a separate top-level result.
+    """
+    children = entry.get("children", [])
+    pruned_children = [c for c in (_prune_entry(ch, filters) for ch in children) if c is not None]
+    self_matches = entry_matches(entry, filters)
+    if not self_matches and not pruned_children:
+        return None
+    new_entry = dict(entry)
+    if "children" in entry:
+        new_entry["children"] = pruned_children
+    return new_entry
+
+
+def _prune_category(cat: dict, filters: list[tuple[str, str, str]]) -> dict | None:
+    """Prune one category (and its subcategories) to only branches containing a
+    match. Returns None if the category has no matching entry anywhere beneath it.
+    """
+    pruned_entries = [e for e in (_prune_entry(en, filters) for en in cat.get("entries", [])) if e is not None]
+    pruned_subs = [s for s in (_prune_category(sc, filters) for sc in cat.get("categories", [])) if s is not None]
+    if not pruned_entries and not pruned_subs:
+        return None
+    new_cat = dict(cat)
+    if "entries" in cat:
+        new_cat["entries"] = pruned_entries
+    if "categories" in cat:
+        new_cat["categories"] = pruned_subs
+    return new_cat
+
+
+def _entry_sort_key(entry: dict, sort_field: str):
+    if sort_field not in entry:
+        return float('inf')  # missing values sort last
+    v = entry[sort_field]
+    if isinstance(v, str) and len(v) >= 10:
+        return (v, 0)  # YYYY-MM-DD sorts lexicographically (earlier dates first)
+    return v
+
+
+def _sort_tree(node, sort_field: str) -> None:
+    """Sort every entries/children list found anywhere in a (possibly nested)
+    filtered-read result, in place, so sorting still works now that matches
+    can be nested rather than a single flat list."""
     if isinstance(node, dict):
-        if "id" in node and "title" in node:
-            if entry_matches(node, filters):
-                results.append(node)
-            for child in node.get("children", []):
-                results.extend(collect_matching_entries(child, filters))
-        else:
-            for v in node.values():
-                results.extend(collect_matching_entries(v, filters))
+        if "entries" in node:
+            node["entries"].sort(key=lambda e: _entry_sort_key(e, sort_field))
+            for e in node["entries"]:
+                _sort_tree(e, sort_field)
+        if "categories" in node:
+            for c in node["categories"]:
+                _sort_tree(c, sort_field)
+        if "children" in node:
+            node["children"].sort(key=lambda e: _entry_sort_key(e, sort_field))
+            for c in node["children"]:
+                _sort_tree(c, sort_field)
     elif isinstance(node, list):
+        node.sort(key=lambda e: _entry_sort_key(e, sort_field))
         for item in node:
-            results.extend(collect_matching_entries(item, filters))
-    return results
+            _sort_tree(item, sort_field)
+
+
+def collect_matching_entries(data, filters: list[tuple[str, str, str]]):
+    """Filter a list document down to only what matches, preserving structure:
+    every ancestor (category and/or parent entry) of a match is kept so a
+    match is never returned without its context, and a match is never
+    duplicated as both a nested child and an independent top-level result.
+
+    - Full document (dict with 'categories'): returns the same dict shape,
+      pruned to only categories/subcategories/entries containing a match.
+    - Bare entry list (e.g. already-filtered input): returns a pruned list.
+    """
+    if isinstance(data, dict) and "categories" in data:
+        pruned_cats = [c for c in (_prune_category(cat, filters) for cat in data.get("categories", [])) if c is not None]
+        result = dict(data)
+        result["categories"] = pruned_cats
+        return result
+    elif isinstance(data, list):
+        return [e for e in (_prune_entry(en, filters) for en in data) if e is not None]
+    return data
 
 
 # ── Category / entry lookup helpers ──────────────────────────────────────────
@@ -421,19 +490,13 @@ def cmd_read(args: argparse.Namespace) -> None:
     validate_filter_values(filters, data.get("schema", ""))
     matches = collect_matching_entries(data, filters)
 
-    # Sort if requested
+    # Sort if requested. Sorting recurses into every entries/children list in
+    # the (possibly nested, ancestor-preserving) result, since a match may now
+    # live several levels deep rather than in one flat list.
     if hasattr(args, 'sort') and args.sort:
         sort_field = args.sort
-        # Try to sort by the field, treating dates as dates
         try:
-            matches.sort(key=lambda e: (
-                # Missing values sort last
-                float('inf') if sort_field not in e else (
-                    # Treat YYYY-MM-DD as dates (earlier dates first)
-                    e[sort_field] if not isinstance(e[sort_field], str) or len(e[sort_field]) < 10
-                    else (e[sort_field], 0)  # Sort dates lexicographically (safe for YYYY-MM-DD)
-                )
-            ))
+            _sort_tree(matches, sort_field)
         except (TypeError, ValueError) as ex:
             die(f"sort by '{sort_field}' failed: {ex}")
 
@@ -497,6 +560,10 @@ def cmd_create_entry(args: argparse.Namespace) -> None:
     save_yaml(file, data)
 
 
+# States that mean "this entry is finished" across both todo and triage schemas.
+FINISHED_STATES = frozenset({"complete", "accepted", "rejected"})
+
+
 def cmd_update(args: argparse.Namespace) -> None:
     file = Path(args.file)
     data = load_yaml(file)
@@ -509,6 +576,8 @@ def cmd_update(args: argparse.Namespace) -> None:
 
     if not isinstance(updates, list):
         die("update input must be a YAML list")
+
+    today = datetime.date.today().isoformat()
 
     for patch in updates:
         if "id" not in patch:
@@ -527,6 +596,22 @@ def cmd_update(args: argparse.Namespace) -> None:
             if k == "id":
                 continue
             entry[k] = v
+
+        # `modified`: auto-stamped on every touch (debugging aid; not shown to
+        # the user). `completed`: auto-stamped only the first time a patch
+        # itself transitions state into a finished value, so later unrelated
+        # edits (e.g. a deadline correction) never overwrite the real
+        # completion date. Both are skipped if the patch already set them
+        # explicitly.
+        if "modified" not in patch:
+            entry["modified"] = today
+        if (
+            "completed" not in patch
+            and "state" in patch
+            and patch["state"] in FINISHED_STATES
+            and not entry.get("completed")
+        ):
+            entry["completed"] = today
 
     validate_list(data)
     save_yaml(file, data)

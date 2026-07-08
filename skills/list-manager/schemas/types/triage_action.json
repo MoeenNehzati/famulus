@@ -48,6 +48,16 @@
     },
     "location": {
       "type": "string"
+    },
+    "modified": {
+      "type": "string",
+      "format": "date",
+      "description": "Auto-stamped to today by `lists.py update` whenever any field on this entry changes -- not user-set."
+    },
+    "completed": {
+      "type": "string",
+      "format": "date",
+      "description": "Auto-stamped to today the first time a patch sets state to accepted/rejected -- not user-set (unless the patch explicitly provides it). Never overwritten by later, unrelated edits."
     }
   },
   "additionalProperties": false

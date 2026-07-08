@@ -45,7 +45,7 @@ script_interfaces:
   # The primary local CLI for structured list operations.
   read-list:
     id: read-list
-    description: "Read a local YAML list file, optionally filtered (raw YAML output)."
+    description: "Read a local YAML list file, optionally filtered (raw YAML output). A filtered read preserves structure: it returns the same shape as the input (full doc with categories, or a bare list) pruned to only branches containing a match -- every ancestor category and parent entry of a match is kept for context, and a match is never duplicated as both a nested child and an independent top-level result."
     usage: "<file> [filters]"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "read"]
@@ -54,7 +54,7 @@ script_interfaces:
         - min_positionals: 1
           allow_extra_positionals: true
           allow_stdin: false
-          notes: "First positional is the local YAML file; remaining positionals are filters."
+          notes: "First positional is the local YAML file; remaining positionals are filters. Filtered output is a pruned tree (or pruned list, if the input itself was a bare list), not a flat list of matches -- do not assume flat-list shape."
       allow_all_skills: false
       allowed_callers:
         - daily-plan
@@ -101,8 +101,8 @@ script_interfaces:
 
   read-beautify:
     id: read-beautify
-    description: "Read a local YAML list file and render it for display (diff-fenced)."
-    usage: "<file> [filters]"
+    description: "Read a local YAML list file and render it for display (nested bullet-list markdown by default; --table for a flat GFM table, --diff for the legacy diff-fenced view)."
+    usage: "<file> [filters] [--sort FIELD] [-D|--no-descriptions] [--markdown|--table|--diff] [--no-ids] [-o FILE]"
     cwd: skill_root
     command: ["python3", "scripts/read_beautify.py"]
     default:
@@ -110,15 +110,15 @@ script_interfaces:
         - min_positionals: 1
           allow_extra_positionals: true
           allow_stdin: false
-          notes: "Read a local YAML list file and immediately return pretty output."
+          notes: "Read a local YAML list file and immediately return pretty output. No allowed_flags restriction: --sort/-D/--markdown/--table/--diff/--no-ids/-o all pass through."
       allow_all_skills: false
       allowed_callers:
         - daily-plan
 
   beautify-list:
     id: beautify-list
-    description: "Render YAML list entries from stdin (diff-fenced). Pass YAML via stdin using `dispatcher --stdin`."
-    usage: ""
+    description: "Render YAML list entries from stdin (nested bullet-list markdown by default for todo/triage; --table for a flat GFM table, --diff for the legacy diff-fenced view). Pass YAML via stdin using `dispatcher --stdin`."
+    usage: "[-D|--no-descriptions] [--markdown|--table|--diff] [--relative-deadlines] [--ids]"
     cwd: skill_root
     command: ["python3", "scripts/beautify.py"]
     default:
@@ -126,7 +126,7 @@ script_interfaces:
         - min_positionals: 0
           allow_extra_positionals: true
           allow_stdin: true
-          notes: "Reads YAML from stdin and renders user-facing list output."
+          notes: "Reads YAML from stdin and renders user-facing list output. No allowed_flags restriction: -D/--markdown/--table/--diff/--relative-deadlines/--ids all pass through."
       allow_all_skills: false
       allowed_callers: []
 
@@ -204,7 +204,7 @@ script_interfaces:
   #
   cloud-read:
     id: cloud-read
-    description: "Read a cloud list by name (raw YAML), optionally filtered."
+    description: "Read a cloud list by name (raw YAML), optionally filtered. A filtered read preserves structure: same shape as the full doc, pruned to only branches containing a match -- ancestor categories/parent entries are kept, and a match is never duplicated as both a nested child and a top-level result."
     usage: "<name> [filters] --cloud"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "read"]
@@ -217,7 +217,7 @@ script_interfaces:
           allowed_flags: ["--cloud", "--sort", "-o", "--output"]
           positional_patterns:
             0: "^[a-zA-Z0-9_-]+$"  # List name must be a valid identifier
-          notes: "Read cloud list by name (raw YAML), optionally filtered."
+          notes: "Read cloud list by name (raw YAML), optionally filtered. Filtered output is a pruned tree, not a flat list of matches -- do not assume flat-list shape."
       allow_all_skills: false
       allowed_callers: []
 
@@ -320,7 +320,7 @@ script_interfaces:
 
   cloud-read-beautify:
     id: cloud-read-beautify
-    description: "Read a cloud list by name and render it (diff-fenced, id-annotated). Relay stdout verbatim."
+    description: "Read a cloud list by name and render it (nested bullet-list markdown by default, id-annotated; --table for a flat GFM table, --diff for the legacy diff-fenced view). Relay stdout verbatim."
     usage: "<name> [filters] --cloud"
     cwd: skill_root
     command: ["python3", "scripts/read_beautify.py"]
@@ -330,9 +330,9 @@ script_interfaces:
           allow_extra_positionals: true   # name + filters
           allow_stdin: false
           required_flags: ["--cloud"]
-          allowed_flags: ["--cloud", "--sort", "-D", "--no-descriptions", "--markdown", "-o", "--output"]
+          allowed_flags: ["--cloud", "--sort", "-D", "--no-descriptions", "--markdown", "--table", "--diff", "-o", "--output"]
           positional_patterns:
             0: "^[a-zA-Z0-9_-]+$"  # List name
-          notes: "Read a cloud list by name and render it (diff-fenced), optionally filtered."
+          notes: "Read a cloud list by name and render it as nested bullet-list markdown by default, optionally filtered."
       allow_all_skills: false
       allowed_callers: []

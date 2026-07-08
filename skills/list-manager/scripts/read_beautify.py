@@ -31,7 +31,9 @@ def main() -> int:
     parser.add_argument("--cloud", action="store_true", help="Treat the source as a cloud list name and download it")
     parser.add_argument("--sort", metavar="FIELD", help="Sort results by field before rendering")
     parser.add_argument("-D", "--no-descriptions", action="store_true", help="Hide entry descriptions")
-    parser.add_argument("--markdown", action="store_true", help="Render markdown instead of diff")
+    parser.add_argument("--markdown", action="store_true", help="Render bullet-list markdown (already the default; explicit form for when schema info may be stripped)")
+    parser.add_argument("--table", action="store_true", help="Render a flat GFM table instead of the default nested bullet list")
+    parser.add_argument("--diff", action="store_true", help="Render the legacy ```diff```-fenced view instead of the default bullet list")
     parser.add_argument("--no-ids", action="store_true", help="Do not append each entry's #id (ids are shown by default)")
     parser.add_argument("-o", "--output", metavar="FILE", help="Write beautified output to file instead of stdout")
     args = parser.parse_args()
@@ -61,7 +63,18 @@ def main() -> int:
             return read_result.returncode
 
         beautify_cmd = [sys.executable, str(BEAUTIFY_PY), "--relative-deadlines"]
-        beautify_cmd.append("--markdown" if args.markdown else "--diff")
+        if args.diff:
+            beautify_cmd.append("--diff")
+        elif args.table:
+            beautify_cmd.append("--table")
+        else:
+            # Force the bullet-list renderer explicitly rather than relying on
+            # beautify.py's schema-based auto-detection: filtered `lists.py
+            # read` output is only a `schema`-bearing dict when the source
+            # file was a full document. If the source itself was already a
+            # bare entry list (e.g. a caller re-reading an intermediate file),
+            # there's no `schema` key to detect from, so force it here.
+            beautify_cmd.append("--markdown")
         if args.no_descriptions:
             beautify_cmd.append("--no-descriptions")
         if not args.no_ids:

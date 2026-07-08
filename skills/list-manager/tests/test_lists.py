@@ -155,6 +155,27 @@ def test_gen_id_avoids_collisions(tmp_path):
 
 # ── read ──────────────────────────────────────────────────────────────────────
 
+def _flatten_entries(node) -> list[dict]:
+    """Walk a filtered-read result (nested dict or list) and collect every
+    entry dict found anywhere in it, for assertions that don't care about the
+    surrounding category/parent-entry structure."""
+    entries: list[dict] = []
+    if isinstance(node, dict):
+        if "id" in node and "title" in node:
+            entries.append(node)
+            for c in node.get("children", []):
+                entries.extend(_flatten_entries(c))
+        else:
+            for e in node.get("entries", []):
+                entries.extend(_flatten_entries(e))
+            for c in node.get("categories", []):
+                entries.extend(_flatten_entries(c))
+    elif isinstance(node, list):
+        for item in node:
+            entries.extend(_flatten_entries(item))
+    return entries
+
+
 def test_read_unfiltered_returns_full_doc(todo_file):
     result = run(["read", str(todo_file)])
     assert result.returncode == 0, result.stderr
@@ -166,16 +187,30 @@ def test_read_unfiltered_returns_full_doc(todo_file):
 def test_read_filter_exact_match(todo_file):
     result = run(["read", str(todo_file), "state=incomplete"])
     assert result.returncode == 0, result.stderr
-    entries = yaml.safe_load(result.stdout)
-    assert isinstance(entries, list)
+    data = yaml.safe_load(result.stdout)
+    # Structure (schema/categories) is preserved, not flattened.
+    assert data["schema"] == "todo"
+    entries = _flatten_entries(data)
     assert all(e["state"] == "incomplete" for e in entries)
     assert any(e["title"] == "Reply to Diego" for e in entries)
+
+
+def test_read_filter_preserves_ancestor_categories(todo_file):
+    # The match (Reply to Diego) lives under Work > Writing -- both ancestor
+    # categories must survive pruning, and unrelated categories must not.
+    result = run(["read", str(todo_file), "title~=Diego"])
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(result.stdout)
+    work = next(c for c in data["categories"] if c["name"] == "Work")
+    assert [c["name"] for c in work["categories"]] == ["Writing"]
+    assert len(data["categories"]) == 1  # Personal has no match, so it's pruned
 
 
 def test_read_filter_or_values(todo_file):
     result = run(["read", str(todo_file), "state=incomplete,inprogress"])
     assert result.returncode == 0, result.stderr
-    entries = yaml.safe_load(result.stdout)
+    data = yaml.safe_load(result.stdout)
+    entries = _flatten_entries(data)
     assert len(entries) == 2
     states = {e["state"] for e in entries}
     assert states == {"incomplete", "inprogress"}
@@ -184,7 +219,7 @@ def test_read_filter_or_values(todo_file):
 def test_read_filter_and_multiple_keys(todo_file):
     result = run(["read", str(todo_file), "state=incomplete", "location=home"])
     assert result.returncode == 0, result.stderr
-    entries = yaml.safe_load(result.stdout)
+    entries = _flatten_entries(yaml.safe_load(result.stdout))
     assert len(entries) == 1
     assert entries[0]["title"] == "Reply to Diego"
 
@@ -192,7 +227,7 @@ def test_read_filter_and_multiple_keys(todo_file):
 def test_read_filter_substring(todo_file):
     result = run(["read", str(todo_file), "title~=Diego"])
     assert result.returncode == 0, result.stderr
-    entries = yaml.safe_load(result.stdout)
+    entries = _flatten_entries(yaml.safe_load(result.stdout))
     assert len(entries) == 1
     assert entries[0]["id"] == "a3f2b9"
 
@@ -201,7 +236,7 @@ def test_read_filter_regex_anchored(todo_file):
     # ~= is a regex search: ^Reply matches "Reply to Diego" but not "Review draft".
     result = run(["read", str(todo_file), "title~=^Reply"])
     assert result.returncode == 0, result.stderr
-    entries = yaml.safe_load(result.stdout)
+    entries = _flatten_entries(yaml.safe_load(result.stdout))
     assert len(entries) == 1
     assert entries[0]["id"] == "a3f2b9"
 
@@ -209,7 +244,7 @@ def test_read_filter_regex_anchored(todo_file):
 def test_read_filter_regex_case_insensitive(todo_file):
     result = run(["read", str(todo_file), "title~=diego"])
     assert result.returncode == 0, result.stderr
-    entries = yaml.safe_load(result.stdout)
+    entries = _flatten_entries(yaml.safe_load(result.stdout))
     assert len(entries) == 1
     assert entries[0]["id"] == "a3f2b9"
 
@@ -218,8 +253,35 @@ def test_read_filter_ids_or(todo_file):
     # id filter with comma-OR selects an explicit set — the semantic-selection path.
     result = run(["read", str(todo_file), "id=a3f2b9,c3d1e5"])
     assert result.returncode == 0, result.stderr
-    entries = yaml.safe_load(result.stdout)
+    entries = _flatten_entries(yaml.safe_load(result.stdout))
     assert {e["id"] for e in entries} == {"a3f2b9", "c3d1e5"}
+
+
+def test_read_filter_matching_child_keeps_parent_no_duplicate(tmp_path):
+    # A matching nested child must bring its parent entry along for context,
+    # and must not also be duplicated as an independent top-level result.
+    f = tmp_path / "todo.yaml"
+    f.write_text(
+        "schema: todo\nname: todo\ncategories:\n"
+        "- name: Work\n  entries:\n"
+        "  - id: parent1\n    title: Parent task\n"
+        "    state: incomplete\n    created: '2026-06-29'\n"
+        "    deadline: '2026-07-04'\n"
+        "    children:\n"
+        "    - id: child1\n      title: Child task\n"
+        "      state: complete\n      created: '2026-06-29'\n"
+        "      deadline: '2026-07-04'\n"
+    )
+    result = run(["read", str(f), "state=complete"])
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(result.stdout)
+    work = next(c for c in data["categories"] if c["name"] == "Work")
+    assert len(work["entries"]) == 1
+    parent = work["entries"][0]
+    assert parent["id"] == "parent1"  # kept for context, though it doesn't itself match
+    assert [c["id"] for c in parent["children"]] == ["child1"]  # the actual match
+    # The child must not also appear a second time as its own top-level entry.
+    assert _flatten_entries(data) == [parent, parent["children"][0]]
 
 
 def test_update_coerces_unquoted_dates(tmp_path):
@@ -264,14 +326,16 @@ def test_read_filter_invalid_enum_value_errors(todo_file):
 def test_read_filter_no_matches_non_enum_field(todo_file):
     result = run(["read", str(todo_file), "location=nowhere"])
     assert result.returncode == 0, result.stderr
-    entries = yaml.safe_load(result.stdout)
-    assert entries == [] or entries is None
+    data = yaml.safe_load(result.stdout)
+    # No entry matches, so every category is pruned away; the doc shell remains.
+    assert _flatten_entries(data) == []
+    assert data["categories"] == []
 
 
 def test_read_filter_complete(todo_file):
     result = run(["read", str(todo_file), "state=complete"])
     assert result.returncode == 0, result.stderr
-    entries = yaml.safe_load(result.stdout)
+    entries = _flatten_entries(yaml.safe_load(result.stdout))
     assert len(entries) == 1
     assert entries[0]["title"] == "Book dentist"
 
@@ -387,6 +451,44 @@ def test_update_changes_state(todo_file):
     data = yaml.safe_load(todo_file.read_text())
     entry = data["categories"][0]["categories"][3]["entries"][0]
     assert entry["state"] == "complete"
+
+
+def test_update_stamps_modified_on_any_change(todo_file):
+    import datetime
+    today = datetime.date.today().isoformat()
+    update_yaml = "- id: a3f2b9\n  location: office\n"
+    result = run(["update", str(todo_file)], stdin=update_yaml)
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(todo_file.read_text())
+    entry = data["categories"][0]["categories"][3]["entries"][0]
+    assert entry["modified"] == today
+    assert "completed" not in entry  # unrelated edit, entry never finished
+
+
+def test_update_stamps_completed_on_finish_only(todo_file):
+    import datetime
+    today = datetime.date.today().isoformat()
+    result = run(["update", str(todo_file)], stdin="- id: a3f2b9\n  state: complete\n")
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(todo_file.read_text())
+    entry = data["categories"][0]["categories"][3]["entries"][0]
+    assert entry["completed"] == today
+    assert entry["modified"] == today
+
+
+def test_update_never_overwrites_existing_completed(todo_file):
+    result = run(["update", str(todo_file)], stdin="- id: a3f2b9\n  state: complete\n")
+    assert result.returncode == 0, result.stderr
+    # Backdate `completed` directly in the file, then make an unrelated edit --
+    # the real completion date must survive, not get bumped to today.
+    data = yaml.safe_load(todo_file.read_text())
+    data["categories"][0]["categories"][3]["entries"][0]["completed"] = "2026-01-01"
+    todo_file.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
+    result = run(["update", str(todo_file)], stdin="- id: a3f2b9\n  location: office\n")
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(todo_file.read_text())
+    entry = data["categories"][0]["categories"][3]["entries"][0]
+    assert entry["completed"] == "2026-01-01"
 
 
 def test_update_multiple_entries(todo_file):

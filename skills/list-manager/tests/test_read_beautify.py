@@ -47,14 +47,35 @@ categories:
     return f
 
 
-def test_read_beautify_diff_relative_deadlines(todo_file):
+def test_read_beautify_bullet_relative_deadlines(todo_file):
     result = run([str(todo_file), '--sort', 'deadline'])
     assert result.returncode == 0, result.stderr
     assert 'schema:' not in result.stdout
-    assert '[2d overdue]' in result.stdout
-    assert '[due today]' in result.stdout
-    assert '[in 1d]' in result.stdout
+    assert '2d overdue' in result.stdout
+    assert 'due today' in result.stdout
     assert 'Overdue task' in result.stdout
+    # Default render is now a nested bullet list, not a ```diff``` fence or a table.
+    assert '```diff' not in result.stdout
+    assert '| # |' not in result.stdout
+    assert '- [ ] Overdue task' in result.stdout
+    # "Tomorrow task" is complete but has no recorded `completed` date -- it
+    # must show no badge at all, not the (by-then-irrelevant) "in 1d" deadline.
+    assert 'in 1d' not in result.stdout
+    assert '- [x] ~~Tomorrow task~~  `#cccccc`' in result.stdout
+
+
+def test_read_beautify_diff_flag(todo_file):
+    result = run([str(todo_file), '--sort', 'deadline', '--diff'])
+    assert result.returncode == 0, result.stderr
+    assert '```diff' in result.stdout
+    assert '[2d overdue]' in result.stdout
+
+
+def test_read_beautify_table_flag(todo_file):
+    result = run([str(todo_file), '--sort', 'deadline', '--table'])
+    assert result.returncode == 0, result.stderr
+    assert '| # |' in result.stdout
+    assert '2d overdue' in result.stdout
 
 
 def test_read_beautify_markdown_and_filter(todo_file):
