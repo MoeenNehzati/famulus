@@ -37,7 +37,7 @@ For development mode, repair flows, and more installation detail, see [docs/inst
 
 Famulus works with both Claude Code and Codex.
 
-The install and packaging paths have CI coverage on Linux, macOS, and Windows through [`.github/workflows/test-install.yml`](.github/workflows/test-install.yml). In practice, it has only been tested thoroughly on Linux.
+The install and packaging paths have CI coverage on Linux, macOS, and Windows through [`.github/workflows/python-tests.yml`](.github/workflows/python-tests.yml). In practice, it has only been tested thoroughly on Linux.
 
 ## Featured Flows
 
@@ -135,6 +135,7 @@ Usage details and documentation for the launchers are in [docs/launchers.md](doc
 
 - [docs/contributors/documentation-system.md](docs/contributors/documentation-system.md) — documentation generation and validation
 - [docs/contributors/README.md](docs/contributors/README.md) — maintainer and skill-extension entrypoint
+- [TESTING.md](TESTING.md) — hook order, CI behavior, and Python test-suite boundaries
 
 
 ## Maintainer Checks
@@ -143,9 +144,9 @@ These checks are for contributors working on the repository, not for ordinary pl
 
 - `python3 scripts/generate-doc-artifacts.py` — regenerate generated documentation artifacts and embedded coverage blocks.
 - `python3 validators/runner.py` — run the repository's documentation and contract validators.
-- `python3 -m pytest` — run the Python test suite.
+- `python3 scripts/run-python-tests.py --suite full --verbose` — run the full Python test suite, including installation tests.
 
-The pre-commit hook regenerates documentation artifacts, the README preview, and `PROFILES.md`, then runs the repo validators and secret scan before commit.
+Hook order, CI behavior, and test-suite boundaries are documented in [TESTING.md](TESTING.md).
 
 ## License
 

@@ -45,3 +45,4 @@ else
 fi
 
 python3 "$REPO_ROOT/validators/runner.py"
+python3 "$REPO_ROOT/scripts/run-python-tests.py" --suite precommit

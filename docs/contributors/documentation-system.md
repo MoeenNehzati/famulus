@@ -110,3 +110,5 @@ When you add a new documentation contract:
 5. Regenerate docs and run validators.
 
 This keeps the rules in one place and avoids scattering doc-generation logic across unrelated scripts.
+
+For the local pre-commit order, GitHub Actions behavior, and Python test-suite boundaries, see [TESTING.md](../../TESTING.md).

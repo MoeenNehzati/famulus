@@ -1,4 +1,4 @@
-name: Install Tests
+name: Python Tests
 
 on:
   push:
@@ -28,17 +28,13 @@ jobs:
           python-version: '3.11'
 
       - name: Install test dependencies
-        run: python3 -m pip install pytest pyyaml
+        run: python3 -m pip install pytest pyyaml jsonschema
 
       - name: Install Claude and Codex CLIs
         run: npm install -g @anthropic-ai/claude-code @openai/codex
 
       - name: Run repo validators
-        if: runner.os == 'Linux'
         run: python3 validators/runner.py
 
-      - name: Run validator smoke tests and hook tests
-        run: python3 -m pytest tests hooks/tests -v
-
-      - name: Run install/uninstall/e2e test suite
-        run: python3 -m pytest skills/install-assistant-tools/tests -v
+      - name: Run Python test suite
+        run: python3 scripts/run-python-tests.py --suite full --verbose

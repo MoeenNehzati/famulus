@@ -33,12 +33,13 @@ dispatcher --caller-skill <caller> <callee> <interface-id> [args...]
 
 ## Validation and Enforcement
 
-Famulus enforces the documentation and skill contracts through repo validators and pre-commit:
+Famulus enforces the documentation and skill contracts through repo validators, the local pre-commit hook, and GitHub Actions:
 
 - [`validators/runner.py`](../../validators/runner.py)
 - [`.githooks/pre-commit`](../../.githooks/pre-commit)
+- [`.github/workflows/python-tests.yml`](../../.github/workflows/python-tests.yml)
 
-The hook regenerates documentation artifacts, regenerates [PROFILES.md](../../PROFILES.md), refreshes the README preview, runs the secret scan, and then runs the validator runner.
+For hook order, CI behavior, and Python test-suite boundaries, see [TESTING.md](../../TESTING.md).
 
 ## Development-Facing Skill Areas
 
@@ -80,4 +81,5 @@ These tools support repo work without being part of the authored skill-contract 
 
 - [docs/scaffolding/README.md](../scaffolding/README.md) — long-form explanation of the scaffolding layer and why it exists
 - [docs/contributors/documentation-system.md](documentation-system.md) — how doc generation and doc validation work
+- [TESTING.md](../../TESTING.md) — hook order, CI behavior, and Python test-suite boundaries
 - [references/blueprint/README.md](../../references/blueprint/README.md) — blueprint reference index

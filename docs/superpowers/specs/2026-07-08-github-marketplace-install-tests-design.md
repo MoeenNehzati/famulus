@@ -86,10 +86,11 @@ Parses the `"repository"` field of `.claude-plugin/plugin.json` (a full
 
 ## CI wiring
 
-None needed. `.github/workflows/test-install.yml`'s existing step already runs
-`python3 -m pytest skills/install-assistant-tools/tests -v`, a directory-level invocation that
-picks up the two new files automatically, on the same push/pull_request triggers and the same
-Linux/macOS/Windows matrix as everything else in that directory.
+None needed. `.github/workflows/python-tests.yml`'s existing step already runs
+`python3 scripts/run-python-tests.py --suite full --verbose`, whose `full`
+suite includes `skills/install-assistant-tools/tests/`, on the same
+push/pull_request triggers and the same Linux/macOS/Windows matrix as the rest
+of the Python suite.
 
 ## Out of scope
 
