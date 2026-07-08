@@ -251,7 +251,7 @@ def test_full_install_writes_manifest(tmp_path: Path):
     home-scoped manifest (replacing setup_tools.run(), now deleted).
 
     Hook installation (json_hook_commands) is dev_link.py's job — see
-    test_dev_link.py / test_setup_tools_hooks.py for that coverage.
+    test_dev_link.py / test_dev_link_hooks.py for that coverage.
     """
     import scaffold
     import launchers
