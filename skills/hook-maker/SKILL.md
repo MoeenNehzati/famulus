@@ -6,7 +6,7 @@ description: Use when designing, creating, installing, or refactoring assistant 
 <!-- BEGIN BLUEPRINT CONTRACT -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Category: coding-development-assistant
+Category: skill-making-development-assistant
 
 Dependencies: none
 

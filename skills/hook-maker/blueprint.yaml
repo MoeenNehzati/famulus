@@ -1,7 +1,7 @@
 # Canonical contract for hook-maker.
 # This skill has no script interfaces; it provides design guidance and a hook scaffold reference.
 
-category: coding-development-assistant
+category: skill-making-development-assistant
 # Bump this major version whenever the exported skill contract changes in a
 # breaking way for dependent skills.
 interface_version: 1
