@@ -8,10 +8,6 @@ category: skill-making-development-assistant
 interface_version: 1
 
 depends_on:
-  cloud-files:
-    major_version: 1
-    exports:
-      - setup-oauth
   g-calendar:
     major_version: 1
     exports:

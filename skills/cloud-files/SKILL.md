@@ -24,6 +24,9 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
+- `ensure-oauth` — Check cloud-files OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill cloud-files) as part of connecting remotes.
+  - `dispatcher --caller-skill cloud-files cloud-files ensure-oauth ensure-oauth --home <dir> [--dry-run]`
+  - Check OAuth status and guide setup for cloud-files.
 - `lists-delete` — Delete a file from cloud storage under the lists/ directory.
   - `dispatcher --caller-skill cloud-files cloud-files lists-delete lists/<path>`
   - Delete list files from cloud storage. Restricted to lists/ directory.
@@ -45,6 +48,9 @@ Use the installed `dispatcher` command for this skill's script interfaces:
 - `setup-oauth` — Run one-time OAuth2 setup for Google Drive access.
   - `dispatcher --caller-skill cloud-files cloud-files setup-oauth [--from-json <client_json_path>] [--client-id <id> --client-secret <secret>] [--port <port>]`
   - OAuth setup for Google Drive access.
+- `write-config` — Write ~/.config/cloud-files/config.json with the given remote LLM root. Relocated from install-assistant-tools.
+  - `dispatcher --caller-skill cloud-files cloud-files write-config write-config --home <dir> [--remote-llm-root <path>] [--dry-run]`
+  - Write cloud-files config.json.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

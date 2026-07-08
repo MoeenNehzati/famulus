@@ -9,7 +9,6 @@ description: Install or update the assistant, collab, coauthor, and tw/tmux-work
 Category: skill-making-development-assistant
 
 Dependencies:
-- cloud-files
 - g-calendar
 
 Interface Version: 1
@@ -98,9 +97,9 @@ Before running anything, summarize:
 - Git hooks will be configured.
 - LLM session hooks will be registered in `~/.claude/settings.local.json` and `~/.codex/config.toml` for dev-mode operation.
 - The live cross-host hook logic lives under `llmhooks/`; plugin installs still use `hooks/` as a compatibility shim.
-- `~/.config/cloud-files/config.json` will be written or updated.
-- After the core install, the installer can optionally walk through Google
-  Drive (`cloud-files`) and Google Calendar (`g-calendar`) OAuth setup.
+- The installer can still optionally walk through Google Calendar (g-calendar)
+  OAuth setup for now — this is mid-migration to g-calendar's own
+  conversational setup flow.
 - Existing symlinks may be replaced if they already point somewhere else.
 - Existing real files or directories are **not** overwritten; they are skipped
   with a warning.
@@ -275,11 +274,7 @@ Because installed commands are symlinks into `bin/`, editing `bin/assistant` or
 For cross-platform validation, use the Python tests rather than shell wrappers:
 
 ```bash
-python3 tests/test_codex_install.py
-python3 tests/test_claude_install.py
-python3 skills/install-assistant-tools/tests/test_setup_symlinks.py
-python3 skills/install-assistant-tools/tests/test_setup_tools_cloud_files.py
-python3 skills/install-assistant-tools/tests/test_setup_tools_recurring_env.py
+python3 -m pytest skills/install-assistant-tools/tests/
 ```
 
 What they cover:
@@ -289,11 +284,20 @@ What they cover:
   into a fresh temp environment.
 - `test_claude_install.py`: isolated Claude marketplace install, installed
   package contents, and Claude's plugin inventory/details output.
-- `test_setup_symlinks.py`: dry-run behavior, conflict preservation,
-  `skills/` migration, symlink replacement, idempotent already-linked paths,
-  and symlinked-`CODEX_HOME` skipping.
-- `test_setup_tools_cloud_files.py`: cloud-files config writing and optional
-  Google OAuth decision paths.
+- `test_link_utils.py`: shared `make_link`/`make_copy` helpers.
+- `test_rc_block.py`: merge-capable managed-block writer shared by
+  `scaffold`/`launchers`/`dev_link`.
+- `test_scaffold.py`: dispatcher/invoke-skill launcher installation and PATH.
+- `test_launchers.py`: per-agent bin/profile/worker-dir/`ASSISTANT_DEFAULT`
+  installation.
+- `test_agent_launch.py`: agent `.md` frontmatter/prompt parsing and repo-root
+  resolution used by the installed `assistant`/`collab`/`coauthor` launchers.
+- `test_dev_link.py`: dry-run behavior, conflict preservation, `skills/`
+  migration, symlink replacement, idempotent already-linked paths,
+  symlinked-`CODEX_HOME` skipping, git hooks, dev-mode hook registration,
+  and the `$AI` export.
+- `test_install.py`: Phase-1 orchestration (mode selection, chaining
+  `scaffold`/`dev_link`/`launchers`).
 
 Known handoff caveat / TODO:
 

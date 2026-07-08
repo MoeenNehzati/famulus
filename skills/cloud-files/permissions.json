@@ -4,7 +4,8 @@
     "Bash(python3 scripts/write_llm_file.py:*)",
     "Bash(python3 scripts/delete_llm_file.py:*)",
     "Bash(python3 scripts/ls_llm.py:*)",
-    "Bash(python3 scripts/setup_oauth.py:*)"
+    "Bash(python3 scripts/setup_oauth.py:*)",
+    "Bash(python3 scripts/ensure_oauth.py:*)"
   ],
   "network": []
 }
