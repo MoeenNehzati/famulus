@@ -57,6 +57,10 @@ def render_skill_index(repo_root: Path) -> str:
         "",
         "This page is the complete skill inventory. For walkthroughs and examples, start from the user docs or contributor docs linked from [README.md](../README.md).",
         "",
+        "![Skill taxonomy](../graphs/skill-taxonomy.svg)",
+        "",
+        "The graph gives a visual overview of the live skill set. The sections below are the complete text inventory.",
+        "",
     ]
     for audience, categories in CATEGORY_TREE:
         lines.append(f"## {audience}")

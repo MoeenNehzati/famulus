@@ -33,10 +33,7 @@ fi
 # Regenerate the README HTML preview from the latest README.md
 if [ -f "$REPO_ROOT/scripts/generate-previews.py" ]; then
     python3 "$REPO_ROOT/scripts/generate-previews.py" --target readme >/dev/null
-    if ! git diff --quiet "$REPO_ROOT/_build/README-preview.html" 2>/dev/null; then
-        echo "✓ Updated _build/README-preview.html from README.md"
-        git add "$REPO_ROOT/_build/README-preview.html"
-    fi
+    echo "✓ Regenerated local README preview in _build/README-preview.html"
 fi
 
 # Secret scan on staged changes

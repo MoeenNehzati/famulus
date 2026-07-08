@@ -7,9 +7,9 @@ If you want one entry point, start with [skills/skill-maker/](../../skills/skill
 blueprint sync script, most skill-system validators, and the rules that other
 skills are expected to follow.
 
-Render a local HTML version with [../../scripts/generate-scaffolding-preview.sh](../../scripts/generate-scaffolding-preview.sh).
+Render a local HTML version with `python3 scripts/generate-previews.py --target scaffolding`.
 
-<img src="../../graphs/scaffolding-responsibility-map.png" alt="Scaffolding responsibility map" style="max-width: 100%; width: auto; height: auto; display: block; margin: 1.5rem auto;">
+<img src="../../graphs/scaffolding-responsibility-map.svg" alt="Scaffolding responsibility map" style="max-width: 100%; width: auto; height: auto; display: block; margin: 1.5rem auto;">
 <p class="graph-caption">The core promise: one explicit convention for skills, one mechanical path for enforcing it, and one clearer end state for the assistant as the toolset grows.</p>
 
 ## Core pitch
@@ -52,7 +52,7 @@ As the repo explains its parts, each part should be tied to an end goal:
 
 ## Structure at a glance
 
-<img src="../../graphs/skill-development-framework.png" alt="Skill development framework" style="max-width: 100%; width: auto; height: auto; display: block; margin: 1.5rem auto;">
+<img src="../../graphs/skill-development-framework.svg" alt="Skill development framework" style="max-width: 100%; width: auto; height: auto; display: block; margin: 1.5rem auto;">
 <p class="graph-caption">This graph is the structural overview. The sections below unpack what each part owns and which end goal it protects.</p>
 
 ## 1. The authored contract
@@ -194,7 +194,7 @@ flagging mistakes before they become the new normal.
 
 ## 6. Why this reduces overlap
 
-<img src="../../graphs/skill-taxonomy.png" alt="Skill taxonomy" style="max-width: 100%; width: auto; height: auto; display: block; margin: 1.5rem auto;">
+<img src="../../graphs/skill-taxonomy.svg" alt="Skill taxonomy" style="max-width: 100%; width: auto; height: auto; display: block; margin: 1.5rem auto;">
 <p class="graph-caption">The skill taxonomy is one visible outcome of the scaffolding discipline: a toolset that stays partitioned enough for the LLM to choose among skills without every tool collapsing into the same fuzzy surface.</p>
 
 Because skills are pushed toward one owned job, one declared boundary, and one

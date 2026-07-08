@@ -37,7 +37,7 @@ class CoverageBlock:
 
 COVERAGE_BLOCKS = (
     CoverageBlock(GENERAL_DOC, "productivity-general-assistant", "Productivity"),
-    CoverageBlock(GENERAL_DOC, "workflow-general-assistant", "Workflow"),
+    CoverageBlock(GENERAL_DOC, "workflow-general-assistant", "Coordination"),
     CoverageBlock(RESEARCH_DOC, "research-assistant", "Research"),
     CoverageBlock(SYSTEM_DOC, "system-assistant", "System"),
     CoverageBlock(CONTRIBUTOR_DOC, "skill-making-development-assistant", "Skill Making"),
@@ -51,7 +51,7 @@ CONTRIBUTOR_DOCS = (CONTRIBUTOR_DOC, DOC_SYSTEM_DOC)
 CATEGORY_DISPLAY = {
     "research-assistant": "Research Assistant",
     "productivity-general-assistant": "Productivity",
-    "workflow-general-assistant": "Workflow",
+    "workflow-general-assistant": "Coordination",
     "skill-making-development-assistant": "Skill Making",
     "coding-development-assistant": "Coding",
     "development-assistant": "Development",
