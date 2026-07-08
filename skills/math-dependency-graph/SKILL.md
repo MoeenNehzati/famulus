@@ -155,6 +155,16 @@ For dependencies, use these fields:
 Prefer the model to justify difficult edges from mathematical content, not from string matching.
 If the document is ambiguous, keep the JSON conservative and mark uncertainty explicitly.
 
+Set `document.title` to the document's title as it appears in the source.
+
+```json
+{
+  "document": {
+    "title": "Inference From Random Restarts"
+  }
+}
+```
+
 If the document uses local TeX macros, set the active entrypoint under:
 
 - `document.source_entrypoint`

@@ -285,12 +285,14 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     for idx, edge in enumerate(edges, start=1):
         edge_payload.append({"edge_id": f"edge_{idx}", **edge})
     graph_build_id = str(int(time.time() * 1000))
+    doc_title = doc.get("document", {}).get("title", "")
+    page_title = f"{doc_title} — Math dependency graph" if doc_title else "Math dependency graph"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Math dependency graph</title>
+  <title>{html.escape(page_title)}</title>
   <script>
     const GRAPH_BUILD_ID = "{graph_build_id}";
     window.MathJax = {{
@@ -459,10 +461,15 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       margin: 0 2px;
     }}
     .canvas-wrap {{
-      overflow: auto;
+      overflow: hidden;
       position: absolute;
       inset: 0;
-      padding: 24px;
+      padding: 0;
+      cursor: grab;
+      user-select: none;
+    }}
+    .canvas-wrap.panning {{
+      cursor: grabbing;
     }}
     .panel {{
       border-left: 1px solid #d5d8dc;
@@ -779,6 +786,16 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         <span class="toolbar-tip" data-tooltip="Click: restore individually hidden and focus-hidden nodes while keeping hidden legend categories. Double-click: reset everything, including legend categories. Shortcut: c.">
           <button id="reset-btn" class="toolbar-btn" type="button" aria-label="Reset graph state">Reset</button>
         </span>
+        <div class="toolbar-sep"></div>
+        <span class="toolbar-tip" data-tooltip="Zoom in. Shortcut: + or =">
+          <button id="zoom-in-btn" class="toolbar-btn" type="button" aria-label="Zoom in">+</button>
+        </span>
+        <span class="toolbar-tip" data-tooltip="Zoom out. Shortcut: −">
+          <button id="zoom-out-btn" class="toolbar-btn" type="button" aria-label="Zoom out">−</button>
+        </span>
+        <span class="toolbar-tip" data-tooltip="Fit graph in viewport. Shortcut: f">
+          <button id="fit-btn" class="toolbar-btn" type="button" aria-label="Fit graph in viewport">Fit</button>
+        </span>
       </div>
       <div class="routing-controls" id="routing-controls">
         <details open>
@@ -850,7 +867,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       <button class="panel-toggle" id="panel-toggle" type="button" aria-expanded="true" aria-controls="panel-content" title="Collapse side panel">⟩</button>
       <div class="collapsed-label">Panel</div>
       <div class="panel-content" id="panel-content">
-        <h1>Math dependency graph</h1>
+        <h1 id="panel-title">Math dependency graph</h1>
 
         <div class="sidebar-section" draggable="true" data-section-id="cheatsheet">
           <div class="drag-handle" title="Drag to reorder">⠿</div>
@@ -860,8 +877,9 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
             <div class="small" style="margin-top:0.25rem;"><strong>Toolbar</strong> (top-left, always visible): <em>Highlight ancestors</em> cycles focus (off → dim → hide); <em>Delete node</em> removes the selected node; <em>Redraw all</em> resets layout.</div>
             <div class="small" style="margin-top:0.25rem;">Hover a node or edge to preview metadata. Click to pin details here.</div>
             <div class="small" style="margin-top:0.25rem;">Click a type in the legend to hide or show that category. Causality is preserved via bridge edges.</div>
-            <div class="small" style="margin-top:0.25rem;"><kbd>h</kbd> cycles ancestor focus (off → dim → hide). <kbd>Esc</kbd> or ✕ deselects. <kbd>r</kbd> redraws. <kbd>c</kbd> clears everything.</div>
+            <div class="small" style="margin-top:0.25rem;"><kbd>h</kbd> cycles ancestor focus (off → dim → hide). <kbd>Esc</kbd> or ✕ deselects. <kbd>r</kbd> redraws. <kbd>c</kbd> clears everything. <kbd>f</kbd> fits the graph.</div>
             <div class="small" style="margin-top:0.25rem;">Drag a node to reposition it. Drag the ⠿ handle on each section to reorder this panel.</div>
+            <div class="small" style="margin-top:0.25rem;"><strong>Scroll</strong> to zoom in/out (centered at cursor). <strong>Drag empty space</strong> to pan. Use the toolbar +/−/Fit buttons or keyboard <kbd>+</kbd> <kbd>−</kbd> <kbd>f</kbd>.</div>
             <div class="small" style="margin-top:0.25rem;"><strong>Edge styles:</strong> solid = Verified; long-dashed = Likely; short-dashed = Speculative. <strong>Node borders:</strong> solid = explicit; dashed = model-introduced.</div>
             {f'<div class="small" style="margin-top:0.35rem;">{html.escape(reduction_note)}</div>' if reduction_note else ''}
           </details>
@@ -904,6 +922,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     const layoutEl = document.getElementById("layout");
     const panelToggle = document.getElementById("panel-toggle");
     const svgEl = document.getElementById("graph-svg");
+    const canvasWrapEl = document.getElementById("canvas-wrap");
     const edgeLayer = document.getElementById("edge-layer");
     const nodeLayer = document.getElementById("node-layer");
     const tooltip = document.getElementById("tooltip");
@@ -976,6 +995,13 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     let dragStartOffsetY = 0;
     const DRAG_THRESHOLD = 5;
 
+    // Pan/zoom state
+    let panX = 0, panY = 0, zoomLevel = 1;
+    let isPanning = false;
+    let panStartClientX = 0, panStartClientY = 0, panStartX = 0, panStartY = 0;
+    let hasFittedOnce = false;
+    const MIN_ZOOM = 0.08, MAX_ZOOM = 5;
+
     let renderVersion = 0;
     let lastRenderedEdges = [];
     let elk = null;
@@ -1006,7 +1032,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 
     const routingPresets = {{
       compact: {{ extraClearance: 0, parallelSpacing: 4, mergeLaneDistance: 18, nodeSpacing: 12, layerSpacing: 45, edgeNodeSpacing: 8 }},
-      balanced: {{ extraClearance: 3, parallelSpacing: 12, mergeLaneDistance: 34, nodeSpacing: 46, layerSpacing: 90, edgeNodeSpacing: 40 }},
+      balanced: {{ extraClearance: 3, parallelSpacing: 12, mergeLaneDistance: 34, nodeSpacing: 46, layerSpacing: 150, edgeNodeSpacing: 40 }},
       spacious: {{ extraClearance: 16, parallelSpacing: 36, mergeLaneDistance: 80, nodeSpacing: 120, layerSpacing: 210, edgeNodeSpacing: 110 }}
     }};
     const shapePresets = {{
@@ -1054,7 +1080,8 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
           ancestorFocusMode,
           panelCollapsed: layoutEl.classList.contains("panel-collapsed"),
           manualPositions: Array.from(manualPositions.entries()),
-          routingConfig
+          routingConfig,
+          panX, panY, zoomLevel
         }};
         window.localStorage.setItem(viewerStateKey, JSON.stringify(payload));
       }} catch (e) {{}}
@@ -1082,6 +1109,11 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         (payload.manualPositions || []).forEach(([id, pos]) => {{
           if (entityMap.has(id)) manualPositions.set(id, pos);
         }});
+        if (typeof payload.panX === "number") {{
+          panX = payload.panX; panY = payload.panY; zoomLevel = payload.zoomLevel || 1;
+          applyTransform();
+          hasFittedOnce = true;
+        }}
       }} catch (e) {{}}
     }}
 
@@ -1116,6 +1148,64 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       layoutEl.classList.toggle("panel-collapsed");
       syncPanelToggle();
       saveViewerState();
+    }});
+
+    // ── Pan / zoom ────────────────────────────────────────────────────────────
+
+    function applyTransform() {{
+      svgEl.style.transformOrigin = "0 0";
+      svgEl.style.transform = `translate(${{panX}}px, ${{panY}}px) scale(${{zoomLevel}})`;
+    }}
+
+    function fitGraph() {{
+      const canvasRect = canvasWrapEl.getBoundingClientRect();
+      const svgW = parseFloat(svgEl.getAttribute("width")) || 1200;
+      const svgH = parseFloat(svgEl.getAttribute("height")) || 800;
+      const padding = 40;
+      const availW = Math.max(1, canvasRect.width - padding * 2);
+      const availH = Math.max(1, canvasRect.height - padding * 2);
+      zoomLevel = Math.min(availW / svgW, availH / svgH, 1);
+      panX = (canvasRect.width - svgW * zoomLevel) / 2;
+      panY = padding;
+      applyTransform();
+    }}
+
+    function zoomAt(newZoom, clientX, clientY) {{
+      newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+      const canvasRect = canvasWrapEl.getBoundingClientRect();
+      const cx = clientX - canvasRect.left;
+      const cy = clientY - canvasRect.top;
+      const svgX = (cx - panX) / zoomLevel;
+      const svgY = (cy - panY) / zoomLevel;
+      zoomLevel = newZoom;
+      panX = cx - svgX * zoomLevel;
+      panY = cy - svgY * zoomLevel;
+      applyTransform();
+    }}
+
+    // Wheel zoom
+    canvasWrapEl.addEventListener("wheel", event => {{
+      event.preventDefault();
+      const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+      zoomAt(zoomLevel * factor, event.clientX, event.clientY);
+      saveViewerState();
+    }}, {{ passive: false }});
+
+    // Pan: mousedown on empty canvas space
+    canvasWrapEl.addEventListener("mousedown", event => {{
+      if (event.button !== 0) return;
+      if (draggingNodeId !== null) return;
+      const target = event.target;
+      if (target.closest && target.closest(".graph-node")) return;
+      if (target.dataset && target.dataset.edgeId) return;
+      if (target.classList && (target.classList.contains("edge-arrow") || target.classList.contains("edge-path"))) return;
+      isPanning = true;
+      panStartClientX = event.clientX;
+      panStartClientY = event.clientY;
+      panStartX = panX;
+      panStartY = panY;
+      canvasWrapEl.classList.add("panning");
+      event.preventDefault();
     }});
 
     // ── Utilities ────────────────────────────────────────────────────────────
@@ -2183,6 +2273,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         svgEl.setAttribute("width", String(graphWidth));
         svgEl.setAttribute("height", String(graphHeight));
         svgEl.setAttribute("viewBox", `0 0 ${{graphWidth}} ${{graphHeight}}`);
+        if (!hasFittedOnce) {{ fitGraph(); hasFittedOnce = true; }}
 
         const targetCounts = new Map();
         visibleEdges.forEach(edge => targetCounts.set(edge.target, (targetCounts.get(edge.target) || 0) + 1));
@@ -2300,6 +2391,12 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     // ── Node dragging (SVG mouse events) ─────────────────────────────────────
 
     document.addEventListener("mousemove", event => {{
+      if (isPanning) {{
+        panX = panStartX + (event.clientX - panStartClientX);
+        panY = panStartY + (event.clientY - panStartClientY);
+        applyTransform();
+        return;
+      }}
       if (draggingNodeId === null) return;
       const clientDx = event.clientX - dragStartClientX;
       const clientDy = event.clientY - dragStartClientY;
@@ -2335,6 +2432,12 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
     }});
 
     document.addEventListener("mouseup", event => {{
+      if (isPanning) {{
+        isPanning = false;
+        canvasWrapEl.classList.remove("panning");
+        saveViewerState();
+        return;
+      }}
       if (draggingNodeId !== null) {{
         const droppedNodeId = draggingNodeId;
         const nodeEl = nodeLayer.querySelector(`[data-node-id="${{draggingNodeId}}"]`);
@@ -2366,6 +2469,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 
     document.getElementById("redraw-btn").addEventListener("click", () => {{
       manualPositions.clear();
+      hasFittedOnce = false;
       nodeLayer.querySelectorAll(".graph-node").forEach(el => el.removeAttribute("transform"));
       updateVisibilityFull();
       saveViewerState();
@@ -2384,6 +2488,7 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       ancestorFocusMode = 0;
       ancestorHiddenByFocus.clear();
       manualPositions.clear();
+      hasFittedOnce = false;
       if (includeCategories) {{
         hiddenTypes.clear();
         syncLegendRows();
@@ -2409,6 +2514,23 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
         resetClickTimer = null;
       }}
       resetViewState({{includeCategories: true}});
+    }});
+
+    document.getElementById("zoom-in-btn").addEventListener("click", () => {{
+      const r = canvasWrapEl.getBoundingClientRect();
+      zoomAt(zoomLevel * 1.3, r.left + r.width / 2, r.top + r.height / 2);
+      saveViewerState();
+    }});
+
+    document.getElementById("zoom-out-btn").addEventListener("click", () => {{
+      const r = canvasWrapEl.getBoundingClientRect();
+      zoomAt(zoomLevel / 1.3, r.left + r.width / 2, r.top + r.height / 2);
+      saveViewerState();
+    }});
+
+    document.getElementById("fit-btn").addEventListener("click", () => {{
+      fitGraph();
+      saveViewerState();
     }});
 
     // ── Sidebar drag-to-reorder ───────────────────────────────────────────────
@@ -2538,10 +2660,37 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
       if (event.key.toLowerCase() === "c") {{
         event.preventDefault();
         resetViewState({{includeCategories: event.shiftKey}});
+        return;
+      }}
+      if (event.key === "+" || event.key === "=") {{
+        event.preventDefault();
+        const r = canvasWrapEl.getBoundingClientRect();
+        zoomAt(zoomLevel * 1.2, r.left + r.width / 2, r.top + r.height / 2);
+        saveViewerState();
+        return;
+      }}
+      if (event.key === "-") {{
+        event.preventDefault();
+        const r = canvasWrapEl.getBoundingClientRect();
+        zoomAt(zoomLevel / 1.2, r.left + r.width / 2, r.top + r.height / 2);
+        saveViewerState();
+        return;
+      }}
+      if (event.key.toLowerCase() === "f") {{
+        event.preventDefault();
+        fitGraph();
+        saveViewerState();
+        return;
       }}
     }});
 
     // ── Initialization ────────────────────────────────────────────────────────
+
+    (function applyDocumentTitle() {{
+      const t = docData.document?.title;
+      if (!t) return;
+      document.getElementById("panel-title").textContent = t;
+    }})();
 
     startBuildRefreshWatcher();
     restoreViewerState();
