@@ -16,14 +16,18 @@ _TOKENS = ("seyed", "moeen", "nehzati")
 _PATTERN = re.compile("|".join(_TOKENS), re.IGNORECASE)
 
 # Public identifiers that are allowed to appear anywhere: the GitHub handle
-# is the repo's public address and appears in install/clone commands.
-_ALLOWED_IDENTIFIERS = ("MoeenNehzati",)
+# and the public GitHub Pages domain are intentionally linked from user docs.
+_ALLOWED_PATTERNS = (
+    re.compile(r"https?://moeennehzati\.github\.io/\S*", re.IGNORECASE),
+    re.compile(r"moeennehzati\.github\.io", re.IGNORECASE),
+    re.compile(r"MoeenNehzati", re.IGNORECASE),
+)
 
 
 def _scrub(text: str) -> str:
     """Remove allowed public identifiers before scanning for tokens."""
-    for ident in _ALLOWED_IDENTIFIERS:
-        text = text.replace(ident, "")
+    for pattern in _ALLOWED_PATTERNS:
+        text = pattern.sub("", text)
     return text
 
 # Files allowed to contain the tokens:

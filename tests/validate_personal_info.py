@@ -65,6 +65,20 @@ def test_github_handle_does_not_mask_other_tokens(tmp_path: Path) -> None:
     assert len(validate(tmp_path)) == 1
 
 
+def test_public_github_pages_domain_allowed(tmp_path: Path) -> None:
+    (tmp_path / "doc.md").write_text(
+        "https://moeennehzati.github.io/assets/html/nehzati2026inference.html\n"
+    )
+    assert validate(tmp_path) == []
+
+
+def test_public_github_pages_domain_does_not_mask_other_tokens(tmp_path: Path) -> None:
+    (tmp_path / "doc.md").write_text(
+        "https://moeennehzati.github.io/ and /home/moeen\n"
+    )
+    assert len(validate(tmp_path)) == 1
+
+
 def test_validator_excludes_itself(tmp_path: Path) -> None:
     d = tmp_path / "validators"
     d.mkdir()

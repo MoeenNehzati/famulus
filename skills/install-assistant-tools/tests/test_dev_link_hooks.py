@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import dev_link  # noqa: E402
 
 
-class SetupToolsHooksTests(unittest.TestCase):
+class DevLinkHooksTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repo_root = ROOT_DIR
 
