@@ -1,0 +1,18 @@
+Command Leakage Detector Stress Test v6
+========================================
+
+positive samples: 13
+negative samples: 9
+variants per sample: 14
+total cases: 308
+positive variants detected: 182/182
+negative variants flagged:   0/126
+rule counts: {'SBX001': 70, 'SBX002': 33, 'SBX003': 36, 'SBX004': 200, 'SBX005': 930, 'SBX006': 61}
+
+MISSES
+------
+none
+
+FALSE POSITIVES
+---------------
+none
