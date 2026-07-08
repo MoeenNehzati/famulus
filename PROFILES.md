@@ -17,5 +17,3 @@ Generated from:
 - Claude: `profiles/*_claude_setting.json`
 
 **To update:** Run `bash scripts/generate-settings-table.sh` after modifying profile configs.
-
-_Last generated: 2026-07-08 17:11:55 UTC_

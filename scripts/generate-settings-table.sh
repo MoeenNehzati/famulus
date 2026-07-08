@@ -100,8 +100,6 @@ descriptions["coauthor"]="Math/research mode, deep thinking and rigor"
   echo "- Claude: \`profiles/*_claude_setting.json\`"
   echo ""
   echo "**To update:** Run \`bash scripts/generate-settings-table.sh\` after modifying profile configs."
-  echo ""
-  echo "_Last generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')_"
 } > "$output_file"
 
 echo "✓ Generated $output_file"
