@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compatibility wrapper for the newer documentation generator."""
+"""Regenerate generated documentation artifacts and embedded coverage blocks."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,12 +13,10 @@ from docs_tooling.render import generate_all
 
 
 def main() -> int:
-    print(
-        "warning: scripts/generate-skills-table.py is deprecated; "
-        "use scripts/generate-doc-artifacts.py instead.",
-        file=sys.stderr,
-    )
-    generate_all(REPO_ROOT)
+    changed = generate_all(REPO_ROOT)
+    if changed:
+        for path in changed:
+            print(path.as_posix())
     return 0
 
 

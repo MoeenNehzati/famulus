@@ -1,0 +1,20 @@
+{
+  "name": "nullkit",
+  "interface": {
+    "displayName": "nullkit"
+  },
+  "plugins": [
+    {
+      "name": "famulus",
+      "source": {
+        "source": "local",
+        "path": "."
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

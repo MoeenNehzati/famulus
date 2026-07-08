@@ -11,7 +11,7 @@ python3 -m pytest
 Collection is configured in `pytest.ini`:
 - `testpaths`: `tests/`, `hooks/tests/`, `skills/*/tests/`
 - `python_files = test_*.py validate_*.py` — the `tests/validate_*.py` smoke
-  tests for `skills/skill-maker/validators/` are collected too.
+  tests for repo validators and `skills/skill-maker/validators/` are collected too.
 - `skills/initialize-tdd/` is excluded: its `assets/python/tests/` is a
   scaffold template for new projects, not this repo's tests.
 
@@ -28,7 +28,9 @@ python3 -m pytest tests            # validator smoke tests
 - **Unit/suite tests** (everything above): fast, sandboxed via tmp dirs.
 - **Pre-commit validators**: run by `.githooks/pre-commit` via
   `validators/runner.py` — not pytest; the pytest files in `tests/` only
-  smoke-test the validator modules.
+  smoke-test the validator modules. The same hook also regenerates the
+  generated documentation artifacts, `_build/README-preview.html`, and
+  `PROFILES.md` when needed.
 - **Browser smoke test**: `skills/math-dependency-graph/tests` launches
   headless Chrome; slowest part of the suite.
 
@@ -51,3 +53,10 @@ python3 -m pytest tests            # validator smoke tests
 - Some list-manager/daily-plan integration paths touch real cloud lists if
   run without sandboxing; a stray "Test: valid entry with deadline" entry
   appeared on the live todo list on 2026-07-04.
+
+## Documentation System
+
+- `python3 scripts/generate-doc-artifacts.py` regenerates `docs/skills.md`
+  plus the embedded coverage blocks in the user and contributor docs.
+- Documentation conformance now lives in `validators/`, not in a prose-shape
+  README unit test.

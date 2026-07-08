@@ -19,12 +19,23 @@ if [ -f "$REPO_ROOT/scripts/generate-settings-table.sh" ]; then
     fi
 fi
 
-# Regenerate the README skills table from skills/*/ metadata
-if [ -f "$REPO_ROOT/scripts/generate-skills-table.py" ]; then
-    python3 "$REPO_ROOT/scripts/generate-skills-table.py" >/dev/null
-    if ! git diff --quiet "$REPO_ROOT/README.md" 2>/dev/null; then
-        echo "✓ Updated README.md skills table from skills/ metadata"
-        git add "$REPO_ROOT/README.md"
+# Regenerate generated documentation artifacts and embedded coverage blocks
+if [ -f "$REPO_ROOT/scripts/generate-doc-artifacts.py" ]; then
+    python3 "$REPO_ROOT/scripts/generate-doc-artifacts.py" >/dev/null
+    git add \
+        "$REPO_ROOT/docs/skills.md" \
+        "$REPO_ROOT/docs/user/general.md" \
+        "$REPO_ROOT/docs/user/research.md" \
+        "$REPO_ROOT/docs/user/system.md" \
+        "$REPO_ROOT/docs/contributors/README.md"
+fi
+
+# Regenerate the README HTML preview from the latest README.md
+if [ -f "$REPO_ROOT/scripts/generate-readme-preview.sh" ]; then
+    "$REPO_ROOT/scripts/generate-readme-preview.sh" >/dev/null
+    if ! git diff --quiet "$REPO_ROOT/_build/README-preview.html" 2>/dev/null; then
+        echo "✓ Updated _build/README-preview.html from README.md"
+        git add "$REPO_ROOT/_build/README-preview.html"
     fi
 fi
 
