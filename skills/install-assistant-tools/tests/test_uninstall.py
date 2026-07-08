@@ -217,17 +217,6 @@ def test_removes_bin_links_and_launcher(installed):
     assert leftovers == [], f"bin dir not emptied: {leftovers}"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="recurring-tasks env.sh is POSIX-only by design")
-def test_removes_fake_repo_env_sh_not_real_one(installed):
-    real_env_sh = REPO_ROOT / "skills" / "recurring-tasks" / "scripts" / "env.sh"
-    existed_before = real_env_sh.exists()
-    run_uninstall(installed)
-    fake_env_sh = installed["repo"] / "skills" / "recurring-tasks" / "scripts" / "env.sh"
-    assert not fake_env_sh.exists()
-    # the live machine's generated env.sh must never be touched by tests
-    assert real_env_sh.exists() == existed_before
-
-
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows installs manage PATH via registry, not shell rc")
 def test_strips_rc_block_preserving_user_lines(installed):
     text = installed["shell_rc"].read_text(encoding="utf-8")
@@ -260,15 +249,6 @@ def test_removes_managed_claude_hook_preserving_user_hook(installed):
     ]
     assert commands == ["echo user-hook"]
     assert after["permissions"] == {"allow": ["Bash(ls:*)"]}
-
-
-def test_removes_ai_agent_env_file(installed):
-    env_file = installed["home"] / ".config" / "environment.d" / "20-ai-agent.conf"
-    if sys.platform == "win32":
-        pytest.skip("environment.d is Linux-only")
-    assert env_file.exists()
-    run_uninstall(installed)
-    assert not env_file.exists()
 
 
 def test_leaves_credentials_by_default(installed):

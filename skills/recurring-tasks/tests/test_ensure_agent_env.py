@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+import ensure_agent_env
+
+
+def test_writes_env_sh_with_bin_dir_on_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    repo_root = tmp_path / "repo"
+    (repo_root / "skills" / "recurring-tasks" / "scripts").mkdir(parents=True)
+    home = tmp_path / "home"
+    home.mkdir()
+    bin_dir = tmp_path / "bin"
+
+    ensure_agent_env.run(repo_root=repo_root, home=home, bin_dir=bin_dir, dry_run=False)
+
+    env_script = repo_root / "skills" / "recurring-tasks" / "scripts" / "env.sh"
+    assert env_script.is_file()
+    assert str(bin_dir) in env_script.read_text()
+    assert env_script.stat().st_mode & 0o111
+
+
+def test_writes_systemd_environment_file_scoped_to_home(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(ensure_agent_env.shutil, "which", lambda name: None)  # no systemctl in test env
+    repo_root = tmp_path / "repo"
+    (repo_root / "skills" / "recurring-tasks" / "scripts").mkdir(parents=True)
+    home = tmp_path / "home"
+    home.mkdir()
+
+    ensure_agent_env.run(repo_root=repo_root, home=home, bin_dir=tmp_path / "bin", dry_run=False)
+
+    env_file = home / ".config" / "environment.d" / "20-ai-agent.conf"
+    assert env_file.is_file()
+    assert "AI_AGENT_COMMAND_TEMPLATE=invoke-skill {skill}" in env_file.read_text()
+
+
+def test_dry_run_writes_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    repo_root = tmp_path / "repo"
+    (repo_root / "skills" / "recurring-tasks" / "scripts").mkdir(parents=True)
+    home = tmp_path / "home"
+    home.mkdir()
+
+    ensure_agent_env.run(repo_root=repo_root, home=home, bin_dir=tmp_path / "bin", dry_run=True)
+
+    assert not (repo_root / "skills" / "recurring-tasks" / "scripts" / "env.sh").exists()
+    assert not (home / ".config" / "environment.d" / "20-ai-agent.conf").exists()

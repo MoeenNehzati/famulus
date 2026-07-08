@@ -15,6 +15,12 @@ CRON_MARKER="# ai-recurring-healthcheck"
 
 echo "── Prerequisites ──"
 python3 -c "import yaml; print('PyYAML ok')"
+REPO_ROOT="$(cd "$SKILL_DIR/../.." && pwd)"
+BIN_DIR="$(dirname "$(command -v assistant 2>/dev/null || echo "$HOME/Documents/scripts/bin/assistant")")"
+python3 "$SKILL_DIR/scripts/ensure_agent_env.py" \
+  --repo-root "$REPO_ROOT" \
+  --home "$HOME" \
+  --bin-dir "$BIN_DIR"
 
 echo ""
 echo "── Syncing units ──"

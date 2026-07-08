@@ -26,6 +26,8 @@ Use the installed `dispatcher` command for this skill's script interfaces:
   - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-disable <name>`
 - `scripts-enable` — Enable a job by setting enabled: true in jobs.yaml and syncing unit files.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-enable <name>`
+- `scripts-ensure-agent-env` — Idempotently ensure recurring-tasks' own PATH/env prerequisites (env.sh, systemd AI_AGENT_COMMAND_TEMPLATE) are in place. Also run automatically by scripts-setup.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-ensure-agent-env --repo-root DIR --home DIR --bin-dir DIR [--dry-run]`
 - `scripts-healthcheck` — Run pre-flight and per-job health checks for all enabled recurring tasks; sends a desktop notification on failure.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks scripts-healthcheck`
 - `scripts-setup` — Verify prerequisites, sync systemd unit files from jobs.yaml, install the healthcheck cron entry, and list active timers.

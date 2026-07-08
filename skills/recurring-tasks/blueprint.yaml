@@ -17,6 +17,8 @@ suggested_permissions:
       reason: "Consolidated interface: enable/disable/test/view-logs jobs."
     - command: ["scripts/healthcheck.py"]
       reason: "Run pre-flight and per-job health checks."
+    - command: ["scripts/ensure_agent_env.py"]
+      reason: "Ensure recurring-tasks' own PATH/env prerequisites are in place."
     - command: ["systemctl"]
       reason: "Manage systemd user units."
     - command: ["journalctl"]
@@ -112,6 +114,16 @@ script_interfaces:
       patterns:
         - name: owner
           allow_extra_positionals: false
+
+  scripts-ensure-agent-env:
+    id: scripts-ensure-agent-env
+    description: "Idempotently ensure recurring-tasks' own PATH/env prerequisites (env.sh, systemd AI_AGENT_COMMAND_TEMPLATE) are in place. Also run automatically by scripts-setup."
+    usage: "--repo-root DIR --home DIR --bin-dir DIR [--dry-run]"
+    cwd: skill_root
+    command: ["python3", "scripts/ensure_agent_env.py"]
+    default:
+      patterns:
+        - name: owner
 
   # ── Internal interfaces (not model-callable; no description) ───────────────
 
