@@ -47,6 +47,21 @@ def test_ensure_rc_vars_replaces_existing_value_for_same_key(tmp_path):
     assert "export ASSISTANT_DEFAULT=claude" not in content
 
 
+def test_ensure_rc_vars_does_not_accumulate_blank_lines_across_repeated_writes(tmp_path):
+    """Regression: three separate callers (scaffold/launchers/dev_link) each
+    writing their one var, one after another, must not each add another
+    blank separator line before the block."""
+    rc_file = tmp_path / ".bashrc"
+    rc_file.write_text("# user line\n")
+
+    ensure_rc_vars(rc_file, {"AI": 'export AI="/repo"'}, dry_run=False)
+    ensure_rc_vars(rc_file, {"PATH": 'export PATH="/bin:$PATH"'}, dry_run=False)
+    ensure_rc_vars(rc_file, {"ASSISTANT_DEFAULT": "export ASSISTANT_DEFAULT=claude"}, dry_run=False)
+
+    content = rc_file.read_text()
+    assert content.startswith("# user line\n\n" + BLOCK_BEGIN)
+
+
 def test_ensure_rc_vars_dry_run_does_not_write(tmp_path, capsys):
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("original\n")

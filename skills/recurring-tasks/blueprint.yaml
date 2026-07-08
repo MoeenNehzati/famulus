@@ -5,7 +5,7 @@ cross_platform: false
 
 depends_on:
   install-assistant-tools:
-    major_version: 1
+    major_version: 2
 
 suggested_permissions:
   bash:

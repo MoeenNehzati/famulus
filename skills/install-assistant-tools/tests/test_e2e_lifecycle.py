@@ -35,7 +35,8 @@ from install_test_utils import (  # noqa: E402
 )
 
 import dev_link  # noqa: E402
-import setup_tools  # noqa: E402
+import launchers  # noqa: E402
+import scaffold  # noqa: E402
 
 UNINSTALL = SCRIPT_DIR.parent / "scripts" / "uninstall.py"
 
@@ -138,8 +139,9 @@ def test_launchers_executable_after_install(homes):
     source_bin = REPO_ROOT / "skills" / "install-assistant-tools" / "bin"
     buf = io.StringIO()
     with redirect_stdout(buf):
-        setup_tools.install_bin_scripts(source_bin, bin_dir, dry_run=False)
-        setup_tools.install_dispatcher_launcher(REPO_ROOT, bin_dir, dry_run=False)
+        scaffold.install_dispatcher_launcher(REPO_ROOT, bin_dir, dry_run=False)
+        for agent in ("assistant", "collab", "coauthor", "tw"):
+            launchers.install_bin_for_agent(source_bin, bin_dir, agent, dry_run=False, manifest=None)
 
     env = python_test_env(homes["root"], {"HOME": str(homes["home"])})
     for cmd in ("assistant", "collab", "coauthor", "tw", "dispatcher"):
@@ -172,6 +174,21 @@ def _make_fake_repo(root: Path) -> Path:
     )
     (repo / "CLAUDE.md").write_text("repo instructions\n", encoding="utf-8")
     (repo / "AGENTS.md").write_text("repo instructions\n", encoding="utf-8")
+
+    # launchers.py needs source bin scripts + profiles/agent content
+    src_bin = repo / "skills" / "install-assistant-tools" / "bin"
+    src_bin.mkdir(parents=True)
+    for name in ("_agent_launch.py", "assistant", "collab", "coauthor", "tmux-workspace",
+                 "assistant.bat", "collab.bat", "coauthor.bat"):
+        (src_bin / name).write_text("#!/bin/bash\n", encoding="utf-8")
+    for agent in ("assistant", "collab", "coauthor"):
+        (repo / "profiles" / f"{agent}.config.toml").write_text(
+            f'model_instructions_file = "agents/{agent}.md"\n', encoding="utf-8"
+        )
+        (repo / "agents" / f"{agent}.md").write_text(
+            f"---\ndescription: {agent}\n---\nBody.\n", encoding="utf-8"
+        )
+
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     return repo
 
@@ -279,17 +296,16 @@ def test_install_uninstall_roundtrip_restores_home(homes, tmp_path: Path):
                 claude_home=homes["claude"],
                 codex_home=homes["codex"],
             )
-            setup_tools.run(
+            scaffold.run(repo_root=repo, home=home, bin_dir=bin_dir, shell_rc=shell_rc)
+            launchers.run(
+                repo_root=repo,
+                agents=["assistant", "collab", "coauthor", "tw"],
                 home=home,
                 bin_dir=bin_dir,
-                shell_rc=shell_rc,
-                claude_home=homes["claude"],
                 codex_home=homes["codex"],
+                claude_home=homes["claude"],
+                shell_rc=shell_rc,
                 default_llm="claude",
-                update_system_shell_rc=False,
-                dry_run=False,
-                install_packages=False,
-                repo_root=repo,
             )
     finally:
         sys.path[:] = saved_path

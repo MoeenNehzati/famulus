@@ -1,9 +1,10 @@
 """Tests for uninstall.py — manifest-based reversal of install side effects.
 
 The installed state is produced by REALLY running the installers
-(dev_link.run + setup_tools.run) against a fake repo and sandboxed
-homes, so a genuine manifest drives the uninstall — the only supported
-path. A missing manifest is a hard error (tested), never a heuristic guess.
+(dev_link.run + scaffold.run + launchers.run) against a fake repo and
+sandboxed homes, so a genuine manifest drives the uninstall — the only
+supported path. A missing manifest is a hard error (tested), never a
+heuristic guess.
 """
 from __future__ import annotations
 
@@ -23,7 +24,8 @@ sys.path.insert(0, str(SCRIPTS))
 
 from install_manifest import Manifest, manifest_path  # noqa: E402
 import dev_link  # noqa: E402
-import setup_tools  # noqa: E402
+import launchers  # noqa: E402
+import scaffold  # noqa: E402
 
 UNINSTALL = SCRIPTS / "uninstall.py"
 
@@ -132,12 +134,13 @@ def make_installed_state(root: Path) -> dict[str, Path]:
                 home=home, repo_root=repo,
                 claude_home=claude_home, codex_home=codex_home,
             )
-            setup_tools.run(
+            scaffold.run(repo_root=repo, home=home, bin_dir=bin_dir, shell_rc=shell_rc)
+            launchers.run(
+                repo_root=repo,
+                agents=["assistant", "collab", "coauthor", "tw"],
                 home=home, bin_dir=bin_dir, shell_rc=shell_rc,
                 claude_home=claude_home, codex_home=codex_home,
-                default_llm="claude", update_system_shell_rc=False,
-                dry_run=False, install_packages=False,
-                repo_root=repo,
+                default_llm="claude",
             )
     finally:
         sys.path[:] = saved_path

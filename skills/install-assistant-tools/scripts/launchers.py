@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -156,6 +157,53 @@ def _ensure_assistant_default_windows(default_llm: str, dry_run: bool, manifest:
         manifest.record("registry_env", path="ASSISTANT_DEFAULT", names=["ASSISTANT_DEFAULT"])
 
 
+def verify_install(bin_dir: Path, agents: list[str]) -> bool:
+    """Run --help on each installed agent command and report results.
+
+    Only verifies the agents actually selected (unlike setup_tools.py's old
+    fixed VERIFY_CMDS list) — installing a subset shouldn't report FAIL for
+    agents that were never asked for.
+
+    On Windows, tmux-workspace is skipped (tmux is not available) and .bat
+    wrappers are used for assistant/collab/coauthor because extension-less
+    scripts cannot be executed directly by Windows.
+    """
+    log("")
+    log("Verifying installation...")
+    ok = True
+    is_windows = sys.platform == "win32"
+
+    for agent in agents:
+        name = "tw" if agent == "tw" else agent
+        if is_windows and name == "tw":
+            log("  SKIP: tw (tmux not available on Windows)")
+            continue
+
+        if is_windows and name in ("assistant", "collab", "coauthor"):
+            dst = bin_dir / f"{name}.bat"
+        else:
+            dst = bin_dir / name
+
+        if not dst.exists():
+            log(f"  FAIL: {dst} not found")
+            ok = False
+            continue
+        if not is_windows and not os.access(dst, os.X_OK):
+            log(f"  FAIL: {dst} is not executable")
+            ok = False
+            continue
+        result = subprocess.run([str(dst), "--help"], capture_output=True)
+        if result.returncode == 0:
+            log(f"  OK:   {dst} --help")
+        else:
+            log(f"  FAIL: {dst} --help exited {result.returncode}")
+            ok = False
+
+    if not ok:
+        log("Warning: one or more verification checks failed.")
+    return ok
+
+
 def run(
     *,
     repo_root: Path,
@@ -205,6 +253,9 @@ def run(
 
     if manifest is not None:
         manifest.save()
+
+    if not dry_run and agents:
+        verify_install(bin_dir, agents)
 
     log("")
     log("Launchers complete.")

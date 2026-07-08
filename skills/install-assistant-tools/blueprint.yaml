@@ -5,7 +5,7 @@
 category: skill-making-development-assistant
 # Bump this major version whenever the exported contract changes in a
 # breaking way for dependent skills.
-interface_version: 1
+interface_version: 2
 
 depends_on: {}
 
@@ -26,28 +26,37 @@ skill_interface:
 script_interfaces:
   scripts-install:
     id: scripts-install
-    description: "Run the combined installer — wires config dirs to the repo, then installs bin scripts, rc block, and git hooks."
-    usage: "[--dry-run] [--no-claude] [--no-codex] [--bin-dir DIR] [--shell-rc FILE] [--system-shell-rc FILE] [--no-system-shell-rc] [--default-llm {claude,codex}] [--cloud-files-remote-llm-root PATH] [--home DIR] [--claude-home DIR] [--codex-home DIR]"
+    description: "Phase-1 orchestrator: asks the dev-mode question, then runs scaffold, optionally dev-link, then launchers."
+    usage: "[--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path DIR] [--agents LIST] [--default-llm {claude,codex}] [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]"
     cwd: skill_root
     command: ["python3", "scripts/install.py"]
     default:
       patterns:
         - name: owner
-  scripts-setup-symlinks:
-    id: scripts-setup-symlinks
-    description: "Wire Claude and Codex config dirs to the canonical AI repo with symlinks, preserving any unique local skill entries."
-    usage: "[--dry-run] [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR]"
+  scripts-scaffold:
+    id: scripts-scaffold
+    description: "Install the dispatcher + invoke-skill launchers and put the bin dir on PATH. Universal floor, mode-independent."
+    usage: "--repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]"
     cwd: skill_root
-    command: ["python3", "scripts/setup_symlinks.py"]
+    command: ["python3", "scripts/scaffold.py"]
     default:
       patterns:
         - name: owner
-  scripts-setup-tools:
-    id: scripts-setup-tools
-    description: "Install or update bin launchers, worker dirs, profile copies, git hooks, and the managed shell rc block."
-    usage: "[--dry-run] [--no-system-shell-rc] [--bin-dir DIR] [--shell-rc FILE] [--system-shell-rc FILE] [--default-llm {claude,codex}] [--cloud-files-remote-llm-root PATH] [--home DIR] [--codex-home DIR] [--claude-home DIR]"
+  scripts-dev-link:
+    id: scripts-dev-link
+    description: "Symlink Claude/Codex config dirs to a live repo checkout, register dev-mode hooks, set git hooksPath, export $AI. Requires an explicit repo path."
+    usage: "--repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]"
     cwd: skill_root
-    command: ["python3", "scripts/setup_tools.py"]
+    command: ["python3", "scripts/dev_link.py"]
+    default:
+      patterns:
+        - name: owner
+  scripts-launchers:
+    id: scripts-launchers
+    description: "Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT for the given agents."
+    usage: "--repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--dry-run]"
+    cwd: skill_root
+    command: ["python3", "scripts/launchers.py"]
     default:
       patterns:
         - name: owner

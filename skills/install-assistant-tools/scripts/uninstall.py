@@ -36,7 +36,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from install_manifest import Manifest, manifest_path  # noqa: E402
-from setup_tools import (  # noqa: E402
+from rc_block import (  # noqa: E402
     BLOCK_BEGIN,
     BLOCK_END,
 )

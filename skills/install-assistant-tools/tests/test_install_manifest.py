@@ -136,13 +136,15 @@ def test_setup_symlinks_dry_run_records_nothing(tmp_path: Path):
 
 
 def test_rc_block_recorded(tmp_path: Path):
-    import setup_tools
+    # ensure_rc_block (setup_tools.py, legacy) is gone; the merge-based
+    # writer used by scaffold/launchers/dev_link is rc_block.ensure_rc_vars,
+    # already covered exhaustively by test_rc_block.py. This test just
+    # confirms it records into a manifest the way callers expect.
+    from rc_block import ensure_rc_vars
 
     rc = tmp_path / ".bashrc"
     manifest = Manifest(tmp_path / "manifest.json")
-    setup_tools.ensure_rc_block(
-        rc, tmp_path / "bin", "claude", REPO_ROOT, "user", False, manifest=manifest
-    )
+    ensure_rc_vars(rc, {"PATH": 'export PATH="/bin:$PATH"'}, False, manifest=manifest)
     blocks = [e for e in manifest.entries if e["kind"] == "marker_block"]
     assert any(e["path"] == str(rc) for e in blocks)
 
@@ -245,57 +247,44 @@ def test_uninstall_keeps_failed_entries_in_manifest(tmp_path: Path):
 
 
 def test_full_install_writes_manifest(tmp_path: Path):
-    """setup_tools.run records its side effects in the home-scoped manifest.
+    """scaffold.run() + launchers.run() record their side effects in the
+    home-scoped manifest (replacing setup_tools.run(), now deleted).
 
-    Hook installation (json_hook_commands) has moved to dev_link.py — see
-    test_dev_link.py / test_setup_tools_hooks.py for that coverage. This
-    test only covers what setup_tools.run() itself still does.
+    Hook installation (json_hook_commands) is dev_link.py's job — see
+    test_dev_link.py / test_setup_tools_hooks.py for that coverage.
     """
-    import subprocess
+    import scaffold
+    import launchers
 
-    import setup_tools
-
-    # In-process run() MUST get a throwaway repo_root: several install steps
-    # write into the repo (recurring-tasks env.sh, git hooksPath, worker
-    # dirs), and the default would mutate the live checkout.
     repo = tmp_path / "repo"
-    (repo / ".githooks").mkdir(parents=True)
-    (repo / ".githooks" / "pre-commit").write_text("#!/bin/bash\n", encoding="utf-8")
+    skill_dir = repo / "skills" / "install-assistant-tools"
+    source_bin = skill_dir / "bin"
+    source_bin.mkdir(parents=True)
+    for name in ["assistant", "_agent_launch.py"]:
+        (source_bin / name).write_text("#!/bin/sh\necho stub\n")
+        (source_bin / name).chmod(0o755)
     (repo / "profiles").mkdir()
-    (repo / "llmhooks").mkdir()
-    (repo / "llmhooks" / "__init__.py").write_text("", encoding="utf-8")
-    (repo / "llmhooks" / "registry.py").write_text(
-        "def hooks_for_host(host):\n    return []\n", encoding="utf-8"
+    (repo / "profiles" / "assistant.config.toml").write_text(
+        'model_instructions_file = "agents/assistant.md"\n'
     )
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "agents").mkdir()
+    (repo / "agents" / "assistant.md").write_text("---\ndescription: t\n---\nBody.\n")
 
     home = tmp_path / "home"
     home.mkdir()
-    # run() imports llmhooks from the fake repo; snapshot import state so the
-    # stub doesn't stay cached and poison later tests in the same process.
-    saved_path = list(sys.path)
-    saved_llmhooks = {
-        name: mod for name, mod in sys.modules.items()
-        if name == "llmhooks" or name.startswith("llmhooks.")
-    }
-    try:
-        setup_tools.run(
-            home=home,
-            bin_dir=home / "bin",
-            shell_rc=home / ".bashrc",
-            claude_home=home / ".claude",
-            codex_home=home / ".codex",
-            default_llm="claude",
-            update_system_shell_rc=False,
-            dry_run=False,
-            install_packages=False,
-            repo_root=repo,
-        )
-    finally:
-        sys.path[:] = saved_path
-        for name in [n for n in sys.modules if n == "llmhooks" or n.startswith("llmhooks.")]:
-            del sys.modules[name]
-        sys.modules.update(saved_llmhooks)
+
+    scaffold.run(repo_root=repo, home=home, bin_dir=home / "bin", shell_rc=home / ".bashrc")
+    launchers.run(
+        repo_root=repo,
+        agents=["assistant"],
+        home=home,
+        bin_dir=home / "bin",
+        codex_home=home / ".codex",
+        claude_home=home / ".claude",
+        shell_rc=home / ".bashrc",
+        default_llm="claude",
+    )
+
     mpath = manifest_path(home)
     assert mpath.exists()
     entries = json.loads(mpath.read_text())["entries"]

@@ -10,7 +10,7 @@ Category: skill-making-development-assistant
 
 Dependencies: none
 
-Interface Version: 1
+Interface Version: 2
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
@@ -20,12 +20,14 @@ Exported Script Interfaces: none
 Owner-Facing Script Interfaces:
 
 Use the installed `dispatcher` command for this skill's script interfaces:
-- `scripts-install` — Run the combined installer — wires config dirs to the repo, then installs bin scripts, rc block, and git hooks.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-install [--dry-run] [--no-claude] [--no-codex] [--bin-dir DIR] [--shell-rc FILE] [--system-shell-rc FILE] [--no-system-shell-rc] [--default-llm {claude,codex}] [--cloud-files-remote-llm-root PATH] [--home DIR] [--claude-home DIR] [--codex-home DIR]`
-- `scripts-setup-symlinks` — Wire Claude and Codex config dirs to the canonical AI repo with symlinks, preserving any unique local skill entries.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-setup-symlinks [--dry-run] [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR]`
-- `scripts-setup-tools` — Install or update bin launchers, worker dirs, profile copies, git hooks, and the managed shell rc block.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-setup-tools [--dry-run] [--no-system-shell-rc] [--bin-dir DIR] [--shell-rc FILE] [--system-shell-rc FILE] [--default-llm {claude,codex}] [--cloud-files-remote-llm-root PATH] [--home DIR] [--codex-home DIR] [--claude-home DIR]`
+- `scripts-dev-link` — Symlink Claude/Codex config dirs to a live repo checkout, register dev-mode hooks, set git hooksPath, export $AI. Requires an explicit repo path.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-dev-link --repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]`
+- `scripts-install` — Phase-1 orchestrator: asks the dev-mode question, then runs scaffold, optionally dev-link, then launchers.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-install [--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path DIR] [--agents LIST] [--default-llm {claude,codex}] [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]`
+- `scripts-launchers` — Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT for the given agents.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-launchers --repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--dry-run]`
+- `scripts-scaffold` — Install the dispatcher + invoke-skill launchers and put the bin dir on PATH. Universal floor, mode-independent.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-scaffold --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]`
 <!-- END BLUEPRINT INTERFACES -->
 # Install Assistant Tools
 
@@ -51,86 +53,106 @@ bin/
   collab             Python launcher — claude --agent collab or codex --profile collab
   coauthor           Python launcher — claude --agent coauthor or codex --profile coauthor
   tmux-workspace     Bash script for tw / tmux-workspace (Unix only)
-  _agent_launch.py   Shared launcher logic imported by the three launchers above
+  _agent_launch.py   Shared launcher logic imported by the three launchers above.
+                     Resolves its own repo root via Path(__file__).resolve()
+                     (works in plugin mode too, no $AI dependency); builds the
+                     Claude --agents JSON inline from agents/<agent>.md instead
+                     of requiring $CLAUDE_HOME/agents/<agent>.md.
   assistant.bat      Windows wrapper (delegates to assistant via py.exe)
   collab.bat         Windows wrapper (delegates to collab via py.exe)
   coauthor.bat       Windows wrapper (delegates to coauthor via py.exe)
 scripts/
-  install.py         Combined entry point — runs setup_symlinks then setup_tools
-  setup_symlinks.py  Wires Claude and Codex config dirs to the repo
-  setup_tools.py     Installs bin scripts, profiles, rc block, git hooks
+  install.py         Phase-1 orchestrator — asks the dev-mode question, then
+                     chains scaffold -> [dev_link] -> launchers
+  scaffold.py        Universal floor: dispatcher + invoke-skill launchers, PATH,
+                     required Python packages. Mode-independent, always runs.
+  dev_link.py        Dev-mode only: Claude/Codex config-dir symlinks, dev-mode
+                     hook registration, git hooksPath, $AI export. Requires an
+                     explicit repo path — never inferred.
+  launchers.py       Per selected agent: bin launcher, profile config (with an
+                     absolute model_instructions_file rewrite so Codex doesn't
+                     need $CODEX_HOME/agents either), worker dir,
+                     ASSISTANT_DEFAULT. No agents preselected.
+  link_utils.py      Shared make_link/make_copy used by scaffold/launchers/dev_link.
+  rc_block.py        Merge-capable managed-block writer: scaffold owns PATH,
+                     launchers owns ASSISTANT_DEFAULT, dev_link owns $AI — all
+                     three share one physical rc block without clobbering
+                     each other on repeated runs.
   uninstall.py       Reverses install side effects; best-effort with a final
                      removed/skipped/left/FAILED report (exit 1 on failures).
                      Leaves OAuth credentials unless --purge; supports
                      --dry-run, --no-pip, --no-git-hooks.
   install_manifest.py Home-scoped record of install side effects
                      (~/.local/state/assistant-tools/install-manifest.json).
-                     install/setup_* record into it; uninstall.py replays it
-                     in reverse (exact even across plugin-cache version
-                     drift), falling back to heuristics when absent.
+                     scaffold/dev_link/launchers record into it; uninstall.py
+                     replays it in reverse (exact even across plugin-cache
+                     version drift), falling back to heuristics when absent.
 ```
 
 ## Workflow
 
-### 1. Tell the user what will happen
+### 1. Ask the mode question
 
-Before running anything, summarize:
+Before running anything, ask explicitly:
 
-- Claude and Codex config dirs will be wired back to this repo with symlinks.
-- Claude and Codex skills will both be wired through `~/.{claude,codex}/skills -> <repo>/skills`.
-- If either user `skills/` directory already exists as a real directory, the installer will preserve unique local entries by moving them into the canonical repo `skills/` tree before replacing the directory with a symlink.
-- Launcher scripts will be symlinked into a bin dir on `PATH`.
-- A `dispatcher` launcher is **generated** into the managed bin dir: it runs
-  `script_dispatcher` directly from the repo (`$AI`, with the install-time
-  path baked in as fallback for systemd/cron). First-party code is never
-  pip-installed — no second copy to drift or break.
-- Profile `.config.toml` files are **copied** (not symlinked) into the Codex
-  and Claude homes: Codex writes machine-local state (project trust levels,
-  trusted hook hashes, keyed by absolute personal paths) back into its config
-  file, and a symlink would leak that state into the tracked repo. Existing
-  copies are kept as-is to preserve accumulated local state; legacy symlinks
-  are replaced by copies.
-- A managed rc block or Windows user-environment entry will set `PATH`,
-  `ASSISTANT_DEFAULT`, and `$AI`.
-- Worker directories will be created if absent.
-- Git hooks will be configured.
-- LLM session hooks will be registered in `~/.claude/settings.local.json` and `~/.codex/config.toml` for dev-mode operation.
-- The live cross-host hook logic lives under `llmhooks/`; plugin installs still use `hooks/` as a compatibility shim.
-- Existing symlinks may be replaced if they already point somewhere else.
-- Existing real files or directories are **not** overwritten; they are skipped
-  with a warning.
-- The installer runs lightweight verification at the end.
+> "Do you want development mode? This wires `~/.claude`/`~/.codex` to a live
+> repo checkout so skill/hook edits take effect immediately, instead of a
+> static plugin install."
 
-Ask for confirmation before proceeding.
+Never infer this from filesystem probes (e.g. whether some assumed path is a
+git checkout) — dev mode is an explicit user choice. If yes, ask for the repo
+path directly; do not assume it matches wherever this skill's own code is
+currently running from. Plugin-mode installs don't need a repo path — the
+repo root is derived from wherever the plugin itself is running from, since
+there's no separate "live checkout" concept to get wrong there.
 
-### 2. Run the combined installer
+### 2. Run Phase 1 (installation)
 
-Use the `scripts-install` interface. On an unfamiliar machine, pass `--dry-run`
-to preview without writing anything. Other commonly used flags:
+Use the `scripts-install` interface (`install.py`), which chains:
 
-- `--no-claude` / `--no-codex` — skip symlinks for one tool
-- `--bin-dir DIR` / `--shell-rc FILE` — override default paths
-- `--default-llm {claude,codex}` — set the default backend non-interactively
+1. `scaffold` — dispatcher + invoke-skill launchers, PATH. Always runs,
+   regardless of mode.
+2. `dev-link` — only if dev mode was chosen in step 1. Symlinks, dev-mode
+   hooks, git hooksPath, `$AI`.
+3. `launchers` — asks which of `assistant`/`collab`/`coauthor`/`tw` to
+   install (none preselected — explicit opt-in), then installs the bin
+   launcher/profile/worker-dir/`ASSISTANT_DEFAULT` for each chosen agent.
 
-See the `scripts-install` usage string for the full flag list.
+Each of these three is also independently runnable via `scripts-scaffold`,
+`scripts-dev-link`, `scripts-launchers` for targeted repairs. On an
+unfamiliar machine, pass `--dry-run` to preview without writing anything.
+
+Claude and Codex skill/reference visibility in **plugin mode** already comes
+from the plugin loader itself — `dev-link`'s symlinks are a dev-mode
+convenience, not something plugin-mode installs need or run.
 
 The installer auto-detects the user's shell on Unix (`zsh` → `.zshrc`, else
 `.bashrc`). On Windows it writes PATH and env vars to the user registry
 (`HKEY_CURRENT_USER\Environment`) and broadcasts `WM_SETTINGCHANGE` so new
 terminals pick up the change immediately.
 
-Optional Google services step:
+### 3. Phase 2 — connect remotes, then offer recurring automation
 
-- If `credentials.json` already exists for a service, the installer reports it
-  as already configured.
-- If `client.json` exists and the user chooses that service, the installer runs
-  the service's `setup_oauth.py`.
-- If `client.json` is missing, the installer prints where to save it.
-- In non-interactive mode, optional Google service setup is skipped.
-- Keeping a Google OAuth app in **Testing** may require repeated
-  re-authorization; **Publish app** / **In production** is preferred.
+This phase is deliberately not this skill's job to script — no dependency on
+any other skill is declared here, and none should be added just to name one
+in prose. It's the assistant's own conversational follow-through, using
+whatever cloud-storage, calendar, and email skills are actually configured
+in this environment.
 
-### 3. What the current implementation really does on conflicts
+After Phase 1 completes, ask whether the user wants to connect their cloud
+storage, calendar, and email accounts now — framing it as worthwhile in this
+session because it unlocks recurring email triage and daily planning
+afterward, rather than something to leave for later. If yes, walk through
+each account's own setup flow directly (each such skill owns its own OAuth
+or credential guidance) — do not duplicate that guidance here.
+
+Then, whether or not remotes were connected now, ask whether the user wants
+recurring triage and daily planning set up. If yes, hand this off entirely
+to the recurring-automation system's own workflow — it is responsible for
+lazily and idempotently ensuring its own prerequisites the first time it's
+used. This skill has no further role at that point.
+
+### 4. What the current implementation really does on conflicts
 
 This is important for reliable operator expectations.
 
@@ -173,13 +195,13 @@ This is important for reliable operator expectations.
 
 #### Symlinked `~/.codex`
 
-- `setup_symlinks.py` warns and skips Codex directory links if `CODEX_HOME`
+- `dev_link.py` warns and skips Codex directory links if `CODEX_HOME`
   itself is a symlink.
 
 Do **not** promise merge, backup, replace/keep menus, rollback, or
 non-interactive conflict-policy flags unless the code has actually gained them.
 
-### 4. Sanity check
+### 5. Sanity check
 
 After the installer finishes, reload the environment and verify:
 
@@ -197,7 +219,7 @@ where assistant
 If the command is not found, the bin dir is not on `PATH`. Check installer
 output and open a fresh terminal.
 
-### 5. Basic smoke test
+### 6. Basic smoke test
 
 ```bash
 assistant --help
@@ -208,7 +230,7 @@ tw -h       # Unix only; skip on Windows
 
 Each help command should exit 0.
 
-### 6. If something fails
+### 7. If something fails
 
 If a command fails or is not available on the user's platform:
 
@@ -225,8 +247,8 @@ Do not modify scripts speculatively.
 | User rc | `~/.zshrc` (zsh) or `~/.bashrc` (bash/other) — auto-detected; Windows uses registry |
 | System rc | `/etc/bash.bashrc` (skipped on Windows) |
 | Bin dir | `$HOME/Documents/scripts/bin` |
-| AI root | Two levels above the skill dir (for example `~/Documents/AI`), exported as `$AI` |
-| Workers | `$AI/workers/{assistant,collab,coauthor}` |
+| Repo root | Dev mode: the path the user supplied. Plugin mode: derived from wherever the plugin is running from. `$AI` itself is only exported by `dev-link` (dev-mode only) — plugin-mode installs never set it; `_agent_launch.py` and `dispatcher` resolve their own repo root from their own file location instead. |
+| Workers | `<repo-root>/workers/{assistant,collab,coauthor}` |
 | Codex home | `$CODEX_HOME`, or `$HOME/.codex` |
 | Claude home | `$CLAUDE_HOME`, or `$HOME/.claude` |
 | Git hooks | `<repo-root>/.githooks` |
@@ -312,8 +334,8 @@ Known handoff caveat / TODO:
 block or Windows user environment and then open a new shell.
 
 **`ModuleNotFoundError: No module named '_agent_launch'`** — `_agent_launch.py`
-is missing from the bin dir. Re-run the installer and check `BIN_SCRIPTS` in
-`setup_tools.py`.
+is missing from the bin dir. Re-run the installer and check
+`install_bin_for_agent` in `launchers.py`.
 
 **`tw: command not found` on Windows** — expected; tmux is not available on
 Windows.
@@ -339,15 +361,17 @@ To add an agent (for example `researcher`):
 
 1. copy `bin/assistant` to `bin/researcher` and update `agent=` / env fallback
 2. copy `bin/assistant.bat` to `bin/researcher.bat`
-3. add `researcher` to `AGENTS`, `BIN_SCRIPTS`, `BAT_WRAPPERS`, and
-   `VERIFY_CMDS` in `setup_tools.py`
+3. add `researcher` to `ALL_AGENTS` and `WORKER_AGENTS` in `launchers.py`
 4. add `profiles/researcher.config.toml`
 5. add `profiles/researcher_claude_setting.json`
-6. re-run the installer
+6. re-run the installer (`--agents researcher` or pick it interactively)
 
 ### Key contracts
 
-- `$AI` points to the repo root and controls the default worker directories.
-- `profiles/*.config.toml` are linked into both Codex and Claude homes.
+- `<repo-root>` (dev mode: user-supplied; plugin mode: derived from the
+  running plugin's own location) controls the default worker directories —
+  not `$AI`, which is only exported by `dev-link` as a dev-mode convenience.
+- `profiles/*.config.toml` are copied (not linked) into both Codex and Claude
+  homes, with `model_instructions_file` rewritten to an absolute path.
 - `profiles/*_claude_setting.json` are linked into Claude home only.
 - `workers/` contains one default working directory per agent.

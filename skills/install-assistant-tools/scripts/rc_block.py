@@ -61,6 +61,11 @@ def ensure_rc_vars(
         stripped = line.rstrip("\n")
         if stripped == BLOCK_BEGIN:
             inside = True
+            # Drop the blank separator line written before the block, so
+            # repeated writes (from this or another rc_block.py caller
+            # sharing the same managed block) don't accumulate blank lines.
+            if filtered and not filtered[-1].strip():
+                filtered.pop()
             continue
         if stripped == BLOCK_END:
             inside = False

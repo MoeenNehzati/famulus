@@ -147,6 +147,37 @@ def test_run_with_no_agents_installs_nothing(tmp_path):
     assert not (bin_dir / "assistant").exists()
 
 
+def test_run_verifies_installed_launchers(tmp_path, capsys):
+    repo_root = _make_repo(tmp_path)
+    bin_dir = tmp_path / "bin"
+
+    launchers.run(
+        repo_root=repo_root,
+        agents=["assistant"],
+        bin_dir=bin_dir,
+        codex_home=tmp_path / "codex",
+        claude_home=tmp_path / "claude",
+        shell_rc=tmp_path / ".bashrc",
+        default_llm="claude",
+        dry_run=False,
+    )
+
+    out = capsys.readouterr().out
+    assert f"OK:   {bin_dir / 'assistant'} --help" in out
+    # only the selected agent is verified, not the whole fixed list
+    assert "collab" not in out
+
+
+def test_verify_install_reports_fail_for_missing_launcher(tmp_path, capsys):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    ok = launchers.verify_install(bin_dir, ["assistant"])
+
+    assert ok is False
+    assert f"FAIL: {bin_dir / 'assistant'} not found" in capsys.readouterr().out
+
+
 def test_tw_agent_links_both_tmux_workspace_and_tw_alias(tmp_path):
     repo_root = _make_repo(tmp_path)
     bin_dir = tmp_path / "bin"
