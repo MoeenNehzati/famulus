@@ -14,12 +14,19 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def read_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def github_owner_repo(repo_root: Path = REPO_ROOT) -> str:
+    """`owner/repo` shorthand, read from the plugin manifest's `repository` URL."""
+    repository = read_json(repo_root / ".claude-plugin" / "plugin.json")["repository"]
+    return urlparse(repository).path.strip("/")
 
 
 def expected_skills(repo_root: Path = REPO_ROOT) -> list[str]:
