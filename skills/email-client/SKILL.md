@@ -10,7 +10,7 @@ Category: productivity-general-assistant
 
 Dependencies: none
 
-Interface Version: 2
+Interface Version: 3
 
 Exported Script Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
@@ -30,12 +30,16 @@ Use the installed `dispatcher` command for this skill's script interfaces:
   - `dispatcher --caller-skill email-client email-client accounts-set-password --nickname <nick> --purpose imap|smtp`
 - `accounts-update` — Update fields on an existing account nickname.
   - `dispatcher --caller-skill email-client email-client accounts-update --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P]`
+- `mail-attachments` — List attachment metadata for one or more emails as JSON. Returns one record per requested UID with attachment entries containing filename, content_type, size_bytes, size_human, and disposition.
+  - `dispatcher --caller-skill email-client email-client mail-attachments -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...]`
 - `mail-folders` — List IMAP folders for an account (JSON).
   - `dispatcher --caller-skill email-client email-client mail-folders -a <nickname>`
 - `mail-list` — List email envelopes for an account as JSON (fields: id, flags, subject, from, date, message_id). --folder accepts aliases inbox|sent|drafts|trash|all or any literal IMAP folder name (default inbox). --after narrows server-side by day (IMAP SINCE). Filters are key=value (exact, comma-separated=OR) or key~=value (regex, case-insensitive) over id/subject/from/date/message_id/flags, ANDed across distinct keys, applied client-side after fetch. Unfiltered + undated scans the whole folder (slow on large mailboxes) — pair filters with --after.
   - `dispatcher --caller-skill email-client email-client mail-list -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] [--after YYYY-MM-DD] [key=value|key~=value ...] [--limit N]`
-- `mail-read` — Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/ Date/Message-ID, then In-Reply-To/References only if the message is a reply, then a blank line, then the decoded body (text/plain preferred; falls back to HTML with tags stripped; attachments are skipped, not shown).
+- `mail-read` — Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/ Date/Message-ID, then In-Reply-To/References only if the message is a reply, then an Attachments section (none or one line per attachment with filename, MIME type, and size), then a blank line, then the decoded body (text/plain preferred; falls back to HTML with tags stripped).
   - `dispatcher --caller-skill email-client email-client mail-read -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>`
+- `mail-save-attachments` — Save attachments from one or more emails into a directory. Use --all to save every attachment, or repeat --name to save only selected filenames. Returns JSON describing the saved files.
+  - `dispatcher --caller-skill email-client email-client mail-save-attachments -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...] --out <dir> (--all | --name <filename> [--name <filename> ...])`
 - `send-email` — Send an email via msmtp; body comes from stdin.
   - `dispatcher --caller-skill email-client email-client send-email --from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]`
 <!-- END BLUEPRINT INTERFACES -->
@@ -49,9 +53,10 @@ own memory/preferences, not in this skill.
 Reading and sending both go through plain IMAP/SMTP via Python's standard library and
 msmtp directly — no external mail-client binary, no pip installs.
 
-## Reading — `mail-list` / `mail-read` / `mail-folders`
+## Reading and attachments — `mail-list` / `mail-read` / `mail-attachments` / `mail-save-attachments` / `mail-folders`
 
-All return JSON (except `mail-read`, which prints headers + decoded body as text).
+All return JSON except `mail-read`, which prints a readable text view: headers, an
+`Attachments:` section, then the decoded body.
 
 ```bash
 # List recent envelopes (folder defaults to inbox)
@@ -63,6 +68,17 @@ mail-list -a work --limit 20
 
 # Read a message by UID (the "id" field from mail-list output)
 mail-read -a work 42
+
+# Machine-readable attachment listing for one or more messages
+mail-attachments -a work 42
+mail-attachments -a work 42 43 44
+
+# Save every attachment from a message
+mail-save-attachments -a work 42 --out /tmp/mail-attachments --all
+
+# Save only selected filenames, even across multiple messages
+mail-save-attachments -a work 42 43 --out /tmp/mail-attachments \
+  --name lessons.zip --name screenshot.png
 
 # List folders
 mail-folders -a work
@@ -90,6 +106,16 @@ un-dated `mail-list` scans the whole folder (tens of seconds on a large mailbox)
 
 Every envelope from `mail-list` includes `message_id` — no separate lookup needed for
 replies (see below).
+
+Use the interfaces this way:
+
+- `mail-read` — human-oriented read path; always shows attachment names/metadata so you
+  can see what the email carries without a second command.
+- `mail-attachments` — JSON attachment metadata when a caller needs structured output or
+  wants to inspect several message UIDs at once.
+- `mail-save-attachments` — download path. `--all` saves every attachment; repeated
+  `--name <filename>` restricts to selected filenames. If two saved files would collide,
+  the later one gets a numeric suffix like `notes-2.pdf`.
 
 ## Sending — `send-email`
 

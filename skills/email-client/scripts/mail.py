@@ -13,11 +13,15 @@ for that account.
 Subcommands:
   list    -a <nickname> [--folder FOLDER] [--after YYYY-MM-DD] [FILTER...] [--limit N]
   read    -a <nickname> [--folder FOLDER] <uid>
+  attachments -a <nickname> [--folder FOLDER] <uid> [<uid> ...]
+  save-attachments -a <nickname> [--folder FOLDER] <uid> [<uid> ...] --out DIR (--all | --name NAME [...])
   folders -a <nickname>
 
 Structured output is JSON so callers don't need to parse a text table.
 Every envelope from `list` includes message_id, so a separate lookup (as
 email-get-message-id.sh used to require) is no longer needed for replies.
+`read` is the exception: it prints a readable text view with headers,
+attachment names/metadata, then the decoded body.
 
 FILTER arguments use the same DSL as list-manager's `read` filters, so there's
 one filtering language across the toolkit instead of a second one just for
@@ -113,6 +117,145 @@ def parse_date(raw: str | None) -> str | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.isoformat()
+
+
+def format_size(size_bytes: int) -> str:
+    if size_bytes < 1000:
+        return f"{size_bytes} B"
+    size = float(size_bytes)
+    for unit in ("KB", "MB", "GB", "TB"):
+        size /= 1000.0
+        if size < 999.5 or unit == "TB":
+            if size >= 10:
+                return f"{round(size):.0f} {unit}"
+            return f"{size:.1f} {unit}"
+    return f"{size_bytes} B"
+
+
+def clean_attachment_name(raw_name: str | None) -> str:
+    if not raw_name:
+        return ""
+    decoded = decode_mime_words(raw_name).replace("\x00", "").strip()
+    if not decoded:
+        return ""
+    return re.split(r"[\\/]+", decoded)[-1]
+
+
+def attachment_payload_bytes(part: email.message.Message) -> bytes:
+    payload = part.get_payload(decode=True)
+    if isinstance(payload, bytes):
+        return payload
+    if payload is None:
+        raw = part.get_payload()
+        if isinstance(raw, bytes):
+            return raw
+        if isinstance(raw, str):
+            charset = part.get_content_charset() or "utf-8"
+            return raw.encode(charset, errors="replace")
+    return b""
+
+
+def collect_attachments(msg: email.message.Message) -> list[dict]:
+    if not msg.is_multipart():
+        return []
+
+    attachments = []
+    unnamed_count = 0
+    for part in msg.walk():
+        if part.is_multipart():
+            continue
+        disposition = (part.get_content_disposition() or "").lower()
+        raw_name = part.get_filename()
+        if disposition != "attachment" and not raw_name:
+            continue
+
+        name = clean_attachment_name(raw_name)
+        if not name:
+            unnamed_count += 1
+            name = f"attachment-{unnamed_count}"
+        payload = attachment_payload_bytes(part)
+        size_bytes = len(payload)
+        attachments.append(
+            {
+                "name": name,
+                "content_type": part.get_content_type(),
+                "size_bytes": size_bytes,
+                "size_human": format_size(size_bytes),
+                "disposition": disposition,
+                "_payload": payload,
+            }
+        )
+    return attachments
+
+
+def public_attachment_record(record: dict) -> dict:
+    return {
+        "name": record["name"],
+        "content_type": record["content_type"],
+        "size_bytes": record["size_bytes"],
+        "size_human": record["size_human"],
+        "disposition": record["disposition"],
+    }
+
+
+def render_attachment_lines(msg: email.message.Message) -> list[str]:
+    attachments = [public_attachment_record(record) for record in collect_attachments(msg)]
+    if not attachments:
+        return ["Attachments: none"]
+
+    lines = ["Attachments:"]
+    for attachment in attachments:
+        lines.append(
+            f"- {attachment['name']} "
+            f"({attachment['content_type']}, {attachment['size_human']})"
+        )
+    return lines
+
+
+def unique_output_path(out_dir: Path, filename: str) -> Path:
+    candidate = out_dir / filename
+    if not candidate.exists():
+        return candidate
+
+    stem = candidate.stem or filename
+    suffix = candidate.suffix
+    index = 2
+    while True:
+        candidate = out_dir / f"{stem}-{index}{suffix}"
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
+def save_attachment_records(
+    attachments: list[dict],
+    out_dir: Path,
+    *,
+    selected_names: set[str] | None = None,
+    uid: str | None = None,
+    subject: str | None = None,
+) -> list[dict]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    saved = []
+    for record in attachments:
+        if selected_names is not None and record["name"] not in selected_names:
+            continue
+        dest = unique_output_path(out_dir, record["name"])
+        dest.write_bytes(record["_payload"])
+        saved.append(
+            {
+                "uid": uid,
+                "subject": subject,
+                "attachment": record["name"],
+                "content_type": record["content_type"],
+                "size_bytes": record["size_bytes"],
+                "size_human": record["size_human"],
+                "disposition": record["disposition"],
+                "saved_to": str(dest),
+            }
+        )
+    return saved
 
 
 # ── client-side filtering (same DSL as list-manager's `read` filters) ──────
@@ -275,9 +418,20 @@ def format_read_output(msg: email.message.Message) -> str:
         lines.append(f"In-Reply-To: {msg.get('In-Reply-To').strip()}")
     if msg.get("References"):
         lines.append(f"References: {msg.get('References').strip()}")
+    lines.extend(render_attachment_lines(msg))
     lines.append("")
     lines.append(extract_body(msg))
     return "\n".join(lines)
+
+
+def fetch_message(conn: imaplib.IMAP4_SSL, uid: str, folder: str) -> email.message.Message:
+    status, msg_data = conn.uid("fetch", uid, "(RFC822)")
+    if status != "OK" or not msg_data:
+        die(f"no message with id {uid} in folder '{folder}'")
+    for part in msg_data:
+        if isinstance(part, tuple) and len(part) >= 2 and part[1] is not None:
+            return email.message_from_bytes(part[1])
+    die(f"no message with id {uid} in folder '{folder}'")
 
 
 def cmd_read(args: argparse.Namespace) -> None:
@@ -288,13 +442,62 @@ def cmd_read(args: argparse.Namespace) -> None:
         if status != "OK":
             die(f"cannot select folder '{folder}'")
 
-        status, msg_data = conn.uid("fetch", args.uid, "(RFC822)")
-        if status != "OK" or not msg_data or msg_data[0] is None:
-            die(f"no message with id {args.uid} in folder '{folder}'")
-
-        raw = msg_data[0][1]
-        msg = email.message_from_bytes(raw)
+        msg = fetch_message(conn, args.uid, folder)
         print(format_read_output(msg))
+    finally:
+        conn.logout()
+
+
+def cmd_attachments(args: argparse.Namespace) -> None:
+    conn, _ = connect(args.account)
+    try:
+        folder = resolve_folder(args.folder)
+        status, _ = conn.select(f'"{folder}"', readonly=True)
+        if status != "OK":
+            die(f"cannot select folder '{folder}'")
+
+        records = []
+        for uid in args.uids:
+            msg = fetch_message(conn, uid, folder)
+            records.append(
+                {
+                    "uid": uid,
+                    "subject": decode_mime_words(msg.get("Subject")),
+                    "attachments": [
+                        public_attachment_record(record) for record in collect_attachments(msg)
+                    ],
+                }
+            )
+        print(json.dumps(records, indent=2))
+    finally:
+        conn.logout()
+
+
+def cmd_save_attachments(args: argparse.Namespace) -> None:
+    conn, _ = connect(args.account)
+    try:
+        folder = resolve_folder(args.folder)
+        status, _ = conn.select(f'"{folder}"', readonly=True)
+        if status != "OK":
+            die(f"cannot select folder '{folder}'")
+
+        out_dir = Path(args.out)
+        selected_names = None if args.all else set(args.name or [])
+        saved = []
+        for uid in args.uids:
+            msg = fetch_message(conn, uid, folder)
+            saved.extend(
+                save_attachment_records(
+                    collect_attachments(msg),
+                    out_dir,
+                    selected_names=selected_names,
+                    uid=uid,
+                    subject=decode_mime_words(msg.get("Subject")),
+                )
+            )
+        if not saved:
+            die("no attachments matched the requested selection")
+        print(json.dumps(saved, indent=2))
     finally:
         conn.logout()
 
@@ -336,6 +539,22 @@ def main() -> None:
     p_read.add_argument("--folder", default="inbox")
     p_read.add_argument("uid")
     p_read.set_defaults(func=cmd_read)
+
+    p_attachments = sub.add_parser("attachments")
+    p_attachments.add_argument("-a", "--account", required=True)
+    p_attachments.add_argument("--folder", default="inbox")
+    p_attachments.add_argument("uids", nargs="+")
+    p_attachments.set_defaults(func=cmd_attachments)
+
+    p_save = sub.add_parser("save-attachments")
+    p_save.add_argument("-a", "--account", required=True)
+    p_save.add_argument("--folder", default="inbox")
+    p_save.add_argument("uids", nargs="+")
+    p_save.add_argument("--out", required=True)
+    selection = p_save.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--all", action="store_true")
+    selection.add_argument("--name", action="append")
+    p_save.set_defaults(func=cmd_save_attachments)
 
     p_folders = sub.add_parser("folders")
     p_folders.add_argument("-a", "--account", required=True)

@@ -5,7 +5,7 @@
 category: productivity-general-assistant
 # Bump this major version whenever the exported contract changes in a
 # breaking way for dependent skills.
-interface_version: 2
+interface_version: 3
 
 cross_platform: false
 
@@ -64,11 +64,38 @@ script_interfaces:
     description: >-
       Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/
       Date/Message-ID, then In-Reply-To/References only if the message is a reply,
-      then a blank line, then the decoded body (text/plain preferred; falls back to
-      HTML with tags stripped; attachments are skipped, not shown).
+      then an Attachments section (none or one line per attachment with filename,
+      MIME type, and size), then a blank line, then the decoded body (text/plain
+      preferred; falls back to HTML with tags stripped).
     usage: "-a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>"
     cwd: skill_root
     command: ["python3", "scripts/mail.py", "read"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+  mail-attachments:
+    id: mail-attachments
+    description: >-
+      List attachment metadata for one or more emails as JSON. Returns one record
+      per requested UID with attachment entries containing filename, content_type,
+      size_bytes, size_human, and disposition.
+    usage: "-a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...]"
+    cwd: skill_root
+    command: ["python3", "scripts/mail.py", "attachments"]
+    default:
+      patterns:
+        - name: owner
+          allow_extra_positionals: true
+  mail-save-attachments:
+    id: mail-save-attachments
+    description: >-
+      Save attachments from one or more emails into a directory. Use --all to save
+      every attachment, or repeat --name to save only selected filenames. Returns
+      JSON describing the saved files.
+    usage: "-a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...] --out <dir> (--all | --name <filename> [--name <filename> ...])"
+    cwd: skill_root
+    command: ["python3", "scripts/mail.py", "save-attachments"]
     default:
       patterns:
         - name: owner

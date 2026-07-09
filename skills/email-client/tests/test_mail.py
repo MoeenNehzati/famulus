@@ -74,6 +74,78 @@ def test_resolve_folder_passthrough_for_unknown():
     assert mail.resolve_folder("[Gmail]/Starred") == "[Gmail]/Starred"
 
 
+# ── attachment helpers ──────────────────────────────────────────────────────
+
+def test_format_size_uses_human_units():
+    assert mail.format_size(999) == "999 B"
+    assert mail.format_size(59_241) == "59 KB"
+
+
+def test_collect_attachments_extracts_metadata():
+    raw = (
+        "Content-Type: multipart/mixed; boundary=BOUNDARY\r\n\r\n"
+        "--BOUNDARY\r\nContent-Type: text/plain\r\n\r\nBody text\r\n"
+        "--BOUNDARY\r\nContent-Type: application/pdf\r\n"
+        'Content-Disposition: attachment; filename="notes.pdf"\r\n\r\npdf-bytes\r\n'
+        "--BOUNDARY--\r\n"
+    )
+    msg = email.message_from_string(raw)
+    attachments = [mail.public_attachment_record(record) for record in mail.collect_attachments(msg)]
+    assert attachments == [
+        {
+            "name": "notes.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 9,
+            "size_human": "9 B",
+            "disposition": "attachment",
+        }
+    ]
+
+
+def test_save_attachment_records_filters_and_avoids_collisions(tmp_path):
+    attachments = [
+        {
+            "name": "notes.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 3,
+            "size_human": "3 B",
+            "disposition": "attachment",
+            "_payload": b"one",
+        },
+        {
+            "name": "notes.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 3,
+            "size_human": "3 B",
+            "disposition": "attachment",
+            "_payload": b"two",
+        },
+        {
+            "name": "other.txt",
+            "content_type": "text/plain",
+            "size_bytes": 5,
+            "size_human": "5 B",
+            "disposition": "attachment",
+            "_payload": b"three",
+        },
+    ]
+
+    saved = mail.save_attachment_records(
+        attachments,
+        tmp_path,
+        selected_names={"notes.pdf"},
+        uid="42",
+        subject="Example",
+    )
+
+    assert [item["attachment"] for item in saved] == ["notes.pdf", "notes.pdf"]
+    assert Path(saved[0]["saved_to"]).name == "notes.pdf"
+    assert Path(saved[1]["saved_to"]).name == "notes-2.pdf"
+    assert (tmp_path / "notes.pdf").read_bytes() == b"one"
+    assert (tmp_path / "notes-2.pdf").read_bytes() == b"two"
+    assert not (tmp_path / "other.txt").exists()
+
+
 # ── format_read_output ──────────────────────────────────────────────────────
 
 def test_format_read_output_omits_threading_headers_when_absent():
@@ -85,6 +157,7 @@ def test_format_read_output_omits_threading_headers_when_absent():
     out = mail.format_read_output(msg)
     assert "In-Reply-To" not in out
     assert "References" not in out
+    assert "Attachments: none" in out
     assert "Message-ID: <1@example.com>" in out
     assert out.endswith("Body text")
 
@@ -99,6 +172,22 @@ def test_format_read_output_includes_threading_headers_when_present():
     out = mail.format_read_output(msg)
     assert "In-Reply-To: <1@example.com>" in out
     assert "References: <1@example.com>" in out
+
+
+def test_format_read_output_lists_attachments():
+    raw = (
+        "Subject: Files\r\nFrom: a@example.com\r\nTo: b@example.com\r\n"
+        "Date: Sun, 05 Jul 2026 12:05:00 +0000\r\nMessage-ID: <2@example.com>\r\n"
+        "Content-Type: multipart/mixed; boundary=BOUNDARY\r\n\r\n"
+        "--BOUNDARY\r\nContent-Type: text/plain\r\n\r\nReply text\r\n"
+        "--BOUNDARY\r\nContent-Type: application/zip\r\n"
+        'Content-Disposition: attachment; filename="lessons.zip"\r\n\r\nabc\r\n'
+        "--BOUNDARY--\r\n"
+    )
+    msg = email.message_from_string(raw)
+    out = mail.format_read_output(msg)
+    assert "Attachments:" in out
+    assert "- lessons.zip (application/zip, 3 B)" in out
 
 
 # ── extract_body ─────────────────────────────────────────────────────────────
