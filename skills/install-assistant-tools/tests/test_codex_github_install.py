@@ -100,7 +100,10 @@ class CodexGithubInstallTests(unittest.TestCase):
             self.assertEqual(missing_skills, [], f"Missing installed skills: {missing_skills}")
 
             required_paths = [
-                installed_path / "AGENTS.md",
+                # Codex's installed plugin cache exposes skills correctly but
+                # may omit root-level symlink aliases from the marketplace
+                # checkout (for example AGENTS.md -> CLAUDE.md). Assert the
+                # real content/plugin assets instead of that cache-shape detail.
                 installed_path / "CLAUDE.md",
                 installed_path / "agents" / "assistant.md",
                 installed_path / "agents" / "collab.md",

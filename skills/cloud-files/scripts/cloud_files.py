@@ -557,7 +557,7 @@ def match_remote_entries(
         entry
         for entry in walk_remote_entries(config, base_id)
         if (include_dirs or not entry.is_dir)
-        and PurePosixPath(entry.path).full_match(normalized)
+        and PurePosixPath(f"/{entry.path}").match(f"/{normalized}")
     ]
     if not matches:
         raise FileNotFoundError(normalized)

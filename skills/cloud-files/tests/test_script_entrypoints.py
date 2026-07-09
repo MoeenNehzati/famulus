@@ -83,7 +83,7 @@ def ls_entrypoint(args, *, use_llm_root: bool) -> int:
                 if child.is_dir():
                     continue
                 child_rel = child.relative_to(STORE).as_posix()
-                if PurePosixPath(child_rel).full_match(rel):
+                if PurePosixPath(f"/{child_rel}").match(f"/{rel}"):
                     print(child_rel)
             continue
         target = _path(rel)
@@ -122,7 +122,7 @@ def rm_entrypoint(args, *, use_llm_root: bool) -> int:
                 if child.is_dir():
                     continue
                 child_rel = child.relative_to(STORE).as_posix()
-                if PurePosixPath(child_rel).full_match(rel):
+                if PurePosixPath(f"/{child_rel}").match(f"/{rel}"):
                     child.unlink()
                     matched = True
             if not matched:
