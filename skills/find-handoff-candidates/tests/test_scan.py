@@ -91,6 +91,8 @@ def test_scan_flags_session_with_large_gap_and_no_handoff(tmp_path):
         for i in range(50)
     ]
     _write_transcript(session_file, lines)
+    mtime = datetime.datetime.fromisoformat("2026-07-07T12:00:00").timestamp()
+    os.utime(session_file, (mtime, mtime))
 
     fake = FakeParser("fake-host", [session_file])
     results = mod.scan("2026-07-07", {"fake-host": 10_000}, parsers=[fake])
@@ -152,6 +154,8 @@ def test_scan_flags_new_work_after_completed_handoff(tmp_path):
         for _ in range(10)
     ]
     _write_transcript(session_file, lines)
+    mtime = datetime.datetime.fromisoformat("2026-07-07T12:00:00").timestamp()
+    os.utime(session_file, (mtime, mtime))
 
     fake = FakeParser("fake-host", [session_file])
     results = mod.scan("2026-07-07", {"fake-host": 10_000}, parsers=[fake])
