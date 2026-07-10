@@ -3,14 +3,14 @@
 Manage recurring jobs: enable, disable, test, view logs, and check status.
 
 Usage:
-  python3 manage-job.py enable <name>          # Enable a job (sets enabled: true, syncs units)
-  python3 manage-job.py disable <name>         # Disable a job (sets enabled: false, syncs units)
-  python3 manage-job.py enable <name> --jobs-file FILE --no-sync   # test/dry-run against a different jobs.yaml
-  python3 manage-job.py test <name>            # Run a job immediately, show output
-  python3 manage-job.py view-logs <name>       # Tail job logs (default 50 lines)
-  python3 manage-job.py view-logs <name> --lines 100
-  python3 manage-job.py status                 # Show all timers and next fire times
-  python3 manage-job.py sync                   # Regenerate systemd units from jobs.yaml
+  python3 manage_job.py enable <name>          # Enable a job (sets enabled: true, syncs units)
+  python3 manage_job.py disable <name>         # Disable a job (sets enabled: false, syncs units)
+  python3 manage_job.py enable <name> --jobs-file FILE --no-sync   # test/dry-run against a different jobs.yaml
+  python3 manage_job.py test <name>            # Run a job immediately, show output
+  python3 manage_job.py view-logs <name>       # Tail job logs (default 50 lines)
+  python3 manage_job.py view-logs <name> --lines 100
+  python3 manage_job.py status                 # Show all timers and next fire times
+  python3 manage_job.py sync                   # Regenerate systemd units from jobs.yaml
 
 All operations sync systemd units after modifying jobs.yaml.
 """
@@ -42,7 +42,7 @@ def save_jobs(jobs: list, jobs_file: Path = JOBS_FILE) -> None:
 
 def sync_units(jobs_file: Path | None = None) -> None:
     """Regenerate systemd units."""
-    cmd = [sys.executable, str(SKILL_DIR / "scripts" / "sync-units.py")]
+    cmd = [sys.executable, str(SKILL_DIR / "scripts" / "sync_units.py")]
     if jobs_file is not None:
         cmd += ["--jobs-file", str(jobs_file)]
     subprocess.run(cmd, check=True)

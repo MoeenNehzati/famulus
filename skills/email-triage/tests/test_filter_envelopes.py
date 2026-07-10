@@ -1,4 +1,4 @@
-"""Unit + CLI tests for filter-envelopes.py's watermark/filtering logic.
+"""Unit + CLI tests for filter_envelopes.py's watermark/filtering logic.
 
 Unit tests monkeypatch STATE_DIR/WATERMARK/STATUS_FILE directly. CLI tests
 invoke the script as a subprocess with EMAIL_TRIAGE_STATE_DIR pointed at a
@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-SCRIPT_PATH = Path(__file__).parent.parent / "scripts" / "filter-envelopes.py"
+SCRIPT_PATH = Path(__file__).parent.parent / "scripts" / "filter_envelopes.py"
 MODULE_PATH = SCRIPT_PATH
 spec = importlib.util.spec_from_file_location("filter_envelopes", MODULE_PATH)
 fe = importlib.util.module_from_spec(spec)

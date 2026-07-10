@@ -38,6 +38,19 @@ script_interfaces:
     usage: "--from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]"
     cwd: skill_root
     command: ["scripts/email-send.sh"]
+    dependencies:
+      - kind: binary
+        name: msmtp
+        reason: "Sends the composed email via SMTP."
+      - kind: binary
+        name: secret-tool
+        reason: "Retrieves the SMTP credential from the keyring."
+      - kind: binary
+        name: base64
+        reason: "Encodes attachments for MIME messages."
+      - kind: binary
+        name: file
+        reason: "Detects attachment MIME types."
     default:
       patterns:
         - name: owner
@@ -55,6 +68,10 @@ script_interfaces:
     usage: "-a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] [--after YYYY-MM-DD] [key=value|key~=value ...] [--limit N]"
     cwd: skill_root
     command: ["python3", "scripts/mail.py", "list"]
+    dependencies:
+      - kind: binary
+        name: secret-tool
+        reason: "Retrieves the IMAP credential from the keyring."
     default:
       patterns:
         - name: owner
@@ -70,6 +87,10 @@ script_interfaces:
     usage: "-a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>"
     cwd: skill_root
     command: ["python3", "scripts/mail.py", "read"]
+    dependencies:
+      - kind: binary
+        name: secret-tool
+        reason: "Retrieves the IMAP credential from the keyring."
     default:
       patterns:
         - name: owner
@@ -83,6 +104,10 @@ script_interfaces:
     usage: "-a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...]"
     cwd: skill_root
     command: ["python3", "scripts/mail.py", "attachments"]
+    dependencies:
+      - kind: binary
+        name: secret-tool
+        reason: "Retrieves the IMAP credential from the keyring."
     default:
       patterns:
         - name: owner
@@ -96,6 +121,10 @@ script_interfaces:
     usage: "-a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...] --out <dir> (--all | --name <filename> [--name <filename> ...])"
     cwd: skill_root
     command: ["python3", "scripts/mail.py", "save-attachments"]
+    dependencies:
+      - kind: binary
+        name: secret-tool
+        reason: "Retrieves the IMAP credential from the keyring."
     default:
       patterns:
         - name: owner
@@ -106,6 +135,10 @@ script_interfaces:
     usage: "-a <nickname>"
     cwd: skill_root
     command: ["python3", "scripts/mail.py", "folders"]
+    dependencies:
+      - kind: binary
+        name: secret-tool
+        reason: "Retrieves the IMAP credential from the keyring."
     default:
       patterns:
         - name: owner
@@ -116,6 +149,7 @@ script_interfaces:
     usage: ""
     cwd: skill_root
     command: ["python3", "scripts/accounts.py", "list"]
+    dependencies: []
     default:
       patterns:
         - name: owner
@@ -126,6 +160,7 @@ script_interfaces:
     usage: "--nickname <nick> --email <addr> [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls]"
     cwd: skill_root
     command: ["python3", "scripts/accounts.py", "add"]
+    dependencies: []
     default:
       patterns:
         - name: owner
@@ -136,6 +171,7 @@ script_interfaces:
     usage: "--nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P]"
     cwd: skill_root
     command: ["python3", "scripts/accounts.py", "update"]
+    dependencies: []
     default:
       patterns:
         - name: owner
@@ -146,6 +182,10 @@ script_interfaces:
     usage: "--nickname <nick> [--purge-credentials]"
     cwd: skill_root
     command: ["python3", "scripts/accounts.py", "remove"]
+    dependencies:
+      - kind: binary
+        name: secret-tool
+        reason: "Clears stored account credentials when requested."
     default:
       patterns:
         - name: owner
@@ -156,6 +196,10 @@ script_interfaces:
     usage: "--nickname <nick> --purpose imap|smtp"
     cwd: skill_root
     command: ["python3", "scripts/accounts.py", "set-password"]
+    dependencies:
+      - kind: binary
+        name: secret-tool
+        reason: "Stores IMAP or SMTP credentials in the keyring."
     default:
       patterns:
         - name: owner

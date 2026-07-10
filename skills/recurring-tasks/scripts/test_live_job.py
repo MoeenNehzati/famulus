@@ -161,14 +161,14 @@ def main() -> None:
         write_jobs(temp_jobs_path, temp_jobs)
 
         print(f'Syncing temp job: {job_name}')
-        run(['python3', str(SCRIPTS / 'sync-units.py'), '--jobs-file', str(temp_jobs_path)])
+        run(['python3', str(SCRIPTS / 'sync_units.py'), '--jobs-file', str(temp_jobs_path)])
         ensure_timer_active(job_name)
         run_service_and_verify(job_name, marker)
         print(f'PASS: live {args.backend} selftest succeeded for {job_name}')
     finally:
         try:
             print('Restoring original jobs.yaml schedule...')
-            run(['python3', str(SCRIPTS / 'sync-units.py'), '--jobs-file', str(DEFAULT_JOBS)], check=False)
+            run(['python3', str(SCRIPTS / 'sync_units.py'), '--jobs-file', str(DEFAULT_JOBS)], check=False)
         finally:
             cleanup(job_name, temp_skill_path, args.keep_artifacts)
             temp_jobs_path.unlink(missing_ok=True)

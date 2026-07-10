@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Record that this triage run failed, so update-watermark.py refuses to advance.
+"""Record that this triage run failed, so update_watermark.py refuses to advance.
 
 Call this as soon as a list-manager add/update fails (Step 5). Do not call
 scripts-update-watermark afterward in the same run — this file is the guard
 that makes that mistake safe even if the instruction is skipped.
 
-Usage: mark-failure.py "<reason>"
+Usage: mark_failure.py "<reason>"
 """
 import json
 import os

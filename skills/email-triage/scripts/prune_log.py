@@ -2,7 +2,7 @@
 """
 Prune triage.log entries older than 30 days.
 
-Usage: prune-log.py
+Usage: prune_log.py
 Reads and rewrites triage.log in place.
 Prints a one-line summary: "Pruned N entries older than 30 days (M kept)."
 Lines that cannot be parsed are kept.

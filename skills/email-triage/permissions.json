@@ -1,11 +1,11 @@
 {
   "bash": [
-    "Bash(python3 scripts/filter-envelopes.py:*)",
-    "Bash(scripts/get-cutoff.py:*)",
-    "Bash(scripts/update-watermark.py:*)",
+    "Bash(python3 scripts/filter_envelopes.py:*)",
+    "Bash(scripts/get_cutoff.py:*)",
+    "Bash(scripts/update_watermark.py:*)",
     "Bash(scripts/log-decision.sh:*)",
-    "Bash(python3 scripts/prune-log.py:*)",
-    "Bash(python3 scripts/mark-failure.py:*)"
+    "Bash(python3 scripts/prune_log.py:*)",
+    "Bash(python3 scripts/mark_failure.py:*)"
   ],
   "network": []
 }

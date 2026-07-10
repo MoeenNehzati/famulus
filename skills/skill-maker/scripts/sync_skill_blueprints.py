@@ -6,6 +6,7 @@ This tool never rewrites blueprint files. It only validates them and syncs:
 
 - ``depends_on_skills``
 - ``permissions.json``
+- ``references/blueprint/runtime_dependencies.json``
 - the generated contract block near the top of ``SKILL.md``
 - the generated owner-facing dispatcher interface block in ``SKILL.md``
 
@@ -35,6 +36,8 @@ CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
 INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
 LEGACY_DEFAULT_FIELDS = ("patterns", "allow_all_skills", "allowed_callers")
+RUNTIME_DEPENDENCIES_PATH = REPO_ROOT / "references" / "blueprint" / "runtime_dependencies.json"
+DEPENDENCY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+\-\[\]]*$")
 
 
 @dataclass(frozen=True)
@@ -107,6 +110,38 @@ def expect_runtime(value: Any, context: str, errors: list[str]) -> None:
             errors.append(f"{context}: command runtime needs non-empty string list `argv`")
         return
     errors.append(f"{context}: runtime kind must be `python_module` or `command`")
+
+
+def expect_runtime_dependencies(value: Any, context: str, errors: list[str]) -> None:
+    if value is None:
+        errors.append(f"{context}: required list, use [] when the interface has no runtime dependencies")
+        return
+    if not isinstance(value, list):
+        errors.append(f"{context}: expected list")
+        return
+
+    seen: set[tuple[str, str]] = set()
+    for idx, entry in enumerate(value):
+        entry_context = f"{context}[{idx}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{entry_context}: expected mapping")
+            continue
+        kind = entry.get("kind")
+        name = entry.get("name")
+        reason = entry.get("reason")
+        if kind not in {"python", "binary"}:
+            errors.append(f"{entry_context}.kind: must be `python` or `binary`")
+        if not isinstance(name, str) or not name.strip():
+            errors.append(f"{entry_context}.name: must be a non-empty string")
+        elif not DEPENDENCY_NAME_RE.fullmatch(name):
+            errors.append(f"{entry_context}.name: must be a package or executable name, not a path or shell command")
+        if not isinstance(reason, str) or not reason.strip():
+            errors.append(f"{entry_context}.reason: must be a non-empty string")
+        if isinstance(kind, str) and isinstance(name, str):
+            key = (kind, name)
+            if key in seen:
+                errors.append(f"{entry_context}: duplicate dependency `{kind}:{name}`")
+            seen.add(key)
 
 
 def expect_llm_binding(value: Any, context: str, errors: list[str]) -> None:
@@ -331,6 +366,7 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                     continue
                 validate_access_surface(errors, interface_spec, context, allow_id=False)
                 expect_runtime(interface_spec.get("runtime"), f"{context}.runtime", errors)
+                expect_runtime_dependencies(interface_spec.get("dependencies"), f"{context}.dependencies", errors)
             for interface_name, interface_spec in llm_interfaces.items():
                 context = f"{blueprint.path}: interfaces.llm.{interface_name}"
                 if not isinstance(interface_spec, dict):
@@ -374,6 +410,7 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                 command = interface_spec.get("command")
                 if not isinstance(command, list) or not all(isinstance(token, str) and token for token in command):
                     errors.append(f"{context}: missing non-empty string list `command`")
+                expect_runtime_dependencies(interface_spec.get("dependencies"), f"{context}.dependencies", errors)
 
                 if "default" in interface_spec and legacy_default_fields(interface_spec):
                     errors.append(
@@ -785,6 +822,84 @@ def sync_skill(blueprint: SkillBlueprint, check_only: bool) -> list[str]:
     return errors
 
 
+def generated_runtime_dependencies_manifest(blueprints: dict[str, SkillBlueprint]) -> dict[str, Any]:
+    """Build the stdlib-readable dependency manifest from blueprint interfaces."""
+    skills: dict[str, Any] = {}
+    all_dependencies: dict[str, set[str]] = {
+        "python": set(),
+        "binary": set(),
+    }
+
+    for skill_name, blueprint in sorted(blueprints.items()):
+        generated_interfaces: dict[str, Any] = {}
+
+        if uses_new_interface_model(blueprint.data):
+            machine_interfaces, _ = normalized_interface_maps(blueprint.data, str(blueprint.path))
+            interface_items = [
+                (interface_name, f"{skill_name}.machine.{interface_name}", interface_spec)
+                for interface_name, interface_spec in sorted(machine_interfaces.items())
+            ]
+        else:
+            script_interfaces = expect_mapping(blueprint.data.get("script_interfaces"), "script_interfaces")
+            interface_items = [
+                (
+                    interface_name,
+                    interface_id(interface_name, interface_spec, f"script_interfaces.{interface_name}"),
+                    interface_spec,
+                )
+                for interface_name, interface_spec in sorted(script_interfaces.items())
+                if isinstance(interface_spec, dict)
+            ]
+
+        for interface_name, interface_id_value, interface_spec in interface_items:
+            if not isinstance(interface_spec, dict):
+                continue
+            raw_dependencies = interface_spec.get("dependencies", [])
+            dependencies: list[dict[str, str]] = []
+            if isinstance(raw_dependencies, list):
+                for entry in raw_dependencies:
+                    if not isinstance(entry, dict):
+                        continue
+                    kind = entry.get("kind")
+                    name = entry.get("name")
+                    reason = entry.get("reason")
+                    if kind not in all_dependencies or not isinstance(name, str) or not isinstance(reason, str):
+                        continue
+                    dependencies.append({"kind": kind, "name": name, "reason": reason})
+                    all_dependencies[kind].add(name)
+
+            generated_interfaces[interface_name] = {
+                "id": interface_id_value,
+                "dependencies": dependencies,
+            }
+
+        if generated_interfaces:
+            skills[skill_name] = {"interfaces": generated_interfaces}
+
+    return {
+        "version": 1,
+        "skills": skills,
+        "all": {
+            "python": sorted(all_dependencies["python"]),
+            "binary": sorted(all_dependencies["binary"]),
+        },
+    }
+
+
+def sync_runtime_dependencies_manifest(
+    blueprints: dict[str, SkillBlueprint],
+    check_only: bool,
+) -> list[str]:
+    expected = json.dumps(generated_runtime_dependencies_manifest(blueprints), indent=2) + "\n"
+    current = RUNTIME_DEPENDENCIES_PATH.read_text(encoding="utf-8") if RUNTIME_DEPENDENCIES_PATH.exists() else ""
+    if current == expected:
+        return []
+    if check_only:
+        return [f"{RUNTIME_DEPENDENCIES_PATH}: out of sync with blueprint.yaml"]
+    RUNTIME_DEPENDENCIES_PATH.write_text(expected, encoding="utf-8")
+    return []
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate and sync skill blueprints.")
     parser.add_argument(
@@ -806,6 +921,7 @@ def main() -> int:
     errors = validate_blueprints(blueprints)
     for blueprint in blueprints.values():
         errors.extend(sync_skill(blueprint, check_only=args.check))
+    errors.extend(sync_runtime_dependencies_manifest(blueprints, check_only=args.check))
 
     if errors:
         print("error: invalid or out-of-sync skill blueprints.", file=sys.stderr)

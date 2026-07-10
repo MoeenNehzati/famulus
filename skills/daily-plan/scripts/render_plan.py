@@ -7,15 +7,15 @@ Beautification is handled externally via list-manager skill invocation.
 
 Usage:
     # Extract blocks from plan
-    python render-plan.py extract <plan-file> <output-dir>
+    python render_plan.py extract <plan-file> <output-dir>
 
     # Reassemble plan with beautified blocks
-    python render-plan.py reassemble <plan-file> <blocks-dir>
+    python render_plan.py reassemble <plan-file> <blocks-dir>
 
 Example:
-    python render-plan.py extract plan.yaml /tmp/plan-blocks/
+    python render_plan.py extract plan.yaml /tmp/plan-blocks/
     # ... beautify blocks via list-manager skill ...
-    python render-plan.py reassemble plan.yaml /tmp/plan-blocks/
+    python render_plan.py reassemble plan.yaml /tmp/plan-blocks/
 """
 
 import sys
@@ -105,7 +105,7 @@ def reassemble_command(plan_file, blocks_dir):
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: python render-plan.py <extract|reassemble> <plan-file> <dir>", file=sys.stderr)
+        print("Usage: python render_plan.py <extract|reassemble> <plan-file> <dir>", file=sys.stderr)
         sys.exit(1)
 
     command = sys.argv[1]

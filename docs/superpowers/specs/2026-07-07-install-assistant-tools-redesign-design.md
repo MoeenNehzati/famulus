@@ -52,7 +52,7 @@ or users who want zero agent launchers) have no granular control.
   scripts are not standalone-importable outside that process tree.
 - `$AI` and `ASSISTANT_DEFAULT` are not universal dependencies. `$AI` is
   consumed only by the installer's own internals and by
-  `recurring-tasks` scripts (`invoke-agent.sh`, `test-live-job.py`).
+  `recurring-tasks` scripts (`invoke-agent.sh`, `test_live_job.py`).
   `ASSISTANT_DEFAULT` is consumed only by `install-assistant-tools`
   itself and `recurring-tasks`. Neither is a general skill dependency.
 - `install_git_hooks` already has an existing safety check

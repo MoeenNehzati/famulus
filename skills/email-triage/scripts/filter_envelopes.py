@@ -4,7 +4,7 @@ Filter JSON envelopes (from email-client's mail-list) to those strictly after
 the triage watermark, dropping old emails before the model ever sees them.
 
 Usage:
-  filter-envelopes.py -a <account>   < envelopes.json
+  filter_envelopes.py -a <account>   < envelopes.json
 
 email-client's mail-list only supports date-level `--after` filtering (an
 IMAP SINCE limitation), so the caller is expected to:
@@ -22,8 +22,8 @@ import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-# State lives next to this script (SKILL_DIR/state), matching get-cutoff.py and
-# update-watermark.py, so it stays portable across machines regardless of
+# State lives next to this script (SKILL_DIR/state), matching get_cutoff.py and
+# update_watermark.py, so it stays portable across machines regardless of
 # $HOME layout or the caller's cwd.
 SKILL_DIR = Path(__file__).resolve().parent.parent
 # Overridable via env var so tests can point at a tmp_path instead of the
@@ -63,8 +63,8 @@ def load_cutoff():
 def clear_stale_error():
     """Reset a leftover result=error from a previously-failed, already-reported
     run. Runs at the start of every triage cycle so a stale failure can't block
-    update-watermark.py forever once the underlying problem is fixed — this
-    run's own mark-failure.py call (if any) will set it again before Step 7."""
+    update_watermark.py forever once the underlying problem is fixed — this
+    run's own mark_failure.py call (if any) will set it again before Step 7."""
     if STATUS_FILE.exists():
         try:
             status = json.loads(STATUS_FILE.read_text())
@@ -76,7 +76,7 @@ def clear_stale_error():
 
 def main():
     if "-a" not in sys.argv:
-        print("Usage: filter-envelopes.py -a <account>   < envelopes.json", file=sys.stderr)
+        print("Usage: filter_envelopes.py -a <account>   < envelopes.json", file=sys.stderr)
         sys.exit(1)
     account = sys.argv[sys.argv.index("-a") + 1]
 

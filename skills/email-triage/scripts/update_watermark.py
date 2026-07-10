@@ -4,7 +4,7 @@
 State lives in a directory next to this script (SKILL_DIR/state), so it stays
 portable across machines regardless of $HOME layout or the caller's cwd.
 
-Safety: if scripts/mark-failure.py was called earlier in this run, a
+Safety: if scripts/mark_failure.py was called earlier in this run, a
 status.json with result="error" will be present. In that case this script
 refuses to advance the watermark (exit 1) so no emails are silently skipped
 on the next run. On success it resets status.json to result="ok".

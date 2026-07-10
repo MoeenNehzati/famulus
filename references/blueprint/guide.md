@@ -125,6 +125,7 @@ interfaces:
       runtime:
         kind: python_module
         module: scripts.read_data
+      dependencies: []
 
   llm:
     summarize:
@@ -182,8 +183,39 @@ Each machine interface owns:
 - `allow_all_skills`
 - `allowed_callers`
 - `runtime`
+- `dependencies`
 
-Machine interfaces are the only interfaces the dispatcher executes.
+Machine interfaces are the target executable interface model. Legacy
+`script_interfaces` remain executable during migration and use the same
+dependency declaration shape.
+
+### `dependencies`
+
+Required list on every executable interface: new-style machine interfaces and
+legacy `script_interfaces`. Use `[]` when the interface has no non-stdlib
+runtime dependencies.
+
+Each dependency is a factual runtime requirement with:
+
+- `kind`: `python` for installable Python packages, or `binary` for executable
+  tools expected on `PATH`
+- `name`: package or executable name
+- `reason`: short human explanation used by docs and review
+
+Examples:
+
+```yaml
+dependencies:
+  - kind: python
+    name: PyYAML
+    reason: "Reads YAML list files."
+  - kind: binary
+    name: curl
+    reason: "Fetches remote JSON from the weather API."
+```
+
+These declarations are not permission suggestions. Keep developer-selected
+approval baselines in top-level `suggested_permissions`.
 
 ### `interfaces.llm`
 
@@ -232,6 +264,7 @@ interfaces:
       runtime:
         kind: python_module
         module: scripts.scan
+      dependencies: []
 ```
 
 This is **internal metadata**. It belongs in the blueprint so the dispatcher
@@ -246,6 +279,7 @@ Current standard runtime kinds:
 runtime:
   kind: python_module
   module: scripts.scan
+dependencies: []
 ```
 
 Use for Python skill code. The dispatcher runs it as a real module in a fresh
@@ -257,9 +291,19 @@ subprocess, which allows normal relative imports inside `scripts/`.
 runtime:
   kind: command
   argv: ["maker", "--mode", "convert"]
+dependencies:
+  - kind: binary
+    name: maker
+    reason: "Performs the conversion invoked by this interface."
 ```
 
 Use for non-Python tools.
+
+The blueprint sync tool generates `references/blueprint/runtime_dependencies.json`
+from all executable-interface `dependencies` declarations, including legacy
+`script_interfaces` during migration. Installers should use that JSON manifest,
+not PyYAML or direct blueprint parsing, when installing declared runtime
+packages.
 
 ---
 

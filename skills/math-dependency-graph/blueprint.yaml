@@ -32,6 +32,7 @@ script_interfaces:
     usage: "<source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file <path>] [--refresh-macros] [--reduce-transitive-edges]"
     cwd: skill_root
     command: ["python3", "scripts/build_math_dependency_graph.py"]
+    dependencies: []
     default:
       patterns:
         - name: owner
@@ -42,6 +43,7 @@ script_interfaces:
     usage: "<entrypoint.tex> [--out <path>]"
     cwd: skill_root
     command: ["python3", "scripts/extract_mathjax_macros.py"]
+    dependencies: []
     default:
       patterns:
         - name: owner
@@ -52,6 +54,7 @@ script_interfaces:
     usage: "[--directory <path>] [--host <host>] [--port <port>]"
     cwd: skill_root
     command: ["python3", "scripts/serve_graph.py"]
+    dependencies: []
     default:
       patterns:
         - name: owner

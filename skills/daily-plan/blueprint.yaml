@@ -33,7 +33,7 @@ suggested_permissions:
   bash:
     - command: ["python3", "scripts/orchestrate.py"]
       reason: "Main orchestration script for plan generation via dispatcher."
-    - command: ["python3", "scripts/render-plan.py"]
+    - command: ["python3", "scripts/render_plan.py"]
       reason: "Plan rendering helper for display formatting."
     - command: ["python3", "scripts/mutate_plan.py"]
       reason: "Apply plan-local or master-list-backed mutations and show the refreshed plan."
@@ -59,6 +59,10 @@ script_interfaces:
     usage: "[--forced]"
     cwd: skill_root
     command: ["python3", "scripts/orchestrate.py"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads and writes YAML plan/list data through plan_runtime."
     default:
       patterns:
         - min_positionals: 0
@@ -77,6 +81,10 @@ script_interfaces:
     usage: "read|write|exists|delete <date>"
     cwd: skill_root
     command: ["scripts/plans.sh"]
+    dependencies:
+      - kind: binary
+        name: rclone
+        reason: "Reads and writes plan files in the configured GDrive remote."
     default:
       patterns:
         - name: "read"
@@ -102,7 +110,8 @@ script_interfaces:
     description: "Extract or reassemble sections of a plan file for rendering."
     usage: "<extract|reassemble> <plan-file> <dir>"
     cwd: skill_root
-    command: ["python3", "scripts/render-plan.py"]
+    command: ["python3", "scripts/render_plan.py"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 0
@@ -116,6 +125,10 @@ script_interfaces:
     usage: "{hide,show,keep,remove,mark-done,reject,set-deadline,add} ..."
     cwd: skill_root
     command: ["python3", "scripts/mutate_plan.py"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads and writes YAML plan/list data through plan_runtime."
     default:
       patterns:
         - min_positionals: 1

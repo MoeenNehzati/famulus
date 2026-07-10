@@ -34,6 +34,7 @@ script_interfaces:
     usage: "<project-dir>"
     cwd: skill_root
     command: ["python3", "scripts/setup_compat_aliases.py"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 1

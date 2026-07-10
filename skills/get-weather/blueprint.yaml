@@ -28,6 +28,13 @@ script_interfaces:
     usage: "[--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]"
     cwd: skill_root
     command: ["scripts/weather.sh"]
+    dependencies:
+      - kind: binary
+        name: curl
+        reason: "Fetches geocoding, IP-location, and forecast API responses."
+      - kind: binary
+        name: jq
+        reason: "Parses and formats JSON API responses."
     default:
       patterns:
         - min_positionals: 0

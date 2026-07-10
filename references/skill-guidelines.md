@@ -133,6 +133,7 @@ Do not invoke the `dispatcher` CLI from Python skill code, and do not modify
 - `patterns` — positional/flag/stdin constraints
 - `allow_all_skills` / `allowed_callers` — access control
 - `runtime` — internal execution metadata
+- `dependencies` — factual runtime package and executable requirements
 
 `runtime` is **internal metadata**. It belongs in the blueprint because the
 dispatcher must know how to execute the interface, but it must not leak into
@@ -140,6 +141,33 @@ user-facing generated docs. Typical runtime forms:
 
 - `kind: python_module` with `module: scripts.scan`
 - `kind: command` with explicit argv for non-Python tools
+
+Every executable interface must declare `dependencies`. This applies to
+new-style `interfaces.machine.<name>` entries and legacy `script_interfaces`
+while the migration is still in progress. Use `dependencies: []` when the
+interface has no non-stdlib Python package or external executable requirements.
+Otherwise list one object per requirement:
+
+```yaml
+dependencies:
+  - kind: python
+    name: PyYAML
+    reason: "Reads YAML input files."
+  - kind: binary
+    name: curl
+    reason: "Fetches remote JSON from the API."
+```
+
+`kind: python` names an installable Python package. `kind: binary` names an
+executable expected on `PATH`. `reason` is required and should explain why the
+interface needs that dependency; it is used for docs and review. Runtime
+dependencies are factual environment requirements. They are separate from
+top-level `suggested_permissions`, which remains developer judgment about a
+good baseline approval set and must not be inferred from code.
+
+The blueprint sync tool generates `references/blueprint/runtime_dependencies.json`
+from these declarations. Installers and other non-YAML consumers should read
+that JSON manifest instead of parsing blueprint YAML at runtime.
 
 Pattern semantics are per interface, not per grouped command. Every
 `interfaces.machine.<name>` entry is one canonical callable interface. Do not
@@ -227,6 +255,11 @@ This is the intended model:
 Because machine interfaces run as real modules, nested relative imports inside
 `scripts/` are allowed and expected. Use explicit `__init__.py` files for
 package directories under `scripts/`.
+
+Python runtime files under `skills/<skill-name>/scripts/` must use importable
+module filenames with underscores instead of hyphens. For example, use
+`render_plan.py`, not `render-plan.py`. This is mechanically checked by
+`validators/python_script_names.py`.
 
 **TOML IO boundary**
 

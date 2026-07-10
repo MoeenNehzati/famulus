@@ -118,6 +118,10 @@ interfaces:
       runtime:
         kind: python_module
         module: scripts.read_data
+      dependencies:
+        - kind: python
+          name: PyYAML
+          reason: "Parses YAML input files read by this interface."
 
     # ==========================================================================
     # EXAMPLE 2: Multiple calling conventions
@@ -146,6 +150,10 @@ interfaces:
       runtime:
         kind: python_module
         module: scripts.update_data
+      dependencies:
+        - kind: python
+          name: jsonschema
+          reason: "Validates update payloads before writing them."
 
     # ==========================================================================
     # EXAMPLE 3: Internal-only machine interface
@@ -156,6 +164,7 @@ interfaces:
       runtime:
         kind: python_module
         module: scripts.internal_worker
+      dependencies: []
 
     # ==========================================================================
     # EXAMPLE 4: Restricted machine interface
@@ -173,6 +182,7 @@ interfaces:
       runtime:
         kind: python_module
         module: scripts.special_data
+      dependencies: []
 
   llm:
     # ==========================================================================
@@ -221,6 +231,18 @@ interfaces:
 # runtime:
 #   kind: command
 #   argv: ["maker", "--mode", "convert"]
+#
+# Every executable interface must also declare runtime dependencies. Use []
+# when it has no non-stdlib Python packages or external executables. These are
+# factual runtime requirements, not permission suggestions.
+#
+# dependencies:
+#   - kind: python
+#     name: PyYAML
+#     reason: "Reads YAML input files."
+#   - kind: binary
+#     name: curl
+#     reason: "Fetches data from the remote API."
 
 # ==============================================================================
 # LLM INTERFACE BINDING KINDS

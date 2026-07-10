@@ -70,6 +70,209 @@ class SkillBlueprintToolTests(unittest.TestCase):
         result = self.run_cmd("skills/skill-maker/validators/blueprints.py")
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
 
+    def test_sync_validator_requires_machine_interface_dependencies(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_dependency_test",
+            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
+        )
+        blueprints = {
+            "demo-skill": sync_module.SkillBlueprint(
+                "demo-skill",
+                Path("skills/demo-skill/blueprint.yaml"),
+                {
+                    "category": "workflow-general-assistant",
+                    "interface_version": 1,
+                    "interfaces": {
+                        "machine": {
+                            "scan": {
+                                "runtime": {"kind": "python_module", "module": "scripts.scan"},
+                            }
+                        }
+                    },
+                },
+            )
+        }
+
+        errors = sync_module.validate_blueprints(blueprints)
+
+        self.assertTrue(any("interfaces.machine.scan.dependencies" in error for error in errors))
+
+    def test_sync_validator_accepts_empty_machine_interface_dependencies(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_empty_dependency_test",
+            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
+        )
+        blueprints = {
+            "demo-skill": sync_module.SkillBlueprint(
+                "demo-skill",
+                Path("skills/demo-skill/blueprint.yaml"),
+                {
+                    "category": "workflow-general-assistant",
+                    "interface_version": 1,
+                    "interfaces": {
+                        "machine": {
+                            "scan": {
+                                "runtime": {"kind": "python_module", "module": "scripts.scan"},
+                                "dependencies": [],
+                            }
+                        }
+                    },
+                },
+            )
+        }
+
+        errors = sync_module.validate_blueprints(blueprints)
+
+        self.assertEqual(errors, [])
+
+    def test_sync_validator_requires_legacy_script_interface_dependencies(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_legacy_dependency_test",
+            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
+        )
+        blueprints = {
+            "demo-skill": sync_module.SkillBlueprint(
+                "demo-skill",
+                Path("skills/demo-skill/blueprint.yaml"),
+                {
+                    "category": "workflow-general-assistant",
+                    "interface_version": 1,
+                    "script_interfaces": {
+                        "scan": {
+                            "id": "scan",
+                            "command": ["python3", "scripts/scan.py"],
+                        }
+                    },
+                },
+            )
+        }
+
+        errors = sync_module.validate_blueprints(blueprints)
+
+        self.assertTrue(any("script_interfaces.scan.dependencies" in error for error in errors))
+
+    def test_sync_validator_rejects_dependency_shell_commands(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_bad_dependency_name_test",
+            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
+        )
+        blueprints = {
+            "demo-skill": sync_module.SkillBlueprint(
+                "demo-skill",
+                Path("skills/demo-skill/blueprint.yaml"),
+                {
+                    "category": "workflow-general-assistant",
+                    "interface_version": 1,
+                    "interfaces": {
+                        "machine": {
+                            "scan": {
+                                "runtime": {"kind": "command", "argv": ["rg"]},
+                                "dependencies": [
+                                    {
+                                        "kind": "binary",
+                                        "name": "rg --files",
+                                        "reason": "Searches local files.",
+                                    }
+                                ],
+                            }
+                        }
+                    },
+                },
+            )
+        }
+
+        errors = sync_module.validate_blueprints(blueprints)
+
+        self.assertTrue(any("not a path or shell command" in error for error in errors))
+
+    def test_runtime_dependency_manifest_is_generated_from_machine_interfaces(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_manifest_test",
+            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
+        )
+        blueprints = {
+            "demo-skill": sync_module.SkillBlueprint(
+                "demo-skill",
+                Path("skills/demo-skill/blueprint.yaml"),
+                {
+                    "category": "workflow-general-assistant",
+                    "interface_version": 1,
+                    "interfaces": {
+                        "machine": {
+                            "scan": {
+                                "runtime": {"kind": "python_module", "module": "scripts.scan"},
+                                "dependencies": [
+                                    {
+                                        "kind": "python",
+                                        "name": "PyYAML",
+                                        "reason": "Parses YAML inputs.",
+                                    },
+                                    {
+                                        "kind": "binary",
+                                        "name": "rg",
+                                        "reason": "Searches local text quickly.",
+                                    },
+                                ],
+                            }
+                        }
+                    },
+                },
+            )
+        }
+
+        manifest = sync_module.generated_runtime_dependencies_manifest(blueprints)
+
+        self.assertEqual(manifest["all"], {"python": ["PyYAML"], "binary": ["rg"]})
+        self.assertEqual(
+            manifest["skills"]["demo-skill"]["interfaces"]["scan"]["dependencies"],
+            [
+                {"kind": "python", "name": "PyYAML", "reason": "Parses YAML inputs."},
+                {"kind": "binary", "name": "rg", "reason": "Searches local text quickly."},
+            ],
+        )
+
+    def test_runtime_dependency_manifest_includes_legacy_script_interfaces(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_legacy_manifest_test",
+            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
+        )
+        blueprints = {
+            "demo-skill": sync_module.SkillBlueprint(
+                "demo-skill",
+                Path("skills/demo-skill/blueprint.yaml"),
+                {
+                    "category": "workflow-general-assistant",
+                    "interface_version": 1,
+                    "script_interfaces": {
+                        "scan": {
+                            "id": "scan",
+                            "command": ["python3", "scripts/scan.py"],
+                            "dependencies": [
+                                {
+                                    "kind": "python",
+                                    "name": "PyYAML",
+                                    "reason": "Parses YAML inputs.",
+                                }
+                            ],
+                        }
+                    },
+                },
+            )
+        }
+
+        manifest = sync_module.generated_runtime_dependencies_manifest(blueprints)
+
+        self.assertEqual(manifest["all"], {"python": ["PyYAML"], "binary": []})
+        self.assertEqual(
+            manifest["skills"]["demo-skill"]["interfaces"]["scan"],
+            {
+                "id": "scan",
+                "dependencies": [
+                    {"kind": "python", "name": "PyYAML", "reason": "Parses YAML inputs."}
+                ],
+            },
+        )
+
     def test_boundary_hook_check_passes(self) -> None:
         result = self.run_cmd("skills/skill-maker/validators/boundaries.py")
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)

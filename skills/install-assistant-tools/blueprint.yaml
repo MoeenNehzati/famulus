@@ -30,6 +30,10 @@ script_interfaces:
     usage: "[--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path DIR] [--agents LIST] [--default-llm {claude,codex}] [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]"
     cwd: skill_root
     command: ["python3", "scripts/install.py"]
+    dependencies:
+      - kind: binary
+        name: git
+        reason: "Configures repository hook settings during development installs."
     default:
       patterns:
         - name: owner
@@ -39,6 +43,7 @@ script_interfaces:
     usage: "--repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]"
     cwd: skill_root
     command: ["python3", "scripts/scaffold.py"]
+    dependencies: []
     default:
       patterns:
         - name: owner
@@ -48,6 +53,10 @@ script_interfaces:
     usage: "--repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]"
     cwd: skill_root
     command: ["python3", "scripts/dev_link.py"]
+    dependencies:
+      - kind: binary
+        name: git
+        reason: "Configures repository hook settings during development installs."
     default:
       patterns:
         - name: owner
@@ -57,6 +66,7 @@ script_interfaces:
     usage: "--repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--dry-run]"
     cwd: skill_root
     command: ["python3", "scripts/launchers.py"]
+    dependencies: []
     default:
       patterns:
         - name: owner

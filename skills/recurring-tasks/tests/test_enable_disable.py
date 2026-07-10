@@ -3,7 +3,7 @@ import subprocess, tempfile, os
 from pathlib import Path
 
 SCRIPTS = Path(__file__).parent.parent / "scripts"
-MANAGE_JOB = SCRIPTS / "manage-job.py"
+MANAGE_JOB = SCRIPTS / "manage_job.py"
 
 JOBS_YAML = """\
 jobs:

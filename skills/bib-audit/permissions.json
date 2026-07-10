@@ -3,8 +3,8 @@
     "Bash(biber:*)",
     "Bash(bibtex-check:*)",
     "Bash(bibtex-update:*)",
-    "Bash(scripts/bib-similarity.py:*)",
-    "Bash(scripts/bib-validate-bibtex.py:*)"
+    "Bash(scripts/bib_similarity.py:*)",
+    "Bash(scripts/bib_validate_bibtex.py:*)"
   ],
   "network": []
 }

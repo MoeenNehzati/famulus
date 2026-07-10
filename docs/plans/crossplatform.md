@@ -173,7 +173,7 @@ Targets:
 
 Status:
 
-- partially done
+- done
 
 Description:
 
@@ -182,13 +182,21 @@ Description:
 What was done:
 
 - the missing dependency class was identified clearly in the lessons archive
-- the repo already declares some known Python dependencies, but the coverage is incomplete
+- made `dependencies` mandatory on executable blueprint interfaces, including new-style machine interfaces and legacy `script_interfaces`; interfaces with no non-stdlib Python package or external executable requirements must say `dependencies: []`
+- dependency entries now require `kind`, `name`, and `reason`, with `kind` limited to `python` or `binary`
+- documented that dependency declarations are factual runtime requirements and are separate from developer-chosen `suggested_permissions`
+- added schema and sync-validator coverage so missing or malformed executable-interface dependencies fail before runtime
+- added generated `references/blueprint/runtime_dependencies.json`, produced by `skills/skill-maker/scripts/sync_skill_blueprints.py` from blueprint declarations
+- updated `skills/install-assistant-tools/scripts/scaffold.py` to install Python packages from the generated JSON manifest using stdlib JSON, so end-user installs do not need PyYAML
+- moved current legacy `script_interfaces` dependencies into blueprint declarations, including `dateparser`, `PyYAML`, `jsonschema`, `rich`, `bibtexparser`, `marker-pdf`, and known external binaries such as `rclone`, `curl`, `jq`, `msmtp`, `secret-tool`, `systemctl`, and `journalctl`
+- removed the hardcoded installer Python package fallback; installer package selection now comes from the generated JSON manifest
 
 Prevention:
 
-- add the currently known missing Python packages
-- audit shared skills for undeclared external binary dependencies
-- add a validator or audit check so dependency declarations do not drift from implementation reality
+- keep dependency declarations on each executable blueprint interface, including explicit empty lists
+- keep `sync_skill_blueprints.py --check` in the validation path so generated dependency manifests cannot drift from blueprint YAML
+- keep installer tests that verify scaffold consumes `references/blueprint/runtime_dependencies.json` for Python packages and ignores binary dependencies for pip installation
+- continue migrating legacy `script_interfaces` into new-style machine interfaces, but keep their dependencies declared and validated while they remain legacy
 
 ### 5. Fail loudly when a required capability is skipped on a host
 

@@ -1,0 +1,767 @@
+{
+  "version": 1,
+  "skills": {
+    "bib-audit": {
+      "interfaces": {
+        "scripts-bib-similarity": {
+          "id": "scripts-bib-similarity",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "bibtexparser",
+              "reason": "Parses BibTeX entries more accurately than the fallback parser."
+            }
+          ]
+        },
+        "scripts-bib-validate-bibtex": {
+          "id": "scripts-bib-validate-bibtex",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "bibtexparser",
+              "reason": "Parses BibTeX entries more accurately than the fallback parser."
+            }
+          ]
+        }
+      }
+    },
+    "cloud-files": {
+      "interfaces": {
+        "ensure-oauth": {
+          "id": "ensure-oauth",
+          "dependencies": []
+        },
+        "lists-delete": {
+          "id": "lists-delete",
+          "dependencies": []
+        },
+        "lists-read": {
+          "id": "lists-read",
+          "dependencies": []
+        },
+        "lists-write": {
+          "id": "lists-write",
+          "dependencies": []
+        },
+        "plans-delete": {
+          "id": "plans-delete",
+          "dependencies": []
+        },
+        "plans-read": {
+          "id": "plans-read",
+          "dependencies": []
+        },
+        "plans-write": {
+          "id": "plans-write",
+          "dependencies": []
+        },
+        "setup-oauth": {
+          "id": "setup-oauth",
+          "dependencies": []
+        },
+        "write-config": {
+          "id": "write-config",
+          "dependencies": []
+        }
+      }
+    },
+    "daily-plan": {
+      "interfaces": {
+        "mutate-plan": {
+          "id": "mutate-plan",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads and writes YAML plan/list data through plan_runtime."
+            }
+          ]
+        },
+        "orchestrate": {
+          "id": "orchestrate",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads and writes YAML plan/list data through plan_runtime."
+            }
+          ]
+        },
+        "plan-storage": {
+          "id": "plan-storage",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "rclone",
+              "reason": "Reads and writes plan files in the configured GDrive remote."
+            }
+          ]
+        },
+        "render-plan": {
+          "id": "render-plan",
+          "dependencies": []
+        }
+      }
+    },
+    "email-client": {
+      "interfaces": {
+        "accounts-add": {
+          "id": "accounts-add",
+          "dependencies": []
+        },
+        "accounts-list": {
+          "id": "accounts-list",
+          "dependencies": []
+        },
+        "accounts-remove": {
+          "id": "accounts-remove",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "secret-tool",
+              "reason": "Clears stored account credentials when requested."
+            }
+          ]
+        },
+        "accounts-set-password": {
+          "id": "accounts-set-password",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "secret-tool",
+              "reason": "Stores IMAP or SMTP credentials in the keyring."
+            }
+          ]
+        },
+        "accounts-update": {
+          "id": "accounts-update",
+          "dependencies": []
+        },
+        "mail-attachments": {
+          "id": "mail-attachments",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "secret-tool",
+              "reason": "Retrieves the IMAP credential from the keyring."
+            }
+          ]
+        },
+        "mail-folders": {
+          "id": "mail-folders",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "secret-tool",
+              "reason": "Retrieves the IMAP credential from the keyring."
+            }
+          ]
+        },
+        "mail-list": {
+          "id": "mail-list",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "secret-tool",
+              "reason": "Retrieves the IMAP credential from the keyring."
+            }
+          ]
+        },
+        "mail-read": {
+          "id": "mail-read",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "secret-tool",
+              "reason": "Retrieves the IMAP credential from the keyring."
+            }
+          ]
+        },
+        "mail-save-attachments": {
+          "id": "mail-save-attachments",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "secret-tool",
+              "reason": "Retrieves the IMAP credential from the keyring."
+            }
+          ]
+        },
+        "send-email": {
+          "id": "send-email",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "msmtp",
+              "reason": "Sends the composed email via SMTP."
+            },
+            {
+              "kind": "binary",
+              "name": "secret-tool",
+              "reason": "Retrieves the SMTP credential from the keyring."
+            },
+            {
+              "kind": "binary",
+              "name": "base64",
+              "reason": "Encodes attachments for MIME messages."
+            },
+            {
+              "kind": "binary",
+              "name": "file",
+              "reason": "Detects attachment MIME types."
+            }
+          ]
+        }
+      }
+    },
+    "email-triage": {
+      "interfaces": {
+        "scripts-filter-envelopes": {
+          "id": "scripts-filter-envelopes",
+          "dependencies": []
+        },
+        "scripts-get-cutoff": {
+          "id": "scripts-get-cutoff",
+          "dependencies": []
+        },
+        "scripts-log-decision": {
+          "id": "scripts-log-decision",
+          "dependencies": []
+        },
+        "scripts-mark-failure": {
+          "id": "scripts-mark-failure",
+          "dependencies": []
+        },
+        "scripts-prune-log": {
+          "id": "scripts-prune-log",
+          "dependencies": []
+        },
+        "scripts-update-watermark": {
+          "id": "scripts-update-watermark",
+          "dependencies": []
+        }
+      }
+    },
+    "find-handoff-candidates": {
+      "interfaces": {
+        "calibrate": {
+          "id": "find-handoff-candidates.machine.calibrate",
+          "dependencies": []
+        },
+        "scan": {
+          "id": "find-handoff-candidates.machine.scan",
+          "dependencies": []
+        }
+      }
+    },
+    "g-calendar": {
+      "interfaces": {
+        "ensure-oauth": {
+          "id": "ensure-oauth",
+          "dependencies": []
+        },
+        "scripts-gcal": {
+          "id": "scripts-gcal",
+          "dependencies": []
+        },
+        "setup-oauth": {
+          "id": "setup-oauth",
+          "dependencies": []
+        }
+      }
+    },
+    "get-weather": {
+      "interfaces": {
+        "scripts-weather": {
+          "id": "scripts-weather",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "curl",
+              "reason": "Fetches geocoding, IP-location, and forecast API responses."
+            },
+            {
+              "kind": "binary",
+              "name": "jq",
+              "reason": "Parses and formats JSON API responses."
+            }
+          ]
+        }
+      }
+    },
+    "initialize-tdd": {
+      "interfaces": {
+        "setup-compat-aliases": {
+          "id": "setup-compat-aliases",
+          "dependencies": []
+        }
+      }
+    },
+    "install-assistant-tools": {
+      "interfaces": {
+        "scripts-dev-link": {
+          "id": "scripts-dev-link",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "git",
+              "reason": "Configures repository hook settings during development installs."
+            }
+          ]
+        },
+        "scripts-install": {
+          "id": "scripts-install",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "git",
+              "reason": "Configures repository hook settings during development installs."
+            }
+          ]
+        },
+        "scripts-launchers": {
+          "id": "scripts-launchers",
+          "dependencies": []
+        },
+        "scripts-scaffold": {
+          "id": "scripts-scaffold",
+          "dependencies": []
+        }
+      }
+    },
+    "list-manager": {
+      "interfaces": {
+        "beautify-list": {
+          "id": "beautify-list",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads YAML list data from stdin."
+            },
+            {
+              "kind": "python",
+              "name": "rich",
+              "reason": "Renders nested list output for terminal display."
+            }
+          ]
+        },
+        "cloud-create-entry": {
+          "id": "cloud-create-entry",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads and writes YAML list data downloaded from cloud storage."
+            },
+            {
+              "kind": "python",
+              "name": "jsonschema",
+              "reason": "Validates new entries before upload."
+            }
+          ]
+        },
+        "cloud-delete": {
+          "id": "cloud-delete",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads and writes YAML list data downloaded from cloud storage."
+            }
+          ]
+        },
+        "cloud-init": {
+          "id": "cloud-init",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Writes YAML list data for upload."
+            },
+            {
+              "kind": "python",
+              "name": "jsonschema",
+              "reason": "Validates initialized list data before upload."
+            }
+          ]
+        },
+        "cloud-read": {
+          "id": "cloud-read",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads YAML list data downloaded from cloud storage."
+            }
+          ]
+        },
+        "cloud-read-beautify": {
+          "id": "cloud-read-beautify",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads YAML list data downloaded from cloud storage."
+            },
+            {
+              "kind": "python",
+              "name": "rich",
+              "reason": "Renders nested list output for terminal display."
+            }
+          ]
+        },
+        "cloud-update": {
+          "id": "cloud-update",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads and writes YAML list data downloaded from cloud storage."
+            },
+            {
+              "kind": "python",
+              "name": "jsonschema",
+              "reason": "Validates list mutations before upload."
+            }
+          ]
+        },
+        "create-entry": {
+          "id": "create-entry",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads and writes YAML list files."
+            },
+            {
+              "kind": "python",
+              "name": "jsonschema",
+              "reason": "Validates new entries before writing."
+            }
+          ]
+        },
+        "describe-schema": {
+          "id": "describe-schema",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "jsonschema",
+              "reason": "Resolves and reports JSON Schema metadata for list entries."
+            }
+          ]
+        },
+        "generate-id": {
+          "id": "generate-id",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads YAML list files to avoid ID collisions."
+            }
+          ]
+        },
+        "init-list": {
+          "id": "init-list",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Writes YAML list files."
+            },
+            {
+              "kind": "python",
+              "name": "jsonschema",
+              "reason": "Validates initialized list data before writing."
+            }
+          ]
+        },
+        "migrate-markdown": {
+          "id": "migrate-markdown",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Writes migrated YAML list files."
+            },
+            {
+              "kind": "python",
+              "name": "jsonschema",
+              "reason": "Validates migrated entries before writing."
+            },
+            {
+              "kind": "python",
+              "name": "dateparser",
+              "reason": "Parses natural-language legacy Markdown deadlines."
+            }
+          ]
+        },
+        "read-beautify": {
+          "id": "read-beautify",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads YAML list data before rendering."
+            },
+            {
+              "kind": "python",
+              "name": "rich",
+              "reason": "Renders nested list output for terminal display."
+            }
+          ]
+        },
+        "read-list": {
+          "id": "read-list",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads YAML list files."
+            }
+          ]
+        },
+        "update-list": {
+          "id": "update-list",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads and writes YAML list files."
+            },
+            {
+              "kind": "python",
+              "name": "jsonschema",
+              "reason": "Validates list mutations before writing."
+            }
+          ]
+        }
+      }
+    },
+    "math-dependency-graph": {
+      "interfaces": {
+        "scripts-build-math-dependency-graph": {
+          "id": "scripts-build-math-dependency-graph",
+          "dependencies": []
+        },
+        "scripts-extract-mathjax-macros": {
+          "id": "scripts-extract-mathjax-macros",
+          "dependencies": []
+        },
+        "scripts-serve-graph": {
+          "id": "scripts-serve-graph",
+          "dependencies": []
+        }
+      }
+    },
+    "pdf-to-markdown": {
+      "interfaces": {
+        "scripts-check-marker-models": {
+          "id": "scripts-check-marker-models",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "marker-pdf",
+              "reason": "Provides the Surya settings module used to locate Marker model checkpoints."
+            }
+          ]
+        },
+        "scripts-fetch-arxiv-source": {
+          "id": "scripts-fetch-arxiv-source",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "curl",
+              "reason": "Downloads arXiv source tarballs."
+            },
+            {
+              "kind": "binary",
+              "name": "file",
+              "reason": "Detects arXiv HTML responses versus gzip source archives."
+            },
+            {
+              "kind": "binary",
+              "name": "tar",
+              "reason": "Extracts downloaded source archives."
+            }
+          ]
+        }
+      }
+    },
+    "recurring-tasks": {
+      "interfaces": {
+        "scripts-disable": {
+          "id": "scripts-disable",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads and writes jobs.yaml."
+            },
+            {
+              "kind": "binary",
+              "name": "systemctl",
+              "reason": "Disables generated user timers."
+            }
+          ]
+        },
+        "scripts-enable": {
+          "id": "scripts-enable",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads and writes jobs.yaml."
+            },
+            {
+              "kind": "binary",
+              "name": "systemctl",
+              "reason": "Enables and starts generated user timers."
+            }
+          ]
+        },
+        "scripts-ensure-agent-env": {
+          "id": "scripts-ensure-agent-env",
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "systemctl",
+              "reason": "Publishes recurring-task environment variables to the user manager when available."
+            }
+          ]
+        },
+        "scripts-env": {
+          "id": "scripts-env",
+          "dependencies": []
+        },
+        "scripts-healthcheck": {
+          "id": "scripts-healthcheck",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads jobs.yaml for enabled jobs."
+            },
+            {
+              "kind": "binary",
+              "name": "systemctl",
+              "reason": "Checks user service and timer health."
+            },
+            {
+              "kind": "binary",
+              "name": "journalctl",
+              "reason": "Reports recent service logs for failing jobs."
+            }
+          ]
+        },
+        "scripts-invoke-agent": {
+          "id": "scripts-invoke-agent",
+          "dependencies": []
+        },
+        "scripts-job-utils": {
+          "id": "scripts-job-utils",
+          "dependencies": []
+        },
+        "scripts-setup": {
+          "id": "scripts-setup",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Validates that jobs.yaml tooling can load YAML."
+            },
+            {
+              "kind": "binary",
+              "name": "systemctl",
+              "reason": "Lists and manages generated user timers."
+            },
+            {
+              "kind": "binary",
+              "name": "crontab",
+              "reason": "Installs the recurring healthcheck cron entry."
+            }
+          ]
+        },
+        "scripts-status": {
+          "id": "scripts-status",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Loads jobs.yaml in the management CLI."
+            },
+            {
+              "kind": "binary",
+              "name": "systemctl",
+              "reason": "Lists active generated user timers."
+            }
+          ]
+        },
+        "scripts-sync": {
+          "id": "scripts-sync",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads jobs.yaml while generating unit files."
+            },
+            {
+              "kind": "binary",
+              "name": "systemctl",
+              "reason": "Reloads and enables generated user timers."
+            }
+          ]
+        },
+        "scripts-test": {
+          "id": "scripts-test",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Reads jobs.yaml before running the job."
+            },
+            {
+              "kind": "binary",
+              "name": "systemctl",
+              "reason": "Starts the generated user service immediately."
+            }
+          ]
+        },
+        "scripts-view-logs": {
+          "id": "scripts-view-logs",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Loads jobs.yaml before locating the run log."
+            }
+          ]
+        }
+      }
+    }
+  },
+  "all": {
+    "python": [
+      "PyYAML",
+      "bibtexparser",
+      "dateparser",
+      "jsonschema",
+      "marker-pdf",
+      "rich"
+    ],
+    "binary": [
+      "base64",
+      "crontab",
+      "curl",
+      "file",
+      "git",
+      "journalctl",
+      "jq",
+      "msmtp",
+      "rclone",
+      "secret-tool",
+      "systemctl",
+      "tar"
+    ]
+  }
+}

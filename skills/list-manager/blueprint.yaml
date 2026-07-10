@@ -49,6 +49,10 @@ script_interfaces:
     usage: "<file> [filters]"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "read"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads YAML list files."
     default:
       patterns:
         - min_positionals: 1
@@ -65,6 +69,10 @@ script_interfaces:
     usage: "<schema> [field]"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "describe-schema"]
+    dependencies:
+      - kind: python
+        name: jsonschema
+        reason: "Resolves and reports JSON Schema metadata for list entries."
     default:
       patterns:
         - min_positionals: 1
@@ -80,6 +88,13 @@ script_interfaces:
     usage: "<file> --file /tmp/patch.yaml"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "update"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads and writes YAML list files."
+      - kind: python
+        name: jsonschema
+        reason: "Validates list mutations before writing."
     default:
       patterns:
         - name: "file-mode"
@@ -105,6 +120,13 @@ script_interfaces:
     usage: "<file> [filters] [--sort FIELD] [-D|--no-descriptions] [--markdown|--table|--diff] [--no-ids] [-o FILE]"
     cwd: skill_root
     command: ["python3", "scripts/read_beautify.py"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads YAML list data before rendering."
+      - kind: python
+        name: rich
+        reason: "Renders nested list output for terminal display."
     default:
       patterns:
         - min_positionals: 1
@@ -121,6 +143,13 @@ script_interfaces:
     usage: "[-D|--no-descriptions] [--markdown|--table|--diff] [--relative-deadlines] [--ids]"
     cwd: skill_root
     command: ["python3", "scripts/beautify.py"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads YAML list data from stdin."
+      - kind: python
+        name: rich
+        reason: "Renders nested list output for terminal display."
     default:
       patterns:
         - min_positionals: 0
@@ -136,6 +165,13 @@ script_interfaces:
     usage: "<file> [--schema <name>]"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "init"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Writes YAML list files."
+      - kind: python
+        name: jsonschema
+        reason: "Validates initialized list data before writing."
     default:
       patterns:
         - min_positionals: 1
@@ -150,6 +186,13 @@ script_interfaces:
     usage: "<file> <category/path> --entries /tmp/entry.yaml"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "create-entry"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads and writes YAML list files."
+      - kind: python
+        name: jsonschema
+        reason: "Validates new entries before writing."
     default:
       patterns:
         - name: "stdin-mode"
@@ -172,6 +215,10 @@ script_interfaces:
     usage: "<file> [--count N]"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "gen-id"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads YAML list files to avoid ID collisions."
     default:
       patterns:
         - min_positionals: 1
@@ -186,6 +233,16 @@ script_interfaces:
     usage: "<source.md> <dest.yaml> --schema <schema>"
     cwd: skill_root
     command: ["python3", "scripts/migrate_md.py"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Writes migrated YAML list files."
+      - kind: python
+        name: jsonschema
+        reason: "Validates migrated entries before writing."
+      - kind: python
+        name: dateparser
+        reason: "Parses natural-language legacy Markdown deadlines."
     default:
       patterns:
         - min_positionals: 3
@@ -208,6 +265,10 @@ script_interfaces:
     usage: "<name> [filters] --cloud"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "read"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads YAML list data downloaded from cloud storage."
     default:
       patterns:
         - min_positionals: 1
@@ -227,6 +288,13 @@ script_interfaces:
     usage: "<name> <category/path> --cloud --entries /tmp/entry.yaml"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "create-entry"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads and writes YAML list data downloaded from cloud storage."
+      - kind: python
+        name: jsonschema
+        reason: "Validates new entries before upload."
     default:
       patterns:
         - name: "stdin-mode"
@@ -256,6 +324,13 @@ script_interfaces:
     usage: "<name> --cloud --file /tmp/patch.yaml"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "update"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads and writes YAML list data downloaded from cloud storage."
+      - kind: python
+        name: jsonschema
+        reason: "Validates list mutations before upload."
     default:
       patterns:
         - name: "file-mode"
@@ -285,6 +360,13 @@ script_interfaces:
     usage: "<name> --cloud --schema <schema>"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "init"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Writes YAML list data for upload."
+      - kind: python
+        name: jsonschema
+        reason: "Validates initialized list data before upload."
     default:
       patterns:
         - min_positionals: 1
@@ -304,6 +386,10 @@ script_interfaces:
     usage: "<name> --cloud <id> [<id>...]"
     cwd: skill_root
     command: ["python3", "scripts/lists.py", "delete"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads and writes YAML list data downloaded from cloud storage."
     default:
       patterns:
         - min_positionals: 2   # list name + at least one id
@@ -324,6 +410,13 @@ script_interfaces:
     usage: "<name> [filters] --cloud"
     cwd: skill_root
     command: ["python3", "scripts/read_beautify.py"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads YAML list data downloaded from cloud storage."
+      - kind: python
+        name: rich
+        reason: "Renders nested list output for terminal display."
     default:
       patterns:
         - min_positionals: 1

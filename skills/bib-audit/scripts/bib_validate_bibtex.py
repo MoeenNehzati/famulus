@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-bib-validate-bibtex.py — syntactic and required-field validation for BibTeX/natbib .bib files.
+bib_validate_bibtex.py — syntactic and required-field validation for BibTeX/natbib .bib files.
 
 Use for projects with BibTeX+natbib backend. Do NOT use for biblatex projects (use biber --tool instead).
 
 Usage:
-  python3 bib-validate-bibtex.py <file.bib>
+  python3 bib_validate_bibtex.py <file.bib>
 
 Output: JSON with errors, warnings, and infos per entry.
 

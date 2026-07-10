@@ -69,11 +69,12 @@ Runs in every install, regardless of mode or which agents you want. Installs:
   everything else structurally depends on.
 - The `invoke-skill` launcher — used by `recurring-tasks` systemd/cron jobs
   to invoke a skill by name without hardcoding an absolute path.
-- Required third-party Python packages (currently just `dateparser`, used by
-  `list-manager`). First-party code (`script_dispatcher` itself) is
-  deliberately **not** pip-installed — it runs straight from the repo via a
-  path baked into the `dispatcher` launcher at generation time, so there's
-  never a second copy to drift out of sync.
+- Required third-party Python packages from
+  `references/blueprint/runtime_dependencies.json`, generated from executable
+  interface dependency declarations. First-party code (`script_dispatcher`
+  itself) is deliberately **not** pip-installed — it runs straight from the
+  repo via a path baked into the `dispatcher` launcher at generation time, so
+  there's never a second copy to drift out of sync.
 - `PATH` — adds `<bin-dir>` to your shell rc (or the Windows registry) so
   `dispatcher` and the agent launchers resolve as bare commands.
 

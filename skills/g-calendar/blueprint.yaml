@@ -32,6 +32,7 @@ script_interfaces:
     usage: "<command> [options]"
     cwd: skill_root
     command: ["scripts/gcal.sh"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 0
@@ -48,6 +49,7 @@ script_interfaces:
     usage: "[--from-json /path/to/client.json]"
     cwd: skill_root
     command: ["python3", "scripts/setup_oauth.py"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 0
@@ -64,6 +66,7 @@ script_interfaces:
     usage: "--home <dir> [--dry-run]"
     cwd: skill_root
     command: ["python3", "scripts/ensure_oauth.py"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 0

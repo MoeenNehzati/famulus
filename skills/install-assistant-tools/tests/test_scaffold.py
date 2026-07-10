@@ -1,11 +1,27 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import scaffold
+
+
+def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[str]) -> None:
+    manifest = repo_root / "references" / "blueprint" / "runtime_dependencies.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "skills": {},
+                "all": {"python": python_packages, "binary": ["rg"]},
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_run_writes_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch):
@@ -83,6 +99,7 @@ def test_run_installs_required_python_packages(tmp_path, monkeypatch):
     )
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
+    write_runtime_dependencies_manifest(repo_root, ["dateparser"])
     bin_dir = tmp_path / "bin"
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("")
@@ -90,3 +107,25 @@ def test_run_installs_required_python_packages(tmp_path, monkeypatch):
     scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
 
     assert any("dateparser" in " ".join(cmd) for cmd in calls)
+
+
+def test_run_installs_python_packages_from_runtime_dependency_manifest(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    calls = []
+    monkeypatch.setattr(
+        scaffold.subprocess, "run",
+        lambda cmd, **kw: (calls.append(cmd), type("R", (), {"returncode": 0, "stderr": ""})())[1],
+    )
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    write_runtime_dependencies_manifest(repo_root, ["PyYAML", "jsonschema"])
+    bin_dir = tmp_path / "bin"
+    rc_file = tmp_path / ".bashrc"
+    rc_file.write_text("")
+
+    scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
+
+    installed = {" ".join(cmd) for cmd in calls}
+    assert any("PyYAML" in cmd for cmd in installed)
+    assert any("jsonschema" in cmd for cmd in installed)
+    assert not any(" rg " in f" {cmd} " for cmd in installed)

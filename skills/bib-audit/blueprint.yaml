@@ -18,9 +18,9 @@ suggested_permissions:
       reason: "Migrated from legacy permissions.json."
     - command: ["bibtex-update"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["scripts/bib-similarity.py"]
+    - command: ["scripts/bib_similarity.py"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["scripts/bib-validate-bibtex.py"]
+    - command: ["scripts/bib_validate_bibtex.py"]
       reason: "Migrated from legacy permissions.json."
   network:
     []
@@ -39,7 +39,11 @@ script_interfaces:
     description: "Detect duplicate and version-pair candidates in a .bib file by scoring all entry pairs."
     usage: "<file.bib> [--threshold 0.3]"
     cwd: skill_root
-    command: ["python3", "scripts/bib-similarity.py"]
+    command: ["python3", "scripts/bib_similarity.py"]
+    dependencies:
+      - kind: python
+        name: bibtexparser
+        reason: "Parses BibTeX entries more accurately than the fallback parser."
     default:
       patterns:
         - name: owner
@@ -49,7 +53,11 @@ script_interfaces:
     description: "Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects)."
     usage: "<file.bib>"
     cwd: skill_root
-    command: ["python3", "scripts/bib-validate-bibtex.py"]
+    command: ["python3", "scripts/bib_validate_bibtex.py"]
+    dependencies:
+      - kind: python
+        name: bibtexparser
+        reason: "Parses BibTeX entries more accurately than the fallback parser."
     default:
       patterns:
         - name: owner

@@ -45,6 +45,7 @@ script_interfaces:
     usage: "lists/<path>"
     cwd: skill_root
     command: ["python3", "scripts/read_llm_file.py"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 1
@@ -65,6 +66,7 @@ script_interfaces:
     usage: "lists/<path>"
     cwd: skill_root
     command: ["python3", "scripts/write_llm_file.py"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 1
@@ -85,6 +87,7 @@ script_interfaces:
     usage: "lists/<path>"
     cwd: skill_root
     command: ["python3", "scripts/delete_llm_file.py"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 1
@@ -110,6 +113,7 @@ script_interfaces:
     usage: "plans/<path>"
     cwd: skill_root
     command: ["python3", "scripts/read_llm_file.py"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 1
@@ -129,6 +133,7 @@ script_interfaces:
     usage: "plans/<path>"
     cwd: skill_root
     command: ["python3", "scripts/write_llm_file.py"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 1
@@ -148,6 +153,7 @@ script_interfaces:
     usage: "plans/<path>"
     cwd: skill_root
     command: ["python3", "scripts/delete_llm_file.py"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 1
@@ -167,6 +173,7 @@ script_interfaces:
     usage: "[--from-json <client_json_path>] [--client-id <id> --client-secret <secret>] [--port <port>]"
     cwd: skill_root
     command: ["python3", "scripts/setup_oauth.py"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 0
@@ -183,6 +190,7 @@ script_interfaces:
     usage: "ensure-oauth --home <dir> [--dry-run]"
     cwd: skill_root
     command: ["python3", "scripts/ensure_oauth.py"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 1
@@ -199,6 +207,7 @@ script_interfaces:
     usage: "write-config --home <dir> [--remote-llm-root <path>] [--dry-run]"
     cwd: skill_root
     command: ["python3", "scripts/ensure_oauth.py"]
+    dependencies: []
     default:
       patterns:
         - min_positionals: 1

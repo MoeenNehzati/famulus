@@ -8,8 +8,8 @@ jobs invoke `invoke-skill <name>`. Both need to exist and be on PATH
 regardless of plugin vs dev-mode, and regardless of which agent launchers
 (assistant/collab/coauthor/tw) the user wants. Run this first, always.
 
-Also installs required third-party Python packages (e.g. dateparser) that
-skill scripts depend on generally, not tied to any particular agent.
+Also installs required third-party Python packages declared by blueprint
+executable interfaces, not tied to any particular agent.
 
 Does NOT set ASSISTANT_DEFAULT (see launchers.py) or AI (see dev_link.py) —
 this subcommand only owns PATH.
@@ -17,6 +17,7 @@ this subcommand only owns PATH.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -32,19 +33,28 @@ def log(msg: str = "") -> None:
     print(msg, flush=True)
 
 
-REQUIRED_PYTHON_PACKAGES = [
-    "dateparser",  # list-manager: migrate-md deadline resolution
-]
+RUNTIME_DEPENDENCIES_MANIFEST = Path("references") / "blueprint" / "runtime_dependencies.json"
 
 
-def install_python_packages(dry_run: bool) -> None:
+def required_python_packages(repo_root: Path) -> list[str]:
+    packages: set[str] = set()
+    manifest = repo_root / RUNTIME_DEPENDENCIES_MANIFEST
+    if manifest.exists():
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        manifest_packages = data.get("all", {}).get("python", [])
+        if isinstance(manifest_packages, list):
+            packages.update(package for package in manifest_packages if isinstance(package, str) and package)
+    return sorted(packages, key=str.lower)
+
+
+def install_python_packages(repo_root: Path, dry_run: bool) -> None:
     """Ensure required third-party Python packages are installed.
 
     officina.dispatcher itself (first-party) is deliberately NOT pip-installed
     here — it runs from the repo via the dispatcher launcher below.
     """
     log("\nInstalling required Python packages...")
-    for package in REQUIRED_PYTHON_PACKAGES:
+    for package in required_python_packages(repo_root):
         if dry_run:
             log(f"  (dry-run) Would install: {package}")
             continue
@@ -193,7 +203,7 @@ def run(
     if dry_run:
         manifest = None
 
-    install_python_packages(dry_run)
+    install_python_packages(repo_root, dry_run)
     install_dispatcher_launcher(repo_root, bin_dir, dry_run, manifest)
     install_invoke_skill_launcher(bin_dir, dry_run, manifest)
 

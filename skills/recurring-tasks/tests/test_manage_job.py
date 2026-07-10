@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for manage-job.py: the enable/disable/test/view-logs/status/sync
+"""Tests for manage_job.py: the enable/disable/test/view-logs/status/sync
 subcommands, at both the function level and the CLI level.
 
 test_enable_disable.py already covers enable/disable through the CLI
@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 SKILL_DIR = Path(__file__).parent.parent
-SCRIPT = SKILL_DIR / "scripts" / "manage-job.py"
+SCRIPT = SKILL_DIR / "scripts" / "manage_job.py"
 
 
 def _load():
@@ -102,7 +102,7 @@ def test_disable_job_passes_custom_jobs_file_to_sync():
 def test_default_jobs_file_calls_sync_units_with_no_override():
     """When jobs_file is the module's own default JOBS_FILE (i.e. a real
     install, not a test), sync_units should be called with no --jobs-file
-    override, since sync-units.py's own default already points at the same
+    override, since sync_units.py's own default already points at the same
     file."""
     mod = _load()
     with mock.patch.object(mod, "load_jobs", return_value=[{"name": "a", "enabled": False}]), \
@@ -121,9 +121,9 @@ def test_sync_units_invokes_sync_units_script():
         mod.sync_units()
         cmd = run.call_args[0][0]
         assert cmd[0] == mod.sys.executable
-        assert cmd[1] == str(mod.SKILL_DIR / "scripts" / "sync-units.py")
+        assert cmd[1] == str(mod.SKILL_DIR / "scripts" / "sync_units.py")
         assert "--jobs-file" not in cmd
-    print("PASS: sync_units() with no override calls sync-units.py plainly")
+    print("PASS: sync_units() with no override calls sync_units.py plainly")
 
 
 def test_sync_units_passes_jobs_file_override():
@@ -208,7 +208,7 @@ def test_status_lists_ai_timers(capsys):
 
 def test_cli_sync_subcommand_dispatches_to_sync_units():
     mod = _load()
-    with mock.patch.object(mod.sys, "argv", ["manage-job.py", "sync"]), \
+    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "sync"]), \
          mock.patch.object(mod, "sync_units") as sync_units:
         mod.main()
         sync_units.assert_called_once_with()
@@ -217,7 +217,7 @@ def test_cli_sync_subcommand_dispatches_to_sync_units():
 
 def test_cli_test_subcommand_dispatches_to_test_job():
     mod = _load()
-    with mock.patch.object(mod.sys, "argv", ["manage-job.py", "test", "my-job"]), \
+    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "test", "my-job"]), \
          mock.patch.object(mod, "test_job") as test_job:
         mod.main()
         test_job.assert_called_once_with("my-job")
@@ -226,7 +226,7 @@ def test_cli_test_subcommand_dispatches_to_test_job():
 
 def test_cli_view_logs_subcommand_passes_lines_flag():
     mod = _load()
-    with mock.patch.object(mod.sys, "argv", ["manage-job.py", "view-logs", "my-job", "--lines", "10"]), \
+    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "view-logs", "my-job", "--lines", "10"]), \
          mock.patch.object(mod, "view_logs") as view_logs:
         mod.main()
         view_logs.assert_called_once_with("my-job", 10)
@@ -235,7 +235,7 @@ def test_cli_view_logs_subcommand_passes_lines_flag():
 
 def test_cli_status_subcommand_dispatches_to_status():
     mod = _load()
-    with mock.patch.object(mod.sys, "argv", ["manage-job.py", "status"]), \
+    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "status"]), \
          mock.patch.object(mod, "status") as status_fn:
         mod.main()
         status_fn.assert_called_once_with()
@@ -244,7 +244,7 @@ def test_cli_status_subcommand_dispatches_to_status():
 
 def test_cli_enable_subcommand_passes_jobs_file_and_no_sync():
     mod = _load()
-    argv = ["manage-job.py", "enable", "my-job", "--jobs-file", "/tmp/x.yaml", "--no-sync"]
+    argv = ["manage_job.py", "enable", "my-job", "--jobs-file", "/tmp/x.yaml", "--no-sync"]
     with mock.patch.object(mod.sys, "argv", argv), \
          mock.patch.object(mod, "enable_job") as enable_job:
         mod.main()
@@ -254,7 +254,7 @@ def test_cli_enable_subcommand_passes_jobs_file_and_no_sync():
 
 def test_cli_reports_error_and_exits_nonzero_on_exception():
     mod = _load()
-    with mock.patch.object(mod.sys, "argv", ["manage-job.py", "test", "my-job"]), \
+    with mock.patch.object(mod.sys, "argv", ["manage_job.py", "test", "my-job"]), \
          mock.patch.object(mod, "test_job", side_effect=RuntimeError("kaboom")):
         try:
             mod.main()

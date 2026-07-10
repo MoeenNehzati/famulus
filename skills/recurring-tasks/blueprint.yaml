@@ -11,9 +11,9 @@ suggested_permissions:
   bash:
     - command: ["scripts/setup.sh"]
       reason: "Initial setup: syncs unit files, installs healthcheck cron entry."
-    - command: ["scripts/sync-units.py"]
+    - command: ["scripts/sync_units.py"]
       reason: "Write/remove systemd user unit files to match jobs.yaml."
-    - command: ["scripts/manage-job.py"]
+    - command: ["scripts/manage_job.py"]
       reason: "Consolidated interface: enable/disable/test/view-logs jobs."
     - command: ["scripts/healthcheck.py"]
       reason: "Run pre-flight and per-job health checks."
@@ -32,7 +32,14 @@ script_interfaces:
     description: "Enable a job by setting enabled: true in jobs.yaml and syncing unit files."
     usage: "<name>"
     cwd: skill_root
-    command: ["python3", "scripts/manage-job.py", "enable"]
+    command: ["python3", "scripts/manage_job.py", "enable"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads and writes jobs.yaml."
+      - kind: binary
+        name: systemctl
+        reason: "Enables and starts generated user timers."
     default:
       patterns:
         - name: owner
@@ -43,7 +50,14 @@ script_interfaces:
     description: "Disable a job by setting enabled: false in jobs.yaml and syncing unit files."
     usage: "<name>"
     cwd: skill_root
-    command: ["python3", "scripts/manage-job.py", "disable"]
+    command: ["python3", "scripts/manage_job.py", "disable"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads and writes jobs.yaml."
+      - kind: binary
+        name: systemctl
+        reason: "Disables generated user timers."
     default:
       patterns:
         - name: owner
@@ -54,7 +68,14 @@ script_interfaces:
     description: "Trigger a job immediately via systemd, show output and status."
     usage: "<name>"
     cwd: skill_root
-    command: ["python3", "scripts/manage-job.py", "test"]
+    command: ["python3", "scripts/manage_job.py", "test"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads jobs.yaml before running the job."
+      - kind: binary
+        name: systemctl
+        reason: "Starts the generated user service immediately."
     default:
       patterns:
         - name: owner
@@ -65,7 +86,11 @@ script_interfaces:
     description: "Tail the run log for a job (default 50 lines)."
     usage: "<job-name> [--lines N]"
     cwd: skill_root
-    command: ["python3", "scripts/manage-job.py", "view-logs"]
+    command: ["python3", "scripts/manage_job.py", "view-logs"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Loads jobs.yaml before locating the run log."
     default:
       patterns:
         - name: owner
@@ -76,7 +101,14 @@ script_interfaces:
     description: "List all active ai-* timers, next fire times, and service status."
     usage: ""
     cwd: skill_root
-    command: ["python3", "scripts/manage-job.py", "status"]
+    command: ["python3", "scripts/manage_job.py", "status"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Loads jobs.yaml in the management CLI."
+      - kind: binary
+        name: systemctl
+        reason: "Lists active generated user timers."
     default:
       patterns:
         - name: owner
@@ -87,7 +119,14 @@ script_interfaces:
     description: "Regenerate systemd unit files from jobs.yaml."
     usage: ""
     cwd: skill_root
-    command: ["python3", "scripts/sync-units.py"]
+    command: ["python3", "scripts/sync_units.py"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads jobs.yaml while generating unit files."
+      - kind: binary
+        name: systemctl
+        reason: "Reloads and enables generated user timers."
     default:
       patterns:
         - name: owner
@@ -99,6 +138,16 @@ script_interfaces:
     usage: ""
     cwd: skill_root
     command: ["python3", "scripts/healthcheck.py"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Reads jobs.yaml for enabled jobs."
+      - kind: binary
+        name: systemctl
+        reason: "Checks user service and timer health."
+      - kind: binary
+        name: journalctl
+        reason: "Reports recent service logs for failing jobs."
     default:
       patterns:
         - name: owner
@@ -110,6 +159,16 @@ script_interfaces:
     usage: ""
     cwd: skill_root
     command: ["scripts/setup.sh"]
+    dependencies:
+      - kind: python
+        name: PyYAML
+        reason: "Validates that jobs.yaml tooling can load YAML."
+      - kind: binary
+        name: systemctl
+        reason: "Lists and manages generated user timers."
+      - kind: binary
+        name: crontab
+        reason: "Installs the recurring healthcheck cron entry."
     default:
       patterns:
         - name: owner
@@ -121,6 +180,10 @@ script_interfaces:
     usage: "--repo-root DIR --home DIR --bin-dir DIR [--dry-run]"
     cwd: skill_root
     command: ["python3", "scripts/ensure_agent_env.py"]
+    dependencies:
+      - kind: binary
+        name: systemctl
+        reason: "Publishes recurring-task environment variables to the user manager when available."
     default:
       patterns:
         - name: owner
@@ -131,6 +194,7 @@ script_interfaces:
     id: scripts-job-utils
     cwd: skill_root
     command: ["python3", "scripts/_job_utils.py"]
+    dependencies: []
     default:
       patterns:
         - name: owner
@@ -140,6 +204,7 @@ script_interfaces:
     id: scripts-env
     cwd: skill_root
     command: ["scripts/env.sh"]
+    dependencies: []
     default:
       patterns:
         - name: owner
@@ -149,6 +214,7 @@ script_interfaces:
     id: scripts-invoke-agent
     cwd: skill_root
     command: ["scripts/invoke-agent.sh"]
+    dependencies: []
     default:
       patterns:
         - name: owner

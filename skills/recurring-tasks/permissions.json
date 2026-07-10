@@ -1,8 +1,8 @@
 {
   "bash": [
     "Bash(scripts/setup.sh:*)",
-    "Bash(scripts/sync-units.py:*)",
-    "Bash(scripts/manage-job.py:*)",
+    "Bash(scripts/sync_units.py:*)",
+    "Bash(scripts/manage_job.py:*)",
     "Bash(scripts/healthcheck.py:*)",
     "Bash(scripts/ensure_agent_env.py:*)",
     "Bash(systemctl:*)",

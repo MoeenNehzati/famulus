@@ -47,6 +47,7 @@ interfaces:
       runtime:
         kind: python_module
         module: scripts.scan
+      dependencies: []
 
     calibrate:
       description: "Re-derive reference median/p75/p90 gap-size statistics per host from real transcripts in a lookback window, to check whether scan's default thresholds still make sense. Diagnostic only -- does not modify any parser file; read the output and edit the relevant parser's default_threshold by hand if it suggests new numbers."
@@ -64,3 +65,4 @@ interfaces:
       runtime:
         kind: python_module
         module: scripts.calibrate
+      dependencies: []

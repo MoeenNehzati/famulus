@@ -42,6 +42,10 @@ script_interfaces:
     usage: ""
     cwd: skill_root
     command: ["scripts/check-marker-models.sh"]
+    dependencies:
+      - kind: python
+        name: marker-pdf
+        reason: "Provides the Surya settings module used to locate Marker model checkpoints."
     default:
       patterns:
         - name: owner
@@ -51,6 +55,16 @@ script_interfaces:
     usage: "<arxiv-id> <output-dir>"
     cwd: skill_root
     command: ["scripts/fetch-arxiv-source.sh"]
+    dependencies:
+      - kind: binary
+        name: curl
+        reason: "Downloads arXiv source tarballs."
+      - kind: binary
+        name: file
+        reason: "Detects arXiv HTML responses versus gzip source archives."
+      - kind: binary
+        name: tar
+        reason: "Extracts downloaded source archives."
     default:
       patterns:
         - name: owner

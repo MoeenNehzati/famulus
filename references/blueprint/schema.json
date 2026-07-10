@@ -199,7 +199,7 @@
     },
     "machineInterface": {
       "type": "object",
-      "required": ["runtime"],
+      "required": ["runtime", "dependencies"],
       "additionalProperties": false,
       "properties": {
         "description": {
@@ -229,6 +229,9 @@
         },
         "runtime": {
           "$ref": "#/definitions/runtime"
+        },
+        "dependencies": {
+          "$ref": "#/definitions/runtimeDependencies"
         }
       },
       "allOf": [
@@ -236,6 +239,33 @@
           "$ref": "#/definitions/allowAllSkillsConstraint"
         }
       ]
+    },
+    "runtimeDependencies": {
+      "type": "array",
+      "description": "Required runtime packages or executables for this machine interface. Use [] when the interface has no non-stdlib runtime dependencies.",
+      "items": {
+        "$ref": "#/definitions/runtimeDependency"
+      },
+      "uniqueItems": true
+    },
+    "runtimeDependency": {
+      "type": "object",
+      "required": ["kind", "name", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["python", "binary"]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.+\\-\\[\\]]*$"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
     },
     "llmInterface": {
       "type": "object",
@@ -361,7 +391,7 @@
     },
     "legacyScriptInterface": {
       "type": "object",
-      "required": ["id", "command"],
+      "required": ["id", "command", "dependencies"],
       "additionalProperties": false,
       "properties": {
         "id": {
@@ -386,6 +416,9 @@
             "minLength": 1
           },
           "minItems": 1
+        },
+        "dependencies": {
+          "$ref": "#/definitions/runtimeDependencies"
         },
         "patterns": {
           "type": "array",

@@ -6,7 +6,7 @@
 #   --migrate-cron  also remove the old ai-recurring crontab block
 #                   (pass this once when migrating from a cron-based install)
 #
-# All extra arguments are forwarded to sync-units.py.
+# All extra arguments are forwarded to sync_units.py.
 set -euo pipefail
 
 SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,7 +24,7 @@ python3 "$SKILL_DIR/scripts/ensure_agent_env.py" \
 
 echo ""
 echo "── Syncing units ──"
-python3 "$SKILL_DIR/scripts/sync-units.py" "$@"
+python3 "$SKILL_DIR/scripts/sync_units.py" "$@"
 
 echo ""
 echo "── Installing healthcheck cron entry ──"

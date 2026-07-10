@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-bib-similarity.py — pairwise duplicate/version candidate detection for .bib files.
+bib_similarity.py — pairwise duplicate/version candidate detection for .bib files.
 
 Usage:
-  python3 bib-similarity.py <file.bib> [--threshold 0.4]
+  python3 bib_similarity.py <file.bib> [--threshold 0.4]
 
 Output: JSON. Pairs sorted by score descending.
 

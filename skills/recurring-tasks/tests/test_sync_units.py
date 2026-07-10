@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Tests for sync-units.py: unit file generation and cron->systemd conversion."""
+"""Tests for sync_units.py: unit file generation and cron->systemd conversion."""
 import importlib.util, subprocess, tempfile, os
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).parent.parent
-SCRIPT    = SKILL_DIR / "scripts" / "sync-units.py"
+SCRIPT    = SKILL_DIR / "scripts" / "sync_units.py"
 
 
 def _load():
@@ -146,7 +146,7 @@ def test_two_enabled_jobs_each_get_units():
 def test_no_per_job_runner_scripts_written():
     """Simplified architecture: the command is embedded directly in the
     service's ExecStart via bash -c; no per-job runner .sh script is
-    generated (see sync-units.py's module docstring)."""
+    generated (see sync_units.py's module docstring)."""
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
         runners = list(Path(d).rglob("*.sh"))
