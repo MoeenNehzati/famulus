@@ -1,0 +1,639 @@
+# Cross-Platform Reliability Plan
+
+## Goal
+
+Make Famulus work cleanly across Linux, macOS, and Windows as the project evolves, not just after ad hoc fixes when CI fails.
+
+This plan separates:
+
+- immediate product fixes we should land soon
+- longer fixes that require redesign or substantial coding
+- standards that should shape new work
+- tests and validation layers that should catch regressions early
+- per-item status, incident description, completed work, and future prevention work
+
+The key principle is:
+
+> A simple one-time fix is not enough if the same class of problem can re-enter silently in normal development.
+
+## Scope
+
+This plan is about shared project behavior, especially:
+
+- shared skills intended to work across hosts
+- installer and launcher behavior
+- subprocess and dispatcher boundaries
+- generated artifacts and installed outputs
+- filesystem, path, shell, and encoding semantics
+
+It is not limited to Windows. Windows exposed many of the failures first, but several are really cross-OS or generally portability-sensitive.
+
+## Desired Outcome
+
+We should be able to:
+
+- develop mostly on Linux without repeatedly shipping Linux-specific assumptions
+- rely on local validation to catch a meaningful fraction of portability regressions before CI
+- use CI as confirmation and native-host smoke coverage, not as the first serious portability check
+- add new shared skills without reintroducing shell-first or host-assumption-heavy designs
+
+## Current Sequence
+
+- current completed step: `install-assistant-tools` profile rewriting now treats Windows-style backslash paths literally and writes TOML-safe path strings, with focused launcher tests passing
+- current repo blocker: the broader precommit Python suite is still red for unrelated `skill-maker` / dispatcher issues, so cross-platform work should continue in narrowly scoped slices
+- recommended next item: `Category 1 / Immediate Fix 2` — stop relying on GNU-only date formatting in shared runtime code
+- emphasis for the next slice: do not stop at the local fix; add the narrowest durable tests or validators that would catch the same portability class elsewhere in the repo
+
+Why this is next:
+
+- it is an immediate product/runtime fix, not a speculative redesign
+- the failure mode is concrete and already understood from the lessons archive
+- it is a bounded change with a clear portability test to add
+
+## Tracking Format
+
+Each actionable item in this document should carry four fields:
+
+- `Status` — `not started`, `in progress`, `partially done`, `done`, `blocked`, or `decided not to do`
+- `Description` — what broke or what risk exists
+- `What was done` — concrete changes already implemented, if any
+- `Prevention` — how the same class of issue should be prevented from re-entering
+
+Important:
+
+- a one-time patch may move `What was done` forward without meaning the problem is fully solved
+- `Prevention` is the long-term reliability work: standards, validation, tests, design constraints, or architectural changes
+- some items will have `What was done: none yet` and still be important planning entries
+
+## Category 1: Immediate Fixes
+
+These are changes that are important, concrete, and should not wait for a larger redesign.
+
+### 1. Fix unsafe profile rewriting in `install-assistant-tools`
+
+Target:
+
+- `skills/install-assistant-tools/scripts/launchers.py`
+
+Status:
+
+- done
+
+Description:
+
+- the current `re.sub(..., replacement_string, ...)` path rewrite is unsafe
+- Windows paths trigger it reliably, but the underlying mistake is portable
+
+What was done:
+
+- replaced the regex replacement string with a replacement function so filesystem paths are inserted literally
+- encoded the rewritten `model_instructions_file` value as a TOML-compatible basic string, preserving backslashes instead of letting TOML treat them as escapes
+- added a focused launcher test that runs on Linux but feeds the rewrite helper a Windows-style backslash path and verifies the installed profile parses back to the same path value
+- adjusted the launcher tests to use a temp home for install manifests, so the test suite does not touch the real user manifest
+
+Prevention:
+
+- keep the targeted Windows-style path test in `skills/install-assistant-tools/tests/test_launchers.py`
+- treat “string replacement involving filesystem paths” as a portability-sensitive code path in reviews
+
+### 2. Stop relying on GNU-only date formatting in shared runtime code
+
+Targets:
+
+- `skills/daily-plan/scripts/plan_runtime.py`
+- any other shared code using GNU/BSD-only `strftime` or shell date behavior
+
+Status:
+
+- not started in this repo
+
+Description:
+
+- shared runtime code currently relies on GNU/BSD-specific date formatting behavior
+- this causes direct runtime failure on Windows
+
+What was done:
+
+- the exact failure pattern was identified from the lessons archive
+
+Prevention:
+
+- replace non-portable date formatting patterns with explicit Python formatting logic
+- add tests for date-key helpers and any other portable date formatting helpers
+- add a review rule against GNU-only shell date usage in shared cross-platform runtime paths
+
+### 3. Make subprocess text encoding explicit where user text crosses process boundaries
+
+Targets:
+
+- `script_dispatcher/src/script_dispatcher/core.py`
+- scripts that print non-ASCII user-facing content
+
+Status:
+
+- not started in this repo
+
+Description:
+
+- subprocess text boundaries currently rely too much on ambient host encoding behavior
+- the lessons include both crash behavior and silent mojibake/data-corruption risk
+
+What was done:
+
+- the archive isolated the bad and good remediation patterns
+- in particular, it showed that process-wide environment forcing can hide crashes while still corrupting text
+
+Prevention:
+
+- pin UTF-8 explicitly where subprocess stdin/stdout is treated as text
+- configure script-local output encoding where needed rather than relying on ambient console defaults
+- add round-trip integration tests with non-ASCII fixtures
+- add a validator or review rule for portability-sensitive `subprocess.run(..., text=True)` usage
+
+### 4. Declare known runtime dependencies up front
+
+Targets:
+
+- `skills/install-assistant-tools/scripts/scaffold.py`
+- relevant skill docs and manifests
+
+Status:
+
+- partially done
+
+Description:
+
+- shared skills rely on Python packages and external binaries that are not always declared where installation and validation can see them
+
+What was done:
+
+- the missing dependency class was identified clearly in the lessons archive
+- the repo already declares some known Python dependencies, but the coverage is incomplete
+
+Prevention:
+
+- add the currently known missing Python packages
+- audit shared skills for undeclared external binary dependencies
+- add a validator or audit check so dependency declarations do not drift from implementation reality
+
+### 5. Fail loudly when a required capability is skipped on a host
+
+Targets:
+
+- `skills/install-assistant-tools/scripts/scaffold.py`
+- installer UX and reporting
+
+Status:
+
+- not started in this repo
+
+Description:
+
+- silent or low-signal installer skips defer real failures into unrelated runtime surfaces
+
+What was done:
+
+- the dependency chain and the misleading downstream error shape were documented in the lessons archive
+
+Prevention:
+
+- if a host skips installation of a required shared capability such as `dispatcher`, the installer should clearly say which dependent workflows are broken
+- strengthen installer tests so skipped foundational capabilities fail validation rather than remaining a documentation detail
+
+## Category 2: Longer Fixes Requiring Redesign or Significant Coding
+
+These are not just patches. They change architecture, runtime surfaces, or support contracts.
+
+### 1. Rewrite `g-calendar` out of Bash
+
+Targets:
+
+- `skills/g-calendar/scripts/gcal.py`
+- `skills/g-calendar/scripts/gcal.sh`
+- `skills/g-calendar/blueprint.yaml`
+
+Status:
+
+- in progress
+
+Description:
+
+- the old Bash runtime was the core portability problem, and that logic has now moved to Python
+- the exported `scripts-gcal` entrypoint is still Bash-based in the current repo, so the skill is not yet fully on a native cross-platform runtime surface
+- this is true regardless of concurrency concerns
+
+What was done:
+
+- the lessons archive documented and validated a Python rewrite approach
+- this repo now has a stdlib Python calendar runtime in `skills/g-calendar/scripts/gcal.py`
+- the existing `scripts-gcal` shell entrypoint was kept as a wrapper so callers do not have to change immediately
+- parallel all-calendar event fetching and retained event fields such as summary, time, location, description, status, and link were preserved in the Python path
+- the Python runtime now caps all-calendar worker fanout and skips thread-pool setup when the calendar list is empty
+- focused tests were added for date-range resolution, merged multi-calendar fetches, empty-calendar behavior, worker-cap behavior, create/get/update/delete/move command behavior, and the `gcal.sh` wrapper help surface
+- local timing and request-breakdown measurements were run against the live calendar account to confirm that request latency and calendar-list discovery dominate runtime, not Python thread-pool overhead
+- skill-local verification passed:
+  - `python3 -m pytest -q skills/g-calendar/tests`
+  - `python3 skills/skill-maker/scripts/sync_skill_blueprints.py --check`
+- the repo-wide precommit Python suite is still failing for unrelated `skill-maker` / dispatcher issues outside `g-calendar`, so this item is not yet at a globally green checkpoint
+
+Prevention:
+
+- finish removing Bash from the exported runtime surface, not just the implementation body
+- switch the exported interface to call the Python entrypoint directly once the permission, dispatcher, and validator surfaces are ready
+- treat Bash-first shared runtimes as exceptions that require justification
+- keep focused unit tests on the Python runtime so future feature work does not drift back toward shell-only assumptions
+- add native smoke coverage for the exported interface before claiming the skill is fully cross-platform
+- if faster repeated reads become important, add access-token reuse and calendar-list caching rather than adding more threads; measurements showed fixed serial API costs dominate
+
+### 2. Redesign `email-client` around host-specific secret and send backends behind one stable interface
+
+Targets:
+
+- `skills/email-client/scripts/accounts.py`
+- `skills/email-client/scripts/mail.py`
+- `skills/email-client/scripts/email-send.sh`
+- any future `secretstore.py` / `email_send.py` style modules
+
+Status:
+
+- not started in this repo
+
+Description:
+
+- the current email-client runtime is Linux-first and exposes host-specific mechanisms too directly to shared runtime code
+
+What was done:
+
+- the lessons archive produced a concrete example of both the needed abstraction and a bad partial merge shape that would have broken other hosts
+
+Prevention:
+
+- define a generic credential-store interface and a generic send interface
+- implement Linux, Windows, and eventually macOS backends behind that interface
+- remove direct caller dependence on `secret-tool`, `msmtp`, or one host's credential system
+- add backend-contract tests so one host’s implementation cannot silently replace another host’s path
+
+### 3. Redesign launcher and automation surfaces that currently assume POSIX shell
+
+Targets:
+
+- `skills/install-assistant-tools/scripts/scaffold.py`
+- `skills/recurring-tasks/scripts/invoke-agent.sh`
+- installed `dispatcher` / `invoke-skill` behavior
+
+Status:
+
+- not started in this repo
+
+Description:
+
+- host launcher and automation behavior still assumes POSIX shell and systemd-oriented execution in places where the project wants broader host support
+
+What was done:
+
+- the lessons archive mapped which failures came from launcher surfaces versus core Python logic
+
+Prevention:
+
+- treat host launchers as a supported product surface
+- implement proper Windows launchers for supported flows
+- decide explicitly how recurring automation should work on non-systemd hosts
+- require installer and launcher smoke tests to verify promised host surfaces
+
+### 4. Reduce shell-first shared runtime design in new and existing skills
+
+Targets:
+
+- shared skills marked or intended as cross-platform
+
+Status:
+
+- in progress as a project direction, but not enforced strongly enough
+
+Description:
+
+- shell wrappers and external toolchains still appear too often as primary runtime surfaces for shared logic
+
+What was done:
+
+- some parts of the repo already follow a Python-first cross-platform direction
+- installer tests are already Python-based, which is the right shape
+
+Prevention:
+
+- migrate high-value shared runtimes from shell wrappers and external toolchains toward Python-first implementations
+- make “shared cross-platform skills should be Python-first” an explicit development standard
+- reflect that standard in validators, code review, and new skill scaffolding
+
+## Category 3: Standards To Follow From Now On
+
+These are working rules for future development. They should influence design before bugs are written.
+
+### 1. Shared cross-platform skills should be Python-first by default
+
+Status:
+
+- proposed standard
+
+Description:
+
+- shared skills keep inheriting portability problems when Bash or shell-first design is treated as normal
+
+What was done:
+
+- this plan now records the standard explicitly
+
+Meaning:
+
+- if a skill is expected to work across Linux, macOS, and Windows, its primary runtime interface should not be Bash
+
+Allowed exception:
+
+- a skill may be explicitly platform-scoped, but that should be declared intentionally rather than by accident
+
+### 2. Host-specific behavior belongs behind stable interfaces
+
+Status:
+
+- proposed standard
+
+Description:
+
+- direct host-specific coupling in shared callers makes future portability work brittle
+
+What was done:
+
+- the lessons archive provided a concrete negative example and this plan records the policy
+
+Meaning:
+
+- callers should ask for generic actions such as "store credential" or "send mail"
+- callers should not know whether the host backend uses `secret-tool`, Windows Credential Manager, Keychain, `msmtp`, or a pure Python SMTP client
+
+### 3. Treat subprocess encoding as an interface contract
+
+Status:
+
+- proposed standard
+
+Description:
+
+- text encoding problems are easy to dismiss as environment quirks until they become correctness or corruption bugs
+
+What was done:
+
+- the plan now elevates this from implementation detail to explicit interface rule
+
+Meaning:
+
+- if text crosses a subprocess boundary, encoding must be explicit where the boundary is portability-sensitive
+- do not rely on ambient locale or console defaults
+
+### 4. Do not use GNU or POSIX extensions casually in shared runtime code
+
+Status:
+
+- proposed standard
+
+Description:
+
+- GNU and POSIX assumptions enter shared code easily on Linux and are then discovered late on other hosts
+
+What was done:
+
+- this plan now makes that assumption class explicit
+
+Meaning:
+
+- avoid assuming `date -d`, `timedatectl`, `chmod` semantics, POSIX exec bits, shell path behavior, or `bash` availability in shared runtime paths
+
+### 5. Declare runtime dependencies where installation and validation can see them
+
+Status:
+
+- proposed standard
+
+Description:
+
+- dependency drift makes portability look like runtime instability when it is often really install contract drift
+
+What was done:
+
+- the plan now records declaration visibility as a design rule
+
+Meaning:
+
+- do not let a skill assume that `jq`, `curl`, `msmtp`, or a Python package is present without declaring that requirement somewhere authoritative
+
+### 6. Silent host degradation is worse than explicit unsupported status
+
+Status:
+
+- proposed standard
+
+Description:
+
+- hidden degradation produces confusing downstream failures and wastes debugging time
+
+What was done:
+
+- the plan now records this as an explicit product rule
+
+Meaning:
+
+- if a host is not supported for a capability, say so clearly
+- do not quietly skip a foundational component and let failures surface several layers later
+
+### 7. `cross_platform: false` should be intentional, narrow, and reviewed
+
+Status:
+
+- proposed standard
+
+Description:
+
+- opt-out flags are useful, but they can also hide drift if not treated as conscious contract decisions
+
+What was done:
+
+- the plan now records this as a review expectation
+
+Meaning:
+
+- the flag should not become a hiding place for portability debt in broadly useful shared skills
+- if a skill is excluded, we should know whether that is temporary debt or a permanent contract choice
+
+### 8. Prefer behavioral guarantees over weakened assertions
+
+Status:
+
+- proposed standard
+
+Description:
+
+- when a Unix-specific assertion fails, the wrong reaction is often to reduce the test to something vacuous
+
+What was done:
+
+- the plan now records that tests should be made portable, not diluted
+
+Meaning:
+
+- if a test fails on Windows because the assertion is Unix-specific, replace it with a cross-platform behavioral guarantee
+- do not weaken the test into “command exited successfully” if a stronger portable guarantee is possible
+
+## Category 4: Tests And Validation To Add
+
+The goal here is not just more tests. It is earlier and more meaningful detection.
+
+### A. Unit Tests
+
+Add targeted unit tests for portability-sensitive helpers and transformations.
+
+Examples:
+
+- Windows-style path replacement tests for launcher/profile rewriting
+- date-key formatting tests that do not depend on host-specific `strftime`
+- launcher-selection tests for `.bat` vs extensionless launchers
+- path-join and path-normalization tests using Windows-style inputs
+
+Why this matters:
+
+- many portability bugs are small, local, and cheap to catch if we test the exact transformation
+
+Limitation:
+
+- these tests catch local logic bugs
+- they do not replace real subprocess or installed-layout testing
+
+### B. Contract Tests
+
+Add validators that enforce portability rules at the repo level.
+
+Examples:
+
+- detect undeclared external binary dependencies in shared skills
+- detect undeclared Python package dependencies
+- flag risky subprocess text usage without explicit encoding where appropriate
+- flag GNU/POSIX shell assumptions in code paths that are meant to be cross-platform
+- require justification for `cross_platform: false`
+
+Why this matters:
+
+- prevention is harder than the one-time fix
+- contract tests make prevention part of normal development rather than memory
+
+### C. Integration Tests Runnable On Linux
+
+Add real subprocess-boundary tests that run on Linux but simulate portability-sensitive behavior.
+
+Examples:
+
+- real `script_dispatcher.dispatch()` round-trip tests using stub skills
+- non-ASCII stdin/stdout round-trip tests across dispatcher boundaries
+- nested child-process tests that verify environment propagation such as `PYTHONPATH`
+- `daily-plan` integration tests using stub `cloud-files`, `g-calendar`, and `list-manager` skills through real subprocess calls rather than mocked lambdas
+
+Why this matters:
+
+- many failures are invisible to pure unit tests
+- Linux-only integration coverage can still catch a large fraction of portability bugs if the test is built around the real boundary
+
+### D. Native Cross-Platform Smoke Tests In CI
+
+Keep CI matrix coverage, but strengthen what each host actually proves.
+
+Examples:
+
+- Windows installer smoke that requires a working installed `dispatcher`
+- Windows launcher smoke that verifies `.bat` execution paths
+- Windows and macOS smoke tests for one real shared workflow, not just metadata validation
+- calendar smoke once `g-calendar` is rewritten in Python
+- email-client smoke once the backend abstraction exists
+
+Why this matters:
+
+- some behavior cannot be simulated faithfully on Linux
+- CI should remain the place where native host behavior is confirmed
+
+### E. Installer And Launcher Tests
+
+Treat installed outputs as a product surface.
+
+Examples:
+
+- assert installed artifacts are correct for the host
+- verify behavior, not just presence
+- verify generated launchers contain the correct host-specific command routing
+- verify install-time failure messages are informative when a required capability is unsupported
+
+Why this matters:
+
+- many of the late failures were not deep algorithm bugs
+- they were broken installed surfaces
+
+### F. Filesystem And Path-Semantics Tests
+
+Add explicit coverage for OS-sensitive filesystem behavior.
+
+Examples:
+
+- symlink availability and failure-path behavior
+- path separator handling
+- filename case-collision audits
+- line-ending-sensitive generated files
+- permission-bit versus actual invocability assertions
+- packaged archive extract-install tests
+
+Why this matters:
+
+- filesystem assumptions are one of the main ways Linux-only development misses real host differences
+
+## Priority Order
+
+This is the recommended implementation order.
+
+### First
+
+- fix unsafe path replacement
+- fix date-format portability issues
+- make dispatcher text encoding explicit
+- make installer failure on skipped foundational capability much clearer
+- write the tests that lock those fixes in
+
+### Second
+
+- add contract tests for undeclared dependencies and risky portability patterns
+- add real dispatcher round-trip integration tests with non-ASCII fixtures
+- strengthen installer and launcher assertions
+
+### Third
+
+- rewrite `g-calendar` in Python
+- redesign `email-client` host backend boundaries
+- redesign non-POSIX automation and launcher surfaces that are meant to be supported on Windows
+
+## What This Plan Does Not Fully Capture
+
+Some issues do not fit cleanly into the four categories above.
+
+### 1. Operational cleanup after already-corrupted external data
+
+If a portability bug has already written bad data to external storage, the product fix and prevention work do not automatically clean up the affected data.
+
+### 2. Unconfirmed or partially diagnosed issues
+
+Some observed failures may still need deeper root-cause confirmation before they deserve major design commitments.
+
+### 3. Deliberately platform-specific features
+
+Some workflows may remain host-specific by design. Those need an explicit contract, not accidental drift.
+
+## Success Criteria
+
+This plan is succeeding when:
+
+- shared cross-platform skills are no longer shell-first by default
+- portability regressions are increasingly caught by local validation or Linux-run integration tests before CI
+- CI failures on Windows/macOS are more often host-specific edge cases than foundational install/runtime breaks
+- adding a new shared skill naturally follows the project’s portability standards instead of fighting them

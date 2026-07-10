@@ -7,7 +7,7 @@ Two files live at ~/.config/g-calendar/ (both mode 600, never git-tracked):
                      overwritten by this script. Source of truth for re-auth.
   credentials.json — working credentials written by this script
                      (client_id + client_secret + refresh_token). Overwritten
-                     on every run. Used by gcal.sh to mint access tokens.
+                     on every run. Used by gcal.py to mint access tokens.
 
 Usage:
     setup_oauth.py                              # reads ~/.config/g-calendar/client.json

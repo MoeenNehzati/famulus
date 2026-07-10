@@ -3,7 +3,7 @@ name: g-calendar
 description: |
   Read and modify the user's Google Calendar (list calendars, check agenda,
   search events, create/update/delete events) via a local OAuth-backed
-  curl/bash CLI - no MCP involved. Use when the user asks about their
+  CLI - no MCP involved. Use when the user asks about their
   schedule, meetings, availability, or wants to add/move/cancel a calendar
   event.
 ---
@@ -62,8 +62,10 @@ Skill: g-calendar
 
 ## 1. What this is
 
-The `scripts-gcal` interface talks directly to the Google Calendar API v3 over curl,
-using a locally stored refresh token. It replaces the broken
+The `scripts-gcal` interface talks directly to the Google Calendar API v3,
+using a locally stored refresh token. The exported interface is still
+`gcal.sh`, but that shell entrypoint is now only a thin wrapper around the
+stdlib Python runtime in `gcal.py`. It replaces the broken
 `calendarmcp.googleapis.com` MCP connector (see project memory
 `calendar-mcp-broken` - that connector's `tools/call` permanently fails with
 "The caller does not have permission", independent of re-auth).
@@ -156,8 +158,9 @@ For anything not covered above (recurring events / RRULEs, attendees,
 free-busy queries, etc.) - last resort, since it requires a shell pipeline
 (`TOKEN=$(...) && curl ...`) that doesn't match the allow-listed Bash pattern
 and triggers a permission prompt every time. If a capability is needed
-repeatedly, add a small subcommand to `gcal.sh` instead (as was done
-for `get`, `create-calendar`, `move`). For genuine one-offs, use `scripts-gcal`
+repeatedly, add a small subcommand to `gcal.py` and keep exposing it through
+`scripts-gcal` instead (as was done for `get`, `create-calendar`, `move`).
+For genuine one-offs, use `scripts-gcal`
 with the `token` subcommand to obtain a bearer token, then call the API directly:
 
 ```bash
