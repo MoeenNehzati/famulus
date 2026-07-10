@@ -33,6 +33,12 @@ from typing import Any
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+try:
+    from officina.common.dates import get_today_date_key
+except ImportError:  # pragma: no cover - local checkout fallback
+    sys.path.insert(0, str(REPO_ROOT / "src"))
+    from officina.common.dates import get_today_date_key
+
 MAX_ITEMS = 5
 SECTION_SPECS = {
     "actions": {
@@ -83,7 +89,7 @@ def run_dispatcher(target_skill: str, script_interface: str, *args: str, stdin: 
 
 
 def get_today_date() -> str:
-    return datetime.now().strftime("%-m-%-d-%y").lstrip("0")
+    return get_today_date_key()
 
 
 def plan_path(date_key: str) -> str:

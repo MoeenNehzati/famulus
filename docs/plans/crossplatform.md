@@ -105,22 +105,30 @@ Targets:
 
 Status:
 
-- not started in this repo
+- done
 
 Description:
 
-- shared runtime code currently relies on GNU/BSD-specific date formatting behavior
-- this causes direct runtime failure on Windows
+- shared runtime code relied on GNU/POSIX-specific `strftime` no-padding modifiers (`%-m`, `%-d`)
+- those modifiers are passed through to the host C library by Python and fail on Windows
+- the broader assumption class is non-portable date/time formatting at IO boundaries
 
 What was done:
 
-- the exact failure pattern was identified from the lessons archive
+- added `officina.common.dates` helpers for the repo's compact `M-D-YY` date-key IO contract: `format_date_key()`, `parse_date_key()`, and `get_today_date_key()`
+- replaced the daily-plan `M-D-YY` key generation with that shared helper, preserving unpadded month/day and zero-padded two-digit year behavior
+- added focused shared-helper and daily-plan tests for exact date-key behavior, including a one-digit month/day and a two-digit year with a leading zero
+- removed the stale daily-plan `date` permission from `blueprint.yaml` and regenerated-equivalent `permissions.json`
+- added `validators/portable_dates.py`, a repo validator that flags host-specific `strftime` padding modifiers in runtime Python
+- added validator tests covering GNU-style `%-d` and Windows-style `%#d`, including a `cross_platform: false` skill so this class is not hidden by broad opt-outs
+- updated `references/skill-guidelines.md` to document the date/time IO formatting rule, point authors to `officina.common.dates`, and link the mechanical validator
 
 Prevention:
 
-- replace non-portable date formatting patterns with explicit Python formatting logic
-- add tests for date-key helpers and any other portable date formatting helpers
-- add a review rule against GNU-only shell date usage in shared cross-platform runtime paths
+- keep exact behavioral tests for date-key helpers rather than smoke tests that only prove the code runs on Linux
+- run `tests/test_officina_dates.py`, `tests/validate_portable_dates.py`, and `validators/portable_dates.py` with the validator suite so project-owned date formats and GNU/BSD/Windows-only `strftime` modifiers are caught before CI/native-host failures
+- prefer `officina.common.dates` for project-owned date/time IO formats; add named helpers there when a format becomes part of a cross-skill storage, display, or protocol contract
+- keep the validator focused on mechanically detecting non-portable `strftime` directives rather than banning broader date/time implementation choices
 
 ### 3. Make subprocess text encoding explicit where user text crosses process boundaries
 

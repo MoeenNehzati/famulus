@@ -356,6 +356,13 @@ directory.
 language, runtime, and any external tools invoked. Skills must work out of the
 box across Linux, macOS, and Windows on machines other than your own.
 
+Date and time formatting at IO boundaries must avoid host-specific formatting
+extensions. In Python, do not use GNU/POSIX-only or Windows-only `strftime`
+padding modifiers such as `%-m`, `%-d`, `%#m`, or `%#d`. Put shared date/time
+storage and display formats in the first-party helpers under
+`officina.common.dates` instead of retyping ad hoc formatting logic in each
+skill. This is mechanically checked by `validators/portable_dates.py`.
+
 **14. Shared skill content must stay neutral about which specific AI-assistant
 host it runs under.** Enforced by `validators/platform_neutral.py`.
 

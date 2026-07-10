@@ -37,8 +37,6 @@ suggested_permissions:
       reason: "Plan rendering helper for display formatting."
     - command: ["python3", "scripts/mutate_plan.py"]
       reason: "Apply plan-local or master-list-backed mutations and show the refreshed plan."
-    - command: ["date"]
-      reason: "Get current date for plan key (M-D-YY format)."
   network: []
 
 skill_interface:

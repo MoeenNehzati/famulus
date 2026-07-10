@@ -2,8 +2,7 @@
   "bash": [
     "Bash(python3 scripts/orchestrate.py:*)",
     "Bash(python3 scripts/render-plan.py:*)",
-    "Bash(python3 scripts/mutate_plan.py:*)",
-    "Bash(date:*)"
+    "Bash(python3 scripts/mutate_plan.py:*)"
   ],
   "network": []
 }

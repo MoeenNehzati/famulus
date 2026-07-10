@@ -10,6 +10,12 @@ assert spec.loader is not None
 spec.loader.exec_module(plan_runtime)
 
 
+def test_get_today_date_uses_shared_date_key_formatter(monkeypatch):
+    monkeypatch.setattr(plan_runtime, "get_today_date_key", lambda: "1-5-07")
+
+    assert plan_runtime.get_today_date() == "1-5-07"
+
+
 def test_initial_meta_filters_and_sorts():
     todo = {
         "categories": [{"name": "Work", "entries": [
