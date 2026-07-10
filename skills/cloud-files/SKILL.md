@@ -16,41 +16,42 @@ Dependencies: none
 
 Interface Version: 1
 
-Exported Script Interfaces: none
+Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Script Interfaces:
+Owner-Facing Machine Interfaces:
 
-Use the installed `dispatcher` command for this skill's script interfaces:
+Use the installed `dispatcher` command for this skill's machine interfaces:
 - `ensure-oauth` — Check cloud-files OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill cloud-files) as part of connecting remotes.
-  - `dispatcher --caller-skill cloud-files cloud-files ensure-oauth ensure-oauth --home <dir> [--dry-run]`
+  - `dispatcher --caller-skill cloud-files cloud-files.machine.ensure-oauth ensure-oauth --home <dir> [--dry-run]`
   - Check OAuth status and guide setup for cloud-files.
 - `lists-delete` — Delete a file from cloud storage under the lists/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files lists-delete lists/<path>`
+  - `dispatcher --caller-skill cloud-files cloud-files.machine.lists-delete lists/<path>`
   - Delete list files from cloud storage. Restricted to lists/ directory.
 - `lists-read` — Read a file from cloud storage under the lists/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files lists-read lists/<path>`
+  - `dispatcher --caller-skill cloud-files cloud-files.machine.lists-read lists/<path>`
   - Read list files from cloud storage. Restricted to lists/ directory.
 - `lists-write` — Write content (from stdin) to a file in cloud storage under the lists/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files lists-write lists/<path>`
+  - `dispatcher --caller-skill cloud-files cloud-files.machine.lists-write lists/<path>`
   - Write list files to cloud storage. Restricted to lists/ directory.
 - `plans-delete` — Delete a file from cloud storage under the plans/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files plans-delete plans/<path>`
+  - `dispatcher --caller-skill cloud-files cloud-files.machine.plans-delete plans/<path>`
   - Delete plan files from cloud storage. Restricted to plans/ directory.
 - `plans-read` — Read a file from cloud storage under the plans/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files plans-read plans/<path>`
+  - `dispatcher --caller-skill cloud-files cloud-files.machine.plans-read plans/<path>`
   - Read plan files from cloud storage. Restricted to plans/ directory.
 - `plans-write` — Write content (from stdin) to a file in cloud storage under the plans/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files plans-write plans/<path>`
+  - `dispatcher --caller-skill cloud-files cloud-files.machine.plans-write plans/<path>`
   - Write plan files to cloud storage. Restricted to plans/ directory.
 - `setup-oauth` — Run one-time OAuth2 setup for Google Drive access.
-  - `dispatcher --caller-skill cloud-files cloud-files setup-oauth [--from-json <client_json_path>] [--client-id <id> --client-secret <secret>] [--port <port>]`
+  - `dispatcher --caller-skill cloud-files cloud-files.machine.setup-oauth [--from-json <client_json_path>] [--client-id <id> --client-secret <secret>] [--port <port>]`
   - OAuth setup for Google Drive access.
 - `write-config` — Write ~/.config/cloud-files/config.json with the given remote LLM root. Relocated from install-assistant-tools.
-  - `dispatcher --caller-skill cloud-files cloud-files write-config write-config --home <dir> [--remote-llm-root <path>] [--dry-run]`
+  - `dispatcher --caller-skill cloud-files cloud-files.machine.write-config write-config --home <dir> [--remote-llm-root <path>] [--dry-run]`
   - Write cloud-files config.json.
+
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

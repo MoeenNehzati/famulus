@@ -12,36 +12,37 @@ Dependencies: none
 
 Interface Version: 3
 
-Exported Script Interfaces: none
+Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Script Interfaces:
+Owner-Facing Machine Interfaces:
 
-Use the installed `dispatcher` command for this skill's script interfaces:
+Use the installed `dispatcher` command for this skill's machine interfaces:
 - `accounts-add` — Register a new account nickname. Gmail IMAP/SMTP settings are the default; pass explicit host/port flags for other providers. Follow with accounts-set-password for imap and smtp.
-  - `dispatcher --caller-skill email-client email-client accounts-add --nickname <nick> --email <addr> [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls]`
+  - `dispatcher --caller-skill email-client email-client.machine.accounts-add --nickname <nick> --email <addr> [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls]`
 - `accounts-list` — List registered account nicknames with their email/display name (no secrets).
-  - `dispatcher --caller-skill email-client email-client accounts-list`
+  - `dispatcher --caller-skill email-client email-client.machine.accounts-list`
 - `accounts-remove` — Remove an account nickname from the registry; optionally purge its keyring credentials too.
-  - `dispatcher --caller-skill email-client email-client accounts-remove --nickname <nick> [--purge-credentials]`
+  - `dispatcher --caller-skill email-client email-client.machine.accounts-remove --nickname <nick> [--purge-credentials]`
 - `accounts-set-password` — Store the IMAP or SMTP credential for an account in the GNOME keyring. The secret is read from stdin, never a CLI argument.
-  - `dispatcher --caller-skill email-client email-client accounts-set-password --nickname <nick> --purpose imap|smtp`
+  - `dispatcher --caller-skill email-client email-client.machine.accounts-set-password --nickname <nick> --purpose imap|smtp`
 - `accounts-update` — Update fields on an existing account nickname.
-  - `dispatcher --caller-skill email-client email-client accounts-update --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P]`
+  - `dispatcher --caller-skill email-client email-client.machine.accounts-update --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P]`
 - `mail-attachments` — List attachment metadata for one or more emails as JSON. Returns one record per requested UID with attachment entries containing filename, content_type, size_bytes, size_human, and disposition.
-  - `dispatcher --caller-skill email-client email-client mail-attachments -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...]`
+  - `dispatcher --caller-skill email-client email-client.machine.mail-attachments -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...]`
 - `mail-folders` — List IMAP folders for an account (JSON).
-  - `dispatcher --caller-skill email-client email-client mail-folders -a <nickname>`
+  - `dispatcher --caller-skill email-client email-client.machine.mail-folders -a <nickname>`
 - `mail-list` — List email envelopes for an account as JSON (fields: id, flags, subject, from, date, message_id). --folder accepts aliases inbox|sent|drafts|trash|all or any literal IMAP folder name (default inbox). --after narrows server-side by day (IMAP SINCE). Filters are key=value (exact, comma-separated=OR) or key~=value (regex, case-insensitive) over id/subject/from/date/message_id/flags, ANDed across distinct keys, applied client-side after fetch. Unfiltered + undated scans the whole folder (slow on large mailboxes) — pair filters with --after.
-  - `dispatcher --caller-skill email-client email-client mail-list -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] [--after YYYY-MM-DD] [key=value|key~=value ...] [--limit N]`
+  - `dispatcher --caller-skill email-client email-client.machine.mail-list -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] [--after YYYY-MM-DD] [key=value|key~=value ...] [--limit N]`
 - `mail-read` — Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/ Date/Message-ID, then In-Reply-To/References only if the message is a reply, then an Attachments section (none or one line per attachment with filename, MIME type, and size), then a blank line, then the decoded body (text/plain preferred; falls back to HTML with tags stripped).
-  - `dispatcher --caller-skill email-client email-client mail-read -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>`
+  - `dispatcher --caller-skill email-client email-client.machine.mail-read -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>`
 - `mail-save-attachments` — Save attachments from one or more emails into a directory. Use --all to save every attachment, or repeat --name to save only selected filenames. Returns JSON describing the saved files.
-  - `dispatcher --caller-skill email-client email-client mail-save-attachments -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...] --out <dir> (--all | --name <filename> [--name <filename> ...])`
+  - `dispatcher --caller-skill email-client email-client.machine.mail-save-attachments -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...] --out <dir> (--all | --name <filename> [--name <filename> ...])`
 - `send-email` — Send an email via msmtp; body comes from stdin.
-  - `dispatcher --caller-skill email-client email-client send-email --from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]`
+  - `dispatcher --caller-skill email-client email-client.machine.send-email --from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]`
+
 <!-- END BLUEPRINT INTERFACES -->
 # Email
 

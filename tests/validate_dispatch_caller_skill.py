@@ -22,9 +22,9 @@ def test_empty_skills_passes(tmp_path: Path) -> None:
 
 def test_literal_match_passes(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "good-skill"
-    (skill / "scripts").mkdir(parents=True)
+    (skill / "_rtx").mkdir(parents=True)
     (skill / "blueprint.yaml").write_text("name: good-skill\n", encoding="utf-8")
-    (skill / "scripts" / "run.py").write_text(
+    (skill / "_rtx" / "run.py").write_text(
         "from officina.dispatcher import dispatch\n"
         "dispatch(caller_skill='good-skill', target_skill='other', script_interface='x')\n",
         encoding="utf-8",
@@ -34,9 +34,9 @@ def test_literal_match_passes(tmp_path: Path) -> None:
 
 def test_module_constant_match_passes(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "good-skill"
-    (skill / "scripts").mkdir(parents=True)
+    (skill / "_rtx").mkdir(parents=True)
     (skill / "blueprint.yaml").write_text("name: good-skill\n", encoding="utf-8")
-    (skill / "scripts" / "run.py").write_text(
+    (skill / "_rtx" / "run.py").write_text(
         "OWNER = 'good-skill'\n"
         "from officina.dispatcher import dispatch\n"
         "dispatch(caller_skill=OWNER, target_skill='other', script_interface='x')\n",
@@ -47,9 +47,9 @@ def test_module_constant_match_passes(tmp_path: Path) -> None:
 
 def test_missing_caller_skill_flagged(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "bad-skill"
-    (skill / "scripts").mkdir(parents=True)
+    (skill / "_rtx").mkdir(parents=True)
     (skill / "blueprint.yaml").write_text("name: bad-skill\n", encoding="utf-8")
-    (skill / "scripts" / "run.py").write_text(
+    (skill / "_rtx" / "run.py").write_text(
         "from officina.dispatcher import dispatch\n"
         "dispatch(target_skill='other', script_interface='x')\n",
         encoding="utf-8",
@@ -60,9 +60,9 @@ def test_missing_caller_skill_flagged(tmp_path: Path) -> None:
 
 def test_wrong_skill_flagged(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "bad-skill"
-    (skill / "scripts").mkdir(parents=True)
+    (skill / "_rtx").mkdir(parents=True)
     (skill / "blueprint.yaml").write_text("name: bad-skill\n", encoding="utf-8")
-    (skill / "scripts" / "run.py").write_text(
+    (skill / "_rtx" / "run.py").write_text(
         "from officina.dispatcher import dispatch\n"
         "dispatch(caller_skill='other-skill', target_skill='other', script_interface='x')\n",
         encoding="utf-8",
@@ -73,9 +73,9 @@ def test_wrong_skill_flagged(tmp_path: Path) -> None:
 
 def test_dynamic_caller_skill_flagged(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "bad-skill"
-    (skill / "scripts").mkdir(parents=True)
+    (skill / "_rtx").mkdir(parents=True)
     (skill / "blueprint.yaml").write_text("name: bad-skill\n", encoding="utf-8")
-    (skill / "scripts" / "run.py").write_text(
+    (skill / "_rtx" / "run.py").write_text(
         "from officina.dispatcher import dispatch\n"
         "def wrapper(caller_skill: str):\n"
         "    dispatch(caller_skill=caller_skill, target_skill='other', script_interface='x')\n",
@@ -87,9 +87,9 @@ def test_dynamic_caller_skill_flagged(tmp_path: Path) -> None:
 
 def test_famulus_dispatcher_import_flagged(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "bad-skill"
-    (skill / "scripts").mkdir(parents=True)
+    (skill / "_rtx").mkdir(parents=True)
     (skill / "blueprint.yaml").write_text("name: bad-skill\n", encoding="utf-8")
-    (skill / "scripts" / "run.py").write_text(
+    (skill / "_rtx" / "run.py").write_text(
         "from famulus.dispatcher import dispatch\n"
         "dispatch(caller_skill='bad-skill', target_skill='other', script_interface='x')\n",
         encoding="utf-8",

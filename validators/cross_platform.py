@@ -125,7 +125,7 @@ def _iter_skill_files(repo_root: Path):
 
 def _is_runtime_script(rel_path: Path) -> bool:
     parts = rel_path.parts
-    return len(parts) >= 4 and parts[0] == "skills" and parts[2] == "scripts"
+    return len(parts) >= 4 and parts[0] == "skills" and parts[2] == "_rtx"
 
 
 def _command_violations(tokens: list[str], context: str) -> list[str]:
@@ -151,15 +151,21 @@ def _validate_blueprint(path: Path, rel_path: Path) -> list[str]:
     if not isinstance(raw, dict):
         return errors
 
-    script_interfaces = raw.get("script_interfaces") or {}
-    if isinstance(script_interfaces, dict):
-        for interface_name, spec in script_interfaces.items():
-            if not isinstance(spec, dict):
-                continue
-            command = spec.get("command")
-            if isinstance(command, list) and all(isinstance(token, str) for token in command):
-                for error in _command_violations(command, f"{rel_path}: script_interfaces.{interface_name}.command"):
-                    errors.append(error)
+    interfaces = raw.get("interfaces") or {}
+    if isinstance(interfaces, dict):
+        machine_interfaces = interfaces.get("machine") or {}
+        if isinstance(machine_interfaces, dict):
+            for interface_name, spec in machine_interfaces.items():
+                if not isinstance(spec, dict):
+                    continue
+                runtime = spec.get("runtime") or {}
+                if not isinstance(runtime, dict):
+                    continue
+                command = runtime.get("argv")
+                if isinstance(command, list) and all(isinstance(token, str) for token in command):
+                    context = f"{rel_path}: interfaces.machine.{interface_name}.runtime.argv"
+                    for error in _command_violations(command, context):
+                        errors.append(error)
 
     suggested = raw.get("suggested_permissions") or {}
     if isinstance(suggested, dict):

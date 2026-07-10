@@ -3,14 +3,14 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-# g-calendar and cloud-files each have their own scripts/ensure_oauth.py.
+# g-calendar and cloud-files each have their own _rtx/_ensure_oauth.py.
 # A bare `import ensure_oauth` after sys.path.insert would collide: whichever
 # test module imports it first wins the sys.modules["ensure_oauth"] cache
 # slot, silently reusing the wrong skill's file for the other's tests. Load
 # by explicit file path under a unique module name instead.
 _SPEC = importlib.util.spec_from_file_location(
     "g_calendar_ensure_oauth",
-    Path(__file__).resolve().parents[1] / "scripts" / "ensure_oauth.py",
+    Path(__file__).resolve().parents[1] / "_rtx" / "_ensure_oauth.py",
 )
 ensure_oauth = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(ensure_oauth)

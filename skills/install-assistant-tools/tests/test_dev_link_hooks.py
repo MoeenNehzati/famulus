@@ -10,9 +10,9 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
-import dev_link  # noqa: E402
+import _config_bridge as dev_link  # noqa: E402
 
 
 class DevLinkHooksTests(unittest.TestCase):

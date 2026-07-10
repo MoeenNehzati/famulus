@@ -1,5 +1,10 @@
 # Famulus Blueprint v2 Implementation Plan
 
+Status: historical design note. This plan predates the current
+`interfaces.machine` blueprint model; live blueprint syntax and validator
+policy are documented in `references/blueprint/guide.md` and
+`references/skill-guidelines.md`.
+
 ## Goal
 
 Implement a new `blueprint.yaml` contract model that cleanly separates:
@@ -96,7 +101,7 @@ script_interfaces:
     description: "Read a local YAML list file."
     usage: "<file> [filters]"
     cwd: skill_root
-    command: ["python3", "scripts/lists.py", "read"]
+    command: ["python3", "_rtx/_yaml_store.py", "read"]
 
     artifacts:
       inputs:
@@ -209,7 +214,7 @@ script_interfaces:
   read-list:
     id: read-list
     version: "3.2"
-    command: ["python3", "scripts/lists.py", "read"]
+    command: ["python3", "_rtx/_yaml_store.py", "read"]
     subinterfaces:
       planner-view:
         id: read-list-planner
@@ -528,7 +533,7 @@ Keep `additionalProperties: false` everywhere.
 Update:
 
 ```text
-skills/skill-maker/scripts/sync_skill_blueprints.py
+skills/skill-maker/_rtx/_blueprint_syncer.py
 ```
 
 Required behavior:
@@ -921,7 +926,7 @@ Required fail cases:
 7. Run sync script:
 
    ```bash
-   python3 skills/skill-maker/scripts/sync_skill_blueprints.py
+   python3 skills/skill-maker/_rtx/_blueprint_syncer.py
    ```
 
 8. Update validators:

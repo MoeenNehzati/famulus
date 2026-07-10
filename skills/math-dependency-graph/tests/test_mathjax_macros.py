@@ -11,12 +11,12 @@ from pathlib import Path
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
-SCRIPT_DIR = SKILL_DIR / "scripts"
+SCRIPT_DIR = SKILL_DIR / "_rtx"
 FIXTURE_DIR = SKILL_DIR / "tests" / "fixtures" / "macro-paper"
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from build_math_dependency_graph import TYPE_STYLES, build_html_with_elk  # noqa: E402
-from extract_mathjax_macros import default_output_path, extract_macros  # noqa: E402
+from _graph_builder import TYPE_STYLES, build_html_with_elk  # noqa: E402
+from _tex_macro_reader import default_output_path, extract_macros  # noqa: E402
 
 
 class MathJaxMacroExtractionTest(unittest.TestCase):
@@ -41,7 +41,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             expected = default_output_path(entrypoint)
 
             result = subprocess.run(
-                [sys.executable, str(SCRIPT_DIR / "extract_mathjax_macros.py"), str(entrypoint)],
+                [sys.executable, str(SCRIPT_DIR / "_tex_macro_reader.py"), str(entrypoint)],
                 check=True,
                 text=True,
                 capture_output=True,
@@ -66,7 +66,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             result = subprocess.run(
                 [
                     sys.executable,
-                    str(SCRIPT_DIR / "build_math_dependency_graph.py"),
+                    str(SCRIPT_DIR / "_graph_builder.py"),
                     str(graph),
                     "--tex-entry",
                     str(work / "main.tex"),

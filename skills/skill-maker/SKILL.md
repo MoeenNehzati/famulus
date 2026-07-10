@@ -12,7 +12,7 @@ Dependencies: none
 
 Interface Version: 1
 
-Exported Script Interfaces: none
+Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 
 ## Research option when creating a skill
@@ -38,7 +38,7 @@ This skill owns the conformance infrastructure for the skill system:
 
 - **`validators/`** — Python validator modules (names, metadata, blueprints, boundaries, dependencies, blueprint relationships). Each exports `validate(repo_root: Path) -> list[str]` and is auto-discovered by `validators/runner.py` on every commit. See `../../references/skill-guidelines.md` for the full validator contract and conventions.
 - **`tests/`** — behavior tests for the blueprint dispatcher and sync scripts (`test_blueprint_tools.py`).
-- **`scripts/`** — blueprint sync script (`sync_skill_blueprints.py`).
+- **runtime syncer** — refreshes generated blueprint compatibility artifacts.
 
 To add a new conformance check: add a `.py` file to `validators/` with a `validate(repo_root)` function and a matching `tests/validate_<name>.py`. No registration needed.
 

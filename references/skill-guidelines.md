@@ -139,14 +139,12 @@ Do not invoke the `dispatcher` CLI from Python skill code, and do not modify
 dispatcher must know how to execute the interface, but it must not leak into
 user-facing generated docs. Typical runtime forms:
 
-- `kind: python_module` with `module: scripts.scan`
+- `kind: python_module` with `module: _rtx._handoff_scan`
 - `kind: command` with explicit argv for non-Python tools
 
-Every executable interface must declare `dependencies`. This applies to
-new-style `interfaces.machine.<name>` entries and legacy `script_interfaces`
-while the migration is still in progress. Use `dependencies: []` when the
-interface has no non-stdlib Python package or external executable requirements.
-Otherwise list one object per requirement:
+Every executable `interfaces.machine.<name>` entry must declare `dependencies`.
+Use `dependencies: []` when the interface has no non-stdlib Python package or
+external executable requirements. Otherwise list one object per requirement:
 
 ```yaml
 dependencies:
@@ -231,11 +229,55 @@ Every Python `dispatch(...)` call must include `caller_skill` set to the owning
 skill's exact name; that value must be a string literal or a module-level
 string constant that resolves statically.
 
+**Private runtime files**
+
+Skill implementation files live under the private runtime-execution package
+`skills/<skill-name>/_rtx/`. `_rtx` is an implementation namespace, not public
+documentation vocabulary. Public skill docs must describe interfaces, not
+runtime files.
+
+Every non-exempt file directly under `_rtx/` must use an allowed runtime suffix
+and a private multi-part stem:
+
+```text
+_rtx/_Calendar_Gateway.py
+_rtx/_mail_transport.sh
+```
+
+The stem must match:
+
+```regex
+^_[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$
+```
+
+That means the filename starts with `_` and has at least two underscore-separated
+segments after it. Case is allowed, but case-only filename collisions are
+forbidden. `__init__.py` is the only exempt package marker. The allowed runtime
+suffix list currently contains `.py` and `.sh`; add to that list deliberately
+when a new runtime file type is needed.
+
+Skill-facing Markdown (`SKILL.md` and skill-local Markdown outside tests and
+assets) must not mention:
+
+- `_rtx`
+- runtime filenames ending in an allowed runtime suffix such as `.py` or `.sh`
+- normalized forms of private runtime stems, such as `_Calendar_Gateway`,
+  `Calendar_Gateway`, `calendar gateway`, or `calendar-gateway`
+
+Blueprints bind public interface names to private runtime modules. Tests,
+validators, and migration/design docs may mention runtime file details when
+they are defining or checking the convention.
+
+This is mechanically checked by `validators/skill_runtime_files.py` and
+`validators/skill_runtime_doc_references.py`, with behavior tests in
+`tests/validate_skill_runtime_files.py` and
+`tests/validate_skill_runtime_doc_references.py`.
+
 **Import discipline**
 
 Skill Python files may import only:
 
-- relative modules from their own skill-local `scripts/` package
+- relative modules from their own skill-local `_rtx/` package
 - first-party shared packages under `src/officina/`
 - stdlib and approved third-party packages
 
@@ -243,7 +285,7 @@ They must not import:
 
 - another skill's Python modules directly
 - repo-maintainer packages outside `src/officina/`
-- another skill's `scripts/` directory through `sys.path`, path loading, or
+- another skill's runtime directory through `sys.path`, path loading, or
   dynamic module tricks
 
 This is the intended model:
@@ -252,14 +294,10 @@ This is the intended model:
 - generic shared infrastructure: `officina.*`
 - cross-skill behavior: `dispatch(...)`
 
-Because machine interfaces run as real modules, nested relative imports inside
-`scripts/` are allowed and expected. Use explicit `__init__.py` files for
-package directories under `scripts/`.
-
-Python runtime files under `skills/<skill-name>/scripts/` must use importable
-module filenames with underscores instead of hyphens. For example, use
-`render_plan.py`, not `render-plan.py`. This is mechanically checked by
-`validators/python_script_names.py`.
+Because machine interfaces run with the skill root on `PYTHONPATH`, direct
+modules under `_rtx/` may use relative imports to share same-skill helpers.
+Runtime files must remain direct children of `_rtx/`; add nested-package support
+to the validator before introducing package directories there.
 
 **TOML IO boundary**
 
@@ -293,7 +331,7 @@ validation after writes. This rule is enforced by
 
 **Injection lifecycle**
 
-`../../skills/skill-maker/scripts/sync_skill_blueprints.py` injects and
+`../../skills/skill-maker/_rtx/_blueprint_syncer.py` injects and
 refreshes the generated compatibility artifacts for blueprint skills:
 
 - `depends_on_skills`
@@ -326,7 +364,7 @@ is named `my-X`. Every `my-X` skill must follow this layout:
 
 ```json
 {
-  "bash": ["Bash(scripts/example.sh:*)"],
+  "bash": ["Bash(_rtx/_example_tool.sh:*)"],
   "network": ["WebSearch", "WebFetch(https://example.com/*)"]
 }
 ```
@@ -364,7 +402,7 @@ re-explain, or re-invoke any interface. Specifically:
 - `interfaces.llm.<name>` documents the LLM-facing interface file and
   description, but never a dispatcher invocation.
 - The skill body references interface names only — it never shows
-  `dispatcher --caller-skill` invocations or `scripts/` paths.
+  `dispatcher --caller-skill` invocations or runtime file paths.
 
 The generated blocks must be sufficient for a first-attempt correct invocation.
 
@@ -389,7 +427,7 @@ commit, and push to `origin`.
 - **Do not introduce new cross-skill Python imports.** If behavior should be
   shared across skills, expose it through a skill invocation, exported machine
   interface, or a first-party shared package under `src/officina/`.
-- **Do not reach into another skill's script directory from local scripts.**
+- **Do not reach into another skill's runtime directory from local runtime code.**
 - **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative. A
   skill may refer to files under its own directory, to shared `../references/`
   material, and to shared repo tools under `../../tools/`. It must not mention
@@ -402,9 +440,9 @@ commit, and push to `origin`.
   - `interfaces.llm` describes LLM-facing interfaces
   - `interface_version` is the major version of that public contract
 
-**10. No code in SKILL.md — scripts only, with one exception** — skill files
+**10. No code in SKILL.md — runtime files only, with one exception** — skill files
 must not contain executable code logic. Any logic belongs in a dedicated file
-under `scripts/`, except when the skill's purpose is to provide an interface to
+under `_rtx/`, except when the skill's purpose is to provide an interface to
 a specific external tool and that tool is declared in frontmatter `tools:`.
 
 **11. State data lives under the skill's directory** — any persistent state a

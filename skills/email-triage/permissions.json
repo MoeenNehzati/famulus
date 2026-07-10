@@ -1,11 +1,11 @@
 {
   "bash": [
-    "Bash(python3 scripts/filter_envelopes.py:*)",
-    "Bash(scripts/get_cutoff.py:*)",
-    "Bash(scripts/update_watermark.py:*)",
-    "Bash(scripts/log-decision.sh:*)",
-    "Bash(python3 scripts/prune_log.py:*)",
-    "Bash(python3 scripts/mark_failure.py:*)"
+    "Bash(python3 _rtx/_envelope_gate.py:*)",
+    "Bash(_rtx/_watermark_floor.py:*)",
+    "Bash(_rtx/_watermark_writer.py:*)",
+    "Bash(_rtx/_decision_sink.sh:*)",
+    "Bash(python3 _rtx/_log_compactor.py:*)",
+    "Bash(python3 _rtx/_failure_sentinel.py:*)"
   ],
   "network": []
 }

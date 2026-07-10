@@ -44,7 +44,7 @@ As the repo explains its parts, each part should be tied to an end goal:
 |---|---|---|
 | `SKILL.md` | trigger conditions, usage guidance, owned responsibility | cohesive skills |
 | `blueprint.yaml` | dependencies, interfaces, permissions hints, cross-skill boundaries | explicit touch surface |
-| `scripts/` | concrete behavior behind the skill contract | implementation without leaking boundaries |
+| `_rtx/` | private runtime implementation behind the skill contract | implementation without leaking boundaries |
 | blueprint sync | generated compatibility artifacts that stay aligned with the blueprint | one canonical contract source |
 | `dispatcher` / `script_dispatcher` | allowed cross-skill script invocation only | narrow, predictable composition |
 | validators | boundary checks, schema checks, sync checks, metadata checks | machine-flagged LLM mistakes |
@@ -64,7 +64,7 @@ Each skill has three authored surfaces:
 
 1. `SKILL.md` says when the skill applies and how to use it.
 2. `blueprint.yaml` says what the skill is allowed to depend on and export.
-3. `scripts/`, tests, schemas, and references implement the behavior.
+3. Private runtime files, tests, schemas, and references implement the behavior.
 
 Responsibilities in this layer:
 
@@ -74,7 +74,7 @@ Responsibilities in this layer:
 - `blueprint.yaml`
   - Responsible for making dependencies, interfaces, permissions hints, and
     cross-skill boundaries explicit.
-- `scripts/`
+- `_rtx/`
   - Responsible for holding the real logic so the skill contract is not mixed
     with ad hoc code in prose.
 
@@ -110,7 +110,7 @@ Generated from `blueprint.yaml`:
 - the contract block near the top of `SKILL.md`
 - the owner-facing interface block in `SKILL.md`
 
-[skills/skill-maker/scripts/sync_skill_blueprints.py](../../skills/skill-maker/scripts/sync_skill_blueprints.py) is the sync boundary
+[skills/skill-maker/_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py) is the sync boundary
 between the authored blueprint and those compatibility artifacts. Do not edit
 generated blocks by hand.
 
@@ -129,21 +129,20 @@ At the top level, the live blueprint contract currently covers:
 - `depends_on`
 - `skill_interface`
 - `suggested_permissions`
-- `script_interfaces`
+- `interfaces`
 
 `category` is still the live classification field. The checked-in schema does
 not currently define top-level `role` or `kind` fields.
 
-The most important high-friction part is `script_interfaces`, because that is
-where the repo makes script boundaries explicit. Each interface group declares:
+The most important high-friction part is `interfaces.machine`, because that is
+where the repo makes executable boundaries explicit. Each machine interface
+declares:
 
-- the owner-facing default `id`
-- the shared `command`
 - optional `description` and `usage` for the generated `SKILL.md` block
-- an optional `default` subinterface for the owner-facing surface
-- optional named `subinterfaces` for narrower external caller views
 - `patterns` that constrain valid argv/stdin forms
 - `allow_all_skills` and `allowed_callers` access rules
+- `runtime`, which tells the dispatcher how to execute the interface
+- `dependencies`, which lists factual package and executable requirements
 
 That is the contract the dispatcher enforces at runtime. This part is
 responsible for making it mechanically clear what a skill may touch and how it
@@ -151,8 +150,8 @@ may touch it.
 
 ## 4. The runtime boundary
 
-Cross-skill script calls are not supposed to reach into another skill's
-`scripts/` directory directly.
+Cross-skill calls are not supposed to reach into another skill's private
+runtime directory directly.
 
 The intended runtime path is:
 
@@ -214,7 +213,7 @@ This is one of the practical senses in which the repo is doing
 
 - its [SKILL.md](../../skills/skill-maker/SKILL.md) points directly at [references/skill-guidelines.md](../../references/skill-guidelines.md)
 - its [`validators/`](../../skills/skill-maker/validators/) directory is the main skill-system enforcement surface
-- its [scripts/sync_skill_blueprints.py](../../skills/skill-maker/scripts/sync_skill_blueprints.py) shows what the blueprint generates
+- its [_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py) shows what the blueprint generates
 - its tests exercise the blueprint tooling itself
 
 If you are trying to understand "how does this repo scaffold skills?", that
@@ -227,7 +226,7 @@ If you are changing a skill:
 1. Start from `references/blueprint/template.yaml`.
 2. Edit the skill's `blueprint.yaml`.
 3. Sync generated artifacts with
-   `skills/skill-maker/scripts/sync_skill_blueprints.py`.
+   `skills/skill-maker/_rtx/_blueprint_syncer.py`.
 4. Run the relevant validators and tests.
 
 If you are changing the schema or scaffolding:

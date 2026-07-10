@@ -44,82 +44,24 @@ def validate(repo_root: Path) -> list[str]:
             continue
 
         interfaces = blueprint.get("interfaces")
-        if isinstance(interfaces, dict):
-            for kind in ("machine", "llm"):
-                namespace = interfaces.get(kind)
-                if namespace is None:
-                    continue
-                if not isinstance(namespace, dict):
-                    errors.append(f"{blueprint_path}: interfaces.{kind}: expected mapping")
-                    continue
-                for interface_name, interface_spec in namespace.items():
-                    context = f"{blueprint_path}: interfaces.{kind}.{interface_name}"
-                    if "." in str(interface_name):
-                        errors.append(f"{context}: interface names must not contain `.`")
-                    if not isinstance(interface_spec, dict):
-                        errors.append(f"{context}: expected mapping")
+        if interfaces is None:
             continue
-
-        script_interfaces = blueprint.get("script_interfaces")
-        if script_interfaces is None:
+        if not isinstance(interfaces, dict):
+            errors.append(f"{blueprint_path}: interfaces: expected mapping")
             continue
-        if not isinstance(script_interfaces, dict):
-            errors.append(f"{blueprint_path}: script_interfaces: expected mapping")
-            continue
-
-        seen_ids: dict[str, str] = {}
-        for interface_name, interface_spec in script_interfaces.items():
-            context = f"{blueprint_path}: script_interfaces.{interface_name}"
-            if not isinstance(interface_spec, dict):
-                errors.append(f"{context}: expected mapping")
+        for kind in ("machine", "llm"):
+            namespace = interfaces.get(kind)
+            if namespace is None:
                 continue
-
-            interface_id = interface_spec.get("id")
-            if not isinstance(interface_id, str) or not interface_id.strip():
-                errors.append(f"{context}: missing non-empty string `id`")
-            else:
-                previous = seen_ids.get(interface_id)
-                if previous is not None:
-                    errors.append(
-                        f"{context}: id `{interface_id}` duplicates {previous}; "
-                        f"interface ids must be unique within a skill"
-                    )
-                else:
-                    seen_ids[interface_id] = context
-
-            if "default" in interface_spec:
-                default_spec = interface_spec["default"]
-                if not isinstance(default_spec, dict):
-                    errors.append(f"{context}.default: expected mapping")
-                elif "id" in default_spec:
-                    errors.append(
-                        f"{context}.default: must not define `id`; the default subinterface shares the parent interface id"
-                    )
-
-            subinterfaces = interface_spec.get("subinterfaces")
-            if subinterfaces is None:
+            if not isinstance(namespace, dict):
+                errors.append(f"{blueprint_path}: interfaces.{kind}: expected mapping")
                 continue
-            if not isinstance(subinterfaces, dict):
-                errors.append(f"{context}.subinterfaces: expected mapping")
-                continue
-
-            for sub_name, sub_spec in subinterfaces.items():
-                sub_context = f"{context}.subinterfaces.{sub_name}"
-                if not isinstance(sub_spec, dict):
-                    errors.append(f"{sub_context}: expected mapping")
-                    continue
-                sub_id = sub_spec.get("id")
-                if not isinstance(sub_id, str) or not sub_id.strip():
-                    errors.append(f"{sub_context}: missing non-empty string `id`")
-                    continue
-                previous = seen_ids.get(sub_id)
-                if previous is not None:
-                    errors.append(
-                        f"{sub_context}: id `{sub_id}` duplicates {previous}; "
-                        f"interface ids must be unique within a skill"
-                    )
-                else:
-                    seen_ids[sub_id] = sub_context
+            for interface_name, interface_spec in namespace.items():
+                context = f"{blueprint_path}: interfaces.{kind}.{interface_name}"
+                if "." in str(interface_name):
+                    errors.append(f"{context}: interface names must not contain `.`")
+                if not isinstance(interface_spec, dict):
+                    errors.append(f"{context}: expected mapping")
 
     return errors
 

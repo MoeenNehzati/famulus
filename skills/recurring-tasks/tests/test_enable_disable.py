@@ -2,14 +2,14 @@
 import subprocess, tempfile, os
 from pathlib import Path
 
-SCRIPTS = Path(__file__).parent.parent / "scripts"
-MANAGE_JOB = SCRIPTS / "manage_job.py"
+SCRIPTS = Path(__file__).parent.parent / "_rtx"
+MANAGE_JOB = SCRIPTS / "_job_control.py"
 
 JOBS_YAML = """\
 jobs:
   - name: email-triage
     description: "Triage new emails into todo and potential-actions lists"
-    command: "{skill_dir}/scripts/run-skill.sh email-triage"
+    command: "invoke-skill email-triage"
     schedule: "0 * * * *"
     enabled: true
 """

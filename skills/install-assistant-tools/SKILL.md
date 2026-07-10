@@ -12,22 +12,23 @@ Dependencies: none
 
 Interface Version: 2
 
-Exported Script Interfaces: none
+Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Script Interfaces:
+Owner-Facing Machine Interfaces:
 
-Use the installed `dispatcher` command for this skill's script interfaces:
+Use the installed `dispatcher` command for this skill's machine interfaces:
 - `scripts-dev-link` — Symlink Claude/Codex config dirs to a live repo checkout, register dev-mode hooks, set git hooksPath, export $AI. Requires an explicit repo path.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-dev-link --repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]`
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.machine.scripts-dev-link --repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]`
 - `scripts-install` — Phase-1 orchestrator: asks the dev-mode question, then runs scaffold, optionally dev-link, then launchers.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-install [--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path DIR] [--agents LIST] [--default-llm {claude,codex}] [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]`
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.machine.scripts-install [--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path DIR] [--agents LIST] [--default-llm {claude,codex}] [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]`
 - `scripts-launchers` — Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT for the given agents.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-launchers --repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--dry-run]`
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.machine.scripts-launchers --repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--dry-run]`
 - `scripts-scaffold` — Install the dispatcher + invoke-skill launchers and put the bin dir on PATH. Universal floor, mode-independent.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools scripts-scaffold --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]`
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.machine.scripts-scaffold --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]`
+
 <!-- END BLUEPRINT INTERFACES -->
 # Install Assistant Tools
 
@@ -61,32 +62,33 @@ bin/
   assistant.bat      Windows wrapper (delegates to assistant via py.exe)
   collab.bat         Windows wrapper (delegates to collab via py.exe)
   coauthor.bat       Windows wrapper (delegates to coauthor via py.exe)
-scripts/
-  install.py         Phase-1 orchestrator — asks the dev-mode question, then
-                     chains scaffold -> [dev_link] -> launchers
-  scaffold.py        Universal floor: dispatcher + invoke-skill launchers, PATH,
+runtime phases
+  install runner     Phase-1 orchestrator — asks the dev-mode question, then
+                     chains scaffold -> [repo bridge] -> launchers
+  scaffold           Universal floor: dispatcher + invoke-skill launchers, PATH,
                      required Python packages. Mode-independent, always runs.
-  dev_link.py        Dev-mode only: Claude/Codex config-dir symlinks, dev-mode
+  repo bridge        Dev-mode only: Claude/Codex config-dir symlinks, dev-mode
                      hook registration, git hooksPath, $AI export. Requires an
                      explicit repo path — never inferred.
-  launchers.py       Per selected agent: bin launcher, profile config (with an
+  launchers          Per selected agent: bin launcher, profile config (with an
                      absolute model_instructions_file rewrite so Codex doesn't
                      need $CODEX_HOME/agents either), worker dir,
                      ASSISTANT_DEFAULT. No agents preselected.
-  link_utils.py      Shared make_link/make_copy used by scaffold/launchers/dev_link.
-  rc_block.py        Merge-capable managed-block writer: scaffold owns PATH,
-                     launchers owns ASSISTANT_DEFAULT, dev_link owns $AI — all
-                     three share one physical rc block without clobbering
+  link helpers       Shared make_link/make_copy helpers used by scaffold,
+                     launchers, and repo bridge.
+  rc writer          Merge-capable managed-block writer: scaffold owns PATH,
+                     launchers owns ASSISTANT_DEFAULT, repo bridge owns $AI —
+                     all three share one physical rc block without clobbering
                      each other on repeated runs.
-  uninstall.py       Reverses install side effects; best-effort with a final
+  uninstall runner   Reverses install side effects; best-effort with a final
                      removed/skipped/left/FAILED report (exit 1 on failures).
                      Leaves OAuth credentials unless --purge; supports
                      --dry-run, --no-pip, --no-git-hooks.
-  install_manifest.py Home-scoped record of install side effects
+  manifest store     Home-scoped record of install side effects
                      (~/.local/state/assistant-tools/install-manifest.json).
-                     scaffold/dev_link/launchers record into it; uninstall.py
-                     replays it in reverse (exact even across plugin-cache
-                     version drift), falling back to heuristics when absent.
+                     install phases record into it; uninstall replays it in
+                     reverse (exact even across plugin-cache version drift),
+                     falling back to heuristics when absent.
 ```
 
 ## Workflow

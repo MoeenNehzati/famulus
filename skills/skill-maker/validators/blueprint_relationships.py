@@ -12,10 +12,6 @@ class BlueprintError(Exception):
     """Raised when a blueprint relationship is invalid."""
 
 
-def _uses_new_interface_model(blueprint: dict[str, Any]) -> bool:
-    return isinstance(blueprint.get("interfaces"), dict)
-
-
 def load_blueprints(skills_root: Path) -> dict[str, dict[str, Any]]:
     """Load all blueprint.yaml files under skills_root."""
     blueprints: dict[str, dict[str, Any]] = {}
@@ -47,49 +43,16 @@ def _expect_string_list(value: Any, context: str) -> list[str]:
     return value
 
 
-def _interface_id(interface_name: str, interface_spec: dict[str, Any], context: str) -> str:
-    value = interface_spec.get("id")
-    if not isinstance(value, str) or not value.strip():
-        raise BlueprintError(f"{context}: missing non-empty string `id`")
-    return value.strip()
-
-
-def _default_surface(interface_spec: dict[str, Any], context: str) -> dict[str, Any]:
-    explicit = interface_spec.get("default")
-    if explicit is not None:
-        if not isinstance(explicit, dict):
-            raise BlueprintError(f"{context}.default: expected mapping")
-        return explicit
-    result: dict[str, Any] = {}
-    for field in ("patterns", "allow_all_skills", "allowed_callers"):
-        if field in interface_spec:
-            result[field] = interface_spec[field]
-    return result
-
-
-def _named_subinterfaces(interface_spec: dict[str, Any], context: str) -> dict[str, dict[str, Any]]:
-    raw = interface_spec.get("subinterfaces")
-    if raw is None:
-        return {}
-    if not isinstance(raw, dict):
-        raise BlueprintError(f"{context}.subinterfaces: expected mapping")
-    result: dict[str, dict[str, Any]] = {}
-    for sub_name, sub_spec in raw.items():
-        if not isinstance(sub_spec, dict):
-            raise BlueprintError(f"{context}.subinterfaces.{sub_name}: expected mapping")
-        result[sub_name] = sub_spec
-    return result
-
-
 def _resolve_callable_surface(
+    skill_name: str,
     blueprint: dict[str, Any],
     export_id: str,
 ) -> tuple[str, dict[str, Any]]:
-    if _uses_new_interface_model(blueprint):
-        parts = export_id.split(".")
-        if len(parts) != 3:
-            raise BlueprintError(f"canonical interface `{export_id}` must have form skill.kind.name")
+    parts = export_id.split(".")
+    if len(parts) == 3:
         target_skill, kind, interface_name = parts
+        if target_skill != skill_name:
+            raise BlueprintError(f"canonical interface `{export_id}` names `{target_skill}`, expected `{skill_name}`")
         interfaces = _expect_mapping(blueprint.get("interfaces"), "interfaces")
         if kind not in {"machine", "llm"}:
             raise BlueprintError(f"unsupported interface kind `{kind}`")
@@ -98,21 +61,14 @@ def _resolve_callable_surface(
         if not isinstance(spec, dict):
             raise BlueprintError(f"{kind} interface `{interface_name}` is not defined")
         return f"{target_skill}.{kind}.{interface_name}", spec
-
-    interfaces = _expect_mapping(blueprint.get("script_interfaces"), "script_interfaces")
-    for interface_name, interface_spec in interfaces.items():
-        context = f"script_interfaces.{interface_name}"
-        if not isinstance(interface_spec, dict):
-            raise BlueprintError(f"{context}: expected mapping")
-        if _interface_id(interface_name, interface_spec, context) == export_id:
-            return export_id, _default_surface(interface_spec, context)
-        for sub_name, sub_spec in _named_subinterfaces(interface_spec, context).items():
-            sub_id = sub_spec.get("id")
-            if not isinstance(sub_id, str) or not sub_id.strip():
-                raise BlueprintError(f"{context}.subinterfaces.{sub_name}: missing non-empty string `id`")
-            if sub_id.strip() == export_id:
-                return sub_id.strip(), sub_spec
-    raise BlueprintError(f"script interface id `{export_id}` is not defined")
+    if len(parts) != 1:
+        raise BlueprintError(f"interface `{export_id}` must be a local name or skill.kind.name")
+    interfaces = _expect_mapping(blueprint.get("interfaces"), "interfaces")
+    machine = _expect_mapping(interfaces.get("machine"), "interfaces.machine")
+    spec = machine.get(export_id)
+    if not isinstance(spec, dict):
+        raise BlueprintError(f"machine interface `{export_id}` is not defined")
+    return f"{skill_name}.machine.{export_id}", spec
 
 
 def validate_relationships(
@@ -168,7 +124,7 @@ def validate_relationships(
                     if not isinstance(export_name, str):
                         continue
                     try:
-                        resolved_id, surface_spec = _resolve_callable_surface(dep_blueprint, export_name)
+                        resolved_id, surface_spec = _resolve_callable_surface(dep_name, dep_blueprint, export_name)
                     except BlueprintError:
                         errors.append(
                             f"{blueprint_path}: depends_on.{dep_name}.exports includes "

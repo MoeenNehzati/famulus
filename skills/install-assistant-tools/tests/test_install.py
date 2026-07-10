@@ -3,9 +3,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
-import install
+import _phase_entry as install
 
 
 def test_plugin_mode_skips_dev_link(tmp_path, monkeypatch):
@@ -68,6 +68,6 @@ def test_plugin_mode_uses_auto_derived_repo_root(tmp_path, monkeypatch):
     )
 
     scaffold_kwargs = dict(calls[0][1])
-    # Auto-derived from install.py's own location: <repo>/skills/install-assistant-tools/scripts/install.py
+    # Auto-derived from install.py's own location: <repo>/skills/install-assistant-tools/_rtx/_phase_entry.py
     expected_repo_root = Path(install.__file__).resolve().parents[3]
     assert scaffold_kwargs["repo_root"] == expected_repo_root

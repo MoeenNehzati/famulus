@@ -4,9 +4,9 @@ import sys
 import tomllib
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
-import launchers
+import _agent_launchers as launchers
 
 
 def _make_repo(tmp_path: Path) -> Path:

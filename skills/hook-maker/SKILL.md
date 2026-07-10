@@ -12,7 +12,7 @@ Dependencies: none
 
 Interface Version: 1
 
-Exported Script Interfaces: none
+Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 ## Core rule
 

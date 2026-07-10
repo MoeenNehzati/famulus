@@ -1,7 +1,7 @@
 {
   "bash": [
-    "Bash(scripts/fetch-arxiv-source.sh:*)",
-    "Bash(scripts/check-marker-models.sh:*)",
+    "Bash(_rtx/_source_fetcher.sh:*)",
+    "Bash(_rtx/_marker_probe.sh:*)",
     "Bash(marker_single:*)"
   ],
   "network": [

@@ -10,12 +10,12 @@ from pathlib import Path
 
 _SPEC = importlib.util.spec_from_file_location(
     "g_calendar_gcal",
-    Path(__file__).resolve().parents[1] / "scripts" / "gcal.py",
+    Path(__file__).resolve().parents[1] / "_rtx" / "_gcal_client.py",
 )
 gcal = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(gcal)
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
-GCAL_SHELL = SCRIPT_DIR / "gcal.sh"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "_rtx"
+GCAL_SHELL = SCRIPT_DIR / "_gcal_client.sh"
 
 
 def test_resolve_range_defaults_from_local_midnight(monkeypatch):

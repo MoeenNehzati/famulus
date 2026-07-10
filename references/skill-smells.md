@@ -10,7 +10,7 @@ Visible symptoms that signal a skill needs refactoring. Each smell maps to one o
 **Moves:** Extract Sub-skill, Extract Script, Purge Dead Content.
 
 ## Executable logic in SKILL.md
-**Signal:** Shell commands, Python snippets, or other runnable code appears inline in SKILL.md rather than in `scripts/`.
+**Signal:** Shell commands, Python snippets, or other runnable code appears inline in SKILL.md rather than behind a blueprint interface and private `_rtx/` runtime file.
 **Analog:** Wrong layer of abstraction.
 **Moves:** Extract Script.
 
@@ -53,7 +53,7 @@ Visible symptoms that signal a skill needs refactoring. Each smell maps to one o
 **Moves:** Relocate Credentials.
 
 ## Monolithic script
-**Signal:** A single script under `scripts/` handles multiple unrelated responsibilities, making it hard to invoke or test one part independently.
+**Signal:** A single private runtime file under `_rtx/` handles multiple unrelated responsibilities, making it hard to invoke or test one part independently.
 **Analog:** Long Method.
 **Moves:** Decompose Script.
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 SKILL_DIR = Path(__file__).parent.parent
-SCRIPT = SKILL_DIR / "scripts" / "healthcheck.py"
+SCRIPT = SKILL_DIR / "_rtx" / "_healthcheck_probe.py"
 
 
 def _load(tmp_dir: Path):

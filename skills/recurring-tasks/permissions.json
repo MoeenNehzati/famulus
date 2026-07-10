@@ -1,10 +1,10 @@
 {
   "bash": [
-    "Bash(scripts/setup.sh:*)",
-    "Bash(scripts/sync_units.py:*)",
-    "Bash(scripts/manage_job.py:*)",
-    "Bash(scripts/healthcheck.py:*)",
-    "Bash(scripts/ensure_agent_env.py:*)",
+    "Bash(_rtx/_setup_runner.sh:*)",
+    "Bash(_rtx/_unit_writer.py:*)",
+    "Bash(_rtx/_job_control.py:*)",
+    "Bash(_rtx/_healthcheck_probe.py:*)",
+    "Bash(_rtx/_ensure_agent_env.py:*)",
     "Bash(systemctl:*)",
     "Bash(journalctl:*)"
   ],

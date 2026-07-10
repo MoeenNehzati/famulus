@@ -12,18 +12,19 @@ Dependencies: none
 
 Interface Version: 1
 
-Exported Script Interfaces: none
+Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Script Interfaces:
+Owner-Facing Machine Interfaces:
 
-Use the installed `dispatcher` command for this skill's script interfaces:
+Use the installed `dispatcher` command for this skill's machine interfaces:
 - `setup-compat-aliases` — Create every host compatibility alias symlink (e.g. a legacy filename some host looks for specifically) in a freshly scaffolded project directory.
-  - `dispatcher --caller-skill initialize-tdd initialize-tdd setup-compat-aliases <project-dir>`
+  - `dispatcher --caller-skill initialize-tdd initialize-tdd.machine.setup-compat-aliases <project-dir>`
   - First positional is the scaffolded project's directory path. Discovers and runs every compat-alias helper next to this script; adding a new host's alias later needs no change here.
+
 <!-- END BLUEPRINT INTERFACES -->
 # Initialize TDD Project
 
@@ -85,7 +86,7 @@ If either input is missing, ask the user before proceeding.
      - `{{PROJECT_NAME}}` -> `name` (human-readable, as given)
      - `{{PACKAGE_DIST_NAME}}` -> `slug` (only present in `pyproject.toml`)
 
-5. **Create host compatibility aliases**
+5. **Create host compatibility symlinks**
    - Call the `setup-compat-aliases` interface with the project directory,
      so any host that looks for a differently-named instructions file
      (rather than `AGENTS.md`) still finds the same content.

@@ -1,6 +1,6 @@
 # Canonical contract for install-assistant-tools.
 # This file was migrated from legacy skill metadata.
-# Tighten the placeholder script interfaces as each script contract becomes clearer.
+# Tighten the placeholder machine interfaces as each runtime contract becomes clearer.
 
 category: skill-making-development-assistant
 # Bump this major version whenever the exported contract changes in a
@@ -23,50 +23,59 @@ skill_interface:
   side_effects:
     - "May invoke local scripts or dependencies as described in SKILL.md."
 
-script_interfaces:
-  scripts-install:
-    id: scripts-install
-    description: "Phase-1 orchestrator: asks the dev-mode question, then runs scaffold, optionally dev-link, then launchers."
-    usage: "[--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path DIR] [--agents LIST] [--default-llm {claude,codex}] [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]"
-    cwd: skill_root
-    command: ["python3", "scripts/install.py"]
-    dependencies:
+interfaces:
+  machine:
+    scripts-install:
+      description: 'Phase-1 orchestrator: asks the dev-mode question, then runs scaffold, optionally dev-link, then launchers.'
+      usage: '[--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path DIR] [--agents LIST] [--default-llm
+        {claude,codex}] [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]'
+      patterns:
+      - name: owner
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_phase_entry.py
+      dependencies:
       - kind: binary
         name: git
-        reason: "Configures repository hook settings during development installs."
-    default:
+        reason: Configures repository hook settings during development installs.
+    scripts-scaffold:
+      description: Install the dispatcher + invoke-skill launchers and put the bin dir on PATH. Universal floor, mode-independent.
+      usage: --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]
       patterns:
-        - name: owner
-  scripts-scaffold:
-    id: scripts-scaffold
-    description: "Install the dispatcher + invoke-skill launchers and put the bin dir on PATH. Universal floor, mode-independent."
-    usage: "--repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]"
-    cwd: skill_root
-    command: ["python3", "scripts/scaffold.py"]
-    dependencies: []
-    default:
+      - name: owner
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_install_scaffold.py
+      dependencies: []
+    scripts-dev-link:
+      description: Symlink Claude/Codex config dirs to a live repo checkout, register dev-mode hooks, set git hooksPath, export
+        $AI. Requires an explicit repo path.
+      usage: --repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR] [--shell-rc FILE]
+        [--dry-run]
       patterns:
-        - name: owner
-  scripts-dev-link:
-    id: scripts-dev-link
-    description: "Symlink Claude/Codex config dirs to a live repo checkout, register dev-mode hooks, set git hooksPath, export $AI. Requires an explicit repo path."
-    usage: "--repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]"
-    cwd: skill_root
-    command: ["python3", "scripts/dev_link.py"]
-    dependencies:
+      - name: owner
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_config_bridge.py
+      dependencies:
       - kind: binary
         name: git
-        reason: "Configures repository hook settings during development installs."
-    default:
+        reason: Configures repository hook settings during development installs.
+    scripts-launchers:
+      description: Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT for the given agents.
+      usage: --repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc
+        FILE] [--default-llm {claude,codex}] [--dry-run]
       patterns:
-        - name: owner
-  scripts-launchers:
-    id: scripts-launchers
-    description: "Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT for the given agents."
-    usage: "--repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--dry-run]"
-    cwd: skill_root
-    command: ["python3", "scripts/launchers.py"]
-    dependencies: []
-    default:
-      patterns:
-        - name: owner
+      - name: owner
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_agent_launchers.py
+      dependencies: []

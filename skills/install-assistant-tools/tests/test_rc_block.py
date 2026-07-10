@@ -3,9 +3,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
-from rc_block import BLOCK_BEGIN, BLOCK_END, ensure_rc_vars
+from _shell_block import BLOCK_BEGIN, BLOCK_END, ensure_rc_vars
 
 
 def test_ensure_rc_vars_writes_new_block(tmp_path):

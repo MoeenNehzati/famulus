@@ -20,46 +20,42 @@ def _write_blueprint(path: Path, data: dict) -> None:
     path.write_text(yaml.dump(data))
 
 
-def test_unique_ids_pass(tmp_path: Path) -> None:
+def test_machine_and_llm_interface_names_pass(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path / "skills" / "my-skill" / "blueprint.yaml",
         {
-            "script_interfaces": {
-                "read-data": {
-                    "id": "read-data",
-                    "command": ["python3", "scripts/tool.py"],
-                    "subinterfaces": {
-                        "daily-plan-view": {
-                            "id": "read-data-daily-plan",
-                        }
-                    },
-                }
+            "interfaces": {
+                "machine": {
+                    "read-data": {
+                        "runtime": {"kind": "command", "argv": ["python3", "_rtx/_tool_entry.py"]},
+                        "dependencies": [],
+                    }
+                },
+                "llm": {
+                    "skill-doc": {
+                        "description": "Prompt surface.",
+                        "binding": {"kind": "markdown_file", "path": "SKILL.md"},
+                    }
+                },
             }
         },
     )
     assert _mod.validate(tmp_path) == []
 
 
-def test_duplicate_ids_fail(tmp_path: Path) -> None:
+def test_dotted_interface_name_fails(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path / "skills" / "my-skill" / "blueprint.yaml",
         {
-            "script_interfaces": {
-                "read-data": {
-                    "id": "shared-id",
-                    "command": ["python3", "scripts/tool.py"],
-                },
-                "write-data": {
-                    "id": "write-data",
-                    "command": ["python3", "scripts/tool.py"],
-                    "subinterfaces": {
-                        "narrow": {
-                            "id": "shared-id",
-                        }
-                    },
-                },
+            "interfaces": {
+                "machine": {
+                    "read.data": {
+                        "runtime": {"kind": "command", "argv": ["python3", "_rtx/_tool_entry.py"]},
+                        "dependencies": [],
+                    }
+                }
             }
         },
     )
     errors = _mod.validate(tmp_path)
-    assert any("shared-id" in error and "unique within a skill" in error for error in errors)
+    assert any("must not contain `.`" in error for error in errors)

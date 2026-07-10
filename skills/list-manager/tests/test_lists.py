@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-LISTS_PY = Path(__file__).parent.parent / "scripts" / "lists.py"
+LISTS_PY = Path(__file__).parent.parent / "_rtx" / "_yaml_store.py"
 
 # A valid todo YAML used by multiple tests.
 # Domain categories (Work, Personal) must have exactly the 6 task-list subcategories.

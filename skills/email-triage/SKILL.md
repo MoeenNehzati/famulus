@@ -14,26 +14,27 @@ Dependencies:
 
 Interface Version: 1
 
-Exported Script Interfaces: none
+Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Script Interfaces:
+Owner-Facing Machine Interfaces:
 
-Use the installed `dispatcher` command for this skill's script interfaces:
+Use the installed `dispatcher` command for this skill's machine interfaces:
 - `scripts-filter-envelopes` — Filter JSON envelopes (from email-client's mail-list, piped via stdin) to those strictly after the triage watermark.
-  - `dispatcher --caller-skill email-triage email-triage scripts-filter-envelopes -a <account>   < envelopes.json`
+  - `dispatcher --caller-skill email-triage email-triage.machine.scripts-filter-envelopes -a <account>   < envelopes.json`
 - `scripts-get-cutoff` — Return the cutoff date for the current triage run, with a fallback if no watermark exists.
-  - `dispatcher --caller-skill email-triage email-triage scripts-get-cutoff`
+  - `dispatcher --caller-skill email-triage email-triage.machine.scripts-get-cutoff`
 - `scripts-log-decision` — Append a triage classification decision for one email to triage.log.
-  - `dispatcher --caller-skill email-triage email-triage scripts-log-decision <account> <id> <from> <subject> <DECISION> <reason>`
+  - `dispatcher --caller-skill email-triage email-triage.machine.scripts-log-decision <account> <id> <from> <subject> <DECISION> <reason>`
 - `scripts-mark-failure` — Record that this triage run failed, so update-watermark refuses to advance and the scheduled health check reports it.
-  - `dispatcher --caller-skill email-triage email-triage scripts-mark-failure <reason>`
+  - `dispatcher --caller-skill email-triage email-triage.machine.scripts-mark-failure <reason>`
 - `scripts-prune-log` — Drop triage.log entries older than 30 days and print a one-line summary.
-  - `dispatcher --caller-skill email-triage email-triage scripts-prune-log`
+  - `dispatcher --caller-skill email-triage email-triage.machine.scripts-prune-log`
 - `scripts-update-watermark` — Advance the triage watermark to the current timestamp. Refuses if scripts-mark-failure was called earlier in this run.
-  - `dispatcher --caller-skill email-triage email-triage scripts-update-watermark`
+  - `dispatcher --caller-skill email-triage email-triage.machine.scripts-update-watermark`
+
 <!-- END BLUEPRINT INTERFACES -->
 # Email Triage
 

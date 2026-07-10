@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-REPO_SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+REPO_SCRIPTS = Path(__file__).resolve().parents[1] / "_rtx"
 
 STUB_CLOUD_FILES = r'''
 from __future__ import annotations
@@ -143,10 +143,10 @@ class ScriptEntryPointTests(unittest.TestCase):
             store = tmpdir / "store"
             store.mkdir()
 
-            for name in ("read_llm_file.py", "write_llm_file.py", "delete_llm_file.py"):
+            for name in ("_read_llm_file.py", "_write_llm_file.py", "_delete_llm_file.py"):
                 shutil.copy2(REPO_SCRIPTS / name, tmpdir / name)
 
-            (tmpdir / "cloud_files.py").write_text(STUB_CLOUD_FILES, encoding="utf-8")
+            (tmpdir / "_drive_gateway.py").write_text(STUB_CLOUD_FILES, encoding="utf-8")
 
             env = os.environ.copy()
             env["TEST_STORE"] = str(store)
@@ -155,7 +155,7 @@ class ScriptEntryPointTests(unittest.TestCase):
             content = "script wrapper roundtrip\n"
 
             write_res = subprocess.run(
-                [sys.executable, str(tmpdir / "write_llm_file.py"), relpath],
+                [sys.executable, str(tmpdir / "_write_llm_file.py"), relpath],
                 input=content,
                 text=True,
                 capture_output=True,
@@ -165,7 +165,7 @@ class ScriptEntryPointTests(unittest.TestCase):
             self.assertEqual(write_res.returncode, 0, write_res.stderr)
 
             read_res = subprocess.run(
-                [sys.executable, str(tmpdir / "read_llm_file.py"), relpath],
+                [sys.executable, str(tmpdir / "_read_llm_file.py"), relpath],
                 text=True,
                 capture_output=True,
                 env=env,
@@ -175,7 +175,7 @@ class ScriptEntryPointTests(unittest.TestCase):
             self.assertEqual(read_res.stdout, content)
 
             list_before_delete = subprocess.run(
-                [sys.executable, str(tmpdir / "read_llm_file.py"), "--list", "scratch"],
+                [sys.executable, str(tmpdir / "_read_llm_file.py"), "--list", "scratch"],
                 text=True,
                 capture_output=True,
                 env=env,
@@ -185,7 +185,7 @@ class ScriptEntryPointTests(unittest.TestCase):
             self.assertIn("roundtrip.txt", list_before_delete.stdout.splitlines())
 
             delete_res = subprocess.run(
-                [sys.executable, str(tmpdir / "delete_llm_file.py"), relpath],
+                [sys.executable, str(tmpdir / "_delete_llm_file.py"), relpath],
                 text=True,
                 capture_output=True,
                 env=env,
@@ -194,7 +194,7 @@ class ScriptEntryPointTests(unittest.TestCase):
             self.assertEqual(delete_res.returncode, 0, delete_res.stderr)
 
             list_after_delete = subprocess.run(
-                [sys.executable, str(tmpdir / "read_llm_file.py"), "--list", "scratch"],
+                [sys.executable, str(tmpdir / "_read_llm_file.py"), "--list", "scratch"],
                 text=True,
                 capture_output=True,
                 env=env,
@@ -204,7 +204,7 @@ class ScriptEntryPointTests(unittest.TestCase):
             self.assertNotIn("roundtrip.txt", list_after_delete.stdout.splitlines())
 
             missing_read = subprocess.run(
-                [sys.executable, str(tmpdir / "read_llm_file.py"), relpath],
+                [sys.executable, str(tmpdir / "_read_llm_file.py"), relpath],
                 text=True,
                 capture_output=True,
                 env=env,
@@ -220,10 +220,10 @@ class ScriptEntryPointTests(unittest.TestCase):
             store = tmpdir / "store"
             store.mkdir()
 
-            for name in ("cp_llm.py", "ls_llm.py", "rm_llm.py"):
+            for name in ("_cp_llm.py", "_ls_llm.py", "_rm_llm.py"):
                 shutil.copy2(REPO_SCRIPTS / name, tmpdir / name)
 
-            (tmpdir / "cloud_files.py").write_text(STUB_CLOUD_FILES, encoding="utf-8")
+            (tmpdir / "_drive_gateway.py").write_text(STUB_CLOUD_FILES, encoding="utf-8")
 
             env = os.environ.copy()
             env["TEST_STORE"] = str(store)
@@ -233,7 +233,7 @@ class ScriptEntryPointTests(unittest.TestCase):
             local_dst = tmpdir / "downloaded.txt"
 
             upload_res = subprocess.run(
-                [sys.executable, str(tmpdir / "cp_llm.py"), str(local_src), "llm:scratch/roundtrip.txt"],
+                [sys.executable, str(tmpdir / "_cp_llm.py"), str(local_src), "llm:scratch/roundtrip.txt"],
                 text=True,
                 capture_output=True,
                 env=env,
@@ -242,7 +242,7 @@ class ScriptEntryPointTests(unittest.TestCase):
             self.assertEqual(upload_res.returncode, 0, upload_res.stderr)
 
             list_res = subprocess.run(
-                [sys.executable, str(tmpdir / "ls_llm.py"), "llm:scratch/*"],
+                [sys.executable, str(tmpdir / "_ls_llm.py"), "llm:scratch/*"],
                 text=True,
                 capture_output=True,
                 env=env,
@@ -252,7 +252,7 @@ class ScriptEntryPointTests(unittest.TestCase):
             self.assertIn("scratch/roundtrip.txt", list_res.stdout.splitlines())
 
             download_res = subprocess.run(
-                [sys.executable, str(tmpdir / "cp_llm.py"), "llm:scratch/roundtrip.txt", str(local_dst)],
+                [sys.executable, str(tmpdir / "_cp_llm.py"), "llm:scratch/roundtrip.txt", str(local_dst)],
                 text=True,
                 capture_output=True,
                 env=env,
@@ -262,7 +262,7 @@ class ScriptEntryPointTests(unittest.TestCase):
             self.assertEqual(local_dst.read_text(encoding="utf-8"), "roundtrip\n")
 
             delete_res = subprocess.run(
-                [sys.executable, str(tmpdir / "rm_llm.py"), "llm:scratch/*"],
+                [sys.executable, str(tmpdir / "_rm_llm.py"), "llm:scratch/*"],
                 text=True,
                 capture_output=True,
                 env=env,
@@ -271,7 +271,7 @@ class ScriptEntryPointTests(unittest.TestCase):
             self.assertEqual(delete_res.returncode, 0, delete_res.stderr)
 
             post_list = subprocess.run(
-                [sys.executable, str(tmpdir / "ls_llm.py"), "llm:scratch"],
+                [sys.executable, str(tmpdir / "_ls_llm.py"), "llm:scratch"],
                 text=True,
                 capture_output=True,
                 env=env,

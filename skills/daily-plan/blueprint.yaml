@@ -31,11 +31,11 @@ depends_on:
 
 suggested_permissions:
   bash:
-    - command: ["python3", "scripts/orchestrate.py"]
+    - command: ["python3", "_rtx/_plan_orchestrate.py"]
       reason: "Main orchestration script for plan generation via dispatcher."
-    - command: ["python3", "scripts/render_plan.py"]
+    - command: ["python3", "_rtx/_render_plan.py"]
       reason: "Plan rendering helper for display formatting."
-    - command: ["python3", "scripts/mutate_plan.py"]
+    - command: ["python3", "_rtx/_state_patch.py"]
       reason: "Apply plan-local or master-list-backed mutations and show the refreshed plan."
   network: []
 
@@ -50,88 +50,91 @@ skill_interface:
     - Writes plan file to cloud storage.
     - May update todo list via list-manager.
 
-script_interfaces:
-  # Orchestration entry point: coordinates all dependencies via dispatcher
-  # to generate and persist the daily plan without LLM involvement.
-  orchestrate:
-    id: orchestrate
-    description: "Generate today's plan (or show the existing one, refreshing its Todo/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists."
-    usage: "[--forced]"
-    cwd: skill_root
-    command: ["python3", "scripts/orchestrate.py"]
-    dependencies:
+interfaces:
+  machine:
+    orchestrate:
+      description: Generate today's plan (or show the existing one, refreshing its Todo/Triage blocks from current list state).
+        Pass --forced to regenerate even if a plan already exists.
+      usage: '[--forced]'
+      allow_all_skills: false
+      patterns:
+      - min_positionals: 0
+        max_positionals: 0
+        allow_stdin: false
+      - min_positionals: 0
+        max_positionals: 0
+        allow_stdin: false
+        required_flags:
+        - --forced
+        allowed_flags:
+        - --forced
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_plan_orchestrate.py
+      dependencies:
       - kind: python
         name: PyYAML
-        reason: "Reads and writes YAML plan/list data through plan_runtime."
-    default:
-      patterns:
-        - min_positionals: 0
-          max_positionals: 0
-          allow_stdin: false
-        - min_positionals: 0
-          max_positionals: 0
-          allow_stdin: false
-          required_flags: ["--forced"]
-          allowed_flags: ["--forced"]
+        reason: Reads and writes YAML plan/list data through plan_runtime.
+    plan-storage:
+      description: Read, write, check existence of, or delete a plan file in cloud storage by date.
+      usage: read|write|exists|delete <date>
       allow_all_skills: false
-
-  plan-storage:
-    id: plan-storage
-    description: "Read, write, check existence of, or delete a plan file in cloud storage by date."
-    usage: "read|write|exists|delete <date>"
-    cwd: skill_root
-    command: ["scripts/plans.sh"]
-    dependencies:
+      patterns:
+      - name: read
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+      - name: write
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: true
+      - name: exists
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+      - name: delete
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+      runtime:
+        kind: command
+        argv:
+        - _rtx/_plan_storage.sh
+      dependencies:
       - kind: binary
         name: rclone
-        reason: "Reads and writes plan files in the configured GDrive remote."
-    default:
-      patterns:
-        - name: "read"
-          min_positionals: 2
-          max_positionals: 2
-          allow_stdin: false
-        - name: "write"
-          min_positionals: 2
-          max_positionals: 2
-          allow_stdin: true
-        - name: "exists"
-          min_positionals: 2
-          max_positionals: 2
-          allow_stdin: false
-        - name: "delete"
-          min_positionals: 2
-          max_positionals: 2
-          allow_stdin: false
+        reason: Reads and writes plan files in the configured GDrive remote.
+    render-plan:
+      description: Extract or reassemble sections of a plan file for rendering.
+      usage: <extract|reassemble> <plan-file> <dir>
       allow_all_skills: false
-
-  render-plan:
-    id: render-plan
-    description: "Extract or reassemble sections of a plan file for rendering."
-    usage: "<extract|reassemble> <plan-file> <dir>"
-    cwd: skill_root
-    command: ["python3", "scripts/render_plan.py"]
-    dependencies: []
-    default:
       patterns:
-        - min_positionals: 0
-          allow_extra_positionals: true
-          allow_stdin: true
+      - min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_render_plan.py
+      dependencies: []
+    mutate-plan:
+      description: Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to today's plan and display
+        the refreshed result.
+      usage: '{hide,show,keep,remove,mark-done,reject,set-deadline,add} ...'
       allow_all_skills: false
-
-  mutate-plan:
-    id: mutate-plan
-    description: "Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to today's plan and display the refreshed result."
-    usage: "{hide,show,keep,remove,mark-done,reject,set-deadline,add} ..."
-    cwd: skill_root
-    command: ["python3", "scripts/mutate_plan.py"]
-    dependencies:
+      patterns:
+      - min_positionals: 1
+        allow_extra_positionals: true
+        allow_stdin: false
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_state_patch.py
+      dependencies:
       - kind: python
         name: PyYAML
-        reason: "Reads and writes YAML plan/list data through plan_runtime."
-    default:
-      patterns:
-        - min_positionals: 1
-          allow_extra_positionals: true
-          allow_stdin: false
-      allow_all_skills: false
+        reason: Reads and writes YAML plan/list data through plan_runtime.

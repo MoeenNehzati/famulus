@@ -4,7 +4,7 @@
     "bib-audit": {
       "interfaces": {
         "scripts-bib-similarity": {
-          "id": "scripts-bib-similarity",
+          "id": "bib-audit.machine.scripts-bib-similarity",
           "dependencies": [
             {
               "kind": "python",
@@ -14,7 +14,7 @@
           ]
         },
         "scripts-bib-validate-bibtex": {
-          "id": "scripts-bib-validate-bibtex",
+          "id": "bib-audit.machine.scripts-bib-validate-bibtex",
           "dependencies": [
             {
               "kind": "python",
@@ -28,39 +28,39 @@
     "cloud-files": {
       "interfaces": {
         "ensure-oauth": {
-          "id": "ensure-oauth",
+          "id": "cloud-files.machine.ensure-oauth",
           "dependencies": []
         },
         "lists-delete": {
-          "id": "lists-delete",
+          "id": "cloud-files.machine.lists-delete",
           "dependencies": []
         },
         "lists-read": {
-          "id": "lists-read",
+          "id": "cloud-files.machine.lists-read",
           "dependencies": []
         },
         "lists-write": {
-          "id": "lists-write",
+          "id": "cloud-files.machine.lists-write",
           "dependencies": []
         },
         "plans-delete": {
-          "id": "plans-delete",
+          "id": "cloud-files.machine.plans-delete",
           "dependencies": []
         },
         "plans-read": {
-          "id": "plans-read",
+          "id": "cloud-files.machine.plans-read",
           "dependencies": []
         },
         "plans-write": {
-          "id": "plans-write",
+          "id": "cloud-files.machine.plans-write",
           "dependencies": []
         },
         "setup-oauth": {
-          "id": "setup-oauth",
+          "id": "cloud-files.machine.setup-oauth",
           "dependencies": []
         },
         "write-config": {
-          "id": "write-config",
+          "id": "cloud-files.machine.write-config",
           "dependencies": []
         }
       }
@@ -68,7 +68,7 @@
     "daily-plan": {
       "interfaces": {
         "mutate-plan": {
-          "id": "mutate-plan",
+          "id": "daily-plan.machine.mutate-plan",
           "dependencies": [
             {
               "kind": "python",
@@ -78,7 +78,7 @@
           ]
         },
         "orchestrate": {
-          "id": "orchestrate",
+          "id": "daily-plan.machine.orchestrate",
           "dependencies": [
             {
               "kind": "python",
@@ -88,7 +88,7 @@
           ]
         },
         "plan-storage": {
-          "id": "plan-storage",
+          "id": "daily-plan.machine.plan-storage",
           "dependencies": [
             {
               "kind": "binary",
@@ -98,7 +98,7 @@
           ]
         },
         "render-plan": {
-          "id": "render-plan",
+          "id": "daily-plan.machine.render-plan",
           "dependencies": []
         }
       }
@@ -106,15 +106,15 @@
     "email-client": {
       "interfaces": {
         "accounts-add": {
-          "id": "accounts-add",
+          "id": "email-client.machine.accounts-add",
           "dependencies": []
         },
         "accounts-list": {
-          "id": "accounts-list",
+          "id": "email-client.machine.accounts-list",
           "dependencies": []
         },
         "accounts-remove": {
-          "id": "accounts-remove",
+          "id": "email-client.machine.accounts-remove",
           "dependencies": [
             {
               "kind": "binary",
@@ -124,7 +124,7 @@
           ]
         },
         "accounts-set-password": {
-          "id": "accounts-set-password",
+          "id": "email-client.machine.accounts-set-password",
           "dependencies": [
             {
               "kind": "binary",
@@ -134,11 +134,11 @@
           ]
         },
         "accounts-update": {
-          "id": "accounts-update",
+          "id": "email-client.machine.accounts-update",
           "dependencies": []
         },
         "mail-attachments": {
-          "id": "mail-attachments",
+          "id": "email-client.machine.mail-attachments",
           "dependencies": [
             {
               "kind": "binary",
@@ -148,7 +148,7 @@
           ]
         },
         "mail-folders": {
-          "id": "mail-folders",
+          "id": "email-client.machine.mail-folders",
           "dependencies": [
             {
               "kind": "binary",
@@ -158,7 +158,7 @@
           ]
         },
         "mail-list": {
-          "id": "mail-list",
+          "id": "email-client.machine.mail-list",
           "dependencies": [
             {
               "kind": "binary",
@@ -168,7 +168,7 @@
           ]
         },
         "mail-read": {
-          "id": "mail-read",
+          "id": "email-client.machine.mail-read",
           "dependencies": [
             {
               "kind": "binary",
@@ -178,7 +178,7 @@
           ]
         },
         "mail-save-attachments": {
-          "id": "mail-save-attachments",
+          "id": "email-client.machine.mail-save-attachments",
           "dependencies": [
             {
               "kind": "binary",
@@ -188,7 +188,7 @@
           ]
         },
         "send-email": {
-          "id": "send-email",
+          "id": "email-client.machine.send-email",
           "dependencies": [
             {
               "kind": "binary",
@@ -217,27 +217,27 @@
     "email-triage": {
       "interfaces": {
         "scripts-filter-envelopes": {
-          "id": "scripts-filter-envelopes",
+          "id": "email-triage.machine.scripts-filter-envelopes",
           "dependencies": []
         },
         "scripts-get-cutoff": {
-          "id": "scripts-get-cutoff",
+          "id": "email-triage.machine.scripts-get-cutoff",
           "dependencies": []
         },
         "scripts-log-decision": {
-          "id": "scripts-log-decision",
+          "id": "email-triage.machine.scripts-log-decision",
           "dependencies": []
         },
         "scripts-mark-failure": {
-          "id": "scripts-mark-failure",
+          "id": "email-triage.machine.scripts-mark-failure",
           "dependencies": []
         },
         "scripts-prune-log": {
-          "id": "scripts-prune-log",
+          "id": "email-triage.machine.scripts-prune-log",
           "dependencies": []
         },
         "scripts-update-watermark": {
-          "id": "scripts-update-watermark",
+          "id": "email-triage.machine.scripts-update-watermark",
           "dependencies": []
         }
       }
@@ -257,15 +257,15 @@
     "g-calendar": {
       "interfaces": {
         "ensure-oauth": {
-          "id": "ensure-oauth",
+          "id": "g-calendar.machine.ensure-oauth",
           "dependencies": []
         },
         "scripts-gcal": {
-          "id": "scripts-gcal",
+          "id": "g-calendar.machine.scripts-gcal",
           "dependencies": []
         },
         "setup-oauth": {
-          "id": "setup-oauth",
+          "id": "g-calendar.machine.setup-oauth",
           "dependencies": []
         }
       }
@@ -273,7 +273,7 @@
     "get-weather": {
       "interfaces": {
         "scripts-weather": {
-          "id": "scripts-weather",
+          "id": "get-weather.machine.scripts-weather",
           "dependencies": [
             {
               "kind": "binary",
@@ -292,7 +292,7 @@
     "initialize-tdd": {
       "interfaces": {
         "setup-compat-aliases": {
-          "id": "setup-compat-aliases",
+          "id": "initialize-tdd.machine.setup-compat-aliases",
           "dependencies": []
         }
       }
@@ -300,7 +300,7 @@
     "install-assistant-tools": {
       "interfaces": {
         "scripts-dev-link": {
-          "id": "scripts-dev-link",
+          "id": "install-assistant-tools.machine.scripts-dev-link",
           "dependencies": [
             {
               "kind": "binary",
@@ -310,7 +310,7 @@
           ]
         },
         "scripts-install": {
-          "id": "scripts-install",
+          "id": "install-assistant-tools.machine.scripts-install",
           "dependencies": [
             {
               "kind": "binary",
@@ -320,11 +320,11 @@
           ]
         },
         "scripts-launchers": {
-          "id": "scripts-launchers",
+          "id": "install-assistant-tools.machine.scripts-launchers",
           "dependencies": []
         },
         "scripts-scaffold": {
-          "id": "scripts-scaffold",
+          "id": "install-assistant-tools.machine.scripts-scaffold",
           "dependencies": []
         }
       }
@@ -332,7 +332,7 @@
     "list-manager": {
       "interfaces": {
         "beautify-list": {
-          "id": "beautify-list",
+          "id": "list-manager.machine.beautify-list",
           "dependencies": [
             {
               "kind": "python",
@@ -347,7 +347,7 @@
           ]
         },
         "cloud-create-entry": {
-          "id": "cloud-create-entry",
+          "id": "list-manager.machine.cloud-create-entry",
           "dependencies": [
             {
               "kind": "python",
@@ -362,7 +362,7 @@
           ]
         },
         "cloud-delete": {
-          "id": "cloud-delete",
+          "id": "list-manager.machine.cloud-delete",
           "dependencies": [
             {
               "kind": "python",
@@ -372,7 +372,7 @@
           ]
         },
         "cloud-init": {
-          "id": "cloud-init",
+          "id": "list-manager.machine.cloud-init",
           "dependencies": [
             {
               "kind": "python",
@@ -387,7 +387,7 @@
           ]
         },
         "cloud-read": {
-          "id": "cloud-read",
+          "id": "list-manager.machine.cloud-read",
           "dependencies": [
             {
               "kind": "python",
@@ -397,7 +397,7 @@
           ]
         },
         "cloud-read-beautify": {
-          "id": "cloud-read-beautify",
+          "id": "list-manager.machine.cloud-read-beautify",
           "dependencies": [
             {
               "kind": "python",
@@ -412,7 +412,7 @@
           ]
         },
         "cloud-update": {
-          "id": "cloud-update",
+          "id": "list-manager.machine.cloud-update",
           "dependencies": [
             {
               "kind": "python",
@@ -427,7 +427,7 @@
           ]
         },
         "create-entry": {
-          "id": "create-entry",
+          "id": "list-manager.machine.create-entry",
           "dependencies": [
             {
               "kind": "python",
@@ -442,7 +442,7 @@
           ]
         },
         "describe-schema": {
-          "id": "describe-schema",
+          "id": "list-manager.machine.describe-schema",
           "dependencies": [
             {
               "kind": "python",
@@ -452,7 +452,7 @@
           ]
         },
         "generate-id": {
-          "id": "generate-id",
+          "id": "list-manager.machine.generate-id",
           "dependencies": [
             {
               "kind": "python",
@@ -462,7 +462,7 @@
           ]
         },
         "init-list": {
-          "id": "init-list",
+          "id": "list-manager.machine.init-list",
           "dependencies": [
             {
               "kind": "python",
@@ -477,7 +477,7 @@
           ]
         },
         "migrate-markdown": {
-          "id": "migrate-markdown",
+          "id": "list-manager.machine.migrate-markdown",
           "dependencies": [
             {
               "kind": "python",
@@ -497,7 +497,7 @@
           ]
         },
         "read-beautify": {
-          "id": "read-beautify",
+          "id": "list-manager.machine.read-beautify",
           "dependencies": [
             {
               "kind": "python",
@@ -512,7 +512,7 @@
           ]
         },
         "read-list": {
-          "id": "read-list",
+          "id": "list-manager.machine.read-list",
           "dependencies": [
             {
               "kind": "python",
@@ -522,7 +522,7 @@
           ]
         },
         "update-list": {
-          "id": "update-list",
+          "id": "list-manager.machine.update-list",
           "dependencies": [
             {
               "kind": "python",
@@ -541,15 +541,15 @@
     "math-dependency-graph": {
       "interfaces": {
         "scripts-build-math-dependency-graph": {
-          "id": "scripts-build-math-dependency-graph",
+          "id": "math-dependency-graph.machine.scripts-build-math-dependency-graph",
           "dependencies": []
         },
         "scripts-extract-mathjax-macros": {
-          "id": "scripts-extract-mathjax-macros",
+          "id": "math-dependency-graph.machine.scripts-extract-mathjax-macros",
           "dependencies": []
         },
         "scripts-serve-graph": {
-          "id": "scripts-serve-graph",
+          "id": "math-dependency-graph.machine.scripts-serve-graph",
           "dependencies": []
         }
       }
@@ -557,7 +557,7 @@
     "pdf-to-markdown": {
       "interfaces": {
         "scripts-check-marker-models": {
-          "id": "scripts-check-marker-models",
+          "id": "pdf-to-markdown.machine.scripts-check-marker-models",
           "dependencies": [
             {
               "kind": "python",
@@ -567,7 +567,7 @@
           ]
         },
         "scripts-fetch-arxiv-source": {
-          "id": "scripts-fetch-arxiv-source",
+          "id": "pdf-to-markdown.machine.scripts-fetch-arxiv-source",
           "dependencies": [
             {
               "kind": "binary",
@@ -591,7 +591,7 @@
     "recurring-tasks": {
       "interfaces": {
         "scripts-disable": {
-          "id": "scripts-disable",
+          "id": "recurring-tasks.machine.scripts-disable",
           "dependencies": [
             {
               "kind": "python",
@@ -606,7 +606,7 @@
           ]
         },
         "scripts-enable": {
-          "id": "scripts-enable",
+          "id": "recurring-tasks.machine.scripts-enable",
           "dependencies": [
             {
               "kind": "python",
@@ -621,7 +621,7 @@
           ]
         },
         "scripts-ensure-agent-env": {
-          "id": "scripts-ensure-agent-env",
+          "id": "recurring-tasks.machine.scripts-ensure-agent-env",
           "dependencies": [
             {
               "kind": "binary",
@@ -630,12 +630,8 @@
             }
           ]
         },
-        "scripts-env": {
-          "id": "scripts-env",
-          "dependencies": []
-        },
         "scripts-healthcheck": {
-          "id": "scripts-healthcheck",
+          "id": "recurring-tasks.machine.scripts-healthcheck",
           "dependencies": [
             {
               "kind": "python",
@@ -655,15 +651,15 @@
           ]
         },
         "scripts-invoke-agent": {
-          "id": "scripts-invoke-agent",
+          "id": "recurring-tasks.machine.scripts-invoke-agent",
           "dependencies": []
         },
         "scripts-job-utils": {
-          "id": "scripts-job-utils",
+          "id": "recurring-tasks.machine.scripts-job-utils",
           "dependencies": []
         },
         "scripts-setup": {
-          "id": "scripts-setup",
+          "id": "recurring-tasks.machine.scripts-setup",
           "dependencies": [
             {
               "kind": "python",
@@ -683,7 +679,7 @@
           ]
         },
         "scripts-status": {
-          "id": "scripts-status",
+          "id": "recurring-tasks.machine.scripts-status",
           "dependencies": [
             {
               "kind": "python",
@@ -698,7 +694,7 @@
           ]
         },
         "scripts-sync": {
-          "id": "scripts-sync",
+          "id": "recurring-tasks.machine.scripts-sync",
           "dependencies": [
             {
               "kind": "python",
@@ -713,7 +709,7 @@
           ]
         },
         "scripts-test": {
-          "id": "scripts-test",
+          "id": "recurring-tasks.machine.scripts-test",
           "dependencies": [
             {
               "kind": "python",
@@ -728,7 +724,7 @@
           ]
         },
         "scripts-view-logs": {
-          "id": "scripts-view-logs",
+          "id": "recurring-tasks.machine.scripts-view-logs",
           "dependencies": [
             {
               "kind": "python",

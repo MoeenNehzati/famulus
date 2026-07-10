@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 SKILL_DIR = Path(__file__).parent.parent
-SCRIPT = SKILL_DIR / "scripts" / "manage_job.py"
+SCRIPT = SKILL_DIR / "_rtx" / "_job_control.py"
 
 
 def _load():
@@ -121,7 +121,7 @@ def test_sync_units_invokes_sync_units_script():
         mod.sync_units()
         cmd = run.call_args[0][0]
         assert cmd[0] == mod.sys.executable
-        assert cmd[1] == str(mod.SKILL_DIR / "scripts" / "sync_units.py")
+        assert cmd[1] == str(mod.SKILL_DIR / "_rtx" / "_unit_writer.py")
         assert "--jobs-file" not in cmd
     print("PASS: sync_units() with no override calls sync_units.py plainly")
 

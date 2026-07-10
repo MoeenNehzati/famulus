@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Behavior tests for find-handoff-candidates/scripts/scan.py.
+"""Behavior tests for find-handoff-candidates/_rtx/_handoff_scan.py.
 
 Uses a FakeParser implementing the same interface as the real per-host
 parsers (id, opaque_field, default_threshold, list_session_files,
@@ -26,7 +26,7 @@ def _load():
     _clear_scripts_modules()
     sys.path.insert(0, str(SKILL_DIR))
     try:
-        return importlib.import_module("scripts.scan")
+        return importlib.import_module("_rtx._handoff_scan")
     finally:
         sys.path.pop(0)
 

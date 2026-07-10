@@ -40,7 +40,7 @@ Identify content that is repeated across multiple skills or that is reference ma
 **Risk:** Low, but test the `@` include.
 
 ### Extract Script
-Move any executable logic from SKILL.md into a new file under `scripts/`. Update SKILL.md to describe when to call the script and how to interpret its output. Add the script path to `permissions.json`.
+Move any executable logic from SKILL.md into a new private runtime file under `_rtx/`. Update SKILL.md to describe the public interface and how to interpret its output. Add the interface to `blueprint.yaml` / generated permissions as appropriate.
 **Preserve:** The script must implement exactly the same logic that was inline. SKILL.md instructions for invoking it must produce the same result.
 **Risk:** Medium — logic moves, easy to introduce a subtle change.
 
@@ -66,7 +66,7 @@ Identify a coherent sub-responsibility within the skill that:
 Steps:
 1. Write a characterization of the sub-responsibility (inputs, outputs, behavior).
 2. Create the new skill directory and SKILL.md.
-3. Move the relevant content (SKILL.md sections + scripts) to the new skill.
+3. Move the relevant content (SKILL.md sections + private runtime files) to the new skill.
 4. In the original skill, replace the moved content with a skill invocation.
 5. Verify aggregate behavior is unchanged.
 
@@ -78,9 +78,9 @@ Split a monolithic script that handles multiple unrelated responsibilities into 
 
 Steps:
 1. Identify the distinct responsibilities in the script.
-2. Create one new script per responsibility under `scripts/`.
-3. Update SKILL.md to invoke them in the same order as the original script.
-4. Add new scripts to `permissions.json`.
+2. Create one new private runtime file per responsibility under `_rtx/`.
+3. Update SKILL.md to invoke the corresponding interfaces in the same order as the original behavior.
+4. Add new interfaces to `blueprint.yaml` / generated permissions as appropriate.
 5. Delete the original script once all responsibilities are covered.
 
 **Preserve:** Each responsibility must produce the same output as before. Run the original first, record outputs, then verify the decomposed scripts match.
@@ -98,12 +98,12 @@ Steps:
 **Risk:** High — requires knowing all callers.
 
 ### Depend on Interface
-If a skill calls another skill's scripts directly, replace the raw script call with either a proper skill invocation or a dispatcher call to the dependency's exported interface.
+If a skill calls another skill's private runtime files directly, replace the raw file call with either a proper skill invocation or a dispatcher call to the dependency's exported interface.
 
 Steps:
 1. Identify the raw script access and which skill owns it.
 2. Understand the owning skill's exported interface and which invocation mode matches the current use.
-3. Replace the raw script call in SKILL.md or scripts/ with either a skill invocation or a dispatcher call to the exported interface.
+3. Replace the raw runtime-file call in SKILL.md or `_rtx/` with either a skill invocation or a dispatcher call to the exported interface.
 4. Verify output is equivalent.
 
 **Preserve:** Output and side effects.

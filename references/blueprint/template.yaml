@@ -117,7 +117,7 @@ interfaces:
       # user-facing generated docs.
       runtime:
         kind: python_module
-        module: scripts.read_data
+        module: _rtx._read_data
       dependencies:
         - kind: python
           name: PyYAML
@@ -149,7 +149,7 @@ interfaces:
           notes: "Stdin mode: reads update data from stdin."
       runtime:
         kind: python_module
-        module: scripts.update_data
+        module: _rtx._update_data
       dependencies:
         - kind: python
           name: jsonschema
@@ -163,7 +163,7 @@ interfaces:
       allowed_callers: []
       runtime:
         kind: python_module
-        module: scripts.internal_worker
+        module: _rtx._internal_worker
       dependencies: []
 
     # ==========================================================================
@@ -181,7 +181,7 @@ interfaces:
           notes: "Only paths under special/ are accepted."
       runtime:
         kind: python_module
-        module: scripts.special_data
+        module: _rtx._special_data
       dependencies: []
 
   llm:
@@ -220,7 +220,7 @@ interfaces:
 # 1. python_module
 #    - module: required dotted module name relative to the skill package
 #    - executes as a real module in a fresh subprocess
-#    - supports normal relative imports inside scripts/
+#    - supports normal relative imports inside _rtx/
 #
 # 2. command
 #    - argv: required explicit argv list for non-Python tools
@@ -301,10 +301,10 @@ interfaces:
 # 2. Keep public interface documentation (`description`, `usage`, `notes`)
 #    separate from private runtime metadata (`runtime`).
 #
-# 3. Use relative imports for same-skill Python code inside scripts/.
+# 3. Use relative imports for same-skill Python code inside _rtx/.
 #
 # 4. Put truly shared first-party Python code under src/officina/, not in
-#    another skill's scripts/ directory.
+#    another skill's runtime directory.
 #
-# 5. Prefer `python_module` runtime for Python skill code so nested packages and
-#    relative imports work naturally.
+# 5. Prefer `python_module` runtime for Python skill code so relative imports
+#    between same-skill runtime modules work naturally.

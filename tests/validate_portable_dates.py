@@ -24,7 +24,7 @@ def test_explicit_python_date_formatting_passes_for_shared_helper(tmp_path: Path
 
 
 def test_local_explicit_python_date_formatting_passes(tmp_path: Path) -> None:
-    script = tmp_path / "skills" / "daily-plan" / "scripts" / "plan_runtime.py"
+    script = tmp_path / "skills" / "daily-plan" / "_rtx" / "_day_model.py"
     script.parent.mkdir(parents=True)
     script.write_text(
         "def format_plan_date_key(date_value):\n"
@@ -36,7 +36,7 @@ def test_local_explicit_python_date_formatting_passes(tmp_path: Path) -> None:
 
 def test_gnu_strftime_padding_modifier_is_rejected_even_when_skill_opts_out(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "daily-plan"
-    script = skill / "scripts" / "plan_runtime.py"
+    script = skill / "_rtx" / "_day_model.py"
     script.parent.mkdir(parents=True)
     (skill / "blueprint.yaml").write_text("cross_platform: false\n", encoding="utf-8")
     script.write_text(
@@ -53,7 +53,7 @@ def test_gnu_strftime_padding_modifier_is_rejected_even_when_skill_opts_out(tmp_
 
 
 def test_windows_strftime_padding_modifier_is_rejected(tmp_path: Path) -> None:
-    script = tmp_path / "skills" / "my-skill" / "scripts" / "run.py"
+    script = tmp_path / "skills" / "my-skill" / "_rtx" / "run.py"
     script.parent.mkdir(parents=True)
     script.write_text(
         "from datetime import datetime\n"

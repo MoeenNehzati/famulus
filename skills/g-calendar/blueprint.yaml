@@ -9,11 +9,11 @@ depends_on: {}
 
 suggested_permissions:
   bash:
-    - command: ["scripts/gcal.sh"]
+    - command: ["_rtx/_gcal_client.sh"]
       reason: "Calendar query tool."
-    - command: ["python3", "scripts/setup_oauth.py"]
+    - command: ["python3", "_rtx/_oauth_bootstrap.py"]
       reason: "OAuth setup tool."
-    - command: ["python3", "scripts/ensure_oauth.py"]
+    - command: ["python3", "_rtx/_ensure_oauth.py"]
       reason: "Check OAuth status and guide setup (relocated from install-assistant-tools)."
   network: []
 
@@ -25,52 +25,51 @@ skill_interface:
   side_effects:
     - May interact with Google Calendar API.
 
-script_interfaces:
-  scripts-gcal:
-    id: scripts-gcal
-    description: "Query or modify Google Calendar events via the gcal.sh CLI (agenda, search, create, update, delete, etc.)."
-    usage: "<command> [options]"
-    cwd: skill_root
-    command: ["scripts/gcal.sh"]
-    dependencies: []
-    default:
-      patterns:
-        - min_positionals: 0
-          allow_extra_positionals: true
-          allow_stdin: false
-      # Only daily-plan can access g-calendar functionality
+interfaces:
+  machine:
+    scripts-gcal:
+      description: Query or modify Google Calendar events via the gcal.sh CLI (agenda, search, create, update, delete, etc.).
+      usage: <command> [options]
       allow_all_skills: false
       allowed_callers:
-        - daily-plan
-
-  setup-oauth:
-    id: setup-oauth
-    description: "Run the OAuth setup flow to generate or refresh Google Calendar credentials."
-    usage: "[--from-json /path/to/client.json]"
-    cwd: skill_root
-    command: ["python3", "scripts/setup_oauth.py"]
-    dependencies: []
-    default:
+      - daily-plan
       patterns:
-        - min_positionals: 0
-          max_positionals: 0
-          allow_stdin: false
-          notes: "OAuth setup for Google Calendar access."
-      # Not publicly exported; invoked internally by ensure-oauth (as a
-      # subprocess, not a dispatcher call) and directly by the owning skill.
+      - min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+      runtime:
+        kind: command
+        argv:
+        - _rtx/_gcal_client.sh
+      dependencies: []
+    setup-oauth:
+      description: Run the OAuth setup flow to generate or refresh Google Calendar credentials.
+      usage: '[--from-json /path/to/client.json]'
       allow_all_skills: false
-
-  ensure-oauth:
-    id: ensure-oauth
-    description: "Check g-calendar OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill g-calendar) as part of connecting remotes."
-    usage: "--home <dir> [--dry-run]"
-    cwd: skill_root
-    command: ["python3", "scripts/ensure_oauth.py"]
-    dependencies: []
-    default:
       patterns:
-        - min_positionals: 0
-          allow_extra_positionals: true
-          allow_stdin: false
-          notes: "Check OAuth status and guide setup for g-calendar."
+      - min_positionals: 0
+        max_positionals: 0
+        allow_stdin: false
+        notes: OAuth setup for Google Calendar access.
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_oauth_bootstrap.py
+      dependencies: []
+    ensure-oauth:
+      description: "Check g-calendar OAuth status; print setup guidance or launch browser authorization as needed. Relocated\
+        \ from install-assistant-tools \u2014 invoke directly (caller-skill g-calendar) as part of connecting remotes."
+      usage: --home <dir> [--dry-run]
       allow_all_skills: false
+      patterns:
+      - min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: Check OAuth status and guide setup for g-calendar.
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_ensure_oauth.py
+      dependencies: []

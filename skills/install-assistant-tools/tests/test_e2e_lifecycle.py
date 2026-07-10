@@ -24,7 +24,7 @@ import pytest
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
-sys.path.insert(0, str(SCRIPT_DIR.parent / "scripts"))
+sys.path.insert(0, str(SCRIPT_DIR.parent / "_rtx"))
 
 from install_test_utils import (  # noqa: E402
     REPO_ROOT,
@@ -34,11 +34,11 @@ from install_test_utils import (  # noqa: E402
     run_command,
 )
 
-import dev_link  # noqa: E402
-import launchers  # noqa: E402
-import scaffold  # noqa: E402
+import _config_bridge as dev_link  # noqa: E402
+import _agent_launchers as launchers  # noqa: E402
+import _install_scaffold as scaffold  # noqa: E402
 
-UNINSTALL = SCRIPT_DIR.parent / "scripts" / "uninstall.py"
+UNINSTALL = SCRIPT_DIR.parent / "_rtx" / "_install_uninstall.py"
 
 pytestmark = pytest.mark.skipif(
     not can_create_symlink(), reason="symlink creation unavailable"

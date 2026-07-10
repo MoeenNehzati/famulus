@@ -124,7 +124,7 @@ interfaces:
           notes: "First positional is the input file."
       runtime:
         kind: python_module
-        module: scripts.read_data
+        module: _rtx._read_data
       dependencies: []
 
   llm:
@@ -185,15 +185,13 @@ Each machine interface owns:
 - `runtime`
 - `dependencies`
 
-Machine interfaces are the target executable interface model. Legacy
-`script_interfaces` remain executable during migration and use the same
-dependency declaration shape.
+Machine interfaces are the executable interface model. The legacy
+`script_interfaces` key is no longer accepted by the schema or sync validator.
 
 ### `dependencies`
 
-Required list on every executable interface: new-style machine interfaces and
-legacy `script_interfaces`. Use `[]` when the interface has no non-stdlib
-runtime dependencies.
+Required list on every executable machine interface. Use `[]` when the
+interface has no non-stdlib runtime dependencies.
 
 Each dependency is a factual runtime requirement with:
 
@@ -263,7 +261,7 @@ interfaces:
     scan:
       runtime:
         kind: python_module
-        module: scripts.scan
+        module: _rtx._handoff_scan
       dependencies: []
 ```
 
@@ -278,12 +276,12 @@ Current standard runtime kinds:
 ```yaml
 runtime:
   kind: python_module
-  module: scripts.scan
+  module: _rtx._handoff_scan
 dependencies: []
 ```
 
 Use for Python skill code. The dispatcher runs it as a real module in a fresh
-subprocess, which allows normal relative imports inside `scripts/`.
+subprocess, which allows normal relative imports inside `_rtx/`.
 
 ### `command`
 
@@ -300,10 +298,9 @@ dependencies:
 Use for non-Python tools.
 
 The blueprint sync tool generates `references/blueprint/runtime_dependencies.json`
-from all executable-interface `dependencies` declarations, including legacy
-`script_interfaces` during migration. Installers should use that JSON manifest,
-not PyYAML or direct blueprint parsing, when installing declared runtime
-packages.
+from all `interfaces.machine.<name>.dependencies` declarations. Installers
+should use that JSON manifest, not PyYAML or direct blueprint parsing, when
+installing declared runtime packages.
 
 ---
 
@@ -323,19 +320,20 @@ from officina.dispatcher import dispatch
 Not:
 
 ```python
-from skills.other_skill.scripts.foo import bar
+from skills.other_skill._rtx._foo_bar import bar
 from validators.runner import main
 ```
 
 Rules:
 
-- same-skill imports: relative imports inside `scripts/`
+- same-skill imports: relative imports inside `_rtx/`
 - first-party shared/runtime imports: `officina.*`
 - cross-skill behavior: `dispatch(...)`
 - other repo packages outside `src/officina/` are not part of the import surface
 
-Nested packages under `scripts/` are supported as long as they have
-`__init__.py` files.
+Runtime files currently remain direct children of `_rtx/`. Same-skill helpers
+can still use relative imports between direct `_rtx` modules; nested package
+directories need an explicit validator/policy update before use.
 
 ---
 
@@ -357,7 +355,7 @@ interfaces:
           notes: "First positional is the resource id."
       runtime:
         kind: python_module
-        module: scripts.read_data
+        module: _rtx._read_data
 ```
 
 ### Internal-only interface
@@ -370,7 +368,7 @@ interfaces:
       allowed_callers: []
       runtime:
         kind: python_module
-        module: scripts.internal_worker
+        module: _rtx._internal_worker
 ```
 
 ### Restricted interface
@@ -390,7 +388,7 @@ interfaces:
           notes: "Only list paths under lists/ are allowed."
       runtime:
         kind: python_module
-        module: scripts.read_lists
+        module: _rtx._read_lists
 ```
 
 ### Multiple calling conventions
@@ -414,7 +412,7 @@ interfaces:
           notes: "Caller pipes patch data to stdin."
       runtime:
         kind: python_module
-        module: scripts.update_data
+        module: _rtx._update_data
 ```
 
 ---
@@ -534,8 +532,8 @@ For Python import resolution, keep the repo runtime model in sync with the IDE:
 3. Use relative imports for same-skill code and `officina.*` for shared code.
 4. Use `allow_all_skills: true` sparingly.
 5. Match major versions carefully.
-6. Prefer `python_module` runtime for Python skill code so nested packages and
-   relative imports work naturally.
+6. Prefer `python_module` runtime for Python skill code so relative imports
+   between same-skill runtime modules work naturally.
 
 ---
 

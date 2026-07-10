@@ -19,7 +19,7 @@ Dependencies:
 
 Interface Version: 1
 
-Exported Script Interfaces: none
+Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 When this skill is used, begin with:
 

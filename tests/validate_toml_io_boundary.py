@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from validators.toml_io_boundary import validate  # noqa: E402
 
 
-def _write_runtime_file(tmp_path: Path, content: str, rel: str = "skills/demo/scripts/run.py") -> Path:
+def _write_runtime_file(tmp_path: Path, content: str, rel: str = "skills/demo/_rtx/_run_tool.py") -> Path:
     path = tmp_path / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")

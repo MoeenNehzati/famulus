@@ -8,9 +8,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "_rtx"
 sys.path.insert(0, str(SCRIPT_DIR))
-import cloud_files  # noqa: E402
+import _drive_gateway as cloud_files  # noqa: E402
 
 
 class CloudFilesTests(unittest.TestCase):

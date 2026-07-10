@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-runtime_path = Path(__file__).parent.parent / "scripts" / "plan_runtime.py"
+runtime_path = Path(__file__).parent.parent / "_rtx" / "_day_model.py"
 spec = importlib.util.spec_from_file_location("plan_runtime", runtime_path)
 plan_runtime = importlib.util.module_from_spec(spec)
 assert spec.loader is not None

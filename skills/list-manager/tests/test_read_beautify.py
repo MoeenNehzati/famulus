@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-READ_BEAUTIFY_PY = Path(__file__).parent.parent / "scripts" / "read_beautify.py"
+READ_BEAUTIFY_PY = Path(__file__).parent.parent / "_rtx" / "_render_bridge.py"
 
 
 def run(args: list[str]) -> subprocess.CompletedProcess:

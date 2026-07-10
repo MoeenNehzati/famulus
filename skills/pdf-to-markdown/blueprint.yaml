@@ -1,6 +1,6 @@
 # Canonical contract for pdf-to-markdown.
 # This file was migrated from legacy skill metadata.
-# Tighten the placeholder script interfaces as each script contract becomes clearer.
+# Tighten the placeholder machine interfaces as each runtime contract becomes clearer.
 
 category: system-assistant
 # Bump this major version whenever the exported contract changes in a
@@ -14,9 +14,9 @@ depends_on:
 
 suggested_permissions:
   bash:
-    - command: ["scripts/fetch-arxiv-source.sh"]
+    - command: ["_rtx/_source_fetcher.sh"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["scripts/check-marker-models.sh"]
+    - command: ["_rtx/_marker_probe.sh"]
       reason: "Migrated from legacy permissions.json."
     - command: ["marker_single"]
       reason: "Migrated from legacy permissions.json."
@@ -35,36 +35,37 @@ skill_interface:
   side_effects:
     - "May invoke local scripts or dependencies as described in SKILL.md."
 
-script_interfaces:
-  scripts-check-marker-models:
-    id: scripts-check-marker-models
-    description: "Check whether required Marker/Surya models are downloaded and cached locally."
-    usage: ""
-    cwd: skill_root
-    command: ["scripts/check-marker-models.sh"]
-    dependencies:
+interfaces:
+  machine:
+    scripts-check-marker-models:
+      description: Check whether required Marker/Surya models are downloaded and cached locally.
+      usage: ''
+      patterns:
+      - name: owner
+      runtime:
+        kind: command
+        argv:
+        - _rtx/_marker_probe.sh
+      dependencies:
       - kind: python
         name: marker-pdf
-        reason: "Provides the Surya settings module used to locate Marker model checkpoints."
-    default:
+        reason: Provides the Surya settings module used to locate Marker model checkpoints.
+    scripts-fetch-arxiv-source:
+      description: Download and extract the LaTeX source tarball for a paper from arXiv.
+      usage: <arxiv-id> <output-dir>
       patterns:
-        - name: owner
-  scripts-fetch-arxiv-source:
-    id: scripts-fetch-arxiv-source
-    description: "Download and extract the LaTeX source tarball for a paper from arXiv."
-    usage: "<arxiv-id> <output-dir>"
-    cwd: skill_root
-    command: ["scripts/fetch-arxiv-source.sh"]
-    dependencies:
+      - name: owner
+      runtime:
+        kind: command
+        argv:
+        - _rtx/_source_fetcher.sh
+      dependencies:
       - kind: binary
         name: curl
-        reason: "Downloads arXiv source tarballs."
+        reason: Downloads arXiv source tarballs.
       - kind: binary
         name: file
-        reason: "Detects arXiv HTML responses versus gzip source archives."
+        reason: Detects arXiv HTML responses versus gzip source archives.
       - kind: binary
         name: tar
-        reason: "Extracts downloaded source archives."
-    default:
-      patterns:
-        - name: owner
+        reason: Extracts downloaded source archives.

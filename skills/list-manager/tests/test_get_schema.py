@@ -5,10 +5,10 @@ directly.
 import sys
 from pathlib import Path
 
-SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+SCRIPTS_DIR = Path(__file__).parent.parent / "_rtx"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-import get_schema  # noqa: E402
+import _get_schema as get_schema  # noqa: E402
 
 
 def test_get_schema_whole_returns_properties_and_required():

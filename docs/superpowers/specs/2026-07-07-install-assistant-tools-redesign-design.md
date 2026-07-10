@@ -4,7 +4,7 @@ Status: approved (design phase). Date: 2026-07-07.
 
 ## Problem
 
-The current `install-assistant-tools` installer (`scripts/install.py` →
+The current `install-assistant-tools` installer (`_rtx/_phase_entry.py` →
 `setup_symlinks.py` + `setup_tools.py`) is a single all-or-nothing entry
 point. It bundles unrelated concerns together (dev-mode symlinking, bin
 launcher installation, PATH/env setup, worker directories, git hooks, dev-mode
@@ -43,8 +43,8 @@ or users who want zero agent launchers) have no granular control.
   that can drift. This means `dispatcher` still needs the bin dir on
   `PATH` to be invoked bare, same as any other launcher.
 - Python scripts that need `script_dispatcher` as a library (e.g.
-  `list-manager/scripts/cloud_transport.py`,
-  `daily-plan/scripts/plan_runtime.py`) do a bare
+  `list-manager/_rtx/_cloud_transport.py`,
+  `daily-plan/_rtx/_day_model.py`) do a bare
   `from script_dispatcher import dispatch` with no path manipulation of
   their own. This only works because they run as children of the
   `dispatcher` bash launcher, which exports

@@ -14,17 +14,18 @@ Dependencies: none
 
 Interface Version: 1
 
-Exported Script Interfaces:
-- `scripts-weather`
+Exported Interfaces:
+- `get-weather.machine.scripts-weather`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Script Interfaces:
+Owner-Facing Machine Interfaces:
 
-Use the installed `dispatcher` command for this skill's script interfaces:
+Use the installed `dispatcher` command for this skill's machine interfaces:
 - `scripts-weather` — Fetch weather data for a location and date range, returning hourly forecast JSON.
-  - `dispatcher --caller-skill get-weather get-weather scripts-weather [--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]`
+  - `dispatcher --caller-skill get-weather get-weather.machine.scripts-weather [--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]`
+
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

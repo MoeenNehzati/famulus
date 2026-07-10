@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-ACCOUNTS_PY = Path(__file__).parent.parent / "scripts" / "accounts.py"
+ACCOUNTS_PY = Path(__file__).parent.parent / "_rtx" / "_email_accounts.py"
 
 
 def run(config_dir, *args, input=None):

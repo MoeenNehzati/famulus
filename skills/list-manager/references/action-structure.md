@@ -1,7 +1,7 @@
 # Action Structure (Legacy Markdown Format)
 
 > **This document describes the old Markdown format used before migration to YAML.**
-> It is kept as a reference for `scripts/migrate_md.py`. The current category
+> It is kept as a reference for the legacy-import path. The current category
 > structure is enforced by JSONSchema — see `schemas/lists/todo.json` and
 > `schemas/lists/task-list*.json`.
 

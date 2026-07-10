@@ -8,7 +8,7 @@ The skill system is built around a small set of explicit authored surfaces:
 
 - [`SKILL.md`](../../skills/skill-maker/SKILL.md) for trigger and usage guidance
 - [`blueprint.yaml`](../../skills/skill-maker/blueprint.yaml) for dependencies, interfaces, and invocation constraints
-- `scripts/`, tests, schemas, and references for implementation
+- private runtime files, tests, schemas, and references for implementation
 
 The canonical references for that contract live here:
 
@@ -19,10 +19,10 @@ The canonical references for that contract live here:
 
 ## How Skills Stay in Sync
 
-[`blueprint.yaml`](../../skills/skill-maker/blueprint.yaml) is the canonical machine-readable contract. Generated compatibility artifacts and generated `SKILL.md` blocks are refreshed through [skills/skill-maker/scripts/sync_skill_blueprints.py](../../skills/skill-maker/scripts/sync_skill_blueprints.py):
+[`blueprint.yaml`](../../skills/skill-maker/blueprint.yaml) is the canonical machine-readable contract. Generated compatibility artifacts and generated `SKILL.md` blocks are refreshed through [skills/skill-maker/_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py):
 
 ```bash
-python3 skills/skill-maker/scripts/sync_skill_blueprints.py
+python3 skills/skill-maker/_rtx/_blueprint_syncer.py
 ```
 
 Cross-skill script calls should go through the dispatcher boundary, not direct script reach-through:

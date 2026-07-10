@@ -9,7 +9,7 @@ depends_on: {}
 
 suggested_permissions:
   bash:
-    - command: ["scripts/weather.sh"]
+    - command: ["_rtx/_weather_client.sh"]
       reason: "Weather lookup tool."
   network: []
 
@@ -21,25 +21,25 @@ skill_interface:
   side_effects:
     - May query weather APIs.
 
-script_interfaces:
-  scripts-weather:
-    id: scripts-weather
-    description: "Fetch weather data for a location and date range, returning hourly forecast JSON."
-    usage: "[--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]"
-    cwd: skill_root
-    command: ["scripts/weather.sh"]
-    dependencies:
-      - kind: binary
-        name: curl
-        reason: "Fetches geocoding, IP-location, and forecast API responses."
-      - kind: binary
-        name: jq
-        reason: "Parses and formats JSON API responses."
-    default:
-      patterns:
-        - min_positionals: 0
-          allow_extra_positionals: true
-          allow_stdin: false
-      # Public: anyone can use weather data
+interfaces:
+  machine:
+    scripts-weather:
+      description: Fetch weather data for a location and date range, returning hourly forecast JSON.
+      usage: '[--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]'
       allow_all_skills: true
       allowed_callers: []
+      patterns:
+      - min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+      runtime:
+        kind: command
+        argv:
+        - _rtx/_weather_client.sh
+      dependencies:
+      - kind: binary
+        name: curl
+        reason: Fetches geocoding, IP-location, and forecast API responses.
+      - kind: binary
+        name: jq
+        reason: Parses and formats JSON API responses.

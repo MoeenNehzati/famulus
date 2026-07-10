@@ -19,22 +19,23 @@ Dependencies:
 
 Interface Version: 1
 
-Exported Script Interfaces: none
+Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Script Interfaces:
+Owner-Facing Machine Interfaces:
 
-Use the installed `dispatcher` command for this skill's script interfaces:
+Use the installed `dispatcher` command for this skill's machine interfaces:
 - `mutate-plan` — Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to today's plan and display the refreshed result.
-  - `dispatcher --caller-skill daily-plan daily-plan mutate-plan {hide,show,keep,remove,mark-done,reject,set-deadline,add} ...`
+  - `dispatcher --caller-skill daily-plan daily-plan.machine.mutate-plan {hide,show,keep,remove,mark-done,reject,set-deadline,add} ...`
 - `orchestrate` — Generate today's plan (or show the existing one, refreshing its Todo/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists.
-  - `dispatcher --caller-skill daily-plan daily-plan orchestrate [--forced]`
+  - `dispatcher --caller-skill daily-plan daily-plan.machine.orchestrate [--forced]`
 - `plan-storage` — Read, write, check existence of, or delete a plan file in cloud storage by date.
-  - `dispatcher --caller-skill daily-plan daily-plan plan-storage read|write|exists|delete <date>`
+  - `dispatcher --caller-skill daily-plan daily-plan.machine.plan-storage read|write|exists|delete <date>`
 - `render-plan` — Extract or reassemble sections of a plan file for rendering.
-  - `dispatcher --caller-skill daily-plan daily-plan render-plan <extract|reassemble> <plan-file> <dir>`
+  - `dispatcher --caller-skill daily-plan daily-plan.machine.render-plan <extract|reassemble> <plan-file> <dir>`
+
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, invoke `orchestrate`. To force regeneration of an existing plan, pass `--forced`.
 

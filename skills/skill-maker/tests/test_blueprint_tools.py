@@ -52,7 +52,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         )
 
     def test_blueprints_are_in_sync(self) -> None:
-        result = self.run_cmd("skills/skill-maker/scripts/sync_skill_blueprints.py", "--check")
+        result = self.run_cmd("skills/skill-maker/_rtx/_blueprint_syncer.py", "--check")
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
 
     def test_blueprint_template_exists_and_is_comment_rich(self) -> None:
@@ -73,7 +73,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
     def test_sync_validator_requires_machine_interface_dependencies(self) -> None:
         sync_module = load_module(
             "sync_skill_blueprints_dependency_test",
-            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
         )
         blueprints = {
             "demo-skill": sync_module.SkillBlueprint(
@@ -85,7 +85,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
                     "interfaces": {
                         "machine": {
                             "scan": {
-                                "runtime": {"kind": "python_module", "module": "scripts.scan"},
+                                "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
                             }
                         }
                     },
@@ -100,7 +100,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
     def test_sync_validator_accepts_empty_machine_interface_dependencies(self) -> None:
         sync_module = load_module(
             "sync_skill_blueprints_empty_dependency_test",
-            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
         )
         blueprints = {
             "demo-skill": sync_module.SkillBlueprint(
@@ -112,7 +112,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
                     "interfaces": {
                         "machine": {
                             "scan": {
-                                "runtime": {"kind": "python_module", "module": "scripts.scan"},
+                                "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
                                 "dependencies": [],
                             }
                         }
@@ -125,10 +125,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
-    def test_sync_validator_requires_legacy_script_interface_dependencies(self) -> None:
+    def test_sync_validator_rejects_script_interfaces(self) -> None:
         sync_module = load_module(
-            "sync_skill_blueprints_legacy_dependency_test",
-            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
+            "sync_skill_blueprints_removed_script_interfaces_test",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
         )
         blueprints = {
             "demo-skill": sync_module.SkillBlueprint(
@@ -137,10 +137,11 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 {
                     "category": "workflow-general-assistant",
                     "interface_version": 1,
+                    "interfaces": {"machine": {}},
                     "script_interfaces": {
                         "scan": {
                             "id": "scan",
-                            "command": ["python3", "scripts/scan.py"],
+                            "command": ["python3", "_rtx/_handoff_scan.py"],
                         }
                     },
                 },
@@ -149,12 +150,12 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
         errors = sync_module.validate_blueprints(blueprints)
 
-        self.assertTrue(any("script_interfaces.scan.dependencies" in error for error in errors))
+        self.assertTrue(any("script_interfaces" in error and "removed" in error for error in errors))
 
     def test_sync_validator_rejects_dependency_shell_commands(self) -> None:
         sync_module = load_module(
             "sync_skill_blueprints_bad_dependency_name_test",
-            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
         )
         blueprints = {
             "demo-skill": sync_module.SkillBlueprint(
@@ -188,7 +189,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
     def test_runtime_dependency_manifest_is_generated_from_machine_interfaces(self) -> None:
         sync_module = load_module(
             "sync_skill_blueprints_manifest_test",
-            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
         )
         blueprints = {
             "demo-skill": sync_module.SkillBlueprint(
@@ -200,7 +201,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
                     "interfaces": {
                         "machine": {
                             "scan": {
-                                "runtime": {"kind": "python_module", "module": "scripts.scan"},
+                                "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
                                 "dependencies": [
                                     {
                                         "kind": "python",
@@ -231,48 +232,6 @@ class SkillBlueprintToolTests(unittest.TestCase):
             ],
         )
 
-    def test_runtime_dependency_manifest_includes_legacy_script_interfaces(self) -> None:
-        sync_module = load_module(
-            "sync_skill_blueprints_legacy_manifest_test",
-            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
-        )
-        blueprints = {
-            "demo-skill": sync_module.SkillBlueprint(
-                "demo-skill",
-                Path("skills/demo-skill/blueprint.yaml"),
-                {
-                    "category": "workflow-general-assistant",
-                    "interface_version": 1,
-                    "script_interfaces": {
-                        "scan": {
-                            "id": "scan",
-                            "command": ["python3", "scripts/scan.py"],
-                            "dependencies": [
-                                {
-                                    "kind": "python",
-                                    "name": "PyYAML",
-                                    "reason": "Parses YAML inputs.",
-                                }
-                            ],
-                        }
-                    },
-                },
-            )
-        }
-
-        manifest = sync_module.generated_runtime_dependencies_manifest(blueprints)
-
-        self.assertEqual(manifest["all"], {"python": ["PyYAML"], "binary": []})
-        self.assertEqual(
-            manifest["skills"]["demo-skill"]["interfaces"]["scan"],
-            {
-                "id": "scan",
-                "dependencies": [
-                    {"kind": "python", "name": "PyYAML", "reason": "Parses YAML inputs."}
-                ],
-            },
-        )
-
     def test_boundary_hook_check_passes(self) -> None:
         result = self.run_cmd("skills/skill-maker/validators/boundaries.py")
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
@@ -295,7 +254,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
             payload["command"],
             [
                 "python3",
-                "scripts/lists.py",
+                "_rtx/_yaml_store.py",
                 "update",
                 "/tmp/todo.yaml",
                 "--file",
@@ -424,7 +383,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertIn("does not match any declared pattern", result.stderr)
 
     def test_contract_block_is_injected_after_frontmatter(self) -> None:
-        sync_module = load_module("sync_skill_blueprints", REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py")
+        sync_module = load_module("sync_skill_blueprints", REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py")
         contract_block = "<!-- BEGIN BLUEPRINT CONTRACT -->\nInjected\n<!-- END BLUEPRINT CONTRACT -->\n"
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -443,7 +402,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertEqual(updated, expected)
 
     def test_contract_block_is_replaced_in_place(self) -> None:
-        sync_module = load_module("sync_skill_blueprints", REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py")
+        sync_module = load_module("sync_skill_blueprints", REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py")
         contract_block = "<!-- BEGIN BLUEPRINT CONTRACT -->\nNew\n<!-- END BLUEPRINT CONTRACT -->\n"
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -463,7 +422,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
     def test_interface_block_is_injected_after_contract_block(self) -> None:
         sync_module = load_module(
             "sync_skill_blueprints",
-            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
         )
         interface_block = (
             "<!-- BEGIN BLUEPRINT INTERFACES -->\nInjected\n<!-- END BLUEPRINT INTERFACES -->\n"
@@ -484,33 +443,29 @@ class SkillBlueprintToolTests(unittest.TestCase):
         )
         self.assertEqual(updated, expected)
 
-    def test_generated_interface_block_uses_owner_interface_ids(self) -> None:
+    def test_generated_interface_block_uses_machine_interface_names(self) -> None:
         sync_module = load_module(
             "sync_skill_blueprints",
-            REPO_ROOT / "skills" / "skill-maker" / "scripts" / "sync_skill_blueprints.py",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
         )
         block = sync_module.generated_interface_block(
             "demo-skill",
             {
-                "script_interfaces": {
-                    "read-data": {
-                        "id": "read-data",
-                        "description": "Read an input file.",
-                        "command": ["python3", "scripts/tool.py"],
-                        "subinterfaces": {
-                            "daily-plan-view": {
-                                "id": "read-data-daily-plan",
-                                "patterns": [{"min_positionals": 1}],
-                            }
-                        },
+                "interfaces": {
+                    "machine": {
+                        "read-data": {
+                            "description": "Read an input file.",
+                            "usage": "<path>",
+                            "runtime": {"kind": "command", "argv": ["python3", "_rtx/_tool_entry.py"]},
+                            "dependencies": [],
+                        }
                     }
                 }
             }
         )
 
         self.assertIn("`read-data` — Read an input file.", block)
-        self.assertIn("dispatcher --caller-skill demo-skill demo-skill read-data", block)
-        self.assertNotIn("read-data-daily-plan", block)
+        self.assertIn("dispatcher --caller-skill demo-skill demo-skill.machine.read-data <path>", block)
 
 
 if __name__ == "__main__":

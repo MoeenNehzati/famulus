@@ -114,7 +114,7 @@ class CodexGithubInstallTests(unittest.TestCase):
                 installed_path / "profiles" / "assistant_claude_setting.json",
                 installed_path / "profiles" / "collab_claude_setting.json",
                 installed_path / "profiles" / "coauthor_claude_setting.json",
-                installed_path / "skills" / "install-assistant-tools" / "scripts" / "install.py",
+                installed_path / "skills" / "install-assistant-tools" / "_rtx" / "_phase_entry.py",
             ]
             missing_paths = [
                 str(path.relative_to(installed_path)) for path in required_paths if not path.exists()

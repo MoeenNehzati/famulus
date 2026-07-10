@@ -3,9 +3,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
-from link_utils import make_copy, make_link
+from _fs_links import make_copy, make_link
 
 
 def test_make_link_creates_symlink(tmp_path):

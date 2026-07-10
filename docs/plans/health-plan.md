@@ -62,7 +62,7 @@ Create:
 skills/skill-health/
   SKILL.md
   blueprint.yaml
-  scripts/health.py
+  _rtx/_health_state.py
   tests/test_health.py
 
 skills/skill-doctor/
@@ -84,7 +84,7 @@ README/docs only if necessary
 Also update generated blueprint artifacts after adding/changing blueprints:
 
 ```bash
-python3 skills/skill-maker/scripts/sync_skill_blueprints.py
+python3 skills/skill-maker/_rtx/_blueprint_syncer.py
 ```
 
 ---
@@ -120,7 +120,7 @@ description: Use when reading, invalidating, migrating, or recording the local h
 
 <!-- generated blueprint blocks -->
 
-Use the exported script interfaces.
+Use the exported machine interfaces.
 
 For health reports, call the status interface. If the user does not name a skill, call status without a skill name so the script reports all observed skills.
 
@@ -131,7 +131,7 @@ This skill is mechanical bookkeeping only; it does not judge whether a skill des
 
 The skill should not contain health logic.
 
-## `skills/skill-health/scripts/health.py`
+## `skills/skill-health/_rtx/_health_state.py`
 
 Implement in pure Python stdlib.
 
@@ -140,10 +140,10 @@ The script owns all computation and report generation.
 Supported commands:
 
 ```bash
-python3 skills/skill-health/scripts/health.py status [skill-name] [--json]
-python3 skills/skill-health/scripts/health.py invalidate <skill-name> --reason "..."
-python3 skills/skill-health/scripts/health.py certify <skill-name> --checker "skill-doctor@1"
-python3 skills/skill-health/scripts/health.py migrate-unhealthy [--all] --reason "..."
+python3 skills/skill-health/_rtx/_health_state.py status [skill-name] [--json]
+python3 skills/skill-health/_rtx/_health_state.py invalidate <skill-name> --reason "..."
+python3 skills/skill-health/_rtx/_health_state.py certify <skill-name> --checker "skill-doctor@1"
+python3 skills/skill-health/_rtx/_health_state.py migrate-unhealthy [--all] --reason "..."
 ```
 
 `status` without a skill name means report all observed skills.
@@ -157,8 +157,8 @@ all directories matching skills/*/ that contain SKILL.md
 So these are equivalent:
 
 ```bash
-python3 skills/skill-health/scripts/health.py status
-python3 skills/skill-health/scripts/health.py status --all
+python3 skills/skill-health/_rtx/_health_state.py status
+python3 skills/skill-health/_rtx/_health_state.py status --all
 ```
 
 `--all` may be supported as an alias, but it should not be required.
@@ -324,7 +324,7 @@ references/blueprint/schema.json
 references/blueprint/template.yaml
 references/blueprint/guide.md
 skills/skill-maker/validators/**/*.py
-skills/skill-maker/scripts/sync_skill_blueprints.py
+skills/skill-maker/_rtx/_blueprint_syncer.py
 validators/**/*.py
 .githooks/pre-commit
 .githooks/skill/**
@@ -445,7 +445,7 @@ For one skill, prefer the same shape with a single item in `skills`.
 Command:
 
 ```bash
-python3 skills/skill-health/scripts/health.py invalidate <skill-name> --reason "..."
+python3 skills/skill-health/_rtx/_health_state.py invalidate <skill-name> --reason "..."
 ```
 
 Writes `.health.json` with:
@@ -468,7 +468,7 @@ This means the record is internally valid but not certified.
 Command:
 
 ```bash
-python3 skills/skill-health/scripts/health.py certify <skill-name> --checker "skill-doctor@1"
+python3 skills/skill-health/_rtx/_health_state.py certify <skill-name> --checker "skill-doctor@1"
 ```
 
 Guard:
@@ -507,7 +507,7 @@ Also record current hashes and mtime.
 Command:
 
 ```bash
-python3 skills/skill-health/scripts/health.py migrate-unhealthy --all \
+python3 skills/skill-health/_rtx/_health_state.py migrate-unhealthy --all \
   --reason "initial migration: wellness has not been run yet"
 ```
 
@@ -529,7 +529,7 @@ depends_on: {}
 
 suggested_permissions:
   bash:
-    - command: ["python3", "skills/skill-health/scripts/health.py"]
+    - command: ["python3", "_rtx/_health_state.py"]
       reason: "Mechanical health-record operations for Famulus skills."
   network: []
 
@@ -542,14 +542,15 @@ skill_interface:
   side_effects:
     - May create or update local skills/<skill>/.health.json records for invalidate, certify, and migrate operations.
 
-script_interfaces:
-  health-status:
-    id: health-status
-    description: "Read derived health status for one skill or all observed skills."
-    usage: "status [skill-name] [--json]"
-    cwd: repo_root
-    command: ["python3", "skills/skill-health/scripts/health.py"]
-    default:
+interfaces:
+  machine:
+    health-status:
+      description: "Read derived health status for one skill or all observed skills."
+      usage: "status [skill-name] [--json]"
+      runtime:
+        kind: python_module
+        module: _rtx._health_state
+      dependencies: []
       patterns:
         - min_positionals: 1
           max_positionals: 2
@@ -560,13 +561,13 @@ script_interfaces:
       allow_all_skills: true
       allowed_callers: []
 
-  health-invalidate:
-    id: health-invalidate
-    description: "Invalidate a skill's current health certification."
-    usage: "invalidate <skill-name> --reason <reason>"
-    cwd: repo_root
-    command: ["python3", "skills/skill-health/scripts/health.py"]
-    default:
+    health-invalidate:
+      description: "Invalidate a skill's current health certification."
+      usage: "invalidate <skill-name> --reason <reason>"
+      runtime:
+        kind: python_module
+        module: _rtx._health_state
+      dependencies: []
       patterns:
         - min_positionals: 2
           allow_stdin: false
@@ -580,13 +581,13 @@ script_interfaces:
         - skill-doctor
         - skill-maker
 
-  health-certify:
-    id: health-certify
-    description: "Write a well health record after skill-doctor certifies a skill."
-    usage: "certify <skill-name> --checker skill-doctor@1"
-    cwd: repo_root
-    command: ["python3", "skills/skill-health/scripts/health.py"]
-    default:
+    health-certify:
+      description: "Write a well health record after skill-doctor certifies a skill."
+      usage: "certify <skill-name> --checker skill-doctor@1"
+      runtime:
+        kind: python_module
+        module: _rtx._health_state
+      dependencies: []
       patterns:
         - min_positionals: 2
           allow_stdin: false
@@ -601,13 +602,13 @@ script_interfaces:
       allowed_callers:
         - skill-doctor
 
-  health-migrate:
-    id: health-migrate
-    description: "Initialize local unhealthy health records for observed skills."
-    usage: "migrate-unhealthy [--all] --reason <reason>"
-    cwd: repo_root
-    command: ["python3", "skills/skill-health/scripts/health.py"]
-    default:
+    health-migrate:
+      description: "Initialize local unhealthy health records for observed skills."
+      usage: "migrate-unhealthy [--all] --reason <reason>"
+      runtime:
+        kind: python_module
+        module: _rtx._health_state
+      dependencies: []
       patterns:
         - min_positionals: 1
           allow_stdin: false
@@ -651,7 +652,7 @@ Behavior:
 4. If a path is under `skills/<skill-name>/` and the skill directory contains `SKILL.md`, run:
 
 ```bash
-python3 skills/skill-health/scripts/health.py invalidate <skill-name> \
+python3 skills/skill-health/_rtx/_health_state.py invalidate <skill-name> \
   --reason "modified by assistant write/edit hook"
 ```
 
@@ -755,7 +756,7 @@ Determine the target skill name. If none is explicitly named and context clearly
 Use JSON, not the human report, for decision-making:
 
 ```bash
-python3 skills/skill-health/scripts/health.py status <target> --json
+python3 skills/skill-health/_rtx/_health_state.py status <target> --json
 ```
 
 ### 3. Read target files
@@ -790,7 +791,7 @@ references/blueprint/guide.md
 Run:
 
 ```bash
-python3 skills/skill-maker/scripts/sync_skill_blueprints.py --check
+python3 skills/skill-maker/_rtx/_blueprint_syncer.py --check
 python3 validators/runner.py
 ```
 
@@ -833,7 +834,7 @@ Required review points:
 - Description is trigger-only, not a summary of workflow.
 - SKILL.md body is terse and output-focused.
 - SKILL.md does not contain implementation logic that belongs in scripts.
-- Blueprint owns script interface definitions.
+- Blueprint owns machine interface definitions.
 - SKILL.md body does not restate generated dispatcher invocations.
 - Generated interface block is sufficient for first-attempt invocation.
 - Blueprint skill_interface accurately describes actual inputs, outputs, and side effects.
@@ -848,7 +849,7 @@ Required review points:
 - Persistent state lives under the owning skill directory.
 - Credentials/secrets are documented under ~/.config/<skill-name>/ and not stored in repo.
 - Tests exist for nontrivial scripts, validators, hook behavior, and migrations.
-- Script interfaces have clear usage, patterns, and notes.
+- Machine interfaces have clear usage, patterns, and notes.
 - Blueprint category is appropriate for the skill's actual role.
 - The skill has a single coherent responsibility.
 - The skill does not duplicate an existing skill unless it is intentionally extending it.
@@ -866,7 +867,7 @@ Required review points:
 - depends_on reflects actual skill-level or dispatcher-level use.
 - exports list matches interfaces the skill actually calls.
 - skill_interface inputs/outputs/side_effects match the body and scripts.
-- script_interfaces describe actual script commands and argument contracts.
+- interfaces.machine entries describe actual runtime commands and argument contracts.
 - usage fields are complete and not placeholders.
 - pattern notes are enough for a dependent skill to call correctly.
 - allow_all_skills / allowed_callers choices are appropriate.
@@ -923,14 +924,14 @@ Only certify if all are true:
 Then run:
 
 ```bash
-python3 skills/skill-health/scripts/health.py certify <target> \
+python3 skills/skill-health/_rtx/_health_state.py certify <target> \
   --checker "skill-doctor@1"
 ```
 
 After certification, run:
 
 ```bash
-python3 skills/skill-health/scripts/health.py status <target>
+python3 skills/skill-health/_rtx/_health_state.py status <target>
 ```
 
 Display the resulting report.
@@ -957,15 +958,15 @@ Report:
 After implementation, run locally:
 
 ```bash
-python3 skills/skill-health/scripts/health.py migrate-unhealthy --all \
+python3 skills/skill-health/_rtx/_health_state.py migrate-unhealthy --all \
   --reason "initial migration: wellness has not been run yet"
 ```
 
 Then verify:
 
 ```bash
-python3 skills/skill-health/scripts/health.py status
-python3 skills/skill-health/scripts/health.py status --json
+python3 skills/skill-health/_rtx/_health_state.py status
+python3 skills/skill-health/_rtx/_health_state.py status --json
 ```
 
 Expected:
@@ -1034,7 +1035,7 @@ The implementation is complete when:
 
 ```text
 - .gitignore ignores skills/*/.health.json.
-- skill-health exists and is a thin wrapper around scripts/health.py.
+- skill-health exists and is a thin wrapper around _rtx/_health_state.py.
 - health.py supports status, invalidate, certify, and migrate-unhealthy.
 - health.py status with no skill reports all observed skills.
 - health.py generates the full human-readable health report.
@@ -1056,13 +1057,13 @@ The implementation is complete when:
 After code changes:
 
 ```bash
-python3 skills/skill-maker/scripts/sync_skill_blueprints.py
+python3 skills/skill-maker/_rtx/_blueprint_syncer.py
 python3 validators/runner.py
 pytest skills/skill-health/tests
 pytest
-python3 skills/skill-health/scripts/health.py migrate-unhealthy --all \
+python3 skills/skill-health/_rtx/_health_state.py migrate-unhealthy --all \
   --reason "initial migration: wellness has not been run yet"
-python3 skills/skill-health/scripts/health.py status
+python3 skills/skill-health/_rtx/_health_state.py status
 git status --short
 ```
 

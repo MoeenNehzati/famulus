@@ -19,15 +19,15 @@ import pytest
 
 from install_test_utils import REPO_ROOT, can_create_symlink, python_test_env, run_command
 
-SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "scripts"
+SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "_rtx"
 sys.path.insert(0, str(SCRIPTS))
 
-from install_manifest import Manifest, manifest_path  # noqa: E402
-import dev_link  # noqa: E402
-import launchers  # noqa: E402
-import scaffold  # noqa: E402
+from _state_record import Manifest, manifest_path  # noqa: E402
+import _config_bridge as dev_link  # noqa: E402
+import _agent_launchers as launchers  # noqa: E402
+import _install_scaffold as scaffold  # noqa: E402
 
-UNINSTALL = SCRIPTS / "uninstall.py"
+UNINSTALL = SCRIPTS / "_install_uninstall.py"
 
 BLOCK_BEGIN = "# >>> assistant-tools >>>"
 BLOCK_END = "# <<< assistant-tools <<<"
@@ -80,7 +80,7 @@ def make_fake_repo(root: Path) -> Path:
                  "assistant.bat", "collab.bat", "coauthor.bat"):
         (src_bin / name).write_text("#!/bin/bash\n", encoding="utf-8")
 
-    rt_scripts = repo / "skills" / "recurring-tasks" / "scripts"
+    rt_scripts = repo / "skills" / "recurring-tasks" / "_rtx"
     rt_scripts.mkdir(parents=True)
     (rt_scripts / "env.sh").write_text("export PATH=fake:$PATH\n", encoding="utf-8")
 
@@ -102,7 +102,7 @@ def make_installed_state(root: Path) -> dict[str, Path]:
     home = root / "home"
     claude_home = home / ".claude"
     codex_home = home / ".codex"
-    bin_dir = home / "Documents" / "scripts" / "bin"
+    bin_dir = home / "Documents" / "_rtx" / "bin"
     for d in (claude_home, codex_home, bin_dir):
         d.mkdir(parents=True)
 
@@ -258,7 +258,7 @@ def test_removes_managed_claude_hook_preserving_user_hook(installed):
 def _seed_legacy_config_dir_entry(installed: dict[str, Path]) -> Path:
     """Simulate a pre-migration manifest entry: cloud-files config.json used
     to be written (and manifest-tracked) by install-assistant-tools itself.
-    That responsibility has moved to cloud-files/scripts/ensure_oauth.py, but
+    That responsibility has moved to cloud-files/_rtx/_ensure_oauth.py, but
     uninstall.py must still correctly purge/leave entries recorded by an
     older install for users upgrading across the migration.
     """

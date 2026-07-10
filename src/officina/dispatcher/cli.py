@@ -52,7 +52,7 @@ def main() -> int:
         target = args.target_or_skill
     else:
         if not script_args:
-            print("error: legacy invocation requires <target-skill> <script-interface>", file=sys.stderr)
+            print("error: shorthand invocation requires <target-skill> <machine-interface>", file=sys.stderr)
             return 2
         target_skill = args.target_or_skill
         script_interface = script_args.pop(0)

@@ -14,19 +14,20 @@ Dependencies: none
 
 Interface Version: 1
 
-Exported Script Interfaces: none
+Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Script Interfaces:
+Owner-Facing Machine Interfaces:
 
-Use the installed `dispatcher` command for this skill's script interfaces:
+Use the installed `dispatcher` command for this skill's machine interfaces:
 - `scripts-check-marker-models` — Check whether required Marker/Surya models are downloaded and cached locally.
-  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown scripts-check-marker-models`
+  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown.machine.scripts-check-marker-models`
 - `scripts-fetch-arxiv-source` — Download and extract the LaTeX source tarball for a paper from arXiv.
-  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown scripts-fetch-arxiv-source <arxiv-id> <output-dir>`
+  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown.machine.scripts-fetch-arxiv-source <arxiv-id> <output-dir>`
+
 <!-- END BLUEPRINT INTERFACES -->
 # PDF to Markdown
 

@@ -23,42 +23,23 @@ def _expect_mapping(value: Any) -> dict[str, Any]:
     return value
 
 
-def _uses_new_interface_model(blueprint: dict[str, Any]) -> bool:
-    return isinstance(blueprint.get("interfaces"), dict)
-
-
 def _interface_ids(blueprint: dict[str, Any], only_visible: bool = False) -> list[str]:
     """Return sorted list of interface IDs from blueprint.
 
     If only_visible=True, return only interfaces that have a description (those that
     the sync tool will expose in the generated block). Internal interfaces omit description.
     """
-    if _uses_new_interface_model(blueprint):
-        interfaces = _expect_mapping(blueprint.get("interfaces"))
-        machine = _expect_mapping(interfaces.get("machine"))
-        result: list[str] = []
-        for name, spec in sorted(machine.items()):
-            if not isinstance(spec, dict):
-                continue
-            if only_visible:
-                desc = spec.get("description")
-                if not (isinstance(desc, str) and desc.strip()):
-                    continue
-            result.append(str(name))
-        return result
-
-    interfaces = _expect_mapping(blueprint.get("script_interfaces"))
+    interfaces = _expect_mapping(blueprint.get("interfaces"))
+    machine = _expect_mapping(interfaces.get("machine"))
     result: list[str] = []
-    for _name, spec in sorted(interfaces.items()):
+    for name, spec in sorted(machine.items()):
         if not isinstance(spec, dict):
             continue
         if only_visible:
             desc = spec.get("description")
             if not (isinstance(desc, str) and desc.strip()):
                 continue
-        interface_id = spec.get("id")
-        if isinstance(interface_id, str) and interface_id.strip():
-            result.append(interface_id.strip())
+        result.append(str(name))
     return result
 
 
@@ -83,9 +64,9 @@ def _body_for_invocation_check(text: str) -> str:
     """Strip generated blocks and code fences before checking for invocation violations.
 
     Code fences are excluded because architecture diagrams and directory listings
-    may reference scripts/ paths structurally (e.g. showing what systemd calls)
-    without being executable invocations. Absolute paths (e.g. $HOME/.../scripts/)
-    are also excluded via the caller's regex.
+    may reference runtime paths structurally without being executable invocations.
+    Absolute paths under unrelated repo tooling are also excluded via the caller's
+    regex.
     """
     body = _body_text(text)
     # Remove all fenced code blocks (```...```)
@@ -131,10 +112,10 @@ def validate(repo_root: Path) -> list[str]:
         # re-invoke them in the hand-authored body
         body = _body_text(text)
         invocation_body = _body_for_invocation_check(text)
-        # Match `scripts/` not preceded by `/` (to allow absolute paths like $HOME/.../scripts/foo)
-        if re.search(r"(?<!/)scripts/", invocation_body):
+        raw_runtime_pattern = r"(?<!/)(?:scripts|_rtx)/[\w.-]+\.(?:py|sh)"
+        if re.search(raw_runtime_pattern, invocation_body):
             errors.append(
-                f"{skill_md}: skill body must not invoke scripts directly; "
+                f"{skill_md}: skill body must not invoke runtime files directly; "
                 "reference dispatcher interface names instead"
             )
         if "dispatcher --caller-skill" in body:
@@ -152,15 +133,11 @@ def validate(repo_root: Path) -> list[str]:
             errors.append(f"{skill_md}: missing generated blueprint interface block")
             continue
 
-        if "scripts/" in block or "python3 scripts/" in block or "python scripts/" in block:
-            errors.append(f"{skill_md}: generated interface block must not expose raw scripts")
+        if re.search(raw_runtime_pattern, block):
+            errors.append(f"{skill_md}: generated interface block must not expose raw runtime files")
 
         for interface_id in visible_ids:
-            expected = (
-                f"dispatcher --caller-skill {skill_name} {skill_name}.machine.{interface_id}"
-                if _uses_new_interface_model(blueprint)
-                else f"dispatcher --caller-skill {skill_name} {skill_name} {interface_id}"
-            )
+            expected = f"dispatcher --caller-skill {skill_name} {skill_name}.machine.{interface_id}"
             if expected not in block:
                 errors.append(
                     f"{skill_md}: generated interface block is missing dispatcher command for `{interface_id}`"

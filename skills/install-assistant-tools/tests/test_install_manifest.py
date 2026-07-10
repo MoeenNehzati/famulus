@@ -15,12 +15,12 @@ import pytest
 
 from install_test_utils import REPO_ROOT, can_create_symlink, python_test_env, run_command
 
-SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "scripts"
+SCRIPTS = REPO_ROOT / "skills" / "install-assistant-tools" / "_rtx"
 sys.path.insert(0, str(SCRIPTS))
 
-from install_manifest import Manifest, manifest_path  # noqa: E402
+from _state_record import Manifest, manifest_path  # noqa: E402
 
-UNINSTALL = SCRIPTS / "uninstall.py"
+UNINSTALL = SCRIPTS / "_install_uninstall.py"
 
 pytestmark = pytest.mark.skipif(not can_create_symlink(), reason="symlinks unavailable")
 
@@ -77,7 +77,7 @@ def _make_repo_for_manifest_tests(tmp_path: Path) -> Path:
 
 
 def test_setup_symlinks_records_links(tmp_path: Path):
-    import dev_link
+    import _config_bridge as dev_link
 
     repo = _make_repo_for_manifest_tests(tmp_path)
     claude_home = tmp_path / ".claude"
@@ -108,7 +108,7 @@ def test_setup_symlinks_records_links(tmp_path: Path):
 
 
 def test_setup_symlinks_dry_run_records_nothing(tmp_path: Path):
-    import dev_link
+    import _config_bridge as dev_link
 
     repo = _make_repo_for_manifest_tests(tmp_path)
     manifest = Manifest(tmp_path / "manifest.json")
@@ -140,7 +140,7 @@ def test_rc_block_recorded(tmp_path: Path):
     # writer used by scaffold/launchers/dev_link is rc_block.ensure_rc_vars,
     # already covered exhaustively by test_rc_block.py. This test just
     # confirms it records into a manifest the way callers expect.
-    from rc_block import ensure_rc_vars
+    from _shell_block import ensure_rc_vars
 
     rc = tmp_path / ".bashrc"
     manifest = Manifest(tmp_path / "manifest.json")
@@ -253,8 +253,8 @@ def test_full_install_writes_manifest(tmp_path: Path):
     Hook installation (json_hook_commands) is dev_link.py's job — see
     test_dev_link.py / test_dev_link_hooks.py for that coverage.
     """
-    import scaffold
-    import launchers
+    import _install_scaffold as scaffold
+    import _agent_launchers as launchers
 
     repo = tmp_path / "repo"
     skill_dir = repo / "skills" / "install-assistant-tools"

@@ -24,20 +24,21 @@ Dependencies: none
 
 Interface Version: 1
 
-Exported Script Interfaces: none
+Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Script Interfaces:
+Owner-Facing Machine Interfaces:
 
-Use the installed `dispatcher` command for this skill's script interfaces:
+Use the installed `dispatcher` command for this skill's machine interfaces:
 - `scripts-build-math-dependency-graph` — Render an interactive standalone HTML math dependency graph from canonical JSON.
-  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph scripts-build-math-dependency-graph <source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file <path>] [--refresh-macros] [--reduce-transitive-edges]`
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.machine.scripts-build-math-dependency-graph <source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file <path>] [--refresh-macros] [--reduce-transitive-edges]`
 - `scripts-extract-mathjax-macros` — Extract MathJax macro definitions from a TeX entrypoint, recursively following \input/\include.
-  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph scripts-extract-mathjax-macros <entrypoint.tex> [--out <path>]`
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.machine.scripts-extract-mathjax-macros <entrypoint.tex> [--out <path>]`
 - `scripts-serve-graph` — Serve graph HTML from a local directory with no-cache headers for repeated browser inspection.
-  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph scripts-serve-graph [--directory <path>] [--host <host>] [--port <port>]`
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.machine.scripts-serve-graph [--directory <path>] [--host <host>] [--port <port>]`
+
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

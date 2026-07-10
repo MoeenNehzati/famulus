@@ -9,17 +9,17 @@ depends_on: {}
 
 suggested_permissions:
   bash:
-    - command: ["python3", "scripts/read_llm_file.py"]
+    - command: ["python3", "_rtx/_read_llm_file.py"]
       reason: "Read files from cloud storage under LLM root."
-    - command: ["python3", "scripts/write_llm_file.py"]
+    - command: ["python3", "_rtx/_write_llm_file.py"]
       reason: "Write files to cloud storage under LLM root."
-    - command: ["python3", "scripts/delete_llm_file.py"]
+    - command: ["python3", "_rtx/_delete_llm_file.py"]
       reason: "Delete files from cloud storage under LLM root."
-    - command: ["python3", "scripts/ls_llm.py"]
+    - command: ["python3", "_rtx/_ls_llm.py"]
       reason: "List/check files in cloud storage."
-    - command: ["python3", "scripts/setup_oauth.py"]
+    - command: ["python3", "_rtx/_oauth_bootstrap.py"]
       reason: "OAuth setup for cloud access."
-    - command: ["python3", "scripts/ensure_oauth.py"]
+    - command: ["python3", "_rtx/_ensure_oauth.py"]
       reason: "Check OAuth status and write config.json (relocated from install-assistant-tools)."
   network: []
 
@@ -31,189 +31,171 @@ skill_interface:
   side_effects:
     - Reads and writes files on cloud storage.
 
-script_interfaces:
-  # ========================================================================
-  # LIST-MANAGER INTERFACES: Restricted to lists/ directory
-  # ========================================================================
-  # Only list-manager can read/write under lists/ directory.
-  # Path constraints enforce this at invocation time (compile-time validation
-  # by hooks, runtime validation by dispatcher).
-  #
-  lists-read:
-    id: lists-read
-    description: "Read a file from cloud storage under the lists/ directory."
-    usage: "lists/<path>"
-    cwd: skill_root
-    command: ["python3", "scripts/read_llm_file.py"]
-    dependencies: []
-    default:
-      patterns:
-        - min_positionals: 1
-          max_positionals: 1
-          allow_stdin: false
-          positional_patterns:
-            0: "^lists/.*"  # ONLY paths under lists/ directory
-          notes: "Read list files from cloud storage. Restricted to lists/ directory."
-      # Not publicly exported; only list-manager can use this interface.
+interfaces:
+  machine:
+    lists-read:
+      description: Read a file from cloud storage under the lists/ directory.
+      usage: lists/<path>
       allow_all_skills: false
       allowed_callers:
-        - list-manager
-        - daily-plan
-
-  lists-write:
-    id: lists-write
-    description: "Write content (from stdin) to a file in cloud storage under the lists/ directory."
-    usage: "lists/<path>"
-    cwd: skill_root
-    command: ["python3", "scripts/write_llm_file.py"]
-    dependencies: []
-    default:
+      - list-manager
+      - daily-plan
       patterns:
-        - min_positionals: 1
-          max_positionals: 1
-          allow_stdin: true
-          positional_patterns:
-            0: "^lists/.*"  # ONLY paths under lists/ directory
-          notes: "Write list files to cloud storage. Restricted to lists/ directory."
-      # Not publicly exported; only list-manager can use this interface.
+      - min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        positional_patterns:
+          0: ^lists/.*
+        notes: Read list files from cloud storage. Restricted to lists/ directory.
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_read_llm_file.py
+      dependencies: []
+    lists-write:
+      description: Write content (from stdin) to a file in cloud storage under the lists/ directory.
+      usage: lists/<path>
       allow_all_skills: false
       allowed_callers:
-        - list-manager
-        - daily-plan
-
-  lists-delete:
-    id: lists-delete
-    description: "Delete a file from cloud storage under the lists/ directory."
-    usage: "lists/<path>"
-    cwd: skill_root
-    command: ["python3", "scripts/delete_llm_file.py"]
-    dependencies: []
-    default:
+      - list-manager
+      - daily-plan
       patterns:
-        - min_positionals: 1
-          max_positionals: 1
-          allow_stdin: false
-          positional_patterns:
-            0: "^lists/.*"  # ONLY paths under lists/ directory
-          notes: "Delete list files from cloud storage. Restricted to lists/ directory."
-      # Not publicly exported; only list-manager can use this interface.
+      - min_positionals: 1
+        max_positionals: 1
+        allow_stdin: true
+        positional_patterns:
+          0: ^lists/.*
+        notes: Write list files to cloud storage. Restricted to lists/ directory.
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_write_llm_file.py
+      dependencies: []
+    lists-delete:
+      description: Delete a file from cloud storage under the lists/ directory.
+      usage: lists/<path>
       allow_all_skills: false
       allowed_callers:
-        - list-manager
-
-  # ========================================================================
-  # DAILY-PLAN INTERFACES: Restricted to plans/ directory
-  # ========================================================================
-  # Only daily-plan can read/write under plans/ directory.
-  # Path constraints enforce this at invocation time.
-  #
-  plans-read:
-    id: plans-read
-    description: "Read a file from cloud storage under the plans/ directory."
-    usage: "plans/<path>"
-    cwd: skill_root
-    command: ["python3", "scripts/read_llm_file.py"]
-    dependencies: []
-    default:
+      - list-manager
       patterns:
-        - min_positionals: 1
-          max_positionals: 1
-          allow_stdin: false
-          positional_patterns:
-            0: "^plans/.*"  # ONLY paths under plans/ directory
-          notes: "Read plan files from cloud storage. Restricted to plans/ directory."
-      # Not publicly exported; only daily-plan can use this interface.
+      - min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        positional_patterns:
+          0: ^lists/.*
+        notes: Delete list files from cloud storage. Restricted to lists/ directory.
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_delete_llm_file.py
+      dependencies: []
+    plans-read:
+      description: Read a file from cloud storage under the plans/ directory.
+      usage: plans/<path>
       allow_all_skills: false
       allowed_callers:
-        - daily-plan
-
-  plans-write:
-    id: plans-write
-    description: "Write content (from stdin) to a file in cloud storage under the plans/ directory."
-    usage: "plans/<path>"
-    cwd: skill_root
-    command: ["python3", "scripts/write_llm_file.py"]
-    dependencies: []
-    default:
+      - daily-plan
       patterns:
-        - min_positionals: 1
-          max_positionals: 1
-          allow_stdin: true
-          positional_patterns:
-            0: "^plans/.*"  # ONLY paths under plans/ directory
-          notes: "Write plan files to cloud storage. Restricted to plans/ directory."
-      # Not publicly exported; only daily-plan can use this interface.
+      - min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        positional_patterns:
+          0: ^plans/.*
+        notes: Read plan files from cloud storage. Restricted to plans/ directory.
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_read_llm_file.py
+      dependencies: []
+    plans-write:
+      description: Write content (from stdin) to a file in cloud storage under the plans/ directory.
+      usage: plans/<path>
       allow_all_skills: false
       allowed_callers:
-        - daily-plan
-
-  plans-delete:
-    id: plans-delete
-    description: "Delete a file from cloud storage under the plans/ directory."
-    usage: "plans/<path>"
-    cwd: skill_root
-    command: ["python3", "scripts/delete_llm_file.py"]
-    dependencies: []
-    default:
+      - daily-plan
       patterns:
-        - min_positionals: 1
-          max_positionals: 1
-          allow_stdin: false
-          positional_patterns:
-            0: "^plans/.*"  # ONLY paths under plans/ directory
-          notes: "Delete plan files from cloud storage. Restricted to plans/ directory."
-      # Not publicly exported; only daily-plan can use this interface.
+      - min_positionals: 1
+        max_positionals: 1
+        allow_stdin: true
+        positional_patterns:
+          0: ^plans/.*
+        notes: Write plan files to cloud storage. Restricted to plans/ directory.
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_write_llm_file.py
+      dependencies: []
+    plans-delete:
+      description: Delete a file from cloud storage under the plans/ directory.
+      usage: plans/<path>
       allow_all_skills: false
       allowed_callers:
-        - daily-plan
-
-  setup-oauth:
-    id: setup-oauth
-    description: "Run one-time OAuth2 setup for Google Drive access."
-    usage: "[--from-json <client_json_path>] [--client-id <id> --client-secret <secret>] [--port <port>]"
-    cwd: skill_root
-    command: ["python3", "scripts/setup_oauth.py"]
-    dependencies: []
-    default:
+      - daily-plan
       patterns:
-        - min_positionals: 0
-          max_positionals: 0
-          allow_stdin: false
-          notes: "OAuth setup for Google Drive access."
-      # Not publicly exported; invoked internally by ensure-oauth (as a
-      # subprocess, not a dispatcher call) and directly by the owning skill.
+      - min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        positional_patterns:
+          0: ^plans/.*
+        notes: Delete plan files from cloud storage. Restricted to plans/ directory.
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_delete_llm_file.py
+      dependencies: []
+    setup-oauth:
+      description: Run one-time OAuth2 setup for Google Drive access.
+      usage: '[--from-json <client_json_path>] [--client-id <id> --client-secret <secret>] [--port <port>]'
       allow_all_skills: false
-
-  ensure-oauth:
-    id: ensure-oauth
-    description: "Check cloud-files OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill cloud-files) as part of connecting remotes."
-    usage: "ensure-oauth --home <dir> [--dry-run]"
-    cwd: skill_root
-    command: ["python3", "scripts/ensure_oauth.py"]
-    dependencies: []
-    default:
       patterns:
-        - min_positionals: 1
-          max_positionals: 1
-          allow_stdin: false
-          positional_patterns:
-            0: "^ensure-oauth$"
-          notes: "Check OAuth status and guide setup for cloud-files."
+      - min_positionals: 0
+        max_positionals: 0
+        allow_stdin: false
+        notes: OAuth setup for Google Drive access.
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_oauth_bootstrap.py
+      dependencies: []
+    ensure-oauth:
+      description: "Check cloud-files OAuth status; print setup guidance or launch browser authorization as needed. Relocated\
+        \ from install-assistant-tools \u2014 invoke directly (caller-skill cloud-files) as part of connecting remotes."
+      usage: ensure-oauth --home <dir> [--dry-run]
       allow_all_skills: false
-
-  write-config:
-    id: write-config
-    description: "Write ~/.config/cloud-files/config.json with the given remote LLM root. Relocated from install-assistant-tools."
-    usage: "write-config --home <dir> [--remote-llm-root <path>] [--dry-run]"
-    cwd: skill_root
-    command: ["python3", "scripts/ensure_oauth.py"]
-    dependencies: []
-    default:
       patterns:
-        - min_positionals: 1
-          max_positionals: 1
-          allow_stdin: false
-          positional_patterns:
-            0: "^write-config$"
-          notes: "Write cloud-files config.json."
+      - min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        positional_patterns:
+          0: ^ensure-oauth$
+        notes: Check OAuth status and guide setup for cloud-files.
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_ensure_oauth.py
+      dependencies: []
+    write-config:
+      description: Write ~/.config/cloud-files/config.json with the given remote LLM root. Relocated from install-assistant-tools.
+      usage: write-config --home <dir> [--remote-llm-root <path>] [--dry-run]
       allow_all_skills: false
+      patterns:
+      - min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        positional_patterns:
+          0: ^write-config$
+        notes: Write cloud-files config.json.
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_ensure_oauth.py
+      dependencies: []

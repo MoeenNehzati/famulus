@@ -9,213 +9,207 @@ depends_on:
 
 suggested_permissions:
   bash:
-    - command: ["scripts/setup.sh"]
+    - command: ["_rtx/_setup_runner.sh"]
       reason: "Initial setup: syncs unit files, installs healthcheck cron entry."
-    - command: ["scripts/sync_units.py"]
+    - command: ["_rtx/_unit_writer.py"]
       reason: "Write/remove systemd user unit files to match jobs.yaml."
-    - command: ["scripts/manage_job.py"]
+    - command: ["_rtx/_job_control.py"]
       reason: "Consolidated interface: enable/disable/test/view-logs jobs."
-    - command: ["scripts/healthcheck.py"]
+    - command: ["_rtx/_healthcheck_probe.py"]
       reason: "Run pre-flight and per-job health checks."
-    - command: ["scripts/ensure_agent_env.py"]
+    - command: ["_rtx/_ensure_agent_env.py"]
       reason: "Ensure recurring-tasks' own PATH/env prerequisites are in place."
     - command: ["systemctl"]
       reason: "Manage systemd user units."
     - command: ["journalctl"]
       reason: "Read systemd journal for job diagnostics."
 
-script_interfaces:
-  # ── Model-callable interfaces ──────────────────────────────────────────────
-
-  scripts-enable:
-    id: scripts-enable
-    description: "Enable a job by setting enabled: true in jobs.yaml and syncing unit files."
-    usage: "<name>"
-    cwd: skill_root
-    command: ["python3", "scripts/manage_job.py", "enable"]
-    dependencies:
+interfaces:
+  machine:
+    scripts-enable:
+      description: 'Enable a job by setting enabled: true in jobs.yaml and syncing unit files.'
+      usage: <name>
+      patterns:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_job_control.py
+        - enable
+      dependencies:
       - kind: python
         name: PyYAML
-        reason: "Reads and writes jobs.yaml."
+        reason: Reads and writes jobs.yaml.
       - kind: binary
         name: systemctl
-        reason: "Enables and starts generated user timers."
-    default:
+        reason: Enables and starts generated user timers.
+    scripts-disable:
+      description: 'Disable a job by setting enabled: false in jobs.yaml and syncing unit files.'
+      usage: <name>
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-
-  scripts-disable:
-    id: scripts-disable
-    description: "Disable a job by setting enabled: false in jobs.yaml and syncing unit files."
-    usage: "<name>"
-    cwd: skill_root
-    command: ["python3", "scripts/manage_job.py", "disable"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_job_control.py
+        - disable
+      dependencies:
       - kind: python
         name: PyYAML
-        reason: "Reads and writes jobs.yaml."
+        reason: Reads and writes jobs.yaml.
       - kind: binary
         name: systemctl
-        reason: "Disables generated user timers."
-    default:
+        reason: Disables generated user timers.
+    scripts-test:
+      description: Trigger a job immediately via systemd, show output and status.
+      usage: <name>
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-
-  scripts-test:
-    id: scripts-test
-    description: "Trigger a job immediately via systemd, show output and status."
-    usage: "<name>"
-    cwd: skill_root
-    command: ["python3", "scripts/manage_job.py", "test"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_job_control.py
+        - test
+      dependencies:
       - kind: python
         name: PyYAML
-        reason: "Reads jobs.yaml before running the job."
+        reason: Reads jobs.yaml before running the job.
       - kind: binary
         name: systemctl
-        reason: "Starts the generated user service immediately."
-    default:
+        reason: Starts the generated user service immediately.
+    scripts-view-logs:
+      description: Tail the run log for a job (default 50 lines).
+      usage: <job-name> [--lines N]
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-
-  scripts-view-logs:
-    id: scripts-view-logs
-    description: "Tail the run log for a job (default 50 lines)."
-    usage: "<job-name> [--lines N]"
-    cwd: skill_root
-    command: ["python3", "scripts/manage_job.py", "view-logs"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_job_control.py
+        - view-logs
+      dependencies:
       - kind: python
         name: PyYAML
-        reason: "Loads jobs.yaml before locating the run log."
-    default:
+        reason: Loads jobs.yaml before locating the run log.
+    scripts-status:
+      description: List all active ai-* timers, next fire times, and service status.
+      usage: ''
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-
-  scripts-status:
-    id: scripts-status
-    description: "List all active ai-* timers, next fire times, and service status."
-    usage: ""
-    cwd: skill_root
-    command: ["python3", "scripts/manage_job.py", "status"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: false
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_job_control.py
+        - status
+      dependencies:
       - kind: python
         name: PyYAML
-        reason: "Loads jobs.yaml in the management CLI."
+        reason: Loads jobs.yaml in the management CLI.
       - kind: binary
         name: systemctl
-        reason: "Lists active generated user timers."
-    default:
+        reason: Lists active generated user timers.
+    scripts-sync:
+      description: Regenerate systemd unit files from jobs.yaml.
+      usage: ''
       patterns:
-        - name: owner
-          allow_extra_positionals: false
-
-  scripts-sync:
-    id: scripts-sync
-    description: "Regenerate systemd unit files from jobs.yaml."
-    usage: ""
-    cwd: skill_root
-    command: ["python3", "scripts/sync_units.py"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: false
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_unit_writer.py
+      dependencies:
       - kind: python
         name: PyYAML
-        reason: "Reads jobs.yaml while generating unit files."
+        reason: Reads jobs.yaml while generating unit files.
       - kind: binary
         name: systemctl
-        reason: "Reloads and enables generated user timers."
-    default:
+        reason: Reloads and enables generated user timers.
+    scripts-healthcheck:
+      description: Run pre-flight and per-job health checks for all enabled recurring tasks; sends a desktop notification
+        on failure.
+      usage: ''
       patterns:
-        - name: owner
-          allow_extra_positionals: false
-
-  scripts-healthcheck:
-    id: scripts-healthcheck
-    description: "Run pre-flight and per-job health checks for all enabled recurring tasks; sends a desktop notification on failure."
-    usage: ""
-    cwd: skill_root
-    command: ["python3", "scripts/healthcheck.py"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: false
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_healthcheck_probe.py
+      dependencies:
       - kind: python
         name: PyYAML
-        reason: "Reads jobs.yaml for enabled jobs."
+        reason: Reads jobs.yaml for enabled jobs.
       - kind: binary
         name: systemctl
-        reason: "Checks user service and timer health."
+        reason: Checks user service and timer health.
       - kind: binary
         name: journalctl
-        reason: "Reports recent service logs for failing jobs."
-    default:
+        reason: Reports recent service logs for failing jobs.
+    scripts-setup:
+      description: Verify prerequisites, sync systemd unit files from jobs.yaml, install the healthcheck cron entry, and list
+        active timers.
+      usage: ''
       patterns:
-        - name: owner
-          allow_extra_positionals: false
-
-  scripts-setup:
-    id: scripts-setup
-    description: "Verify prerequisites, sync systemd unit files from jobs.yaml, install the healthcheck cron entry, and list active timers."
-    usage: ""
-    cwd: skill_root
-    command: ["scripts/setup.sh"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: false
+      runtime:
+        kind: command
+        argv:
+        - _rtx/_setup_runner.sh
+      dependencies:
       - kind: python
         name: PyYAML
-        reason: "Validates that jobs.yaml tooling can load YAML."
+        reason: Validates that jobs.yaml tooling can load YAML.
       - kind: binary
         name: systemctl
-        reason: "Lists and manages generated user timers."
+        reason: Lists and manages generated user timers.
       - kind: binary
         name: crontab
-        reason: "Installs the recurring healthcheck cron entry."
-    default:
+        reason: Installs the recurring healthcheck cron entry.
+    scripts-ensure-agent-env:
+      description: Idempotently ensure recurring-tasks' own PATH/env prerequisites and systemd AI_AGENT_COMMAND_TEMPLATE are
+        in place. Also run automatically by scripts-setup.
+      usage: --repo-root DIR --home DIR --bin-dir DIR [--dry-run]
       patterns:
-        - name: owner
-          allow_extra_positionals: false
-
-  scripts-ensure-agent-env:
-    id: scripts-ensure-agent-env
-    description: "Idempotently ensure recurring-tasks' own PATH/env prerequisites (env.sh, systemd AI_AGENT_COMMAND_TEMPLATE) are in place. Also run automatically by scripts-setup."
-    usage: "--repo-root DIR --home DIR --bin-dir DIR [--dry-run]"
-    cwd: skill_root
-    command: ["python3", "scripts/ensure_agent_env.py"]
-    dependencies:
+      - name: owner
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_ensure_agent_env.py
+      dependencies:
       - kind: binary
         name: systemctl
-        reason: "Publishes recurring-task environment variables to the user manager when available."
-    default:
+        reason: Publishes recurring-task environment variables to the user manager when available.
+    scripts-job-utils:
       patterns:
-        - name: owner
-
-  # ── Internal interfaces (not model-callable; no description) ───────────────
-
-  scripts-job-utils:
-    id: scripts-job-utils
-    cwd: skill_root
-    command: ["python3", "scripts/_job_utils.py"]
-    dependencies: []
-    default:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_job_utils.py
+      dependencies: []
+    scripts-invoke-agent:
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-
-  scripts-env:
-    id: scripts-env
-    cwd: skill_root
-    command: ["scripts/env.sh"]
-    dependencies: []
-    default:
-      patterns:
-        - name: owner
-          allow_extra_positionals: true
-
-  scripts-invoke-agent:
-    id: scripts-invoke-agent
-    cwd: skill_root
-    command: ["scripts/invoke-agent.sh"]
-    dependencies: []
-    default:
-      patterns:
-        - name: owner
-          allow_extra_positionals: true
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - _rtx/_agent_invoker.sh
+      dependencies: []

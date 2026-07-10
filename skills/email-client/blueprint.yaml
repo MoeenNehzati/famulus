@@ -1,6 +1,6 @@
 # Canonical contract for email-client.
 # This file was migrated from legacy skill metadata.
-# Tighten the placeholder script interfaces as each script contract becomes clearer.
+# Tighten the placeholder machine interfaces as each runtime contract becomes clearer.
 
 category: productivity-general-assistant
 # Bump this major version whenever the exported contract changes in a
@@ -14,11 +14,11 @@ depends_on:
 
 suggested_permissions:
   bash:
-    - command: ["scripts/email-send.sh"]
+    - command: ["_rtx/_smtp_transport.sh"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["python3", "scripts/mail.py"]
+    - command: ["python3", "_rtx/_imap_gateway.py"]
       reason: "Read-side IMAP client (list/read/folders), stdlib-only, no external binary."
-    - command: ["python3", "scripts/accounts.py"]
+    - command: ["python3", "_rtx/_email_accounts.py"]
       reason: "Account registry: add/update/remove/list nicknames and set credentials."
   network:
     []
@@ -31,176 +31,194 @@ skill_interface:
   side_effects:
     - "May invoke local scripts or dependencies as described in SKILL.md."
 
-script_interfaces:
-  send-email:
-    id: send-email
-    description: "Send an email via msmtp; body comes from stdin."
-    usage: "--from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]"
-    cwd: skill_root
-    command: ["scripts/email-send.sh"]
-    dependencies:
+interfaces:
+  machine:
+    send-email:
+      description: Send an email via msmtp; body comes from stdin.
+      usage: --from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to
+        <msg-id>] [--references <refs>]
+      patterns:
+      - name: owner
+        allow_stdin: true
+      runtime:
+        kind: command
+        argv:
+        - _rtx/_smtp_transport.sh
+      dependencies:
       - kind: binary
         name: msmtp
-        reason: "Sends the composed email via SMTP."
+        reason: Sends the composed email via SMTP.
       - kind: binary
         name: secret-tool
-        reason: "Retrieves the SMTP credential from the keyring."
+        reason: Retrieves the SMTP credential from the keyring.
       - kind: binary
         name: base64
-        reason: "Encodes attachments for MIME messages."
+        reason: Encodes attachments for MIME messages.
       - kind: binary
         name: file
-        reason: "Detects attachment MIME types."
-    default:
+        reason: Detects attachment MIME types.
+    mail-list:
+      description: "List email envelopes for an account as JSON (fields: id, flags, subject, from, date, message_id). --folder\
+        \ accepts aliases inbox|sent|drafts|trash|all or any literal IMAP folder name (default inbox). --after narrows server-side\
+        \ by day (IMAP SINCE). Filters are key=value (exact, comma-separated=OR) or key~=value (regex, case-insensitive) over\
+        \ id/subject/from/date/message_id/flags, ANDed across distinct keys, applied client-side after fetch. Unfiltered +\
+        \ undated scans the whole folder (slow on large mailboxes) \u2014 pair filters with --after."
+      usage: -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] [--after YYYY-MM-DD] [key=value|key~=value ...]
+        [--limit N]
       patterns:
-        - name: owner
-          allow_stdin: true
-  mail-list:
-    id: mail-list
-    description: >-
-      List email envelopes for an account as JSON (fields: id, flags, subject, from,
-      date, message_id). --folder accepts aliases inbox|sent|drafts|trash|all or any
-      literal IMAP folder name (default inbox). --after narrows server-side by day
-      (IMAP SINCE). Filters are key=value (exact, comma-separated=OR) or key~=value
-      (regex, case-insensitive) over id/subject/from/date/message_id/flags, ANDed
-      across distinct keys, applied client-side after fetch. Unfiltered + undated
-      scans the whole folder (slow on large mailboxes) — pair filters with --after.
-    usage: "-a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] [--after YYYY-MM-DD] [key=value|key~=value ...] [--limit N]"
-    cwd: skill_root
-    command: ["python3", "scripts/mail.py", "list"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_imap_gateway.py
+        - list
+      dependencies:
       - kind: binary
         name: secret-tool
-        reason: "Retrieves the IMAP credential from the keyring."
-    default:
+        reason: Retrieves the IMAP credential from the keyring.
+    mail-read:
+      description: Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/ Date/Message-ID, then In-Reply-To/References
+        only if the message is a reply, then an Attachments section (none or one line per attachment with filename, MIME type,
+        and size), then a blank line, then the decoded body (text/plain preferred; falls back to HTML with tags stripped).
+      usage: -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-  mail-read:
-    id: mail-read
-    description: >-
-      Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/
-      Date/Message-ID, then In-Reply-To/References only if the message is a reply,
-      then an Attachments section (none or one line per attachment with filename,
-      MIME type, and size), then a blank line, then the decoded body (text/plain
-      preferred; falls back to HTML with tags stripped).
-    usage: "-a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>"
-    cwd: skill_root
-    command: ["python3", "scripts/mail.py", "read"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_imap_gateway.py
+        - read
+      dependencies:
       - kind: binary
         name: secret-tool
-        reason: "Retrieves the IMAP credential from the keyring."
-    default:
+        reason: Retrieves the IMAP credential from the keyring.
+    mail-attachments:
+      description: List attachment metadata for one or more emails as JSON. Returns one record per requested UID with attachment
+        entries containing filename, content_type, size_bytes, size_human, and disposition.
+      usage: -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...]
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-  mail-attachments:
-    id: mail-attachments
-    description: >-
-      List attachment metadata for one or more emails as JSON. Returns one record
-      per requested UID with attachment entries containing filename, content_type,
-      size_bytes, size_human, and disposition.
-    usage: "-a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...]"
-    cwd: skill_root
-    command: ["python3", "scripts/mail.py", "attachments"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_imap_gateway.py
+        - attachments
+      dependencies:
       - kind: binary
         name: secret-tool
-        reason: "Retrieves the IMAP credential from the keyring."
-    default:
+        reason: Retrieves the IMAP credential from the keyring.
+    mail-save-attachments:
+      description: Save attachments from one or more emails into a directory. Use --all to save every attachment, or repeat
+        --name to save only selected filenames. Returns JSON describing the saved files.
+      usage: -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...] --out <dir> (--all | --name
+        <filename> [--name <filename> ...])
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-  mail-save-attachments:
-    id: mail-save-attachments
-    description: >-
-      Save attachments from one or more emails into a directory. Use --all to save
-      every attachment, or repeat --name to save only selected filenames. Returns
-      JSON describing the saved files.
-    usage: "-a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...] --out <dir> (--all | --name <filename> [--name <filename> ...])"
-    cwd: skill_root
-    command: ["python3", "scripts/mail.py", "save-attachments"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_imap_gateway.py
+        - save-attachments
+      dependencies:
       - kind: binary
         name: secret-tool
-        reason: "Retrieves the IMAP credential from the keyring."
-    default:
+        reason: Retrieves the IMAP credential from the keyring.
+    mail-folders:
+      description: List IMAP folders for an account (JSON).
+      usage: -a <nickname>
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-  mail-folders:
-    id: mail-folders
-    description: "List IMAP folders for an account (JSON)."
-    usage: "-a <nickname>"
-    cwd: skill_root
-    command: ["python3", "scripts/mail.py", "folders"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_imap_gateway.py
+        - folders
+      dependencies:
       - kind: binary
         name: secret-tool
-        reason: "Retrieves the IMAP credential from the keyring."
-    default:
+        reason: Retrieves the IMAP credential from the keyring.
+    accounts-list:
+      description: List registered account nicknames with their email/display name (no secrets).
+      usage: ''
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-  accounts-list:
-    id: accounts-list
-    description: "List registered account nicknames with their email/display name (no secrets)."
-    usage: ""
-    cwd: skill_root
-    command: ["python3", "scripts/accounts.py", "list"]
-    dependencies: []
-    default:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_email_accounts.py
+        - list
+      dependencies: []
+    accounts-add:
+      description: Register a new account nickname. Gmail IMAP/SMTP settings are the default; pass explicit host/port flags
+        for other providers. Follow with accounts-set-password for imap and smtp.
+      usage: --nickname <nick> --email <addr> [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port
+        P] [--starttls]
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-  accounts-add:
-    id: accounts-add
-    description: "Register a new account nickname. Gmail IMAP/SMTP settings are the default; pass explicit host/port flags for other providers. Follow with accounts-set-password for imap and smtp."
-    usage: "--nickname <nick> --email <addr> [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls]"
-    cwd: skill_root
-    command: ["python3", "scripts/accounts.py", "add"]
-    dependencies: []
-    default:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_email_accounts.py
+        - add
+      dependencies: []
+    accounts-update:
+      description: Update fields on an existing account nickname.
+      usage: --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port
+        P]
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-  accounts-update:
-    id: accounts-update
-    description: "Update fields on an existing account nickname."
-    usage: "--nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P]"
-    cwd: skill_root
-    command: ["python3", "scripts/accounts.py", "update"]
-    dependencies: []
-    default:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_email_accounts.py
+        - update
+      dependencies: []
+    accounts-remove:
+      description: Remove an account nickname from the registry; optionally purge its keyring credentials too.
+      usage: --nickname <nick> [--purge-credentials]
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-  accounts-remove:
-    id: accounts-remove
-    description: "Remove an account nickname from the registry; optionally purge its keyring credentials too."
-    usage: "--nickname <nick> [--purge-credentials]"
-    cwd: skill_root
-    command: ["python3", "scripts/accounts.py", "remove"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_email_accounts.py
+        - remove
+      dependencies:
       - kind: binary
         name: secret-tool
-        reason: "Clears stored account credentials when requested."
-    default:
+        reason: Clears stored account credentials when requested.
+    accounts-set-password:
+      description: Store the IMAP or SMTP credential for an account in the GNOME keyring. The secret is read from stdin, never
+        a CLI argument.
+      usage: --nickname <nick> --purpose imap|smtp
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-  accounts-set-password:
-    id: accounts-set-password
-    description: "Store the IMAP or SMTP credential for an account in the GNOME keyring. The secret is read from stdin, never a CLI argument."
-    usage: "--nickname <nick> --purpose imap|smtp"
-    cwd: skill_root
-    command: ["python3", "scripts/accounts.py", "set-password"]
-    dependencies:
+      - name: owner
+        allow_stdin: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_email_accounts.py
+        - set-password
+      dependencies:
       - kind: binary
         name: secret-tool
-        reason: "Stores IMAP or SMTP credentials in the keyring."
-    default:
-      patterns:
-        - name: owner
-          allow_stdin: true
+        reason: Stores IMAP or SMTP credentials in the keyring.

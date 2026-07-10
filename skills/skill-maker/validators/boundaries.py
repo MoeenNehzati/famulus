@@ -5,11 +5,11 @@ import re
 import sys
 from pathlib import Path
 
-SCRIPT_SUFFIXES = {".py", ".sh"}
+RUNTIME_SUFFIXES = {".py", ".sh"}
 
 
-def _is_text_script(path: Path) -> bool:
-    return path.is_file() and path.suffix in SCRIPT_SUFFIXES
+def _is_text_runtime_file(path: Path) -> bool:
+    return path.is_file() and path.suffix in RUNTIME_SUFFIXES
 
 
 def validate(repo_root: Path) -> list[str]:
@@ -25,7 +25,7 @@ def validate(repo_root: Path) -> list[str]:
         skill_dir = blueprint_path.parent
         skill_name = skill_dir.name
         other_skills = [name for name in skill_names if name != skill_name]
-        script_files = [path for path in skill_dir.rglob("*") if _is_text_script(path)]
+        script_files = [path for path in skill_dir.rglob("*") if _is_text_runtime_file(path)]
 
         for path in script_files:
             try:
@@ -40,19 +40,19 @@ def validate(repo_root: Path) -> list[str]:
 
                 for other_skill in other_skills:
                     direct_patterns = [
-                        rf"(?:^|[^A-Za-z0-9_-])(?:\.\./)+{re.escape(other_skill)}/scripts/",
-                        rf"(?:^|[^A-Za-z0-9_-])skills/{re.escape(other_skill)}/scripts/",
-                        rf"/skills/{re.escape(other_skill)}/scripts/",
+                        rf"(?:^|[^A-Za-z0-9_-])(?:\.\./)+{re.escape(other_skill)}/_rtx/",
+                        rf"(?:^|[^A-Za-z0-9_-])skills/{re.escape(other_skill)}/_rtx/",
+                        rf"/skills/{re.escape(other_skill)}/_rtx/",
                     ]
                     if any(re.search(pattern, line) for pattern in direct_patterns):
                         rel = path.relative_to(repo_root)
                         errors.append(
-                            f"{rel}:{lineno}: direct cross-skill script path to "
+                            f"{rel}:{lineno}: direct cross-skill runtime path to "
                             f"{other_skill} is forbidden"
                         )
                         break
 
-                    if "skills" in line and "scripts" in line and other_skill in line:
+                    if "skills" in line and "_rtx" in line and other_skill in line:
                         if "sys.path.insert" in line:
                             rel = path.relative_to(repo_root)
                             errors.append(

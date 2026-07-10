@@ -168,14 +168,14 @@ install.py [--home DIR] [--bin-dir DIR] [--shell-rc FILE]
 **Non-interactive example** (e.g. a provisioning script):
 
 ```bash
-python3 scripts/install.py --non-interactive --no-dev-mode \
+python3 _rtx/_phase_entry.py --non-interactive --no-dev-mode \
   --agents assistant,collab,coauthor,tw --default-llm claude
 ```
 
 **Dev-mode non-interactive example:**
 
 ```bash
-python3 scripts/install.py --non-interactive --dev-mode \
+python3 _rtx/_phase_entry.py --non-interactive --dev-mode \
   --repo-path ~/Documents/AI --agents assistant --default-llm claude
 ```
 
@@ -371,11 +371,11 @@ everything else, but exits non-zero. Common cause: a file permission issue
 uninstall; it's idempotent against partially-completed runs.
 
 **Recurring-tasks jobs aren't picking up `assistant`/`codex`/`claude` on PATH**
-That's [recurring-tasks/scripts/ensure_agent_env.py](../skills/recurring-tasks/scripts/ensure_agent_env.py)'s job, not this
-installer's — it writes [recurring-tasks/scripts/env.sh](../skills/recurring-tasks/scripts/env.sh) and the systemd
+Recurring-tasks owns that setup, not this installer. Its environment setup
+interface writes a generated PATH bootstrap and the systemd
 `AI_AGENT_COMMAND_TEMPLATE` environment file, run automatically as part of
-that skill's own `scripts-setup`. If jobs still can't find a command, check
-`env.sh`'s `PATH` line directly and re-run that skill's setup.
+that skill's own setup interface. If jobs still can't find a command, re-run
+recurring-tasks setup and inspect the generated PATH bootstrap.
 
 ---
 

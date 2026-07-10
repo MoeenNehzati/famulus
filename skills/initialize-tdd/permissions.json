@@ -1,7 +1,7 @@
 {
   "bash": [
     "Bash(git:*)",
-    "Bash(python3 scripts/setup_compat_aliases.py:*)"
+    "Bash(python3 _rtx/_host_links.py:*)"
   ],
   "network": []
 }

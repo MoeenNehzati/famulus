@@ -45,8 +45,6 @@ def test_skill_with_blueprint_but_no_contract_flagged(tmp_path: Path) -> None:
 
 
 def test_machine_interface_without_dependencies_flagged_by_schema() -> None:
-    if not _mod._HAS_JSONSCHEMA:
-        return
     schema = _mod._load_schema()
     assert schema is not None
     blueprint = {
@@ -55,7 +53,7 @@ def test_machine_interface_without_dependencies_flagged_by_schema() -> None:
         "interfaces": {
             "machine": {
                 "scan": {
-                    "runtime": {"kind": "python_module", "module": "scripts.scan"},
+                    "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
                 }
             }
         },
@@ -66,9 +64,7 @@ def test_machine_interface_without_dependencies_flagged_by_schema() -> None:
     assert any("dependencies" in error and "required" in error for error in errors)
 
 
-def test_legacy_script_interface_without_dependencies_flagged_by_schema() -> None:
-    if not _mod._HAS_JSONSCHEMA:
-        return
+def test_script_interfaces_are_rejected_by_schema() -> None:
     schema = _mod._load_schema()
     assert schema is not None
     blueprint = {
@@ -77,19 +73,17 @@ def test_legacy_script_interface_without_dependencies_flagged_by_schema() -> Non
         "script_interfaces": {
             "scan": {
                 "id": "scan",
-                "command": ["python3", "scripts/scan.py"],
+                "command": ["python3", "_rtx/_handoff_scan.py"],
             }
         },
     }
 
     errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
 
-    assert any("dependencies" in error and "required" in error for error in errors)
+    assert any("script_interfaces" in error and "Additional properties" in error for error in errors)
 
 
 def test_machine_interface_dependency_objects_pass_schema() -> None:
-    if not _mod._HAS_JSONSCHEMA:
-        return
     schema = _mod._load_schema()
     assert schema is not None
     blueprint = {
@@ -98,7 +92,7 @@ def test_machine_interface_dependency_objects_pass_schema() -> None:
         "interfaces": {
             "machine": {
                 "scan": {
-                    "runtime": {"kind": "python_module", "module": "scripts.scan"},
+                    "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
                     "dependencies": [
                         {
                             "kind": "python",
@@ -119,3 +113,16 @@ def test_machine_interface_dependency_objects_pass_schema() -> None:
     errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
 
     assert errors == []
+
+
+def test_missing_jsonschema_is_reported_as_validator_error(monkeypatch) -> None:
+    schema = _mod._load_schema()
+    assert schema is not None
+    monkeypatch.setattr(_mod, "jsonschema", None)
+
+    errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), {}, schema)
+
+    assert errors == [
+        "blueprint.yaml: cannot validate blueprint schema because required "
+        "Python package `jsonschema` is not installed"
+    ]

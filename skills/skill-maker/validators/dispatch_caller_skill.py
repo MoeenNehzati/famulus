@@ -8,7 +8,7 @@ from pathlib import Path
 
 def _python_files(skill_dir: Path) -> list[Path]:
     paths: list[Path] = []
-    for subdir in ("scripts", "bin"):
+    for subdir in ("_rtx", "bin"):
         root = skill_dir / subdir
         if not root.is_dir():
             continue

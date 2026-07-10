@@ -21,10 +21,10 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "_rtx"
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(ROOT_DIR / "tests"))
-import dev_link  # noqa: E402
+import _config_bridge as dev_link  # noqa: E402
 from install_test_utils import can_create_symlink  # noqa: E402
 
 
@@ -288,8 +288,16 @@ class SetupSymlinksTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = self.make_repo_root(Path(tmp))
             home = Path(tmp) / "home"
+            claude_home = home / "claude"
+            codex_home = home / "codex"
 
-            self.capture_run(repo_root=repo_root, home=home, dry_run=False)
+            self.capture_run(
+                repo_root=repo_root,
+                home=home,
+                claude_home=claude_home,
+                codex_home=codex_home,
+                dry_run=False,
+            )
 
             result = subprocess.run(
                 ["git", "-C", str(repo_root), "config", "core.hooksPath"],
@@ -306,8 +314,16 @@ class SetupSymlinksTests(unittest.TestCase):
                 "def hooks_for_host(host):\n    return []\n", encoding="utf-8"
             )
             home = Path(tmp) / "home"
+            claude_home = home / "claude"
+            codex_home = home / "codex"
 
-            output = self.capture_run(repo_root=repo_root, home=home, dry_run=False)
+            output = self.capture_run(
+                repo_root=repo_root,
+                home=home,
+                claude_home=claude_home,
+                codex_home=codex_home,
+                dry_run=False,
+            )
 
             self.assertIn("not a git checkout; skipping git hooks setup", output)
 
@@ -318,8 +334,17 @@ class SetupSymlinksTests(unittest.TestCase):
             home.mkdir()
             rc_file = home / ".bashrc"
             rc_file.write_text("")
+            claude_home = home / "claude"
+            codex_home = home / "codex"
 
-            self.capture_run(repo_root=repo_root, home=home, shell_rc=rc_file, dry_run=False)
+            self.capture_run(
+                repo_root=repo_root,
+                home=home,
+                claude_home=claude_home,
+                codex_home=codex_home,
+                shell_rc=rc_file,
+                dry_run=False,
+            )
 
             content = rc_file.read_text()
             self.assertIn(f'export AI="{repo_root}"', content)

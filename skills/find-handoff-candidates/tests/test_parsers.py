@@ -9,11 +9,11 @@ SKILL_DIR = Path(__file__).parent.parent
 
 def _load(name):
     for module_name in list(sys.modules):
-        if module_name == "scripts" or module_name.startswith("scripts."):
+        if module_name == "_rtx" or module_name.startswith("_rtx."):
             sys.modules.pop(module_name, None)
     sys.path.insert(0, str(SKILL_DIR))
     try:
-        return importlib.import_module(f"scripts.{name}")
+        return importlib.import_module(f"_rtx._{name}")
     finally:
         sys.path.pop(0)
 
@@ -84,11 +84,11 @@ def test_codex_parser_resume_hint_has_no_leading_slash():
 
 def test_init_aggregates_both_parsers_with_distinct_ids():
     for module_name in list(sys.modules):
-        if module_name == "scripts" or module_name.startswith("scripts."):
+        if module_name == "_rtx" or module_name.startswith("_rtx."):
             sys.modules.pop(module_name, None)
     sys.path.insert(0, str(SKILL_DIR))
     try:
-        mod = importlib.import_module("scripts")
+        mod = importlib.import_module("_rtx")
     finally:
         sys.path.pop(0)
 

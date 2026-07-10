@@ -11,11 +11,10 @@ import yaml
 
 try:
     import jsonschema
-    _HAS_JSONSCHEMA = True
-except ImportError:
-    _HAS_JSONSCHEMA = False
+except ImportError:  # pragma: no cover - exercised only in misconfigured envs
+    jsonschema = None
 
-_SYNC_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "sync_skill_blueprints.py"
+_SYNC_SCRIPT = Path(__file__).resolve().parents[1] / "_rtx" / "_blueprint_syncer.py"
 _SCHEMA_PATH = Path(__file__).resolve().parents[3] / "references" / "blueprint" / "schema.json"
 
 CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
@@ -50,10 +49,6 @@ def _load_schema() -> dict[str, Any] | None:
     return json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
-def _uses_new_interface_model(blueprint: dict[str, Any]) -> bool:
-    return isinstance(blueprint.get("interfaces"), dict)
-
-
 def _validate_blueprint_schema(
     blueprint_path: Path,
     blueprint: dict[str, Any],
@@ -61,8 +56,11 @@ def _validate_blueprint_schema(
 ) -> list[str]:
     """Run jsonschema validation; return error strings."""
     errors: list[str] = []
-    if not _HAS_JSONSCHEMA:
-        return errors
+    if jsonschema is None:
+        return [
+            f"{blueprint_path}: cannot validate blueprint schema because required "
+            "Python package `jsonschema` is not installed"
+        ]
     validator = jsonschema.Draft7Validator(schema)
     for error in sorted(validator.iter_errors(blueprint), key=lambda e: list(e.absolute_path)):
         path = ".".join(str(p) for p in error.absolute_path) or "(root)"
@@ -123,34 +121,20 @@ def _validate_interface_cross_fields(
     (jsonschema marks both as optional individually; the pairing rule requires Python.)
     """
     errors: list[str] = []
-    if _uses_new_interface_model(blueprint):
-        interfaces = blueprint.get("interfaces") or {}
-        machine = interfaces.get("machine") or {}
-        if not isinstance(machine, dict):
-            return errors
-        for iface_name, spec in machine.items():
-            if not isinstance(spec, dict):
-                continue
-            has_desc = bool((spec.get("description") or "").strip())
-            has_usage = spec.get("usage") is not None
-            if has_desc and not has_usage:
-                errors.append(
-                    f"{blueprint_path}: machine interface '{iface_name}' has description but no usage field "
-                    "(add usage: \"\" for no-arg interfaces, or the full arg template)"
-                )
-        return errors
-
-    interfaces = blueprint.get("script_interfaces") or {}
+    interfaces = blueprint.get("interfaces") or {}
     if not isinstance(interfaces, dict):
         return errors
-    for iface_name, spec in interfaces.items():
+    machine = interfaces.get("machine") or {}
+    if not isinstance(machine, dict):
+        return errors
+    for iface_name, spec in machine.items():
         if not isinstance(spec, dict):
             continue
         has_desc = bool((spec.get("description") or "").strip())
         has_usage = spec.get("usage") is not None
         if has_desc and not has_usage:
             errors.append(
-                f"{blueprint_path}: interface '{iface_name}' has description but no usage field "
+                f"{blueprint_path}: machine interface '{iface_name}' has description but no usage field "
                 "(add usage: \"\" for no-arg interfaces, or the full arg template)"
             )
     return errors

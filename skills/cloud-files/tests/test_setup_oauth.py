@@ -6,9 +6,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "_rtx"
 sys.path.insert(0, str(SCRIPT_DIR))
-import setup_oauth  # noqa: E402
+import _oauth_bootstrap as setup_oauth  # noqa: E402
 
 
 class SetupOauthTests(unittest.TestCase):

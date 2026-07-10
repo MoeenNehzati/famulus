@@ -4,7 +4,7 @@ We need to update Famulus’s skill validation system and skill guidelines to pr
 
 ## Goal
 
-Add a validator that catches cases where a hand-authored `SKILL.md` tells the model to run commands directly, mentions raw script paths, includes command-line flags, or otherwise leaks executable mechanics. Normal execution must live behind blueprint-declared script interfaces. The generated blueprint interface block may contain invocation commands; the hand-authored body should refer to interface ids and outcomes.
+Add a validator that catches cases where a hand-authored `SKILL.md` tells the model to run commands directly, mentions raw script paths, includes command-line flags, or otherwise leaks executable mechanics. Normal execution must live behind blueprint-declared machine interfaces. The generated blueprint interface block may contain invocation commands; the hand-authored body should refer to interface names and outcomes.
 
 Use the attached prototype as the starting point:
 
@@ -71,7 +71,7 @@ Do not blindly copy it as a standalone CLI only. Integrate it into the repo’s 
 
 6. Error messages must be educational. They should tell the model what to do instead, for example:
 
-   - “Move executable paths into a blueprint script interface and refer to the interface id instead.”
+   - “Move executable paths into a blueprint machine interface and refer to the interface name instead.”
    - “Generated interface blocks are the place for invocation commands.”
    - “Shell composition belongs in scripts.”
    - “Move flags to blueprint usage/patterns or script help.”
@@ -131,7 +131,7 @@ Do not blindly copy it as a standalone CLI only. Integrate it into the repo’s 
    - Validators catch command-shaped text.
    - `skill-doctor` must catch semantic leakage that regex cannot catch, such as “verify manually” or “change the executable bit” when no explicit command appears.
    - Mentioning exported interface ids is allowed.
-   - Normal command invocation belongs in blueprint script interfaces and scripts.
+   - Normal command invocation belongs in blueprint machine interfaces and runtime files.
 
 10. Update any skill-maker or guideline-update skill text if needed so future skill creation/editing follows the new rule.
 

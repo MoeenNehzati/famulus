@@ -1,6 +1,6 @@
 # Canonical contract for initialize-tdd.
 # This file was migrated from legacy skill metadata.
-# Tighten the placeholder script interfaces as each script contract becomes clearer.
+# Tighten the placeholder machine interfaces as each runtime contract becomes clearer.
 
 category: coding-development-assistant
 # Bump this major version whenever the exported contract changes in a
@@ -14,7 +14,7 @@ suggested_permissions:
   bash:
     - command: ["git"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["python3", "scripts/setup_compat_aliases.py"]
+    - command: ["python3", "_rtx/_host_links.py"]
       reason: "Creates host compatibility alias symlinks in the newly scaffolded project directory only; no writes outside it, no network."
   network:
     []
@@ -27,19 +27,23 @@ skill_interface:
   side_effects:
     - "May invoke local scripts or dependencies as described in SKILL.md."
 
-script_interfaces:
-  setup-compat-aliases:
-    id: setup-compat-aliases
-    description: "Create every host compatibility alias symlink (e.g. a legacy filename some host looks for specifically) in a freshly scaffolded project directory."
-    usage: "<project-dir>"
-    cwd: skill_root
-    command: ["python3", "scripts/setup_compat_aliases.py"]
-    dependencies: []
-    default:
-      patterns:
-        - min_positionals: 1
-          max_positionals: 1
-          allow_stdin: false
-          notes: "First positional is the scaffolded project's directory path. Discovers and runs every compat-alias helper next to this script; adding a new host's alias later needs no change here."
+interfaces:
+  machine:
+    setup-compat-aliases:
+      description: Create every host compatibility alias symlink (e.g. a legacy filename some host looks for specifically)
+        in a freshly scaffolded project directory.
+      usage: <project-dir>
       allow_all_skills: false
       allowed_callers: []
+      patterns:
+      - min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        notes: First positional is the scaffolded project's directory path. Discovers and runs every compat-alias helper next
+          to this script; adding a new host's alias later needs no change here.
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_host_links.py
+      dependencies: []

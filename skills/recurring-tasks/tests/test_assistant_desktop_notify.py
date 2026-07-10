@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 SKILL_DIR = Path(__file__).parent.parent
-SCRIPT = SKILL_DIR / "scripts" / "assistant_desktop_notify.py"
+SCRIPT = SKILL_DIR / "_rtx" / "_assistant_desktop_notify.py"
 
 
 def _load():

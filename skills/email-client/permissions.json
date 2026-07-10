@@ -1,8 +1,8 @@
 {
   "bash": [
-    "Bash(scripts/email-send.sh:*)",
-    "Bash(python3 scripts/mail.py:*)",
-    "Bash(python3 scripts/accounts.py:*)"
+    "Bash(_rtx/_smtp_transport.sh:*)",
+    "Bash(python3 _rtx/_imap_gateway.py:*)",
+    "Bash(python3 _rtx/_email_accounts.py:*)"
   ],
   "network": []
 }

@@ -17,22 +17,23 @@ Dependencies: none
 
 Interface Version: 1
 
-Exported Script Interfaces: none
+Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Script Interfaces:
+Owner-Facing Machine Interfaces:
 
-Use the installed `dispatcher` command for this skill's script interfaces:
+Use the installed `dispatcher` command for this skill's machine interfaces:
 - `ensure-oauth` — Check g-calendar OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill g-calendar) as part of connecting remotes.
-  - `dispatcher --caller-skill g-calendar g-calendar ensure-oauth --home <dir> [--dry-run]`
+  - `dispatcher --caller-skill g-calendar g-calendar.machine.ensure-oauth --home <dir> [--dry-run]`
   - Check OAuth status and guide setup for g-calendar.
 - `scripts-gcal` — Query or modify Google Calendar events via the gcal.sh CLI (agenda, search, create, update, delete, etc.).
-  - `dispatcher --caller-skill g-calendar g-calendar scripts-gcal <command> [options]`
+  - `dispatcher --caller-skill g-calendar g-calendar.machine.scripts-gcal <command> [options]`
 - `setup-oauth` — Run the OAuth setup flow to generate or refresh Google Calendar credentials.
-  - `dispatcher --caller-skill g-calendar g-calendar setup-oauth [--from-json /path/to/client.json]`
+  - `dispatcher --caller-skill g-calendar g-calendar.machine.setup-oauth [--from-json /path/to/client.json]`
   - OAuth setup for Google Calendar access.
+
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

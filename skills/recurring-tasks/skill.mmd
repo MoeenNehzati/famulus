@@ -5,15 +5,15 @@ flowchart TD
   subgraph SETUP ["Setup (run once per machine)"]
     direction TB
     JY[("jobs.yaml\nsource of truth")]
-    SH["scripts/setup.sh"]
-    SU["scripts/sync_units.py"]
+    SH["_rtx/_setup_runner.sh"]
+    SU["_rtx/_unit_writer.py"]
     ENVC["~/.config/environment.d/\n20-ai-agent.conf\nsets AI_AGENT_COMMAND_TEMPLATE"]
-    IAT["install-assistant-tools skill\n(separate — sets env var)"]
+    IAT["install-assistant-tools skill\n(separate — installs launcher)"]
 
     SH -->|calls| SU
-    SH -->|installs healthcheck| CRON_ENTRY["crontab: 0 */4 * * *\nhealthcheck.sh"]
+    SH -->|installs healthcheck| CRON_ENTRY["crontab: 0 */4 * * *\nhealthcheck probe"]
     SU -->|reads| JY
-    IAT -->|writes| ENVC
+    SH -->|writes| ENVC
   end
 
   %% ── Generated artifacts ─────────────────────────────────────────
@@ -21,7 +21,7 @@ flowchart TD
     direction TB
     TIMER["~/.config/systemd/user/\nai-NAME.timer\nOnCalendar + Persistent=true"]
     SVC["~/.config/systemd/user/\nai-NAME.service"]
-    RUNNER["scripts/runners/NAME.sh\nsets PATH, DBUS env\ncalls run-skill.sh"]
+    RUNNER["systemd service command\nsets PATH, DBUS env\ncalls invoke-skill"]
   end
 
   SU -->|creates| TIMER
@@ -31,16 +31,16 @@ flowchart TD
   %% ── Job execution ───────────────────────────────────────────────
   subgraph EXEC ["Job execution (per scheduled fire)"]
     direction TB
-    RSH["scripts/run-skill.sh NAME\nreads AI_AGENT_COMMAND_TEMPLATE\nsubstitutes {skill} → NAME"]
-    IA["scripts/invoke-agent.sh NAME\nassistant --permission-mode bypassPermissions\n  -p /NAME"]
+    RSH["invoke-skill NAME\nresolves recurring-tasks runtime\ncalls agent invoker"]
+    IA["_rtx/_agent_invoker.sh NAME\nassistant --permission-mode bypassPermissions\n  -p /NAME"]
     CLAUDE["assistant\nruns /NAME skill\nnon-interactively"]
     JOBLOG["logs/NAME/run.log\n(stdout + stderr)"]
   end
 
   TIMER -->|fires on schedule| SVC
   SVC -->|ExecStart| RUNNER
-  RUNNER -->|calls| RSH
-  ENVC -.->|"env var read at runtime"| RSH
+    RUNNER -->|calls| RSH
+    ENVC -.->|"env var checked at runtime"| RSH
   RSH -->|exec| IA
   IA -->|invokes| CLAUDE
   CLAUDE -->|output appended to| JOBLOG
@@ -48,7 +48,7 @@ flowchart TD
   %% ── Healthcheck ─────────────────────────────────────────────────
   subgraph HC ["Healthcheck (cron, every 4 hours — independent of systemd)"]
     direction TB
-    HCS["scripts/healthcheck.sh"]
+    HCS["healthcheck probe"]
 
     subgraph PRE ["Pre-flight checks"]
       direction LR

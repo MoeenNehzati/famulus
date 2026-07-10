@@ -7,7 +7,7 @@ blocks, and malformed/defenced snippets), but strips YAML frontmatter and
 known generated blueprint blocks before scanning.
 
 It is intentionally not a general English classifier. It catches command-shaped
-spans that should be moved behind blueprint-declared script interfaces.
+spans that should be moved behind blueprint-declared machine interfaces.
 """
 from __future__ import annotations
 

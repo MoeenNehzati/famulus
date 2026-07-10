@@ -1,6 +1,6 @@
 # Canonical contract for bib-audit.
 # This file was migrated from legacy skill metadata.
-# Tighten the placeholder script interfaces as each script contract becomes clearer.
+# Tighten the placeholder machine interfaces as each runtime contract becomes clearer.
 
 category: research-assistant
 # Bump this major version whenever the exported contract changes in a
@@ -18,9 +18,9 @@ suggested_permissions:
       reason: "Migrated from legacy permissions.json."
     - command: ["bibtex-update"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["scripts/bib_similarity.py"]
+    - command: ["_rtx/_reference_pairs.py"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["scripts/bib_validate_bibtex.py"]
+    - command: ["_rtx/_syntax_checker.py"]
       reason: "Migrated from legacy permissions.json."
   network:
     []
@@ -33,32 +33,35 @@ skill_interface:
   side_effects:
     - "May invoke local scripts or dependencies as described in SKILL.md."
 
-script_interfaces:
-  scripts-bib-similarity:
-    id: scripts-bib-similarity
-    description: "Detect duplicate and version-pair candidates in a .bib file by scoring all entry pairs."
-    usage: "<file.bib> [--threshold 0.3]"
-    cwd: skill_root
-    command: ["python3", "scripts/bib_similarity.py"]
-    dependencies:
+interfaces:
+  machine:
+    scripts-bib-similarity:
+      description: Detect duplicate and version-pair candidates in a .bib file by scoring all entry pairs.
+      usage: <file.bib> [--threshold 0.3]
+      patterns:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_reference_pairs.py
+      dependencies:
       - kind: python
         name: bibtexparser
-        reason: "Parses BibTeX entries more accurately than the fallback parser."
-    default:
+        reason: Parses BibTeX entries more accurately than the fallback parser.
+    scripts-bib-validate-bibtex:
+      description: Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects).
+      usage: <file.bib>
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-  scripts-bib-validate-bibtex:
-    id: scripts-bib-validate-bibtex
-    description: "Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects)."
-    usage: "<file.bib>"
-    cwd: skill_root
-    command: ["python3", "scripts/bib_validate_bibtex.py"]
-    dependencies:
+      - name: owner
+        allow_extra_positionals: true
+      runtime:
+        kind: command
+        argv:
+        - python3
+        - _rtx/_syntax_checker.py
+      dependencies:
       - kind: python
         name: bibtexparser
-        reason: "Parses BibTeX entries more accurately than the fallback parser."
-    default:
-      patterns:
-        - name: owner
-          allow_extra_positionals: true
+        reason: Parses BibTeX entries more accurately than the fallback parser.

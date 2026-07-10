@@ -1,6 +1,6 @@
 {
   "bash": [
-    "Bash(scripts/weather.sh:*)"
+    "Bash(_rtx/_weather_client.sh:*)"
   ],
   "network": []
 }

@@ -12,7 +12,7 @@ Dependencies: none
 
 Interface Version: 1
 
-Exported Script Interfaces: none
+Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 
 **Skills are software modules. Refactoring a skill follows standard software refactoring discipline** — the same principles Fowler describes for code apply directly: behavior preservation is non-negotiable, moves are small and verified one at a time, and the safety net (characterization) comes before the first change.
@@ -20,7 +20,7 @@ Exported Script Interfaces: none
 ## Workflow
 
 ### 1. Characterize (before touching anything)
-Read the target skill's `SKILL.md`, `permissions.json`, and all files under `scripts/`. Write a brief behavioral spec:
+Read the target skill's `SKILL.md`, `permissions.json`, and private runtime implementation files. Write a brief behavioral spec:
 - What triggers this skill?
 - What does it do, step by step?
 - What does it produce (outputs, files written, commands run)?

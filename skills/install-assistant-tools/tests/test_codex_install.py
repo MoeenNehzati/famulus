@@ -148,7 +148,7 @@ class CodexInstallTests(unittest.TestCase):
                 installed_path / "profiles" / "assistant_claude_setting.json",
                 installed_path / "profiles" / "collab_claude_setting.json",
                 installed_path / "profiles" / "coauthor_claude_setting.json",
-                installed_path / "skills" / "install-assistant-tools" / "scripts" / "install.py",
+                installed_path / "skills" / "install-assistant-tools" / "_rtx" / "_phase_entry.py",
                 # workers/ are deliberately NOT here: they are runtime dirs
                 # created by the installer bootstrap, never plugin content
             ]
@@ -185,7 +185,7 @@ class CodexInstallTests(unittest.TestCase):
 
             install_cmd = [
                 sys.executable,
-                str(installed_path / "skills" / "install-assistant-tools" / "scripts" / "install.py"),
+                str(installed_path / "skills" / "install-assistant-tools" / "_rtx" / "_phase_entry.py"),
                 "--home",
                 str(install_home),
                 "--codex-home",

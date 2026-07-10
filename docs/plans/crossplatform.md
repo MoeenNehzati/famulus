@@ -73,7 +73,7 @@ These are changes that are important, concrete, and should not wait for a larger
 
 Target:
 
-- `skills/install-assistant-tools/scripts/launchers.py`
+- `skills/install-assistant-tools/_rtx/_agent_launchers.py`
 
 Status:
 
@@ -106,7 +106,7 @@ Prevention:
 
 Targets:
 
-- `skills/daily-plan/scripts/plan_runtime.py`
+- `skills/daily-plan/_rtx/_day_model.py`
 - any other shared code using GNU/BSD-only `strftime` or shell date behavior
 
 Status:
@@ -168,7 +168,7 @@ Prevention:
 
 Targets:
 
-- `skills/install-assistant-tools/scripts/scaffold.py`
+- `skills/install-assistant-tools/_rtx/_install_scaffold.py`
 - relevant skill docs and manifests
 
 Status:
@@ -182,27 +182,27 @@ Description:
 What was done:
 
 - the missing dependency class was identified clearly in the lessons archive
-- made `dependencies` mandatory on executable blueprint interfaces, including new-style machine interfaces and legacy `script_interfaces`; interfaces with no non-stdlib Python package or external executable requirements must say `dependencies: []`
+- made `dependencies` mandatory on executable blueprint machine interfaces; interfaces with no non-stdlib Python package or external executable requirements must say `dependencies: []`
 - dependency entries now require `kind`, `name`, and `reason`, with `kind` limited to `python` or `binary`
 - documented that dependency declarations are factual runtime requirements and are separate from developer-chosen `suggested_permissions`
 - added schema and sync-validator coverage so missing or malformed executable-interface dependencies fail before runtime
-- added generated `references/blueprint/runtime_dependencies.json`, produced by `skills/skill-maker/scripts/sync_skill_blueprints.py` from blueprint declarations
-- updated `skills/install-assistant-tools/scripts/scaffold.py` to install Python packages from the generated JSON manifest using stdlib JSON, so end-user installs do not need PyYAML
-- moved current legacy `script_interfaces` dependencies into blueprint declarations, including `dateparser`, `PyYAML`, `jsonschema`, `rich`, `bibtexparser`, `marker-pdf`, and known external binaries such as `rclone`, `curl`, `jq`, `msmtp`, `secret-tool`, `systemctl`, and `journalctl`
+- added generated `references/blueprint/runtime_dependencies.json`, produced by `skills/skill-maker/_rtx/_blueprint_syncer.py` from blueprint declarations
+- updated `skills/install-assistant-tools/_rtx/_install_scaffold.py` to install Python packages from the generated JSON manifest using stdlib JSON, so end-user installs do not need PyYAML
+- moved current runtime dependency declarations onto `interfaces.machine` entries, including `dateparser`, `PyYAML`, `jsonschema`, `rich`, `bibtexparser`, `marker-pdf`, and known external binaries such as `rclone`, `curl`, `jq`, `msmtp`, `secret-tool`, `systemctl`, and `journalctl`
 - removed the hardcoded installer Python package fallback; installer package selection now comes from the generated JSON manifest
 
 Prevention:
 
-- keep dependency declarations on each executable blueprint interface, including explicit empty lists
-- keep `sync_skill_blueprints.py --check` in the validation path so generated dependency manifests cannot drift from blueprint YAML
+- keep dependency declarations on each executable `interfaces.machine` entry, including explicit empty lists
+- keep `python3 skills/skill-maker/_rtx/_blueprint_syncer.py --check` in the validation path so generated dependency manifests cannot drift from blueprint YAML
 - keep installer tests that verify scaffold consumes `references/blueprint/runtime_dependencies.json` for Python packages and ignores binary dependencies for pip installation
-- continue migrating legacy `script_interfaces` into new-style machine interfaces, but keep their dependencies declared and validated while they remain legacy
+- keep schema, sync-validator, and generated-doc tests rejecting the removed `script_interfaces` key so executable contracts stay on `interfaces.machine`
 
 ### 5. Fail loudly when a required capability is skipped on a host
 
 Targets:
 
-- `skills/install-assistant-tools/scripts/scaffold.py`
+- `skills/install-assistant-tools/_rtx/_install_scaffold.py`
 - installer UX and reporting
 
 Status:
@@ -230,8 +230,8 @@ These are not just patches. They change architecture, runtime surfaces, or suppo
 
 Targets:
 
-- `skills/g-calendar/scripts/gcal.py`
-- `skills/g-calendar/scripts/gcal.sh`
+- `skills/g-calendar/_rtx/_gcal_client.py`
+- `skills/g-calendar/_rtx/_gcal_client.sh`
 - `skills/g-calendar/blueprint.yaml`
 
 Status:
@@ -247,7 +247,7 @@ Description:
 What was done:
 
 - the lessons archive documented and validated a Python rewrite approach
-- this repo now has a stdlib Python calendar runtime in `skills/g-calendar/scripts/gcal.py`
+- this repo now has a stdlib Python calendar runtime in `skills/g-calendar/_rtx/_gcal_client.py`
 - the existing `scripts-gcal` shell entrypoint was kept as a wrapper so callers do not have to change immediately
 - parallel all-calendar event fetching and retained event fields such as summary, time, location, description, status, and link were preserved in the Python path
 - the Python runtime now caps all-calendar worker fanout and skips thread-pool setup when the calendar list is empty
@@ -255,7 +255,7 @@ What was done:
 - local timing and request-breakdown measurements were run against the live calendar account to confirm that request latency and calendar-list discovery dominate runtime, not Python thread-pool overhead
 - skill-local verification passed:
   - `python3 -m pytest -q skills/g-calendar/tests`
-  - `python3 skills/skill-maker/scripts/sync_skill_blueprints.py --check`
+  - `python3 skills/skill-maker/_rtx/_blueprint_syncer.py --check`
 - the repo-wide precommit Python suite is still failing for unrelated `skill-maker` / dispatcher issues outside `g-calendar`, so this item is not yet at a globally green checkpoint
 
 Prevention:
@@ -271,9 +271,9 @@ Prevention:
 
 Targets:
 
-- `skills/email-client/scripts/accounts.py`
-- `skills/email-client/scripts/mail.py`
-- `skills/email-client/scripts/email-send.sh`
+- `skills/email-client/_rtx/_email_accounts.py`
+- `skills/email-client/_rtx/_imap_gateway.py`
+- `skills/email-client/_rtx/_smtp_transport.sh`
 - any future `secretstore.py` / `email_send.py` style modules
 
 Status:
@@ -299,8 +299,8 @@ Prevention:
 
 Targets:
 
-- `skills/install-assistant-tools/scripts/scaffold.py`
-- `skills/recurring-tasks/scripts/invoke-agent.sh`
+- `skills/install-assistant-tools/_rtx/_install_scaffold.py`
+- `skills/recurring-tasks/_rtx/_agent_invoker.sh`
 - installed `dispatcher` / `invoke-skill` behavior
 
 Status:

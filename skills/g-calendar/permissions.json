@@ -1,8 +1,8 @@
 {
   "bash": [
-    "Bash(scripts/gcal.sh:*)",
-    "Bash(python3 scripts/setup_oauth.py:*)",
-    "Bash(python3 scripts/ensure_oauth.py:*)"
+    "Bash(_rtx/_gcal_client.sh:*)",
+    "Bash(python3 _rtx/_oauth_bootstrap.py:*)",
+    "Bash(python3 _rtx/_ensure_oauth.py:*)"
   ],
   "network": []
 }

@@ -4,9 +4,9 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
-import scaffold
+import _install_scaffold as scaffold
 
 
 def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[str]) -> None:

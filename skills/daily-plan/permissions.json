@@ -1,8 +1,8 @@
 {
   "bash": [
-    "Bash(python3 scripts/orchestrate.py:*)",
-    "Bash(python3 scripts/render_plan.py:*)",
-    "Bash(python3 scripts/mutate_plan.py:*)"
+    "Bash(python3 _rtx/_plan_orchestrate.py:*)",
+    "Bash(python3 _rtx/_render_plan.py:*)",
+    "Bash(python3 _rtx/_state_patch.py:*)"
   ],
   "network": []
 }

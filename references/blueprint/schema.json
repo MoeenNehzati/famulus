@@ -3,7 +3,7 @@
   "title": "Skill Blueprint Schema",
   "description": "Schema for blueprint.yaml files that define skill contracts, dependencies, and interfaces.",
   "type": "object",
-  "required": ["category", "interface_version"],
+  "required": ["category", "interface_version", "interfaces"],
   "additionalProperties": false,
   "properties": {
     "category": {
@@ -156,13 +156,6 @@
         "llm": {
           "$ref": "#/definitions/llmInterfaceMap"
         }
-      }
-    },
-    "script_interfaces": {
-      "type": "object",
-      "description": "Legacy compatibility surface. Prefer `interfaces.machine` / `interfaces.llm` for new blueprints.",
-      "additionalProperties": {
-        "$ref": "#/definitions/legacyScriptInterface"
       }
     }
   },
@@ -389,137 +382,8 @@
         }
       ]
     },
-    "legacyScriptInterface": {
-      "type": "object",
-      "required": ["id", "command", "dependencies"],
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "description": {
-          "type": "string",
-          "minLength": 1
-        },
-        "usage": {
-          "type": "string"
-        },
-        "cwd": {
-          "enum": ["skill_root", "repo_root"],
-          "default": "skill_root"
-        },
-        "command": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "minItems": 1
-        },
-        "dependencies": {
-          "$ref": "#/definitions/runtimeDependencies"
-        },
-        "patterns": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/definitions/legacyPattern"
-          }
-        },
-        "allow_all_skills": {
-          "type": "boolean",
-          "default": false
-        },
-        "allowed_callers": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/skillName"
-          },
-          "default": []
-        },
-        "default": {
-          "$ref": "#/definitions/legacyDefaultSubinterface"
-        },
-        "subinterfaces": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/definitions/legacyNamedSubinterface"
-          }
-        }
-      },
-      "allOf": [
-        {
-          "$ref": "#/definitions/allowAllSkillsConstraint"
-        }
-      ]
-    },
-    "legacyDefaultSubinterface": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "patterns": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/definitions/legacyPattern"
-          }
-        },
-        "allow_all_skills": {
-          "type": "boolean",
-          "default": false
-        },
-        "allowed_callers": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/skillName"
-          },
-          "default": []
-        }
-      },
-      "allOf": [
-        {
-          "$ref": "#/definitions/allowAllSkillsConstraint"
-        }
-      ]
-    },
-    "legacyNamedSubinterface": {
-      "type": "object",
-      "required": ["id"],
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "patterns": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/definitions/legacyPattern"
-          }
-        },
-        "allow_all_skills": {
-          "type": "boolean",
-          "default": false
-        },
-        "allowed_callers": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/skillName"
-          },
-          "default": []
-        }
-      },
-      "allOf": [
-        {
-          "$ref": "#/definitions/allowAllSkillsConstraint"
-        }
-      ]
-    },
     "pattern": {
       "type": "object",
-      "required": ["notes"],
       "additionalProperties": false,
       "properties": {
         "name": {
@@ -556,77 +420,6 @@
           "type": "object",
           "propertyNames": {
             "pattern": "^--[A-Za-z0-9][A-Za-z0-9-]*$"
-          },
-          "additionalProperties": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required_flags": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
-          }
-        },
-        "allowed_flags": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
-          }
-        },
-        "forbidden_flags": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
-          }
-        },
-        "notes": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "legacyPattern": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "min_positionals": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "max_positionals": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "allow_extra_positionals": {
-          "type": "boolean",
-          "default": false
-        },
-        "allow_stdin": {
-          "type": "boolean",
-          "default": false
-        },
-        "positional_patterns": {
-          "type": "object",
-          "propertyNames": {
-            "pattern": "^[0-9]+$"
-          },
-          "additionalProperties": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "flag_patterns": {
-          "type": "object",
-          "propertyNames": {
-            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
           },
           "additionalProperties": {
             "type": "string",

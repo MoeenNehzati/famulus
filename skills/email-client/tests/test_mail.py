@@ -7,7 +7,7 @@ import email
 import importlib.util
 from pathlib import Path
 
-MAIL_PY = Path(__file__).parent.parent / "scripts" / "mail.py"
+MAIL_PY = Path(__file__).parent.parent / "_rtx" / "_imap_gateway.py"
 spec = importlib.util.spec_from_file_location("mail", MAIL_PY)
 mail = importlib.util.module_from_spec(spec)
 assert spec.loader is not None

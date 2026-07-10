@@ -6,10 +6,10 @@ recorded -- never a misleading "Nd overdue" for something that's done.
 import sys
 from pathlib import Path
 
-SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+SCRIPTS_DIR = Path(__file__).parent.parent / "_rtx"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-import beautify  # noqa: E402
+import _list_beautify as beautify  # noqa: E402
 
 
 def test_date_badge_shows_deadline_for_open_entry():
@@ -57,7 +57,7 @@ def test_modified_never_rendered(tmp_path, monkeypatch, capsys):
         "    modified: '2026-06-30'\n    completed: '2026-06-29'\n"
     )
     result = subprocess.run(
-        [sys.executable, str(SCRIPTS_DIR / "beautify.py")],
+        [sys.executable, str(SCRIPTS_DIR / "_list_beautify.py")],
         input=yaml_in, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr

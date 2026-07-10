@@ -15,22 +15,26 @@ def test_empty_repo_passes(tmp_path: Path) -> None:
 
 def test_clean_python_skill_passes(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "clean-skill"
-    (skill / "scripts").mkdir(parents=True)
+    (skill / "_rtx").mkdir(parents=True)
     (skill / "blueprint.yaml").write_text(
-        "script_interfaces:\n"
-        "  run:\n"
-        "    command: [\"python3\", \"scripts/run.py\"]\n",
+        "interfaces:\n"
+        "  machine:\n"
+        "    run:\n"
+        "      runtime:\n"
+        "        kind: command\n"
+        "        argv: [\"python3\", \"_rtx/_run_tool.py\"]\n"
+        "      dependencies: []\n",
         encoding="utf-8",
     )
-    (skill / "scripts" / "run.py").write_text(
-        "import subprocess\nsubprocess.run([\"python3\", \"scripts/helper.py\"])\n",
+    (skill / "_rtx" / "run.py").write_text(
+        "import subprocess\nsubprocess.run([\"python3\", \"_rtx/_helper_tool.py\"])\n",
         encoding="utf-8",
     )
     assert validate(tmp_path) == []
 
 
 def test_shell_script_is_rejected(tmp_path: Path) -> None:
-    skill = tmp_path / "skills" / "bad-skill" / "scripts"
+    skill = tmp_path / "skills" / "bad-skill" / "_rtx"
     skill.mkdir(parents=True)
     (skill / "run.sh").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
     errors = validate(tmp_path)
@@ -41,13 +45,17 @@ def test_blueprint_shell_command_is_rejected(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "bad-skill"
     skill.mkdir(parents=True)
     (skill / "blueprint.yaml").write_text(
-        "script_interfaces:\n"
-        "  run:\n"
-        "    command: [\"scripts/run.sh\"]\n",
+        "interfaces:\n"
+        "  machine:\n"
+        "    run:\n"
+        "      runtime:\n"
+        "        kind: command\n"
+        "        argv: [\"_rtx/_run_tool.sh\"]\n"
+        "      dependencies: []\n",
         encoding="utf-8",
     )
     errors = validate(tmp_path)
-    assert any("shell script token `scripts/run.sh`" in error for error in errors)
+    assert any("shell script token `_rtx/_run_tool.sh`" in error for error in errors)
 
 
 def test_blueprint_unix_command_in_permission_is_rejected(tmp_path: Path) -> None:
@@ -68,9 +76,13 @@ def test_blueprint_windows_command_is_rejected(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "bad-skill"
     skill.mkdir(parents=True)
     (skill / "blueprint.yaml").write_text(
-        "script_interfaces:\n"
-        "  run:\n"
-        "    command: [\"powershell.exe\", \"-File\", \"scripts/run.ps1\"]\n",
+        "interfaces:\n"
+        "  machine:\n"
+        "    run:\n"
+        "      runtime:\n"
+        "        kind: command\n"
+        "        argv: [\"powershell.exe\", \"-File\", \"_rtx/_run_tool.ps1\"]\n"
+        "      dependencies: []\n",
         encoding="utf-8",
     )
     errors = validate(tmp_path)
@@ -78,7 +90,7 @@ def test_blueprint_windows_command_is_rejected(tmp_path: Path) -> None:
 
 
 def test_python_macos_subprocess_is_rejected(tmp_path: Path) -> None:
-    skill = tmp_path / "skills" / "bad-skill" / "scripts"
+    skill = tmp_path / "skills" / "bad-skill" / "_rtx"
     skill.mkdir(parents=True)
     (skill / "run.py").write_text(
         "import subprocess\nsubprocess.run(['osascript', '-e', 'beep'])\n",
@@ -89,7 +101,7 @@ def test_python_macos_subprocess_is_rejected(tmp_path: Path) -> None:
 
 
 def test_python_shell_true_is_rejected(tmp_path: Path) -> None:
-    skill = tmp_path / "skills" / "bad-skill" / "scripts"
+    skill = tmp_path / "skills" / "bad-skill" / "_rtx"
     skill.mkdir(parents=True)
     (skill / "run.py").write_text(
         "import subprocess\nsubprocess.run('echo hi', shell=True)\n",
@@ -100,7 +112,7 @@ def test_python_shell_true_is_rejected(tmp_path: Path) -> None:
 
 
 def test_python_unix_subprocess_is_rejected(tmp_path: Path) -> None:
-    skill = tmp_path / "skills" / "bad-skill" / "scripts"
+    skill = tmp_path / "skills" / "bad-skill" / "_rtx"
     skill.mkdir(parents=True)
     (skill / "run.py").write_text(
         "import subprocess\nsubprocess.run(['grep', 'x', 'file.txt'])\n",
@@ -111,7 +123,7 @@ def test_python_unix_subprocess_is_rejected(tmp_path: Path) -> None:
 
 
 def test_cross_platform_false_skips_skill(tmp_path: Path) -> None:
-    skill = tmp_path / "skills" / "daily-plan" / "scripts"
+    skill = tmp_path / "skills" / "daily-plan" / "_rtx"
     skill.mkdir(parents=True)
     (tmp_path / "skills" / "daily-plan" / "blueprint.yaml").write_text(
         "cross_platform: false\n",
@@ -122,7 +134,7 @@ def test_cross_platform_false_skips_skill(tmp_path: Path) -> None:
 
 
 def test_cross_platform_defaults_to_true(tmp_path: Path) -> None:
-    skill = tmp_path / "skills" / "default-skill" / "scripts"
+    skill = tmp_path / "skills" / "default-skill" / "_rtx"
     skill.mkdir(parents=True)
     (skill / "run.sh").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
     errors = validate(tmp_path)
@@ -130,7 +142,7 @@ def test_cross_platform_defaults_to_true(tmp_path: Path) -> None:
 
 
 def test_runner_reports_cross_platform_errors(tmp_path: Path) -> None:
-    skill = tmp_path / "skills" / "bad-skill" / "scripts"
+    skill = tmp_path / "skills" / "bad-skill" / "_rtx"
     skill.mkdir(parents=True)
     (skill / "run.sh").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
     runner = Path(__file__).resolve().parents[1] / "validators" / "runner.py"

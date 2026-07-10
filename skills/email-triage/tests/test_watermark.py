@@ -6,12 +6,17 @@ import subprocess
 import sys
 from pathlib import Path
 
-SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+SCRIPTS_DIR = Path(__file__).parent.parent / "_rtx"
+SCRIPT_NAMES = {
+    "update_watermark.py": "_watermark_writer.py",
+    "mark_failure.py": "_failure_sentinel.py",
+    "get_cutoff.py": "_watermark_floor.py",
+}
 
 
 def run(script, state_dir, *args, input=None):
     return subprocess.run(
-        [sys.executable, str(SCRIPTS_DIR / script), *args],
+        [sys.executable, str(SCRIPTS_DIR / SCRIPT_NAMES[script]), *args],
         capture_output=True, text=True, input=input,
         env={"EMAIL_TRIAGE_STATE_DIR": str(state_dir)},
     )

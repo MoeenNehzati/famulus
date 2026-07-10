@@ -1,5 +1,5 @@
 # Canonical contract for hook-maker.
-# This skill has no script interfaces; it provides design guidance and a hook scaffold reference.
+# This skill has no machine interfaces; it provides design guidance and a hook scaffold reference.
 
 category: skill-making-development-assistant
 # Bump this major version whenever the exported skill contract changes in a
@@ -26,5 +26,5 @@ skill_interface:
   side_effects:
     - "May create or modify hook modules, host registration code, and tests when the user asks for implementation."
 
-script_interfaces:
-  {}
+interfaces:
+  machine: {}

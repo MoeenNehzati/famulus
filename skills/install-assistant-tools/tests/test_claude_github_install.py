@@ -111,7 +111,7 @@ class ClaudeGithubInstallTests(unittest.TestCase):
                 installed_path / "agents" / "assistant.md",
                 installed_path / "agents" / "collab.md",
                 installed_path / "agents" / "coauthor.md",
-                installed_path / "skills" / "install-assistant-tools" / "scripts" / "install.py",
+                installed_path / "skills" / "install-assistant-tools" / "_rtx" / "_phase_entry.py",
             ]
             missing_paths = [
                 str(path.relative_to(installed_path)) for path in required_paths if not path.exists()

@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-SCRIPT_PATH = Path(__file__).parent.parent / "scripts" / "filter_envelopes.py"
+SCRIPT_PATH = Path(__file__).parent.parent / "_rtx" / "_envelope_gate.py"
 MODULE_PATH = SCRIPT_PATH
 spec = importlib.util.spec_from_file_location("filter_envelopes", MODULE_PATH)
 fe = importlib.util.module_from_spec(spec)
