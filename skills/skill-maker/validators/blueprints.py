@@ -24,10 +24,34 @@ INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_unique_mapping(loader: _UniqueKeyLoader, node: yaml.nodes.MappingNode, deep: bool = False):
+    mapping: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise yaml.YAMLError(f"duplicate key `{key}`")
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_mapping,
+)
+
+
 def _load_schema() -> dict[str, Any] | None:
     if not _SCHEMA_PATH.exists():
         return None
     return json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
+def _uses_new_interface_model(blueprint: dict[str, Any]) -> bool:
+    return isinstance(blueprint.get("interfaces"), dict)
 
 
 def _validate_blueprint_schema(
@@ -99,6 +123,23 @@ def _validate_interface_cross_fields(
     (jsonschema marks both as optional individually; the pairing rule requires Python.)
     """
     errors: list[str] = []
+    if _uses_new_interface_model(blueprint):
+        interfaces = blueprint.get("interfaces") or {}
+        machine = interfaces.get("machine") or {}
+        if not isinstance(machine, dict):
+            return errors
+        for iface_name, spec in machine.items():
+            if not isinstance(spec, dict):
+                continue
+            has_desc = bool((spec.get("description") or "").strip())
+            has_usage = spec.get("usage") is not None
+            if has_desc and not has_usage:
+                errors.append(
+                    f"{blueprint_path}: machine interface '{iface_name}' has description but no usage field "
+                    "(add usage: \"\" for no-arg interfaces, or the full arg template)"
+                )
+        return errors
+
     interfaces = blueprint.get("script_interfaces") or {}
     if not isinstance(interfaces, dict):
         return errors
@@ -106,7 +147,7 @@ def _validate_interface_cross_fields(
         if not isinstance(spec, dict):
             continue
         has_desc = bool((spec.get("description") or "").strip())
-        has_usage = spec.get("usage") is not None  # "" is valid (no-arg interface)
+        has_usage = spec.get("usage") is not None
         if has_desc and not has_usage:
             errors.append(
                 f"{blueprint_path}: interface '{iface_name}' has description but no usage field "
@@ -142,7 +183,7 @@ def validate(repo_root: Path) -> list[str]:
 
         # ── Schema validation (jsonschema) ───────────────────────────────────
         try:
-            blueprint = yaml.safe_load(blueprint_path.read_text(encoding="utf-8")) or {}
+            blueprint = yaml.load(blueprint_path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader) or {}
         except yaml.YAMLError as exc:
             errors.append(f"{blueprint_path}: YAML parse error: {exc}")
             continue

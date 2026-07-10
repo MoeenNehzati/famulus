@@ -25,7 +25,7 @@ def test_dispatch_import_passes(tmp_path: Path) -> None:
     (skill / "scripts").mkdir(parents=True)
     (skill / "blueprint.yaml").write_text("name: good-skill\n", encoding="utf-8")
     (skill / "scripts" / "run.py").write_text(
-        "from script_dispatcher import dispatch\n"
+        "from officina.dispatcher import dispatch\n"
         "dispatch(caller_skill='good-skill', target_skill='other', script_interface='x')\n",
         encoding="utf-8",
     )
@@ -51,7 +51,7 @@ def test_sys_path_hack_flagged(tmp_path: Path) -> None:
     (skill / "blueprint.yaml").write_text("name: hacky-skill\n", encoding="utf-8")
     (skill / "scripts" / "run.py").write_text(
         "import sys\n"
-        "sys.path.insert(0, '/repo/script_dispatcher/src')\n",
+        "sys.path.insert(0, '/repo/src')\n",
         encoding="utf-8",
     )
     errors = _mod.validate(tmp_path)
@@ -66,7 +66,7 @@ def test_installer_skill_exempt(tmp_path: Path) -> None:
     (skill / "blueprint.yaml").write_text("name: install-assistant-tools\n", encoding="utf-8")
     (skill / "scripts" / "setup.py").write_text(
         "import sys\n"
-        "sys.path.insert(0, str(root / 'script_dispatcher' / 'src'))\n"
+        "sys.path.insert(0, str(root / 'src'))\n"
         "launcher = bin_dir / \"dispatcher\"\n",
         encoding="utf-8",
     )
@@ -78,7 +78,7 @@ def test_other_skills_not_exempt(tmp_path: Path) -> None:
     (skill / "scripts").mkdir(parents=True)
     (skill / "blueprint.yaml").write_text("name: sneaky-skill\n", encoding="utf-8")
     (skill / "scripts" / "run.py").write_text(
-        "sys.path.insert(0, '/repo/script_dispatcher/src')\n",
+        "sys.path.insert(0, '/repo/src')\n",
         encoding="utf-8",
     )
     errors = _mod.validate(tmp_path)

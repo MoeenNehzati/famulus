@@ -15,7 +15,7 @@ depends_on:
   find-handoff-candidates:
     major_version: 1
     exports:
-      - scan
+      - find-handoff-candidates.machine.scan
   prepare-handoff:
     major_version: 1
 

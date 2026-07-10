@@ -21,6 +21,7 @@ No agents are preselected: pass --agents explicitly.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -40,6 +41,11 @@ ALL_AGENTS = ["assistant", "collab", "coauthor", "tw"]
 # tw is a bin-dir alias for tmux-workspace; it has no separate worker dir,
 # profile, or ASSISTANT_DEFAULT relevance (tmux-workspace isn't an LLM backend).
 WORKER_AGENTS = ["assistant", "collab", "coauthor"]
+
+
+def _toml_basic_string(value: str) -> str:
+    """Return a TOML-compatible quoted string for a path-like value."""
+    return json.dumps(value, ensure_ascii=False)
 
 
 def install_bin_for_agent(source_bin_dir: Path, bin_dir: Path, agent: str, dry_run: bool, manifest: Manifest | None) -> None:
@@ -95,7 +101,10 @@ def write_config_toml_with_absolute_agent_path(
 
     content = src.read_text(encoding="utf-8")
     content = _MODEL_INSTRUCTIONS_RE.sub(
-        f'model_instructions_file = "{agent_md_path}"', content
+        lambda _match: (
+            f"model_instructions_file = {_toml_basic_string(str(agent_md_path))}"
+        ),
+        content,
     )
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(content, encoding="utf-8")

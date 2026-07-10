@@ -1,7 +1,7 @@
 {
   "bash": [
-    "Bash(python3 scripts/scan.py:*)",
-    "Bash(python3 scripts/calibrate.py:*)"
+    "Bash(dispatcher --caller-skill find-handoff-candidates find-handoff-candidates.machine.scan:*)",
+    "Bash(dispatcher --caller-skill find-handoff-candidates find-handoff-candidates.machine.calibrate:*)"
   ],
   "network": []
 }

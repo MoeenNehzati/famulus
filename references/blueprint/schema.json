@@ -7,8 +7,6 @@
   "additionalProperties": false,
   "properties": {
     "category": {
-      "title": "Skill Category",
-      "description": "A single category node from the assistant taxonomy tree. Names encode hierarchy via postfix: 'workflow-general-assistant' is a child of 'general-assistant'. Skills may be placed at any node (leaf or intermediate). The root 'assistant' is structural and may not be used. Full tree in references/blueprint/guide.md.",
       "type": "string",
       "enum": [
         "research-assistant",
@@ -22,21 +20,18 @@
       ]
     },
     "interface_version": {
-      "title": "Interface Version",
-      "description": "Major version of the exported contract. Bump when breaking changes occur.",
       "type": "integer",
       "minimum": 1
     },
     "cross_platform": {
-      "title": "Cross-Platform Validator Opt-In",
-      "description": "Whether this skill is expected to satisfy the cross-platform validator. Omit or set true for the default shared-skill policy. Set false only for intentionally OS-bound skills, such as scheduler or service-manager integrations.",
       "type": "boolean",
       "default": true
     },
     "depends_on": {
-      "title": "Dependencies",
-      "description": "Map of skill name to dependency specification.",
       "type": "object",
+      "propertyNames": {
+        "$ref": "#/definitions/skillName"
+      },
       "additionalProperties": {
         "oneOf": [
           {
@@ -53,8 +48,14 @@
               "exports": {
                 "type": "array",
                 "items": {
-                  "type": "string",
-                  "minLength": 1
+                  "oneOf": [
+                    {
+                      "$ref": "#/definitions/canonicalInterfaceName"
+                    },
+                    {
+                      "$ref": "#/definitions/interfaceName"
+                    }
+                  ]
                 }
               }
             }
@@ -63,8 +64,6 @@
       }
     },
     "skill_interface": {
-      "title": "Skill Interface",
-      "description": "High-level contract describing inputs, outputs, and side effects.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -89,8 +88,6 @@
       }
     },
     "suggested_permissions": {
-      "title": "Suggested Permissions",
-      "description": "Permission suggestions for pre-approval.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -149,34 +146,234 @@
         }
       }
     },
-    "script_interfaces": {
-      "title": "Script Interfaces",
-      "description": "Map of script-interface group name to invocation contract. Each group has one owner-facing default id plus optional named subinterfaces for narrower external views.",
+    "interfaces": {
       "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/machineInterfaceMap"
+        },
+        "llm": {
+          "$ref": "#/definitions/llmInterfaceMap"
+        }
+      }
+    },
+    "script_interfaces": {
+      "type": "object",
+      "description": "Legacy compatibility surface. Prefer `interfaces.machine` / `interfaces.llm` for new blueprints.",
       "additionalProperties": {
-        "$ref": "#/definitions/scriptInterface"
+        "$ref": "#/definitions/legacyScriptInterface"
       }
     }
   },
   "definitions": {
-    "scriptInterface": {
+    "skillName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+$"
+    },
+    "interfaceName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "canonicalInterfaceName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.(machine|llm)\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "machineInterfaceMap": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/definitions/interfaceName"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/machineInterface"
+      }
+    },
+    "llmInterfaceMap": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/definitions/interfaceName"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/llmInterface"
+      }
+    },
+    "machineInterface": {
+      "type": "object",
+      "required": ["runtime"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "usage": {
+          "type": "string"
+        },
+        "patterns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/pattern"
+          }
+        },
+        "allow_all_skills": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowed_callers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/skillName"
+          },
+          "default": []
+        },
+        "runtime": {
+          "$ref": "#/definitions/runtime"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/allowAllSkillsConstraint"
+        }
+      ]
+    },
+    "llmInterface": {
+      "type": "object",
+      "required": ["description"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "binding": {
+          "$ref": "#/definitions/llmBinding"
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/).+"
+        },
+        "allow_all_skills": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowed_callers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/skillName"
+          },
+          "default": []
+        },
+        "routing_hints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": ["binding"]
+            },
+            {
+              "required": ["file"]
+            }
+          ]
+        },
+        {
+          "$ref": "#/definitions/allowAllSkillsConstraint"
+        }
+      ]
+    },
+    "llmBinding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "path"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "markdown_file"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?!/).+"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "uri"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "uri"
+            },
+            "uri": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:.*$"
+            }
+          }
+        }
+      ]
+    },
+    "runtime": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "module"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "python_module"
+            },
+            "module": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "argv"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "command"
+            },
+            "argv": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "legacyScriptInterface": {
       "type": "object",
       "required": ["id", "command"],
       "additionalProperties": false,
       "properties": {
         "id": {
           "type": "string",
-          "minLength": 1,
-          "description": "Stable id of the owner-facing/default subinterface. This id must be unique within the skill. Uniqueness is enforced by skills/skill-maker/validators/interface_ids.py."
+          "minLength": 1
         },
         "description": {
           "type": "string",
-          "minLength": 1,
-          "description": "Optional human-facing owner summary. When present, the sync tool injects this interface into SKILL.md. Omit it for narrow machine-facing subinterfaces that should stay out of the skill body."
+          "minLength": 1
         },
         "usage": {
-          "type": "string",
-          "description": "Optional complete invocation argument template (positionals, required flags, optional flags). The sync tool renders this into the dispatcher invocation in the generated SKILL.md block. Use \"\" for no-arg interfaces (renders clean invocation with no trailing args); omit entirely to render a '...' stub. Required whenever description is set."
+          "type": "string"
         },
         "cwd": {
           "enum": ["skill_root", "repo_root"],
@@ -194,50 +391,7 @@
           "type": "array",
           "minItems": 1,
           "items": {
-            "$ref": "#/definitions/pattern"
-          },
-          "description": "Legacy/default shorthand for the owner-facing default subinterface. Prefer `default.patterns` for new blueprints."
-        },
-        "allow_all_skills": {
-          "type": "boolean",
-          "default": false,
-          "description": "Legacy/default shorthand for the owner-facing default subinterface. Prefer `default.allow_all_skills` for new blueprints."
-        },
-        "allowed_callers": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "default": [],
-          "description": "Legacy/default shorthand for the owner-facing default subinterface. Prefer `default.allowed_callers` for new blueprints."
-        },
-        "default": {
-          "$ref": "#/definitions/defaultSubinterface"
-        },
-        "subinterfaces": {
-          "type": "object",
-          "description": "Optional narrower callable views of the same script command. Use these to restrict other skills without affecting the owner-facing default surface.",
-          "additionalProperties": {
-            "$ref": "#/definitions/namedSubinterface"
-          }
-        }
-      },
-        "allOf": [
-          {
-            "$ref": "#/definitions/allowAllSkillsConstraint"
-          }
-        ]
-    },
-    "defaultSubinterface": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "patterns": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/definitions/pattern"
+            "$ref": "#/definitions/legacyPattern"
           }
         },
         "allow_all_skills": {
@@ -247,8 +401,45 @@
         "allowed_callers": {
           "type": "array",
           "items": {
-            "type": "string",
-            "minLength": 1
+            "$ref": "#/definitions/skillName"
+          },
+          "default": []
+        },
+        "default": {
+          "$ref": "#/definitions/legacyDefaultSubinterface"
+        },
+        "subinterfaces": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/legacyNamedSubinterface"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/allowAllSkillsConstraint"
+        }
+      ]
+    },
+    "legacyDefaultSubinterface": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "patterns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/legacyPattern"
+          }
+        },
+        "allow_all_skills": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowed_callers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/skillName"
           },
           "default": []
         }
@@ -259,21 +450,20 @@
         }
       ]
     },
-    "namedSubinterface": {
+    "legacyNamedSubinterface": {
       "type": "object",
       "required": ["id"],
       "additionalProperties": false,
       "properties": {
         "id": {
           "type": "string",
-          "minLength": 1,
-          "description": "Stable id of this named subinterface. Must be unique within the skill. Uniqueness is enforced by skills/skill-maker/validators/interface_ids.py."
+          "minLength": 1
         },
         "patterns": {
           "type": "array",
           "minItems": 1,
           "items": {
-            "$ref": "#/definitions/pattern"
+            "$ref": "#/definitions/legacyPattern"
           }
         },
         "allow_all_skills": {
@@ -283,8 +473,7 @@
         "allowed_callers": {
           "type": "array",
           "items": {
-            "type": "string",
-            "minLength": 1
+            "$ref": "#/definitions/skillName"
           },
           "default": []
         }
@@ -297,6 +486,7 @@
     },
     "pattern": {
       "type": "object",
+      "required": ["notes"],
       "additionalProperties": false,
       "properties": {
         "name": {
@@ -305,11 +495,11 @@
         },
         "min_positionals": {
           "type": "integer",
-          "minimum": 0,
-          "default": 0
+          "minimum": 0
         },
         "max_positionals": {
-          "type": "integer"
+          "type": "integer",
+          "minimum": 0
         },
         "allow_extra_positionals": {
           "type": "boolean",
@@ -321,47 +511,123 @@
         },
         "positional_patterns": {
           "type": "object",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         },
         "flag_patterns": {
           "type": "object",
+          "propertyNames": {
+            "pattern": "^--[A-Za-z0-9][A-Za-z0-9-]*$"
+          },
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         },
         "required_flags": {
           "type": "array",
           "items": {
             "type": "string",
-            "minLength": 1
-          },
-          "default": []
+            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
+          }
         },
         "allowed_flags": {
           "type": "array",
           "items": {
             "type": "string",
-            "minLength": 1
-          },
-          "default": []
+            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
+          }
         },
         "forbidden_flags": {
           "type": "array",
           "items": {
             "type": "string",
-            "minLength": 1
-          },
-          "default": []
+            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
+          }
         },
         "notes": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "legacyPattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "min_positionals": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_positionals": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "allow_extra_positionals": {
+          "type": "boolean",
+          "default": false
+        },
+        "allow_stdin": {
+          "type": "boolean",
+          "default": false
+        },
+        "positional_patterns": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "flag_patterns": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required_flags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
+          }
+        },
+        "allowed_flags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
+          }
+        },
+        "forbidden_flags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
+          }
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
     "allowAllSkillsConstraint": {
-      "description": "If allow_all_skills is true, allowed_callers must be empty (public interface). If allow_all_skills is false, allowed_callers can be non-empty (restricted interface).",
       "if": {
         "properties": {
           "allow_all_skills": {

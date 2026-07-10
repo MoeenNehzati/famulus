@@ -23,10 +23,10 @@ class CloudTransportError(Exception):
 
 def _dispatch(interface_id: str, remote_path: str, *, stdin: str | None = None) -> tuple[int, str, str]:
     try:
-        from script_dispatcher import InvocationError, dispatch
+        from officina.dispatcher import InvocationError, dispatch
     except ImportError as exc:
         raise CloudTransportError(
-            "script_dispatcher is not installed. Re-run install-assistant-tools "
+            "officina.dispatcher is not installed. Re-run install-assistant-tools "
             "to install the shared dispatcher package."
         ) from exc
 

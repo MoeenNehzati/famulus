@@ -23,12 +23,30 @@ def _expect_mapping(value: Any) -> dict[str, Any]:
     return value
 
 
+def _uses_new_interface_model(blueprint: dict[str, Any]) -> bool:
+    return isinstance(blueprint.get("interfaces"), dict)
+
+
 def _interface_ids(blueprint: dict[str, Any], only_visible: bool = False) -> list[str]:
     """Return sorted list of interface IDs from blueprint.
 
     If only_visible=True, return only interfaces that have a description (those that
     the sync tool will expose in the generated block). Internal interfaces omit description.
     """
+    if _uses_new_interface_model(blueprint):
+        interfaces = _expect_mapping(blueprint.get("interfaces"))
+        machine = _expect_mapping(interfaces.get("machine"))
+        result: list[str] = []
+        for name, spec in sorted(machine.items()):
+            if not isinstance(spec, dict):
+                continue
+            if only_visible:
+                desc = spec.get("description")
+                if not (isinstance(desc, str) and desc.strip()):
+                    continue
+            result.append(str(name))
+        return result
+
     interfaces = _expect_mapping(blueprint.get("script_interfaces"))
     result: list[str] = []
     for _name, spec in sorted(interfaces.items()):
@@ -138,7 +156,11 @@ def validate(repo_root: Path) -> list[str]:
             errors.append(f"{skill_md}: generated interface block must not expose raw scripts")
 
         for interface_id in visible_ids:
-            expected = f"dispatcher --caller-skill {skill_name} {skill_name} {interface_id}"
+            expected = (
+                f"dispatcher --caller-skill {skill_name} {skill_name}.machine.{interface_id}"
+                if _uses_new_interface_model(blueprint)
+                else f"dispatcher --caller-skill {skill_name} {skill_name} {interface_id}"
+            )
             if expected not in block:
                 errors.append(
                     f"{skill_md}: generated interface block is missing dispatcher command for `{interface_id}`"

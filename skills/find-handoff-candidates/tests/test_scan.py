@@ -7,21 +7,28 @@ extract_project, extract_session_id, resume_hint) so these tests never
 need to touch real transcript directories or care which host is which --
 scan.py itself is fully generic, and these tests exercise exactly that.
 """
+import importlib
 import datetime
-import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).parent.parent
-SCRIPT = SKILL_DIR / "scripts" / "scan.py"
+
+def _clear_scripts_modules() -> None:
+    for name in list(sys.modules):
+        if name == "scripts" or name.startswith("scripts."):
+            sys.modules.pop(name, None)
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("scan", SCRIPT)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    _clear_scripts_modules()
+    sys.path.insert(0, str(SKILL_DIR))
+    try:
+        return importlib.import_module("scripts.scan")
+    finally:
+        sys.path.pop(0)
 
 
 def _write_transcript(path, lines):

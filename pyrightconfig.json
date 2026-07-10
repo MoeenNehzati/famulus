@@ -1,0 +1,22 @@
+{
+  "include": [
+    "src",
+    "skills",
+    "tests",
+    "script_dispatcher/src"
+  ],
+  "exclude": [
+    "**/.claude",
+    "**/.codex",
+    "**/.agents",
+    "**/.pytest_cache"
+  ],
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": [
+        "src"
+      ]
+    }
+  ]
+}

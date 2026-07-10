@@ -30,7 +30,7 @@ This skill separates four outputs that are easy to conflate:
 
 ## Invocation Rules
 
-If the user explicitly invokes `$prepare-handoff` or a namespaced equivalent such as `$famulus:prepare-handoff`, run the skill on the available current context. Do not refuse merely because an automatic trigger heuristic is not met. If the usable work segment is thin or unclear, say that you are not sure what should be preserved, ask for one or two concrete pointers, and try again after the user responds.
+If the user explicitly invokes `$prepare-handoff` or a namespaced equivalent such as `$officina:prepare-handoff`, run the skill on the available current context. Do not refuse merely because an automatic trigger heuristic is not met. If the usable work segment is thin or unclear, say that you are not sure what should be preserved, ask for one or two concrete pointers, and try again after the user responds.
 
 Automatically invoke this skill when the user's latest message is primarily a transition, pause, end-of-session, or track-switch request and the recent work produced project-continuity knowledge worth preserving.
 
@@ -155,6 +155,23 @@ Ask a short question such as:
 
 After the user gives pointers, rerun the workflow using those pointers as the missing context.
 
+## Explicit Close Request
+
+If a handoff has already reached the `STARTED` marker and the user then
+explicitly asks to close, end, or finish the handoff without writing anything,
+do not keep the handoff open just because no workflow/docs/lessons were
+approved.
+
+In that case:
+
+- do not write files
+- give a concise closure report stating that no handoff writes were applied
+- emit the completion sentinel
+
+This is a special close-out path for an already-started handoff. It does not
+authorize writing without approval, and it does not change the normal rule that
+an unstarted, thin, or abandoned handoff should not emit `COMPLETE`.
+
 ## Report
 
 End with a concise report:
@@ -168,6 +185,6 @@ Immediately after this report (i.e. once workflow/doc updates and lesson writes 
 
 `<!-- HANDOFF-SENTINEL: COMPLETE -->`
 
-This is a machine-readable completion marker consumed by an external session scanner — not a user-facing note. Do not paraphrase or alter its spacing/punctuation. Do not emit it if the handoff plan was never approved (thin/unclear context, or the user declined) — an unapproved or abandoned handoff should stay at `STARTED`, not `COMPLETE`.
+This is a machine-readable completion marker consumed by an external session scanner — not a user-facing note. Do not paraphrase or alter its spacing/punctuation. Do not emit it if the handoff plan was never approved (thin/unclear context, or the user declined) unless the user explicitly asked to close an already-started handoff without writes. An unstarted or abandoned handoff should stay at `STARTED`, not `COMPLETE`.
 
 Do not commit unless the user explicitly asks.

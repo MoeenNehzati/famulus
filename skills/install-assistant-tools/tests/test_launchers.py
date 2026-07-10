@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -41,6 +42,7 @@ def test_run_installs_only_selected_agents(tmp_path):
     launchers.run(
         repo_root=repo_root,
         agents=["assistant"],
+        home=tmp_path / "home",
         bin_dir=bin_dir,
         codex_home=codex_home,
         claude_home=claude_home,
@@ -68,6 +70,7 @@ def test_config_toml_gets_absolute_agent_path_not_codex_home_relative(tmp_path):
     launchers.run(
         repo_root=repo_root,
         agents=["assistant"],
+        home=tmp_path / "home",
         bin_dir=bin_dir,
         codex_home=codex_home,
         claude_home=claude_home,
@@ -85,6 +88,32 @@ def test_config_toml_gets_absolute_agent_path_not_codex_home_relative(tmp_path):
     assert 'model = "gpt-5.4-mini"' in codex_config  # other lines preserved
 
 
+def test_config_toml_rewrite_treats_windows_backslashes_as_literal_path(tmp_path):
+    src = tmp_path / "assistant.config.toml"
+    dst = tmp_path / "codex" / "assistant.config.toml"
+    windows_agent_path = Path(r"C:\Users\tester\Officina\agents\assistant.md")
+    src.write_text(
+        'model_instructions_file = "agents/assistant.md"\nmodel = "gpt-5.4-mini"\n',
+        encoding="utf-8",
+    )
+
+    launchers.write_config_toml_with_absolute_agent_path(
+        src,
+        dst,
+        windows_agent_path,
+        dry_run=False,
+    )
+
+    installed = dst.read_text(encoding="utf-8")
+    parsed = tomllib.loads(installed)
+    assert parsed["model_instructions_file"] == str(windows_agent_path)
+    assert (
+        r'model_instructions_file = "C:\\Users\\tester\\Officina\\agents\\assistant.md"'
+        in installed
+    )
+    assert parsed["model"] == "gpt-5.4-mini"
+
+
 def test_config_toml_preserves_existing_machine_local_copy(tmp_path):
     repo_root = _make_repo(tmp_path)
     codex_home = tmp_path / "codex"
@@ -94,6 +123,7 @@ def test_config_toml_preserves_existing_machine_local_copy(tmp_path):
     launchers.run(
         repo_root=repo_root,
         agents=["assistant"],
+        home=tmp_path / "home",
         bin_dir=tmp_path / "bin",
         codex_home=codex_home,
         claude_home=tmp_path / "claude",
@@ -116,6 +146,7 @@ def test_run_sets_assistant_default_in_rc(tmp_path):
     launchers.run(
         repo_root=repo_root,
         agents=["assistant"],
+        home=tmp_path / "home",
         bin_dir=bin_dir,
         codex_home=codex_home,
         claude_home=claude_home,
@@ -136,6 +167,7 @@ def test_run_with_no_agents_installs_nothing(tmp_path):
     launchers.run(
         repo_root=repo_root,
         agents=[],
+        home=tmp_path / "home",
         bin_dir=bin_dir,
         codex_home=tmp_path / "codex",
         claude_home=tmp_path / "claude",
@@ -154,6 +186,7 @@ def test_run_verifies_installed_launchers(tmp_path, capsys):
     launchers.run(
         repo_root=repo_root,
         agents=["assistant"],
+        home=tmp_path / "home",
         bin_dir=bin_dir,
         codex_home=tmp_path / "codex",
         claude_home=tmp_path / "claude",
@@ -185,6 +218,7 @@ def test_tw_agent_links_both_tmux_workspace_and_tw_alias(tmp_path):
     launchers.run(
         repo_root=repo_root,
         agents=["tw"],
+        home=tmp_path / "home",
         bin_dir=bin_dir,
         codex_home=tmp_path / "codex",
         claude_home=tmp_path / "claude",

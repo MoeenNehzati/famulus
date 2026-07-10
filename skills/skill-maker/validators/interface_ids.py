@@ -43,6 +43,23 @@ def validate(repo_root: Path) -> list[str]:
             errors.append(str(exc))
             continue
 
+        interfaces = blueprint.get("interfaces")
+        if isinstance(interfaces, dict):
+            for kind in ("machine", "llm"):
+                namespace = interfaces.get(kind)
+                if namespace is None:
+                    continue
+                if not isinstance(namespace, dict):
+                    errors.append(f"{blueprint_path}: interfaces.{kind}: expected mapping")
+                    continue
+                for interface_name, interface_spec in namespace.items():
+                    context = f"{blueprint_path}: interfaces.{kind}.{interface_name}"
+                    if "." in str(interface_name):
+                        errors.append(f"{context}: interface names must not contain `.`")
+                    if not isinstance(interface_spec, dict):
+                        errors.append(f"{context}: expected mapping")
+            continue
+
         script_interfaces = blueprint.get("script_interfaces")
         if script_interfaces is None:
             continue

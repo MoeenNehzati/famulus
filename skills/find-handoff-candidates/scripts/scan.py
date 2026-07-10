@@ -55,11 +55,12 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import importlib.util
 import json
 import os
 import re
 import sys
+
+from . import PARSERS
 
 STARTED_RE = re.compile(r"<!--\s*HANDOFF-SENTINEL:\s*STARTED\s*-->")
 COMPLETE_RE = re.compile(r"<!--\s*HANDOFF-SENTINEL:\s*COMPLETE\s*-->")
@@ -67,26 +68,6 @@ COMPLETE_RE = re.compile(r"<!--\s*HANDOFF-SENTINEL:\s*COMPLETE\s*-->")
 # Absolute floor on line count regardless of gap size, just to skip
 # essentially-empty stub sessions where timestamps/byte counts are noise.
 MIN_LINE_FLOOR = 3
-
-
-def _load_parsers():
-    """Load the sibling __init__.py by path, not by relative import.
-
-    The dispatcher invokes this script directly (python3 scripts/scan.py),
-    so it runs as __main__ with no parent package -- `from . import
-    parsers` would fail with "attempted relative import with no known
-    parent package". Loading by file path sidesteps the package system
-    entirely and works regardless of how this script itself was invoked.
-    See references/skill-guidelines.md, guideline 13.
-    """
-    init_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "__init__.py")
-    spec = importlib.util.spec_from_file_location("host_parsers", init_path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.parsers
-
-
-PARSERS = _load_parsers()
 
 
 def _file_mtime_date(path: str) -> str:

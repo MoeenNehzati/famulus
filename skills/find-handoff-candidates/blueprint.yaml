@@ -9,10 +9,12 @@ depends_on:
 
 suggested_permissions:
   bash:
-    - command: ["python3", "scripts/scan.py"]
+    - command: ["dispatcher"]
+      args_prefix: ["--caller-skill", "find-handoff-candidates", "find-handoff-candidates.machine.scan"]
       reason: "Read-only scan of local session transcript files; no writes, no network."
-    - command: ["python3", "scripts/calibrate.py"]
-      reason: "Read-only diagnostic tool for re-deriving DEFAULT_GAP_THRESHOLD reference numbers; no writes, no network."
+    - command: ["dispatcher"]
+      args_prefix: ["--caller-skill", "find-handoff-candidates", "find-handoff-candidates.machine.calibrate"]
+      reason: "Read-only diagnostic tool for re-deriving default threshold reference numbers; no writes, no network."
   network:
     []
 
@@ -25,14 +27,13 @@ skill_interface:
   side_effects:
     - "None. Read-only: scans local session transcript files."
 
-script_interfaces:
-  scan:
-    id: scan
-    description: "Scan session transcripts across every configured host (default: trailing 2 days), and report sessions whose conversation since their last completed handoff exceeds a per-host threshold, using mechanical extraction only (no LLM judgment)."
-    usage: "[--min-gap-chars N] [--days N | --date YYYY-MM-DD]"
-    cwd: skill_root
-    command: ["python3", "scripts/scan.py"]
-    default:
+interfaces:
+  machine:
+    scan:
+      description: "Scan session transcripts across every configured host (default: trailing 2 days), and report sessions whose conversation since their last completed handoff exceeds a per-host threshold, using mechanical extraction only (no LLM judgment)."
+      usage: "[--min-gap-chars N] [--days N | --date YYYY-MM-DD]"
+      allow_all_skills: true
+      allowed_callers: []
       patterns:
         - min_positionals: 0
           max_positionals: 0
@@ -43,16 +44,15 @@ script_interfaces:
             --days: "^[0-9]+$"
             --date: "^\\d{4}-\\d{2}-\\d{2}$"
           notes: "No positionals. --min-gap-chars overrides every host's built-in default threshold (each host is calibrated separately, since they differ by roughly an order of magnitude in bytes per unit of work) with a single shared value. --days (default 2) scans the trailing N days ending today, inclusive; --date pins to one exact day instead (mutually exclusive with --days; mainly useful for backtesting/calibration). Output is a JSON array; each entry's handoff_status is one of none, started, complete -- a complete entry can still be flagged if gap_net_chars (conversation since that completion) exceeds the threshold."
-      allow_all_skills: true
-      allowed_callers: []
+      runtime:
+        kind: python_module
+        module: scripts.scan
 
-  calibrate:
-    id: calibrate
-    description: "Re-derive reference median/p75/p90 gap-size statistics per host from real transcripts in a lookback window, to check whether scan's default thresholds still make sense. Diagnostic only -- does not modify any parser file; read the output and edit the relevant parser's default_threshold by hand if it suggests new numbers."
-    usage: "[--days N]"
-    cwd: skill_root
-    command: ["python3", "scripts/calibrate.py"]
-    default:
+    calibrate:
+      description: "Re-derive reference median/p75/p90 gap-size statistics per host from real transcripts in a lookback window, to check whether scan's default thresholds still make sense. Diagnostic only -- does not modify any parser file; read the output and edit the relevant parser's default_threshold by hand if it suggests new numbers."
+      usage: "[--days N]"
+      allow_all_skills: false
+      allowed_callers: []
       patterns:
         - min_positionals: 0
           max_positionals: 0
@@ -61,5 +61,6 @@ script_interfaces:
           flag_patterns:
             --days: "^[0-9]+$"
           notes: "No positionals. --days sets the lookback window (default 5). Output is human-readable per-host stats to stdout, not JSON -- this is a manual diagnostic tool, not meant for programmatic consumption."
-      allow_all_skills: false
-      allowed_callers: []
+      runtime:
+        kind: python_module
+        module: scripts.calibrate

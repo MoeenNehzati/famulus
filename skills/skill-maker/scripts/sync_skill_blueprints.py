@@ -86,6 +86,62 @@ def expect_list_of_strings(value: Any, context: str) -> list[str]:
     return value
 
 
+def uses_new_interface_model(data: dict[str, Any]) -> bool:
+    interfaces = data.get("interfaces")
+    return isinstance(interfaces, dict)
+
+
+def expect_runtime(value: Any, context: str, errors: list[str]) -> None:
+    if not isinstance(value, dict):
+        errors.append(f"{context}: expected mapping")
+        return
+    kind = value.get("kind")
+    if kind == "python_module":
+        module = value.get("module")
+        if not isinstance(module, str) or not module.strip():
+            errors.append(f"{context}: python_module runtime needs non-empty `module`")
+        return
+    if kind == "command":
+        argv = value.get("argv")
+        if not isinstance(argv, list) or not all(isinstance(token, str) and token for token in argv):
+            errors.append(f"{context}: command runtime needs non-empty string list `argv`")
+        return
+    errors.append(f"{context}: runtime kind must be `python_module` or `command`")
+
+
+def expect_llm_binding(value: Any, context: str, errors: list[str]) -> None:
+    if not isinstance(value, dict):
+        errors.append(f"{context}: expected mapping")
+        return
+    kind = value.get("kind")
+    if kind == "markdown_file":
+        path = value.get("path")
+        if not isinstance(path, str) or not path.strip():
+            errors.append(f"{context}: markdown_file binding needs non-empty `path`")
+        elif path.startswith("/"):
+            errors.append(f"{context}: markdown_file binding `path` must be relative to the skill root")
+        return
+    if kind == "uri":
+        uri = value.get("uri")
+        if not isinstance(uri, str) or not uri.strip():
+            errors.append(f"{context}: uri binding needs non-empty `uri`")
+        elif ":" not in uri:
+            errors.append(f"{context}: uri binding `uri` must be absolute")
+        return
+    errors.append(f"{context}: binding kind must be `markdown_file` or `uri`")
+
+
+def normalized_interface_maps(
+    data: dict[str, Any], context: str
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    if not uses_new_interface_model(data):
+        return {}, {}
+    interfaces = expect_mapping(data.get("interfaces"), f"{context}.interfaces")
+    machine = expect_mapping(interfaces.get("machine"), f"{context}.interfaces.machine")
+    llm = expect_mapping(interfaces.get("llm"), f"{context}.interfaces.llm")
+    return machine, llm
+
+
 def interface_id(interface_name: str, interface_spec: dict[str, Any], context: str) -> str:
     value = interface_spec.get("id")
     if not isinstance(value, str) or not value.strip():
@@ -266,56 +322,91 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                         ):
                             errors.append(f"{context}: web_fetch permission needs non-empty string list `domains`")
 
-        script_interfaces = expect_mapping(data.get("script_interfaces"), f"{blueprint.path}:script_interfaces")
-        for interface_name, interface_spec in script_interfaces.items():
-            context = f"{blueprint.path}: script_interfaces.{interface_name}"
-            if not isinstance(interface_spec, dict):
-                errors.append(f"{context}: expected mapping")
-                continue
-            try:
-                interface_id(interface_name, interface_spec, context)
-            except BlueprintError as exc:
-                errors.append(str(exc))
-
-            cwd = interface_spec.get("cwd", "skill_root")
-            if cwd not in {"skill_root", "repo_root"}:
-                errors.append(f"{context}: cwd must be `skill_root` or `repo_root`")
-            command = interface_spec.get("command")
-            if not isinstance(command, list) or not all(isinstance(token, str) and token for token in command):
-                errors.append(f"{context}: missing non-empty string list `command`")
-
-            if "default" in interface_spec and legacy_default_fields(interface_spec):
-                errors.append(
-                    f"{context}: cannot mix top-level default shorthand "
-                    f"(`patterns`/`allow_all_skills`/`allowed_callers`) with `default`"
-                )
-
-            validate_access_surface(errors, interface_spec, context, allow_id=False)
-
-            default_spec = interface_spec.get("default")
-            if default_spec is not None:
-                if not isinstance(default_spec, dict):
-                    errors.append(f"{context}.default: expected mapping")
+        if uses_new_interface_model(data):
+            machine_interfaces, llm_interfaces = normalized_interface_maps(data, str(blueprint.path))
+            for interface_name, interface_spec in machine_interfaces.items():
+                context = f"{blueprint.path}: interfaces.machine.{interface_name}"
+                if not isinstance(interface_spec, dict):
+                    errors.append(f"{context}: expected mapping")
+                    continue
+                validate_access_surface(errors, interface_spec, context, allow_id=False)
+                expect_runtime(interface_spec.get("runtime"), f"{context}.runtime", errors)
+            for interface_name, interface_spec in llm_interfaces.items():
+                context = f"{blueprint.path}: interfaces.llm.{interface_name}"
+                if not isinstance(interface_spec, dict):
+                    errors.append(f"{context}: expected mapping")
+                    continue
+                if not isinstance(interface_spec.get("description"), str) or not interface_spec["description"].strip():
+                    errors.append(f"{context}: missing non-empty `description`")
+                binding = interface_spec.get("binding")
+                file = interface_spec.get("file")
+                if binding is None:
+                    if not isinstance(file, str) or not file.strip():
+                        errors.append(f"{context}: missing `binding` (or legacy non-empty `file`)")
+                    elif file.startswith("/"):
+                        errors.append(f"{context}: legacy `file` must be relative to the skill root")
                 else:
-                    if "id" in default_spec:
-                        errors.append(
-                            f"{context}.default: must not define `id`; the default subinterface shares the parent interface id"
-                        )
-                    validate_access_surface(errors, default_spec, f"{context}.default", allow_id=False)
+                    expect_llm_binding(binding, f"{context}.binding", errors)
+                if "runtime" in interface_spec:
+                    errors.append(f"{context}: llm interfaces must not define `runtime`")
+                if "allow_all_skills" in interface_spec and not isinstance(interface_spec["allow_all_skills"], bool):
+                    errors.append(f"{context}: `allow_all_skills` must be a boolean")
+                if "allowed_callers" in interface_spec:
+                    try:
+                        expect_list_of_strings(interface_spec["allowed_callers"], f"{context}.allowed_callers")
+                    except BlueprintError as exc:
+                        errors.append(str(exc))
+        else:
+            script_interfaces = expect_mapping(data.get("script_interfaces"), f"{blueprint.path}:script_interfaces")
+            for interface_name, interface_spec in script_interfaces.items():
+                context = f"{blueprint.path}: script_interfaces.{interface_name}"
+                if not isinstance(interface_spec, dict):
+                    errors.append(f"{context}: expected mapping")
+                    continue
+                try:
+                    interface_id(interface_name, interface_spec, context)
+                except BlueprintError as exc:
+                    errors.append(str(exc))
 
-            sub_specs_raw = interface_spec.get("subinterfaces")
-            if sub_specs_raw is not None:
-                if not isinstance(sub_specs_raw, dict):
-                    errors.append(f"{context}.subinterfaces: expected mapping")
-                else:
-                    for sub_name, sub_spec in sub_specs_raw.items():
-                        sub_context = f"{context}.subinterfaces.{sub_name}"
-                        if not isinstance(sub_spec, dict):
-                            errors.append(f"{sub_context}: expected mapping")
-                            continue
-                        if not isinstance(sub_spec.get("id"), str) or not sub_spec["id"].strip():
-                            errors.append(f"{sub_context}: missing non-empty string `id`")
-                        validate_access_surface(errors, sub_spec, sub_context, allow_id=True)
+                cwd = interface_spec.get("cwd", "skill_root")
+                if cwd not in {"skill_root", "repo_root"}:
+                    errors.append(f"{context}: cwd must be `skill_root` or `repo_root`")
+                command = interface_spec.get("command")
+                if not isinstance(command, list) or not all(isinstance(token, str) and token for token in command):
+                    errors.append(f"{context}: missing non-empty string list `command`")
+
+                if "default" in interface_spec and legacy_default_fields(interface_spec):
+                    errors.append(
+                        f"{context}: cannot mix top-level default shorthand "
+                        f"(`patterns`/`allow_all_skills`/`allowed_callers`) with `default`"
+                    )
+
+                validate_access_surface(errors, interface_spec, context, allow_id=False)
+
+                default_spec = interface_spec.get("default")
+                if default_spec is not None:
+                    if not isinstance(default_spec, dict):
+                        errors.append(f"{context}.default: expected mapping")
+                    else:
+                        if "id" in default_spec:
+                            errors.append(
+                                f"{context}.default: must not define `id`; the default subinterface shares the parent interface id"
+                            )
+                        validate_access_surface(errors, default_spec, f"{context}.default", allow_id=False)
+
+                sub_specs_raw = interface_spec.get("subinterfaces")
+                if sub_specs_raw is not None:
+                    if not isinstance(sub_specs_raw, dict):
+                        errors.append(f"{context}.subinterfaces: expected mapping")
+                    else:
+                        for sub_name, sub_spec in sub_specs_raw.items():
+                            sub_context = f"{context}.subinterfaces.{sub_name}"
+                            if not isinstance(sub_spec, dict):
+                                errors.append(f"{sub_context}: expected mapping")
+                                continue
+                            if not isinstance(sub_spec.get("id"), str) or not sub_spec["id"].strip():
+                                errors.append(f"{sub_context}: missing non-empty string `id`")
+                            validate_access_surface(errors, sub_spec, sub_context, allow_id=True)
     return errors
 
 
@@ -349,8 +440,22 @@ def generated_permissions(data: dict[str, Any]) -> dict[str, list[str]]:
     return result
 
 
-def exported_interfaces(data: dict[str, Any]) -> list[str]:
+def exported_interfaces(skill_name: str, data: dict[str, Any]) -> list[str]:
     """Return ids of public interfaces/subinterfaces."""
+    if uses_new_interface_model(data):
+        machine, llm = normalized_interface_maps(data, "interfaces")
+        result: list[str] = []
+        for interface_name, spec in sorted(machine.items()):
+            if not isinstance(spec, dict):
+                continue
+            if bool(spec.get("allow_all_skills", False)):
+                result.append(f"{skill_name}.machine.{interface_name}")
+        for interface_name, spec in sorted(llm.items()):
+            if not isinstance(spec, dict):
+                continue
+            if bool(spec.get("allow_all_skills", False)):
+                result.append(f"{skill_name}.llm.{interface_name}")
+        return result
     interfaces = expect_mapping(data.get("script_interfaces"), "script_interfaces")
     result: list[str] = []
     for interface_name, spec in interfaces.items():
@@ -389,6 +494,33 @@ def owner_interfaces(
     data: dict[str, Any],
 ) -> list[tuple[str, str | None, str | None, list[tuple[str | None, str | None]]]]:
     """Return (id, description, usage, pattern_notes) for each interface, sorted by id."""
+    if uses_new_interface_model(data):
+        interfaces, _llm = normalized_interface_maps(data, "interfaces")
+        result: list[tuple[str, str | None, str | None, list[tuple[str | None, str | None]]]] = []
+        for interface_name, spec in sorted(interfaces.items()):
+            if not isinstance(spec, dict):
+                continue
+            description = spec.get("description")
+            clean_description = description.strip() if isinstance(description, str) and description.strip() else None
+            usage = spec.get("usage")
+            if usage is None:
+                clean_usage = None
+            elif isinstance(usage, str):
+                clean_usage = usage.strip()
+            else:
+                clean_usage = None
+            patterns = spec.get("patterns") or []
+            pattern_notes: list[tuple[str | None, str | None]] = []
+            if isinstance(patterns, list):
+                for pattern in patterns:
+                    if not isinstance(pattern, dict):
+                        continue
+                    name = pattern.get("name") or None
+                    notes = pattern.get("notes") or None
+                    if name or notes:
+                        pattern_notes.append((name, notes))
+            result.append((interface_name, clean_description, clean_usage, pattern_notes))
+        return result
     interfaces = expect_mapping(data.get("script_interfaces"), "script_interfaces")
     result: list[tuple[str, str | None, str | None, list[tuple[str | None, str | None]]]] = []
     for interface_name, spec in sorted(interfaces.items()):
@@ -415,11 +547,11 @@ def owner_interfaces(
     return result
 
 
-def generated_contract_block(data: dict[str, Any]) -> str:
+def generated_contract_block(skill_name: str, data: dict[str, Any]) -> str:
     categories = normalized_categories(data, "generated_contract_block")
     depends_on = sorted(expect_mapping(data.get("depends_on"), "depends_on"))
     version = data["interface_version"]
-    exports = exported_interfaces(data)
+    exports = exported_interfaces(skill_name, data)
 
     lines = [
         CONTRACT_START,
@@ -437,17 +569,74 @@ def generated_contract_block(data: dict[str, Any]) -> str:
     lines.extend(["", f"Interface Version: {version}", ""])
 
     if exports:
-        lines.append("Exported Script Interfaces:")
+        label = "Exported Interfaces" if uses_new_interface_model(data) else "Exported Script Interfaces"
+        lines.append(f"{label}:")
         for name in exports:
             lines.append(f"- `{name}`")
     else:
-        lines.append("Exported Script Interfaces: none")
+        label = "Exported Interfaces" if uses_new_interface_model(data) else "Exported Script Interfaces"
+        lines.append(f"{label}: none")
 
     lines.extend([CONTRACT_END, ""])
     return "\n".join(lines)
 
 
 def generated_interface_block(skill_name: str, data: dict[str, Any]) -> str:
+    if uses_new_interface_model(data):
+        machine_interfaces = owner_interfaces(data)
+        _machine, llm_interfaces = normalized_interface_maps(data, "interfaces")
+        visible_machine = [entry for entry in machine_interfaces if entry[1]]
+        visible_llm = [
+            (name, spec)
+            for name, spec in sorted(llm_interfaces.items())
+            if isinstance(spec, dict) and isinstance(spec.get("description"), str) and spec["description"].strip()
+        ]
+        if not visible_machine and not visible_llm:
+            return ""
+
+        lines = [
+            INTERFACES_START,
+            "> Generated from `blueprint.yaml`. Do not edit this block by hand.",
+            "",
+        ]
+        if visible_machine:
+            lines.extend([
+                "Owner-Facing Machine Interfaces:",
+                "",
+                "Use the installed `dispatcher` command for this skill's machine interfaces:",
+            ])
+            for interface_name, description, usage, pattern_notes in visible_machine:
+                lines.append(f"- `{interface_name}` — {description}")
+                args = f" {usage}" if usage else ("" if usage == "" else " ...")
+                lines.append(
+                    f"  - `dispatcher --caller-skill {skill_name} {skill_name}.machine.{interface_name}{args}`"
+                )
+                for pat_name, pat_notes in pattern_notes:
+                    if pat_name and pat_notes:
+                        lines.append(f"  - {pat_name}: {pat_notes}")
+                    elif pat_notes:
+                        lines.append(f"  - {pat_notes}")
+            lines.append("")
+        if visible_llm:
+            lines.extend([
+                "Owner-Facing LLM Interfaces:",
+                "",
+                "These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:",
+            ])
+            for interface_name, spec in visible_llm:
+                lines.append(f"- `{interface_name}` — {spec['description'].strip()}")
+                binding = spec.get("binding")
+                if isinstance(binding, dict):
+                    kind = binding.get("kind")
+                    if kind == "markdown_file" and isinstance(binding.get("path"), str):
+                        lines.append(f"  - binding: relative markdown path `{binding['path']}`")
+                    elif kind == "uri" and isinstance(binding.get("uri"), str):
+                        lines.append(f"  - binding: uri `{binding['uri']}`")
+                elif isinstance(spec.get("file"), str):
+                    lines.append(f"  - binding: relative markdown path `{spec['file']}`")
+        lines.extend([INTERFACES_END, ""])
+        return "\n".join(lines)
+
     interfaces = owner_interfaces(data)
     if not interfaces:
         return ""
@@ -461,11 +650,9 @@ def generated_interface_block(skill_name: str, data: dict[str, Any]) -> str:
         "Use the installed `dispatcher` command for this skill's script interfaces:",
     ]
     for interface_name, description, usage, pattern_notes in interfaces:
-        # Interfaces without a description are internal — omit from the generated block
         if not description:
             continue
         lines.append(f"- `{interface_name}` — {description}")
-        # usage=None (not set) → show "..." stub; usage="" (set, no args) → no trailing args
         args = f" {usage}" if usage else ("" if usage == "" else " ...")
         lines.append(
             f"  - `dispatcher --caller-skill {skill_name} {skill_name} {interface_name}{args}`"
@@ -566,7 +753,7 @@ def sync_skill(blueprint: SkillBlueprint, check_only: bool) -> list[str]:
     skill_dir = blueprint.path.parent
     expected_depends = generated_dependency_lines(data)
     expected_permissions = json.dumps(generated_permissions(data), indent=2) + "\n"
-    expected_skill = sync_contract_block(skill_dir / "SKILL.md", generated_contract_block(data))
+    expected_skill = sync_contract_block(skill_dir / "SKILL.md", generated_contract_block(blueprint.name, data))
     expected_skill = sync_interface_block(expected_skill, generated_interface_block(blueprint.name, data))
 
     errors: list[str] = []

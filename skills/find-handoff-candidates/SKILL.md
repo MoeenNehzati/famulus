@@ -13,21 +13,22 @@ Dependencies:
 
 Interface Version: 1
 
-Exported Script Interfaces:
-- `scan`
+Exported Interfaces:
+- `find-handoff-candidates.machine.scan`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Script Interfaces:
+Owner-Facing Machine Interfaces:
 
-Use the installed `dispatcher` command for this skill's script interfaces:
+Use the installed `dispatcher` command for this skill's machine interfaces:
 - `calibrate` — Re-derive reference median/p75/p90 gap-size statistics per host from real transcripts in a lookback window, to check whether scan's default thresholds still make sense. Diagnostic only -- does not modify any parser file; read the output and edit the relevant parser's default_threshold by hand if it suggests new numbers.
-  - `dispatcher --caller-skill find-handoff-candidates find-handoff-candidates calibrate [--days N]`
+  - `dispatcher --caller-skill find-handoff-candidates find-handoff-candidates.machine.calibrate [--days N]`
   - No positionals. --days sets the lookback window (default 5). Output is human-readable per-host stats to stdout, not JSON -- this is a manual diagnostic tool, not meant for programmatic consumption.
 - `scan` — Scan session transcripts across every configured host (default: trailing 2 days), and report sessions whose conversation since their last completed handoff exceeds a per-host threshold, using mechanical extraction only (no LLM judgment).
-  - `dispatcher --caller-skill find-handoff-candidates find-handoff-candidates scan [--min-gap-chars N] [--days N | --date YYYY-MM-DD]`
+  - `dispatcher --caller-skill find-handoff-candidates find-handoff-candidates.machine.scan [--min-gap-chars N] [--days N | --date YYYY-MM-DD]`
   - No positionals. --min-gap-chars overrides every host's built-in default threshold (each host is calibrated separately, since they differ by roughly an order of magnitude in bytes per unit of work) with a single shared value. --days (default 2) scans the trailing N days ending today, inclusive; --date pins to one exact day instead (mutually exclusive with --days; mainly useful for backtesting/calibration). Output is a JSON array; each entry's handoff_status is one of none, started, complete -- a complete entry can still be flagged if gap_net_chars (conversation since that completion) exceeds the threshold.
+
 <!-- END BLUEPRINT INTERFACES -->
 # Find Handoff Candidates
 

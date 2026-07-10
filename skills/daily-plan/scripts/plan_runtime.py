@@ -56,10 +56,10 @@ class PlanError(Exception):
 
 def run_dispatcher(target_skill: str, script_interface: str, *args: str, stdin: str | None = None) -> str:
     try:
-        from script_dispatcher import InvocationError, dispatch
+        from officina.dispatcher import InvocationError, dispatch
     except ImportError as exc:  # pragma: no cover
         raise PlanError(
-            "script_dispatcher is not installed. Re-run install-assistant-tools to install the shared dispatcher package."
+            "officina.dispatcher is not installed. Re-run install-assistant-tools to install the shared dispatcher package."
         ) from exc
     try:
         result = dispatch(

@@ -30,19 +30,27 @@ def _module_string_constants(tree: ast.Module) -> dict[str, str]:
     return constants
 
 
-def _dispatch_aliases(tree: ast.AST) -> tuple[set[str], set[str]]:
+def _dispatch_aliases(tree: ast.AST) -> tuple[set[str], set[str], list[int]]:
     direct: set[str] = set()
     modules: set[str] = set()
+    legacy_famulus_lines: list[int] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module == "script_dispatcher":
+        if isinstance(node, ast.ImportFrom) and node.module in {
+            "script_dispatcher",
+            "officina.dispatcher",
+        }:
             for alias in node.names:
                 if alias.name == "dispatch":
                     direct.add(alias.asname or alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module == "famulus.dispatcher":
+            legacy_famulus_lines.append(getattr(node, "lineno", 0))
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name == "script_dispatcher":
+                if alias.name in {"script_dispatcher", "officina.dispatcher"}:
                     modules.add(alias.asname or alias.name)
-    return direct, modules
+                elif alias.name == "famulus.dispatcher":
+                    legacy_famulus_lines.append(getattr(node, "lineno", 0))
+    return direct, modules, legacy_famulus_lines
 
 
 def _is_dispatch_call(node: ast.Call, direct_aliases: set[str], module_aliases: set[str]) -> bool:
@@ -79,7 +87,11 @@ def validate(repo_root: Path) -> list[str]:
                 continue
 
             constants = _module_string_constants(tree)
-            direct_aliases, module_aliases = _dispatch_aliases(tree)
+            direct_aliases, module_aliases, legacy_famulus_lines = _dispatch_aliases(tree)
+            for lineno in legacy_famulus_lines:
+                errors.append(
+                    f"{rel}:{lineno}: import officina.dispatcher instead of removed famulus.dispatcher"
+                )
             if not direct_aliases and not module_aliases:
                 continue
 

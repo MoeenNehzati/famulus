@@ -293,7 +293,7 @@ class CodexInstallTests(unittest.TestCase):
                     expect_copy(path, source, agent)
 
             # dispatcher launcher: generated file (not symlink), runs
-            # script_dispatcher from the repo with an install-time fallback
+            # officina.dispatcher from the repo with an install-time fallback
             # path. POSIX-only by design (Windows has no shell launcher).
             if sys.platform == "win32":
                 self.assertFalse((install_bin / "dispatcher").exists())
@@ -304,7 +304,7 @@ class CodexInstallTests(unittest.TestCase):
                 self.assertTrue(os.access(launcher, os.X_OK), "dispatcher launcher not executable")
                 launcher_text = launcher.read_text(encoding="utf-8")
                 self.assertIn(f'AI="${{AI:-{installed_path}}}"', launcher_text)
-                self.assertIn("script_dispatcher.cli", launcher_text)
+                self.assertIn("officina.dispatcher.cli", launcher_text)
 
             if sys.platform != "win32":
                 shell_text = install_shell_rc.read_text(encoding="utf-8")

@@ -2,7 +2,8 @@
 
 ## Overview
 
-A **blueprint** defines the contract of a skill: what it depends on, what interfaces it exports, and how those interfaces can be invoked.
+A **blueprint** defines the contract of a skill: what it depends on, what
+interfaces it exports, and how those interfaces are validated and executed.
 
 Blueprints serve two purposes:
 1. **Document** the skill's API and constraints
@@ -12,50 +13,84 @@ Blueprints serve two purposes:
 
 ## Architecture: Two-Layer Validation
 
-Validation is split into two independent layers:
+Validation is split into two independent layers.
 
-### Layer 1: YAML Structure (JSON Schema)
+### Layer 1: YAML structure (JSON Schema)
 **File:** `blueprint/schema.json`
 
 Validates individual blueprint files in isolation:
+
 - Is `interface_version` a positive integer?
-- Is `category` a known value from the taxonomy tree?
+- Is `category` a known taxonomy node?
+- Does `interfaces.machine` / `interfaces.llm` have the right shape?
+- Are interface names valid?
 - Are patterns well-formed?
-- **If `allow_all_skills: true`, is `allowed_callers` empty?**
+- If `allow_all_skills: true`, is `allowed_callers` empty?
+- Is `runtime` used only under `interfaces.machine.*`?
 
-**When it runs:**
-- At edit time (IDE with schema integration)
-- At commit time (pre-commit hook)
-
-**Files checked:** Each `skills/<name>/blueprint.yaml`
-
-### Layer 2: Relationships (Python Validator)
-**Files:** `skills/skill-maker/validators/blueprint_relationships.py` and `skills/skill-maker/validators/interface_ids.py`
+### Layer 2: relationships (Python validators)
+**Files:** `skills/skill-maker/validators/`
 
 Validates constraints that span multiple blueprints:
+
 1. No skill depends on itself
-2. If dependency has a blueprint, `major_version` must be declared
-3. `major_version` matches the dependency's `interface_version`
-4. Exported interface id exists in the dependency
-5. Non-public interfaces only export to skills in `allowed_callers`
-6. Interface ids are unique within each skill, including named subinterfaces
-
-**When it runs:**
-- At commit time (pre-commit hook)
-
-**Files checked:** All blueprints together
+2. `major_version` matches the dependency's `interface_version`
+3. Exported canonical interface names exist
+4. Restricted interfaces are only exported to allowed callers
+5. Duplicate YAML keys are rejected before they can mask interfaces
 
 ---
 
-## Creating a New Skill Blueprint
+## Core model
+
+### Interface namespaces
+
+Every blueprint may define two public interface namespaces:
+
+- `interfaces.machine.<name>`
+- `interfaces.llm.<name>`
+
+Canonical external names are:
+
+- machine: `skill.machine.name`
+- llm: `skill.llm.name`
+
+Examples:
+
+- `list-manager.machine.read-list`
+- `find-handoff-candidates.machine.scan`
+- `prepare-handoff.llm.compose-note`
+
+Local interface names are the mapping keys under `machine` or `llm`. They are
+dash-separated and must not contain dots.
+
+### Why mappings, not lists
+
+Interfaces are mappings rather than `[{name: ...}, ...]` lists because:
+
+- lookup is direct
+- uniqueness is natural after parse
+- validation is simpler
+- the canonical name is already encoded by the key path
+
+One caveat: JSON Schema validates the parsed mapping, not the raw YAML text, so
+duplicate-key rejection must also exist in the Python validation/load path.
+
+---
+
+## Creating a new skill blueprint
 
 ### Step 1: Create the file
+
 ```bash
 touch skills/<skill-name>/blueprint.yaml
 ```
 
-### Step 2: Use the template
-Copy the structure from `blueprint/template.yaml`:
+### Step 2: Copy the template
+
+Start from `references/blueprint/template.yaml`.
+
+Representative structure:
 
 ```yaml
 category: research-assistant
@@ -63,368 +98,408 @@ interface_version: 1
 cross_platform: true
 
 depends_on:
-  dependency-skill:
+  list-manager:
     major_version: 1
     exports:
-      - read-data
-      - update-data
+      - list-manager.machine.read-list
 
 skill_interface:
   inputs:
     - User request
-    - Local files
   outputs:
     - Primary artifact
   side_effects:
     - Files written to disk
 
-script_interfaces:
-  read-data:
-    id: read-data
-    cwd: skill_root
-    command: ["python3", "scripts/tool.py", "read"]
-    default:
-      patterns:
-        - min_positionals: 1
-          allow_extra_positionals: true
-          allow_stdin: false
+interfaces:
+  machine:
+    read-data:
+      description: "Read an input file."
+      usage: "<file>"
       allow_all_skills: true
       allowed_callers: []
+      patterns:
+        - min_positionals: 1
+          allow_stdin: false
+          notes: "First positional is the input file."
+      runtime:
+        kind: python_module
+        module: scripts.read_data
 
-  internal-helper:
-    id: internal-helper
-    cwd: skill_root
-    command: ["python3", "scripts/internal.py"]
-    # No explicit default block here: the owner-facing default subinterface
-    # still exists, uses id `internal-helper`, and has no declared restrictions.
+  llm:
+    summarize:
+      description: "Summarize the collected records."
+      binding:
+        kind: markdown_file
+        path: interfaces/summarize.md
 ```
-
-### Step 3: Understand key fields
-
-#### `category`
-Required single string from the typed enum in `schema.json`. The taxonomy is a tree; names encode hierarchy via postfix — `workflow-general-assistant` is a child of `general-assistant`. A skill may be placed at any node (leaf or intermediate).
-
-```
-assistant  (structural root — not a valid value)
-├── research-assistant
-├── general-assistant
-│   ├── productivity-general-assistant
-│   └── workflow-general-assistant
-├── development-assistant
-│   ├── skill-making-development-assistant
-│   └── coding-development-assistant
-└── system-assistant
-```
-
-To add a new node: update the `category` enum in `schema.json` and the `_CATEGORY_NODES` set in `skills/skill-maker/validators/blueprints.py`.
-
-#### `interface_version`
-Positive integer. Increment when breaking changes occur. Dependents must match this version in their `depends_on.X.major_version`.
-
-#### `cross_platform`
-Optional boolean. Default behavior is `true`.
-
-- `true` = the skill is expected to satisfy the shared cross-platform validator
-- `false` = the skill is intentionally platform-specific and is exempt from that validator
-
-Use `false` only when platform-specific behavior is part of the skill's contract, such as integration with a scheduler, service manager, or OS-specific runtime surface. Do not use it merely to postpone portability work.
-
-#### `depends_on`
-Map of skill name → dependency spec. For each dependency with a blueprint, declare:
-- `major_version` — must match the dependency's `interface_version`
-- `exports` — which interfaces you use (optional; empty means you don't call it)
-
-#### `skill_interface`
-High-level contract in plain language. Lists inputs, outputs, side effects.
-
-#### `script_interfaces`
-Map of interface-group name → invocation contract. Each group defines one owner-facing default id plus optional named subinterfaces for narrower external views.
-
-**`id`** — required stable id of the owner-facing/default subinterface. This id is what the dispatcher resolves for the top/default surface. Ids must be unique within the skill; that uniqueness is enforced by `skills/skill-maker/validators/interface_ids.py`.
-
-**`description`** — optional human-facing owner summary. If present, the sync tool injects this top/default interface into `SKILL.md` so the skill can see the useful owner-facing script surface without loading the full blueprint. Narrow named subinterfaces are not injected.
-
-**`cwd`** — where the command runs (`skill_root` or `repo_root`)
-
-**`command`** — argv prefix as list of tokens shared by the default surface and all named subinterfaces in the group
-
-**`default`** — optional explicit override of the owner-facing default subinterface. The default subinterface shares the parent interface's `id`, so `default` must not define its own `id`.
-
-If `default` is omitted, the owner-facing default subinterface still exists, still uses the parent `id`, and has no declared pattern restrictions unless you define them.
-
-**`subinterfaces`** — optional named narrower views of the same command. Use these to restrict other skills without affecting the owner-facing default surface. Each named subinterface has its own required unique `id`.
-
-**`patterns` / `allow_all_skills` / `allowed_callers` at the top level** — supported as legacy shorthand for the owner-facing default subinterface. For new blueprints, prefer `default.patterns`, `default.allow_all_skills`, and `default.allowed_callers`.
-
-**`patterns`** — list of valid calling conventions
-- `min_positionals`, `max_positionals` — positional argument count
-- `allow_stdin`, `allow_extra_positionals` — input modes
-- `positional_patterns` — regex validation for positional args (by index)
-- `flag_patterns` — regex validation for flag values
-- `required_flags`, `allowed_flags`, `forbidden_flags` — flag constraints
-- `notes` — documentation for maintainers
-
-**`allow_all_skills`** — boolean
-- `true` = public; any dependent can use this interface
-- `false` = restricted; only skills in `allowed_callers` can use it
-
-**`allowed_callers`** — list of skill names
-- Only meaningful if `allow_all_skills: false`
-- If empty and `allow_all_skills: false`, interface is internal-only (owning skill only)
-- **Constraint:** If `allow_all_skills: true`, must be empty
 
 ---
 
-## Common Patterns
+## Key fields
 
-### Read-Only Default Interface
+### `category`
+
+Required single string from the typed enum in `schema.json`.
+
+### `interface_version`
+
+Positive integer. Increment when breaking changes occur. Dependents must match
+this version in `depends_on.<skill>.major_version`.
+
+### `cross_platform`
+
+Optional boolean. Default behavior is `true`.
+
+- `true` = the skill is expected to satisfy the shared cross-platform validator
+- `false` = the skill is intentionally platform-specific and is exempt
+
+### `depends_on`
+
+Map of skill name → dependency spec.
+
+For each dependency with a blueprint, declare:
+
+- `major_version`
+- `exports`
+
+Each `exports` entry is the fully qualified canonical interface name, e.g.
+`other-skill.machine.read-data`.
+
+### `skill_interface`
+
+High-level contract in plain language. Lists inputs, outputs, side effects.
+
+### `interfaces.machine`
+
+Map of machine-interface name → invocation contract.
+
+Each machine interface owns:
+
+- `description`
+- `usage`
+- `patterns`
+- `allow_all_skills`
+- `allowed_callers`
+- `runtime`
+
+Machine interfaces are the only interfaces the dispatcher executes.
+
+### `interfaces.llm`
+
+Map of llm-interface name → documented prompt/interface contract.
+
+Each llm interface typically owns:
+
+- `description`
+- `binding`
+- `allow_all_skills`
+- `allowed_callers`
+- optional `routing_hints`
+
+LLM interfaces are documented and routed by skill logic. The dispatcher never
+executes them.
+
+The local Markdown form is a relative path from the skill root:
+
 ```yaml
-read-data:
-  id: read-data
-  cwd: skill_root
-  command: ["python3", "scripts/reader.py"]
-  default:
-    patterns:
-      - min_positionals: 1
-        positional_patterns:
-          0: "^[a-z0-9_-]+$"  # validate first arg format
-        allow_stdin: false
-    allow_all_skills: true
-    allowed_callers: []
+binding:
+  kind: markdown_file
+  path: interfaces/summarize.md
 ```
 
-### Internal-Only Interface
+For externally hosted interfaces, use:
+
 ```yaml
-internal-worker:
-  id: internal-worker
-  cwd: skill_root
-  command: ["python3", "scripts/worker.py"]
-  # No explicit default section: the owner-facing default subinterface still
-  # exists, uses id `internal-worker`, and has no declared pattern restrictions.
+binding:
+  kind: uri
+  uri: https://example.com/interfaces/summarize.md
 ```
 
-### Restricted Named Subinterface (Without Affecting the Owner)
+Use `binding` rather than `runtime` because an LLM interface points at a
+descriptive prompt contract, not an executable program.
+
+---
+
+## Runtime metadata
+
+Runtime metadata lives inline under each machine interface:
+
 ```yaml
-read-lists:
-  id: read-lists
-  cwd: skill_root
-  command: ["python3", "scripts/lists.py", "read"]
-  description: "Read list data using the full owner-facing script surface."
-  subinterfaces:
-    planner-view:
-      id: read-lists-planner
+interfaces:
+  machine:
+    scan:
+      runtime:
+        kind: python_module
+        module: scripts.scan
+```
+
+This is **internal metadata**. It belongs in the blueprint so the dispatcher
+can execute the interface, but it is not part of the user-facing generated
+documentation.
+
+Current standard runtime kinds:
+
+### `python_module`
+
+```yaml
+runtime:
+  kind: python_module
+  module: scripts.scan
+```
+
+Use for Python skill code. The dispatcher runs it as a real module in a fresh
+subprocess, which allows normal relative imports inside `scripts/`.
+
+### `command`
+
+```yaml
+runtime:
+  kind: command
+  argv: ["maker", "--mode", "convert"]
+```
+
+Use for non-Python tools.
+
+---
+
+## Import model
+
+Machine interfaces are executed without depending on the caller's working
+directory.
+
+The intended Python import model for a skill file is:
+
+```python
+from .storage import load_plan
+from officina.common.paths import repo_root
+from officina.dispatcher import dispatch
+```
+
+Not:
+
+```python
+from skills.other_skill.scripts.foo import bar
+from validators.runner import main
+```
+
+Rules:
+
+- same-skill imports: relative imports inside `scripts/`
+- first-party shared/runtime imports: `officina.*`
+- cross-skill behavior: `dispatch(...)`
+- other repo packages outside `src/officina/` are not part of the import surface
+
+Nested packages under `scripts/` are supported as long as they have
+`__init__.py` files.
+
+---
+
+## Common machine-interface patterns
+
+### Read-only interface
+
+```yaml
+interfaces:
+  machine:
+    read-data:
+      allow_all_skills: true
+      allowed_callers: []
       patterns:
         - min_positionals: 1
           positional_patterns:
-            0: "^lists/.*"  # only access lists/ directory
+            0: "^[a-z0-9_-]+$"
+          allow_stdin: false
+          notes: "First positional is the resource id."
+      runtime:
+        kind: python_module
+        module: scripts.read_data
+```
+
+### Internal-only interface
+
+```yaml
+interfaces:
+  machine:
+    internal-worker:
+      allow_all_skills: false
+      allowed_callers: []
+      runtime:
+        kind: python_module
+        module: scripts.internal_worker
+```
+
+### Restricted interface
+
+```yaml
+interfaces:
+  machine:
+    read-lists:
       allow_all_skills: false
       allowed_callers:
         - daily-plan
         - email-triage
+      patterns:
+        - min_positionals: 1
+          positional_patterns:
+            0: "^lists/.*"
+          notes: "Only list paths under lists/ are allowed."
+      runtime:
+        kind: python_module
+        module: scripts.read_lists
 ```
 
-### Multiple Calling Conventions
-```yaml
-update-data:
-  id: update-data
-  cwd: skill_root
-  command: ["python3", "scripts/updater.py"]
-  default:
-    patterns:
-      # PATTERN 1: File mode
-      - name: "file-mode"
-        min_positionals: 1
-        max_positionals: 1
-        required_flags: ["--file"]
-        allow_stdin: false
-        notes: "Caller supplies patch file via --file"
+### Multiple calling conventions
 
-      # PATTERN 2: Stdin mode
-      - name: "stdin-mode"
-        min_positionals: 1
-        max_positionals: 1
-        forbidden_flags: ["--file"]
-        allow_stdin: true
-        notes: "Caller pipes patch data to stdin"
-    allow_all_skills: true
-    allowed_callers: []
+```yaml
+interfaces:
+  machine:
+    update-data:
+      patterns:
+        - name: "file-mode"
+          min_positionals: 1
+          max_positionals: 1
+          required_flags: ["--file"]
+          allow_stdin: false
+          notes: "Caller supplies patch file via --file."
+        - name: "stdin-mode"
+          min_positionals: 1
+          max_positionals: 1
+          forbidden_flags: ["--file"]
+          allow_stdin: true
+          notes: "Caller pipes patch data to stdin."
+      runtime:
+        kind: python_module
+        module: scripts.update_data
 ```
 
 ---
 
-## Migration: `exported` → `allow_all_skills`
+## Dispatcher resolution model
 
-### What Changed
+Canonical CLI form:
 
-The field `exported` has been renamed to `allow_all_skills` for clarity.
-
-**Old:**
-```yaml
-exported: true       # "Is this exported?"
-allowed_callers: []
+```bash
+dispatcher --caller-skill daily-plan list-manager.machine.read-list /tmp/todo.yaml
 ```
 
-**New:**
-```yaml
-allow_all_skills: true   # "Can all skills use this?"
-allowed_callers: []
+Canonical Python form:
+
+```python
+dispatch(
+    caller_skill="daily-plan",
+    target="list-manager.machine.read-list",
+    args=["/tmp/todo.yaml"],
+)
 ```
 
-### Why
+At runtime the dispatcher:
 
-The new name explicitly answers: "Can all skills use this interface?" This is clearer than "is it exported?", which is ambiguous with "is it publicly visible?" vs "can dependents use it?".
+1. parses `skill.machine.name`
+2. resolves `<repo>/skills/<skill>/blueprint.yaml`
+3. loads `interfaces.machine.<name>`
+4. validates dependency/version/export/access rules
+5. matches patterns
+6. resolves inline `runtime`
+7. executes it
 
-### Migration Steps
-
-**For skill creators:**
-1. In your `blueprint.yaml`, replace `exported` with `allow_all_skills`
-2. The value stays the same:
-   - `exported: true` → `allow_all_skills: true`
-   - `exported: false` → `allow_all_skills: false`
-3. No logic changes; same semantics
-
-**For the codebase:**
-- All 20 existing skill blueprints have been migrated
-- The JSON Schema enforces the new name
-- Old blueprints using `exported` will fail validation
-
-**Deadline:** Effective immediately. Use `allow_all_skills` in all new blueprints.
-
-### Examples
-
-**Before:**
-```yaml
-script_interfaces:
-  public-api:
-    command: ["python3", "scripts/api.py"]
-    patterns: [...]
-    exported: true
-    allowed_callers: []
-```
-
-**After:**
-```yaml
-script_interfaces:
-  public-api:
-    command: ["python3", "scripts/api.py"]
-    patterns: [...]
-    allow_all_skills: true
-    allowed_callers: []
-```
+No absolute path is stored in the blueprint. Absolute paths are derived at
+dispatch time from the repo root and skill name.
 
 ---
 
 ## Validation
 
-### Running Validation
+### Running validation
 
-**All validators (run individually or together):**
 ```bash
 python3 skills/skill-maker/validators/blueprints.py
 python3 skills/skill-maker/validators/skill_md_dispatch.py
-python3 skills/skill-maker/validators/dependencies.py
+python3 skills/skill-maker/validators/blueprint_relationships.py
 ```
 
-**All validators automatically at commit** — run by `validators/runner.py` via `.githooks/pre-commit`.
+All validators also run automatically at commit through `validators/runner.py`
+via `.githooks/pre-commit`.
 
-### Common Errors
+### Common errors
 
 **Schema error: `allow_all_skills` must be boolean**
+
 ```
 skills/my-skill/blueprint.yaml:
-  script_interfaces.read-data: `allow_all_skills` must be a boolean
+  interfaces.machine.read-data: `allow_all_skills` must be a boolean
 ```
-**Fix:** Ensure `allow_all_skills: true` or `allow_all_skills: false` (not a string).
 
 **Schema error: if `allow_all_skills: true`, `allowed_callers` must be empty**
+
 ```
 skills/my-skill/blueprint.yaml:
-  script_interfaces.read-data: if allow_all_skills is true, allowed_callers must be empty
-```
-**Fix:** Remove `allowed_callers` or change it to an empty list `[]`.
-
-**Relationship error: major_version must be declared**
-```
-skills/my-skill/blueprint.yaml: depends_on.other-skill must declare
-  major_version because other-skill has a blueprint
-```
-**Fix:** Add `major_version` to match the dependency's `interface_version`:
-```yaml
-depends_on:
-  other-skill:
-    major_version: 1    # <- add this
-    exports: [read-data]
+  interfaces.machine.read-data: if allow_all_skills is true, allowed_callers must be empty
 ```
 
-**Relationship error: major_version does not match**
+**Relationship error: export does not exist**
+
 ```
-skills/my-skill/blueprint.yaml: depends_on.other-skill.major_version=1
-  does not match other-skill interface_version=2
+skills/my-skill/blueprint.yaml: depends_on.other-skill.exports includes
+  other-skill.machine.read-data, but that interface does not exist
 ```
-**Fix:** Update your declaration to match:
-```yaml
-depends_on:
-  other-skill:
-    major_version: 2    # <- update to 2
-    exports: [read-data]
+
+**Validation error: duplicate YAML key masked an interface**
+
+```
+skills/my-skill/blueprint.yaml: duplicate key `scan` under interfaces.machine
 ```
 
 ---
 
-## IDE Integration
+## IDE integration
 
-### VS Code / Editor Setup
+### VS Code / editor setup
 
 To enable schema validation in your editor:
 
-1. **Install JSON Schema extension** (if not already present)
-2. **Add to your editor settings** (`.vscode/settings.json`):
-   ```json
-   {
-     "json.schemas": [
-       {
-         "fileMatch": ["skills/*/blueprint.yaml"],
-         "url": "./references/blueprint/schema.json"
-       }
-     ]
-   }
-   ```
-3. **Reload editor** — you'll now get:
-   - Real-time validation errors
-   - Autocomplete hints
-   - Schema documentation on hover
+1. Install JSON Schema support if needed
+2. Add to `.vscode/settings.json`:
+
+```json
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["skills/*/blueprint.yaml"],
+      "url": "./references/blueprint/schema.json"
+    }
+  ]
+}
+```
+
+3. Reload the editor
+
+For Python import resolution, keep the repo runtime model in sync with the IDE:
+
+- shared first-party packages live under `src/officina/`
+- each skill root is its own Python execution environment
+- repo root itself should not be added as a generic import root
 
 ---
 
-## Reference Files
+## Best practices
 
-- **Schema:** `blueprint/schema.json` — Full JSON Schema validation rules
-- **Template:** `blueprint/template.yaml` — Annotated examples of all features
-- **Validators:** `skills/skill-maker/validators/` — `blueprints.py`, `skill_md_dispatch.py`, `dependencies.py`, and others
-
----
-
-## Best Practices
-
-1. **Keep patterns focused.** One pattern per calling convention. Multiple patterns add complexity.
-
-2. **Use positional_patterns for security.** Validate paths (e.g., `^lists/.*`) and formats at the schema level, not in your script.
-
-3. **Document with notes.** Every pattern should have a `notes` field explaining its purpose.
-
-4. **Use allowed_callers for ownership.** Restrict write interfaces to the skill that owns the resource:
-   ```yaml
-   # list-manager owns lists/
-   write-list:
-     allowed_callers: [daily-plan, email-triage]
-   ```
-
-5. **Match major versions carefully.** When a dependency increments `interface_version`, update your `depends_on.*.major_version` immediately.
-
-6. **Use allow_all_skills: true sparingly.** Prefer restricted access (`allow_all_skills: false` with `allowed_callers`) for sensitive or resource-heavy interfaces.
+1. Keep machine interfaces narrowly scoped: one canonical interface per public
+   callable behavior.
+2. Keep `runtime` internal and user-facing docs external.
+3. Use relative imports for same-skill code and `officina.*` for shared code.
+4. Use `allow_all_skills: true` sparingly.
+5. Match major versions carefully.
+6. Prefer `python_module` runtime for Python skill code so nested packages and
+   relative imports work naturally.
 
 ---
 
-## Questions?
+## Reference files
 
-Refer to the template (`blueprint/template.yaml`) for commented examples of every feature. It's the authoritative reference.
+- `blueprint/schema.json`
+- `blueprint/template.yaml`
+- `skills/skill-maker/validators/`
+
+Refer to the template (`blueprint/template.yaml`) for commented examples of the
+full structure.

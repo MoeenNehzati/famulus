@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """Behavior tests for the per-host parser files and their __init__.py aggregation."""
-import importlib.util
+import importlib
+import sys
 from pathlib import Path
 
-SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+SKILL_DIR = Path(__file__).parent.parent
 
 
 def _load(name):
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS_DIR / f"{name}.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    for module_name in list(sys.modules):
+        if module_name == "scripts" or module_name.startswith("scripts."):
+            sys.modules.pop(module_name, None)
+    sys.path.insert(0, str(SKILL_DIR))
+    try:
+        return importlib.import_module(f"scripts.{name}")
+    finally:
+        sys.path.pop(0)
 
 
 def test_claude_parser_home_dir_respects_env_override(monkeypatch):
@@ -78,10 +83,14 @@ def test_codex_parser_resume_hint_has_no_leading_slash():
 
 
 def test_init_aggregates_both_parsers_with_distinct_ids():
-    init_path = SCRIPTS_DIR / "__init__.py"
-    spec = importlib.util.spec_from_file_location("host_parsers", init_path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    for module_name in list(sys.modules):
+        if module_name == "scripts" or module_name.startswith("scripts."):
+            sys.modules.pop(module_name, None)
+    sys.path.insert(0, str(SKILL_DIR))
+    try:
+        mod = importlib.import_module("scripts")
+    finally:
+        sys.path.pop(0)
 
     assert len(mod.parsers) == 2
     ids = sorted(p.id for p in mod.parsers)

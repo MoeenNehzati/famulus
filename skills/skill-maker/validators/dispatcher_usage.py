@@ -17,7 +17,7 @@ def _python_files(skill_dir: Path) -> list[Path]:
 
 # Skills exempt from these rules (see skill-guidelines.md, installer-bootstrap
 # exception): install-assistant-tools generates and removes the dispatcher
-# launcher itself, and must bootstrap script_dispatcher imports from the repo
+# launcher itself, and must bootstrap officina.dispatcher imports from the repo
 # before any launcher exists.
 _EXCLUDED_SKILLS = {"install-assistant-tools"}
 
@@ -47,13 +47,13 @@ def validate(repo_root: Path) -> list[str]:
 
                 if "invoke_skill_export.py" in line or "scripts/dispatcher.py" in line or '"dispatcher"' in line or "'dispatcher'" in line:
                     errors.append(
-                        f"{rel}:{lineno}: Python skill code must use script_dispatcher.dispatch(), "
+                        f"{rel}:{lineno}: Python skill code must use officina.dispatcher.dispatch(), "
                         "not the dispatcher CLI"
                     )
 
-                if "sys.path" in line and "script_dispatcher" in line:
+                if "sys.path" in line and ("script_dispatcher" in line or "officina" in line or "/src" in line):
                     errors.append(
-                        f"{rel}:{lineno}: do not modify sys.path to reach script_dispatcher; "
+                        f"{rel}:{lineno}: do not modify sys.path to reach officina.dispatcher; "
                         "import it normally"
                     )
 

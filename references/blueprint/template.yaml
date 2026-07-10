@@ -5,10 +5,7 @@
 # as user-owned authoring guidance and must not rewrite this file in place.
 
 # Required single string. Must be one of the typed enum values in
-# references/blueprint/schema.json. The taxonomy is a tree; names encode their
-# position via postfix (e.g. 'workflow-general-assistant' is a child of
-# 'general-assistant'). A skill may be placed at any node — leaf or intermediate.
-# Full tree in references/blueprint/guide.md under "category".
+# references/blueprint/schema.json.
 category: research-assistant
 
 # Required positive integer. Bump this major version only when the exported
@@ -18,17 +15,6 @@ interface_version: 1
 # Optional boolean. Default: true.
 # Set this to false only when the skill is intentionally platform-specific and
 # should be exempt from the shared cross-platform validator.
-#
-# Why this exists:
-# - The default policy for shared skills is Python-first, portable runtime
-#   surfaces with no shell-only or OS-specific execution model.
-# - Some skills are intentionally tied to an operating-system facility
-#   (for example, a scheduler or service manager integration).
-# - Those skills should declare that exception in their own blueprint instead
-#   of relying on a hardcoded skip list inside a validator.
-#
-# Keep this true unless platform-specific behavior is an intentional part of
-# the skill's contract.
 cross_platform: true
 
 # Map of dependency skill name -> dependency contract.
@@ -36,40 +22,44 @@ cross_platform: true
 # For a blueprint-migrated dependency:
 # - major_version: required positive integer, pinned to the dependency's current
 #   exported interface version
-# - exports: optional list of exported script-interface names this skill is
-#   allowed to call through the dispatcher
+# - exports: optional list of canonical interface names that this skill is
+#   allowed to use through that dependency
+#
+# Canonical interface names are:
+# - dependency.machine.name
+# - dependency.llm.name
 depends_on:
   example-dependency:
     major_version: 1
     exports:
-      - read-data
+      - example-dependency.machine.read-data
   legacy-dependency: {}
 
 # Structured permission suggestions for smoother execution.
 # These are not grants; they are inputs to generated permissions.json.
+#
 # Supported categories:
 # - bash: list of commands that are safe and common to pre-approve
-#   - command: required list of argv tokens, for example ["python3", "scripts/tool.py"]
-#   - args_prefix: optional fixed argv prefix after command, for example ["read"]
-#   - reason: required short explanation of why the suggestion is safe/useful
+#   - command: required list of argv tokens
+#   - args_prefix: optional fixed argv prefix
+#   - reason: required short explanation
 # - network: list of suggested web capabilities
 #   - kind: required, one of web_search or web_fetch
-#   - domains: required only for web_fetch; list of allowed domains
+#   - domains: required only for web_fetch
 #   - reason: required short explanation
+#
+# These suggestions are internal compatibility metadata. They do not define the
+# public interface contract.
 suggested_permissions:
   bash:
-    - command: ["python3", "scripts/example.py"]
-      args_prefix: ["read"]
-      reason: "Primary read path behind the exported interface."
+    - command: ["dispatcher"]
+      args_prefix: ["--caller-skill", "example-skill", "example-skill.machine.read-data"]
+      reason: "Primary read path behind the exported machine interface."
   network:
     - kind: web_search
       reason: "Needed only when live verification is part of the workflow."
 
 # High-level skill contract. Keep this user-facing and dependency-facing.
-# Each field takes a list of plain-language strings:
-# - inputs: what the skill expects to receive
-# - outputs: what the skill produces
-# - side_effects: files, state, or external systems the skill may modify
 skill_interface:
   inputs:
     - User request that triggers this skill.
@@ -80,329 +70,190 @@ skill_interface:
     - Files or external state this skill may change.
 
 # ==============================================================================
-# SCRIPT INTERFACES: Invocation Patterns and Constraints
+# INTERFACES: Public callable/documented surfaces
 # ==============================================================================
 #
-# Map of script-interface group name -> concrete local invocation contract.
-# Each group has:
-# - one owner-facing/default interface id (the required top-level `id`)
-# - one shared `command`
-# - optional named narrower subinterfaces for external callers
+# Blueprint interfaces come in two namespaces:
 #
-# The ids are the stable identifiers used by the dispatcher and by
-# depends_on.<skill>.exports in dependent skills.
+# - interfaces.machine.<name>
+#   Dispatcher-callable machine interfaces. Canonical external name:
+#   <skill-name>.machine.<name>
 #
-# Each interface defines one or more PATTERNS, which describe valid ways to
-# call the underlying script. The dispatcher matches incoming invocations
-# against these patterns to ensure they conform to the declared contract.
+# - interfaces.llm.<name>
+#   LLM-facing interfaces documented through a separate file and routed by
+#   higher-level skill logic. Canonical external name:
+#   <skill-name>.llm.<name>
 #
-# Pattern-based design allows:
-# - Multiple valid calling conventions for the same script (file vs stdin mode)
-# - Declarative constraints on arguments and flags (via regex)
-# - Clear documentation of what invocations are valid
-# - Compile-time validation that dependencies use interfaces correctly
-#
-# ==============================================================================
+# Local interface names are the mapping keys under machine/llm. They must be
+# dash-separated and must not contain dots.
 
-script_interfaces:
-  # ============================================================================
-  # EXAMPLE 1: Simple read interface with a single pattern
-  # ============================================================================
-  #
-  # Most interfaces have just one pattern. Use patterns when you need to express
-  # multiple valid calling conventions or complex constraints.
-  #
-  read-data:
-    # Required stable id of the owner-facing/default subinterface.
-    # This must be unique within the skill. That uniqueness is enforced by
-    # skills/skill-maker/validators/interface_ids.py.
-    id: read-data
+interfaces:
+  machine:
+    # ==========================================================================
+    # EXAMPLE 1: Read-only machine interface
+    # ==========================================================================
+    read-data:
+      # Human-facing summary injected into generated SKILL.md.
+      description: "Read an input file and optionally apply extra filters."
 
-    # Optional human-facing summary for the owner-facing/default interface.
-    # If present, the sync tool injects this into SKILL.md so the skill can
-    # see what the interface does without loading blueprint.yaml.
-    # Omit for narrow machine-facing interfaces that should stay out of SKILL.md.
-    description: "Read an input file and optionally apply extra filters."
+      # Optional complete invocation argument template shown in generated docs.
+      usage: "<file> [filters]"
 
-    # Optional complete invocation argument template. The sync tool renders this
-    # into the dispatcher invocation in SKILL.md, replacing the bare "..." stub.
-    # Write it as the argument string after the interface name, e.g.:
-    #   usage: "<file> [filters] --cloud [--sort FIELD]"
-    # This is what makes the generated block actionable without consulting
-    # blueprint.yaml. The skill body must not repeat or re-explain this —
-    # blueprint.yaml owns the interface definition; SKILL.md body uses it.
-    usage: "<file> [filters]"
-
-    # Working directory where the command runs. Default: skill_root.
-    # - skill_root: run in skills/<skill-name>/
-    # - repo_root: run in the repository root
-    cwd: skill_root
-
-    # Required: argv prefix as a list of tokens. The dispatcher appends the
-    # caller-supplied script arguments after this prefix.
-    # Example: if command is ["python3", "scripts/tool.py", "read"]
-    # and caller passes "file.yaml filter=x", the full invocation is:
-    #   python3 scripts/tool.py read file.yaml filter=x
-    command: ["python3", "scripts/example.py", "read"]
-
-    # ========================================================================
-    # DEFAULT SUBINTERFACE: Valid owner-facing invocation shapes
-    # ========================================================================
-    #
-    # The interface always has an owner-facing default subinterface. It shares
-    # the parent interface id above, so `default:` must not define its own id.
-    #
-    # If `default:` is omitted entirely, the owner-facing default still exists
-    # and has no declared pattern restrictions. Define it only when you want
-    # to constrain or expose that owner-facing default surface explicitly.
-    #
-    default:
-      patterns:
-      # Single-pattern interface: omit 'name' (used here for clarity).
-      # The pattern below matches invocations like: read-data /path/to/file extra-arg
-        - min_positionals: 1
-        # Maximum positional arguments. Omit for unlimited.
-        # max_positionals: 3
-          allow_extra_positionals: true  # Allow positionals beyond min_positionals
-          allow_stdin: false
-
-        # ====================================================================
-        # POSITIONAL CONSTRAINTS: Regex patterns for positional arguments
-        # ====================================================================
-        #
-        # Map of arg index -> regex pattern. Validates that the positional
-        # argument at that index matches the regex. Indices are 0-based.
-        #
-        # Examples:
-        #   0: "^/path/to/.*"     # First arg must be an absolute path
-        #   1: "json|yaml"         # Second arg must be json or yaml
-        #   2: "^[a-z0-9_-]+$"     # Third arg must be alphanumeric/dash/underscore
-        #
-        # Patterns use Python regex syntax (re module). Use ^ and $ to match
-        # the entire string, not just substrings. Omit this field if there are
-        # no constraints on positional values.
-        #
-          positional_patterns:
-            0: ".*"  # First positional can be any value (no constraint)
-
-        # ====================================================================
-        # FLAG CONSTRAINTS: Patterns and requirements
-        # ====================================================================
-        #
-        # required_flags: list of flags that MUST appear in the invocation.
-        #   Example: required_flags: ["--file"]
-        #   This means --file (or --file=value) must be present.
-        #
-        # allowed_flags: optional allow-list. If present, ONLY these flags
-        #   can appear; any other flag is rejected.
-        #   Example: allowed_flags: ["--json", "--csv"]
-        #   This means only --json and/or --csv are valid; --xml would fail.
-        #   If required_flags is set, it must be a subset of allowed_flags.
-        #
-        # forbidden_flags: list of flags that MUST NOT appear.
-        #   Example: forbidden_flags: ["--stdin"]
-        #   This means --stdin (or --stdin=value) cannot be used.
-        #
-          required_flags: []
-          allowed_flags: []
-          forbidden_flags: []
-
-        # ====================================================================
-        # FLAG VALUE CONSTRAINTS: Regex patterns for flag values
-        # ====================================================================
-        #
-        # Map of flag name -> regex pattern. Validates that the value of a
-        # flag (if it has one) matches the regex. Only checked if the flag
-        # actually appears in the invocation.
-        #
-        # Examples:
-        #   --output: "^/tmp/.*"    # --output value must be under /tmp/
-        #   --format: "json|yaml"   # --format value must be json or yaml
-        #
-        # Omit this field if flags have no value constraints.
-        #
-          flag_patterns: {}
-
-        # NOTES: Human-readable description of this pattern's calling convention.
-        #
-        # Notes are injected verbatim into the generated SKILL.md interface block,
-        # so dependent skills can call this interface correctly without reading
-        # blueprint.yaml or the underlying script.
-        #
-        # Write notes as if they are the only documentation a caller will see:
-        # - What each positional argument means
-        # - Which flags are required and what they expect
-        # - What the pattern is for (if it's one of several)
-        #
-        # Bad:  notes: "File mode."
-        # Good: notes: "File mode: first positional is the target list name; --file
-        #        points to a YAML patch file prepared by the caller."
-        #
-          notes: "First positional is the input file; additional positionals are filters."
-
-    # ========================================================================
-    # ACCESS CONTROL: Public vs private, and caller restrictions
-    # ========================================================================
-    #
-    # allow_all_skills: boolean (default: false)
-    #   true  = this interface is public; any skill that declares this skill
-    #           as a dependency can use this interface.
-    #   false = this interface is restricted; only skills in allowed_callers
-    #           can use it.
-    #
-    # allowed_callers: list of skill names (only meaningful if allow_all_skills: false)
-    #   When allow_all_skills: false, this list controls which skills can call this
-    #   interface. If the list is empty and allow_all_skills: false, only the owning
-    #   skill (internal use only) can call it.
-    #   Example: allowed_callers: [daily-plan, email-triage]
-    #   This means ONLY daily-plan and email-triage can use this interface,
-    #   even though they declared the dependency.
-    #
-    # Constraint: If allow_all_skills: true, allowed_callers must be empty.
-    #
-    # Access control is validated:
-    # - AT SCHEMA TIME: blueprint.schema.json prevents allow_all_skills: true
-    #   with non-empty allowed_callers
-    # - AT COMMIT TIME: relationship validator checks that restricted interfaces
-    #   only export to skills in allowed_callers
-    # - AT RUNTIME by the dispatcher: if the caller is not in allowed_callers,
-    #   the invocation fails
-    #
+      # Access control.
       allow_all_skills: true
       allowed_callers: []
 
-  # ============================================================================
-  # EXAMPLE 2: Interface with multiple patterns (different calling conventions)
-  # ============================================================================
-  #
-  # Use multiple patterns when a script supports different ways to be called.
-  # The dispatcher tries to match the actual invocation against each pattern
-  # in order and accepts the first match.
-  #
-  # Common example: file input vs stdin input
-  # - Pattern 1 (file-mode): requires --file flag with a file path
-  # - Pattern 2 (stdin-mode): allows stdin, forbids --file flag
-  #
-  update-data:
-    id: update-data
-    description: "Update a target resource from file or stdin input."
-    usage: "<target> --file /tmp/patch.yaml"
-    cwd: skill_root
-    command: ["python3", "scripts/example.py", "update"]
+      # Valid calling conventions. Omit patterns entirely only for intentionally
+      # unrestricted owner-facing interfaces.
+      patterns:
+        - min_positionals: 1
+          allow_extra_positionals: true
+          allow_stdin: false
+          positional_patterns:
+            0: ".*"
+          notes: "First positional is the input file; additional positionals are filters."
 
-    # Legacy shorthand: top-level patterns / allow_all_skills / allowed_callers
-    # are treated as the owner-facing default subinterface.
-    # New blueprints should prefer an explicit `default:` block.
-    patterns:
-      # PATTERN 1: File mode - requires --file flag pointing to an input file
-      - name: "file-mode"  # Optional name for documentation and error messages
-        min_positionals: 1  # First positional is the target (e.g., list name)
-        max_positionals: 1  # No extra positionals in this mode
-        allow_stdin: false
-        required_flags: ["--file"]  # MUST have --file
-        allowed_flags: ["--file"]  # ONLY --file allowed (no other flags)
-        flag_patterns:
-          --file: "^/tmp/.*"  # File path must be under /tmp/
-        notes: "File mode: caller supplies target and patch file via --file."
+      # Internal dispatcher-only runtime binding. This must not leak into
+      # user-facing generated docs.
+      runtime:
+        kind: python_module
+        module: scripts.read_data
 
-      # PATTERN 2: Stdin mode - reads input from stdin, forbids --file
-      - name: "stdin-mode"  # Different pattern for different calling style
-        min_positionals: 1  # First positional is the target
-        max_positionals: 1
-        allow_stdin: true  # Input comes from stdin
-        forbidden_flags: ["--file"]  # Incompatible with stdin mode
-        notes: "Stdin mode: reads update data from stdin."
+    # ==========================================================================
+    # EXAMPLE 2: Multiple calling conventions
+    # ==========================================================================
+    update-data:
+      description: "Update a target resource from file or stdin input."
+      usage: "<target> --file /tmp/patch.yaml"
+      allow_all_skills: true
+      allowed_callers: []
+      patterns:
+        - name: "file-mode"
+          min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+          required_flags: ["--file"]
+          allowed_flags: ["--file"]
+          flag_patterns:
+            --file: "^/tmp/.*"
+          notes: "File mode: caller supplies target and patch file via --file."
+        - name: "stdin-mode"
+          min_positionals: 1
+          max_positionals: 1
+          allow_stdin: true
+          forbidden_flags: ["--file"]
+          notes: "Stdin mode: reads update data from stdin."
+      runtime:
+        kind: python_module
+        module: scripts.update_data
 
-    # Both patterns are public (allow_all_skills: true), so any dependent skill can use
-    # either pattern. The dispatcher auto-matches based on what the caller provides.
-    allow_all_skills: true
-    allowed_callers: []
+    # ==========================================================================
+    # EXAMPLE 3: Internal-only machine interface
+    # ==========================================================================
+    internal-worker:
+      allow_all_skills: false
+      allowed_callers: []
+      runtime:
+        kind: python_module
+        module: scripts.internal_worker
 
-  # ============================================================================
-  # EXAMPLE 3: Internal-only interface (restricted access)
-  # ============================================================================
-  #
-  # Some interfaces should only be used by the owning skill, not by dependents.
-  # Use allow_all_skills: false with an empty allowed_callers list.
-  #
-  # Common example: helper scripts used internally but not part of the public API.
-  #
-  internal-worker:
-    id: internal-worker
-    # No description here: internal helper interfaces can stay machine-facing
-    # and out of SKILL.md unless the owner skill truly needs them documented.
-    cwd: skill_root
-    command: ["python3", "scripts/internal.py"]
-    # No explicit default block here. The owner-facing default subinterface
-    # still exists, uses id `internal-worker`, and has no declared restrictions.
+    # ==========================================================================
+    # EXAMPLE 4: Restricted machine interface
+    # ==========================================================================
+    special-data:
+      allow_all_skills: false
+      allowed_callers:
+        - skill-a
+        - skill-b
+      patterns:
+        - min_positionals: 1
+          positional_patterns:
+            0: "^special/.*"
+          notes: "Only paths under special/ are accepted."
+      runtime:
+        kind: python_module
+        module: scripts.special_data
 
-  # ============================================================================
-  # EXAMPLE 4: Restricted interface (only specific skills allowed)
-  # ============================================================================
-  #
-  # Some interfaces should be restricted to specific skills. This is useful for:
-  # - Access control (only certain skills can read sensitive data)
-  # - Directory/path ownership (e.g., list-manager owns lists/, daily-plan owns plans/)
-  # - Preventing accidental misuse
-  #
-  # The restriction is validated:
-  # - AT COMMIT TIME: check-boundaries hook prevents other skills from exporting
-  #   this interface in their depends_on.exports list
-  # - AT RUNTIME: dispatcher rejects invocations from non-allowed callers
-  #
-  # This enables COMPILE-TIME safety: developers discover violations during git hooks,
-  # not at runtime.
-  #
-  special-data:
-    id: special-data
-    # Restricted subinterfaces often omit description so only the broad
-    # owner-facing/default surface is injected into SKILL.md.
-    cwd: skill_root
-    command: ["python3", "scripts/special.py", "read"]
-    subinterfaces:
-      restricted-view:
-        id: special-data-restricted
-        patterns:
-          - min_positionals: 1
-            # Path argument must be under special/ directory (access control example)
-            positional_patterns:
-              0: "^special/.*"
-        # Not public; only skill-a and skill-b can use it.
-        allow_all_skills: false
-        allowed_callers:
-          - skill-a
-          - skill-b
+  llm:
+    # ==========================================================================
+    # EXAMPLE 5: LLM-facing interface
+    # ==========================================================================
+    summarize:
+      description: "Summarize the collected records for a handoff note."
+      binding:
+        kind: markdown_file
+        path: interfaces/summarize.md
+      allow_all_skills: true
+      allowed_callers: []
+      routing_hints:
+        - "Use after machine interfaces have already collected the structured data."
+        - "This interface is documented for the skill owner; dispatcher never executes it."
+
+    # ==========================================================================
+    # EXAMPLE 6: External LLM-facing interface
+    # ==========================================================================
+    summarize-remote:
+      description: "Summarize records using a prompt surface published outside this repo."
+      binding:
+        kind: uri
+        uri: https://example.com/officina/interfaces/summarize-remote.md
+      allow_all_skills: false
+      allowed_callers:
+        - prepare-handoff
+
+# ==============================================================================
+# MACHINE INTERFACE RUNTIME KINDS
+# ==============================================================================
+#
+# Current standard runtime kinds:
+#
+# 1. python_module
+#    - module: required dotted module name relative to the skill package
+#    - executes as a real module in a fresh subprocess
+#    - supports normal relative imports inside scripts/
+#
+# 2. command
+#    - argv: required explicit argv list for non-Python tools
+#    - dispatcher appends caller-supplied args after argv
+#
+# Example command runtime:
+#
+# runtime:
+#   kind: command
+#   argv: ["maker", "--mode", "convert"]
+
+# ==============================================================================
+# LLM INTERFACE BINDING KINDS
+# ==============================================================================
+#
+# Current standard binding kinds:
+#
+# 1. markdown_file
+#    - path: required path relative to the skill root
+#    - use when the prompt/interface definition lives inside this repo
+#
+# 2. uri
+#    - uri: required absolute URI
+#    - use when the prompt/interface definition is owned elsewhere
 
 # ==============================================================================
 # DISPATCH BEHAVIOR SUMMARY
 # ==============================================================================
 #
-# When a caller invokes an interface via the dispatcher:
+# When a caller invokes a machine interface via the dispatcher:
 #
-# 1. PERMISSION CHECK: Verify caller declared this skill in depends_on.
-#    - If allow_all_skills: true, any dependent is allowed.
-#    - If allow_all_skills: false, caller must be in allowed_callers.
-#
-# 2. VERSION CHECK: Verify caller's depends_on.major_version matches.
-#    - Prevents incompatible versions from being used together.
-#
-# 3. EXPORT CHECK: Verify interface id is in depends_on.exports (if caller exists).
-#    - Prevents unexpected use of private interfaces.
-#
-# 4. PATTERN MATCHING: Try each pattern in order.
-#    - Check min/max positionals
-#    - Check required_flags are present
-#    - Check forbidden_flags are absent
-#    - Check allowed_flags (if specified)
-#    - Check positional_patterns (regex validation)
-#    - Check flag_patterns (regex validation)
-#    - If all checks pass, use this pattern.
-#
-# 5. EXECUTION: Build full command and execute.
-#    - command + script_args -> full invocation
+# 1. Parse the canonical target <skill>.machine.<name>.
+# 2. Verify caller declared the dependency in depends_on.
+# 3. Verify depends_on.major_version matches the dependency's interface_version.
+# 4. Verify the canonical interface name appears in depends_on.exports (if
+#    caller specified exports).
+# 5. Verify allow_all_skills / allowed_callers.
+# 6. Match the invocation against declared patterns.
+# 7. Resolve the inline runtime binding.
+# 8. Execute without depending on the caller's working directory.
 #
 # If any check fails, the dispatcher rejects the invocation with an error.
-#
+
 # ==============================================================================
 # REGEX PATTERN SYNTAX
 # ==============================================================================
@@ -413,40 +264,25 @@ script_interfaces:
 #   "^abc$"                 Exact match: "abc" only
 #   "^/tmp/.*"              Absolute path starting with /tmp/
 #   "json|yaml"             Alternation: either "json" or "yaml"
-#   "[a-z0-9_-]+"           Alphanumeric/dash/underscore, one or more
-#   "^[A-Z]{2}$"            Two uppercase letters (country code example)
+#   "^[a-z0-9_-]+$"         Alphanumeric/dash/underscore only
 #   "^[0-9]{1,3}$"          1-3 digits
-#   "*.md"                   Not valid regex (use .*\.md instead)
 #
 # IMPORTANT: Use ^ and $ to anchor patterns to the full string.
-# Without anchors, "json" matches "jsonl" and "notjson".
-#
+
 # ==============================================================================
 # BEST PRACTICES
 # ==============================================================================
 #
-# 1. Prefer single patterns when possible. Multiple patterns add complexity.
+# 1. Prefer one canonical machine interface per callable behavior. Do not hide
+#    several public interface ids behind a grouped command surface.
 #
-# 2. Use positional_patterns and flag_patterns to encode business logic
-#    that the script can't be trusted to validate (e.g., path prefixes).
+# 2. Keep public interface documentation (`description`, `usage`, `notes`)
+#    separate from private runtime metadata (`runtime`).
 #
-# 3. Use allowed_callers for directory/resource ownership. Example:
-#    - list-manager owns lists/ directory via allowed_callers
-#    - daily-plan owns plans/ directory via allowed_callers
-#    - Prevents cross-contamination and enforces ownership at compile-time
+# 3. Use relative imports for same-skill Python code inside scripts/.
 #
-# 4. Always set 'description' and 'usage' on every interface. The sync tool
-#    injects these into the generated SKILL.md interface block, making it the
-#    single actionable reference for callers. 'description' says what the
-#    interface does; 'usage' is the complete argument template (positionals +
-#    required flags + optional flags). The skill body must not re-explain or
-#    re-invoke interfaces — blueprint.yaml owns the definition, the generated
-#    block exposes it, and the body only names interfaces and states rules.
-#    Use 'notes' on individual patterns for mode-specific detail when multiple
-#    calling conventions exist (file-mode vs stdin-mode, etc.).
+# 4. Put truly shared first-party Python code under src/officina/, not in
+#    another skill's scripts/ directory.
 #
-# 5. Version your interface_version. When you add a new pattern or change
-#    existing constraints in a breaking way, bump interface_version.
-#
-# 6. Document constraints in allowed_flags, required_flags, and positional_patterns.
-#    The schema IS the contract; keep it tight and clear.
+# 5. Prefer `python_module` runtime for Python skill code so nested packages and
+#    relative imports work naturally.

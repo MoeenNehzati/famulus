@@ -12,6 +12,10 @@ class BlueprintError(Exception):
     """Raised when a blueprint relationship is invalid."""
 
 
+def _uses_new_interface_model(blueprint: dict[str, Any]) -> bool:
+    return isinstance(blueprint.get("interfaces"), dict)
+
+
 def load_blueprints(skills_root: Path) -> dict[str, dict[str, Any]]:
     """Load all blueprint.yaml files under skills_root."""
     blueprints: dict[str, dict[str, Any]] = {}
@@ -81,6 +85,20 @@ def _resolve_callable_surface(
     blueprint: dict[str, Any],
     export_id: str,
 ) -> tuple[str, dict[str, Any]]:
+    if _uses_new_interface_model(blueprint):
+        parts = export_id.split(".")
+        if len(parts) != 3:
+            raise BlueprintError(f"canonical interface `{export_id}` must have form skill.kind.name")
+        target_skill, kind, interface_name = parts
+        interfaces = _expect_mapping(blueprint.get("interfaces"), "interfaces")
+        if kind not in {"machine", "llm"}:
+            raise BlueprintError(f"unsupported interface kind `{kind}`")
+        namespace = _expect_mapping(interfaces.get(kind), f"interfaces.{kind}")
+        spec = namespace.get(interface_name)
+        if not isinstance(spec, dict):
+            raise BlueprintError(f"{kind} interface `{interface_name}` is not defined")
+        return f"{target_skill}.{kind}.{interface_name}", spec
+
     interfaces = _expect_mapping(blueprint.get("script_interfaces"), "script_interfaces")
     for interface_name, interface_spec in interfaces.items():
         context = f"script_interfaces.{interface_name}"

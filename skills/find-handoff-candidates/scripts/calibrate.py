@@ -30,15 +30,11 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import importlib.util
 import json
 import os
 import statistics
 
-_SCAN_PATH = os.path.join(os.path.dirname(__file__), "scan.py")
-_spec = importlib.util.spec_from_file_location("scan", _SCAN_PATH)
-scan = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(scan)
+from . import scan
 
 
 def _net_chars_for_file(path: str, opaque_field: str) -> tuple[int, int]:
