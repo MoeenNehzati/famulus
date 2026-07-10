@@ -228,6 +228,36 @@ Because machine interfaces run as real modules, nested relative imports inside
 `scripts/` are allowed and expected. Use explicit `__init__.py` files for
 package directories under `scripts/`.
 
+**TOML IO boundary**
+
+Production Python code must not construct, read, write, or parse TOML files
+directly. TOML filenames are a controlled boundary because host-specific paths
+and TOML string escaping interact badly when callers hand-roll config text.
+
+Use the shared TOML IO boundary:
+
+```python
+from officina.common import toml_io
+
+with toml_io.open(base_dir, "settings.toml", "r") as f:
+    settings_text = f.read()
+
+with toml_io.open(base_dir, f"{name}.settings.toml", "w") as f:
+    f.write(settings_text)
+```
+
+Outside `src/officina/common/toml_io.py`, a `.toml` filename may appear only as
+the direct filename argument to `toml_io.open(...)`. Do not build TOML filenames
+through variables, concatenation, `Path(...)`, `/` path joins, `open(...)`,
+`.read_text(...)`, `.write_text(...)`, `tomllib`, or ad hoc regex/string
+rewrites. If a caller needs a reusable TOML filename or discovery rule, add a
+named helper to `toml_io` and keep filename construction there.
+
+`toml_io.open(...)` owns UTF-8 text mode, filename validation, and parse
+validation after writes. This rule is enforced by
+`validators/toml_io_boundary.py`, with behavior tests in
+`tests/validate_toml_io_boundary.py`.
+
 **Injection lifecycle**
 
 `../../skills/skill-maker/scripts/sync_skill_blueprints.py` injects and

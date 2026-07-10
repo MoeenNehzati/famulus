@@ -97,9 +97,10 @@ def test_config_toml_rewrite_treats_windows_backslashes_as_literal_path(tmp_path
         encoding="utf-8",
     )
 
-    launchers.write_config_toml_with_absolute_agent_path(
-        src,
-        dst,
+    launchers.write_profile_config_with_absolute_agent_path(
+        src.parent,
+        dst.parent,
+        "assistant",
         windows_agent_path,
         dry_run=False,
     )

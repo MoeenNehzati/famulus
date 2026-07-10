@@ -367,7 +367,7 @@ def replay_manifest(
                 "managed block", report, dry_run,
             )
             # If stripping leaves the file blank, it existed only for our
-            # block — remove the husk (e.g. codex config.toml we created).
+            # block — remove the empty config file husk we created.
             stripped_file = Path(path)
             if (
                 not dry_run

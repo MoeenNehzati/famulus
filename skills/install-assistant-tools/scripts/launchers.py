@@ -3,12 +3,12 @@
 launchers.py — Install per-agent bin launchers, profiles, and worker dirs.
 
 For each agent in --agents (assistant, collab, coauthor, tw): symlinks its
-bin launcher, copies its profile .config.toml into Codex/Claude homes,
-creates its worker directory, and links its Claude settings file. Also sets
+bin launcher, copies its profile config into Codex/Claude homes, creates its
+worker directory, and links its Claude settings file. Also sets
 ASSISTANT_DEFAULT (this subcommand's one rc-block var — PATH belongs to
 scaffold.py, AI belongs to dev_link.py).
 
-The copied .config.toml's `model_instructions_file` is rewritten to an
+The copied profile config's `model_instructions_file` is rewritten to an
 absolute path pointing at the repo's own agents/<agent>.md, instead of the
 relative "agents/<agent>.md" Codex would otherwise resolve against
 $CODEX_HOME. This means Codex agent launches work in plugin mode without
@@ -21,14 +21,18 @@ No agents are preselected: pass --agents explicitly.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+if str(REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from officina.common import toml_io
 
 from install_manifest import Manifest, manifest_path
 from link_utils import log, make_link
@@ -41,11 +45,6 @@ ALL_AGENTS = ["assistant", "collab", "coauthor", "tw"]
 # tw is a bin-dir alias for tmux-workspace; it has no separate worker dir,
 # profile, or ASSISTANT_DEFAULT relevance (tmux-workspace isn't an LLM backend).
 WORKER_AGENTS = ["assistant", "collab", "coauthor"]
-
-
-def _toml_basic_string(value: str) -> str:
-    """Return a TOML-compatible quoted string for a path-like value."""
-    return json.dumps(value, ensure_ascii=False)
 
 
 def install_bin_for_agent(source_bin_dir: Path, bin_dir: Path, agent: str, dry_run: bool, manifest: Manifest | None) -> None:
@@ -73,15 +72,22 @@ def install_worker_dir(repo_root: Path, agent: str, dry_run: bool) -> None:
         wdir.mkdir(parents=True, exist_ok=True)
 
 
-def write_config_toml_with_absolute_agent_path(
-    src: Path, dst: Path, agent_md_path: Path, dry_run: bool, manifest: Manifest | None = None
+def write_profile_config_with_absolute_agent_path(
+    src_dir: Path,
+    dst_dir: Path,
+    agent: str,
+    agent_md_path: Path,
+    dry_run: bool,
+    manifest: Manifest | None = None,
 ) -> None:
-    """Copy src (a profile .config.toml) to dst, rewriting model_instructions_file
-    to an absolute path pointing at agent_md_path.
+    """Copy a profile config to dst, rewriting model_instructions_file.
 
     Same skip semantics as make_copy: leaves an existing regular file alone
     (machine-local state), replaces a legacy symlink with a real file.
     """
+    filename = toml_io.profile_config_filename(agent)
+    src = src_dir / filename
+    dst = dst_dir / filename
     if not src.exists():
         log(f"  SKIP (missing source): {src}")
         return
@@ -99,15 +105,16 @@ def write_config_toml_with_absolute_agent_path(
         log(f"  Would write (absolute agent path): {dst}")
         return
 
-    content = src.read_text(encoding="utf-8")
+    with toml_io.open(src_dir, f"{agent}.config.toml", "r") as f:
+        content = f.read()
     content = _MODEL_INSTRUCTIONS_RE.sub(
         lambda _match: (
-            f"model_instructions_file = {_toml_basic_string(str(agent_md_path))}"
+            toml_io.key_value("model_instructions_file", agent_md_path).rstrip("\n")
         ),
         content,
     )
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(content, encoding="utf-8")
+    with toml_io.open(dst_dir, f"{agent}.config.toml", "w") as f:
+        f.write(content)
     log(f"  Wrote (absolute agent path): {dst}")
     if manifest is not None:
         manifest.record("file", path=str(dst))
@@ -123,11 +130,12 @@ def install_profile_for_agent(repo_root: Path, profiles_dir: Path, codex_home: P
         codex_home.mkdir(parents=True, exist_ok=True)
         claude_home.mkdir(parents=True, exist_ok=True)
 
-    config = profiles_dir / f"{agent}.config.toml"
+    config_name = toml_io.profile_config_filename(agent)
+    config = profiles_dir / config_name
     agent_md = repo_root / "agents" / f"{agent}.md"
     if config.exists():
-        write_config_toml_with_absolute_agent_path(config, codex_home / config.name, agent_md, dry_run, manifest)
-        write_config_toml_with_absolute_agent_path(config, claude_home / config.name, agent_md, dry_run, manifest)
+        write_profile_config_with_absolute_agent_path(profiles_dir, codex_home, agent, agent_md, dry_run, manifest)
+        write_profile_config_with_absolute_agent_path(profiles_dir, claude_home, agent, agent_md, dry_run, manifest)
 
     settings = profiles_dir / f"{agent}_claude_setting.json"
     if settings.exists():
@@ -136,10 +144,11 @@ def install_profile_for_agent(repo_root: Path, profiles_dir: Path, codex_home: P
 
 def remove_legacy_coder_links(source_bin_dir: Path, profiles_dir: Path, bin_dir: Path, codex_home: Path, claude_home: Path, dry_run: bool) -> None:
     """Remove legacy 'coder' symlinks that point back into this repo."""
+    legacy_config = toml_io.profile_config_filename("coder")
     candidates = {
         bin_dir     / "coder":             source_bin_dir / "coder",
-        codex_home  / "coder.config.toml": profiles_dir / "coder.config.toml",
-        claude_home / "coder.config.toml": profiles_dir / "coder.config.toml",
+        codex_home  / legacy_config:       profiles_dir / legacy_config,
+        claude_home / legacy_config:       profiles_dir / legacy_config,
     }
     for legacy, expected_target in candidates.items():
         if not legacy.is_symlink():

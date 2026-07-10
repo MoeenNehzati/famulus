@@ -39,9 +39,9 @@ We should be able to:
 
 ## Current Sequence
 
-- current completed step: `install-assistant-tools` profile rewriting now treats Windows-style backslash paths literally and writes TOML-safe path strings, with focused launcher tests passing
-- current repo blocker: the broader precommit Python suite is still red for unrelated `skill-maker` / dispatcher issues, so cross-platform work should continue in narrowly scoped slices
-- recommended next item: `Category 1 / Immediate Fix 2` — stop relying on GNU-only date formatting in shared runtime code
+- current completed step: TOML runtime access is now centralized through `officina.common.toml_io`, and production `.toml` filename mentions are mechanically restricted to direct `toml_io.open(...)` calls
+- current repo status: the full pre-commit hook passed after the TOML boundary work (`475 passed`, gitleaks clean)
+- recommended next item: `Category 1 / Immediate Fix 3` — make subprocess text encoding explicit where user text crosses process boundaries
 - emphasis for the next slice: do not stop at the local fix; add the narrowest durable tests or validators that would catch the same portability class elsewhere in the repo
 
 Why this is next:
@@ -90,11 +90,17 @@ What was done:
 - encoded the rewritten `model_instructions_file` value as a TOML-compatible basic string, preserving backslashes instead of letting TOML treat them as escapes
 - added a focused launcher test that runs on Linux but feeds the rewrite helper a Windows-style backslash path and verifies the installed profile parses back to the same path value
 - adjusted the launcher tests to use a temp home for install manifests, so the test suite does not touch the real user manifest
+- added `officina.common.toml_io` as the controlled TOML text boundary for runtime code
+- refactored `install-assistant-tools` profile rewriting and Codex hook config edits to use `toml_io.open(...)` and TOML scalar helpers
+- added `validators/toml_io_boundary.py`, which rejects production `.toml` filename mentions unless they are the direct filename argument to `toml_io.open(...)`, and rejects computed filename arguments such as variables or string concatenation
+- documented the TOML IO boundary in `references/skill-guidelines.md`
 
 Prevention:
 
 - keep the targeted Windows-style path test in `skills/install-assistant-tools/tests/test_launchers.py`
-- treat “string replacement involving filesystem paths” as a portability-sensitive code path in reviews
+- keep `tests/test_officina_toml_io.py` and `tests/validate_toml_io_boundary.py` in the validator suite so generated TOML is UTF-8, parse-checked, and centrally accessed
+- require new production TOML access to go through `officina.common.toml_io`; add named helpers there for new TOML filename patterns instead of constructing TOML paths at call sites
+- treat “embedding filesystem paths or other dynamic values into config syntax” as a portability-sensitive code path in reviews
 
 ### 2. Stop relying on GNU-only date formatting in shared runtime code
 
@@ -501,6 +507,7 @@ Add targeted unit tests for portability-sensitive helpers and transformations.
 Examples:
 
 - Windows-style path replacement tests for launcher/profile rewriting
+- TOML IO tests that write Windows-style paths, parse the result with `tomllib`, and assert round-trip equality
 - date-key formatting tests that do not depend on host-specific `strftime`
 - launcher-selection tests for `.bat` vs extensionless launchers
 - path-join and path-normalization tests using Windows-style inputs
@@ -520,6 +527,7 @@ Add validators that enforce portability rules at the repo level.
 
 Examples:
 
+- enforce the TOML IO boundary: production `.toml` filenames may appear only as direct `toml_io.open(...)` filename arguments, and the filename argument must be a visible literal or f-string
 - detect undeclared external binary dependencies in shared skills
 - detect undeclared Python package dependencies
 - flag risky subprocess text usage without explicit encoding where appropriate

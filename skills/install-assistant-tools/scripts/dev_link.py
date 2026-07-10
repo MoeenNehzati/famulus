@@ -25,7 +25,7 @@ Links created (documented in README.md § Systemwide Local Setup):
     references      -> <repo>/references
     agents          -> <repo>/agents
     AGENTS.md       -> <repo>/AGENTS.md  (same content as CLAUDE.md via symlink)
-    <p>.config.toml -> <repo>/profiles/<p>.config.toml (one per profile)
+    profile configs -> <repo>/profiles profile configs (one per profile)
 
 NOTE: ~/.codex itself must be a real directory, not a symlink. Codex's Linux
 sandbox may reject read-only mounts that cross a writable symlink at the
@@ -53,7 +53,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+if str(REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(Path(__file__).parent))
+
+from officina.common import toml_io
 
 from install_manifest import Manifest, manifest_path
 from link_utils import make_link
@@ -271,11 +276,11 @@ def _codex_hooks_block(repo_root: Path) -> str:
     for binding in _hook_bindings(repo_root, "codex"):
         lines.append(f"[[hooks.{binding.event}]]\n")
         if binding.matcher is not None:
-            lines.append(f"matcher = {json.dumps(binding.matcher)}\n")
+            lines.append(toml_io.key_value("matcher", binding.matcher))
         lines.append("\n")
         lines.append(f"[[hooks.{binding.event}.hooks]]\n")
-        lines.append('type = "command"\n')
-        lines.append(f"command = {json.dumps(_render_hook_command(binding.argv))}\n")
+        lines.append(toml_io.key_value("type", "command"))
+        lines.append(toml_io.key_value("command", _render_hook_command(binding.argv)))
     lines.append(f"{HOOKS_BLOCK_END}\n")
     return "".join(lines)
 
@@ -352,53 +357,50 @@ def install_claude_hooks(claude_home: Path, repo_root: Path, dry_run: bool, mani
 
 
 def install_codex_hooks(codex_home: Path, repo_root: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
-    """Append (or replace) the managed hook block in ~/.codex/config.toml.
+    """Append or replace the managed hook block in the Codex user config.
 
     Uses BEGIN/END marker comments so the block can be updated idempotently on
     re-run without duplicating entries or touching other config.
     """
     block = _codex_hooks_block(repo_root)
 
-    config_file = codex_home / "config.toml"
+    config_name = toml_io.codex_config_filename()
+    config_file = codex_home / config_name
     log(f"\nInstalling Codex dev-mode hook: {config_file}")
 
     if dry_run:
         log(f"  (dry-run) Would write managed hook block to {config_file}")
         return
 
-    config_file.parent.mkdir(parents=True, exist_ok=True)
-    config_file.touch(exist_ok=True)
-    original = config_file.read_text(encoding="utf-8")
+    with toml_io.open(codex_home, "config.toml", "a+") as f:
+        f.seek(0)
+        original = f.read()
 
-    # Strip existing managed block (inclusive of markers).
-    lines = original.splitlines(keepends=True)
-    filtered: list[str] = []
-    inside = False
-    for line in lines:
-        stripped = line.rstrip("\n")
-        if stripped == HOOKS_BLOCK_BEGIN:
-            inside = True
-            continue
-        if stripped == HOOKS_BLOCK_END:
-            inside = False
-            continue
-        if not inside:
-            filtered.append(line)
+        # Strip existing managed block (inclusive of markers).
+        lines = original.splitlines(keepends=True)
+        filtered: list[str] = []
+        inside = False
+        for line in lines:
+            stripped = line.rstrip("\n")
+            if stripped == HOOKS_BLOCK_BEGIN:
+                inside = True
+                continue
+            if stripped == HOOKS_BLOCK_END:
+                inside = False
+                continue
+            if not inside:
+                filtered.append(line)
 
-    fd, tmp = tempfile.mkstemp(dir=config_file.parent, prefix=config_file.name + ".tmp.")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.writelines(filtered)
-            f.write(block)
-        os.replace(tmp, config_file)
-        if manifest is not None:
-            manifest.record(
-                "marker_block", path=str(config_file),
-                begin=HOOKS_BLOCK_BEGIN, end=HOOKS_BLOCK_END,
-            )
-    except Exception:
-        os.unlink(tmp)
-        raise
+        f.seek(0)
+        f.truncate()
+        f.writelines(filtered)
+        f.write(block)
+
+    if manifest is not None:
+        manifest.record(
+            "marker_block", path=str(config_file),
+            begin=HOOKS_BLOCK_BEGIN, end=HOOKS_BLOCK_END,
+        )
 
     log("  OK")
 
@@ -510,7 +512,7 @@ def run(
 
             # Codex loads profiles from individual files directly under $CODEX_HOME.
             if profiles_dir.is_dir():
-                for profile in sorted(profiles_dir.glob("*.config.toml")):
+                for profile in toml_io.iter_profile_configs(profiles_dir):
                     make_link(profile, codex_home / profile.name, dry_run, manifest)
             else:
                 log(f"  SKIP profiles (directory missing): {profiles_dir}")
