@@ -7,17 +7,17 @@ category: coding-development-assistant
 # breaking way for dependent skills.
 interface_version: 1
 
-depends_on:
-  {}
+depends_on: {}
 
 suggested_permissions:
   bash:
     - command: ["git"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_host_links.py:Interface"]
-      reason: "Creates host compatibility alias symlinks in the newly scaffolded project directory only; no writes outside it, no network."
-  network:
-    []
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_host_links.py:Interface"]
+      reason: "Creates host compatibility alias symlinks in the newly scaffolded project\
+        \ directory only; no writes outside it, no network."
+  network: []
 
 skill_interface:
   inputs:
@@ -30,18 +30,33 @@ skill_interface:
 interfaces:
   machine:
     setup-compat-aliases:
-      description: Create every host compatibility alias symlink (e.g. a legacy filename some host looks for specifically)
-        in a freshly scaffolded project directory.
+      description: Create every host compatibility alias symlink (e.g. a legacy filename
+        some host looks for specifically) in a freshly scaffolded project directory.
       usage: <project-dir>
       allow_all_skills: false
       allowed_callers: []
       patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        notes: First positional is the scaffolded project's directory path. Discovers and runs every compat-alias helper next
-          to this script; adding a new host's alias later needs no change here.
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+          notes: First positional is the scaffolded project's directory path. Discovers
+            and runs every compat-alias helper next to this script; adding a new host's
+            alias later needs no change here.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_host_links.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_host_links.py
+      directly_writes: []
+  llm:
+    default:
+      description: Primary LLM-facing skill instructions.
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []

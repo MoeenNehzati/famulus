@@ -35,6 +35,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `scripts-update-watermark` — Advance the triage watermark to the current timestamp. Refuses if scripts-mark-failure was called earlier in this run.
   - `dispatcher --caller-skill email-triage email-triage.machine.scripts-update-watermark`
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 # Email Triage
 

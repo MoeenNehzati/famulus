@@ -18,6 +18,18 @@ BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint" / "template.yaml"
 DISPATCHER_SRC = REPO_ROOT / "script_dispatcher" / "src"
 
 
+def default_llm_interface() -> dict:
+    return {
+        "default": {
+            "description": "Primary LLM-facing skill instructions.",
+            "binding": {"kind": "skill_file", "path": "SKILL.md"},
+            "directly_reads": ["SKILL.md"],
+            "directly_executes": [],
+            "directly_writes": [],
+        }
+    }
+
+
 def load_module(module_name: str, path: Path):
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
@@ -120,8 +132,12 @@ class SkillBlueprintToolTests(unittest.TestCase):
                                     "entrypoint": "_rtx/_handoff_scan.py:Interface",
                                 },
                                 "dependencies": [],
+                                "directly_reads": [],
+                                "directly_executes": ["_rtx/_handoff_scan.py"],
+                                "directly_writes": [],
                             }
-                        }
+                        },
+                        "llm": default_llm_interface(),
                     },
                 },
             )
@@ -179,8 +195,12 @@ class SkillBlueprintToolTests(unittest.TestCase):
                                     "entrypoint": "_rtx/scan.py:Interface",
                                 },
                                 "dependencies": [],
+                                "directly_reads": [],
+                                "directly_executes": ["_rtx/scan.py"],
+                                "directly_writes": [],
                             }
-                        }
+                        },
+                        "llm": default_llm_interface(),
                     },
                 },
             )
@@ -189,6 +209,43 @@ class SkillBlueprintToolTests(unittest.TestCase):
         errors = sync_module.validate_blueprints(blueprints)
 
         self.assertEqual(errors, [])
+
+    def test_sync_validator_requires_runtime_entrypoint_directly_executed(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_python_machine_runtime_direct_test",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        blueprints = {
+            "demo-skill": sync_module.SkillBlueprint(
+                "demo-skill",
+                Path("skills/demo-skill/blueprint.yaml"),
+                {
+                    "category": "workflow-general-assistant",
+                    "interface_version": 1,
+                    "interfaces": {
+                        "machine": {
+                            "scan": {
+                                "runtime": {
+                                    "kind": "python_machine_interface",
+                                    "entrypoint": "_rtx/scan.py:Interface",
+                                },
+                                "dependencies": [],
+                                "directly_reads": [],
+                                "directly_executes": [],
+                                "directly_writes": [],
+                            }
+                        },
+                        "llm": default_llm_interface(),
+                    },
+                },
+            )
+        }
+
+        errors = sync_module.validate_blueprints(blueprints)
+
+        self.assertTrue(
+            any("interfaces.machine.scan.directly_executes" in error and "_rtx/scan.py" in error for error in errors)
+        )
 
     def test_sync_validator_accepts_python_machine_interface_args_prefix(self) -> None:
         sync_module = load_module(
@@ -211,8 +268,12 @@ class SkillBlueprintToolTests(unittest.TestCase):
                                     "args_prefix": ["--mode", "fast"],
                                 },
                                 "dependencies": [],
+                                "directly_reads": [],
+                                "directly_executes": ["_rtx/scan.py"],
+                                "directly_writes": [],
                             }
-                        }
+                        },
+                        "llm": default_llm_interface(),
                     },
                 },
             )

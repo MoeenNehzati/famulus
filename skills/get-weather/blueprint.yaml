@@ -24,22 +24,37 @@ skill_interface:
 interfaces:
   machine:
     scripts-weather:
-      description: Fetch weather data for a location and date range, returning hourly forecast JSON.
+      description: Fetch weather data for a location and date range, returning hourly
+        forecast JSON.
       usage: '[--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]'
       allow_all_skills: true
       allowed_callers: []
       patterns:
-      - min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
+        - min_positionals: 0
+          allow_extra_positionals: true
+          allow_stdin: false
       runtime:
         kind: command
         argv:
-        - _rtx/_weather_client.sh
+          - _rtx/_weather_client.sh
       dependencies:
-      - kind: binary
-        name: curl
-        reason: Fetches geocoding, IP-location, and forecast API responses.
-      - kind: binary
-        name: jq
-        reason: Parses and formats JSON API responses.
+        - kind: binary
+          name: curl
+          reason: Fetches geocoding, IP-location, and forecast API responses.
+        - kind: binary
+          name: jq
+          reason: Parses and formats JSON API responses.
+      directly_reads: []
+      directly_executes:
+        - _rtx/_weather_client.sh
+      directly_writes: []
+  llm:
+    default:
+      description: Primary LLM-facing skill instructions.
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []

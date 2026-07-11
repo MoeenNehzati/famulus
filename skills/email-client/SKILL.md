@@ -47,6 +47,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `send-email` — Send an email via SMTP; body comes from stdin.
   - `dispatcher --caller-skill email-client email-client.machine.send-email --from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]`
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 # Email
 

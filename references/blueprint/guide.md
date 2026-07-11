@@ -126,13 +126,31 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/read_data.py:ReadData
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/read_data.py
+      directly_writes: []
 
   llm:
+    default:
+      description: "Primary LLM-facing skill instructions."
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []
+
     summarize:
       description: "Summarize the collected records."
       binding:
         kind: markdown_file
         path: interfaces/summarize.md
+      directly_reads:
+        - interfaces/summarize.md
+      directly_executes: []
+      directly_writes: []
 ```
 
 ---
@@ -184,6 +202,9 @@ Each machine interface owns:
 - `allowed_callers`
 - `runtime`
 - `dependencies`
+- `directly_reads`
+- `directly_executes`
+- `directly_writes`
 
 Machine interfaces are the executable interface model. The legacy
 `script_interfaces` key is no longer accepted by the schema or sync validator.
@@ -215,9 +236,45 @@ dependencies:
 These declarations are not permission suggestions. Keep developer-selected
 approval baselines in top-level `suggested_permissions`.
 
+### Direct effect roots
+
+Every machine and LLM interface must declare:
+
+- `directly_reads`
+- `directly_executes`
+- `directly_writes`
+
+Use `[]` when there are no direct roots. Paths are relative to the directory
+containing `blueprint.yaml` by default. Use `$repo/` for repository-root
+relative paths.
+
+These are direct roots only. Tooling expands directories and referenced files
+recursively when computing health hashes, so the blueprint does not need a
+separate recursive flag.
+
+For machine interfaces, `directly_executes` must include the runtime entrypoint
+file when the runtime resolves to a skill-local file.
+
 ### `interfaces.llm`
 
 Map of llm-interface name → documented prompt/interface contract.
+
+Every blueprint must define `interfaces.llm.default`. It represents the skill's
+ordinary `SKILL.md` prompt surface:
+
+```yaml
+interfaces:
+  llm:
+    default:
+      description: "Primary LLM-facing skill instructions."
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []
+```
 
 Each llm interface typically owns:
 
@@ -230,12 +287,22 @@ Each llm interface typically owns:
 LLM interfaces are documented and routed by skill logic. The dispatcher never
 executes them.
 
-The local Markdown form is a relative path from the skill root:
+The local Markdown form is a relative path from the directory containing
+`blueprint.yaml`:
 
 ```yaml
 binding:
   kind: markdown_file
   path: interfaces/summarize.md
+```
+
+The default skill-file form explicitly names `SKILL.md`, also relative to the
+directory containing `blueprint.yaml`:
+
+```yaml
+binding:
+  kind: skill_file
+  path: SKILL.md
 ```
 
 For externally hosted interfaces, use:
@@ -263,6 +330,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/handoff_scan.py:HandoffScan
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/handoff_scan.py
+      directly_writes: []
 ```
 
 This is **internal metadata**. It belongs in the blueprint so the dispatcher
@@ -278,6 +349,10 @@ runtime:
   kind: python_machine_interface
   entrypoint: _rtx/handoff_scan.py:HandoffScan
 dependencies: []
+directly_reads: []
+directly_executes:
+  - _rtx/handoff_scan.py
+directly_writes: []
 ```
 
 Use for Python callable interfaces. The dispatcher runs the shared
@@ -294,14 +369,17 @@ dependencies:
   - kind: binary
     name: maker
     reason: "Performs the conversion invoked by this interface."
+directly_reads: []
+directly_executes: []
+directly_writes: []
 ```
 
 Use for non-Python tools or legacy command surfaces.
 
-For this runtime kind, route smoke is mandatory and built into
-`officina.runtime.python_machine_interface_runner`. The route-smoke test
-appends `--route-smoke`; the shared runner imports the interface class, builds
-its parser, and exits before normal interface execution.
+For `python_machine_interface`, route smoke is built into the shared runner.
+The route-smoke test appends `--route-smoke`; the shared runner imports the
+interface class, builds its parser, and exits before normal interface
+execution.
 
 The blueprint sync tool generates `references/blueprint/runtime_dependencies.json`
 from all `interfaces.machine.<name>.dependencies` declarations. Installers
@@ -366,6 +444,11 @@ interfaces:
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/read_data.py:ReadData
+      dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/read_data.py
+      directly_writes: []
 ```
 
 ### Internal-only interface
@@ -379,6 +462,11 @@ interfaces:
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/internal_worker.py:InternalWorker
+      dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/internal_worker.py
+      directly_writes: []
 ```
 
 ### Restricted interface
@@ -399,6 +487,12 @@ interfaces:
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/read_lists.py:ReadLists
+      dependencies: []
+      directly_reads:
+        - lists/
+      directly_executes:
+        - _rtx/read_lists.py
+      directly_writes: []
 ```
 
 ### Multiple calling conventions
@@ -423,6 +517,11 @@ interfaces:
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/update_data.py:UpdateData
+      dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/update_data.py
+      directly_writes: []
 ```
 
 ---

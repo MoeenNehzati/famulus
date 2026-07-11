@@ -148,6 +148,7 @@
     },
     "interfaces": {
       "type": "object",
+      "required": ["llm"],
       "additionalProperties": false,
       "properties": {
         "machine": {
@@ -183,6 +184,7 @@
     },
     "llmInterfaceMap": {
       "type": "object",
+      "required": ["default"],
       "propertyNames": {
         "$ref": "#/definitions/interfaceName"
       },
@@ -192,7 +194,7 @@
     },
     "machineInterface": {
       "type": "object",
-      "required": ["runtime", "dependencies"],
+      "required": ["runtime", "dependencies", "directly_reads", "directly_executes", "directly_writes"],
       "additionalProperties": false,
       "properties": {
         "description": {
@@ -225,6 +227,15 @@
         },
         "dependencies": {
           "$ref": "#/definitions/runtimeDependencies"
+        },
+        "directly_reads": {
+          "$ref": "#/definitions/directEffectList"
+        },
+        "directly_executes": {
+          "$ref": "#/definitions/directEffectList"
+        },
+        "directly_writes": {
+          "$ref": "#/definitions/directEffectList"
         }
       },
       "allOf": [
@@ -262,7 +273,7 @@
     },
     "llmInterface": {
       "type": "object",
-      "required": ["description"],
+      "required": ["description", "directly_reads", "directly_executes", "directly_writes"],
       "additionalProperties": false,
       "properties": {
         "description": {
@@ -294,6 +305,15 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "directly_reads": {
+          "$ref": "#/definitions/directEffectList"
+        },
+        "directly_executes": {
+          "$ref": "#/definitions/directEffectList"
+        },
+        "directly_writes": {
+          "$ref": "#/definitions/directEffectList"
         }
       },
       "allOf": [
@@ -314,6 +334,19 @@
     },
     "llmBinding": {
       "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "path"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "skill_file"
+            },
+            "path": {
+              "const": "SKILL.md"
+            }
+          }
+        },
         {
           "type": "object",
           "required": ["kind", "path"],
@@ -345,6 +378,16 @@
           }
         }
       ]
+    },
+    "directEffectList": {
+      "type": "array",
+      "description": "Direct file roots this interface reads, executes, or writes. Paths are relative to the directory containing blueprint.yaml, or may use $repo/ for repository-root relative paths. Use [] when there are no direct roots.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+      },
+      "uniqueItems": true
     },
     "runtime": {
       "oneOf": [

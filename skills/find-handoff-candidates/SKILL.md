@@ -29,6 +29,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
   - `dispatcher --caller-skill find-handoff-candidates find-handoff-candidates.machine.scan [--min-gap-chars N] [--days N | --date YYYY-MM-DD]`
   - No positionals. --min-gap-chars overrides every host's built-in default threshold (each host is calibrated separately, since they differ by roughly an order of magnitude in bytes per unit of work) with a single shared value. --days (default 2) scans the trailing N days ending today, inclusive; --date pins to one exact day instead (mutually exclusive with --days; mainly useful for backtesting/calibration). Output is a JSON array; each entry's handoff_status is one of none, started, complete -- a complete entry can still be flagged if gap_net_chars (conversation since that completion) exceeds the threshold.
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 # Find Handoff Candidates
 

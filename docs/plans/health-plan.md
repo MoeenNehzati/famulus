@@ -1,5 +1,11 @@
 Implement Famulus per-skill health records, a mechanical `skill-health` wrapper, and a semantic `skill-doctor` certifier.
 
+Status: blueprint groundwork complete as of 2026-07-11. The live blueprint
+schema now requires `interfaces.llm.default`, explicit `skill_file` binding
+paths, and `directly_reads` / `directly_executes` / `directly_writes` on every
+interface. Build `skill-health` against that contract; do not reintroduce
+implicit `SKILL.md` bindings or ad hoc recursive flags.
+
 ## Goal
 
 Add a local health-record system for Famulus skills.
@@ -84,7 +90,7 @@ README/docs only if necessary
 Also update generated blueprint artifacts after adding/changing blueprints:
 
 ```bash
-python3 skills/skill-maker/_rtx/_blueprint_syncer.py
+dispatcher --caller-skill skill-maker skill-maker.machine.sync-blueprints
 ```
 
 ---
@@ -145,6 +151,10 @@ python3 skills/skill-health/_rtx/_health_state.py invalidate <skill-name> --reas
 python3 skills/skill-health/_rtx/_health_state.py certify <skill-name> --checker "skill-doctor@1"
 python3 skills/skill-health/_rtx/_health_state.py migrate-unhealthy [--all] --reason "..."
 ```
+
+Those are runtime parser contracts. Other skills and operator workflows should
+call the exported dispatcher interfaces instead of invoking `_rtx` files
+directly.
 
 `status` without a skill name means report all observed skills.
 
@@ -278,20 +288,45 @@ if actual_mtime_ns != recorded_mtime_ns:
 
 ## Skill content hash
 
-`skill_content_hash` is a deterministic hash over meaningful files under the target skill.
+`skill_content_hash` is a deterministic hash over the files that define the
+target skill's declared interfaces.
 
-Include these if present:
+Read roots from `skills/<skill>/blueprint.yaml`:
 
 ```text
-SKILL.md
-blueprint.yaml
+interfaces.llm.*.binding
+interfaces.llm.*.directly_reads
+interfaces.llm.*.directly_executes
+interfaces.llm.*.directly_writes
+interfaces.machine.*.directly_reads
+interfaces.machine.*.directly_executes
+interfaces.machine.*.directly_writes
+```
+
+The default LLM interface is explicit:
+
+```yaml
+interfaces:
+  llm:
+    default:
+      binding:
+        kind: skill_file
+        path: SKILL.md
+```
+
+Local binding paths and `directly_*` paths are relative to the directory
+containing `blueprint.yaml`. `$repo/` paths are relative to the repository root.
+
+Expand every file or directory root recursively. Hash both relative paths and
+file bytes in sorted order. Directory traversal must be deterministic and must
+reject path roots that escape the blueprint directory or repository root.
+
+Also include these generated compatibility files if present, because drift in
+them affects how the skill is loaded:
+
+```text
 depends_on_skills
 permissions.json
-scripts/**
-tests/**
-agents/**
-references/**
-validators/**
 ```
 
 Exclude:
@@ -303,8 +338,6 @@ __pycache__/**
 .DS_Store
 *.pyc
 ```
-
-Hash both relative paths and file bytes in sorted order.
 
 Format:
 
@@ -323,6 +356,7 @@ references/skill-guidelines.md
 references/blueprint/schema.json
 references/blueprint/template.yaml
 references/blueprint/guide.md
+docs/plans/health-plan.md
 skills/skill-maker/validators/**/*.py
 skills/skill-maker/_rtx/_blueprint_syncer.py
 validators/**/*.py
@@ -445,7 +479,8 @@ For one skill, prefer the same shape with a single item in `skills`.
 Command:
 
 ```bash
-python3 skills/skill-health/_rtx/_health_state.py invalidate <skill-name> --reason "..."
+dispatcher --caller-skill skill-health skill-health.machine.health-invalidate \
+  invalidate <skill-name> --reason "..."
 ```
 
 Writes `.health.json` with:
@@ -468,7 +503,8 @@ This means the record is internally valid but not certified.
 Command:
 
 ```bash
-python3 skills/skill-health/_rtx/_health_state.py certify <skill-name> --checker "skill-doctor@1"
+dispatcher --caller-skill skill-doctor skill-health.machine.health-certify \
+  certify <skill-name> --checker "skill-doctor@1"
 ```
 
 Guard:
@@ -507,7 +543,8 @@ Also record current hashes and mtime.
 Command:
 
 ```bash
-python3 skills/skill-health/_rtx/_health_state.py migrate-unhealthy --all \
+dispatcher --caller-skill skill-health skill-health.machine.health-migrate \
+  migrate-unhealthy --all \
   --reason "initial migration: wellness has not been run yet"
 ```
 
@@ -529,7 +566,8 @@ depends_on: {}
 
 suggested_permissions:
   bash:
-    - command: ["python3", "_rtx/_health_state.py"]
+    - command: ["dispatcher"]
+      args_prefix: ["--caller-skill", "skill-health", "skill-health.machine.health-status"]
       reason: "Mechanical health-record operations for Famulus skills."
   network: []
 
@@ -549,8 +587,13 @@ interfaces:
       usage: "status [skill-name] [--json]"
       runtime:
         kind: python_machine_interface
-        entrypoint: _rtx/health_state.py:HealthStatus
+        entrypoint: _rtx/_health_state.py:HealthStatus
       dependencies: []
+      directly_reads:
+        - $repo/skills/
+      directly_executes:
+        - _rtx/_health_state.py
+      directly_writes: []
       patterns:
         - min_positionals: 1
           max_positionals: 2
@@ -566,8 +609,14 @@ interfaces:
       usage: "invalidate <skill-name> --reason <reason>"
       runtime:
         kind: python_machine_interface
-        entrypoint: _rtx/health_state.py:HealthInvalidate
+        entrypoint: _rtx/_health_state.py:HealthInvalidate
       dependencies: []
+      directly_reads:
+        - $repo/skills/
+      directly_executes:
+        - _rtx/_health_state.py
+      directly_writes:
+        - $repo/skills/
       patterns:
         - min_positionals: 2
           allow_stdin: false
@@ -586,8 +635,14 @@ interfaces:
       usage: "certify <skill-name> --checker skill-doctor@1"
       runtime:
         kind: python_machine_interface
-        entrypoint: _rtx/health_state.py:HealthCertify
+        entrypoint: _rtx/_health_state.py:HealthCertify
       dependencies: []
+      directly_reads:
+        - $repo/skills/
+      directly_executes:
+        - _rtx/_health_state.py
+      directly_writes:
+        - $repo/skills/
       patterns:
         - min_positionals: 2
           allow_stdin: false
@@ -607,8 +662,14 @@ interfaces:
       usage: "migrate-unhealthy [--all] --reason <reason>"
       runtime:
         kind: python_machine_interface
-        entrypoint: _rtx/health_state.py:HealthMigrate
+        entrypoint: _rtx/_health_state.py:HealthMigrate
       dependencies: []
+      directly_reads:
+        - $repo/skills/
+      directly_executes:
+        - _rtx/_health_state.py
+      directly_writes:
+        - $repo/skills/
       patterns:
         - min_positionals: 1
           allow_stdin: false
@@ -621,9 +682,22 @@ interfaces:
       allowed_callers:
         - skill-maker
         - skill-doctor
+
+  llm:
+    default:
+      description: "Primary LLM-facing skill instructions."
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []
 ```
 
-If the current schema/validators require slightly different pattern fields, follow the repo’s existing blueprint template and validators.
+The `directly_*` roots above are intentionally broad for writes because the
+target `.health.json` path is chosen at runtime from the skill name argument.
+The implementation should still restrict writes to `skills/<skill>/.health.json`.
 
 ---
 
@@ -652,7 +726,8 @@ Behavior:
 4. If a path is under `skills/<skill-name>/` and the skill directory contains `SKILL.md`, run:
 
 ```bash
-python3 skills/skill-health/_rtx/_health_state.py invalidate <skill-name> \
+dispatcher --caller-skill skill-health skill-health.machine.health-invalidate \
+  invalidate <skill-name> \
   --reason "modified by assistant write/edit hook"
 ```
 
@@ -756,7 +831,8 @@ Determine the target skill name. If none is explicitly named and context clearly
 Use JSON, not the human report, for decision-making:
 
 ```bash
-python3 skills/skill-health/_rtx/_health_state.py status <target> --json
+dispatcher --caller-skill skill-doctor skill-health.machine.health-status \
+  status <target> --json
 ```
 
 ### 3. Read target files
@@ -768,7 +844,7 @@ skills/<target>/SKILL.md
 skills/<target>/blueprint.yaml
 skills/<target>/permissions.json
 skills/<target>/depends_on_skills
-skills/<target>/scripts/**
+skills/<target>/_rtx/**
 skills/<target>/tests/**
 skills/<target>/references/**
 skills/<target>/agents/**
@@ -791,7 +867,7 @@ references/blueprint/guide.md
 Run:
 
 ```bash
-python3 skills/skill-maker/_rtx/_blueprint_syncer.py --check
+dispatcher --caller-skill skill-maker skill-maker.machine.sync-blueprints --check
 python3 validators/runner.py
 ```
 
@@ -924,14 +1000,16 @@ Only certify if all are true:
 Then run:
 
 ```bash
-python3 skills/skill-health/_rtx/_health_state.py certify <target> \
+dispatcher --caller-skill skill-doctor skill-health.machine.health-certify \
+  certify <target> \
   --checker "skill-doctor@1"
 ```
 
 After certification, run:
 
 ```bash
-python3 skills/skill-health/_rtx/_health_state.py status <target>
+dispatcher --caller-skill skill-doctor skill-health.machine.health-status \
+  status <target>
 ```
 
 Display the resulting report.
@@ -958,15 +1036,16 @@ Report:
 After implementation, run locally:
 
 ```bash
-python3 skills/skill-health/_rtx/_health_state.py migrate-unhealthy --all \
+dispatcher --caller-skill skill-health skill-health.machine.health-migrate \
+  migrate-unhealthy --all \
   --reason "initial migration: wellness has not been run yet"
 ```
 
 Then verify:
 
 ```bash
-python3 skills/skill-health/_rtx/_health_state.py status
-python3 skills/skill-health/_rtx/_health_state.py status --json
+dispatcher --caller-skill skill-health skill-health.machine.health-status status
+dispatcher --caller-skill skill-health skill-health.machine.health-status status --json
 ```
 
 Expected:
@@ -1057,13 +1136,14 @@ The implementation is complete when:
 After code changes:
 
 ```bash
-python3 skills/skill-maker/_rtx/_blueprint_syncer.py
+dispatcher --caller-skill skill-maker skill-maker.machine.sync-blueprints
 python3 validators/runner.py
 pytest skills/skill-health/tests
 pytest
-python3 skills/skill-health/_rtx/_health_state.py migrate-unhealthy --all \
+dispatcher --caller-skill skill-health skill-health.machine.health-migrate \
+  migrate-unhealthy --all \
   --reason "initial migration: wellness has not been run yet"
-python3 skills/skill-health/_rtx/_health_state.py status
+dispatcher --caller-skill skill-health skill-health.machine.health-status status
 git status --short
 ```
 

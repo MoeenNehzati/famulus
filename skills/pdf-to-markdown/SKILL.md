@@ -28,6 +28,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `scripts-fetch-arxiv-source` — Download and extract the LaTeX source tarball for a paper from arXiv.
   - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown.machine.scripts-fetch-arxiv-source <arxiv-id> <output-dir>`
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 # PDF to Markdown
 

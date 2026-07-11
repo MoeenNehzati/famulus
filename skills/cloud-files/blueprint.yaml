@@ -9,17 +9,23 @@ depends_on: {}
 
 suggested_permissions:
   bash:
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_read_llm_file.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_read_llm_file.py:Interface"]
       reason: "Read files from cloud storage under LLM root."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_write_llm_file.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_write_llm_file.py:Interface"]
       reason: "Write files to cloud storage under LLM root."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_delete_llm_file.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_delete_llm_file.py:Interface"]
       reason: "Delete files from cloud storage under LLM root."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_ls_llm.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_ls_llm.py:Interface"]
       reason: "List/check files in cloud storage."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_oauth_bootstrap.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_oauth_bootstrap.py:Interface"]
       reason: "OAuth setup for cloud access."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_ensure_oauth.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_ensure_oauth.py:Interface"]
       reason: "Check OAuth status and write config.json (relocated from install-assistant-tools)."
   network: []
 
@@ -38,150 +44,201 @@ interfaces:
       usage: lists/<path>
       allow_all_skills: false
       allowed_callers:
-      - list-manager
-      - daily-plan
+        - list-manager
+        - daily-plan
       patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        positional_patterns:
-          0: ^lists/.*
-        notes: Read list files from cloud storage. Restricted to lists/ directory.
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+          positional_patterns:
+            0: ^lists/.*
+          notes: Read list files from cloud storage. Restricted to lists/ directory.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_read_llm_file.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_read_llm_file.py
+      directly_writes: []
     lists-write:
-      description: Write content (from stdin) to a file in cloud storage under the lists/ directory.
+      description: Write content (from stdin) to a file in cloud storage under the
+        lists/ directory.
       usage: lists/<path>
       allow_all_skills: false
       allowed_callers:
-      - list-manager
-      - daily-plan
+        - list-manager
+        - daily-plan
       patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: true
-        positional_patterns:
-          0: ^lists/.*
-        notes: Write list files to cloud storage. Restricted to lists/ directory.
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: true
+          positional_patterns:
+            0: ^lists/.*
+          notes: Write list files to cloud storage. Restricted to lists/ directory.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_write_llm_file.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_write_llm_file.py
+      directly_writes: []
     lists-delete:
       description: Delete a file from cloud storage under the lists/ directory.
       usage: lists/<path>
       allow_all_skills: false
       allowed_callers:
-      - list-manager
+        - list-manager
       patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        positional_patterns:
-          0: ^lists/.*
-        notes: Delete list files from cloud storage. Restricted to lists/ directory.
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+          positional_patterns:
+            0: ^lists/.*
+          notes: Delete list files from cloud storage. Restricted to lists/ directory.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_delete_llm_file.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_delete_llm_file.py
+      directly_writes: []
     plans-read:
       description: Read a file from cloud storage under the plans/ directory.
       usage: plans/<path>
       allow_all_skills: false
       allowed_callers:
-      - daily-plan
+        - daily-plan
       patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        positional_patterns:
-          0: ^plans/.*
-        notes: Read plan files from cloud storage. Restricted to plans/ directory.
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+          positional_patterns:
+            0: ^plans/.*
+          notes: Read plan files from cloud storage. Restricted to plans/ directory.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_read_llm_file.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_read_llm_file.py
+      directly_writes: []
     plans-write:
-      description: Write content (from stdin) to a file in cloud storage under the plans/ directory.
+      description: Write content (from stdin) to a file in cloud storage under the
+        plans/ directory.
       usage: plans/<path>
       allow_all_skills: false
       allowed_callers:
-      - daily-plan
+        - daily-plan
       patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: true
-        positional_patterns:
-          0: ^plans/.*
-        notes: Write plan files to cloud storage. Restricted to plans/ directory.
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: true
+          positional_patterns:
+            0: ^plans/.*
+          notes: Write plan files to cloud storage. Restricted to plans/ directory.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_write_llm_file.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_write_llm_file.py
+      directly_writes: []
     plans-delete:
       description: Delete a file from cloud storage under the plans/ directory.
       usage: plans/<path>
       allow_all_skills: false
       allowed_callers:
-      - daily-plan
+        - daily-plan
       patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        positional_patterns:
-          0: ^plans/.*
-        notes: Delete plan files from cloud storage. Restricted to plans/ directory.
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+          positional_patterns:
+            0: ^plans/.*
+          notes: Delete plan files from cloud storage. Restricted to plans/ directory.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_delete_llm_file.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_delete_llm_file.py
+      directly_writes: []
     setup-oauth:
       description: Run one-time OAuth2 setup for Google Drive access.
-      usage: '[--from-json <client_json_path>] [--client-id <id> --client-secret <secret>] [--port <port>]'
+      usage: '[--from-json <client_json_path>] [--client-id <id> --client-secret <secret>]
+        [--port <port>]'
       allow_all_skills: false
       patterns:
-      - min_positionals: 0
-        max_positionals: 0
-        allow_stdin: false
-        notes: OAuth setup for Google Drive access.
+        - min_positionals: 0
+          max_positionals: 0
+          allow_stdin: false
+          notes: OAuth setup for Google Drive access.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_oauth_bootstrap.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_oauth_bootstrap.py
+      directly_writes: []
     ensure-oauth:
-      description: "Check cloud-files OAuth status; print setup guidance or launch browser authorization as needed. Relocated\
-        \ from install-assistant-tools \u2014 invoke directly (caller-skill cloud-files) as part of connecting remotes."
+      description: "Check cloud-files OAuth status; print setup guidance or launch\
+        \ browser authorization as needed. Relocated from install-assistant-tools\
+        \ — invoke directly (caller-skill cloud-files) as part of connecting remotes."
       usage: ensure-oauth --home <dir> [--dry-run]
       allow_all_skills: false
       patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        positional_patterns:
-          0: ^ensure-oauth$
-        notes: Check OAuth status and guide setup for cloud-files.
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+          positional_patterns:
+            0: ^ensure-oauth$
+          notes: Check OAuth status and guide setup for cloud-files.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_ensure_oauth.py:Interface
         args_prefix:
-        - ensure-oauth
+          - ensure-oauth
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_ensure_oauth.py
+      directly_writes: []
     write-config:
-      description: Write ~/.config/cloud-files/config.json with the given remote LLM root. Relocated from install-assistant-tools.
+      description: Write ~/.config/cloud-files/config.json with the given remote LLM
+        root. Relocated from install-assistant-tools.
       usage: write-config --home <dir> [--remote-llm-root <path>] [--dry-run]
       allow_all_skills: false
       patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        positional_patterns:
-          0: ^write-config$
-        notes: Write cloud-files config.json.
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+          positional_patterns:
+            0: ^write-config$
+          notes: Write cloud-files config.json.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_ensure_oauth.py:Interface
         args_prefix:
-        - write-config
+          - write-config
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_ensure_oauth.py
+      directly_writes: []
+  llm:
+    default:
+      description: Primary LLM-facing skill instructions.
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []

@@ -7,19 +7,20 @@ category: research-assistant
 # breaking way for dependent skills.
 interface_version: 1
 
-depends_on:
-  {}
+depends_on: {}
 
 suggested_permissions:
   bash:
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_graph_builder.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_graph_builder.py:Interface"]
       reason: "Render math dependency graph HTML from canonical JSON."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_tex_macro_reader.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_tex_macro_reader.py:Interface"]
       reason: "Extract MathJax macro definitions from TeX sources."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_graph_server.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_graph_server.py:Interface"]
       reason: "Serve graph HTML locally for inspection."
-  network:
-    []
+  network: []
 
 skill_interface:
   inputs:
@@ -32,32 +33,58 @@ skill_interface:
 interfaces:
   machine:
     scripts-build-math-dependency-graph:
-      description: Render an interactive standalone HTML math dependency graph from canonical JSON.
-      usage: <source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file <path>] [--refresh-macros] [--reduce-transitive-edges]
+      description: Render an interactive standalone HTML math dependency graph from
+        canonical JSON.
+      usage: <source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file
+        <path>] [--refresh-macros] [--reduce-transitive-edges]
       patterns:
-      - name: owner
-        allow_extra_positionals: true
+        - name: owner
+          allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_graph_builder.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_graph_builder.py
+      directly_writes: []
     scripts-extract-mathjax-macros:
-      description: Extract MathJax macro definitions from a TeX entrypoint, recursively following \input/\include.
+      description: Extract MathJax macro definitions from a TeX entrypoint, recursively
+        following \input/\include.
       usage: <entrypoint.tex> [--out <path>]
       patterns:
-      - name: owner
-        allow_extra_positionals: true
+        - name: owner
+          allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_tex_macro_reader.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_tex_macro_reader.py
+      directly_writes: []
     scripts-serve-graph:
-      description: Serve graph HTML from a local directory with no-cache headers for repeated browser inspection.
+      description: Serve graph HTML from a local directory with no-cache headers for
+        repeated browser inspection.
       usage: '[--directory <path>] [--host <host>] [--port <port>]'
       patterns:
-      - name: owner
-        allow_extra_positionals: true
+        - name: owner
+          allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_graph_server.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_graph_server.py
+      directly_writes: []
+  llm:
+    default:
+      description: Primary LLM-facing skill instructions.
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []

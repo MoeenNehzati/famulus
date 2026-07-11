@@ -17,20 +17,25 @@ depends_on:
 
 suggested_permissions:
   bash:
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_envelope_gate.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_envelope_gate.py:Interface"]
       reason: "Filters email-client mail-list JSON to strictly-after-watermark envelopes."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_watermark_floor.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_watermark_floor.py:Interface"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_watermark_writer.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_watermark_writer.py:Interface"]
       reason: "Migrated from legacy permissions.json."
     - command: ["_rtx/_decision_sink.sh"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_log_compactor.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_log_compactor.py:Interface"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_failure_sentinel.py:Interface"]
-      reason: "Records a failed triage run so update-watermark refuses to advance and the scheduled health check can report it."
-  network:
-    []
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_failure_sentinel.py:Interface"]
+      reason: "Records a failed triage run so update-watermark refuses to advance\
+        \ and the scheduled health check can report it."
+  network: []
 
 skill_interface:
   inputs:
@@ -43,67 +48,103 @@ skill_interface:
 interfaces:
   machine:
     scripts-filter-envelopes:
-      description: Filter JSON envelopes (from email-client's mail-list, piped via stdin) to those strictly after the triage
-        watermark.
+      description: Filter JSON envelopes (from email-client's mail-list, piped via
+        stdin) to those strictly after the triage watermark.
       usage: -a <account>   < envelopes.json
       patterns:
-      - name: owner
-        allow_extra_positionals: true
-        allow_stdin: true
+        - name: owner
+          allow_extra_positionals: true
+          allow_stdin: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_envelope_gate.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_envelope_gate.py
+      directly_writes: []
     scripts-get-cutoff:
-      description: Return the cutoff date for the current triage run, with a fallback if no watermark exists.
+      description: Return the cutoff date for the current triage run, with a fallback
+        if no watermark exists.
       usage: ''
       patterns:
-      - name: owner
-        allow_extra_positionals: true
+        - name: owner
+          allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_watermark_floor.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_watermark_floor.py
+      directly_writes: []
     scripts-log-decision:
       description: Append a triage classification decision for one email to triage.log.
       usage: <account> <id> <from> <subject> <DECISION> <reason>
       patterns:
-      - name: owner
-        allow_extra_positionals: true
+        - name: owner
+          allow_extra_positionals: true
       runtime:
         kind: command
         argv:
-        - _rtx/_decision_sink.sh
+          - _rtx/_decision_sink.sh
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_decision_sink.sh
+      directly_writes: []
     scripts-prune-log:
-      description: Drop triage.log entries older than 30 days and print a one-line summary.
+      description: Drop triage.log entries older than 30 days and print a one-line
+        summary.
       usage: ''
       patterns:
-      - name: owner
-        allow_extra_positionals: true
+        - name: owner
+          allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_log_compactor.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_log_compactor.py
+      directly_writes: []
     scripts-update-watermark:
-      description: Advance the triage watermark to the current timestamp. Refuses if scripts-mark-failure was called earlier
-        in this run.
+      description: Advance the triage watermark to the current timestamp. Refuses
+        if scripts-mark-failure was called earlier in this run.
       usage: ''
       patterns:
-      - name: owner
-        allow_extra_positionals: true
+        - name: owner
+          allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_watermark_writer.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_watermark_writer.py
+      directly_writes: []
     scripts-mark-failure:
-      description: Record that this triage run failed, so update-watermark refuses to advance and the scheduled health check
-        reports it.
+      description: Record that this triage run failed, so update-watermark refuses
+        to advance and the scheduled health check reports it.
       usage: <reason>
       patterns:
-      - name: owner
-        allow_extra_positionals: true
+        - name: owner
+          allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_failure_sentinel.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_failure_sentinel.py
+      directly_writes: []
+  llm:
+    default:
+      description: Primary LLM-facing skill instructions.
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []

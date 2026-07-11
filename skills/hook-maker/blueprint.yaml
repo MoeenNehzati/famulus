@@ -8,23 +8,33 @@ interface_version: 1
 
 cross_platform: true
 
-depends_on:
-  {}
+depends_on: {}
 
 suggested_permissions:
-  bash:
-    []
-  network:
-    []
+  bash: []
+  network: []
 
 skill_interface:
   inputs:
-    - "User requests to design, create, install, debug, or refactor cross-host assistant hooks."
+    - "User requests to design, create, install, debug, or refactor cross-host assistant\
+      \ hooks."
     - "Existing host hook configs, installer code, hook modules, and tests when present."
   outputs:
-    - "A host-aware hook design, scaffold, patch, or review that separates purpose, lifecycle binding, and output adapter."
+    - "A host-aware hook design, scaffold, patch, or review that separates purpose,\
+      \ lifecycle binding, and output adapter."
   side_effects:
-    - "May create or modify hook modules, host registration code, and tests when the user asks for implementation."
+    - "May create or modify hook modules, host registration code, and tests when the\
+      \ user asks for implementation."
 
 interfaces:
   machine: {}
+  llm:
+    default:
+      description: Primary LLM-facing skill instructions.
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []

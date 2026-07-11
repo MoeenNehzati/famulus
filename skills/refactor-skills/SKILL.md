@@ -15,6 +15,15 @@ Interface Version: 1
 Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
+<!-- END BLUEPRINT INTERFACES -->
 **Skills are software modules. Refactoring a skill follows standard software refactoring discipline** — the same principles Fowler describes for code apply directly: behavior preservation is non-negotiable, moves are small and verified one at a time, and the safety net (characterization) comes before the first change.
 
 ## Workflow

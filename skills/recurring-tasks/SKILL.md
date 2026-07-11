@@ -41,6 +41,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `scripts-view-logs` — Tail the run log for a job (default 50 lines).
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-view-logs <job-name> [--lines N]`
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 
 # Recurring Tasks

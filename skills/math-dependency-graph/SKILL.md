@@ -39,6 +39,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `scripts-serve-graph` — Serve graph HTML from a local directory with no-cache headers for repeated browser inspection.
   - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.machine.scripts-serve-graph [--directory <path>] [--host <host>] [--port <port>]`
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

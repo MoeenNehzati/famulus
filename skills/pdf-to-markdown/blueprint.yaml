@@ -9,8 +9,7 @@ interface_version: 1
 
 cross_platform: false
 
-depends_on:
-  {}
+depends_on: {}
 
 suggested_permissions:
   bash:
@@ -38,34 +37,54 @@ skill_interface:
 interfaces:
   machine:
     scripts-check-marker-models:
-      description: Check whether required Marker/Surya models are downloaded and cached locally.
+      description: Check whether required Marker/Surya models are downloaded and cached
+        locally.
       usage: ''
       patterns:
-      - name: owner
+        - name: owner
       runtime:
         kind: command
         argv:
-        - _rtx/_marker_probe.sh
+          - _rtx/_marker_probe.sh
       dependencies:
-      - kind: python
-        name: marker-pdf
-        reason: Provides the Surya settings module used to locate Marker model checkpoints.
+        - kind: python
+          name: marker-pdf
+          reason: Provides the Surya settings module used to locate Marker model checkpoints.
+      directly_reads: []
+      directly_executes:
+        - _rtx/_marker_probe.sh
+      directly_writes: []
     scripts-fetch-arxiv-source:
-      description: Download and extract the LaTeX source tarball for a paper from arXiv.
+      description: Download and extract the LaTeX source tarball for a paper from
+        arXiv.
       usage: <arxiv-id> <output-dir>
       patterns:
-      - name: owner
+        - name: owner
       runtime:
         kind: command
         argv:
-        - _rtx/_source_fetcher.sh
+          - _rtx/_source_fetcher.sh
       dependencies:
-      - kind: binary
-        name: curl
-        reason: Downloads arXiv source tarballs.
-      - kind: binary
-        name: file
-        reason: Detects arXiv HTML responses versus gzip source archives.
-      - kind: binary
-        name: tar
-        reason: Extracts downloaded source archives.
+        - kind: binary
+          name: curl
+          reason: Downloads arXiv source tarballs.
+        - kind: binary
+          name: file
+          reason: Detects arXiv HTML responses versus gzip source archives.
+        - kind: binary
+          name: tar
+          reason: Extracts downloaded source archives.
+      directly_reads: []
+      directly_executes:
+        - _rtx/_source_fetcher.sh
+      directly_writes: []
+  llm:
+    default:
+      description: Primary LLM-facing skill instructions.
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []

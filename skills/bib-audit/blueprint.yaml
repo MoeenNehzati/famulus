@@ -7,8 +7,7 @@ category: research-assistant
 # breaking way for dependent skills.
 interface_version: 1
 
-depends_on:
-  {}
+depends_on: {}
 
 suggested_permissions:
   bash:
@@ -20,12 +19,13 @@ suggested_permissions:
       reason: "Migrated from legacy permissions.json."
     - command: ["dispatcher"]
       args_prefix: ["--caller-skill", "bib-audit", "bib-audit.machine.scripts-bib-similarity"]
-      reason: "Runs the local bib-audit duplicate/version candidate detector through the shared dispatcher runtime."
+      reason: "Runs the local bib-audit duplicate/version candidate detector through\
+        \ the shared dispatcher runtime."
     - command: ["dispatcher"]
       args_prefix: ["--caller-skill", "bib-audit", "bib-audit.machine.scripts-bib-validate-bibtex"]
-      reason: "Runs the local bib-audit BibTeX/natbib validator through the shared dispatcher runtime."
-  network:
-    []
+      reason: "Runs the local bib-audit BibTeX/natbib validator through the shared\
+        \ dispatcher runtime."
+  network: []
 
 skill_interface:
   inputs:
@@ -38,28 +38,48 @@ skill_interface:
 interfaces:
   machine:
     scripts-bib-similarity:
-      description: Detect duplicate and version-pair candidates in a .bib file by scoring all entry pairs.
+      description: Detect duplicate and version-pair candidates in a .bib file by
+        scoring all entry pairs.
       usage: <file.bib> [--threshold 0.3]
       patterns:
-      - name: owner
-        allow_extra_positionals: true
+        - name: owner
+          allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_reference_pairs.py:SimilarityInterface
       dependencies:
-      - kind: python
-        name: bibtexparser
-        reason: Parses BibTeX entries more accurately than the fallback parser.
+        - kind: python
+          name: bibtexparser
+          reason: Parses BibTeX entries more accurately than the fallback parser.
+      directly_reads: []
+      directly_executes:
+        - _rtx/_reference_pairs.py
+      directly_writes: []
     scripts-bib-validate-bibtex:
-      description: Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects).
+      description: Validate a BibTeX/natbib .bib file for syntax errors and missing
+        required fields (not for biblatex projects).
       usage: <file.bib>
       patterns:
-      - name: owner
-        allow_extra_positionals: true
+        - name: owner
+          allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_syntax_checker.py:ValidateBibtexInterface
       dependencies:
-      - kind: python
-        name: bibtexparser
-        reason: Parses BibTeX entries more accurately than the fallback parser.
+        - kind: python
+          name: bibtexparser
+          reason: Parses BibTeX entries more accurately than the fallback parser.
+      directly_reads: []
+      directly_executes:
+        - _rtx/_syntax_checker.py
+      directly_writes: []
+  llm:
+    default:
+      description: Primary LLM-facing skill instructions.
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []

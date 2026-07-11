@@ -29,6 +29,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `scripts-scaffold` — Install the dispatcher + invoke-skill launchers and put the bin dir on PATH. Universal floor, mode-independent.
   - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.machine.scripts-scaffold --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]`
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 # Install Assistant Tools
 
@@ -39,9 +44,8 @@ Skill: install-assistant-tools
 ## Platform Support
 
 The installer and primary launchers run on **Linux, macOS, and Windows**
-(Python 3.6+ required). Exceptions: `tmux-workspace` is Unix-only (tmux does
-not exist on Windows), and `invoke-skill` is currently installed only where the
-systemd/Unix recurring-automation backend is supported.
+(Python 3.6+ required). Exception: `tmux-workspace` is Unix-only because tmux
+does not exist on Windows.
 
 If any step fails or a command is not usable on the user's platform, **ask
 whether they want the skill to adapt the relevant scripts** before attempting
@@ -67,8 +71,8 @@ runtime phases
   install runner     Phase-1 orchestrator — asks the dev-mode question, then
                      chains scaffold -> [repo bridge] -> launchers
   scaffold           Universal floor: dispatcher launcher, PATH, required Python
-                     packages, plus invoke-skill where the recurring backend is
-                     supported. Mode-independent, always runs.
+                     packages, plus invoke-skill. Mode-independent, always
+                     runs.
   repo bridge        Dev-mode only: Claude/Codex config-dir symlinks, dev-mode
                      hook registration, git hooksPath, $AI export. Requires an
                      explicit repo path — never inferred.

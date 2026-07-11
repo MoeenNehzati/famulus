@@ -7,14 +7,11 @@ category: development-assistant
 # breaking way for dependent skills.
 interface_version: 1
 
-depends_on:
-  {}
+depends_on: {}
 
 suggested_permissions:
-  bash:
-    []
-  network:
-    []
+  bash: []
+  network: []
 
 skill_interface:
   inputs:
@@ -26,3 +23,13 @@ skill_interface:
 
 interfaces:
   machine: {}
+  llm:
+    default:
+      description: Primary LLM-facing skill instructions.
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []

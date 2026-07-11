@@ -122,6 +122,11 @@ interfaces:
         - kind: python
           name: PyYAML
           reason: "Parses YAML input files read by this interface."
+      directly_reads:
+        - "$repo/data/example.yaml"
+      directly_executes:
+        - _rtx/read_data.py
+      directly_writes: []
 
     # ==========================================================================
     # EXAMPLE 2: Multiple calling conventions
@@ -154,6 +159,12 @@ interfaces:
         - kind: python
           name: jsonschema
           reason: "Validates update payloads before writing them."
+      directly_reads:
+        - "$repo/data/example.yaml"
+      directly_executes:
+        - _rtx/update_data.py
+      directly_writes:
+        - "$repo/data/example.yaml"
 
     # ==========================================================================
     # EXAMPLE 3: Python class-backed command runtime
@@ -171,6 +182,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/analyze_data.py:AnalyzeData
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/analyze_data.py
+      directly_writes: []
 
     # ==========================================================================
     # EXAMPLE 4: Internal-only machine interface
@@ -182,6 +197,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/internal_worker.py:InternalWorker
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/internal_worker.py
+      directly_writes: []
 
     # ==========================================================================
     # EXAMPLE 5: Restricted machine interface
@@ -200,16 +219,38 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/special_data.py:SpecialData
       dependencies: []
+      directly_reads:
+        - special/
+      directly_executes:
+        - _rtx/special_data.py
+      directly_writes: []
 
   llm:
     # ==========================================================================
-    # EXAMPLE 6: LLM-facing interface
+    # EXAMPLE 6: Default LLM-facing skill interface
+    # ==========================================================================
+    default:
+      description: "Primary LLM-facing skill instructions."
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []
+
+    # ==========================================================================
+    # EXAMPLE 7: LLM-facing interface
     # ==========================================================================
     summarize:
       description: "Summarize the collected records for a handoff note."
       binding:
         kind: markdown_file
         path: interfaces/summarize.md
+      directly_reads:
+        - interfaces/summarize.md
+      directly_executes: []
+      directly_writes: []
       allow_all_skills: true
       allowed_callers: []
       routing_hints:
@@ -217,13 +258,16 @@ interfaces:
         - "This interface is documented for the skill owner; dispatcher never executes it."
 
     # ==========================================================================
-    # EXAMPLE 7: External LLM-facing interface
+    # EXAMPLE 8: External LLM-facing interface
     # ==========================================================================
     summarize-remote:
       description: "Summarize records using a prompt surface published outside this repo."
       binding:
         kind: uri
         uri: https://example.com/officina/interfaces/summarize-remote.md
+      directly_reads: []
+      directly_executes: []
+      directly_writes: []
       allow_all_skills: false
       allowed_callers:
         - prepare-handoff
@@ -268,17 +312,32 @@ interfaces:
 #     name: curl
 #     reason: "Fetches data from the remote API."
 #
+# Every interface must also declare direct effect roots. Use [] when there are no
+# direct roots. Paths are relative to the directory containing blueprint.yaml;
+# use $repo/ for paths relative to the repository root. Recursive hashing is
+# handled by tooling, so a directory root covers all files below it.
+#
+# directly_reads:
+#   - SKILL.md
+# directly_executes:
+#   - _rtx/read_data.py
+# directly_writes: []
+#
 # ==============================================================================
 # LLM INTERFACE BINDING KINDS
 # ==============================================================================
 #
 # Current standard binding kinds:
 #
-# 1. markdown_file
-#    - path: required path relative to the skill root
+# 1. skill_file
+#    - path: required literal SKILL.md
+#    - required for interfaces.llm.default; represents the skill file next to blueprint.yaml
+#
+# 2. markdown_file
+#    - path: required path relative to the directory containing blueprint.yaml
 #    - use when the prompt/interface definition lives inside this repo
 #
-# 2. uri
+# 3. uri
 #    - uri: required absolute URI
 #    - use when the prompt/interface definition is owned elsewhere
 

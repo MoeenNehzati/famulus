@@ -19,6 +19,18 @@ def _make_template(tmp_path: Path) -> None:
     (t / "template.yaml").write_text("# blueprint template\n")
 
 
+def _default_llm() -> dict:
+    return {
+        "default": {
+            "description": "Primary LLM-facing skill instructions.",
+            "binding": {"kind": "skill_file", "path": "SKILL.md"},
+            "directly_reads": ["SKILL.md"],
+            "directly_executes": [],
+            "directly_writes": [],
+        }
+    }
+
+
 def test_no_skills_passes(tmp_path: Path) -> None:
     (tmp_path / "skills").mkdir()
     _make_template(tmp_path)
@@ -111,14 +123,87 @@ def test_machine_interface_dependency_objects_pass_schema() -> None:
                             "reason": "Fetches remote JSON.",
                         },
                     ],
+                    "directly_reads": [],
+                    "directly_executes": ["_rtx/_handoff_scan.py"],
+                    "directly_writes": [],
                 }
-            }
+            },
+            "llm": _default_llm(),
         },
     }
 
     errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
 
     assert errors == []
+
+
+def test_llm_default_is_required_by_schema() -> None:
+    schema = _mod._load_schema()
+    assert schema is not None
+    blueprint = {
+        "category": "workflow-general-assistant",
+        "interface_version": 1,
+        "interfaces": {"machine": {}, "llm": {}},
+    }
+
+    errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
+
+    assert any("interfaces.llm" in error and "'default' is a required property" in error for error in errors)
+
+
+def test_direct_effect_roots_are_required_by_schema() -> None:
+    schema = _mod._load_schema()
+    assert schema is not None
+    blueprint = {
+        "category": "workflow-general-assistant",
+        "interface_version": 1,
+        "interfaces": {
+            "machine": {
+                "scan": {
+                    "runtime": {
+                        "kind": "python_machine_interface",
+                        "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                    },
+                    "dependencies": [],
+                }
+            },
+            "llm": _default_llm(),
+        },
+    }
+
+    errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
+
+    assert any("directly_reads" in error and "required" in error for error in errors)
+    assert any("directly_executes" in error and "required" in error for error in errors)
+    assert any("directly_writes" in error and "required" in error for error in errors)
+
+
+def test_direct_effect_roots_reject_parent_traversal_by_schema() -> None:
+    schema = _mod._load_schema()
+    assert schema is not None
+    blueprint = {
+        "category": "workflow-general-assistant",
+        "interface_version": 1,
+        "interfaces": {
+            "machine": {
+                "scan": {
+                    "runtime": {
+                        "kind": "python_machine_interface",
+                        "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                    },
+                    "dependencies": [],
+                    "directly_reads": ["../secret.txt"],
+                    "directly_executes": ["_rtx/_handoff_scan.py"],
+                    "directly_writes": [],
+                }
+            },
+            "llm": _default_llm(),
+        },
+    }
+
+    errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
+
+    assert any("directly_reads.0" in error and "does not match" in error for error in errors)
 
 
 def test_python_module_runtime_is_rejected_by_schema() -> None:

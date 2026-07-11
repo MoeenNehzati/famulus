@@ -47,6 +47,7 @@ DEPENDENCY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+\-\[\]]*$")
 PYTHON_MACHINE_INTERFACE_ENTRYPOINT_RE = re.compile(
     r"^_rtx/[A-Za-z_][A-Za-z0-9_]*\.py:[A-Za-z_][A-Za-z0-9_]*$"
 )
+DIRECT_EFFECT_RE = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$)).+")
 
 
 @dataclass(frozen=True)
@@ -126,6 +127,29 @@ def expect_runtime(value: Any, context: str, errors: list[str]) -> None:
     errors.append(f"{context}: runtime kind must be `python_machine_interface` or `command`")
 
 
+def runtime_entrypoint_file(value: Any) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    kind = value.get("kind")
+    if kind == "python_machine_interface":
+        entrypoint = value.get("entrypoint")
+        if isinstance(entrypoint, str) and ":" in entrypoint:
+            return entrypoint.split(":", 1)[0]
+        return None
+    if kind != "command":
+        return None
+    argv = value.get("argv")
+    if not isinstance(argv, list):
+        return None
+    for token in argv:
+        if not isinstance(token, str):
+            continue
+        path = token.split(":", 1)[0]
+        if path.startswith(("_rtx/", "scripts/", "$repo/")):
+            return path
+    return None
+
+
 def expect_runtime_dependencies(value: Any, context: str, errors: list[str]) -> None:
     if value is None:
         errors.append(f"{context}: required list, use [] when the interface has no runtime dependencies")
@@ -158,17 +182,51 @@ def expect_runtime_dependencies(value: Any, context: str, errors: list[str]) -> 
             seen.add(key)
 
 
+def validate_direct_effects(spec: dict[str, Any], field: str, context: str, errors: list[str]) -> list[str]:
+    value = spec.get(field)
+    field_context = f"{context}.{field}"
+    if value is None:
+        errors.append(f"{field_context}: required list, use [] when there are no direct roots")
+        return []
+    if not isinstance(value, list):
+        errors.append(f"{field_context}: expected list")
+        return []
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for idx, item in enumerate(value):
+        item_context = f"{field_context}[{idx}]"
+        if not isinstance(item, str) or not item:
+            errors.append(f"{item_context}: expected non-empty string")
+            continue
+        if not DIRECT_EFFECT_RE.fullmatch(item):
+            errors.append(f"{item_context}: must be relative and must not contain `..` path segments")
+        if item in seen:
+            errors.append(f"{item_context}: duplicate direct root `{item}`")
+        seen.add(item)
+        result.append(item)
+    return result
+
+
 def expect_llm_binding(value: Any, context: str, errors: list[str]) -> None:
     if not isinstance(value, dict):
         errors.append(f"{context}: expected mapping")
         return
     kind = value.get("kind")
+    if kind == "skill_file":
+        path = value.get("path")
+        if path != "SKILL.md":
+            errors.append(f"{context}: skill_file binding `path` must be `SKILL.md`")
+        extra = set(value) - {"kind", "path"}
+        if extra:
+            errors.append(f"{context}: skill_file binding only accepts `kind` and `path`")
+        return
     if kind == "markdown_file":
         path = value.get("path")
         if not isinstance(path, str) or not path.strip():
             errors.append(f"{context}: markdown_file binding needs non-empty `path`")
         elif path.startswith("/"):
-            errors.append(f"{context}: markdown_file binding `path` must be relative to the skill root")
+            errors.append(f"{context}: markdown_file binding `path` must be relative to the blueprint directory")
         return
     if kind == "uri":
         uri = value.get("uri")
@@ -177,7 +235,7 @@ def expect_llm_binding(value: Any, context: str, errors: list[str]) -> None:
         elif ":" not in uri:
             errors.append(f"{context}: uri binding `uri` must be absolute")
         return
-    errors.append(f"{context}: binding kind must be `markdown_file` or `uri`")
+    errors.append(f"{context}: binding kind must be `skill_file`, `markdown_file`, or `uri`")
 
 
 def normalized_interface_maps(
@@ -344,6 +402,12 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
             validate_access_surface(errors, interface_spec, context, allow_id=False)
             expect_runtime(interface_spec.get("runtime"), f"{context}.runtime", errors)
             expect_runtime_dependencies(interface_spec.get("dependencies"), f"{context}.dependencies", errors)
+            validate_direct_effects(interface_spec, "directly_reads", context, errors)
+            directly_executes = validate_direct_effects(interface_spec, "directly_executes", context, errors)
+            validate_direct_effects(interface_spec, "directly_writes", context, errors)
+            entrypoint_file = runtime_entrypoint_file(interface_spec.get("runtime"))
+            if entrypoint_file and entrypoint_file not in directly_executes:
+                errors.append(f"{context}.directly_executes: must include runtime entrypoint `{entrypoint_file}`")
         for interface_name, interface_spec in llm_interfaces.items():
             context = f"{blueprint.path}: interfaces.llm.{interface_name}"
             if not isinstance(interface_spec, dict):
@@ -357,7 +421,7 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                 if not isinstance(file, str) or not file.strip():
                     errors.append(f"{context}: missing `binding` (or non-empty `file`)")
                 elif file.startswith("/"):
-                    errors.append(f"{context}: `file` must be relative to the skill root")
+                    errors.append(f"{context}: `file` must be relative to the blueprint directory")
             else:
                 expect_llm_binding(binding, f"{context}.binding", errors)
             if "runtime" in interface_spec:
@@ -369,6 +433,22 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                     expect_list_of_strings(interface_spec["allowed_callers"], f"{context}.allowed_callers")
                 except BlueprintError as exc:
                     errors.append(str(exc))
+            validate_direct_effects(interface_spec, "directly_reads", context, errors)
+            validate_direct_effects(interface_spec, "directly_executes", context, errors)
+            validate_direct_effects(interface_spec, "directly_writes", context, errors)
+        default_llm = llm_interfaces.get("default")
+        if not isinstance(default_llm, dict):
+            errors.append(f"{blueprint.path}: interfaces.llm.default is required")
+        else:
+            binding = default_llm.get("binding")
+            if binding != {"kind": "skill_file", "path": "SKILL.md"}:
+                errors.append(
+                    f"{blueprint.path}: interfaces.llm.default.binding must be "
+                    "`{kind: skill_file, path: SKILL.md}`"
+                )
+            directly_reads = default_llm.get("directly_reads")
+            if not isinstance(directly_reads, list) or "SKILL.md" not in directly_reads:
+                errors.append(f"{blueprint.path}: interfaces.llm.default.directly_reads must include `SKILL.md`")
     return errors
 
 
@@ -529,7 +609,9 @@ def generated_interface_block(skill_name: str, data: dict[str, Any]) -> str:
             binding = spec.get("binding")
             if isinstance(binding, dict):
                 kind = binding.get("kind")
-                if kind == "markdown_file" and isinstance(binding.get("path"), str):
+                if kind == "skill_file" and isinstance(binding.get("path"), str):
+                    lines.append(f"  - binding: skill file `{binding['path']}`")
+                elif kind == "markdown_file" and isinstance(binding.get("path"), str):
                     lines.append(f"  - binding: relative markdown path `{binding['path']}`")
                 elif kind == "uri" and isinstance(binding.get("uri"), str):
                     lines.append(f"  - binding: uri `{binding['uri']}`")

@@ -25,6 +25,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `scripts-bib-validate-bibtex` — Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects).
   - `dispatcher --caller-skill bib-audit bib-audit.machine.scripts-bib-validate-bibtex <file.bib>`
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 # Bibliography Audit
 

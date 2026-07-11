@@ -25,6 +25,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
   - `dispatcher --caller-skill initialize-tdd initialize-tdd.machine.setup-compat-aliases <project-dir>`
   - First positional is the scaffolded project's directory path. Discovers and runs every compat-alias helper next to this script; adding a new host's alias later needs no change here.
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 # Initialize TDD Project
 

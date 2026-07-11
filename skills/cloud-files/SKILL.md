@@ -52,6 +52,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
   - `dispatcher --caller-skill cloud-files cloud-files.machine.write-config write-config --home <dir> [--remote-llm-root <path>] [--dry-run]`
   - Write cloud-files config.json.
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

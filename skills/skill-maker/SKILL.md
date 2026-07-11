@@ -26,6 +26,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
   - sync: Refresh generated files from blueprint.yaml.
   - check: Validate blueprints and fail if generated files are out of sync.
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 ## Research option when creating a skill
 

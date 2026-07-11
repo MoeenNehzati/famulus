@@ -9,9 +9,11 @@ depends_on: {}
 
 suggested_permissions:
   bash:
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_oauth_bootstrap.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_oauth_bootstrap.py:Interface"]
       reason: "OAuth setup tool."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_ensure_oauth.py:Interface"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_ensure_oauth.py:Interface"]
       reason: "Check OAuth status and guide setup (relocated from install-assistant-tools)."
   network: []
 
@@ -26,43 +28,68 @@ skill_interface:
 interfaces:
   machine:
     scripts-gcal:
-      description: Query or modify Google Calendar events via the Python calendar CLI (agenda, search, create, update, delete, etc.).
+      description: Query or modify Google Calendar events via the Python calendar
+        CLI (agenda, search, create, update, delete, etc.).
       usage: <command> [options]
       allow_all_skills: false
       allowed_callers:
-      - daily-plan
+        - daily-plan
       patterns:
-      - min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
+        - min_positionals: 0
+          allow_extra_positionals: true
+          allow_stdin: false
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_gcal_client.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_gcal_client.py
+      directly_writes: []
     setup-oauth:
-      description: Run the OAuth setup flow to generate or refresh Google Calendar credentials.
+      description: Run the OAuth setup flow to generate or refresh Google Calendar
+        credentials.
       usage: '[--from-json /path/to/client.json]'
       allow_all_skills: false
       patterns:
-      - min_positionals: 0
-        max_positionals: 0
-        allow_stdin: false
-        notes: OAuth setup for Google Calendar access.
+        - min_positionals: 0
+          max_positionals: 0
+          allow_stdin: false
+          notes: OAuth setup for Google Calendar access.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_oauth_bootstrap.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_oauth_bootstrap.py
+      directly_writes: []
     ensure-oauth:
-      description: "Check g-calendar OAuth status; print setup guidance or launch browser authorization as needed. Relocated\
-        \ from install-assistant-tools \u2014 invoke directly (caller-skill g-calendar) as part of connecting remotes."
+      description: "Check g-calendar OAuth status; print setup guidance or launch\
+        \ browser authorization as needed. Relocated from install-assistant-tools\
+        \ — invoke directly (caller-skill g-calendar) as part of connecting remotes."
       usage: --home <dir> [--dry-run]
       allow_all_skills: false
       patterns:
-      - min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: Check OAuth status and guide setup for g-calendar.
+        - min_positionals: 0
+          allow_extra_positionals: true
+          allow_stdin: false
+          notes: Check OAuth status and guide setup for g-calendar.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_ensure_oauth.py:Interface
       dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_ensure_oauth.py
+      directly_writes: []
+  llm:
+    default:
+      description: Primary LLM-facing skill instructions.
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []

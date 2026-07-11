@@ -26,6 +26,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `scripts-weather` — Fetch weather data for a location and date range, returning hourly forecast JSON.
   - `dispatcher --caller-skill get-weather get-weather.machine.scripts-weather [--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]`
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

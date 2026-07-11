@@ -70,6 +70,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
   - file-mode: Externally supported update mode; caller prepares the patch file.
   - stdin-batch: Internal convenience mode for the owning skill when feeding YAML directly.
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

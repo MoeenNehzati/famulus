@@ -36,6 +36,11 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `render-plan` — Extract or reassemble sections of a plan file for rendering.
   - `dispatcher --caller-skill daily-plan daily-plan.machine.render-plan <extract|reassemble> <plan-file> <dir>`
 
+Owner-Facing LLM Interfaces:
+
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `default` — Primary LLM-facing skill instructions.
+  - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, invoke `orchestrate`. To force regeneration of an existing plan, pass `--forced`.
 

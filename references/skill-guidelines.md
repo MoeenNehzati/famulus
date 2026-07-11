@@ -88,6 +88,8 @@ specification.
     interface.
   - `interfaces.llm.<name>` defines an LLM-facing interface documented through
     a separate file, never executed through the dispatcher.
+    Every blueprint must include `interfaces.llm.default`, backed by
+    `SKILL.md`.
 
 **Canonical interface names**
 
@@ -134,6 +136,9 @@ Do not invoke the `dispatcher` CLI from Python skill code, and do not modify
 - `allow_all_skills` / `allowed_callers` — access control
 - `runtime` — internal execution metadata
 - `dependencies` — factual runtime package and executable requirements
+- `directly_reads` — direct file roots read by this interface
+- `directly_executes` — direct file roots executed by this interface
+- `directly_writes` — direct file roots written by this interface
 
 `runtime` is **internal metadata**. It belongs in the blueprint because the
 dispatcher must know how to execute the interface, but it must not leak into
@@ -167,6 +172,14 @@ The blueprint sync tool generates `references/blueprint/runtime_dependencies.jso
 from these declarations. Installers and other non-YAML consumers should read
 that JSON manifest instead of parsing blueprint YAML at runtime.
 
+Every machine interface must also declare `directly_reads`,
+`directly_executes`, and `directly_writes`. Use `[]` when there are no direct
+roots. Paths are relative to the directory containing `blueprint.yaml` unless
+they start with `$repo/`, which is relative to the repository root. These fields
+are direct roots only: health tooling expands directories and referenced files
+recursively when it computes hashes. A machine interface whose runtime resolves
+to a skill-local file must include that file in `directly_executes`.
+
 Pattern semantics are per interface, not per grouped command. Every
 `interfaces.machine.<name>` entry is one canonical callable interface. Do not
 reintroduce grouped parent interfaces with hidden subinterface ids.
@@ -178,17 +191,41 @@ skill-owned prompt surface routed by higher-level skill logic. It owns:
 
 - `description`
 - `binding` — where the interface definition lives
+- `directly_reads`
+- `directly_executes`
+- `directly_writes`
 - `allow_all_skills` / `allowed_callers` — access control for other skills
 - optional routing or documentation metadata
 
 Typical LLM bindings:
 
+- `kind: skill_file` for the mandatory `interfaces.llm.default` surface,
+  with `path: SKILL.md`
 - `kind: markdown_file` with `path: interfaces/summarize.md`
 - `kind: uri` with `uri: https://example.com/skills/summarize.md`
+
+All local binding paths are relative to the directory containing
+`blueprint.yaml`.
 
 Use `binding`, not `runtime`, because LLM interfaces are descriptive routing
 surfaces rather than dispatcher-executed programs. `runtime` is forbidden under
 `interfaces.llm.*`.
+
+Every blueprint must define:
+
+```yaml
+interfaces:
+  llm:
+    default:
+      description: "Primary LLM-facing skill instructions."
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []
+```
 
 For migration, `file: interfaces/name.md` may be accepted as a shorthand for:
 
