@@ -98,6 +98,27 @@ def test_codex_named_file_may_mention_codex(tmp_path: Path) -> None:
     assert validate(tmp_path) == []
 
 
+def test_windows_named_file_may_mention_windows(tmp_path: Path) -> None:
+    d = tmp_path / "src" / "officina" / "common" / "secrets"
+    d.mkdir(parents=True)
+    (d / "windows.py").write_text("# Handles Windows win32 credential storage.\n")
+    assert validate(tmp_path) == []
+
+
+def test_osx_named_file_may_mention_macos_and_darwin(tmp_path: Path) -> None:
+    d = tmp_path / "src" / "officina" / "common" / "secrets"
+    d.mkdir(parents=True)
+    (d / "osx.py").write_text("# Handles macOS and darwin credential storage.\n")
+    assert validate(tmp_path) == []
+
+
+def test_linux_named_file_may_mention_linux(tmp_path: Path) -> None:
+    d = tmp_path / "src" / "officina" / "common" / "secrets"
+    d.mkdir(parents=True)
+    (d / "linux.py").write_text("# Handles Linux credential storage.\n")
+    assert validate(tmp_path) == []
+
+
 def test_claude_named_file_may_not_mention_codex(tmp_path: Path) -> None:
     d = tmp_path / "skills" / "a-skill" / "_rtx"
     d.mkdir(parents=True)
@@ -115,12 +136,28 @@ def test_generically_named_file_may_not_mention_either_host(tmp_path: Path) -> N
     assert len(errors) == 2
 
 
+def test_generically_named_file_may_not_mention_operating_system(tmp_path: Path) -> None:
+    d = tmp_path / "src" / "officina" / "common"
+    d.mkdir(parents=True)
+    (d / "secret_store.py").write_text("# Uses Windows, macOS, and Linux stores.\n")
+    errors = validate(tmp_path)
+    assert len(errors) == 1
+    assert "Windows" in errors[0]
+
+
 def test_init_py_always_exempt(tmp_path: Path) -> None:
     d = tmp_path / "skills" / "a-skill" / "_rtx"
     d.mkdir(parents=True)
     (d / "__init__.py").write_text(
         "from claude_parser import ClaudeParser\nfrom codex_parser import CodexParser\n"
     )
+    assert validate(tmp_path) == []
+
+
+def test_skill_guidelines_can_define_platform_rule(tmp_path: Path) -> None:
+    refs = tmp_path / "references"
+    refs.mkdir()
+    (refs / "skill-guidelines.md").write_text("Use Windows, macOS, Linux, Claude, and Codex here.\n")
     assert validate(tmp_path) == []
 
 

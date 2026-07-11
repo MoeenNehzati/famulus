@@ -322,7 +322,11 @@ the direct filename argument to `toml_io.open(...)`. Do not build TOML filenames
 through variables, concatenation, `Path(...)`, `/` path joins, `open(...)`,
 `.read_text(...)`, `.write_text(...)`, `tomllib`, or ad hoc regex/string
 rewrites. If a caller needs a reusable TOML filename or discovery rule, add a
-named helper to `toml_io` and keep filename construction there.
+named helper under `src/officina/common/` and keep filename construction there.
+When the helper is specific to a host or platform, give the helper file a
+matching platform name and include `toml` in the filename, such as
+`codex_toml.py`, so both the TOML boundary and platform-neutral boundary stay
+explicit.
 
 `toml_io.open(...)` owns UTF-8 text mode, filename validation, and parse
 validation after writes. This rule is enforced by
@@ -487,6 +491,17 @@ directory.
 **13. Prefer widely available, cross-platform tools at every layer** —
 language, runtime, and any external tools invoked. Skills must work out of the
 box across Linux, macOS, and Windows on machines other than your own.
+
+Shared code under `src/officina/common/` must be host-neutral by default. Put
+repo-wide policy there only when more than one skill can plausibly need the
+same boundary, and keep the surface thin: validation, naming, error
+normalization, and test seams are appropriate; product-specific behavior is
+not. Prefer a mature cross-platform adapter over per-host in-house
+implementations when the adapter delegates to the host facility. For example,
+`officina.common.secret_store` owns the repo contract for small local secrets
+and delegates storage to Python `keyring`; skills should call that wrapper
+instead of importing `keyring` directly or shelling out to host-specific
+credential commands.
 
 Date and time formatting at IO boundaries must avoid host-specific formatting
 extensions. In Python, do not use GNU/POSIX-only or Windows-only `strftime`

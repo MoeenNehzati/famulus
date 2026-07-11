@@ -105,3 +105,12 @@ def test_toml_io_module_is_exempt(tmp_path: Path) -> None:
         rel="src/officina/common/toml_io.py",
     )
     assert validate(tmp_path) == []
+
+
+def test_common_toml_helper_module_is_exempt(tmp_path: Path) -> None:
+    _write_runtime_file(
+        tmp_path,
+        'NAME = "config.toml"\n',
+        rel="src/officina/common/codex_toml.py",
+    )
+    assert validate(tmp_path) == []

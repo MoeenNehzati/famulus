@@ -10,6 +10,7 @@ from pathlib import Path
 _CHECK_ROOTS = ["skills", "src", "script_dispatcher", "llmhooks"]
 _SKIP_PARTS = {"tests", "validators", "__pycache__", ".git", ".claude-plugin", ".codex-plugin", "logs"}
 _ALLOWED_REL = Path("src/officina/common/toml_io.py")
+_ALLOWED_COMMON_TOML_DIR = Path("src/officina/common")
 
 
 def _tracked_files(repo_root: Path) -> set[Path] | None:
@@ -37,11 +38,19 @@ def _iter_python_files(repo_root: Path):
             if tracked is not None and path not in tracked:
                 continue
             rel_path = path.relative_to(repo_root)
-            if rel_path == _ALLOWED_REL:
+            if rel_path == _ALLOWED_REL or _is_common_toml_helper(rel_path):
                 continue
             if any(part in _SKIP_PARTS for part in rel_path.parts):
                 continue
             yield path
+
+
+def _is_common_toml_helper(rel_path: Path) -> bool:
+    return (
+        rel_path.parent == _ALLOWED_COMMON_TOML_DIR
+        and "toml" in rel_path.name
+        and rel_path.suffix == ".py"
+    )
 
 
 def _contains_toml_literal(node: ast.AST) -> bool:

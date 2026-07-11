@@ -1,20 +1,22 @@
 """Validate that shared content contains no platform-specific references.
 
-A file whose own filename names a host (case-insensitive substring match,
-e.g. ``codex_parser.py`` or ``claude_parser.py``) is allowed to mention that
-host's forbidden terms -- the filename itself is the visible signal that
-this one file is intentionally host-specific, while every other shared file
-must stay generic. Both the filename check and the content check are
-case-insensitive (``CLAUDE_HOME`` is treated the same as ``claude_home`` or
-``Claude Code``). ``__init__.py`` is always exempt too: it is the
-conventional aggregation seam that statically imports the host-specific
-files and re-exports a generic collection (e.g. ``parsers = [...]``) for
-everything else to consume without naming any host itself.
+A file whose own filename names a host or operating system (case-insensitive
+substring match, e.g. ``codex_parser.py`` or ``windows.py``) is allowed to
+mention that platform's forbidden terms -- the filename itself is the visible
+signal that this one file is intentionally platform-specific, while every
+other shared file must stay generic. Filename checks are case-insensitive, and
+content checks use each platform group's own pattern policy (for example,
+``CLAUDE_HOME`` is treated the same as ``claude_home`` or ``Claude Code``).
+``__init__.py`` is always exempt too: it is the conventional aggregation seam
+that statically imports platform-specific files and re-exports a generic
+collection (e.g. ``parsers = [...]``) for everything else to consume without
+naming any platform itself.
 
-This lets a skill hold real per-host logic without a blanket per-skill
-exemption: put host-specific parts in a file named after that host (plus
-the __init__.py that wires them together), keep everything else (SKILL.md,
-blueprint.yaml, and any generically-named script) free of host references.
+This lets a module hold real per-platform logic without a blanket per-skill
+exemption: put platform-specific parts in a file named after that platform
+(plus the __init__.py that wires them together), keep everything else
+(SKILL.md, blueprint.yaml, first-party shared packages, and any
+generically-named script) free of platform references.
 """
 from __future__ import annotations
 
@@ -23,17 +25,22 @@ import subprocess
 import sys
 from pathlib import Path
 
-_FORBIDDEN_TERMS: dict[str, re.Pattern[str]] = {
-    "claude": re.compile(r"(\.claude|claude)", re.IGNORECASE),
-    "codex": re.compile(r"(\.codex|codex)", re.IGNORECASE),
+_PLATFORM_GROUPS: dict[str, tuple[set[str], re.Pattern[str]]] = {
+    "claude": ({"claude"}, re.compile(r"(?i:(\.claude|claude))")),
+    "codex": ({"codex"}, re.compile(r"(?i:(\.codex|codex))")),
+    "linux": ({"linux"}, re.compile(r"(?i:\b(linux)\b)")),
+    "osx": ({"osx", "macos", "darwin"}, re.compile(r"(?i:\b(osx|macos|darwin)\b)")),
+    "windows": ({"windows", "win32"}, re.compile(r"\b(Windows|win32)\b")),
 }
 
 _ALWAYS_EXEMPT_FILENAMES = {"__init__.py"}
 
-_CHECK_ROOTS = ["skills", "references", "agents", "CLAUDE.md"]
+_CHECK_ROOTS = ["skills", "references", "agents", "CLAUDE.md", "src/officina"]
 _EXCLUDED_PARTS = {"tests", "validators", ".git", ".claude-plugin", ".codex-plugin"}
 _EXCLUDED_PATHS = {
+    Path("references/skill-guidelines.md"),
     Path("skills/install-assistant-tools"),
+    Path("skills/latex-workshop"),
     Path("skills/recurring-tasks"),
 }
 
@@ -45,10 +52,14 @@ def _forbidden_pattern_for(path: Path) -> re.Pattern[str] | None:
     name_lower = path.name.lower()
     if name_lower in _ALWAYS_EXEMPT_FILENAMES:
         return None
-    active = [p for host, p in _FORBIDDEN_TERMS.items() if host not in name_lower]
+    active = [
+        pattern
+        for aliases, pattern in _PLATFORM_GROUPS.values()
+        if not any(alias in name_lower for alias in aliases)
+    ]
     if not active:
         return None
-    return re.compile("|".join(p.pattern for p in active), re.IGNORECASE)
+    return re.compile("|".join(p.pattern for p in active))
 
 
 def _tracked_files(repo_root: Path) -> set[Path] | None:

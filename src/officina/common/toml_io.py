@@ -73,15 +73,10 @@ def key_value(key: str, value: str | Path) -> str:
 
 
 def profile_config_filename(agent: str) -> str:
-    """Return the Codex/Claude profile config filename for an agent name."""
+    """Return the profile config filename for an agent name."""
     if not agent or "/" in agent or "\\" in agent:
         raise ValueError(f"invalid agent name: {agent!r}")
     return f"{agent}.config.toml"
-
-
-def codex_config_filename() -> str:
-    """Return the Codex user config filename."""
-    return "config.toml"
 
 
 def iter_profile_configs(directory: Path | str):
