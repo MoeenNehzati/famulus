@@ -116,6 +116,10 @@ def test_resolve_unknown_nickname_lists_known(config_dir):
     assert "work" in result.stderr
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX mode bits do not model Windows ACL ownership",
+)
 def test_registry_file_permissions_are_owner_only(config_dir):
     run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
     accounts_file = config_dir / "accounts.json"

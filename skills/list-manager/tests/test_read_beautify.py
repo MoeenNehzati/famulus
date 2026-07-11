@@ -20,6 +20,8 @@ def run(args: list[str]) -> subprocess.CompletedProcess:
         [sys.executable, str(READ_BEAUTIFY_PY)] + args,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         env=env,
     )
 

@@ -295,7 +295,7 @@ def test_cmd_move_uses_destination_query(monkeypatch, capsys):
 
 def test_gcal_python_interface_preserves_help_surface():
     env = os.environ.copy()
-    env["PYTHONPATH"] = f"{REPO_SRC}:{SKILL_ROOT}"
+    env["PYTHONPATH"] = os.pathsep.join([str(REPO_SRC), str(SKILL_ROOT)])
     result = subprocess.run(
         [sys.executable, "-m", "_rtx._gcal_client", "--help"],
         cwd=SKILL_ROOT,

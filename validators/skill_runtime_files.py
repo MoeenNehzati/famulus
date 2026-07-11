@@ -79,7 +79,7 @@ def _validate_rtx_path(path: Path, rel_path: Path) -> list[str]:
 
 def validate(repo_root: Path) -> list[str]:
     errors: list[str] = []
-    seen_by_parent: dict[Path, dict[str, Path]] = defaultdict(dict)
+    seen_by_parent: dict[tuple[str, ...], dict[str, tuple[str, ...]]] = defaultdict(dict)
 
     for path, rel_path in _iter_skill_files(repo_root):
         parts = rel_path.parts
@@ -94,19 +94,21 @@ def validate(repo_root: Path) -> list[str]:
             errors.extend(_validate_rtx_path(path, rel_path))
 
             for depth in range(3, len(parts)):
-                component_path = Path(*parts[: depth + 1])
+                component_parts = parts[: depth + 1]
                 component_name = parts[depth]
                 if component_name in EXEMPT_RTX_DIRNAMES:
                     continue
                 if depth == len(parts) - 1 and component_name in EXEMPT_RTX_FILENAMES:
                     continue
-                parent = Path(*parts[:depth])
+                parent = parts[:depth]
                 folded = component_name.casefold()
                 previous = seen_by_parent[parent].get(folded)
-                if previous is not None and previous != component_path:
-                    errors.append(f"{component_path}: case-insensitive runtime path collision with {previous}")
+                if previous is not None and previous != component_parts:
+                    errors.append(
+                        f"{Path(*component_parts)}: case-insensitive runtime path collision with {Path(*previous)}"
+                    )
                 else:
-                    seen_by_parent[parent][folded] = component_path
+                    seen_by_parent[parent][folded] = component_parts
 
     return errors
 

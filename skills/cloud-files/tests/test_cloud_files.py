@@ -141,7 +141,7 @@ class CloudFilesTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             local_path = Path(tmp) / "todo.md"
-            local_path.write_text("todo\n", encoding="utf-8")
+            local_path.write_bytes(b"todo\n")
             with mock.patch.object(cloud_files, "load_config", return_value=config):
                 with mock.patch.object(
                     cloud_files, "resolve_remote_target", return_value="lists/todo.md"
