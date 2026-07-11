@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -14,8 +15,7 @@ _SPEC = importlib.util.spec_from_file_location(
 )
 gcal = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(gcal)
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "_rtx"
-GCAL_SHELL = SCRIPT_DIR / "_gcal_client.sh"
+SKILL_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_resolve_range_defaults_from_local_midnight(monkeypatch):
@@ -290,15 +290,21 @@ def test_cmd_move_uses_destination_query(monkeypatch, capsys):
     assert capsys.readouterr().out == "Moved: Meeting  [id: evt-1]  -> calendar team/calendar\n"
 
 
-def test_gcal_shell_wrapper_preserves_help_surface():
+def test_gcal_python_module_preserves_help_surface():
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(SKILL_ROOT)
     result = subprocess.run(
-        [str(GCAL_SHELL), "--help"],
+        [sys.executable, "-m", "_rtx._gcal_client", "--help"],
+        cwd=SKILL_ROOT,
+        env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         check=False,
     )
 
     assert result.returncode == 0
-    assert "usage: gcal.sh" in result.stdout
+    assert "usage: scripts-gcal" in result.stdout
     assert "{token,calendars,create-calendar,agenda,search,get,create,update,delete,move}" in result.stdout
     assert result.stderr == ""

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Minimal Google Calendar CLI for the g-calendar skill.
 
-Replaces the previous gcal.sh runtime (bash + curl + jq + GNU `date -d`),
-none of which are guaranteed present on every platform. This rewrite uses
-only stdlib modules and preserves the existing command/flag surface exposed
-through the scripts-gcal interface.
+This stdlib-only runtime replaces the previous shell implementation, whose
+curl/jq/date dependencies were not guaranteed present on every platform. It
+preserves the command/flag surface exposed through the scripts-gcal interface.
 """
 
 from __future__ import annotations
@@ -70,7 +69,7 @@ def iso(dt: datetime) -> str:
 
 def get_access_token() -> str:
     if not CREDS_FILE.is_file():
-        die(f"No credentials at {CREDS_FILE}. Run setup_oauth.py first.")
+        die(f"No credentials at {CREDS_FILE}. Run the setup-oauth interface first.")
 
     creds = json.loads(CREDS_FILE.read_text(encoding="utf-8"))
     data = urllib.parse.urlencode(
@@ -89,7 +88,7 @@ def get_access_token() -> str:
         detail = exc.read().decode("utf-8", errors="replace")
         die(
             "Failed to get access token. Response: "
-            f"{detail}\nIf this says invalid_grant, re-run setup_oauth.py."
+            f"{detail}\nIf this says invalid_grant, re-run the setup-oauth interface."
         )
     except urllib.error.URLError as exc:
         die(f"Failed to get access token: {exc.reason}")
@@ -98,7 +97,7 @@ def get_access_token() -> str:
     if not token:
         die(
             "Failed to get access token. Response: "
-            f"{payload}\nIf this says invalid_grant, re-run setup_oauth.py."
+            f"{payload}\nIf this says invalid_grant, re-run the setup-oauth interface."
         )
     return token
 
@@ -399,7 +398,7 @@ def cmd_move(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="gcal.sh",
+        prog="scripts-gcal",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

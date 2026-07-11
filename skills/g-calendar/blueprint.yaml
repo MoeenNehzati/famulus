@@ -3,14 +3,12 @@
 category: productivity-general-assistant
 interface_version: 1
 
-cross_platform: false
+cross_platform: true
 
 depends_on: {}
 
 suggested_permissions:
   bash:
-    - command: ["_rtx/_gcal_client.sh"]
-      reason: "Calendar query tool."
     - command: ["python3", "_rtx/_oauth_bootstrap.py"]
       reason: "OAuth setup tool."
     - command: ["python3", "_rtx/_ensure_oauth.py"]
@@ -28,7 +26,7 @@ skill_interface:
 interfaces:
   machine:
     scripts-gcal:
-      description: Query or modify Google Calendar events via the gcal.sh CLI (agenda, search, create, update, delete, etc.).
+      description: Query or modify Google Calendar events via the Python calendar CLI (agenda, search, create, update, delete, etc.).
       usage: <command> [options]
       allow_all_skills: false
       allowed_callers:
@@ -38,9 +36,8 @@ interfaces:
         allow_extra_positionals: true
         allow_stdin: false
       runtime:
-        kind: command
-        argv:
-        - _rtx/_gcal_client.sh
+        kind: python_module
+        module: _rtx._gcal_client
       dependencies: []
     setup-oauth:
       description: Run the OAuth setup flow to generate or refresh Google Calendar credentials.

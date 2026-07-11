@@ -39,8 +39,8 @@ We should be able to:
 
 ## Current Sequence
 
-- current completed step: subprocess text mode now uses explicit encoding/error policy at dispatcher and runtime subprocess boundaries, with validator coverage for regressions
-- current repo status: focused subprocess/validator tests pass; full pytest passes except for sandbox/network integration failures that pass when rerun with the needed external access
+- current completed step: `g-calendar` no longer exports a Bash calendar runtime; `scripts-gcal` now dispatches to a stdlib Python module directly
+- current repo status: focused `g-calendar` tests and portability validators pass; the staged-aware validator runner is currently red on unrelated `initialize-tdd` route-smoke/schema work in the live tree
 - recommended next item: `Category 1 / Immediate Fix 5` — fail loudly when a required capability is skipped on a host
 - emphasis for the next slice: keep separating product/runtime failures from installer UX and test-harness-only host access problems
 
@@ -238,40 +238,42 @@ These are not just patches. They change architecture, runtime surfaces, or suppo
 Targets:
 
 - `skills/g-calendar/_rtx/_gcal_client.py`
-- `skills/g-calendar/_rtx/_gcal_client.sh`
 - `skills/g-calendar/blueprint.yaml`
 
 Status:
 
-- in progress
+- done
 
 Description:
 
-- the old Bash runtime was the core portability problem, and that logic has now moved to Python
-- the exported `scripts-gcal` entrypoint is still Bash-based in the current repo, so the skill is not yet fully on a native cross-platform runtime surface
+- the old Bash runtime was the core portability problem, and that logic moved to Python first
+- the remaining issue was that the exported `scripts-gcal` entrypoint was still Bash-based even after the implementation body moved to Python
 - this is true regardless of concurrency concerns
 
 What was done:
 
 - the lessons archive documented and validated a Python rewrite approach
 - this repo now has a stdlib Python calendar runtime in `skills/g-calendar/_rtx/_gcal_client.py`
-- the existing `scripts-gcal` shell entrypoint was kept as a wrapper so callers do not have to change immediately
+- `scripts-gcal` now uses a dispatcher `python_module` runtime instead of a command runtime pointing at a shell wrapper
+- the shell wrapper was removed from the tracked skill runtime files
+- `g-calendar` is now marked `cross_platform: true`
+- the generated permission artifact no longer asks for a Bash approval for the calendar query tool
+- the public skill text now describes the interface and setup interface instead of naming private runtime files
 - parallel all-calendar event fetching and retained event fields such as summary, time, location, description, status, and link were preserved in the Python path
 - the Python runtime now caps all-calendar worker fanout and skips thread-pool setup when the calendar list is empty
-- focused tests were added for date-range resolution, merged multi-calendar fetches, empty-calendar behavior, worker-cap behavior, create/get/update/delete/move command behavior, and the `gcal.sh` wrapper help surface
+- focused tests cover date-range resolution, merged multi-calendar fetches, empty-calendar behavior, worker-cap behavior, create/get/update/delete/move command behavior, and the Python module help surface
 - local timing and request-breakdown measurements were run against the live calendar account to confirm that request latency and calendar-list discovery dominate runtime, not Python thread-pool overhead
 - skill-local verification passed:
   - `python3 -m pytest -q skills/g-calendar/tests`
   - `python3 skills/skill-maker/_rtx/_blueprint_syncer.py --check`
-- the repo-wide precommit Python suite is still failing for unrelated `skill-maker` / dispatcher issues outside `g-calendar`, so this item is not yet at a globally green checkpoint
 
 Prevention:
 
-- finish removing Bash from the exported runtime surface, not just the implementation body
-- switch the exported interface to call the Python entrypoint directly once the permission, dispatcher, and validator surfaces are ready
+- keep `scripts-gcal` bound to a dispatcher `python_module` runtime rather than a shell wrapper
+- keep `g-calendar` enrolled in the cross-platform validator so new tracked shell scripts or shell-script blueprint permissions fail validation
 - treat Bash-first shared runtimes as exceptions that require justification
 - keep focused unit tests on the Python runtime so future feature work does not drift back toward shell-only assumptions
-- add native smoke coverage for the exported interface before claiming the skill is fully cross-platform
+- keep exported-interface smoke coverage on the Python module help path
 - if faster repeated reads become important, add access-token reuse and calendar-list caching rather than adding more threads; measurements showed fixed serial API costs dominate
 
 ### 2. Redesign `email-client` around host-specific secret and send backends behind one stable interface

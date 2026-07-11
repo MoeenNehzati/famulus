@@ -28,7 +28,7 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `ensure-oauth` — Check g-calendar OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill g-calendar) as part of connecting remotes.
   - `dispatcher --caller-skill g-calendar g-calendar.machine.ensure-oauth --home <dir> [--dry-run]`
   - Check OAuth status and guide setup for g-calendar.
-- `scripts-gcal` — Query or modify Google Calendar events via the gcal.sh CLI (agenda, search, create, update, delete, etc.).
+- `scripts-gcal` — Query or modify Google Calendar events via the Python calendar CLI (agenda, search, create, update, delete, etc.).
   - `dispatcher --caller-skill g-calendar g-calendar.machine.scripts-gcal <command> [options]`
 - `setup-oauth` — Run the OAuth setup flow to generate or refresh Google Calendar credentials.
   - `dispatcher --caller-skill g-calendar g-calendar.machine.setup-oauth [--from-json /path/to/client.json]`
@@ -64,9 +64,8 @@ Skill: g-calendar
 ## 1. What this is
 
 The `scripts-gcal` interface talks directly to the Google Calendar API v3,
-using a locally stored refresh token. The exported interface is still
-`gcal.sh`, but that shell entrypoint is now only a thin wrapper around the
-stdlib Python runtime in `gcal.py`. It replaces the broken
+using a locally stored refresh token. It runs through the dispatcher as a
+stdlib-only Python module and replaces the broken
 `calendarmcp.googleapis.com` MCP connector (see project memory
 `calendar-mcp-broken` - that connector's `tools/call` permanently fails with
 "The caller does not have permission", independent of re-auth).
@@ -159,7 +158,7 @@ For anything not covered above (recurring events / RRULEs, attendees,
 free-busy queries, etc.) - last resort, since it requires a shell pipeline
 (`TOKEN=$(...) && curl ...`) that doesn't match the allow-listed Bash pattern
 and triggers a permission prompt every time. If a capability is needed
-repeatedly, add a small subcommand to `gcal.py` and keep exposing it through
+repeatedly, add a small subcommand to `scripts-gcal` and keep exposing it through
 `scripts-gcal` instead (as was done for `get`, `create-calendar`, `move`).
 For genuine one-offs, use `scripts-gcal`
 with the `token` subcommand to obtain a bearer token, then call the API directly:
@@ -186,12 +185,12 @@ Two files live at `~/.config/g-calendar/` (both `chmod 600`, outside git):
 | File | Contents | Written by |
 |------|----------|------------|
 | `client.json` | Google Cloud Console OAuth client JSON (`client_id` + `client_secret`) | You (one-time copy from download) |
-| `credentials.json` | Working credentials (`client_id` + `client_secret` + `refresh_token`) | `setup_oauth.py` — **overwrites on every run** |
+| `credentials.json` | Working credentials (`client_id` + `client_secret` + `refresh_token`) | the `setup-oauth` interface — **overwrites on every run** |
 
 `client.json` is the permanent source of truth. `credentials.json` is
 regenerated whenever the refresh token expires. Never pass `credentials.json`
-as `--from-json` input to `setup_oauth.py` — it uses a flat format that the
-script cannot read as input.
+as `--from-json` input to `setup-oauth` — it uses a flat format that the
+setup flow cannot read as input.
 
 `~/.config/<skill>/` is the convention for private per-skill data: it is
 outside any git repo and never committed.
@@ -221,7 +220,7 @@ as the Google account whose calendar will be used:
   - Application type **Desktop app** (Google auto-allows any
     `http://localhost:<port>` redirect for these), or
   - Application type **Web application** with an explicit Authorized
-    redirect URI of `http://localhost:8765` (must match `setup_oauth.py`'s
+    redirect URI of `http://localhost:8765` (must match `setup-oauth`'s
     `--port`, default 8765, exactly — no trailing slash).
 - Download the client JSON and save it as `~/.config/g-calendar/client.json`
   (mode 600). Keep this file — it is needed for every future re-auth.
