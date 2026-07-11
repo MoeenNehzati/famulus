@@ -18,9 +18,11 @@ suggested_permissions:
 skill_interface:
   inputs:
     - User request to read or check skill audit state.
+    - User or skill request to compute current audit hashes.
     - Optional target skill names.
   outputs:
     - Drift reports comparing recorded audit hashes with current hashes for installed skills.
+    - Current audit hash payloads for installed blueprint-backed skills.
   side_effects:
     - Writes timestamped Markdown reports under _build/.
     - Does not write audit records.
@@ -47,6 +49,24 @@ interfaces:
         - _rtx/_check_drift_state.py
       directly_writes:
         - _build/
+    compute-hashes:
+      description: Compute current audit hashes for selected installed blueprint-backed skills or all observed blueprint-backed skills.
+      usage: "compute-hashes [skill-name ...] [--json]"
+      allow_all_skills: true
+      allowed_callers: []
+      patterns:
+        - min_positionals: 1
+          allow_stdin: false
+          allowed_flags:
+            - --json
+      runtime:
+        kind: python_machine_interface
+        entrypoint: _rtx/_check_drift_state.py:Interface
+      dependencies: []
+      directly_reads: []
+      directly_executes:
+        - _rtx/_check_drift_state.py
+      directly_writes: []
   llm:
     default:
       description: Primary LLM-facing skill instructions.

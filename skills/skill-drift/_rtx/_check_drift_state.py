@@ -98,6 +98,24 @@ class SkillDriftReport:
         }
 
 
+@dataclass(frozen=True)
+class SkillHashReport:
+    skill: str
+    source: str
+    package_root: Path
+    skills_root: Path
+    hashes: dict[str, Any]
+
+    def as_payload(self) -> dict[str, Any]:
+        return {
+            "skill": self.skill,
+            "source": self.source,
+            "package_root": self.package_root.as_posix(),
+            "skills_root": self.skills_root.as_posix(),
+            "hashes": self.hashes,
+        }
+
+
 def display_path(path: Path, root: Path) -> str:
     try:
         return path.relative_to(root).as_posix()
@@ -328,6 +346,14 @@ def build_payload(reports: list[SkillDriftReport]) -> dict[str, Any]:
     }
 
 
+def build_hash_payload(reports: list[SkillHashReport]) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "computed_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "skills": [report.as_payload() for report in reports],
+    }
+
+
 def render_text(reports: list[SkillDriftReport]) -> str:
     payload = build_payload(reports)
     lines = [
@@ -350,6 +376,36 @@ def render_text(reports: list[SkillDriftReport]) -> str:
                     markdown_cell(report.derived_status),
                     markdown_cell(display_path(report.record_path, report.package_root)),
                     markdown_cell(render_concerns_cell(report)),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def render_hash_text(reports: list[SkillHashReport]) -> str:
+    lines = [
+        "# Skill Hash Report",
+        "",
+        f"Computed skills: {len(reports)}",
+        "",
+        "| Source | Skill | Skill hash | Policy hash | Interface hashes |",
+        "|---|---|---|---|---|",
+    ]
+    for report in reports:
+        interfaces = report.hashes.get("interfaces", {})
+        interface_text = "<br>".join(
+            f"{name}: {value}" for name, value in sorted(interfaces.items()) if isinstance(value, str)
+        )
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    markdown_cell(report.source),
+                    markdown_cell(report.skill),
+                    markdown_cell(str(report.hashes.get("skill", ""))),
+                    markdown_cell(str(report.hashes.get("policy", ""))),
+                    markdown_cell(interface_text or "none"),
                 ]
             )
             + " |"
@@ -425,6 +481,12 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--repo-root", type=Path, default=REPO_ROOT, help=argparse.SUPPRESS)
     status.add_argument("--skill-root", type=Path, help=argparse.SUPPRESS)
     status.add_argument("--skills-root", type=Path, help=argparse.SUPPRESS)
+    hashes = subparsers.add_parser("compute-hashes", help="Compute current hashes for blueprint-backed skills.")
+    hashes.add_argument("skills", nargs="*")
+    hashes.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    hashes.add_argument("--repo-root", type=Path, default=REPO_ROOT, help=argparse.SUPPRESS)
+    hashes.add_argument("--skill-root", type=Path, help=argparse.SUPPRESS)
+    hashes.add_argument("--skills-root", type=Path, help=argparse.SUPPRESS)
     return parser
 
 
@@ -444,6 +506,19 @@ def run_status(args: argparse.Namespace) -> int:
         report_path = write_markdown_report(markdown)
         print(markdown, end="")
         print(f"\nSaved report: {report_path.as_posix()}")
+    return 0
+
+
+def run_compute_hashes(args: argparse.Namespace) -> int:
+    sources = requested_skill_sources(args)
+    if not sources:
+        raise DriftCheckError("no installed skill roots were found")
+
+    reports = hash_reports_for_sources(sources, list(args.skills))
+    if args.json:
+        print(json.dumps(build_hash_payload(reports), indent=2, sort_keys=True))
+    else:
+        print(render_hash_text(reports), end="")
     return 0
 
 
@@ -486,12 +561,44 @@ def reports_for_sources(sources: list[SkillSource], requested_skills: list[str])
     return reports
 
 
+def hash_reports_for_sources(sources: list[SkillSource], requested_skills: list[str]) -> list[SkillHashReport]:
+    reports: list[SkillHashReport] = []
+    missing: list[str] = []
+    if requested_skills:
+        for skill_name in requested_skills:
+            matches = [source for source in sources if (source.skills_root / skill_name / "SKILL.md").is_file()]
+            if not matches:
+                missing.append(skill_name)
+                continue
+            for source in matches:
+                reports.append(hash_report_for_skill(source, skill_name))
+    else:
+        for source in sources:
+            for skill_name in observed_skill_names(source.skills_root):
+                reports.append(hash_report_for_skill(source, skill_name))
+    if missing:
+        raise DriftCheckError(f"skill(s) not found in installed skill roots: {', '.join(missing)}")
+    return reports
+
+
+def hash_report_for_skill(source: SkillSource, skill_name: str) -> SkillHashReport:
+    return SkillHashReport(
+        skill=skill_name,
+        source=source.source,
+        package_root=source.package_root,
+        skills_root=source.skills_root,
+        hashes=compute_audit_hashes(source.package_root, source.skills_root, skill_name),
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    if args.command == "status":
+    if args.command in {"status", "compute-hashes"}:
         try:
-            return run_status(args)
+            if args.command == "status":
+                return run_status(args)
+            return run_compute_hashes(args)
         except DriftCheckError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2

@@ -12,6 +12,12 @@ The exported status interface is:
 dispatcher --caller-skill skill-drift skill-drift.machine.drift-status status [skill-name ...] [--json]
 ```
 
+The exported hash-computation interface is:
+
+```bash
+dispatcher --caller-skill skill-drift skill-drift.machine.compute-hashes compute-hashes [skill-name ...] [--json]
+```
+
 With explicit skill names, the checker reports those skills wherever they are
 found in installed skill roots. With no skill names, it reports every discovered
 installed skill.
@@ -25,6 +31,12 @@ skills/skill-drift/_build/<YYYY-MM-DD_HH-MM-SS>.md
 
 `_build/` is gitignored. `--json` keeps machine-readable output on stdout and
 does not write a Markdown report.
+
+`compute-hashes` does not read `.last_audit.json` and does not write a Markdown
+report. It returns the current `skill`, `policy`, and `interfaces` hashes for
+blueprint-backed skills. Missing `blueprint.yaml` is a command failure for
+`compute-hashes`, because certifier skills need hashes they can write into a new
+audit record.
 
 ## What Gets Checked
 

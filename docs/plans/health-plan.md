@@ -20,6 +20,7 @@ skills.
 
 ```bash
 dispatcher --caller-skill skill-drift skill-drift.machine.drift-status status [skill-name ...] [--json]
+dispatcher --caller-skill skill-drift skill-drift.machine.compute-hashes compute-hashes [skill-name ...] [--json]
 ```
 
 Behavior:
@@ -32,6 +33,11 @@ Behavior:
 - `_build/` is gitignored;
 - `--json` emits machine-readable output on stdout and skips Markdown report
   writing.
+
+`compute-hashes` is for certifier/writer skills. It computes the current
+`skill`, `policy`, and `interfaces` hashes without reading `.last_audit.json`
+and without writing a Markdown report. It fails if a target skill lacks
+`blueprint.yaml`.
 
 The checker reports one row per discovered skill with:
 

@@ -738,6 +738,10 @@
     },
     "skill-drift": {
       "interfaces": {
+        "compute-hashes": {
+          "id": "skill-drift.machine.compute-hashes",
+          "dependencies": []
+        },
         "drift-status": {
           "id": "skill-drift.machine.drift-status",
           "dependencies": []

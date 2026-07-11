@@ -352,3 +352,46 @@ def test_status_with_skill_root_uses_that_skill_install_root(tmp_path: Path, cap
     payload = json.loads(capsys.readouterr().out)
     assert payload["summary"] == {"audit-current": 1, "audit-stale": 0}
     assert payload["skills"][0]["source"] == "override"
+
+
+def test_compute_hashes_json_reports_current_hashes_without_reading_record(tmp_path: Path, capsys) -> None:
+    make_skill(tmp_path)
+
+    exit_code = checker.main(["compute-hashes", "demo-skill", "--json", "--repo-root", str(tmp_path)])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema_version"] == checker.SCHEMA_VERSION
+    assert len(payload["skills"]) == 1
+    report = payload["skills"][0]
+    assert report["skill"] == "demo-skill"
+    assert report["source"] == "override"
+    assert set(report["hashes"]) == {"skill", "policy", "interfaces"}
+    assert report["hashes"]["skill"].startswith("sha256:")
+    assert report["hashes"]["interfaces"]["llm.default"].startswith("sha256:")
+    assert report["hashes"]["interfaces"]["machine.worker"].startswith("sha256:")
+    assert not (tmp_path / "skills" / "demo-skill" / ".last_audit.json").exists()
+
+
+def test_compute_hashes_text_does_not_write_markdown_report(tmp_path: Path, capsys, monkeypatch) -> None:
+    make_skill(tmp_path)
+    build_dir = tmp_path / "report-build"
+    monkeypatch.setattr(checker, "BUILD_DIR", build_dir)
+
+    exit_code = checker.main(["compute-hashes", "demo-skill", "--repo-root", str(tmp_path)])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "# Skill Hash Report" in output
+    assert "| override | demo-skill | sha256:" in output
+    assert not build_dir.exists()
+
+
+def test_compute_hashes_fails_when_blueprint_is_missing(tmp_path: Path, capsys) -> None:
+    write(tmp_path / "skills" / "plugin-skill" / "SKILL.md", "plugin skill\n")
+
+    exit_code = checker.main(["compute-hashes", "plugin-skill", "--json", "--repo-root", str(tmp_path)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "plugin-skill: missing blueprint.yaml" in captured.err
