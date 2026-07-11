@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Validate and sync skill blueprints into generated compatibility artifacts.
+"""Validate and sync skill blueprints into generated artifacts.
 
 Blueprints are hand-authored YAML files under ``skills/<name>/blueprint.yaml``.
 This tool never rewrites blueprint files. It only validates them and syncs:
 
-- ``depends_on_skills``
-- ``permissions.json``
 - ``references/blueprint/runtime_dependencies.json``
 - the generated contract block near the top of ``SKILL.md``
 - the generated owner-facing dispatcher interface block in ``SKILL.md``
@@ -452,36 +450,6 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
     return errors
 
 
-def generated_dependency_lines(data: dict[str, Any]) -> str:
-    depends_on = expect_mapping(data.get("depends_on"), "depends_on")
-    names = sorted(depends_on)
-    if not names:
-        return ""
-    return "".join(f"{name}\n" for name in names)
-
-
-def bash_pattern(entry: dict[str, Any]) -> str:
-    tokens = [*entry["command"], *entry.get("args_prefix", [])]
-    return f"Bash({' '.join(tokens)}:*)"
-
-
-def network_patterns(entry: dict[str, Any]) -> list[str]:
-    kind = entry["kind"]
-    if kind == "web_search":
-        return ["WebSearch"]
-    return [f"WebFetch(https://{domain}/*)" for domain in entry["domains"]]
-
-
-def generated_permissions(data: dict[str, Any]) -> dict[str, list[str]]:
-    suggested = expect_mapping(data.get("suggested_permissions"), "suggested_permissions")
-    result: dict[str, list[str]] = {"bash": [], "network": []}
-    for entry in suggested.get("bash", []):
-        result["bash"].append(bash_pattern(entry))
-    for entry in suggested.get("network", []):
-        result["network"].extend(network_patterns(entry))
-    return result
-
-
 def exported_interfaces(skill_name: str, data: dict[str, Any]) -> list[str]:
     """Return ids of public interfaces."""
     machine, llm = normalized_interface_maps(data, "interfaces")
@@ -706,28 +674,10 @@ def strip_legacy_contract_metadata(text: str) -> str:
 def sync_skill(blueprint: SkillBlueprint, check_only: bool) -> list[str]:
     data = blueprint.data
     skill_dir = blueprint.path.parent
-    expected_depends = generated_dependency_lines(data)
-    expected_permissions = json.dumps(generated_permissions(data), indent=2) + "\n"
     expected_skill = sync_contract_block(skill_dir / "SKILL.md", generated_contract_block(blueprint.name, data))
     expected_skill = sync_interface_block(expected_skill, generated_interface_block(blueprint.name, data))
 
     errors: list[str] = []
-
-    depends_path = skill_dir / "depends_on_skills"
-    current_depends = depends_path.read_text(encoding="utf-8") if depends_path.exists() else ""
-    if current_depends != expected_depends:
-        if check_only:
-            errors.append(f"{depends_path}: out of sync with blueprint.yaml")
-        else:
-            depends_path.write_text(expected_depends, encoding="utf-8")
-
-    permissions_path = skill_dir / "permissions.json"
-    current_permissions = permissions_path.read_text(encoding="utf-8") if permissions_path.exists() else ""
-    if current_permissions != expected_permissions:
-        if check_only:
-            errors.append(f"{permissions_path}: out of sync with blueprint.yaml")
-        else:
-            permissions_path.write_text(expected_permissions, encoding="utf-8")
 
     skill_path = skill_dir / "SKILL.md"
     current_skill = skill_path.read_text(encoding="utf-8")

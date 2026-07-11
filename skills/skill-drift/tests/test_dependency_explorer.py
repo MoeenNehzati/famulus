@@ -90,14 +90,12 @@ def test_explore_interface_unions_direct_roots_and_python_dependencies(tmp_path:
     } <= labels
 
 
-def test_explore_skill_unions_interfaces_and_compatibility_files(tmp_path: Path) -> None:
+def test_explore_skill_unions_interface_files(tmp_path: Path) -> None:
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"
     write(skill / "SKILL.md", "See guide.md.\n")
     write(skill / "guide.md", "guide\n")
     write(skill / "_rtx" / "_worker.py", "print('worker')\n")
-    write(skill / "depends_on_skills", "none\n")
-    write(skill / "permissions.json", "{}\n")
     blueprint = {
         "interfaces": {
             "llm": {
@@ -127,8 +125,6 @@ def test_explore_skill_unions_interfaces_and_compatibility_files(tmp_path: Path)
         "skills/demo-skill/SKILL.md",
         "skills/demo-skill/guide.md",
         "skills/demo-skill/_rtx/_worker.py",
-        "skills/demo-skill/depends_on_skills",
-        "skills/demo-skill/permissions.json",
     } <= labels
 
 

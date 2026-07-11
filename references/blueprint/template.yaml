@@ -36,7 +36,7 @@ depends_on:
   legacy-dependency: {}
 
 # Structured permission suggestions for smoother execution.
-# These are not grants; they are inputs to generated permissions.json.
+# These are not grants; they are advisory blueprint metadata.
 #
 # Supported categories:
 # - bash: list of commands that are safe and common to pre-approve

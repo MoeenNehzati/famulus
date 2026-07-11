@@ -199,14 +199,6 @@ class DependencyExplorer:
                     if isinstance(spec, dict):
                         files.extend(self.explore_interface(skill_root, spec))
 
-        for compatibility_file in ("depends_on_skills", "permissions.json"):
-            files.extend(
-                self.explore_file(
-                    skill_root / compatibility_file,
-                    base_dir=skill_root,
-                    reason=f"compatibility file {compatibility_file}",
-                )
-            )
         return dedupe_dependency_files(files)
 
     def _explore_paths(self, seeds: Iterable[tuple[Path, Path, str]]) -> list[DependencyFile]:
@@ -435,7 +427,6 @@ def skill_roots(blueprint: dict[str, Any]) -> list[str]:
         for spec in entries.values():
             if isinstance(spec, dict):
                 roots.extend(interface_roots(spec, include_binding=(namespace == "llm")))
-    roots.extend(["depends_on_skills", "permissions.json"])
     return dedupe_preserving_order(roots)
 
 

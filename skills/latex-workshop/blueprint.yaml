@@ -12,9 +12,9 @@ depends_on: {}
 suggested_permissions:
   bash:
     - command: ["latexmk"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Suggested approval for LaTeX Workshop-compatible builds."
     - command: ["rg"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Suggested approval for LaTeX Workshop-compatible builds."
   network: []
 
 skill_interface:

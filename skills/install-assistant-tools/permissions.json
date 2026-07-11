@@ -1,9 +1,0 @@
-{
-  "bash": [
-    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_phase_entry.py:Interface:*)",
-    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_install_scaffold.py:Interface:*)",
-    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_config_bridge.py:Interface:*)",
-    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_agent_launchers.py:Interface:*)"
-  ],
-  "network": []
-}

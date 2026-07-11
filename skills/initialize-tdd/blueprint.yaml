@@ -12,7 +12,7 @@ depends_on: {}
 suggested_permissions:
   bash:
     - command: ["git"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Suggested approval for project initialization."
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
         "_rtx/_host_links.py:Interface"]
       reason: "Creates host compatibility alias symlinks in the newly scaffolded project\

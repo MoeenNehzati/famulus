@@ -1,8 +1,0 @@
-{
-  "bash": [
-    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_plan_orchestrate.py:Interface:*)",
-    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_render_plan.py:Interface:*)",
-    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_state_patch.py:Interface:*)"
-  ],
-  "network": []
-}

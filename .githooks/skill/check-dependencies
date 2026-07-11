@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Guideline §1 — dependencies: Dependencies block must be present, must match the depends_on_skills
-# sidecar, and every exact skill-name mention in the body must appear in both declarations.
+# Guideline §1 — dependencies: Dependencies block must be present, must match
+# blueprint.yaml:depends_on, and every exact skill-name mention in the body must
+# appear in both declarations.
 # Guideline §8 — local references: parent paths in SKILL.md may only point to ../references/
 # or ../../tools/ (exception: update-skill-guidelines may also reference ../../.githooks/).
 set -uo pipefail

@@ -82,7 +82,7 @@ Each interface takes a single positional path argument constrained to its direct
 
 ## 2. Separately prompted broader reads
 
-A broader read from the Google Drive root is available via a script not registered as a dispatcher interface. It is intentionally not listed in `permissions.json`.
+A broader read from the Google Drive root is available via a script not registered as a dispatcher interface. It is intentionally not listed in `blueprint.yaml:suggested_permissions`.
 
 If a script exits nonzero, report the visible error and do not infer remote
 state beyond what the successful output established.

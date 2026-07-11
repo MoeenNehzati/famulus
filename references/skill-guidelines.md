@@ -47,13 +47,13 @@ is the source of truth for:
 - `skill_interface`
 - `interfaces`
 
-For blueprint skills, `depends_on_skills` and the top-of-file contract block in
-`SKILL.md` are generated compatibility artifacts. The blueprint is canonical;
-the generated files must match it exactly.
+For blueprint skills, the top-of-file contract block in `SKILL.md` is generated
+from `blueprint.yaml`. The blueprint is canonical; generated blocks and
+repo-level manifests must match it exactly.
 
 Every exact skill-name mention in the body of `SKILL.md` must also match the
 dependency set. Do not mention a skill as an invoked collaborator unless it is
-in both the `Dependencies:` block and `depends_on_skills`.
+in both the generated `Dependencies:` block and `blueprint.yaml:depends_on`.
 
 Dependencies authorize skill invocation and, for blueprint-migrated
 dependencies, interface calls through the installed `dispatcher` command (CLI)
@@ -452,15 +452,15 @@ enforced by `validators/subprocess_text_encoding.py`, with behavior tests in
 
 **Injection lifecycle**
 
-`../../skills/skill-maker/_rtx/_blueprint_syncer.py` injects and
-refreshes the generated compatibility artifacts for blueprint skills:
+`../../skills/skill-maker/_rtx/_blueprint_syncer.py` injects and refreshes the
+generated artifacts for blueprint skills:
 
-- `depends_on_skills`
-- `permissions.json`
 - the generated contract block placed immediately after the YAML frontmatter in
   `SKILL.md`
 - the generated owner-facing interface sections placed immediately after the
   contract block
+- repo-level manifests such as
+  `references/blueprint/runtime_dependencies.json`
 
 That generated content is not user-authored. Do not edit it by hand. These
 checks are enforced on every commit by `validators/runner.py` (called from
@@ -480,25 +480,12 @@ is named `my-X`. Every `my-X` skill must follow this layout:
 - Then a **REQUIRED — NON-NEGOTIABLE** instruction to invoke the original `X`
   skill at the bottom.
 
-**4. `permissions.json` and `suggested_permissions`** — every skill ships a
-`permissions.json` alongside `SKILL.md`:
-
-```json
-{
-  "bash": ["Bash(python3 -m officina.runtime.python_machine_interface_runner:*)"],
-  "network": ["WebSearch", "WebFetch(https://example.com/*)"]
-}
-```
-
-Empty array `[]` for unused categories. Entries map to the active agent's
-permission allow-list when that agent supports one. Do not cascade another
-skill's permissions here; list that skill in `depends_on_skills` instead and
-let permission tooling derive transitive grants from declared dependencies.
-
-For blueprint-migrated skills, `permissions.json` is generated from
-`suggested_permissions` in `blueprint.yaml`. `suggested_permissions` is
+**4. `suggested_permissions`** — permission suggestions live in
+`blueprint.yaml`, not in per-skill sidecar files. `suggested_permissions` is
 advisory, not a grant. It should explain what is safe and useful to pre-approve
-for smoother execution.
+for smoother execution. Do not cascade another skill's suggested permissions
+here; list that skill in `depends_on` instead and let permission tooling derive
+transitive grants from declared dependencies.
 
 **5. Frontmatter `description:` is a trigger declaration, not a summary** —
 write it as "Use when..." followed by the triggering conditions and symptoms

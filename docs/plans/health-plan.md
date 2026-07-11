@@ -104,8 +104,8 @@ The dependency explorer recursively includes:
 - relevant shared `officina` imports;
 - package `__init__.py` files;
 - declared `DispatchCall` targets, including nested dispatch chains;
-- compatibility sidecar files such as `depends_on_skills` and
-  `permissions.json`.
+- blueprint metadata and generated repo-level manifests such as
+  `references/blueprint/runtime_dependencies.json`.
 
 See `skills/skill-drift/references/dependency-explorer.md` for the detailed
 recursive matching rules and known limitations.

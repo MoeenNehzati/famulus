@@ -15,18 +15,18 @@ suggested_permissions:
   bash:
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
         "_rtx/_source_fetcher.py:Interface"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Suggested approval for the PDF conversion runtime."
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
         "_rtx/_marker_probe.py:Interface"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Suggested approval for the PDF conversion runtime."
     - command: ["marker_single"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Suggested approval for the PDF conversion runtime."
   network:
     - kind: web_search
-      reason: "Migrated from legacy permissions.json."
+      reason: "Suggested approval for the PDF conversion runtime."
     - kind: web_fetch
       domains: ["arxiv.org"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Suggested approval for the PDF conversion runtime."
 
 skill_interface:
   inputs:

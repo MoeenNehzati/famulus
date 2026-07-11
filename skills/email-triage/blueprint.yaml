@@ -22,16 +22,16 @@ suggested_permissions:
       reason: "Filters email-client mail-list JSON to strictly-after-watermark envelopes."
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
         "_rtx/_watermark_floor.py:Interface"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Suggested approval for the email triage runtime."
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
         "_rtx/_watermark_writer.py:Interface"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Suggested approval for the email triage runtime."
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
         "_rtx/_decision_sink.py:Interface"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Suggested approval for the email triage runtime."
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
         "_rtx/_log_compactor.py:Interface"]
-      reason: "Migrated from legacy permissions.json."
+      reason: "Suggested approval for the email triage runtime."
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
         "_rtx/_failure_sentinel.py:Interface"]
       reason: "Records a failed triage run so update-watermark refuses to advance\

@@ -29,7 +29,7 @@ These interfaces are documented prompt surfaces. They are not executed through `
 ## Workflow
 
 ### 1. Characterize (before touching anything)
-Read the target skill's `SKILL.md`, `permissions.json`, and private runtime implementation files. Write a brief behavioral spec:
+Read the target skill's `SKILL.md`, `blueprint.yaml`, and private runtime implementation files. Write a brief behavioral spec:
 - What triggers this skill?
 - What does it do, step by step?
 - What does it produce (outputs, files written, commands run)?

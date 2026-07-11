@@ -45,7 +45,7 @@ As the repo explains its parts, each part should be tied to an end goal:
 | `SKILL.md` | trigger conditions, usage guidance, owned responsibility | cohesive skills |
 | `blueprint.yaml` | dependencies, interfaces, permissions hints, cross-skill boundaries | explicit touch surface |
 | `_rtx/` | private runtime implementation behind the skill contract | implementation without leaking boundaries |
-| blueprint sync | generated compatibility artifacts that stay aligned with the blueprint | one canonical contract source |
+| blueprint sync | generated blocks and manifests that stay aligned with the blueprint | one canonical contract source |
 | `dispatcher` / `script_dispatcher` | allowed cross-skill script invocation only | narrow, predictable composition |
 | validators | boundary checks, schema checks, sync checks, metadata checks | machine-flagged LLM mistakes |
 | pre-commit and CI | enforcement before merge and after push | convention that actually holds over time |
@@ -105,14 +105,14 @@ Hand-authored:
 
 Generated from `blueprint.yaml`:
 
-- `skills/<name>/depends_on_skills`
-- `skills/<name>/permissions.json`
 - the contract block near the top of `SKILL.md`
 - the owner-facing interface block in `SKILL.md`
+- repo-level manifests such as
+  `references/blueprint/runtime_dependencies.json`
 
 [skills/skill-maker/_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py) is the sync boundary
-between the authored blueprint and those compatibility artifacts. Do not edit
-generated blocks by hand.
+between the authored blueprint and generated artifacts. Do not edit generated
+blocks by hand.
 
 This part is responsible for one end goal in particular: there should be one
 canonical contract source, not several drifting copies.

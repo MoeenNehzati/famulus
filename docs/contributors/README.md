@@ -19,7 +19,7 @@ The canonical references for that contract live here:
 
 ## How Skills Stay in Sync
 
-[`blueprint.yaml`](../../skills/skill-maker/blueprint.yaml) is the canonical machine-readable contract. Generated compatibility artifacts and generated `SKILL.md` blocks are refreshed through [skills/skill-maker/_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py):
+[`blueprint.yaml`](../../skills/skill-maker/blueprint.yaml) is the canonical machine-readable contract. Generated `SKILL.md` blocks and repo-level blueprint manifests are refreshed through [skills/skill-maker/_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py):
 
 ```bash
 python3 skills/skill-maker/_rtx/_blueprint_syncer.py

@@ -32,8 +32,7 @@ At a high level, the recursive dependency set is:
 - a declared dispatch target includes its resolved command-runtime file and, if
   it is another PythonMachineInterface, that target's recursively discovered
   runtime files;
-- a skill includes all LLM and machine interfaces plus compatibility files such
-  as `depends_on_skills` and `permissions.json`.
+- a skill includes all LLM and machine interfaces.
 
 The explorer deduplicates by repo-relative path, so a file reached through more
 than one route appears once in the final dependency set.
@@ -203,15 +202,10 @@ those files as hash entries. This separation is deliberate: tests can ask
 - `interfaces.llm`
 - `interfaces.machine`
 
-It includes each interface's explored dependencies, then also includes the
-compatibility files:
-
-- `depends_on_skills`
-- `permissions.json`
-
-Those compatibility files are included when present. Missing compatibility files
-are currently ignored by `DependencyExplorer.explore_skill`; missing declared
-roots are represented only by the declared-root hash path.
+It includes each interface's explored dependencies. Legacy compatibility
+sidecars such as `depends_on_skills` and `permissions.json` are intentionally
+not hash inputs; dependency and suggested-permission metadata now come from
+`blueprint.yaml`.
 
 ## Tests
 

@@ -15,7 +15,7 @@ Visible symptoms that signal a skill needs refactoring. Each smell maps to one o
 **Moves:** Extract Script.
 
 ## Missing or incomplete contract artifacts
-**Signal:** A migrated skill is missing `blueprint.yaml`, its generated `depends_on_skills` / `permissions.json` artifacts are stale, or its contract block in `SKILL.md` is out of sync.
+**Signal:** A migrated skill is missing `blueprint.yaml`, its generated `SKILL.md` contract/interface blocks are stale, or repo-level blueprint manifests are out of sync.
 **Analog:** Missing interface declaration.
 **Moves:** Add/fix blueprint, Sync generated artifacts.
 

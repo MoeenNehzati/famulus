@@ -21,7 +21,7 @@ Set or correct `category` in `blueprint.yaml`. Must be one of the typed enum val
 **Risk:** None.
 
 ### Sync generated contract artifacts
-If the skill is blueprint-migrated, update `blueprint.yaml` and regenerate `depends_on_skills`, `permissions.json`, and the generated contract block in `SKILL.md`.
+If the skill is blueprint-migrated, update `blueprint.yaml` and regenerate the generated contract/interface blocks in `SKILL.md` plus repo-level blueprint manifests.
 **Risk:** None — purely additive.
 
 ---

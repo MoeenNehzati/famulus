@@ -24,8 +24,7 @@ skill_interface:
 interfaces:
   machine:
     sync-blueprints:
-      description: "Validate skill blueprints and optionally refresh generated compatibility\
-        \ artifacts."
+      description: "Validate skill blueprints and optionally refresh generated artifacts."
       usage: "[--check]"
       allow_all_skills: false
       allowed_callers:

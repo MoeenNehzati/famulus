@@ -1,7 +1,0 @@
-{
-  "bash": [
-    "Bash(dispatcher --caller-skill find-handoff-candidates find-handoff-candidates.machine.scan:*)",
-    "Bash(dispatcher --caller-skill find-handoff-candidates find-handoff-candidates.machine.calibrate:*)"
-  ],
-  "network": []
-}

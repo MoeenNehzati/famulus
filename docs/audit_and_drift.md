@@ -131,6 +131,11 @@ For blueprint-backed skills, interface hashes include:
 - declared dispatch dependencies discovered by the Python interface resolver;
 - machine-interface hashes declared in `uses_interfaces`, recursively.
 
+Legacy compatibility sidecars such as `depends_on_skills` and
+`permissions.json` are not drift inputs. Dependency and suggested-permission
+metadata are represented by `blueprint.yaml` and generated repo-level manifests
+such as `references/blueprint/runtime_dependencies.json`.
+
 `uses_interfaces` is an interface-level dependency declaration. Skill-level
 `depends_on` authorizes which dependency interfaces a skill may use;
 `uses_interfaces` says which machine interfaces a particular interface actually

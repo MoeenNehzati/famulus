@@ -1,9 +1,11 @@
-"""Validate SKILL.md dependency blocks, depends_on_skills sidecars, and parent-path rules."""
+"""Validate SKILL.md dependency blocks, blueprint dependencies, and parent-path rules."""
 from __future__ import annotations
 
 import re
 import sys
 from pathlib import Path
+
+import yaml
 
 # Skill names that are allowed to reference ../../.githooks/ in addition to ../references and ../../tools
 _EXTENDED_PARENT_EXCEPTIONS = {"update-skill-guidelines"}
@@ -23,16 +25,6 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n.*?\n---\s*\n", re.DOTALL)
 # Matches "Dependencies: none" or "Dependencies:" followed by a list
 _DEPS_NONE_RE = re.compile(r"^Dependencies:\s*none\s*$", re.MULTILINE)
 _DEPS_BLOCK_START_RE = re.compile(r"^Dependencies:\s*$", re.MULTILINE)
-
-
-def _load_sidecar(path: Path) -> list[str]:
-    """Parse depends_on_skills: strip comments, blank lines, sort."""
-    lines = []
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        stripped = re.sub(r"\s*#.*$", "", raw).strip()
-        if stripped:
-            lines.append(stripped)
-    return sorted(lines)
 
 
 def _extract_dep_block(text: str) -> list[str] | None:
@@ -114,6 +106,16 @@ def _word_boundary_mentions(text: str, skill_name: str) -> bool:
     return bool(pattern.search(text))
 
 
+def _load_blueprint_dependencies(path: Path) -> list[str]:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        return []
+    depends_on = raw.get("depends_on") or {}
+    if not isinstance(depends_on, dict):
+        return []
+    return sorted(str(name) for name in depends_on)
+
+
 def _validate_parent_paths(skill_file: Path, skill_name: str) -> list[str]:
     errors: list[str] = []
     allowed = _ALLOWED_DIRS_EXTENDED if skill_name in _EXTENDED_PARENT_EXCEPTIONS else _ALLOWED_DIRS_BASE
@@ -132,10 +134,10 @@ def validate(repo_root: Path) -> list[str]:
     if not skills_root.is_dir():
         return errors
 
-    # Collect all known skill names: local directories + names from all depends_on_skills files
+    # Collect all known skill names from local skill directories and blueprint dependencies.
     skill_name_set: set[str] = {p.name for p in skills_root.iterdir() if p.is_dir()}
-    for sidecar in skills_root.glob("*/depends_on_skills"):
-        skill_name_set.update(_load_sidecar(sidecar))
+    for blueprint in skills_root.glob("*/blueprint.yaml"):
+        skill_name_set.update(_load_blueprint_dependencies(blueprint))
     skill_names = sorted(skill_name_set)
 
     skill_files = sorted(skills_root.glob("*/SKILL.md"))
@@ -149,7 +151,7 @@ def validate(repo_root: Path) -> list[str]:
     for skill_file in skill_files:
         skill_dir = skill_file.parent
         skill_name = skill_dir.name
-        dependency_file = skill_dir / "depends_on_skills"
+        blueprint_file = skill_dir / "blueprint.yaml"
 
         text = skill_file.read_text(encoding="utf-8")
 
@@ -158,7 +160,7 @@ def validate(repo_root: Path) -> list[str]:
             lineno = text[: m.start()].count("\n") + 1
             errors.append(
                 f"{skill_file}:{lineno}: {m.group(0)} — "
-                f"use the Dependencies block plus depends_on_skills"
+                f"use the generated Dependencies block from blueprint.yaml"
             )
 
         # Extract Dependencies block
@@ -166,15 +168,11 @@ def validate(repo_root: Path) -> list[str]:
         if skill_deps is None:
             errors.append(f"{skill_file}: missing Dependencies block")
 
-        if not dependency_file.exists():
-            errors.append(f"{skill_file}: missing {dependency_file}")
-            continue
+        blueprint_deps = _load_blueprint_dependencies(blueprint_file) if blueprint_file.exists() else []
 
-        sidecar_deps = _load_sidecar(dependency_file)
-
-        if skill_deps is not None and skill_deps != sidecar_deps:
+        if skill_deps is not None and skill_deps != blueprint_deps:
             errors.append(
-                f"{skill_file}: Dependencies block does not match {dependency_file}"
+                f"{skill_file}: Dependencies block does not match {blueprint_file}:depends_on"
             )
 
         # Extract exact skill-name mentions in body
@@ -182,10 +180,10 @@ def validate(repo_root: Path) -> list[str]:
         other_skills = sorted(s for s in skill_names if s != skill_name)
         body_mentions = sorted(s for s in other_skills if _word_boundary_mentions(body, s))
 
-        if body_mentions != sidecar_deps:
+        if body_mentions != blueprint_deps:
             errors.append(
                 f"{skill_file}: exact skill-name mentions in SKILL.md body "
-                f"do not match {dependency_file}"
+                f"do not match {blueprint_file}:depends_on"
             )
 
     return errors

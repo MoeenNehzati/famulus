@@ -21,7 +21,7 @@ Exported Interfaces: none
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `sync-blueprints` — Validate skill blueprints and optionally refresh generated compatibility artifacts.
+- `sync-blueprints` — Validate skill blueprints and optionally refresh generated artifacts.
   - `dispatcher --caller-skill skill-maker skill-maker.machine.sync-blueprints [--check]`
   - sync: Refresh generated files from blueprint.yaml.
   - check: Validate blueprints and fail if generated files are out of sync.
@@ -55,7 +55,7 @@ This skill owns the conformance infrastructure for the skill system:
 
 - **`validators/`** — Python validator modules (names, metadata, blueprints, boundaries, dependencies, blueprint relationships). Each exports `validate(repo_root: Path) -> list[str]` and is auto-discovered by `validators/runner.py` on every commit. See `../../references/skill-guidelines.md` for the full validator contract and conventions.
 - **`tests/`** — behavior tests for the blueprint dispatcher and sync scripts (`test_blueprint_tools.py`).
-- **runtime syncer** — refreshes generated blueprint compatibility artifacts.
+- **runtime syncer** — refreshes generated blueprint artifacts.
 
 To add a new conformance check: add a `.py` file to `validators/` with a `validate(repo_root)` function and a matching `tests/validate_<name>.py`. No registration needed.
 

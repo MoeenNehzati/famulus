@@ -211,7 +211,6 @@ def test_skill_hash_collects_all_interface_roots(tmp_path: Path) -> None:
     skill = repo / "skills" / "demo-skill"
     write(skill / "SKILL.md", "skill\n")
     write(skill / "_rtx" / "_worker.py", "worker\n")
-    write(skill / "permissions.json", "{}\n")
     blueprint = {
         "interfaces": {
             "llm": {
