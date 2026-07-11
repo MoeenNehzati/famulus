@@ -2,9 +2,8 @@
 """Account registry for email-client: nickname -> {email, IMAP/SMTP settings}.
 
 Lives at ~/.config/email-client/accounts.json — deliberately OUTSIDE the
-skills git repo (which may go public), alongside other local mail-client
-configs (e.g. msmtp's). Passwords are never stored here; they stay in the
-GNOME keyring via secret-tool, keyed by (account=<nickname>, service=<imap_service|smtp_service>).
+skills git repo (which may go public). Passwords are never stored here; they
+stay in the host credential store via officina.common.secret_store.
 
 Subcommands:
   list                                        -> JSON {nickname: {email, display_name}}
@@ -19,10 +18,10 @@ Subcommands:
 import argparse
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
+from officina.common import secret_store
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 # Overridable via env var so tests can point at a tmp_path instead of the
@@ -30,6 +29,7 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 CONFIG_DIR = Path(os.environ["EMAIL_CLIENT_CONFIG_DIR"]) if os.environ.get("EMAIL_CLIENT_CONFIG_DIR") \
     else Path.home() / ".config" / "email-client"
 ACCOUNTS_FILE = CONFIG_DIR / "accounts.json"
+SECRET_NAMESPACE = "email-client"
 
 GMAIL_DEFAULTS = {
     "imap": {"host": "imap.gmail.com", "port": 993},
@@ -52,6 +52,29 @@ def save(data: dict) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     ACCOUNTS_FILE.write_text(json.dumps(data, indent=2) + "\n")
     ACCOUNTS_FILE.chmod(0o600)
+
+
+def credential_key(nickname: str, purpose: str) -> str:
+    return f"{nickname}:{purpose}"
+
+
+def credential_keys(nickname: str, purpose: str, record: dict | None = None) -> list[str]:
+    keys = [credential_key(nickname, purpose)]
+    legacy_key = (record or {}).get(f"{purpose}_service")
+    if legacy_key and legacy_key not in keys:
+        keys.append(legacy_key)
+    return keys
+
+
+def store_credential(nickname: str, purpose: str, record: dict, secret: str) -> None:
+    for key in credential_keys(nickname, purpose, record):
+        secret_store.store(SECRET_NAMESPACE, key, secret)
+
+
+def clear_credentials(nickname: str, record: dict) -> None:
+    for purpose in ("imap", "smtp"):
+        for key in credential_keys(nickname, purpose, record):
+            secret_store.clear(SECRET_NAMESPACE, key)
 
 
 def cmd_list(args: argparse.Namespace) -> None:
@@ -117,11 +140,13 @@ def cmd_remove(args: argparse.Namespace) -> None:
     record = data.pop(args.nickname)
     save(data)
     if args.purge_credentials:
-        for svc in (record["imap_service"], record["smtp_service"]):
-            subprocess.run(["secret-tool", "clear", "account", args.nickname, "service", svc])
-        print(f"Removed account '{args.nickname}' and purged its keyring credentials")
+        try:
+            clear_credentials(args.nickname, record)
+        except secret_store.SecretStoreError as exc:
+            die(f"could not purge credentials for '{args.nickname}': {exc}")
+        print(f"Removed account '{args.nickname}' and purged its stored credentials")
     else:
-        print(f"Removed account '{args.nickname}' (keyring credentials left in place)")
+        print(f"Removed account '{args.nickname}' (stored credentials left in place)")
 
 
 def cmd_set_password(args: argparse.Namespace) -> None:
@@ -130,17 +155,13 @@ def cmd_set_password(args: argparse.Namespace) -> None:
         die(f"no account '{args.nickname}'; use 'add' first")
     if args.purpose not in ("imap", "smtp"):
         die("--purpose must be 'imap' or 'smtp'")
-    service = data[args.nickname][f"{args.purpose}_service"]
     secret = sys.stdin.read().strip()
     if not secret:
         die("no secret provided on stdin")
-    result = subprocess.run(
-        ["secret-tool", "store", "--label", f"email-client {args.nickname} {args.purpose}",
-         "account", args.nickname, "service", service],
-        input=secret, text=True, encoding="utf-8", errors="strict",
-    )
-    if result.returncode != 0:
-        die("secret-tool store failed")
+    try:
+        store_credential(args.nickname, args.purpose, data[args.nickname], secret)
+    except secret_store.SecretStoreError as exc:
+        die(f"could not store {args.purpose} credential for '{args.nickname}': {exc}")
     print(f"Stored {args.purpose} credential for '{args.nickname}'")
 
 

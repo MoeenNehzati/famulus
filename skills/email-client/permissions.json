@@ -1,6 +1,6 @@
 {
   "bash": [
-    "Bash(_rtx/_smtp_transport.sh:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_smtp_transport.py:Interface:*)",
     "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_imap_gateway.py:Interface:*)",
     "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_email_accounts.py:Interface:*)"
   ],

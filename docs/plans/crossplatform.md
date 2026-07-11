@@ -290,12 +290,12 @@ Targets:
 
 - `skills/email-client/_rtx/_email_accounts.py`
 - `skills/email-client/_rtx/_imap_gateway.py`
-- `skills/email-client/_rtx/_smtp_transport.sh`
-- any future `secretstore.py` / `email_send.py` style modules
+- `skills/email-client/_rtx/_smtp_transport.py`
+- `src/officina/common/secret_store.py`
 
 Status:
 
-- not started in this repo
+- done
 
 Description:
 
@@ -304,13 +304,19 @@ Description:
 What was done:
 
 - the lessons archive produced a concrete example of both the needed abstraction and a bad partial merge shape that would have broken other hosts
+- `email-client` account storage, IMAP credential lookup, and SMTP credential lookup now go through `officina.common.secret_store` instead of shelling out to `secret-tool`
+- send-email moved from the shell `_smtp_transport.sh`/`msmtp` path to a Python machine interface that composes MIME with `email`/`mimetypes` and sends with stdlib `smtplib`/`ssl`
+- the public dispatcher interfaces are preserved, including stdin body handling, repeated `--to`, attachments, and reply threading headers
+- `imap_service`/`smtp_service` registry fields remain honored as secondary secret keys during migration, but through the shared secret-store namespace rather than raw host commands
+- `blueprint.yaml`, generated `SKILL.md`, `permissions.json`, and `references/blueprint/runtime_dependencies.json` now declare `keyring` for secret-using email-client interfaces and no longer declare `secret-tool`, `msmtp`, `base64`, or `file` for email-client send/read paths
+- focused tests cover secret-store writes/clears, IMAP canonical and secondary credential lookup, SMTP message construction, attachment display names, STARTTLS versus SMTP_SSL selection, and send/login behavior
 
 Prevention:
 
-- define a generic credential-store interface and a generic send interface
-- implement Linux, Windows, and eventually macOS backends behind that interface
-- remove direct caller dependence on `secret-tool`, `msmtp`, or one host's credential system
-- add backend-contract tests so one host’s implementation cannot silently replace another host’s path
+- keep skills behind `officina.common.secret_store` rather than importing `keyring` directly or shelling out to host credential commands
+- keep send-mail behavior behind the stable `send-email` dispatcher interface while using Python stdlib SMTP primitives internally
+- keep email-client enrolled in blueprint/runtime dependency checks so old host-specific binaries cannot return as undeclared assumptions
+- add OAuth as a separate future feature decision rather than weakening the current app-password behavior guarantee
 
 ### 3. Redesign launcher and automation surfaces that currently assume POSIX shell
 

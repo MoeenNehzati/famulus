@@ -24,9 +24,9 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
   - `dispatcher --caller-skill email-client email-client.machine.accounts-add --nickname <nick> --email <addr> [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls]`
 - `accounts-list` — List registered account nicknames with their email/display name (no secrets).
   - `dispatcher --caller-skill email-client email-client.machine.accounts-list`
-- `accounts-remove` — Remove an account nickname from the registry; optionally purge its keyring credentials too.
+- `accounts-remove` — Remove an account nickname from the registry; optionally purge its stored credentials too.
   - `dispatcher --caller-skill email-client email-client.machine.accounts-remove --nickname <nick> [--purge-credentials]`
-- `accounts-set-password` — Store the IMAP or SMTP credential for an account in the GNOME keyring. The secret is read from stdin, never a CLI argument.
+- `accounts-set-password` — Store the IMAP or SMTP credential for an account in the host credential store. The secret is read from stdin, never a CLI argument.
   - `dispatcher --caller-skill email-client email-client.machine.accounts-set-password --nickname <nick> --purpose imap|smtp`
 - `accounts-update` — Update fields on an existing account nickname.
   - `dispatcher --caller-skill email-client email-client.machine.accounts-update --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P]`
@@ -40,7 +40,7 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
   - `dispatcher --caller-skill email-client email-client.machine.mail-read -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>`
 - `mail-save-attachments` — Save attachments from one or more emails into a directory. Use --all to save every attachment, or repeat --name to save only selected filenames. Returns JSON describing the saved files.
   - `dispatcher --caller-skill email-client email-client.machine.mail-save-attachments -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...] --out <dir> (--all | --name <filename> [--name <filename> ...])`
-- `send-email` — Send an email via msmtp; body comes from stdin.
+- `send-email` — Send an email via SMTP; body comes from stdin.
   - `dispatcher --caller-skill email-client email-client.machine.send-email --from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]`
 
 <!-- END BLUEPRINT INTERFACES -->
@@ -51,8 +51,8 @@ skill. Run `accounts-list` to see what's configured — nicknames and their defa
 routing rules (e.g. "work stuff goes through the `work` account") live in the user's
 own memory/preferences, not in this skill.
 
-Reading and sending both go through plain IMAP/SMTP via Python's standard library and
-msmtp directly — no external mail-client binary, no pip installs.
+Reading and sending both go through plain IMAP/SMTP in Python. Credentials are
+looked up through the shared `officina.common.secret_store` boundary.
 
 ## Reading and attachments — `mail-list` / `mail-read` / `mail-attachments` / `mail-save-attachments` / `mail-folders`
 
@@ -139,8 +139,8 @@ straight to `send-email`, no extra lookup:
 ## Managing accounts — `accounts-list` / `accounts-add` / `accounts-update` / `accounts-remove` / `accounts-set-password`
 
 The registry lives at `~/.config/email-client/accounts.json` (outside the skill
-directory — it's per-machine and not source-controlled, same tier as the msmtp config
-it replaces). Passwords are never stored there; they stay in the GNOME keyring.
+directory — it's per-machine and not source-controlled). Passwords are never stored
+there; they stay in the host credential store.
 
 ```bash
 accounts-list
@@ -161,14 +161,11 @@ accounts-update --nickname work --display-name "New Display Name"
 accounts-remove --nickname work --purge-credentials
 ```
 
-Each account gets its own keyring service names (`email-client-<nickname>-imap` /
-`-smtp`) so credentials never collide across accounts. An account migrated from a
-previous setup can keep pointing at its original keyring service names by setting
-`imap_service`/`smtp_service` in its registry entry accordingly — no re-authentication
-needed.
+Each account gets its own secret keys (`<nickname>:imap` and `<nickname>:smtp`) so
+credentials never collide across accounts. Existing `imap_service`/`smtp_service`
+registry fields are still honored as secondary secret keys during migration.
 
 ## Config Files
 
 - Account registry: `~/.config/email-client/accounts.json`
-- msmtp trust file: `/etc/ssl/certs/ca-certificates.crt` (hardcoded in `email-send.sh`; Gmail SMTP only needs the system CA bundle)
-- App passwords stored in GNOME keyring via `secret-tool`
+- App passwords stored in the host credential store via `officina.common.secret_store`

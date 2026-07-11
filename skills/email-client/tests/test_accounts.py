@@ -115,31 +115,99 @@ def test_registry_file_permissions_are_owner_only(config_dir):
     assert mode == 0o600
 
 
-# ── set-password / remove --purge-credentials (stubbed secret-tool) ────────
+# ── set-password / remove --purge-credentials (stubbed keyring) ─────────────
 
 @pytest.fixture
-def stub_secret_tool(tmp_path):
-    """A fake secret-tool that logs invocations instead of touching the real
-    keyring, so set-password/remove --purge-credentials are testable without
-    real GNOME keyring access."""
-    bin_dir = tmp_path / "stub-bin"
-    bin_dir.mkdir()
-    log_file = tmp_path / "calls.log"
-    script = bin_dir / "secret-tool"
-    script.write_text(f"""#!/usr/bin/env bash
-echo "$@" >> {log_file}
-if [[ "$1" == "store" ]]; then cat > /dev/null; fi
-exit 0
-""")
-    script.chmod(0o755)
-    return bin_dir, log_file
+def fake_keyring(tmp_path):
+    """A fake keyring package with process-persistent JSON storage."""
+    module_dir = tmp_path / "fake-keyring"
+    keyring_dir = module_dir / "keyring"
+    keyring_dir.mkdir(parents=True)
+    log_file = tmp_path / "keyring-calls.log"
+    store_file = tmp_path / "keyring-store.json"
+    (keyring_dir / "__init__.py").write_text(
+        """
+import json
+import os
+from pathlib import Path
+
+from . import errors
 
 
-def run_with_stub(config_dir, stub_bin_dir, *args, input=None):
+class Backend:
+    priority = 1
+
+
+def get_keyring():
+    return Backend()
+
+
+def _store_path():
+    return Path(os.environ["FAKE_KEYRING_STORE"])
+
+
+def _log_path():
+    return Path(os.environ["FAKE_KEYRING_LOG"])
+
+
+def _read():
+    path = _store_path()
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())
+
+
+def _write(data):
+    _store_path().write_text(json.dumps(data, indent=2, sort_keys=True) + "\\n")
+
+
+def _log(*parts):
+    with _log_path().open("a") as fh:
+        fh.write(" ".join(parts) + "\\n")
+
+
+def set_password(service, username, password):
+    _log("set", service, username)
+    data = _read()
+    data.setdefault(service, {})[username] = password
+    _write(data)
+
+
+def get_password(service, username):
+    _log("get", service, username)
+    return _read().get(service, {}).get(username)
+
+
+def delete_password(service, username):
+    _log("delete", service, username)
+    data = _read()
+    if username not in data.get(service, {}):
+        raise errors.PasswordDeleteError(username)
+    del data[service][username]
+    _write(data)
+"""
+    )
+    (keyring_dir / "errors.py").write_text(
+        """
+class KeyringError(Exception):
+    pass
+
+
+class PasswordDeleteError(KeyringError):
+    pass
+"""
+    )
+    return module_dir, log_file, store_file
+
+
+def run_with_fake_keyring(config_dir, fake_keyring, *args, input=None):
+    module_dir, log_file, store_file = fake_keyring
     env = os.environ.copy()
     env["EMAIL_CLIENT_CONFIG_DIR"] = str(config_dir)
-    env["PATH"] = f"{stub_bin_dir}:/usr/bin:/bin"
-    env["PYTHONPATH"] = str(REPO_SRC)
+    env["PATH"] = "/usr/bin:/bin"
+    env["PYTHONPATH"] = os.pathsep.join([str(module_dir), str(REPO_SRC)])
+    env["FAKE_KEYRING_LOG"] = str(log_file)
+    env["FAKE_KEYRING_STORE"] = str(store_file)
     return subprocess.run(
         [sys.executable, str(ACCOUNTS_PY), *args],
         capture_output=True, text=True, input=input,
@@ -147,22 +215,58 @@ def run_with_stub(config_dir, stub_bin_dir, *args, input=None):
     )
 
 
-def test_set_password_reads_from_stdin_not_argv(config_dir, stub_secret_tool):
-    bin_dir, log_file = stub_secret_tool
-    run_with_stub(config_dir, bin_dir, "add", "--nickname", "work", "--email", "me@example.com")
-    result = run_with_stub(config_dir, bin_dir, "set-password", "--nickname", "work", "--purpose", "imap", input="s3cret\n")
+def test_set_password_reads_from_stdin_not_argv(config_dir, fake_keyring):
+    _, log_file, store_file = fake_keyring
+    run_with_fake_keyring(config_dir, fake_keyring, "add", "--nickname", "work", "--email", "me@example.com")
+    result = run_with_fake_keyring(
+        config_dir,
+        fake_keyring,
+        "set-password",
+        "--nickname",
+        "work",
+        "--purpose",
+        "imap",
+        input="s3cret\n",
+    )
     assert result.returncode == 0
     calls = log_file.read_text()
-    assert "email-client-work-imap" in calls
+    assert "Famulus:email-client work:imap" in calls
+    assert "Famulus:email-client email-client-work-imap" in calls
     assert "s3cret" not in calls  # secret goes over stdin, never appears in the logged argv
+    stored = json.loads(store_file.read_text())
+    assert stored["Famulus:email-client"]["work:imap"] == "s3cret"
 
 
-def test_remove_purge_credentials_clears_both_services(config_dir, stub_secret_tool):
-    bin_dir, log_file = stub_secret_tool
-    run_with_stub(config_dir, bin_dir, "add", "--nickname", "work", "--email", "me@example.com")
-    result = run_with_stub(config_dir, bin_dir, "remove", "--nickname", "work", "--purge-credentials")
+def test_remove_purge_credentials_clears_both_services(config_dir, fake_keyring):
+    _, log_file, store_file = fake_keyring
+    run_with_fake_keyring(config_dir, fake_keyring, "add", "--nickname", "work", "--email", "me@example.com")
+    run_with_fake_keyring(
+        config_dir,
+        fake_keyring,
+        "set-password",
+        "--nickname",
+        "work",
+        "--purpose",
+        "imap",
+        input="imap-secret\n",
+    )
+    run_with_fake_keyring(
+        config_dir,
+        fake_keyring,
+        "set-password",
+        "--nickname",
+        "work",
+        "--purpose",
+        "smtp",
+        input="smtp-secret\n",
+    )
+
+    result = run_with_fake_keyring(config_dir, fake_keyring, "remove", "--nickname", "work", "--purge-credentials")
+
     assert result.returncode == 0
     calls = log_file.read_text()
-    assert "email-client-work-imap" in calls
-    assert "email-client-work-smtp" in calls
-    assert "clear" in calls
+    assert "delete Famulus:email-client work:imap" in calls
+    assert "delete Famulus:email-client work:smtp" in calls
+    assert "delete Famulus:email-client email-client-work-imap" in calls
+    assert "delete Famulus:email-client email-client-work-smtp" in calls
+    assert json.loads(store_file.read_text()) == {"Famulus:email-client": {}}

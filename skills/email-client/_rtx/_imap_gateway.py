@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Read-side email client: list/read/folders over IMAP, stdlib only.
 
-IMAP read client using only imaplib/email/ssl from Python's standard
-library — no pip installs, no external binary, one less moving part to
-break. Sending (see email-send.sh) uses msmtp the same way, directly.
+IMAP read client using imaplib/email/ssl from Python's standard library.
+Credentials come from the shared secret-store boundary rather than a
+host-specific command.
 
 Accounts are resolved by nickname through accounts.py's registry
 (~/.config/email-client/accounts.json), not hardcoded here. Credentials come
-from the GNOME keyring via secret-tool, using the imap_service name recorded
-for that account.
+from the host credential store via officina.common.secret_store.
 
 Subcommands:
   list    -a <nickname> [--folder FOLDER] [--after YYYY-MM-DD] [FILTER...] [--limit N]
@@ -45,9 +44,11 @@ from datetime import datetime, timezone
 from email.header import decode_header
 from pathlib import Path
 
+from officina.common import secret_store
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+SECRET_NAMESPACE = "email-client"
 
 FOLDER_ALIASES = {
     "sent": "[Gmail]/Sent Mail",
@@ -73,20 +74,33 @@ def resolve_account(nickname: str) -> dict:
     return json.loads(result.stdout)
 
 
-def get_password(nickname: str, service: str) -> str:
-    result = subprocess.run(
-        ["secret-tool", "lookup", "account", nickname, "service", service],
-        capture_output=True, text=True, encoding="utf-8", errors="strict",
-    )
-    pw = result.stdout.strip()
-    if result.returncode != 0 or not pw:
-        die(f"no credential in keyring for account={nickname} service={service}")
-    return pw
+def credential_key(nickname: str, purpose: str) -> str:
+    return f"{nickname}:{purpose}"
+
+
+def credential_keys(nickname: str, purpose: str, record: dict | None = None) -> list[str]:
+    keys = [credential_key(nickname, purpose)]
+    legacy_key = (record or {}).get(f"{purpose}_service")
+    if legacy_key and legacy_key not in keys:
+        keys.append(legacy_key)
+    return keys
+
+
+def get_password(nickname: str, account: dict) -> str:
+    checked_keys = credential_keys(nickname, "imap", account)
+    try:
+        for key in checked_keys:
+            pw = secret_store.lookup(SECRET_NAMESPACE, key)
+            if pw:
+                return pw
+    except secret_store.SecretStoreError as exc:
+        die(f"could not read IMAP credential for account={nickname}: {exc}")
+    die(f"no credential in host credential store for account={nickname}; checked keys: {', '.join(checked_keys)}")
 
 
 def connect(nickname: str) -> tuple[imaplib.IMAP4_SSL, dict]:
     account = resolve_account(nickname)
-    password = get_password(nickname, account["imap_service"])
+    password = get_password(nickname, account)
     conn = imaplib.IMAP4_SSL(account["imap"]["host"], account["imap"]["port"])
     conn.login(account["email"], password)
     return conn, account

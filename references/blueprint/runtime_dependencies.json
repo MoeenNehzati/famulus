@@ -117,8 +117,8 @@
           "id": "email-client.machine.accounts-remove",
           "dependencies": [
             {
-              "kind": "binary",
-              "name": "secret-tool",
+              "kind": "python",
+              "name": "keyring",
               "reason": "Clears stored account credentials when requested."
             }
           ]
@@ -127,9 +127,9 @@
           "id": "email-client.machine.accounts-set-password",
           "dependencies": [
             {
-              "kind": "binary",
-              "name": "secret-tool",
-              "reason": "Stores IMAP or SMTP credentials in the keyring."
+              "kind": "python",
+              "name": "keyring",
+              "reason": "Stores IMAP or SMTP credentials in the host credential store."
             }
           ]
         },
@@ -141,9 +141,9 @@
           "id": "email-client.machine.mail-attachments",
           "dependencies": [
             {
-              "kind": "binary",
-              "name": "secret-tool",
-              "reason": "Retrieves the IMAP credential from the keyring."
+              "kind": "python",
+              "name": "keyring",
+              "reason": "Retrieves the IMAP credential from the host credential store."
             }
           ]
         },
@@ -151,9 +151,9 @@
           "id": "email-client.machine.mail-folders",
           "dependencies": [
             {
-              "kind": "binary",
-              "name": "secret-tool",
-              "reason": "Retrieves the IMAP credential from the keyring."
+              "kind": "python",
+              "name": "keyring",
+              "reason": "Retrieves the IMAP credential from the host credential store."
             }
           ]
         },
@@ -161,9 +161,9 @@
           "id": "email-client.machine.mail-list",
           "dependencies": [
             {
-              "kind": "binary",
-              "name": "secret-tool",
-              "reason": "Retrieves the IMAP credential from the keyring."
+              "kind": "python",
+              "name": "keyring",
+              "reason": "Retrieves the IMAP credential from the host credential store."
             }
           ]
         },
@@ -171,9 +171,9 @@
           "id": "email-client.machine.mail-read",
           "dependencies": [
             {
-              "kind": "binary",
-              "name": "secret-tool",
-              "reason": "Retrieves the IMAP credential from the keyring."
+              "kind": "python",
+              "name": "keyring",
+              "reason": "Retrieves the IMAP credential from the host credential store."
             }
           ]
         },
@@ -181,9 +181,9 @@
           "id": "email-client.machine.mail-save-attachments",
           "dependencies": [
             {
-              "kind": "binary",
-              "name": "secret-tool",
-              "reason": "Retrieves the IMAP credential from the keyring."
+              "kind": "python",
+              "name": "keyring",
+              "reason": "Retrieves the IMAP credential from the host credential store."
             }
           ]
         },
@@ -191,24 +191,9 @@
           "id": "email-client.machine.send-email",
           "dependencies": [
             {
-              "kind": "binary",
-              "name": "msmtp",
-              "reason": "Sends the composed email via SMTP."
-            },
-            {
-              "kind": "binary",
-              "name": "secret-tool",
-              "reason": "Retrieves the SMTP credential from the keyring."
-            },
-            {
-              "kind": "binary",
-              "name": "base64",
-              "reason": "Encodes attachments for MIME messages."
-            },
-            {
-              "kind": "binary",
-              "name": "file",
-              "reason": "Detects attachment MIME types."
+              "kind": "python",
+              "name": "keyring",
+              "reason": "Retrieves the SMTP credential from the host credential store."
             }
           ]
         }
@@ -756,20 +741,18 @@
       "bibtexparser",
       "dateparser",
       "jsonschema",
+      "keyring",
       "marker-pdf",
       "rich"
     ],
     "binary": [
-      "base64",
       "crontab",
       "curl",
       "file",
       "git",
       "journalctl",
       "jq",
-      "msmtp",
       "rclone",
-      "secret-tool",
       "systemctl",
       "tar"
     ]

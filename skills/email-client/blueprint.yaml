@@ -7,15 +7,15 @@ category: productivity-general-assistant
 # breaking way for dependent skills.
 interface_version: 3
 
-cross_platform: false
+cross_platform: true
 
 depends_on:
   {}
 
 suggested_permissions:
   bash:
-    - command: ["_rtx/_smtp_transport.sh"]
-      reason: "Migrated from legacy permissions.json."
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_smtp_transport.py:Interface"]
+      reason: "Send-side SMTP client (compose/send), stdlib SMTP plus shared secret store."
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_imap_gateway.py:Interface"]
       reason: "Read-side IMAP client (list/read/folders), stdlib-only, no external binary."
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_email_accounts.py:Interface"]
@@ -34,29 +34,20 @@ skill_interface:
 interfaces:
   machine:
     send-email:
-      description: Send an email via msmtp; body comes from stdin.
+      description: Send an email via SMTP; body comes from stdin.
       usage: --from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to
         <msg-id>] [--references <refs>]
       patterns:
       - name: owner
         allow_stdin: true
       runtime:
-        kind: command
-        argv:
-        - _rtx/_smtp_transport.sh
+        kind: python_machine_interface
+        entrypoint: _rtx/_smtp_transport.py:Interface
+        args_prefix: []
       dependencies:
-      - kind: binary
-        name: msmtp
-        reason: Sends the composed email via SMTP.
-      - kind: binary
-        name: secret-tool
-        reason: Retrieves the SMTP credential from the keyring.
-      - kind: binary
-        name: base64
-        reason: Encodes attachments for MIME messages.
-      - kind: binary
-        name: file
-        reason: Detects attachment MIME types.
+      - kind: python
+        name: keyring
+        reason: Retrieves the SMTP credential from the host credential store.
     mail-list:
       description: "List email envelopes for an account as JSON (fields: id, flags, subject, from, date, message_id). --folder\
         \ accepts aliases inbox|sent|drafts|trash|all or any literal IMAP folder name (default inbox). --after narrows server-side\
@@ -74,9 +65,9 @@ interfaces:
         args_prefix:
         - list
       dependencies:
-      - kind: binary
-        name: secret-tool
-        reason: Retrieves the IMAP credential from the keyring.
+      - kind: python
+        name: keyring
+        reason: Retrieves the IMAP credential from the host credential store.
     mail-read:
       description: Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/ Date/Message-ID, then In-Reply-To/References
         only if the message is a reply, then an Attachments section (none or one line per attachment with filename, MIME type,
@@ -91,9 +82,9 @@ interfaces:
         args_prefix:
         - read
       dependencies:
-      - kind: binary
-        name: secret-tool
-        reason: Retrieves the IMAP credential from the keyring.
+      - kind: python
+        name: keyring
+        reason: Retrieves the IMAP credential from the host credential store.
     mail-attachments:
       description: List attachment metadata for one or more emails as JSON. Returns one record per requested UID with attachment
         entries containing filename, content_type, size_bytes, size_human, and disposition.
@@ -107,9 +98,9 @@ interfaces:
         args_prefix:
         - attachments
       dependencies:
-      - kind: binary
-        name: secret-tool
-        reason: Retrieves the IMAP credential from the keyring.
+      - kind: python
+        name: keyring
+        reason: Retrieves the IMAP credential from the host credential store.
     mail-save-attachments:
       description: Save attachments from one or more emails into a directory. Use --all to save every attachment, or repeat
         --name to save only selected filenames. Returns JSON describing the saved files.
@@ -124,9 +115,9 @@ interfaces:
         args_prefix:
         - save-attachments
       dependencies:
-      - kind: binary
-        name: secret-tool
-        reason: Retrieves the IMAP credential from the keyring.
+      - kind: python
+        name: keyring
+        reason: Retrieves the IMAP credential from the host credential store.
     mail-folders:
       description: List IMAP folders for an account (JSON).
       usage: -a <nickname>
@@ -139,9 +130,9 @@ interfaces:
         args_prefix:
         - folders
       dependencies:
-      - kind: binary
-        name: secret-tool
-        reason: Retrieves the IMAP credential from the keyring.
+      - kind: python
+        name: keyring
+        reason: Retrieves the IMAP credential from the host credential store.
     accounts-list:
       description: List registered account nicknames with their email/display name (no secrets).
       usage: ''
@@ -182,7 +173,7 @@ interfaces:
         - update
       dependencies: []
     accounts-remove:
-      description: Remove an account nickname from the registry; optionally purge its keyring credentials too.
+      description: Remove an account nickname from the registry; optionally purge its stored credentials too.
       usage: --nickname <nick> [--purge-credentials]
       patterns:
       - name: owner
@@ -193,11 +184,11 @@ interfaces:
         args_prefix:
         - remove
       dependencies:
-      - kind: binary
-        name: secret-tool
+      - kind: python
+        name: keyring
         reason: Clears stored account credentials when requested.
     accounts-set-password:
-      description: Store the IMAP or SMTP credential for an account in the GNOME keyring. The secret is read from stdin, never
+      description: Store the IMAP or SMTP credential for an account in the host credential store. The secret is read from stdin, never
         a CLI argument.
       usage: --nickname <nick> --purpose imap|smtp
       patterns:
@@ -209,6 +200,6 @@ interfaces:
         args_prefix:
         - set-password
       dependencies:
-      - kind: binary
-        name: secret-tool
-        reason: Stores IMAP or SMTP credentials in the keyring.
+      - kind: python
+        name: keyring
+        reason: Stores IMAP or SMTP credentials in the host credential store.

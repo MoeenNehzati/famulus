@@ -18,6 +18,17 @@ mail = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(mail)
 
+SKILL_ROOT = Path(__file__).parent.parent
+if str(SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(SKILL_ROOT))
+
+SMTP_PY = SKILL_ROOT / "_rtx" / "_smtp_transport.py"
+smtp_spec = importlib.util.spec_from_file_location("_rtx._smtp_transport", SMTP_PY)
+smtp = importlib.util.module_from_spec(smtp_spec)
+assert smtp_spec.loader is not None
+sys.modules[smtp_spec.name] = smtp
+smtp_spec.loader.exec_module(smtp)
+
 
 # ── decode_mime_words ───────────────────────────────────────────────────────
 
@@ -77,6 +88,41 @@ def test_resolve_folder_case_insensitive():
 def test_resolve_folder_passthrough_for_unknown():
     assert mail.resolve_folder("github") == "github"
     assert mail.resolve_folder("[Gmail]/Starred") == "[Gmail]/Starred"
+
+
+# ── credential lookup ───────────────────────────────────────────────────────
+
+def test_get_password_uses_canonical_secret_key(monkeypatch):
+    calls = []
+
+    def lookup(namespace, key):
+        calls.append((namespace, key))
+        if key == "work:imap":
+            return "app-password"
+        return None
+
+    monkeypatch.setattr(mail.secret_store, "lookup", lookup)
+
+    assert mail.get_password("work", {"imap_service": "email-client-work-imap"}) == "app-password"
+    assert calls == [("email-client", "work:imap")]
+
+
+def test_get_password_falls_back_to_legacy_imap_service(monkeypatch):
+    calls = []
+
+    def lookup(namespace, key):
+        calls.append((namespace, key))
+        if key == "custom-imap-service":
+            return "legacy-password"
+        return None
+
+    monkeypatch.setattr(mail.secret_store, "lookup", lookup)
+
+    assert mail.get_password("work", {"imap_service": "custom-imap-service"}) == "legacy-password"
+    assert calls == [
+        ("email-client", "work:imap"),
+        ("email-client", "custom-imap-service"),
+    ]
 
 
 # ── attachment helpers ──────────────────────────────────────────────────────
@@ -292,3 +338,186 @@ def test_envelope_matches_bad_regex_falls_back_to_substring():
     env = _envelope(subject="a(b")
     # "(b" is invalid as a regex (unbalanced paren); should fall back to literal substring
     assert mail.envelope_matches(env, [("subject", "~=", "(b")])
+
+
+# ── send-email SMTP transport ───────────────────────────────────────────────
+
+def test_send_request_defaults_references_to_in_reply_to():
+    args = smtp.build_parser().parse_args([
+        "--from", "work",
+        "--to", "recipient@example.com",
+        "--subject", "Re: Hello",
+        "--in-reply-to", "<parent@example.com>",
+    ])
+
+    request = smtp.request_from_args(args)
+    msg = smtp.build_message(request, {"email": "sender@example.com"}, "Reply body")
+
+    assert request.references == "<parent@example.com>"
+    assert msg["From"] == "sender@example.com"
+    assert msg["To"] == "recipient@example.com"
+    assert msg["Subject"] == "Re: Hello"
+    assert msg["In-Reply-To"] == "<parent@example.com>"
+    assert msg["References"] == "<parent@example.com>"
+    assert msg.get_content().rstrip("\n") == "Reply body"
+
+
+def test_send_message_preserves_repeated_to_headers():
+    args = smtp.build_parser().parse_args([
+        "--from", "work",
+        "--to", "a@example.com",
+        "--to", "b@example.com",
+        "--subject", "Hello",
+    ])
+
+    request = smtp.request_from_args(args)
+    msg = smtp.build_message(request, {"email": "sender@example.com"}, "Body")
+
+    assert request.to_addrs == ["a@example.com", "b@example.com"]
+    assert msg["To"] == "a@example.com, b@example.com"
+
+
+def test_send_message_adds_attachment_with_display_name(tmp_path):
+    attachment = tmp_path / "raw.bin"
+    attachment.write_bytes(b"attachment bytes")
+    args = smtp.build_parser().parse_args([
+        "--from", "work",
+        "--to", "recipient@example.com",
+        "--subject", "Files",
+        "--attach", f"{attachment}:Report.bin",
+    ])
+
+    request = smtp.request_from_args(args)
+    msg = smtp.build_message(request, {"email": "sender@example.com"}, "See attached")
+    attachments = list(msg.iter_attachments())
+
+    assert len(attachments) == 1
+    assert attachments[0].get_filename() == "Report.bin"
+    assert attachments[0].get_payload(decode=True) == b"attachment bytes"
+
+
+def test_smtp_password_prefers_common_secret_store(monkeypatch):
+    calls = []
+
+    def fake_lookup(namespace, key):
+        calls.append((namespace, key))
+        if key == "work:smtp":
+            return "app-password"
+        return None
+
+    monkeypatch.setattr(smtp.secret_store, "lookup", fake_lookup)
+    account = {"smtp_service": "email-client-work-smtp"}
+
+    password = smtp.get_smtp_password("work", account)
+
+    assert password == "app-password"
+    assert calls == [("email-client", "work:smtp")]
+
+
+def test_smtp_password_falls_back_to_service_key_via_secret_store(monkeypatch):
+    calls = []
+
+    def fake_lookup(namespace, key):
+        calls.append((namespace, key))
+        if key == "email-client-work-smtp":
+            return "legacy-service-secret"
+        return None
+
+    monkeypatch.setattr(smtp.secret_store, "lookup", fake_lookup)
+    account = {"smtp_service": "email-client-work-smtp"}
+
+    password = smtp.get_smtp_password("work", account)
+
+    assert password == "legacy-service-secret"
+    assert calls == [
+        ("email-client", "work:smtp"),
+        ("email-client", "email-client-work-smtp"),
+    ]
+
+
+def test_open_smtp_connection_uses_ssl_when_starttls_false(monkeypatch):
+    calls = []
+
+    class FakeSMTPSSL:
+        def __init__(self, host, port, context, timeout):
+            calls.append(("ssl", host, port, context, timeout))
+
+    monkeypatch.setattr(smtp.smtplib, "SMTP_SSL", FakeSMTPSSL)
+
+    smtp.open_smtp_connection({
+        "smtp": {"host": "smtp.example.com", "port": 465, "starttls": False},
+    })
+
+    assert calls[0][0:3] == ("ssl", "smtp.example.com", 465)
+    assert calls[0][4] == smtp.SMTP_TIMEOUT_SECONDS
+
+
+def test_open_smtp_connection_uses_starttls_when_enabled(monkeypatch):
+    calls = []
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout):
+            calls.append(("plain", host, port, timeout))
+
+        def ehlo(self):
+            calls.append(("ehlo",))
+
+        def starttls(self, context):
+            calls.append(("starttls", context))
+
+    monkeypatch.setattr(smtp.smtplib, "SMTP", FakeSMTP)
+
+    smtp.open_smtp_connection({
+        "smtp": {"host": "smtp.example.com", "port": 587, "starttls": True},
+    })
+
+    assert calls[0] == ("plain", "smtp.example.com", 587, smtp.SMTP_TIMEOUT_SECONDS)
+    assert calls[1][0] == "ehlo"
+    assert calls[2][0] == "starttls"
+    assert calls[3][0] == "ehlo"
+
+
+def test_deliver_message_logs_in_and_sends_message():
+    calls = []
+    account = {
+        "email": "sender@example.com",
+        "smtp": {"host": "smtp.example.com", "port": 465, "starttls": False},
+        "smtp_service": "email-client-work-smtp",
+    }
+    request = smtp.SendEmailRequest(
+        nickname="work",
+        to_addrs=["recipient@example.com"],
+        subject="Hello",
+        attachments=[],
+        in_reply_to="",
+        references="",
+    )
+
+    class FakeClient:
+        def __enter__(self):
+            calls.append(("enter",))
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            calls.append(("exit", exc_type))
+
+        def login(self, username, password):
+            calls.append(("login", username, password))
+
+        def send_message(self, message, from_addr, to_addrs):
+            calls.append(("send", message["Subject"], from_addr, tuple(to_addrs)))
+
+    smtp.deliver_message(
+        request,
+        "Body",
+        account_resolver=lambda nickname: account,
+        password_resolver=lambda nickname, resolved_account: "app-password",
+        smtp_opener=lambda resolved_account: FakeClient(),
+    )
+
+    assert calls == [
+        ("enter",),
+        ("login", "sender@example.com", "app-password"),
+        ("send", "Hello", "sender@example.com", ("recipient@example.com",)),
+        ("exit", None),
+    ]
