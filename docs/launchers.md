@@ -11,6 +11,8 @@ Famulus ships three agent launchers:
 - `coauthor`
 
 Those launchers work with both Claude Code and Codex.
+On Windows, the installed commands are `.bat` wrappers that delegate to the
+Python launcher bundle copied into the managed bin directory.
 
 By default, they use the backend selected at install time through `ASSISTANT_DEFAULT`, but you can override that per run:
 
@@ -72,6 +74,8 @@ These launchers are installed through the Phase 1 installer described in [docs/i
 That installer:
 
 - writes the launcher commands into your bin directory
+- copies Windows launcher bundles or symlinks Unix launcher bundles as
+  appropriate for the host
 - installs the Claude/Codex profile files they rely on
 - creates the default worker directories for `assistant`, `collab`, and `coauthor`
 - installs `tw` / `tmux-workspace` when the platform supports tmux

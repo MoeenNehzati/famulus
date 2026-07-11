@@ -333,7 +333,7 @@ Targets:
 
 Status:
 
-- not started in this repo
+- partially done
 
 Description:
 
@@ -342,13 +342,22 @@ Description:
 What was done:
 
 - the lessons archive mapped which failures came from launcher surfaces versus core Python logic
+- added an installer-local launcher bundle layer under `skills/install-assistant-tools/_rtx/_install_launcher/`, with Linux, macOS, and Windows implementations selected behind one neutral `platform_launcher_installer()` boundary
+- moved generated/static launcher file placement out of scaffold and agent launcher orchestration, so `dispatcher`, `invoke-skill`, agent launchers, `.bat` wrappers, and `tw` install through platform-specific launcher bundle contracts
+- made the scaffold install a Windows `dispatcher.bat` launcher instead of skipping the required dispatcher capability on Windows
+- changed Windows `invoke-skill` handling from a required scaffold failure to an explicit unsupported automation capability, because `recurring-tasks` remains systemd/Unix-only today
+- changed Windows agent launcher file installation to copy the launcher bundle instead of relying on symlink creation, avoiding Developer Mode/admin symlink requirements for supported primary launchers
+- changed Windows `tw` handling to skip launcher installation up front rather than only skipping verification
+- added focused tests for generated launcher bundles, copy/link static launcher behavior, platform installer selection, Windows dispatcher installation, unsupported Windows invoke-skill, Windows copied agent launchers, and Windows `tw` skip behavior
+- updated install and launcher docs to describe platform-specific launcher bundle installation and the current recurring-automation support boundary
 
 Prevention:
 
 - treat host launchers as a supported product surface
-- implement proper Windows launchers for supported flows
-- decide explicitly how recurring automation should work on non-systemd hosts
-- require installer and launcher smoke tests to verify promised host surfaces
+- keep supported host launcher installation behind `_rtx/_install_launcher/` instead of scattering `sys.platform` branches across installer phases
+- keep launcher bundle specs rather than single-file assumptions, so future generated launchers can include helper files without redesigning scaffold or launcher orchestration
+- require installer and launcher tests to verify promised host surfaces, including Windows `dispatcher.bat`, copied Windows agent launcher bundles, and explicit unsupported statuses for platform-scoped automation
+- decide explicitly how recurring automation should work on non-systemd hosts before changing `invoke-skill` from unsupported to supported there
 
 ### 4. Reduce shell-first shared runtime design in new and existing skills
 

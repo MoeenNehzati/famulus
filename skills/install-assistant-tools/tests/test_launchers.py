@@ -58,6 +58,45 @@ def test_run_installs_only_selected_agents(tmp_path):
     assert not (codex_home / "assistant.config.toml").is_symlink()
 
 
+def test_run_copies_windows_agent_launcher_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(launchers, "_ensure_assistant_default_windows", lambda *args, **kwargs: None)
+    repo_root = _make_repo(tmp_path)
+    bin_dir = tmp_path / "bin"
+
+    launchers.run(
+        repo_root=repo_root,
+        agents=["assistant"],
+        home=tmp_path / "home",
+        bin_dir=bin_dir,
+        codex_home=tmp_path / "codex",
+        claude_home=tmp_path / "claude",
+        shell_rc=tmp_path / ".bashrc",
+        default_llm="claude",
+        dry_run=True,
+    )
+
+    assert not (bin_dir / "assistant").exists()
+
+    launchers.run(
+        repo_root=repo_root,
+        agents=["assistant"],
+        home=tmp_path / "home",
+        bin_dir=bin_dir,
+        codex_home=tmp_path / "codex",
+        claude_home=tmp_path / "claude",
+        shell_rc=tmp_path / ".bashrc",
+        default_llm="claude",
+        dry_run=False,
+    )
+
+    assert (bin_dir / "assistant").is_file()
+    assert (bin_dir / "_agent_launch.py").is_file()
+    assert (bin_dir / "assistant.bat").is_file()
+    assert not (bin_dir / "assistant").is_symlink()
+    assert not (bin_dir / "_agent_launch.py").is_symlink()
+
+
 def test_config_toml_gets_absolute_agent_path_not_codex_home_relative(tmp_path):
     """Codex resolves model_instructions_file relative to $CODEX_HOME by
     default — rewriting it to an absolute path means plugin-mode installs
@@ -231,3 +270,25 @@ def test_tw_agent_links_both_tmux_workspace_and_tw_alias(tmp_path):
     assert (bin_dir / "tmux-workspace").is_symlink()
     assert (bin_dir / "tw").is_symlink()
     assert (bin_dir / "tmux-workspace").resolve() == (bin_dir / "tw").resolve()
+
+
+def test_tw_agent_is_skipped_on_windows(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(launchers, "_ensure_assistant_default_windows", lambda *args, **kwargs: None)
+    repo_root = _make_repo(tmp_path)
+    bin_dir = tmp_path / "bin"
+
+    launchers.run(
+        repo_root=repo_root,
+        agents=["tw"],
+        home=tmp_path / "home",
+        bin_dir=bin_dir,
+        codex_home=tmp_path / "codex",
+        claude_home=tmp_path / "claude",
+        shell_rc=tmp_path / ".bashrc",
+        default_llm="claude",
+        dry_run=False,
+    )
+
+    assert not (bin_dir / "tmux-workspace").exists()
+    assert not (bin_dir / "tw").exists()

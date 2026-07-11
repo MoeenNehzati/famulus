@@ -38,9 +38,10 @@ Skill: install-assistant-tools
 
 ## Platform Support
 
-The installer and launchers run on **Linux, macOS, and Windows** (Python 3.6+
-required). One exception: `tmux-workspace` is Unix-only (tmux does not exist on
-Windows).
+The installer and primary launchers run on **Linux, macOS, and Windows**
+(Python 3.6+ required). Exceptions: `tmux-workspace` is Unix-only (tmux does
+not exist on Windows), and `invoke-skill` is currently installed only where the
+systemd/Unix recurring-automation backend is supported.
 
 If any step fails or a command is not usable on the user's platform, **ask
 whether they want the skill to adapt the relevant scripts** before attempting
@@ -65,8 +66,9 @@ bin/
 runtime phases
   install runner     Phase-1 orchestrator — asks the dev-mode question, then
                      chains scaffold -> [repo bridge] -> launchers
-  scaffold           Universal floor: dispatcher + invoke-skill launchers, PATH,
-                     required Python packages. Mode-independent, always runs.
+  scaffold           Universal floor: dispatcher launcher, PATH, required Python
+                     packages, plus invoke-skill where the recurring backend is
+                     supported. Mode-independent, always runs.
   repo bridge        Dev-mode only: Claude/Codex config-dir symlinks, dev-mode
                      hook registration, git hooksPath, $AI export. Requires an
                      explicit repo path — never inferred.
@@ -74,8 +76,12 @@ runtime phases
                      absolute model_instructions_file rewrite so Codex doesn't
                      need $CODEX_HOME/agents either), worker dir,
                      ASSISTANT_DEFAULT. No agents preselected.
-  link helpers       Shared make_link/make_copy helpers used by scaffold,
-                     launchers, and repo bridge.
+  launcher installer Installer-local platform layer for generated/static
+                     launcher bundles. It writes/copies/links dispatcher,
+                     invoke-skill, assistant commands, .bat wrappers, and tw
+                     according to the host contract.
+  link helpers       Shared lower-level make_link/make_copy helpers used by
+                     launcher installation, profiles, and repo bridge.
   rc writer          Merge-capable managed-block writer: scaffold owns PATH,
                      launchers owns ASSISTANT_DEFAULT, repo bridge owns $AI —
                      all three share one physical rc block without clobbering
@@ -112,8 +118,8 @@ there's no separate "live checkout" concept to get wrong there.
 
 Use the `scripts-install` interface (`install.py`), which chains:
 
-1. `scaffold` — dispatcher + invoke-skill launchers, PATH. Always runs,
-   regardless of mode.
+1. `scaffold` — dispatcher launcher, PATH, and any supported automation
+   launcher. Always runs, regardless of mode.
 2. `dev-link` — only if dev mode was chosen in step 1. Symlinks, dev-mode
    hooks, git hooksPath, `$AI`.
 3. `launchers` — asks which of `assistant`/`collab`/`coauthor`/`tw` to
@@ -124,12 +130,14 @@ Each of these three is also independently runnable via `scripts-scaffold`,
 `scripts-dev-link`, `scripts-launchers` for targeted repairs. On an
 unfamiliar machine, pass `--dry-run` to preview without writing anything.
 
-`scaffold` prints a final capability report for required shared launchers. If
-`dispatcher` or `invoke-skill` cannot be installed on the host, the report names
-the skipped capability, affected workflows, and reason, then exits nonzero. The
-phase-1 orchestrator stops there rather than continuing into `dev-link` or
-`launchers` with a broken universal floor. `--dry-run` reports the same
-capability status without writing files.
+`scaffold` prints a final capability report for shared launchers. If
+`dispatcher` cannot be installed on the host, the report names the failed
+capability, affected workflows, and reason, then exits nonzero. The phase-1
+orchestrator stops there rather than continuing into `dev-link` or `launchers`
+with a broken universal floor. Platform-scoped automation launchers may be
+reported as unsupported on hosts where that backend is not implemented; this
+does not block the dispatcher floor. `--dry-run` reports the same capability
+status without writing files.
 
 Claude and Codex skill/reference visibility in **plugin mode** already comes
 from the plugin loader itself — `dev-link`'s symlinks are a dev-mode

@@ -43,6 +43,27 @@ def test_run_writes_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch)
     assert str(repo_root) in dispatcher.read_text()
 
 
+def test_run_writes_windows_dispatcher_and_reports_unsupported_invoke_skill(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(scaffold, "ensure_path_windows", lambda *args, **kwargs: None)
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    bin_dir = tmp_path / "bin"
+
+    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, dry_run=False)
+
+    output = capsys.readouterr().out
+    dispatcher = bin_dir / "dispatcher.bat"
+    assert status == 0
+    assert dispatcher.is_file()
+    assert "py -3 -m officina.dispatcher.cli %*" in dispatcher.read_text(encoding="utf-8")
+    assert "OK: dispatcher" in output
+    assert "UNSUPPORTED: invoke-skill" in output
+    assert "recurring-tasks is currently systemd/Unix-only" in output
+    assert not (bin_dir / "dispatcher").exists()
+    assert not (bin_dir / "invoke-skill").exists()
+
+
 def test_run_adds_bin_dir_to_path_in_rc_file(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     repo_root = tmp_path / "repo"
@@ -94,27 +115,6 @@ def test_run_dry_run_reports_required_capabilities(tmp_path, monkeypatch, capsys
     assert "WOULD-INSTALL: invoke-skill" in output
     assert "machine-interface dispatch" in output
     assert "recurring automation" in output
-
-
-def test_run_fails_when_required_capabilities_are_skipped(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(scaffold, "ensure_path_windows", lambda *args, **kwargs: None)
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    bin_dir = tmp_path / "bin"
-
-    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, dry_run=False)
-
-    output = capsys.readouterr().out
-    assert status == 1
-    assert "FAILED: dispatcher" in output
-    assert "FAILED: invoke-skill" in output
-    assert "managed bin launchers are POSIX shell" in output
-    assert "machine-interface dispatch" in output
-    assert "recurring automation" in output
-    assert "Scaffold failed: required capabilities were not installed." in output
-    assert not (bin_dir / "dispatcher").exists()
-    assert not (bin_dir / "invoke-skill").exists()
 
 
 def test_run_reruns_idempotently(tmp_path, monkeypatch):

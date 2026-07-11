@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from officina.common import toml_io
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
+from _install_launcher import platform_launcher_installer
 from _state_record import Manifest, manifest_path
 from _fs_links import log, make_link
 from _shell_block import ensure_rc_vars
@@ -48,19 +49,17 @@ ALL_AGENTS = ["assistant", "collab", "coauthor", "tw"]
 WORKER_AGENTS = ["assistant", "collab", "coauthor"]
 
 
-def install_bin_for_agent(source_bin_dir: Path, bin_dir: Path, agent: str, dry_run: bool, manifest: Manifest | None) -> None:
+def install_agent_launcher_files(source_bin_dir: Path, bin_dir: Path, agent: str, dry_run: bool, manifest: Manifest | None) -> None:
     if not dry_run:
         bin_dir.mkdir(parents=True, exist_ok=True)
-    if agent == "tw":
-        # tw is a convenience alias for tmux-workspace; link both names.
-        make_link(source_bin_dir / "tmux-workspace", bin_dir / "tmux-workspace", dry_run, manifest)
-        make_link(source_bin_dir / "tmux-workspace", bin_dir / "tw", dry_run, manifest)
-        return
-    make_link(source_bin_dir / agent, bin_dir / agent, dry_run, manifest)
-    make_link(source_bin_dir / "_agent_launch.py", bin_dir / "_agent_launch.py", dry_run, manifest)
-    bat = source_bin_dir / f"{agent}.bat"
-    if bat.exists():
-        make_link(bat, bin_dir / f"{agent}.bat", dry_run, manifest)
+    installer = platform_launcher_installer()
+    installer.install_agent_launcher_files(
+        source_bin_dir=source_bin_dir,
+        bin_dir=bin_dir,
+        agent=agent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
 
 
 def install_worker_dir(repo_root: Path, agent: str, dry_run: bool) -> None:
@@ -249,7 +248,7 @@ def run(
         manifest = None
 
     for agent in agents:
-        install_bin_for_agent(source_bin_dir, bin_dir, agent, dry_run, manifest)
+        install_agent_launcher_files(source_bin_dir, bin_dir, agent, dry_run, manifest)
         install_worker_dir(repo_root, agent, dry_run)
         install_profile_for_agent(repo_root, profiles_dir, codex_home, claude_home, agent, dry_run, manifest)
 

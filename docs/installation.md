@@ -62,13 +62,17 @@ install.py
 
 Runs in every install, regardless of mode or which agents you want. Installs:
 
-- The `dispatcher` launcher — a generated bash script (not a symlink) at
-  `<bin-dir>/dispatcher`. Every skill's `SKILL.md` invokes its own scripts
-  through this command (`dispatcher --caller-skill <skill> <skill>
-  <interface> ...`), so this is the one piece of scaffolding almost
-  everything else structurally depends on.
+- The `dispatcher` launcher — generated into the managed bin directory as
+  `<bin-dir>/dispatcher` on Unix-like hosts and `<bin-dir>/dispatcher.bat` on
+  Windows. Every skill's `SKILL.md` invokes its own scripts through this
+  command (`dispatcher --caller-skill <skill> <skill> <interface> ...`), so
+  this is the one piece of scaffolding almost everything else structurally
+  depends on.
 - The `invoke-skill` launcher — used by `recurring-tasks` systemd/cron jobs
-  to invoke a skill by name without hardcoding an absolute path.
+  to invoke a skill by name without hardcoding an absolute path. This is
+  installed only on hosts where the current recurring-automation backend is
+  supported; Windows reports it as unsupported because recurring-tasks is
+  currently systemd/Unix-only.
 - Required third-party Python packages from
   `references/blueprint/runtime_dependencies.json`, generated from executable
   interface dependency declarations. First-party code (`script_dispatcher`
@@ -78,11 +82,13 @@ Runs in every install, regardless of mode or which agents you want. Installs:
 - `PATH` — adds `<bin-dir>` to your shell rc (or the Windows registry) so
   `dispatcher` and the agent launchers resolve as bare commands.
 
-At the end of scaffold, the installer prints a capability report for required
-shared launchers. If a required capability such as `dispatcher` or
-`invoke-skill` is skipped on the host, scaffold exits nonzero and the phase-1
-orchestrator stops before `dev_link.py` or `launchers.py` runs. `--dry-run`
-prints the same capability report without writing files.
+At the end of scaffold, the installer prints a capability report for shared
+launchers. If a required capability such as `dispatcher` fails or is skipped,
+scaffold exits nonzero and the phase-1 orchestrator stops before `dev_link.py`
+or `launchers.py` runs. Platform-scoped capabilities such as `invoke-skill` on
+Windows are reported as unsupported with the affected workflows named, but they
+do not block the universal dispatcher floor. `--dry-run` prints the same
+capability report without writing files.
 
 ### `dev_link.py` — dev mode only
 
@@ -106,8 +112,10 @@ boundary. `dev_link.py` detects this and warns rather than failing silently.
 No agent is preselected — you choose from `assistant`, `collab`, `coauthor`,
 `tw`. For each one chosen, installs:
 
-- The bin launcher (a symlink into the repo's `bin/` — editing
-  [bin/assistant](../bin/assistant) takes effect immediately since it's not copied).
+- The bin launcher. Unix-like hosts install editable symlinks into the repo's
+  `bin/`; Windows copies the launcher bundle into the managed bin directory so
+  supported launchers do not depend on Developer Mode or administrator symlink
+  privileges.
 - Its profile (`profiles/<agent>.config.toml`) copied — not symlinked — into
   both `~/.codex` and `~/.claude`. Copied because Codex writes machine-local
   state (project trust levels, trusted hook hashes) back into that file; a
@@ -119,7 +127,8 @@ No agent is preselected — you choose from `assistant`, `collab`, `coauthor`,
 - A post-install verification pass: runs `<agent> --help` for each agent you
   just installed and reports `OK`/`FAIL` per command.
 
-`tw` installs both `tmux-workspace` and the `tw` alias.
+`tw` installs both `tmux-workspace` and the `tw` alias on Unix-like hosts. It
+is skipped on Windows because tmux is not available there.
 
 ---
 
