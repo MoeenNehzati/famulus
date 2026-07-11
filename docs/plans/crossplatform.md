@@ -223,11 +223,15 @@ Description:
 What was done:
 
 - the dependency chain and the misleading downstream error shape were documented in the lessons archive
+- the implementation slice is now scoped: `dispatcher` is a required scaffold capability, `invoke-skill` is required for recurring automation, and skipped required capabilities should produce a structured install-time report instead of a low-signal note
+- the preferred behavior is an aggregated nonzero scaffold result rather than fail-fast, so users see all missing required capabilities and the dependent workflows affected by each one
 
 Prevention:
 
 - if a host skips installation of a required shared capability such as `dispatcher`, the installer should clearly say which dependent workflows are broken
 - strengthen installer tests so skipped foundational capabilities fail validation rather than remaining a documentation detail
+- add scaffold tests that monkeypatch an unsupported host, assert the installer reports the skipped capability by name, assert it names affected workflows such as machine-interface dispatch or recurring automation, and assert normal install does not silently succeed when a required capability is missing
+- keep dry-run behavior informative: it should report the same capability status without writing files
 
 ## Category 2: Longer Fixes Requiring Redesign or Significant Coding
 
