@@ -21,8 +21,8 @@ def test_clean_python_skill_passes(tmp_path: Path) -> None:
         "  machine:\n"
         "    run:\n"
         "      runtime:\n"
-        "        kind: command\n"
-        "        argv: [\"python3\", \"_rtx/_run_tool.py\"]\n"
+        "        kind: python_machine_interface\n"
+        "        entrypoint: _rtx/_run_tool.py:Interface\n"
         "      dependencies: []\n",
         encoding="utf-8",
     )

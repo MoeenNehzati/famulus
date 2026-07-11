@@ -8,11 +8,15 @@ from typing import Any
 
 import yaml
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
-INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
-CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
-CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
+from validators.skill_md_body import (  # noqa: E402
+    generated_interface_block,
+    hand_authored_skill_body,
+    strip_fenced_code_blocks,
+)
 
 
 def _expect_mapping(value: Any) -> dict[str, Any]:
@@ -43,23 +47,6 @@ def _interface_ids(blueprint: dict[str, Any], only_visible: bool = False) -> lis
     return result
 
 
-def _body_text(text: str) -> str:
-    """Return SKILL.md content with all generated blueprint blocks stripped out."""
-    body = re.sub(
-        rf"{re.escape(CONTRACT_START)}.*?{re.escape(CONTRACT_END)}",
-        "",
-        text,
-        flags=re.DOTALL,
-    )
-    body = re.sub(
-        rf"{re.escape(INTERFACES_START)}.*?{re.escape(INTERFACES_END)}",
-        "",
-        body,
-        flags=re.DOTALL,
-    )
-    return body
-
-
 def _body_for_invocation_check(text: str) -> str:
     """Strip generated blocks and code fences before checking for invocation violations.
 
@@ -68,20 +55,7 @@ def _body_for_invocation_check(text: str) -> str:
     Absolute paths under unrelated repo tooling are also excluded via the caller's
     regex.
     """
-    body = _body_text(text)
-    # Remove all fenced code blocks (```...```)
-    return re.sub(r"```.*?```", "", body, flags=re.DOTALL)
-
-
-def _interface_block(text: str) -> str | None:
-    match = re.search(
-        rf"{re.escape(INTERFACES_START)}(.*?){re.escape(INTERFACES_END)}",
-        text,
-        re.DOTALL,
-    )
-    if not match:
-        return None
-    return match.group(1)
+    return strip_fenced_code_blocks(hand_authored_skill_body(text))
 
 
 def validate(repo_root: Path) -> list[str]:
@@ -110,7 +84,7 @@ def validate(repo_root: Path) -> list[str]:
 
         # Body checks apply regardless of visibility — any skill with interfaces must not
         # re-invoke them in the hand-authored body
-        body = _body_text(text)
+        body = hand_authored_skill_body(text)
         invocation_body = _body_for_invocation_check(text)
         raw_runtime_pattern = r"(?<!/)(?:scripts|_rtx)/[\w.-]+\.(?:py|sh)"
         if re.search(raw_runtime_pattern, invocation_body):
@@ -128,7 +102,7 @@ def validate(repo_root: Path) -> list[str]:
         if not visible_ids:
             continue
 
-        block = _interface_block(text)
+        block = generated_interface_block(text)
         if block is None:
             errors.append(f"{skill_md}: missing generated blueprint interface block")
             continue
@@ -147,7 +121,7 @@ def validate(repo_root: Path) -> list[str]:
 
 
 def main() -> int:
-    errors = validate(Path(__file__).resolve().parents[3])
+    errors = validate(REPO_ROOT)
     if errors:
         print("error: invalid SKILL.md dispatcher exposure.", file=sys.stderr)
         for error in errors:

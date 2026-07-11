@@ -332,7 +332,7 @@ def test_python_declared_dispatch_dependencies_are_traced_recursively(tmp_path: 
     assert "skills/target-skill/_rtx/_helper.py" in labels
 
 
-def test_python_declared_dispatch_to_command_runtime_hashes_command_file(tmp_path: Path) -> None:
+def test_python_declared_dispatch_to_python_runtime_hashes_target_runtime_file(tmp_path: Path) -> None:
     repo = tmp_path
     source = repo / "skills" / "source-skill"
     target = repo / "skills" / "target-skill"
@@ -343,7 +343,7 @@ def test_python_declared_dispatch_to_command_runtime_hashes_command_file(tmp_pat
         "depends_on:\n"
         "  target-skill:\n"
         "    major_version: 1\n"
-        "    exports: [target-skill.machine.command]\n",
+        "    exports: [target-skill.machine.run]\n",
     )
     write(source / "_rtx" / "__init__.py", "")
     write(
@@ -354,10 +354,10 @@ def test_python_declared_dispatch_to_command_runtime_hashes_command_file(tmp_pat
                 "",
                 "class Interface(PythonMachineInterface):",
                 "    dispatches = {",
-                "        'command': DispatchCall(",
+                "        'run': DispatchCall(",
                 "            caller_skill='source-skill',",
                 "            target_skill='target-skill',",
-                "            interface='command',",
+                "            interface='run',",
                 "            smoke_args=(),",
                 "        )",
                 "    }",
@@ -365,21 +365,24 @@ def test_python_declared_dispatch_to_command_runtime_hashes_command_file(tmp_pat
             ]
         ),
     )
-    write(target / "_rtx" / "_tool.sh", "#!/usr/bin/env bash\ntrue\n")
+    write(target / "_rtx" / "_tool.py", "from officina.runtime.python_machine_interface import PythonMachineInterface\n\nclass Interface(PythonMachineInterface):\n    pass\n")
     write(
         target / "blueprint.yaml",
         "category: workflow-general-assistant\n"
         "interface_version: 1\n"
         "interfaces:\n"
         "  machine:\n"
-        "    command:\n"
+        "    run:\n"
         "      allowed_callers: [source-skill]\n"
         "      patterns:\n"
         "        - min_positionals: 0\n"
         "          max_positionals: 0\n"
         "      runtime:\n"
-        "        kind: command\n"
-        "        argv: [_rtx/_tool.sh]\n",
+        "        kind: python_machine_interface\n"
+        "        entrypoint: _rtx/_tool.py:Interface\n"
+        "      directly_reads: []\n"
+        "      directly_executes: [_rtx/_tool.py]\n"
+        "      directly_writes: []\n",
     )
     spec = {
         "runtime": {
@@ -396,7 +399,7 @@ def test_python_declared_dispatch_to_command_runtime_hashes_command_file(tmp_pat
         for entry in health_state.python_runtime_dependency_entries(source, repo, spec)
     }
 
-    assert "skills/target-skill/_rtx/_tool.sh" in labels
+    assert "skills/target-skill/_rtx/_tool.py" in labels
 
 
 def test_python_mixed_local_officina_and_dispatched_imports_are_all_traced(tmp_path: Path) -> None:

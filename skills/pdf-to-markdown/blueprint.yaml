@@ -13,9 +13,11 @@ depends_on: {}
 
 suggested_permissions:
   bash:
-    - command: ["_rtx/_source_fetcher.sh"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_source_fetcher.py:Interface"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["_rtx/_marker_probe.sh"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_marker_probe.py:Interface"]
       reason: "Migrated from legacy permissions.json."
     - command: ["marker_single"]
       reason: "Migrated from legacy permissions.json."
@@ -43,16 +45,15 @@ interfaces:
       patterns:
         - name: owner
       runtime:
-        kind: command
-        argv:
-          - _rtx/_marker_probe.sh
+        kind: python_machine_interface
+        entrypoint: _rtx/_marker_probe.py:Interface
       dependencies:
         - kind: python
           name: marker-pdf
           reason: Provides the Surya settings module used to locate Marker model checkpoints.
       directly_reads: []
       directly_executes:
-        - _rtx/_marker_probe.sh
+        - _rtx/_marker_probe.py
       directly_writes: []
     scripts-fetch-arxiv-source:
       description: Download and extract the LaTeX source tarball for a paper from
@@ -61,22 +62,13 @@ interfaces:
       patterns:
         - name: owner
       runtime:
-        kind: command
-        argv:
-          - _rtx/_source_fetcher.sh
+        kind: python_machine_interface
+        entrypoint: _rtx/_source_fetcher.py:Interface
       dependencies:
-        - kind: binary
-          name: curl
-          reason: Downloads arXiv source tarballs.
-        - kind: binary
-          name: file
-          reason: Detects arXiv HTML responses versus gzip source archives.
-        - kind: binary
-          name: tar
-          reason: Extracts downloaded source archives.
+        []
       directly_reads: []
       directly_executes:
-        - _rtx/_source_fetcher.sh
+        - _rtx/_source_fetcher.py
       directly_writes: []
   llm:
     default:

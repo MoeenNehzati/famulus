@@ -122,12 +122,6 @@ interfaces:
         entrypoint: _rtx/demo.py:Interface
       patterns:
         - min_positionals: 1
-    ordinary:
-      runtime:
-        kind: command
-        argv: [python3, _rtx/plain.py]
-      patterns:
-        - allowed_flags: [--route-smoke]
 """.lstrip(),
         encoding="utf-8",
     )

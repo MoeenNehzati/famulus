@@ -279,18 +279,7 @@
       "interfaces": {
         "scripts-weather": {
           "id": "get-weather.machine.scripts-weather",
-          "dependencies": [
-            {
-              "kind": "binary",
-              "name": "curl",
-              "reason": "Fetches geocoding, IP-location, and forecast API responses."
-            },
-            {
-              "kind": "binary",
-              "name": "jq",
-              "reason": "Parses and formats JSON API responses."
-            }
-          ]
+          "dependencies": []
         }
       }
     },
@@ -573,23 +562,7 @@
         },
         "scripts-fetch-arxiv-source": {
           "id": "pdf-to-markdown.machine.scripts-fetch-arxiv-source",
-          "dependencies": [
-            {
-              "kind": "binary",
-              "name": "curl",
-              "reason": "Downloads arXiv source tarballs."
-            },
-            {
-              "kind": "binary",
-              "name": "file",
-              "reason": "Detects arXiv HTML responses versus gzip source archives."
-            },
-            {
-              "kind": "binary",
-              "name": "tar",
-              "reason": "Extracts downloaded source archives."
-            }
-          ]
+          "dependencies": []
         }
       }
     },
@@ -775,14 +748,10 @@
     ],
     "binary": [
       "crontab",
-      "curl",
-      "file",
       "git",
       "journalctl",
-      "jq",
       "rclone",
-      "systemctl",
-      "tar"
+      "systemctl"
     ]
   }
 }

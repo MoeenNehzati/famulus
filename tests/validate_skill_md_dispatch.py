@@ -21,8 +21,8 @@ _BLUEPRINT = (
     "      description: 'Run the demo script.'\n"
     "      usage: '[args]'\n"
     "      runtime:\n"
-    "        kind: command\n"
-    "        argv: ['python3', '_rtx/_run_tool.py']\n"
+    "        kind: python_machine_interface\n"
+    "        entrypoint: _rtx/_run_tool.py:Interface\n"
     "      dependencies: []\n"
 )
 

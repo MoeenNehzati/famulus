@@ -1,7 +1,7 @@
 {
   "bash": [
-    "Bash(_rtx/_source_fetcher.sh:*)",
-    "Bash(_rtx/_marker_probe.sh:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_source_fetcher.py:Interface:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_marker_probe.py:Interface:*)",
     "Bash(marker_single:*)"
   ],
   "network": [

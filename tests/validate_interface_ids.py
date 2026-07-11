@@ -27,7 +27,10 @@ def test_machine_and_llm_interface_names_pass(tmp_path: Path) -> None:
             "interfaces": {
                 "machine": {
                     "read-data": {
-                        "runtime": {"kind": "command", "argv": ["python3", "_rtx/_tool_entry.py"]},
+                        "runtime": {
+                            "kind": "python_machine_interface",
+                            "entrypoint": "_rtx/_tool_entry.py:Interface",
+                        },
                         "dependencies": [],
                     }
                 },
@@ -50,7 +53,10 @@ def test_dotted_interface_name_fails(tmp_path: Path) -> None:
             "interfaces": {
                 "machine": {
                     "read.data": {
-                        "runtime": {"kind": "command", "argv": ["python3", "_rtx/_tool_entry.py"]},
+                        "runtime": {
+                            "kind": "python_machine_interface",
+                            "entrypoint": "_rtx/_tool_entry.py:Interface",
+                        },
                         "dependencies": [],
                     }
                 }

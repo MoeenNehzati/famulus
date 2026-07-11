@@ -340,7 +340,7 @@ This is **internal metadata**. It belongs in the blueprint so the dispatcher
 can execute the interface, but it is not part of the user-facing generated
 documentation.
 
-Current standard runtime kinds:
+Current standard runtime kind:
 
 ### `python_machine_interface`
 
@@ -359,22 +359,10 @@ Use for Python callable interfaces. The dispatcher runs the shared
 `officina.runtime.python_machine_interface_runner`, which preserves normal
 relative imports inside `_rtx/` and provides the standard route-smoke path.
 
-### `command`
-
-```yaml
-runtime:
-  kind: command
-  argv: ["maker", "--mode", "convert"]
-dependencies:
-  - kind: binary
-    name: maker
-    reason: "Performs the conversion invoked by this interface."
-directly_reads: []
-directly_executes: []
-directly_writes: []
-```
-
-Use for non-Python tools or legacy command surfaces.
+Raw command runtimes are intentionally not allowed. If an interface needs an
+external binary, wrap that behavior in a `python_machine_interface`, declare
+the binary under `dependencies`, and keep argument parsing, validation, and
+cross-platform behavior in Python.
 
 For `python_machine_interface`, route smoke is built into the shared runner.
 The route-smoke test appends `--route-smoke`; the shared runner imports the
@@ -641,10 +629,9 @@ For Python import resolution, keep the repo runtime model in sync with the IDE:
 3. Use relative imports for same-skill code and `officina.*` for shared code.
 4. Use `allow_all_skills: true` sparingly.
 5. Match major versions carefully.
-6. Prefer `python_machine_interface` runtime for Python callable interfaces.
-   Its shared runner preserves same-skill `_rtx` relative imports and provides
-   the standard route-smoke path. Use `command` for non-Python wrappers or
-   legacy entrypoints that have not been migrated yet.
+6. Use `python_machine_interface` for machine interfaces. Its shared runner
+   preserves same-skill `_rtx` relative imports and provides the standard
+   route-smoke path. Raw `command` runtimes are not allowed.
 
 ---
 

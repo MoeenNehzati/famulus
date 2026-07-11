@@ -3,7 +3,7 @@
     "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_envelope_gate.py:Interface:*)",
     "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_watermark_floor.py:Interface:*)",
     "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_watermark_writer.py:Interface:*)",
-    "Bash(_rtx/_decision_sink.sh:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_decision_sink.py:Interface:*)",
     "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_log_compactor.py:Interface:*)",
     "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_failure_sentinel.py:Interface:*)"
   ],

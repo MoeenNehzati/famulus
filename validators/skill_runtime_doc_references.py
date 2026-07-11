@@ -15,6 +15,7 @@ from validators.skill_runtime_files import (
     EXEMPT_RTX_FILENAMES,
     RTX_DIR_NAME,
 )
+from validators.skill_md_body import hand_authored_skill_body
 
 _EXCLUDED_PARTS = {"tests", "assets", ".system"}
 _WORD = r"A-Za-z0-9_"
@@ -23,12 +24,6 @@ _OLD_RUNTIME_PATH_RE = re.compile(
     rf"(?<!/)scripts/[\w.-]+(?:{_SUFFIX_ALT})(?![{_WORD}])",
     re.IGNORECASE,
 )
-
-_CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
-_CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
-_INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
-_INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
-
 
 def _iter_skill_markdown(repo_root: Path):
     skills_root = repo_root / "skills"
@@ -84,20 +79,7 @@ def _public_markdown_text(path: Path, text: str) -> str:
     """Return hand-authored public text for runtime-leak scanning."""
     if path.name != "SKILL.md":
         return text
-    body = re.sub(r"\A---\n.*?\n---\n", "", text, count=1, flags=re.DOTALL)
-    body = re.sub(
-        rf"{re.escape(_CONTRACT_START)}.*?{re.escape(_CONTRACT_END)}",
-        "",
-        body,
-        flags=re.DOTALL,
-    )
-    body = re.sub(
-        rf"{re.escape(_INTERFACES_START)}.*?{re.escape(_INTERFACES_END)}",
-        "",
-        body,
-        flags=re.DOTALL,
-    )
-    return body
+    return hand_authored_skill_body(text)
 
 
 def _suffix_patterns_for_stem(stem: str) -> list[re.Pattern[str]]:

@@ -158,10 +158,12 @@ dispatcher imports and CLI dispatch from skill runtime code, and
 
 `runtime` is **internal metadata**. It belongs in the blueprint because the
 dispatcher must know how to execute the interface, but it must not leak into
-user-facing generated docs. Typical runtime forms:
-
-- `kind: python_machine_interface` with `entrypoint: _rtx/handoff_scan.py:HandoffScan`
-- `kind: command` with explicit argv for non-Python tools
+user-facing generated docs. The only accepted runtime form is
+`kind: python_machine_interface` with an `entrypoint` such as
+`_rtx/handoff_scan.py:HandoffScan`. Raw command runtimes are not allowed. If an
+interface needs an external binary, wrap the behavior in Python, declare the
+binary under `dependencies`, and keep argument parsing, validation, and host
+handling in the Python interface.
 
 Every executable `interfaces.machine.<name>` entry must declare `dependencies`.
 Use `dependencies: []` when the interface has no non-stdlib Python package or
@@ -314,7 +316,7 @@ private naming convention.
 
 ```text
 _rtx/_Calendar_Gateway.py
-_rtx/_mail_transport.sh
+_rtx/_mail_transport.py
 _rtx/_install_launcher/_windows_launcher.py
 ```
 
@@ -328,14 +330,14 @@ That means each private runtime path component starts with `_` and has at
 least two underscore-separated segments after it. Case is allowed, but
 case-only path collisions are forbidden among siblings. `__init__.py` is the
 only exempt package marker; package directories themselves are not exempt. The
-allowed runtime file suffix list currently contains `.py` and `.sh`; add to
-that list deliberately when a new runtime file type is needed.
+allowed runtime file suffix list currently contains `.py`; add to that list
+deliberately only if this policy is relaxed later.
 
 Skill-facing Markdown (`SKILL.md` and skill-local Markdown outside tests and
 assets) must not mention:
 
 - `_rtx`
-- runtime filenames ending in an allowed runtime suffix such as `.py` or `.sh`
+- runtime filenames ending in an allowed runtime suffix such as `.py`
 - normalized forms of private runtime stems, such as `_Calendar_Gateway`,
   `Calendar_Gateway`, `calendar gateway`, or `calendar-gateway`
 
@@ -344,9 +346,13 @@ validators, and migration/design docs may mention runtime file details when
 they are defining or checking the convention.
 
 This is mechanically checked by `validators/skill_runtime_files.py` and
-`validators/skill_runtime_doc_references.py`, with behavior tests in
+`validators/skill_runtime_doc_references.py`, plus
+`skills/skill-maker/validators/skill_body_execution.py` for executable-file
+references used in execution contexts in hand-authored `SKILL.md` bodies, with
+behavior tests in
 `tests/validate_skill_runtime_files.py` and
-`tests/validate_skill_runtime_doc_references.py`.
+`tests/validate_skill_runtime_doc_references.py`, and
+`tests/validate_skill_body_execution.py`.
 
 **Import discipline**
 
@@ -479,7 +485,7 @@ is named `my-X`. Every `my-X` skill must follow this layout:
 
 ```json
 {
-  "bash": ["Bash(_rtx/_example_tool.sh:*)"],
+  "bash": ["Bash(python3 -m officina.runtime.python_machine_interface_runner:*)"],
   "network": ["WebSearch", "WebFetch(https://example.com/*)"]
 }
 ```
@@ -559,6 +565,12 @@ commit, and push to `origin`.
 must not contain executable code logic. Any logic belongs in a dedicated file
 under `_rtx/`, except when the skill's purpose is to provide an interface to
 a specific external tool and that tool is declared in frontmatter `tools:`.
+Hand-authored `SKILL.md` bodies must also avoid executable-file names and paths
+in execution contexts, such as `run tmp.py`, `python helper.py`, `use
+install.sh`, or `launch tool.exe`. If normal operation requires execution, put
+the mechanics behind a blueprint machine interface and refer to the interface
+name and outcome in prose. Generated blueprint interface blocks may contain
+invocation details because they are owned by `blueprint.yaml`.
 
 **11. State data lives under the skill's directory** — any persistent state a
 skill writes must be stored under the skill's own directory, not under system

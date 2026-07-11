@@ -1,6 +1,6 @@
 {
   "bash": [
-    "Bash(_rtx/_weather_client.sh:*)"
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_weather_client.py:Interface:*)"
   ],
   "network": []
 }

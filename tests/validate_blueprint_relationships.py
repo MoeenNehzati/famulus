@@ -50,7 +50,10 @@ def test_machine_export_is_resolved_by_canonical_name(tmp_path: Path) -> None:
             "interfaces": {
                 "machine": {
                     "read-data": {
-                        "runtime": {"kind": "command", "argv": ["python3", "_rtx/_tool_entry.py"]},
+                        "runtime": {
+                            "kind": "python_machine_interface",
+                            "entrypoint": "_rtx/_tool_entry.py:Interface",
+                        },
                         "dependencies": [],
                         "patterns": [{"min_positionals": 1}],
                         "allowed_callers": ["consumer-skill"],
@@ -81,7 +84,10 @@ def test_machine_export_is_resolved_by_local_name(tmp_path: Path) -> None:
             "interfaces": {
                 "machine": {
                     "read-data": {
-                        "runtime": {"kind": "command", "argv": ["python3", "_rtx/_tool_entry.py"]},
+                        "runtime": {
+                            "kind": "python_machine_interface",
+                            "entrypoint": "_rtx/_tool_entry.py:Interface",
+                        },
                         "dependencies": [],
                         "allowed_callers": ["consumer-skill"],
                     }

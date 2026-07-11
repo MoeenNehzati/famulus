@@ -358,7 +358,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                     "interfaces": {
                         "machine": {
                             "scan": {
-                                "runtime": {"kind": "command", "argv": ["rg"]},
+                                "runtime": {
+                                    "kind": "python_machine_interface",
+                                    "entrypoint": "_rtx/_scan_tool.py:Interface",
+                                },
                                 "dependencies": [
                                     {
                                         "kind": "binary",
@@ -652,7 +655,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "read-data": {
                             "description": "Read an input file.",
                             "usage": "<path>",
-                            "runtime": {"kind": "command", "argv": ["python3", "_rtx/_tool_entry.py"]},
+                            "runtime": {
+                                "kind": "python_machine_interface",
+                                "entrypoint": "_rtx/_tool_entry.py:Interface",
+                            },
                             "dependencies": [],
                         }
                     }

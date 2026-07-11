@@ -26,7 +26,13 @@ def write_json(path: Path, payload: object) -> None:
 def make_skill(repo: Path, name: str = "demo-skill") -> Path:
     skill = repo / "skills" / name
     write(skill / "SKILL.md", "demo skill\n")
-    write(skill / "_rtx" / "_worker.py", "VALUE = 'one'\n")
+    write(
+        skill / "_rtx" / "_worker.py",
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n\n"
+        "VALUE = 'one'\n\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    pass\n",
+    )
     write(
         skill / "blueprint.yaml",
         "\n".join(
@@ -46,9 +52,8 @@ def make_skill(repo: Path, name: str = "demo-skill") -> Path:
                 "          max_positionals: 0",
                 "          allow_stdin: false",
                 "      runtime:",
-                "        kind: command",
-                "        argv:",
-                "          - _rtx/_worker.py",
+                "        kind: python_machine_interface",
+                "        entrypoint: _rtx/_worker.py:Interface",
                 "      dependencies: []",
                 "      directly_reads: []",
                 "      directly_executes:",
@@ -143,7 +148,13 @@ def test_skill_mismatch_is_stale(tmp_path: Path) -> None:
 def test_hash_change_is_stale(tmp_path: Path) -> None:
     skill = make_skill(tmp_path)
     write_json(skill / ".last_audit.json", matching_record(tmp_path))
-    write(skill / "_rtx" / "_worker.py", "VALUE = 'two'\n")
+    write(
+        skill / "_rtx" / "_worker.py",
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n\n"
+        "VALUE = 'two'\n\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    pass\n",
+    )
 
     report = checker.check_skill(source_for(tmp_path), "demo-skill")
 

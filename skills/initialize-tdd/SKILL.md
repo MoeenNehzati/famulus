@@ -72,7 +72,7 @@ If either input is missing, ask the user before proceeding.
    - Append `assets/python/.gitignore` to the `.gitignore` already copied
      from `assets/common/` (concatenate, don't overwrite — common covers
      editor/assistant files, python covers venv/python/logs).
-   - `chmod +x install.sh`.
+   - Ensure the copied bootstrap script is executable.
 
    If `language != python`: skip this step, but still do your best for the
    requested language — e.g. add a sensible `.gitignore` for that language's
@@ -100,10 +100,10 @@ If either input is missing, ask the user before proceeding.
    - `git init` in the project directory.
 
 7. **Bootstrap and verify (Python only)**
-   - Run `./install.sh` to create `.venv` and install dependencies. This is
+   - Run the generated bootstrap script to create `.venv` and install dependencies. This is
      a starting-point script — if the environment differs from what it
      assumes (e.g. `python3` not on PATH, a different interpreter needed),
-     adjust `install.sh` accordingly rather than regenerating it from
+     adjust the generated bootstrap script accordingly rather than regenerating it from
      scratch.
    - Run `.venv/bin/pytest -q` and confirm the starter tests pass (2 tests,
      for `config`/`logger`).

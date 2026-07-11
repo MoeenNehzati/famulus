@@ -107,16 +107,15 @@ interfaces:
           max_positionals: 2
           allow_stdin: false
       runtime:
-        kind: command
-        argv:
-          - _rtx/_plan_storage.sh
+        kind: python_machine_interface
+        entrypoint: _rtx/_plan_storage.py:Interface
       dependencies:
         - kind: binary
           name: rclone
           reason: Reads and writes plan files in the configured GDrive remote.
       directly_reads: []
       directly_executes:
-        - _rtx/_plan_storage.sh
+        - _rtx/_plan_storage.py
       directly_writes: []
     render-plan:
       description: Extract or reassemble sections of a plan file for rendering.

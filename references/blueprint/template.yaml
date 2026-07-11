@@ -167,7 +167,7 @@ interfaces:
         - "$repo/data/example.yaml"
 
     # ==========================================================================
-    # EXAMPLE 3: Python class-backed command runtime
+    # EXAMPLE 3: Python class-backed machine interface
     # ==========================================================================
     analyze-data:
       description: "Analyze an input file through a Python machine-interface class."
@@ -273,12 +273,12 @@ interfaces:
         - prepare-handoff
 
 # ==============================================================================
-# MACHINE INTERFACE RUNTIME KINDS
+# MACHINE INTERFACE RUNTIME KIND
 # ==============================================================================
 #
-# Current standard runtime kinds:
+# Current standard runtime kind:
 #
-# 1. python_machine_interface
+# python_machine_interface
 #    - entrypoint: required `_rtx/file.py:ClassName` binding
 #    - args_prefix: optional argv tokens inserted before caller-supplied args
 #    - dispatcher runs officina.runtime.python_machine_interface_runner
@@ -290,15 +290,9 @@ interfaces:
 #   kind: python_machine_interface
 #   entrypoint: _rtx/analyze_data.py:AnalyzeData
 #
-# 2. command
-#    - argv: required explicit argv list for non-Python tools
-#    - dispatcher appends caller-supplied args after argv
-#
-# Example command runtime:
-#
-# runtime:
-#   kind: command
-#   argv: ["maker", "--mode", "convert"]
+# Machine interfaces must use python_machine_interface. External tools may be
+# called from Python runtime code when they are declared as dependencies, but
+# raw command runtimes are not allowed.
 #
 # Every executable interface must also declare runtime dependencies. Use []
 # when it has no non-stdlib Python packages or external executables. These are
@@ -389,7 +383,6 @@ interfaces:
 # 4. Put truly shared first-party Python code under src/officina/, not in
 #    another skill's runtime directory.
 #
-# 5. Prefer `python_machine_interface` runtime for Python callable interfaces.
-#    Its shared runner preserves same-skill _rtx relative imports and provides
-#    the standard route-smoke path. Use `command` for non-Python wrappers or
-#    legacy entrypoints that have not been migrated yet.
+# 5. Use `python_machine_interface` for machine interfaces. Its shared runner
+#    preserves same-skill _rtx relative imports and provides the standard
+#    route-smoke path. Raw `command` runtimes are not allowed.

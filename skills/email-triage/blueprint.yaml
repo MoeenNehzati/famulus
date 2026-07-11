@@ -26,7 +26,8 @@ suggested_permissions:
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
         "_rtx/_watermark_writer.py:Interface"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["_rtx/_decision_sink.sh"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
+        "_rtx/_decision_sink.py:Interface"]
       reason: "Migrated from legacy permissions.json."
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
         "_rtx/_log_compactor.py:Interface"]
@@ -85,13 +86,12 @@ interfaces:
         - name: owner
           allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-          - _rtx/_decision_sink.sh
+        kind: python_machine_interface
+        entrypoint: _rtx/_decision_sink.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_decision_sink.sh
+        - _rtx/_decision_sink.py
       directly_writes: []
     scripts-prune-log:
       description: Drop triage.log entries older than 30 days and print a one-line
