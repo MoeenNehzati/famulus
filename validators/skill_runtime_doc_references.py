@@ -9,7 +9,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from validators.skill_runtime_files import ALLOWED_RTX_SUFFIXES, RTX_DIR_NAME
+from validators.skill_runtime_files import (
+    ALLOWED_RTX_SUFFIXES,
+    EXEMPT_RTX_DIRNAMES,
+    EXEMPT_RTX_FILENAMES,
+    RTX_DIR_NAME,
+)
 
 _EXCLUDED_PARTS = {"tests", "assets", ".system"}
 _WORD = r"A-Za-z0-9_"
@@ -43,14 +48,19 @@ def _runtime_stems_for_skill(skill_dir: Path) -> list[str]:
     rtx_dir = skill_dir / RTX_DIR_NAME
     if not rtx_dir.is_dir():
         return []
-    stems: list[str] = []
-    for path in sorted(rtx_dir.iterdir()):
+    stems: set[str] = set()
+    for path in sorted(rtx_dir.rglob("*")):
+        if path.is_dir():
+            if path.name in EXEMPT_RTX_DIRNAMES:
+                continue
+            stems.add(path.name)
+            continue
         if not path.is_file() or path.suffix not in ALLOWED_RTX_SUFFIXES:
             continue
-        if path.name == "__init__.py":
+        if path.name in EXEMPT_RTX_FILENAMES:
             continue
-        stems.append(path.stem)
-    return stems
+        stems.add(path.stem)
+    return sorted(stems)
 
 
 def _stem_patterns(stem: str) -> list[re.Pattern[str]]:

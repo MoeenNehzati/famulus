@@ -70,6 +70,19 @@ def test_private_stem_with_hyphen_is_rejected(tmp_path: Path) -> None:
     assert any("must not mention private runtime name `_Calendar_Gateway`" in error for error in errors)
 
 
+def test_nested_runtime_package_name_is_rejected(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    package = skill / "_rtx" / "_install_launcher"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "_windows_launcher.py").write_text("# runtime\n", encoding="utf-8")
+    (skill / "SKILL.md").write_text("Use install launcher internals.\n", encoding="utf-8")
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("must not mention private runtime name `_install_launcher`" in error for error in errors)
+
+
 def test_assets_markdown_is_exempt(tmp_path: Path) -> None:
     skill = _skill(tmp_path)
     (skill / "assets" / "README.md").parent.mkdir()

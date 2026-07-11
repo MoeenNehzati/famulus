@@ -10,6 +10,7 @@ from pathlib import Path
 RTX_DIR_NAME = "_rtx"
 ALLOWED_RTX_SUFFIXES = {".py", ".sh"}
 EXEMPT_RTX_FILENAMES = {"__init__.py"}
+EXEMPT_RTX_DIRNAMES = {"__pycache__"}
 RUNTIME_STEM_RE = re.compile(r"^_[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$")
 
 _SKIP_SKILLS = {".system"}
@@ -48,32 +49,40 @@ def _iter_skill_files(repo_root: Path):
         yield path, rel_path
 
 
-def _validate_rtx_file(path: Path, rel_path: Path) -> list[str]:
+def _validate_private_component(component: str, rel_path: Path, kind: str) -> list[str]:
+    if RUNTIME_STEM_RE.fullmatch(component):
+        return []
+    return [
+        f"{rel_path}: runtime {kind} must match "
+        f"`^_[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$`; got `{component}`"
+    ]
+
+
+def _validate_rtx_path(path: Path, rel_path: Path) -> list[str]:
     errors: list[str] = []
+
+    private_parts = rel_path.parts[3:-1]
+    for dirname in private_parts:
+        if dirname in EXEMPT_RTX_DIRNAMES:
+            continue
+        errors.extend(_validate_private_component(dirname, rel_path, "directory name"))
+
     if path.name in EXEMPT_RTX_FILENAMES:
         return errors
-    if len(rel_path.parts) != 4:
-        errors.append(f"{rel_path}: runtime files must be direct children of skills/<skill>/{RTX_DIR_NAME}/")
-        return errors
+
     if path.suffix not in ALLOWED_RTX_SUFFIXES:
         allowed = ", ".join(sorted(ALLOWED_RTX_SUFFIXES))
         errors.append(f"{rel_path}: unsupported runtime suffix `{path.suffix}`; allowed suffixes: {allowed}")
-    if not RUNTIME_STEM_RE.fullmatch(path.stem):
-        errors.append(
-            f"{rel_path}: runtime filename stem must match "
-            "`^_[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$`"
-        )
+    errors.extend(_validate_private_component(path.stem, rel_path, "filename stem"))
     return errors
 
 
 def validate(repo_root: Path) -> list[str]:
     errors: list[str] = []
-    seen_by_skill: dict[Path, dict[str, Path]] = defaultdict(dict)
+    seen_by_parent: dict[Path, dict[str, Path]] = defaultdict(dict)
 
     for path, rel_path in _iter_skill_files(repo_root):
         parts = rel_path.parts
-        skill_root = Path(parts[0]) / parts[1]
-
         if len(parts) >= 4 and parts[2] == "scripts" and path.suffix in ALLOWED_RTX_SUFFIXES:
             errors.append(
                 f"{rel_path}: skill runtime files must live under "
@@ -82,13 +91,22 @@ def validate(repo_root: Path) -> list[str]:
             continue
 
         if len(parts) >= 4 and parts[2] == RTX_DIR_NAME:
-            errors.extend(_validate_rtx_file(path, rel_path))
-            folded = path.name.casefold()
-            previous = seen_by_skill[skill_root].get(folded)
-            if previous is not None and previous != rel_path:
-                errors.append(f"{rel_path}: case-insensitive runtime filename collision with {previous}")
-            else:
-                seen_by_skill[skill_root][folded] = rel_path
+            errors.extend(_validate_rtx_path(path, rel_path))
+
+            for depth in range(3, len(parts)):
+                component_path = Path(*parts[: depth + 1])
+                component_name = parts[depth]
+                if component_name in EXEMPT_RTX_DIRNAMES:
+                    continue
+                if depth == len(parts) - 1 and component_name in EXEMPT_RTX_FILENAMES:
+                    continue
+                parent = Path(*parts[:depth])
+                folded = component_name.casefold()
+                previous = seen_by_parent[parent].get(folded)
+                if previous is not None and previous != component_path:
+                    errors.append(f"{component_path}: case-insensitive runtime path collision with {previous}")
+                else:
+                    seen_by_parent[parent][folded] = component_path
 
     return errors
 

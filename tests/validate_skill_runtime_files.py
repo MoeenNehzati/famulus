@@ -34,6 +34,20 @@ def test_init_file_is_exempt(tmp_path: Path) -> None:
     assert _mod.validate(tmp_path) == []
 
 
+def test_nested_private_runtime_package_passes(tmp_path: Path) -> None:
+    _write(
+        tmp_path
+        / "skills"
+        / "demo-skill"
+        / "_rtx"
+        / "_install_launcher"
+        / "_windows_launcher.py"
+    )
+    _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "_install_launcher" / "__init__.py")
+
+    assert _mod.validate(tmp_path) == []
+
+
 def test_runtime_file_under_scripts_is_rejected(tmp_path: Path) -> None:
     _write(tmp_path / "skills" / "demo-skill" / "scripts" / "_calendar_gateway.py")
 
@@ -47,7 +61,22 @@ def test_missing_leading_underscore_is_rejected(tmp_path: Path) -> None:
 
     errors = _mod.validate(tmp_path)
 
-    assert any("runtime filename stem must match" in error for error in errors)
+    assert any("runtime filename stem must match" in error and "calendar_gateway" in error for error in errors)
+
+
+def test_nested_directory_missing_leading_underscore_is_rejected(tmp_path: Path) -> None:
+    _write(
+        tmp_path
+        / "skills"
+        / "demo-skill"
+        / "_rtx"
+        / "install_launcher"
+        / "_windows_launcher.py"
+    )
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("runtime directory name must match" in error and "install_launcher" in error for error in errors)
 
 
 def test_one_word_runtime_name_is_rejected(tmp_path: Path) -> None:
@@ -66,6 +95,14 @@ def test_hyphenated_runtime_name_is_rejected(tmp_path: Path) -> None:
     assert any("runtime filename stem must match" in error for error in errors)
 
 
+def test_one_word_nested_directory_name_is_rejected(tmp_path: Path) -> None:
+    _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "_launcher" / "__init__.py")
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("runtime directory name must match" in error and "_launcher" in error for error in errors)
+
+
 def test_unsupported_runtime_suffix_is_rejected(tmp_path: Path) -> None:
     _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "_calendar_gateway.txt")
 
@@ -80,7 +117,16 @@ def test_case_insensitive_runtime_name_collision_is_rejected(tmp_path: Path) -> 
 
     errors = _mod.validate(tmp_path)
 
-    assert any("case-insensitive runtime filename collision" in error for error in errors)
+    assert any("case-insensitive runtime path collision" in error for error in errors)
+
+
+def test_case_insensitive_nested_directory_collision_is_rejected(tmp_path: Path) -> None:
+    _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "_Install_Launcher" / "_linux_launcher.py")
+    _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "_install_launcher" / "_osx_launcher.py")
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("case-insensitive runtime path collision" in error for error in errors)
 
 
 def test_system_skill_cache_is_exempt(tmp_path: Path) -> None:

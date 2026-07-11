@@ -236,25 +236,29 @@ Skill implementation files live under the private runtime-execution package
 documentation vocabulary. Public skill docs must describe interfaces, not
 runtime files.
 
-Every non-exempt file directly under `_rtx/` must use an allowed runtime suffix
-and a private multi-part stem:
+Every non-exempt file or package directory under `_rtx/` must use a private
+multi-part stem. The rule cascades through nested packages: every directory
+component below `_rtx/` and every runtime filename stem must match the same
+private naming convention.
 
 ```text
 _rtx/_Calendar_Gateway.py
 _rtx/_mail_transport.sh
+_rtx/_install_launcher/_windows_launcher.py
 ```
 
-The stem must match:
+Every private directory name and every runtime filename stem must match:
 
 ```regex
 ^_[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$
 ```
 
-That means the filename starts with `_` and has at least two underscore-separated
-segments after it. Case is allowed, but case-only filename collisions are
-forbidden. `__init__.py` is the only exempt package marker. The allowed runtime
-suffix list currently contains `.py` and `.sh`; add to that list deliberately
-when a new runtime file type is needed.
+That means each private runtime path component starts with `_` and has at
+least two underscore-separated segments after it. Case is allowed, but
+case-only path collisions are forbidden among siblings. `__init__.py` is the
+only exempt package marker; package directories themselves are not exempt. The
+allowed runtime file suffix list currently contains `.py` and `.sh`; add to
+that list deliberately when a new runtime file type is needed.
 
 Skill-facing Markdown (`SKILL.md` and skill-local Markdown outside tests and
 assets) must not mention:
@@ -294,10 +298,10 @@ This is the intended model:
 - generic shared infrastructure: `officina.*`
 - cross-skill behavior: `dispatch(...)`
 
-Because machine interfaces run with the skill root on `PYTHONPATH`, direct
-modules under `_rtx/` may use relative imports to share same-skill helpers.
-Runtime files must remain direct children of `_rtx/`; add nested-package support
-to the validator before introducing package directories there.
+Because machine interfaces run with the skill root on `PYTHONPATH`, modules
+under `_rtx/` may use relative imports to share same-skill helpers. Nested
+runtime packages are allowed only when their directory names and file stems
+follow the cascading private `_rtx/` naming rule above.
 
 **TOML IO boundary**
 

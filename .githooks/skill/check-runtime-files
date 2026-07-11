@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Guideline §Private runtime files — files and nested package directories under
+# _rtx must use the cascading private multi-part naming convention.
+set -uo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+python3 "$repo_root/validators/skill_runtime_files.py"
