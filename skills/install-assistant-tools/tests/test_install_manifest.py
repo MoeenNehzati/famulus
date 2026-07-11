@@ -260,7 +260,7 @@ def test_full_install_writes_manifest(tmp_path: Path):
     skill_dir = repo / "skills" / "install-assistant-tools"
     source_bin = skill_dir / "bin"
     source_bin.mkdir(parents=True)
-    for name in ["assistant", "_agent_launch.py"]:
+    for name in ["assistant", "_agent_launch.py", "assistant.bat"]:
         (source_bin / name).write_text("#!/bin/sh\necho stub\n")
         (source_bin / name).chmod(0o755)
     (repo / "profiles").mkdir()
@@ -289,5 +289,9 @@ def test_full_install_writes_manifest(tmp_path: Path):
     assert mpath.exists()
     entries = json.loads(mpath.read_text())["entries"]
     kinds = {e["kind"] for e in entries}
-    assert "symlink" in kinds
-    assert "marker_block" in kinds
+    if sys.platform == "win32":
+        assert "file" in kinds
+        assert "registry_env" in kinds
+    else:
+        assert "symlink" in kinds
+        assert "marker_block" in kinds

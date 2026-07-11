@@ -98,8 +98,7 @@ class SetupSymlinksTests(unittest.TestCase):
 
             for path, target in codex_expected.items():
                 self.assertTrue(path.is_symlink(), path)
-                expected = target if target.is_absolute() else target.resolve()
-                self.assertEqual(path.resolve(), expected)
+                self.assertEqual(path.resolve(), target.resolve())
 
     def test_dry_run_does_not_create_any_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

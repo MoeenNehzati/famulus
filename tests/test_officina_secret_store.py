@@ -37,6 +37,16 @@ class FailBackend:
     priority = 0
 
 
+class NullBackend:
+    __module__ = "keyring.backends.null"
+    priority = 1
+
+
+class ZeroPriorityBackend:
+    __module__ = "custom.backend"
+    priority = 0
+
+
 class FakeKeyring:
     def __init__(self, backend=None) -> None:
         self.backend = backend or UsableBackend()
@@ -144,8 +154,9 @@ def test_keyring_backend_reports_missing_package(monkeypatch: pytest.MonkeyPatch
         secret_store.lookup("email-client", "personal:imap")
 
 
-def test_keyring_backend_rejects_unusable_backend(monkeypatch: pytest.MonkeyPatch) -> None:
-    install_fake_keyring(monkeypatch, FakeKeyring(backend=FailBackend()))
+@pytest.mark.parametrize("backend", [FailBackend(), NullBackend(), ZeroPriorityBackend()])
+def test_keyring_backend_rejects_unusable_backend(monkeypatch: pytest.MonkeyPatch, backend) -> None:
+    install_fake_keyring(monkeypatch, FakeKeyring(backend=backend))
 
     with pytest.raises(secret_store.SecretStoreUnavailable, match="usable keyring backend"):
         secret_store.lookup("email-client", "personal:imap")
@@ -171,6 +182,10 @@ def test_default_backend_native_roundtrip_when_available() -> None:
 
     try:
         secret_store.store(namespace, key, secret)
+    except secret_store.SecretStoreUnavailable as exc:
+        pytest.skip(f"native keyring backend unavailable: {exc}")
+
+    try:
         assert secret_store.require(namespace, key) == secret
     finally:
         secret_store.clear(namespace, key)

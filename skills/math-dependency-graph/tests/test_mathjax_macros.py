@@ -90,7 +90,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             )
             payload = json.loads(result.stdout)
 
-            self.assertEqual(Path(payload["macro_file"]), macro_file)
+            self.assertEqual(Path(payload["macro_file"]).resolve(), macro_file.resolve())
             self.assertTrue(macro_file.exists())
             self.assertTrue(html_out.exists())
             html = html_out.read_text(encoding="utf-8")

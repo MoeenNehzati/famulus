@@ -15,7 +15,7 @@ SCRIPTS_DIR = READ_BEAUTIFY_PY.parent
 
 def run(args: list[str]) -> subprocess.CompletedProcess:
     env = os.environ.copy()
-    env["PYTHONPATH"] = f"{REPO_SRC}:{SCRIPTS_DIR}"
+    env["PYTHONPATH"] = os.pathsep.join([str(REPO_SRC), str(SCRIPTS_DIR)])
     return subprocess.run(
         [sys.executable, str(READ_BEAUTIFY_PY)] + args,
         capture_output=True,

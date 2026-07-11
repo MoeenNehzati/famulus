@@ -19,6 +19,7 @@ import os
 import shutil
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -229,6 +230,10 @@ class CodexInstallTests(unittest.TestCase):
                 self.assertTrue(path.is_symlink(), f"Expected symlink: {path}")
                 self.assertEqual(path.resolve(), target.resolve(), f"Wrong target for {path}")
 
+            def expect_file(path: Path) -> None:
+                self.assertTrue(path.is_file(), f"Expected file: {path}")
+                self.assertFalse(path.is_symlink(), f"Expected copy, got symlink: {path}")
+
             def expect_copy(path: Path, source: Path, agent: str) -> None:
                 # Profiles are copied (not symlinked: the tool writes
                 # machine-local state back into its config file), but
@@ -240,14 +245,12 @@ class CodexInstallTests(unittest.TestCase):
                 self.assertTrue(path.is_file(), f"Expected file: {path}")
                 self.assertFalse(path.is_symlink(), f"Expected copy, got symlink: {path}")
                 expected_agent_md = installed_path / "agents" / f"{agent}.md"
-                expected = source.read_text(encoding="utf-8").replace(
-                    f'model_instructions_file = "agents/{agent}.md"',
-                    f'model_instructions_file = "{expected_agent_md}"',
-                )
+                installed = tomllib.loads(path.read_text(encoding="utf-8"))
+                source_payload = tomllib.loads(source.read_text(encoding="utf-8"))
+                self.assertEqual(installed["model_instructions_file"], str(expected_agent_md))
                 self.assertEqual(
-                    path.read_text(encoding="utf-8"),
-                    expected,
-                    f"Copy content mismatch for {path}",
+                    {k: v for k, v in installed.items() if k != "model_instructions_file"},
+                    {k: v for k, v in source_payload.items() if k != "model_instructions_file"},
                 )
 
             codex_copies = {
@@ -284,8 +287,25 @@ class CodexInstallTests(unittest.TestCase):
                 install_bin / "coauthor.bat": installed_path / "skills" / "install-assistant-tools" / "bin" / "coauthor.bat",
             }
 
-            for mapping in (claude_links, bin_links):
-                for path, target in mapping.items():
+            for path, target in claude_links.items():
+                expect_symlink(path, target)
+
+            if sys.platform == "win32":
+                windows_bin_files = [
+                    install_bin / "_agent_launch.py",
+                    install_bin / "assistant",
+                    install_bin / "collab",
+                    install_bin / "coauthor",
+                    install_bin / "assistant.bat",
+                    install_bin / "collab.bat",
+                    install_bin / "coauthor.bat",
+                ]
+                for path in windows_bin_files:
+                    expect_file(path)
+                self.assertFalse((install_bin / "tmux-workspace").exists())
+                self.assertFalse((install_bin / "tw").exists())
+            else:
+                for path, target in bin_links.items():
                     expect_symlink(path, target)
 
             for mapping in (codex_copies, claude_copies):
@@ -297,6 +317,11 @@ class CodexInstallTests(unittest.TestCase):
             # path. Windows has a separate .bat launcher.
             if sys.platform == "win32":
                 self.assertFalse((install_bin / "dispatcher").exists())
+                launcher = install_bin / "dispatcher.bat"
+                self.assertTrue(launcher.is_file(), "dispatcher launcher missing")
+                launcher_text = launcher.read_text(encoding="utf-8")
+                self.assertIn("officina.dispatcher.cli", launcher_text)
+                self.assertIn(str(installed_path), launcher_text)
             else:
                 launcher = install_bin / "dispatcher"
                 self.assertTrue(launcher.is_file(), "dispatcher launcher missing")

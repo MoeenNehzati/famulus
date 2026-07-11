@@ -111,18 +111,24 @@ def test_unsupported_runtime_suffix_is_rejected(tmp_path: Path) -> None:
     assert any("unsupported runtime suffix `.txt`" in error for error in errors)
 
 
-def test_case_insensitive_runtime_name_collision_is_rejected(tmp_path: Path) -> None:
-    _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "_Calendar_Gateway.py")
-    _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "_calendar_gateway.py")
+def test_case_insensitive_runtime_name_collision_is_rejected(tmp_path: Path, monkeypatch) -> None:
+    rel_paths = [
+        Path("skills/demo-skill/_rtx/_Calendar_Gateway.py"),
+        Path("skills/demo-skill/_rtx/_calendar_gateway.py"),
+    ]
+    monkeypatch.setattr(_mod, "_iter_skill_files", lambda repo_root: [(tmp_path / rel, rel) for rel in rel_paths])
 
     errors = _mod.validate(tmp_path)
 
     assert any("case-insensitive runtime path collision" in error for error in errors)
 
 
-def test_case_insensitive_nested_directory_collision_is_rejected(tmp_path: Path) -> None:
-    _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "_Install_Launcher" / "_linux_launcher.py")
-    _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "_install_launcher" / "_osx_launcher.py")
+def test_case_insensitive_nested_directory_collision_is_rejected(tmp_path: Path, monkeypatch) -> None:
+    rel_paths = [
+        Path("skills/demo-skill/_rtx/_Install_Launcher/_linux_launcher.py"),
+        Path("skills/demo-skill/_rtx/_install_launcher/_osx_launcher.py"),
+    ]
+    monkeypatch.setattr(_mod, "_iter_skill_files", lambda repo_root: [(tmp_path / rel, rel) for rel in rel_paths])
 
     errors = _mod.validate(tmp_path)
 

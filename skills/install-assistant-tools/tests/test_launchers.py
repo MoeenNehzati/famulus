@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import os
 import sys
 import tomllib
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
@@ -51,7 +54,12 @@ def test_run_installs_only_selected_agents(tmp_path):
         dry_run=False,
     )
 
-    assert (bin_dir / "assistant").is_symlink()
+    if sys.platform == "win32":
+        assert (bin_dir / "assistant").is_file()
+        assert not (bin_dir / "assistant").is_symlink()
+        assert (bin_dir / "assistant.bat").is_file()
+    else:
+        assert (bin_dir / "assistant").is_symlink()
     assert (repo_root / "workers" / "assistant").is_dir()
     assert not (repo_root / "workers" / "collab").exists()
     assert (codex_home / "assistant.config.toml").is_file()
@@ -120,9 +128,9 @@ def test_config_toml_gets_absolute_agent_path_not_codex_home_relative(tmp_path):
 
     codex_config = (codex_home / "assistant.config.toml").read_text()
     claude_config = (claude_home / "assistant.config.toml").read_text()
-    expected_line = f'model_instructions_file = "{repo_root / "agents" / "assistant.md"}"'
-    assert expected_line in codex_config
-    assert expected_line in claude_config
+    expected_agent_path = str(repo_root / "agents" / "assistant.md")
+    assert tomllib.loads(codex_config)["model_instructions_file"] == expected_agent_path
+    assert tomllib.loads(claude_config)["model_instructions_file"] == expected_agent_path
     assert 'model_instructions_file = "agents/assistant.md"' not in codex_config
     assert 'model = "gpt-5.4-mini"' in codex_config  # other lines preserved
 
@@ -175,7 +183,8 @@ def test_config_toml_preserves_existing_machine_local_copy(tmp_path):
     assert (codex_home / "assistant.config.toml").read_text() == 'model = "user-edited"\n'
 
 
-def test_run_sets_assistant_default_in_rc(tmp_path):
+def test_run_sets_assistant_default_in_rc(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
     repo_root = _make_repo(tmp_path)
     bin_dir = tmp_path / "bin"
     codex_home = tmp_path / "codex"
@@ -198,6 +207,37 @@ def test_run_sets_assistant_default_in_rc(tmp_path):
     content = rc_file.read_text()
     assert "export ASSISTANT_DEFAULT=codex" in content
     assert 'export PATH="' not in content  # launchers does not own PATH
+
+
+def test_run_sets_assistant_default_via_windows_registry(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    registry_calls = []
+    monkeypatch.setattr(
+        launchers,
+        "_ensure_assistant_default_windows",
+        lambda default_llm, dry_run, manifest: registry_calls.append(
+            (default_llm, dry_run, manifest is not None)
+        ),
+    )
+    repo_root = _make_repo(tmp_path)
+    bin_dir = tmp_path / "bin"
+    rc_file = tmp_path / ".bashrc"
+    rc_file.write_text("")
+
+    launchers.run(
+        repo_root=repo_root,
+        agents=["assistant"],
+        home=tmp_path / "home",
+        bin_dir=bin_dir,
+        codex_home=tmp_path / "codex",
+        claude_home=tmp_path / "claude",
+        shell_rc=rc_file,
+        default_llm="codex",
+        dry_run=False,
+    )
+
+    assert registry_calls == [("codex", False, True)]
+    assert rc_file.read_text() == ""
 
 
 def test_run_with_no_agents_installs_nothing(tmp_path):
@@ -236,7 +276,8 @@ def test_run_verifies_installed_launchers(tmp_path, capsys):
     )
 
     out = capsys.readouterr().out
-    assert f"OK:   {bin_dir / 'assistant'} --help" in out
+    launcher_name = "assistant.bat" if sys.platform == "win32" else "assistant"
+    assert f"OK:   {bin_dir / launcher_name} --help" in out
     # only the selected agent is verified, not the whole fixed list
     assert "collab" not in out
 
@@ -248,10 +289,13 @@ def test_verify_install_reports_fail_for_missing_launcher(tmp_path, capsys):
     ok = launchers.verify_install(bin_dir, ["assistant"])
 
     assert ok is False
-    assert f"FAIL: {bin_dir / 'assistant'} not found" in capsys.readouterr().out
+    launcher_name = "assistant.bat" if sys.platform == "win32" else "assistant"
+    assert f"FAIL: {bin_dir / launcher_name} not found" in capsys.readouterr().out
 
 
 def test_tw_agent_links_both_tmux_workspace_and_tw_alias(tmp_path):
+    if sys.platform == "win32" or not hasattr(os, "symlink"):
+        pytest.skip("tw symlink alias is Unix-only")
     repo_root = _make_repo(tmp_path)
     bin_dir = tmp_path / "bin"
 
