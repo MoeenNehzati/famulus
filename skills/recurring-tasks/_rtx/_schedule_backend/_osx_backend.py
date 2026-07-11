@@ -6,6 +6,7 @@ import os
 import plistlib
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 from ._base_backend import ScheduleContext, ScheduleJob
@@ -89,8 +90,7 @@ def plist_content(
     payload = {
         "Label": launchd_label(job_name),
         "ProgramArguments": [
-            "/usr/bin/env",
-            "python3",
+            sys.executable,
             str(executor),
             "--jobs-file",
             str(jobs_file),

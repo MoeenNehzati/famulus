@@ -118,8 +118,8 @@ def test_osx_sync_writes_plist_and_loads_launch_agent(tmp_path):
 
     plist = plistlib.loads((tmp_path / "ai-my-job.plist").read_bytes())
     assert plist["Label"] == launchd_label("my-job")
-    assert plist["ProgramArguments"][:2] == ["/usr/bin/env", "python3"]
-    assert "_job_executor.py" in plist["ProgramArguments"][2]
+    assert plist["ProgramArguments"][0] == sys.executable
+    assert "_job_executor.py" in plist["ProgramArguments"][1]
     assert plist["StartCalendarInterval"] == {"Hour": 9, "Minute": 0, "Weekday": 1}
     calls = [call.args[0] for call in run.call_args_list]
     assert ["launchctl", "bootstrap", mock.ANY, str(tmp_path / "ai-my-job.plist")] in calls

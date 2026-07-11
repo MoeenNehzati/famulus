@@ -6,6 +6,7 @@ import csv
 import os
 import re
 import subprocess
+import sys
 
 from ._base_backend import ScheduleContext, ScheduleJob
 
@@ -24,8 +25,7 @@ def executor_command(job: ScheduleJob, context: ScheduleContext) -> str:
     executor = context.skill_dir / "_rtx" / "_job_executor.py"
     return subprocess.list2cmdline(
         [
-            "py",
-            "-3",
+            sys.executable,
             str(executor),
             "--jobs-file",
             str(context.jobs_file),
