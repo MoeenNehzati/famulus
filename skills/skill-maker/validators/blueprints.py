@@ -210,6 +210,8 @@ def validate(repo_root: Path) -> list[str]:
         cwd=repo_root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         check=False,
     )
     if result.returncode != 0:

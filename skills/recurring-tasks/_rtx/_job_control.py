@@ -82,6 +82,8 @@ def test_job(name: str) -> bool:
         ["systemctl", "--user", "start", "--wait", f"ai-{name}.service"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="strict",
     )
     if result.returncode == 0:
         print(f"✓ Test passed: {name}")
@@ -111,6 +113,8 @@ def status() -> None:
         ["systemctl", "--user", "list-timers", "ai-*.timer", "--no-pager"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="strict",
     )
     print(result.stdout)
 

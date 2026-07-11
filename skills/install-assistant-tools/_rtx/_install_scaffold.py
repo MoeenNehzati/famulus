@@ -62,6 +62,8 @@ def install_python_packages(repo_root: Path, dry_run: bool) -> None:
             [sys.executable, "-m", "pip", "install", package, "--quiet"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="strict",
         )
         if result.returncode == 0:
             log(f"  OK: {package}")

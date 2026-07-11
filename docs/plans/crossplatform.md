@@ -39,16 +39,16 @@ We should be able to:
 
 ## Current Sequence
 
-- current completed step: TOML runtime access is now centralized through `officina.common.toml_io`, and production `.toml` filename mentions are mechanically restricted to direct `toml_io.open(...)` calls
-- current repo status: the full pre-commit hook passed after the TOML boundary work (`475 passed`, gitleaks clean)
-- recommended next item: `Category 1 / Immediate Fix 3` — make subprocess text encoding explicit where user text crosses process boundaries
-- emphasis for the next slice: do not stop at the local fix; add the narrowest durable tests or validators that would catch the same portability class elsewhere in the repo
+- current completed step: subprocess text mode now uses explicit encoding/error policy at dispatcher and runtime subprocess boundaries, with validator coverage for regressions
+- current repo status: focused subprocess/validator tests pass; full pytest passes except for sandbox/network integration failures that pass when rerun with the needed external access
+- recommended next item: `Category 1 / Immediate Fix 5` — fail loudly when a required capability is skipped on a host
+- emphasis for the next slice: keep separating product/runtime failures from installer UX and test-harness-only host access problems
 
 Why this is next:
 
-- it is an immediate product/runtime fix, not a speculative redesign
-- the failure mode is concrete and already understood from the lessons archive
-- it is a bounded change with a clear portability test to add
+- it is the remaining immediate-fix item in this category
+- it addresses misleading downstream failures when installer prerequisites are skipped
+- it is bounded around installer reporting and validation, not a broad runtime redesign
 
 ## Tracking Format
 
@@ -140,12 +140,12 @@ Prevention:
 
 Targets:
 
-- `script_dispatcher/src/script_dispatcher/core.py`
+- `src/officina/dispatcher/core.py`
 - scripts that print non-ASCII user-facing content
 
 Status:
 
-- not started in this repo
+- done
 
 Description:
 
@@ -156,13 +156,20 @@ What was done:
 
 - the archive isolated the bad and good remediation patterns
 - in particular, it showed that process-wide environment forcing can hide crashes while still corrupting text
+- updated `officina.dispatcher.dispatch()` so dispatcher text mode always uses `encoding="utf-8"` and `errors="strict"` instead of the host locale/codepage
+- updated Python module runtime resolution so dispatcher-launched Python children receive `PYTHONIOENCODING=utf-8:strict` locally in the child environment
+- added dispatcher regression tests that assert the UTF-8 strict subprocess kwargs, assert the Python child IO environment, and round-trip non-ASCII stdin/stdout through a real dispatcher invocation
+- added `validators/subprocess_text_encoding.py`, which rejects production/validator `subprocess` text mode unless both `encoding` and `errors` are explicit
+- updated existing runtime and validator subprocess text calls to declare local encoding/error policy; git file-list validators use UTF-8 with `surrogateescape`
+- documented the subprocess text-boundary rule in `references/skill-guidelines.md`
 
 Prevention:
 
-- pin UTF-8 explicitly where subprocess stdin/stdout is treated as text
-- configure script-local output encoding where needed rather than relying on ambient console defaults
-- add round-trip integration tests with non-ASCII fixtures
-- add a validator or review rule for portability-sensitive `subprocess.run(..., text=True)` usage
+- keep dispatcher text mode pinned to UTF-8 strict rather than ambient host encoding
+- keep Python child output encoding local to dispatcher-launched Python module runtimes; do not rely on process-wide environment forcing as the only fix
+- keep `tests/test_officina_dispatcher.py`, including the non-ASCII round-trip fixture
+- keep `validators/subprocess_text_encoding.py` and `tests/validate_subprocess_text_encoding.py` in the validator suite so new `subprocess.run(..., text=True)` usage cannot re-enter without explicit `encoding` and `errors`
+- keep binary subprocess capture allowed when callers intentionally handle bytes and decode explicitly at a narrower boundary
 
 ### 4. Declare known runtime dependencies up front
 

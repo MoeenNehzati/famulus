@@ -162,7 +162,7 @@ def uninstall_git_hooks(repo_root: Path, report: Report, dry_run: bool) -> None:
     try:
         result = subprocess.run(
             ["git", "-C", str(repo_root), "config", "--get", "core.hooksPath"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="strict",
         )
     except OSError as exc:
         report.add("FAILED", "git core.hooksPath", f"git unavailable: {exc}")
@@ -176,7 +176,7 @@ def uninstall_git_hooks(repo_root: Path, report: Report, dry_run: bool) -> None:
         return
     unset = subprocess.run(
         ["git", "-C", str(repo_root), "config", "--unset", "core.hooksPath"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="strict",
     )
     if unset.returncode == 0:
         report.add("removed", "git core.hooksPath")
@@ -191,7 +191,7 @@ def uninstall_pip_package(report: Report, dry_run: bool) -> None:
         return
     result = subprocess.run(
         [sys.executable, "-m", "pip", "uninstall", "-y", "script_dispatcher"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="strict",
     )
     if result.returncode == 0:
         report.add("removed", "pip package script_dispatcher")

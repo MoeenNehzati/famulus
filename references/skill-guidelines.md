@@ -329,6 +329,37 @@ validation after writes. This rule is enforced by
 `validators/toml_io_boundary.py`, with behavior tests in
 `tests/validate_toml_io_boundary.py`.
 
+**Subprocess text boundaries**
+
+Production Python code that asks `subprocess` for text must set both
+`encoding` and `errors` explicitly on that call. Binary subprocess use is fine
+when callers intentionally handle bytes themselves.
+
+Use UTF-8 strict for project-owned/user-facing text:
+
+```python
+subprocess.run(
+    cmd,
+    capture_output=True,
+    text=True,
+    encoding="utf-8",
+    errors="strict",
+    check=False,
+)
+```
+
+For byte streams whose contract is not ordinary text, keep binary mode and
+decode explicitly at the boundary with the correct error policy. For git
+path-list output, use UTF-8 with `surrogateescape` so unusual filenames remain
+round-trippable.
+
+The shared dispatcher owns this boundary for machine-interface calls: text-mode
+dispatcher invocations use UTF-8 strict in the parent process, and Python module
+runtimes get `PYTHONIOENCODING=utf-8:strict` in the child environment. This is
+enforced by `validators/subprocess_text_encoding.py`, with behavior tests in
+`tests/test_officina_dispatcher.py` and
+`tests/validate_subprocess_text_encoding.py`.
+
 **Injection lifecycle**
 
 `../../skills/skill-maker/_rtx/_blueprint_syncer.py` injects and

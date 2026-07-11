@@ -318,6 +318,7 @@ def build_machine_runtime(
         entries = [str(skill_root), str(src_root)]
         current = env.get("PYTHONPATH")
         env["PYTHONPATH"] = os.pathsep.join(entries + ([current] if current else []))
+        env["PYTHONIOENCODING"] = "utf-8:strict"
         return root, [sys.executable, "-m", module, *script_args], env
     if kind == "command":
         argv = runtime.get("argv")
@@ -449,5 +450,8 @@ def dispatch(
         run_kwargs["text"] = text
     elif isinstance(stdin, str):
         run_kwargs["text"] = True
+    if run_kwargs.get("text"):
+        run_kwargs["encoding"] = "utf-8"
+        run_kwargs["errors"] = "strict"
 
     return subprocess.run(resolved.command, **run_kwargs)

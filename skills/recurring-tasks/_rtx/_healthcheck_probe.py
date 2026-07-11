@@ -51,6 +51,8 @@ def check_systemd_manager() -> str | None:
         ["systemctl", "--user", "is-system-running"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="strict",
     )
     state = result.stdout.strip()
     if state in ("running", "degraded"):
@@ -67,6 +69,8 @@ def check_environment() -> str | None:
         ["systemctl", "--user", "show-environment"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="strict",
     )
     template = None
     for line in result.stdout.splitlines():
@@ -120,6 +124,8 @@ def check_job(job: dict) -> str | None:
         ["systemctl", "--user", "is-active", f"ai-{name}.timer"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="strict",
     )
     if result.returncode != 0:
         reason = f"{name}: timer not active"

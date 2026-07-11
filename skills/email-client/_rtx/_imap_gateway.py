@@ -64,7 +64,7 @@ def die(msg: str) -> None:
 def resolve_account(nickname: str) -> dict:
     result = subprocess.run(
         [sys.executable, str(SCRIPT_DIR / "_email_accounts.py"), "resolve", "--nickname", nickname],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="strict",
     )
     if result.returncode != 0:
         die(result.stderr.strip() or f"could not resolve account '{nickname}'")
@@ -74,7 +74,7 @@ def resolve_account(nickname: str) -> dict:
 def get_password(nickname: str, service: str) -> str:
     result = subprocess.run(
         ["secret-tool", "lookup", "account", nickname, "service", service],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="strict",
     )
     pw = result.stdout.strip()
     if result.returncode != 0 or not pw:

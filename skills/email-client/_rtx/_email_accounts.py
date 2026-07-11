@@ -135,7 +135,7 @@ def cmd_set_password(args: argparse.Namespace) -> None:
     result = subprocess.run(
         ["secret-tool", "store", "--label", f"email-client {args.nickname} {args.purpose}",
          "account", args.nickname, "service", service],
-        input=secret, text=True,
+        input=secret, text=True, encoding="utf-8", errors="strict",
     )
     if result.returncode != 0:
         die("secret-tool store failed")

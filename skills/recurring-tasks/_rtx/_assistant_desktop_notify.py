@@ -98,7 +98,7 @@ def _pgrep(name: str) -> list[str]:
     try:
         out = subprocess.run(
             ["pgrep", "-u", str(os.getuid()), "-x", name],
-            capture_output=True, text=True, timeout=3,
+            capture_output=True, text=True, encoding="utf-8", errors="strict", timeout=3,
         )
         return [p for p in out.stdout.split() if p]
     except (OSError, subprocess.SubprocessError):
@@ -174,7 +174,7 @@ def _notify_linux(title: str, body: str, urgency: str, log_path: Path) -> bool:
         try:
             result = subprocess.run(
                 ["notify-send", f"--urgency={urgency}", title, body],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True, text=True, encoding="utf-8", errors="strict", timeout=5,
             )
             _log(log_path, f"notify-send rc={result.returncode} stderr={result.stderr.strip()!r}")
             if result.returncode == 0:
@@ -203,7 +203,7 @@ def _notify_macos(title: str, body: str, urgency: str, log_path: Path) -> bool:
     try:
         result = subprocess.run(
             ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, encoding="utf-8", errors="strict", timeout=5,
         )
         _log(log_path, f"osascript rc={result.returncode} stderr={result.stderr.strip()!r}")
         return result.returncode == 0
@@ -237,7 +237,7 @@ def _notify_windows(title: str, body: str, urgency: str, log_path: Path) -> bool
     try:
         result = subprocess.run(
             ["powershell", "-NoProfile", "-Command", ps_script],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="strict", timeout=10,
         )
         _log(log_path, f"powershell balloon rc={result.returncode} stderr={result.stderr.strip()!r}")
         return result.returncode == 0

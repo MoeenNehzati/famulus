@@ -54,7 +54,14 @@ def main() -> int:
             read_cmd.extend(["--sort", args.sort])
         read_cmd.extend(args.filters)
 
-        read_result = subprocess.run(read_cmd, capture_output=True, text=True, check=False)
+        read_result = subprocess.run(
+            read_cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            check=False,
+        )
         if read_result.returncode != 0:
             if read_result.stdout:
                 print(read_result.stdout, end="")
@@ -85,6 +92,8 @@ def main() -> int:
             input=read_result.stdout,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="strict",
             check=False,
         )
 

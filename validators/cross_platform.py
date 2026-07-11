@@ -61,6 +61,8 @@ def _tracked_files(repo_root: Path) -> set[Path] | None:
         cwd=repo_root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
         check=False,
     )
     if result.returncode != 0 or not result.stdout.strip():

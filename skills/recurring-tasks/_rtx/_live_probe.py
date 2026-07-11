@@ -70,6 +70,8 @@ def run(cmd: list[str], *, check: bool = True, capture: bool = False) -> subproc
         cmd,
         check=check,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         capture_output=capture,
     )
 
@@ -93,10 +95,19 @@ def run_service_and_verify(job_name: str, marker: str) -> None:
             ['systemctl', '--user', 'start', '--wait', service],
             timeout=TIMEOUT_SEC,
             text=True,
+            encoding="utf-8",
+            errors="strict",
             capture_output=True,
         )
     except subprocess.TimeoutExpired as exc:
-        subprocess.run(['systemctl', '--user', 'stop', service], check=False, capture_output=True, text=True)
+        subprocess.run(
+            ['systemctl', '--user', 'stop', service],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+        )
         raise RuntimeError(f'{service} timed out after {TIMEOUT_SEC}s') from exc
 
     elapsed = time.time() - started
@@ -107,6 +118,8 @@ def run_service_and_verify(job_name: str, marker: str) -> None:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="strict",
         )
         tail = log_path.read_text()[-4000:] if log_path.exists() else ''
         raise RuntimeError(
