@@ -45,6 +45,35 @@ def test_module_constant_match_passes(tmp_path: Path) -> None:
     assert _mod.validate(tmp_path) == []
 
 
+def test_dispatch_call_literal_match_passes(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "good-skill"
+    (skill / "_rtx").mkdir(parents=True)
+    (skill / "blueprint.yaml").write_text("name: good-skill\n", encoding="utf-8")
+    (skill / "_rtx" / "run.py").write_text(
+        "from officina.runtime.python_machine_interface import DispatchCall\n"
+        "DISPATCHES = {\n"
+        "    'read': DispatchCall(caller_skill='good-skill', target_skill='other', interface='x')\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    assert _mod.validate(tmp_path) == []
+
+
+def test_dispatch_call_module_constant_match_passes(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "good-skill"
+    (skill / "_rtx").mkdir(parents=True)
+    (skill / "blueprint.yaml").write_text("name: good-skill\n", encoding="utf-8")
+    (skill / "_rtx" / "run.py").write_text(
+        "OWNER = 'good-skill'\n"
+        "import officina.runtime.python_machine_interface as pmi\n"
+        "DISPATCHES = {\n"
+        "    'read': pmi.DispatchCall(caller_skill=OWNER, target_skill='other', interface='x')\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    assert _mod.validate(tmp_path) == []
+
+
 def test_missing_caller_skill_flagged(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "bad-skill"
     (skill / "_rtx").mkdir(parents=True)
@@ -58,6 +87,19 @@ def test_missing_caller_skill_flagged(tmp_path: Path) -> None:
     assert any("must include caller_skill" in error for error in errors)
 
 
+def test_dispatch_call_missing_caller_skill_flagged(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "bad-skill"
+    (skill / "_rtx").mkdir(parents=True)
+    (skill / "blueprint.yaml").write_text("name: bad-skill\n", encoding="utf-8")
+    (skill / "_rtx" / "run.py").write_text(
+        "from officina.runtime.python_machine_interface import DispatchCall\n"
+        "DISPATCHES = {'read': DispatchCall(target_skill='other', interface='x')}\n",
+        encoding="utf-8",
+    )
+    errors = _mod.validate(tmp_path)
+    assert any("DispatchCall() must include caller_skill" in error for error in errors)
+
+
 def test_wrong_skill_flagged(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "bad-skill"
     (skill / "_rtx").mkdir(parents=True)
@@ -65,6 +107,21 @@ def test_wrong_skill_flagged(tmp_path: Path) -> None:
     (skill / "_rtx" / "run.py").write_text(
         "from officina.dispatcher import dispatch\n"
         "dispatch(caller_skill='other-skill', target_skill='other', script_interface='x')\n",
+        encoding="utf-8",
+    )
+    errors = _mod.validate(tmp_path)
+    assert any("expected `bad-skill`" in error for error in errors)
+
+
+def test_dispatch_call_wrong_skill_flagged(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "bad-skill"
+    (skill / "_rtx").mkdir(parents=True)
+    (skill / "blueprint.yaml").write_text("name: bad-skill\n", encoding="utf-8")
+    (skill / "_rtx" / "run.py").write_text(
+        "from officina.runtime.python_machine_interface import DispatchCall\n"
+        "DISPATCHES = {\n"
+        "    'read': DispatchCall(caller_skill='other-skill', target_skill='other', interface='x')\n"
+        "}\n",
         encoding="utf-8",
     )
     errors = _mod.validate(tmp_path)

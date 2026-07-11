@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "_rtx" / "_health_state.py"
-SPEC = importlib.util.spec_from_file_location("skill_health_state", MODULE_PATH)
+MODULE_PATH = Path(__file__).resolve().parents[1] / "_rtx" / "_get_health_state.py"
+SPEC = importlib.util.spec_from_file_location("skill_get_health_state", MODULE_PATH)
 health_state = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 sys.modules[SPEC.name] = health_state
@@ -33,7 +33,7 @@ def test_file_hash_changes_when_file_content_changes(tmp_path: Path) -> None:
     assert first != second
 
 
-def test_file_hash_is_not_transitive_in_first_version(tmp_path: Path) -> None:
+def test_markdown_reference_changes_hash_transitively(tmp_path: Path) -> None:
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"
     write(skill / "SKILL.md", "See [extra](references/extra.md).\n")
@@ -43,8 +43,7 @@ def test_file_hash_is_not_transitive_in_first_version(tmp_path: Path) -> None:
     write(skill / "references" / "extra.md", "two\n")
     second = health_state.hash_declared_roots(skill, repo, ["SKILL.md"])
 
-    assert first == second
-
+    assert first != second
 
 def test_directory_hash_is_recursive_and_ignores_health_record(tmp_path: Path) -> None:
     repo = tmp_path
@@ -87,16 +86,16 @@ def test_interface_hash_includes_binding_and_direct_roots(tmp_path: Path) -> Non
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"
     write(skill / "SKILL.md", "skill\n")
-    write(skill / "_rtx" / "_health_state.py", "print('x')\n")
+    write(skill / "_rtx" / "_get_health_state.py", "print('x')\n")
     spec = {
         "binding": {"kind": "skill_file", "path": "SKILL.md"},
         "directly_reads": ["SKILL.md"],
-        "directly_executes": ["_rtx/_health_state.py"],
+        "directly_executes": ["_rtx/_get_health_state.py"],
         "directly_writes": [],
     }
 
     first = health_state.hash_interface(skill, repo, spec)
-    write(skill / "_rtx" / "_health_state.py", "print('y')\n")
+    write(skill / "_rtx" / "_get_health_state.py", "print('y')\n")
     second = health_state.hash_interface(skill, repo, spec)
 
     assert first != second

@@ -7,15 +7,31 @@ import sys
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 try:
-    from ._day_model import PlanError, get_today_date, mutate_plan, parse_indices
+    from ._day_model import (
+        DISPATCHES,
+        PlanError,
+        get_today_date,
+        mutate_plan,
+        parse_indices,
+        set_dispatch_interface,
+    )
 except ImportError:
-    from _day_model import PlanError, get_today_date, mutate_plan, parse_indices
+    from _day_model import (
+        DISPATCHES,
+        PlanError,
+        get_today_date,
+        mutate_plan,
+        parse_indices,
+        set_dispatch_interface,
+    )
 
 
 class Interface(PythonArgvMachineInterface):
+    dispatches = DISPATCHES
     prog = "state_patch.py"
 
     def run(self, argv: list[str]) -> int:
+        set_dispatch_interface(self)
         return main(argv)
 
 

@@ -35,9 +35,11 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[3]
 try:
     from officina.common.dates import get_today_date_key
+    from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface
 except ImportError:  # pragma: no cover - local checkout fallback
     sys.path.insert(0, str(REPO_ROOT / "src"))
     from officina.common.dates import get_today_date_key
+    from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface
 
 MAX_ITEMS = 5
 SECTION_SPECS = {
@@ -60,26 +62,88 @@ class PlanError(Exception):
     pass
 
 
+DISPATCHES = {
+    "cloud-plans-read": DispatchCall(
+        caller_skill="daily-plan",
+        target_skill="cloud-files",
+        interface="plans-read",
+    ),
+    "cloud-plans-write": DispatchCall(
+        caller_skill="daily-plan",
+        target_skill="cloud-files",
+        interface="plans-write",
+    ),
+    "cloud-lists-read": DispatchCall(
+        caller_skill="daily-plan",
+        target_skill="cloud-files",
+        interface="lists-read",
+    ),
+    "cloud-lists-write": DispatchCall(
+        caller_skill="daily-plan",
+        target_skill="cloud-files",
+        interface="lists-write",
+    ),
+    "calendar-agenda": DispatchCall(
+        caller_skill="daily-plan",
+        target_skill="g-calendar",
+        interface="scripts-gcal",
+    ),
+    "weather": DispatchCall(
+        caller_skill="daily-plan",
+        target_skill="get-weather",
+        interface="scripts-weather",
+        smoke_args=(),
+    ),
+    "list-read-beautify": DispatchCall(
+        caller_skill="daily-plan",
+        target_skill="list-manager",
+        interface="read-beautify",
+    ),
+    "list-update": DispatchCall(
+        caller_skill="daily-plan",
+        target_skill="list-manager",
+        interface="update-list",
+    ),
+}
+
+_DISPATCH_KEYS = {
+    ("cloud-files", "plans-read"): "cloud-plans-read",
+    ("cloud-files", "plans-write"): "cloud-plans-write",
+    ("cloud-files", "lists-read"): "cloud-lists-read",
+    ("cloud-files", "lists-write"): "cloud-lists-write",
+    ("g-calendar", "scripts-gcal"): "calendar-agenda",
+    ("get-weather", "scripts-weather"): "weather",
+    ("list-manager", "read-beautify"): "list-read-beautify",
+    ("list-manager", "update-list"): "list-update",
+}
+
+
+class _DefaultDispatchInterface(PythonMachineInterface):
+    dispatches = DISPATCHES
+
+
+_dispatch_interface: PythonMachineInterface = _DefaultDispatchInterface()
+
+
+def set_dispatch_interface(interface: PythonMachineInterface) -> None:
+    global _dispatch_interface
+    _dispatch_interface = interface
+
+
 def run_dispatcher(target_skill: str, script_interface: str, *args: str, stdin: str | None = None) -> str:
     try:
-        from officina.dispatcher import InvocationError, dispatch
-    except ImportError as exc:  # pragma: no cover
-        raise PlanError(
-            "officina.dispatcher is not installed. Re-run install-assistant-tools to install the shared dispatcher package."
-        ) from exc
+        key = _DISPATCH_KEYS[(target_skill, script_interface)]
+    except KeyError as exc:
+        raise PlanError(f"unknown declared dispatch for {target_skill}:{script_interface}") from exc
     try:
-        result = dispatch(
-            caller_skill="daily-plan",
-            target_skill=target_skill,
-            script_interface=script_interface,
+        result = _dispatch_interface.dispatch(
+            key,
             args=list(args),
             stdin=stdin,
             capture_output=True,
             text=True,
             check=False,
         )
-    except InvocationError as exc:
-        raise PlanError(f"dispatcher request invalid for {target_skill}:{script_interface}: {exc}") from exc
     except Exception as exc:  # pragma: no cover
         raise PlanError(f"Failed to invoke {target_skill}:{script_interface}: {exc}") from exc
     if result.returncode != 0:

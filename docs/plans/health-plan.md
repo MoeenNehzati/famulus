@@ -68,7 +68,7 @@ Create:
 skills/skill-health/
   SKILL.md
   blueprint.yaml
-  _rtx/_health_state.py
+  _rtx/_get_health_state.py
   tests/test_health.py
 
 skills/skill-doctor/
@@ -137,7 +137,7 @@ This skill is mechanical bookkeeping only; it does not judge whether a skill des
 
 The skill should not contain health logic.
 
-## `skills/skill-health/_rtx/_health_state.py`
+## `skills/skill-health/_rtx/_get_health_state.py`
 
 Implement in pure Python stdlib.
 
@@ -146,10 +146,10 @@ The script owns all computation and report generation.
 Supported commands:
 
 ```bash
-python3 skills/skill-health/_rtx/_health_state.py status [skill-name] [--json]
-python3 skills/skill-health/_rtx/_health_state.py invalidate <skill-name> --reason "..."
-python3 skills/skill-health/_rtx/_health_state.py certify <skill-name> --checker "skill-doctor@1"
-python3 skills/skill-health/_rtx/_health_state.py migrate-unhealthy [--all] --reason "..."
+python3 skills/skill-health/_rtx/_get_health_state.py status [skill-name] [--json]
+python3 skills/skill-health/_rtx/_get_health_state.py invalidate <skill-name> --reason "..."
+python3 skills/skill-health/_rtx/_get_health_state.py certify <skill-name> --checker "skill-doctor@1"
+python3 skills/skill-health/_rtx/_get_health_state.py migrate-unhealthy [--all] --reason "..."
 ```
 
 Those are runtime parser contracts. Other skills and operator workflows should
@@ -167,8 +167,8 @@ all directories matching skills/*/ that contain SKILL.md
 So these are equivalent:
 
 ```bash
-python3 skills/skill-health/_rtx/_health_state.py status
-python3 skills/skill-health/_rtx/_health_state.py status --all
+python3 skills/skill-health/_rtx/_get_health_state.py status
+python3 skills/skill-health/_rtx/_get_health_state.py status --all
 ```
 
 `--all` may be supported as an alias, but it should not be required.
@@ -338,6 +338,38 @@ __pycache__/**
 .DS_Store
 *.pyc
 ```
+
+For `python_machine_interface` runtimes, add dependency-explorer results before
+hashing. The explorer is recursive:
+
+1. Load the interface and run `route_smoke()` in an isolated interpreter.
+2. Add same-skill Python modules and `officina` modules loaded during that
+   smoke path.
+3. Resolve each declared `DispatchCall` with dispatcher policy checks, without
+   executing normal `dispatch()`.
+4. For PythonMachineInterface targets, apply the same exploration recursively.
+5. For command-runtime targets, add resolved command files that live under the
+   skills tree.
+
+This means the health contract has three declaration surfaces:
+
+- blueprint `directly_*` roots for direct file roots, including non-Python
+  files;
+- class-level `DispatchCall` entries for cross-skill machine-interface
+  dependencies;
+- `route_smoke()` for same-skill Python imports that are dynamic or lazy in
+  normal execution.
+
+The explorer deliberately does not execute normal `run(...)` just to discover
+dependencies. If a same-skill Python module can affect behavior and is not
+otherwise covered, `route_smoke()` must import that code path cheaply and
+without real side effects.
+
+For Markdown files, the file explorer scans for address-like tokens such as
+`@A.B`, `A/B`, `A\B`, and `A.B`. A token becomes a dependency only if a matching
+file exists relative to the blueprint/current base directory; missing tokens
+are ignored. Discovered Markdown files are explored recursively with the same
+base directory.
 
 Format:
 
@@ -587,12 +619,12 @@ interfaces:
       usage: "status [skill-name] [--json]"
       runtime:
         kind: python_machine_interface
-        entrypoint: _rtx/_health_state.py:HealthStatus
+        entrypoint: _rtx/_get_health_state.py:HealthStatus
       dependencies: []
       directly_reads:
         - $repo/skills/
       directly_executes:
-        - _rtx/_health_state.py
+        - _rtx/_get_health_state.py
       directly_writes: []
       patterns:
         - min_positionals: 1
@@ -609,12 +641,12 @@ interfaces:
       usage: "invalidate <skill-name> --reason <reason>"
       runtime:
         kind: python_machine_interface
-        entrypoint: _rtx/_health_state.py:HealthInvalidate
+        entrypoint: _rtx/_get_health_state.py:HealthInvalidate
       dependencies: []
       directly_reads:
         - $repo/skills/
       directly_executes:
-        - _rtx/_health_state.py
+        - _rtx/_get_health_state.py
       directly_writes:
         - $repo/skills/
       patterns:
@@ -635,12 +667,12 @@ interfaces:
       usage: "certify <skill-name> --checker skill-doctor@1"
       runtime:
         kind: python_machine_interface
-        entrypoint: _rtx/_health_state.py:HealthCertify
+        entrypoint: _rtx/_get_health_state.py:HealthCertify
       dependencies: []
       directly_reads:
         - $repo/skills/
       directly_executes:
-        - _rtx/_health_state.py
+        - _rtx/_get_health_state.py
       directly_writes:
         - $repo/skills/
       patterns:
@@ -662,12 +694,12 @@ interfaces:
       usage: "migrate-unhealthy [--all] --reason <reason>"
       runtime:
         kind: python_machine_interface
-        entrypoint: _rtx/_health_state.py:HealthMigrate
+        entrypoint: _rtx/_get_health_state.py:HealthMigrate
       dependencies: []
       directly_reads:
         - $repo/skills/
       directly_executes:
-        - _rtx/_health_state.py
+        - _rtx/_get_health_state.py
       directly_writes:
         - $repo/skills/
       patterns:
@@ -1114,7 +1146,7 @@ The implementation is complete when:
 
 ```text
 - .gitignore ignores skills/*/.health.json.
-- skill-health exists and is a thin wrapper around _rtx/_health_state.py.
+- skill-health exists and is a thin wrapper around _rtx/_get_health_state.py.
 - health.py supports status, invalidate, certify, and migrate-unhealthy.
 - health.py status with no skill reports all observed skills.
 - health.py generates the full human-readable health report.

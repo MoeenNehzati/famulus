@@ -9,6 +9,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from officina.runtime.python_machine_interface import (  # noqa: E402
+    DispatchCall,
+    DispatchDependencyResolver,
+    PythonMachineInterface,
+)
 from officina.runtime.python_machine_interface_runner import (  # noqa: E402
     load_interface,
     main,
@@ -172,6 +177,122 @@ def test_argv_adapter_passes_normal_args_through(
 
     assert result == 0
     assert capsys.readouterr().out == "--legacy-flag|value\n"
+
+
+def test_declared_dispatch_method_uses_dispatch_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = {}
+
+    def fake_dispatch(**kwargs):
+        captured.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr("officina.dispatcher.dispatch", fake_dispatch)
+
+    class Interface(PythonMachineInterface):
+        dispatches = {
+            "read-cloud": DispatchCall(
+                caller_skill="demo-skill",
+                target_skill="cloud-files",
+                interface="read",
+            )
+        }
+
+        def run(self, args):
+            return self.dispatch("read-cloud", args=["x"], stdin="payload", text=True)
+
+    assert Interface().run(None) == "ok"
+    assert captured["caller_skill"] == "demo-skill"
+    assert captured["target_skill"] == "cloud-files"
+    assert captured["script_interface"] == "read"
+    assert captured["args"] == ["x"]
+    assert captured["stdin"] == "payload"
+    assert captured["text"] is True
+
+
+def test_dispatch_dependency_resolver_follows_transitive_dispatches(tmp_path: Path) -> None:
+    def write(path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    write(
+        tmp_path / "skills" / "source-skill" / "blueprint.yaml",
+        "category: workflow-general-assistant\n"
+        "interface_version: 1\n"
+        "depends_on:\n"
+        "  middle-skill:\n"
+        "    major_version: 1\n"
+        "    exports: [middle-skill.machine.middle]\n",
+    )
+    write(tmp_path / "skills" / "middle-skill" / "_rtx" / "__init__.py", "")
+    write(
+        tmp_path / "skills" / "middle-skill" / "_rtx" / "_middle.py",
+        "from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface\n"
+        "\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    dispatches = {\n"
+        "        'leaf': DispatchCall(\n"
+        "            caller_skill='middle-skill',\n"
+        "            target_skill='leaf-skill',\n"
+        "            interface='leaf',\n"
+        "        )\n"
+        "    }\n"
+        "    def run(self, args):\n"
+        "        return 0\n",
+    )
+    write(
+        tmp_path / "skills" / "middle-skill" / "blueprint.yaml",
+        "category: workflow-general-assistant\n"
+        "interface_version: 1\n"
+        "depends_on:\n"
+        "  leaf-skill:\n"
+        "    major_version: 1\n"
+        "    exports: [leaf-skill.machine.leaf]\n"
+        "interfaces:\n"
+        "  machine:\n"
+        "    middle:\n"
+        "      allowed_callers: [source-skill]\n"
+        "      runtime:\n"
+        "        kind: python_machine_interface\n"
+        "        entrypoint: _rtx/_middle.py:Interface\n",
+    )
+    write(tmp_path / "skills" / "leaf-skill" / "_rtx" / "__init__.py", "")
+    write(
+        tmp_path / "skills" / "leaf-skill" / "_rtx" / "_leaf.py",
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    def run(self, args):\n"
+        "        return 0\n",
+    )
+    write(
+        tmp_path / "skills" / "leaf-skill" / "blueprint.yaml",
+        "category: workflow-general-assistant\n"
+        "interface_version: 1\n"
+        "interfaces:\n"
+        "  machine:\n"
+        "    leaf:\n"
+        "      allowed_callers: [middle-skill]\n"
+        "      runtime:\n"
+        "        kind: python_machine_interface\n"
+        "        entrypoint: _rtx/_leaf.py:Interface\n",
+    )
+
+    class SourceInterface(PythonMachineInterface):
+        dispatches = {
+            "middle": DispatchCall(
+                caller_skill="source-skill",
+                target_skill="middle-skill",
+                interface="middle",
+            )
+        }
+
+    dependencies = DispatchDependencyResolver(repo_root=tmp_path).collect(SourceInterface())
+
+    assert [(item.key, item.resolved.target) for item in dependencies] == [
+        ("middle", "middle-skill.machine.middle"),
+        ("leaf", "leaf-skill.machine.leaf"),
+    ]
+    assert [item.depth for item in dependencies] == [0, 1]
 
 
 def test_main_reports_bad_interface_spec(capsys: pytest.CaptureFixture[str]) -> None:

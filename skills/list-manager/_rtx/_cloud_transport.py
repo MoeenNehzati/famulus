@@ -16,25 +16,48 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface
+
+
+DISPATCHES = {
+    "cloud-files-lists-read": DispatchCall(
+        caller_skill="list-manager",
+        target_skill="cloud-files",
+        interface="lists-read",
+    ),
+    "cloud-files-lists-write": DispatchCall(
+        caller_skill="list-manager",
+        target_skill="cloud-files",
+        interface="lists-write",
+    ),
+}
+
+_INTERFACE_KEYS = {
+    "lists-read": "cloud-files-lists-read",
+    "lists-write": "cloud-files-lists-write",
+}
+
+
+class _CloudTransportInterface(PythonMachineInterface):
+    dispatches = DISPATCHES
+
 
 class CloudTransportError(Exception):
     """Raised when talking to cloud-files fails for any reason."""
 
 
+_DISPATCHER = _CloudTransportInterface()
+
+
 def _dispatch(interface_id: str, remote_path: str, *, stdin: str | None = None) -> tuple[int, str, str]:
     try:
-        from officina.dispatcher import InvocationError, dispatch
-    except ImportError as exc:
-        raise CloudTransportError(
-            "officina.dispatcher is not installed. Re-run install-assistant-tools "
-            "to install the shared dispatcher package."
-        ) from exc
+        key = _INTERFACE_KEYS[interface_id]
+    except KeyError as exc:
+        raise CloudTransportError(f"unknown cloud-files interface: {interface_id}") from exc
 
     try:
-        result = dispatch(
-            caller_skill="list-manager",
-            target_skill="cloud-files",
-            script_interface=interface_id,
+        result = _DISPATCHER.dispatch(
+            key,
             args=[remote_path],
             stdin=stdin,
             capture_output=True,
@@ -42,10 +65,6 @@ def _dispatch(interface_id: str, remote_path: str, *, stdin: str | None = None) 
             timeout=30,
             check=False,
         )
-    except InvocationError as exc:
-        raise CloudTransportError(
-            f"invalid dispatcher request for cloud-files:{interface_id}: {exc}"
-        ) from exc
     except subprocess.TimeoutExpired as exc:
         raise CloudTransportError(f"{interface_id} timed out") from exc
     except Exception as exc:

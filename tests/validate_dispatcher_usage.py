@@ -20,16 +20,34 @@ def test_empty_skills_passes(tmp_path: Path) -> None:
     assert _mod.validate(tmp_path) == []
 
 
-def test_dispatch_import_passes(tmp_path: Path) -> None:
+def test_declared_dispatch_passes(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "good-skill"
     (skill / "_rtx").mkdir(parents=True)
     (skill / "blueprint.yaml").write_text("name: good-skill\n", encoding="utf-8")
     (skill / "_rtx" / "run.py").write_text(
-        "from officina.dispatcher import dispatch\n"
-        "dispatch(caller_skill='good-skill', target_skill='other', script_interface='x')\n",
+        "from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    dispatches = {\n"
+        "        'other': DispatchCall(caller_skill='good-skill', target_skill='other', interface='x')\n"
+        "    }\n"
+        "    def run(self, args):\n"
+        "        return self.dispatch('other').returncode\n",
         encoding="utf-8",
     )
     assert _mod.validate(tmp_path) == []
+
+
+def test_raw_dispatch_import_flagged(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "bad-skill"
+    (skill / "_rtx").mkdir(parents=True)
+    (skill / "blueprint.yaml").write_text("name: bad-skill\n", encoding="utf-8")
+    (skill / "_rtx" / "run.py").write_text(
+        "from officina.dispatcher import dispatch\n"
+        "dispatch(caller_skill='bad-skill', target_skill='other', script_interface='x')\n",
+        encoding="utf-8",
+    )
+    errors = _mod.validate(tmp_path)
+    assert any("not raw officina.dispatcher" in error for error in errors)
 
 
 def test_cli_dispatcher_call_flagged(tmp_path: Path) -> None:

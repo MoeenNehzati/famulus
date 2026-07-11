@@ -8,15 +8,33 @@ import sys
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 try:
-    from ._day_model import PlanError, generate_plan, get_today_date, plan_exists, refresh_rendered_plan
+    from ._day_model import (
+        DISPATCHES,
+        PlanError,
+        generate_plan,
+        get_today_date,
+        plan_exists,
+        refresh_rendered_plan,
+        set_dispatch_interface,
+    )
 except ImportError:
-    from _day_model import PlanError, generate_plan, get_today_date, plan_exists, refresh_rendered_plan
+    from _day_model import (
+        DISPATCHES,
+        PlanError,
+        generate_plan,
+        get_today_date,
+        plan_exists,
+        refresh_rendered_plan,
+        set_dispatch_interface,
+    )
 
 
 class Interface(PythonArgvMachineInterface):
+    dispatches = DISPATCHES
     prog = "plan_orchestrate.py"
 
     def run(self, argv: list[str]) -> int:
+        set_dispatch_interface(self)
         return main(argv)
 
 

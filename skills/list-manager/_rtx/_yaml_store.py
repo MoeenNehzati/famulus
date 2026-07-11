@@ -759,6 +759,7 @@ class DescribeSchemaInterface(PythonMachineInterface):
 
 
 class Interface(PythonArgvMachineInterface):
+    dispatches = cloud_transport.DISPATCHES
     prog = "lists.py"
 
     def run(self, argv: list[str]) -> int:

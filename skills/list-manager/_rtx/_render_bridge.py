@@ -39,6 +39,7 @@ def download_list(list_name: str, dest_path: Path) -> None:
 
 
 class Interface(PythonArgvMachineInterface):
+    dispatches = cloud_transport.DISPATCHES
     prog = "read_beautify.py"
 
     def run(self, argv: list[str]) -> int:

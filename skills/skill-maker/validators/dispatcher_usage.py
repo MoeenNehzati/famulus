@@ -47,8 +47,14 @@ def validate(repo_root: Path) -> list[str]:
 
                 if "invoke_skill_export.py" in line or "scripts/dispatcher.py" in line or '"dispatcher"' in line or "'dispatcher'" in line:
                     errors.append(
-                        f"{rel}:{lineno}: Python skill code must use officina.dispatcher.dispatch(), "
-                        "not the dispatcher CLI"
+                        f"{rel}:{lineno}: Python skill code must use declared DispatchCall entries "
+                        "and PythonMachineInterface.dispatch(), not the dispatcher CLI"
+                    )
+
+                if "from officina.dispatcher" in line or "import officina.dispatcher" in line:
+                    errors.append(
+                        f"{rel}:{lineno}: Python skill code must use declared DispatchCall entries "
+                        "and PythonMachineInterface.dispatch(), not raw officina.dispatcher"
                     )
 
                 if "sys.path" in line and ("script_dispatcher" in line or "officina" in line or "/src" in line):

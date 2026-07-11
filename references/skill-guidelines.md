@@ -57,8 +57,9 @@ in both the `Dependencies:` block and `depends_on_skills`.
 
 Dependencies authorize skill invocation and, for blueprint-migrated
 dependencies, interface calls through the installed `dispatcher` command (CLI)
-or `officina.dispatcher.dispatch()` (Python). A dependency never authorizes
-direct access to another skill's files or raw script paths.
+or declared `DispatchCall` entries used through `PythonMachineInterface.dispatch()`
+(Python). A dependency never authorizes direct access to another skill's files
+or raw script paths.
 
 **Blueprint authoring — REQUIRED: Initialize by copying the template**
 
@@ -107,24 +108,39 @@ The canonical invocation form for machine interfaces is:
 dispatcher --caller-skill daily-plan list-manager.machine.read-list /tmp/todo.yaml
 ```
 
-For Python skill code, the canonical form is:
+For Python skill code, every machine-interface class that may invoke another
+skill must define a declared dispatch menu on the interface. Runtime code calls
+only entries from that menu, never raw dispatcher APIs:
 
 ```python
-from officina.dispatcher import dispatch
+from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface
+
+
+class Interface(PythonMachineInterface):
+    dispatches = {
+        "read-list": DispatchCall(
+            caller_skill="daily-plan",
+            target_skill="list-manager",
+            interface="read-list",
+        )
+    }
 ```
 
-and:
+Then execute by key:
 
 ```python
-dispatch(
-    caller_skill="daily-plan",
-    target="list-manager.machine.read-list",
-    args=["/tmp/todo.yaml"],
-)
+self.dispatch("read-list", args=["/tmp/todo.yaml"])
 ```
 
-Do not invoke the `dispatcher` CLI from Python skill code, and do not modify
-`sys.path` to reach `officina.dispatcher`.
+Do not import or call `officina.dispatcher` from skill runtime code. Do not
+invoke the `dispatcher` CLI from Python skill code, and do not modify `sys.path`
+to reach dispatcher internals.
+
+This is mechanically checked by
+`skills/skill-maker/validators/dispatcher_usage.py`, which rejects raw
+dispatcher imports and CLI dispatch from skill runtime code, and
+`skills/skill-maker/validators/dispatch_caller_skill.py`, which verifies every
+`DispatchCall(caller_skill=...)` statically resolves to the owning skill name.
 
 **Machine interfaces**
 
@@ -179,6 +195,22 @@ they start with `$repo/`, which is relative to the repository root. These fields
 are direct roots only: health tooling expands directories and referenced files
 recursively when it computes hashes. A machine interface whose runtime resolves
 to a skill-local file must include that file in `directly_executes`.
+
+For `kind: python_machine_interface`, health dependency exploration combines
+three surfaces:
+
+- `directly_reads`, `directly_executes`, and `directly_writes` for declared
+  file roots, including non-Python files;
+- class-level `dispatches = {...}` entries made of `DispatchCall(...)` for
+  cross-skill machine-interface dependencies, followed recursively through
+  dispatcher resolution;
+- `route_smoke()` for same-skill dynamic Python imports that normal execution
+  performs lazily.
+
+If a Python file can affect behavior and is not otherwise covered by declared
+roots or `DispatchCall`, the interface's `route_smoke()` must import the code
+path cheaply and without real side effects. Health exploration does not execute
+normal `run(...)` just to discover dependencies.
 
 Pattern semantics are per interface, not per grouped command. Every
 `interfaces.machine.<name>` entry is one canonical callable interface. Do not
@@ -237,9 +269,11 @@ binding:
 
 **Dispatcher role**
 
-The installed `dispatcher` command and the shared `officina.dispatcher` Python
-package are the only sanctioned local cross-skill machine boundaries for
-blueprint-migrated skills. Their job is to:
+The installed `dispatcher` command and the shared dispatcher runtime are the
+only sanctioned local cross-skill machine boundaries for blueprint-migrated
+skills. Python skill runtime code must reach that boundary through declared
+`DispatchCall` entries and `PythonMachineInterface.dispatch()`. The
+dispatcher runtime's job is to:
 
 1. Parse the target canonical name `skill.machine.name`
 2. Resolve the callee `blueprint.yaml`
@@ -262,8 +296,8 @@ dispatcher --dry-run --caller-skill daily-plan \
   list-manager.machine.read-list /tmp/todo.yaml
 ```
 
-Every Python `dispatch(...)` call must include `caller_skill` set to the owning
-skill's exact name; that value must be a string literal or a module-level
+Every `DispatchCall(...)` declaration must include `caller_skill` set to the
+owning skill's exact name; that value must be a string literal or a module-level
 string constant that resolves statically.
 
 **Private runtime files**
@@ -333,7 +367,12 @@ This is the intended model:
 
 - local reuse inside one skill: relative imports
 - generic shared infrastructure: `officina.*`
-- cross-skill behavior: `dispatch(...)`
+- cross-skill behavior: declared `DispatchCall` entries plus
+  `PythonMachineInterface.dispatch()`
+
+The dispatch discipline is mechanically checked by
+`skills/skill-maker/validators/dispatcher_usage.py` and
+`skills/skill-maker/validators/dispatch_caller_skill.py`.
 
 Because machine interfaces run with the skill root on `PYTHONPATH`, modules
 under `_rtx/` may use relative imports to share same-skill helpers. Nested
@@ -499,7 +538,7 @@ commit, and push to `origin`.
   cross-skill boundaries:
   - invoke the dependency skill as a skill
   - call the dependency skill's exported machine interface through `dispatcher`
-    or `officina.dispatcher.dispatch()`
+    or a declared `DispatchCall` used by `PythonMachineInterface.dispatch()`
 - **Do not introduce new cross-skill Python imports.** If behavior should be
   shared across skills, expose it through a skill invocation, exported machine
   interface, or a first-party shared package under `src/officina/`.
