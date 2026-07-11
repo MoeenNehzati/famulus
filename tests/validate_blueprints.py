@@ -137,6 +137,68 @@ def test_machine_interface_dependency_objects_pass_schema() -> None:
     assert errors == []
 
 
+def test_llm_interface_uses_interfaces_pass_schema() -> None:
+    schema = _mod._load_schema()
+    assert schema is not None
+    blueprint = {
+        "category": "workflow-general-assistant",
+        "interface_version": 1,
+        "interfaces": {
+            "machine": {
+                "scan": {
+                    "runtime": {
+                        "kind": "python_machine_interface",
+                        "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                    },
+                    "dependencies": [],
+                    "directly_reads": [],
+                    "directly_executes": ["_rtx/_handoff_scan.py"],
+                    "directly_writes": [],
+                }
+            },
+            "llm": {
+                "default": {
+                    "description": "Primary LLM-facing skill instructions.",
+                    "binding": {"kind": "skill_file", "path": "SKILL.md"},
+                    "uses_interfaces": ["my-skill.machine.scan"],
+                    "directly_reads": ["SKILL.md"],
+                    "directly_executes": [],
+                    "directly_writes": [],
+                }
+            },
+        },
+    }
+
+    errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
+
+    assert errors == []
+
+
+def test_uses_interfaces_rejects_llm_targets_by_schema() -> None:
+    schema = _mod._load_schema()
+    assert schema is not None
+    blueprint = {
+        "category": "workflow-general-assistant",
+        "interface_version": 1,
+        "interfaces": {
+            "llm": {
+                "default": {
+                    "description": "Primary LLM-facing skill instructions.",
+                    "binding": {"kind": "skill_file", "path": "SKILL.md"},
+                    "uses_interfaces": ["my-skill.llm.default"],
+                    "directly_reads": ["SKILL.md"],
+                    "directly_executes": [],
+                    "directly_writes": [],
+                }
+            },
+        },
+    }
+
+    errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
+
+    assert any("uses_interfaces.0" in error and "does not match" in error for error in errors)
+
+
 def test_llm_default_is_required_by_schema() -> None:
     schema = _mod._load_schema()
     assert schema is not None

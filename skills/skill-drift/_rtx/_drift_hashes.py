@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
+import yaml
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = REPO_ROOT / "src"
@@ -29,6 +31,9 @@ DIRECT_FIELDS = ("directly_reads", "directly_executes", "directly_writes")
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
 MARKDOWN_REFERENCE_RE = re.compile(
     r"@?[A-Za-z0-9_.-]+(?:[/\\][A-Za-z0-9_.-]+)+|@?[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+"
+)
+CANONICAL_MACHINE_INTERFACE_RE = re.compile(
+    r"^(?P<skill>[a-z0-9]+(?:-[a-z0-9]+)+)\.machine\.(?P<interface>[a-z0-9]+(?:-[a-z0-9]+)*)$"
 )
 
 
@@ -312,16 +317,108 @@ def interface_roots(interface_spec: dict[str, Any], *, include_binding: bool = T
     return dedupe_preserving_order(roots)
 
 
-def hash_interface(skill_dir: Path, repo_root: Path, interface_spec: dict[str, Any]) -> str:
+def hash_interface(
+    skill_dir: Path,
+    repo_root: Path,
+    interface_spec: dict[str, Any],
+    *,
+    _seen_interfaces: frozenset[str] = frozenset(),
+) -> str:
     """Hash one machine or LLM interface from its declared roots."""
 
-    return digest_entries(interface_entries(skill_dir, repo_root, interface_spec))
+    return digest_entries(
+        interface_entries(
+            skill_dir,
+            repo_root,
+            interface_spec,
+            _seen_interfaces=_seen_interfaces,
+        )
+    )
 
 
-def interface_entries(skill_dir: Path, repo_root: Path, interface_spec: dict[str, Any]) -> list[HashEntry]:
+def interface_entries(
+    skill_dir: Path,
+    repo_root: Path,
+    interface_spec: dict[str, Any],
+    *,
+    _seen_interfaces: frozenset[str] = frozenset(),
+) -> list[HashEntry]:
     """Collect hash entries for one machine or LLM interface."""
 
-    return entries_for_dependency_files(DependencyExplorer(repo_root).explore_interface(skill_dir, interface_spec), repo_root)
+    entries = entries_for_dependency_files(DependencyExplorer(repo_root).explore_interface(skill_dir, interface_spec), repo_root)
+    entries.extend(used_interface_hash_entries(skill_dir, repo_root, interface_spec, _seen_interfaces))
+    return dedupe_entries(entries)
+
+
+def used_interface_hash_entries(
+    skill_dir: Path,
+    repo_root: Path,
+    interface_spec: dict[str, Any],
+    seen_interfaces: frozenset[str] = frozenset(),
+) -> list[HashEntry]:
+    """Return hash entries for machine interfaces declared in uses_interfaces."""
+
+    entries: list[HashEntry] = []
+    for canonical_name in used_interface_names(interface_spec):
+        if canonical_name in seen_interfaces:
+            raise HashRootError(f"uses_interfaces cycle includes {canonical_name}")
+        target_skill, target_interface_name = parse_canonical_machine_interface(canonical_name)
+        target_skill_dir = repo_root / "skills" / target_skill
+        target_blueprint = load_blueprint(target_skill_dir)
+        target_spec = machine_interface_spec(target_blueprint, target_skill, target_interface_name)
+        target_hash = hash_interface(
+            target_skill_dir,
+            repo_root,
+            target_spec,
+            _seen_interfaces=seen_interfaces | {canonical_name},
+        )
+        entries.append(HashEntry(f"used-interface:{canonical_name}", "interface-hash", target_hash.encode("utf-8")))
+    return entries
+
+
+def used_interface_names(interface_spec: dict[str, Any]) -> list[str]:
+    """Return declared canonical machine interfaces used by an interface."""
+
+    value = interface_spec.get("uses_interfaces", [])
+    if not isinstance(value, list):
+        raise HashRootError("uses_interfaces must be a list")
+    result: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise HashRootError("uses_interfaces entries must be strings")
+        parse_canonical_machine_interface(item)
+        result.append(item)
+    return dedupe_preserving_order(result)
+
+
+def parse_canonical_machine_interface(canonical_name: str) -> tuple[str, str]:
+    match = CANONICAL_MACHINE_INTERFACE_RE.match(canonical_name)
+    if not match:
+        raise HashRootError(f"uses_interfaces entry must be canonical machine interface: {canonical_name}")
+    return match.group("skill"), match.group("interface")
+
+
+def load_blueprint(skill_dir: Path) -> dict[str, Any]:
+    path = skill_dir / "blueprint.yaml"
+    if not path.is_file():
+        raise HashRootError(f"{skill_dir.name}: missing blueprint.yaml")
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        raise HashRootError(f"{path}: top level must be a mapping")
+    return raw
+
+
+def machine_interface_spec(blueprint: dict[str, Any], skill_name: str, interface_name: str) -> dict[str, Any]:
+    interfaces = blueprint.get("interfaces")
+    if not isinstance(interfaces, dict):
+        raise HashRootError(f"{skill_name}: missing interfaces")
+    machine = interfaces.get("machine")
+    if not isinstance(machine, dict):
+        raise HashRootError(f"{skill_name}: missing machine interfaces")
+    spec = machine.get(interface_name)
+    if not isinstance(spec, dict):
+        raise HashRootError(f"{skill_name}.machine.{interface_name} is not defined")
+    return spec
 
 
 def skill_roots(blueprint: dict[str, Any]) -> list[str]:
@@ -346,7 +443,25 @@ def hash_skill(skill_dir: Path, repo_root: Path, blueprint: dict[str, Any]) -> s
     """Hash a skill from all blueprint-declared interface roots."""
 
     entries = entries_for_dependency_files(DependencyExplorer(repo_root).explore_skill(skill_dir, blueprint), repo_root)
+    for interface_name, interface_spec in iter_blueprint_interface_specs(blueprint):
+        interface_hash = hash_interface(skill_dir, repo_root, interface_spec)
+        entries.append(HashEntry(f"interface:{interface_name}", "interface-hash", interface_hash.encode("utf-8")))
     return digest_entries(entries)
+
+
+def iter_blueprint_interface_specs(blueprint: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    interfaces = blueprint.get("interfaces")
+    if not isinstance(interfaces, dict):
+        return []
+    result: list[tuple[str, dict[str, Any]]] = []
+    for namespace in ("llm", "machine"):
+        entries = interfaces.get(namespace)
+        if not isinstance(entries, dict):
+            continue
+        for name, spec in sorted(entries.items()):
+            if isinstance(spec, dict):
+                result.append((f"{namespace}.{name}", spec))
+    return result
 
 
 def python_runtime_dependency_entries(

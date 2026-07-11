@@ -22,10 +22,10 @@ Exported Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `compute-hashes` — Compute current audit hashes for selected installed blueprint-backed skills or all observed blueprint-backed skills.
-  - `dispatcher --caller-skill skill-drift skill-drift.machine.compute-hashes compute-hashes [skill-name ...] [--json]`
-- `drift-status` — Read derived audit status for selected installed skills or all observed installed skills.
-  - `dispatcher --caller-skill skill-drift skill-drift.machine.drift-status status [skill-name ...] [--json]`
+- `compute-hashes` — Compute current audit hashes for selected installed skill names, exact skill root paths, or all observed blueprint-backed skills.
+  - `dispatcher --caller-skill skill-drift skill-drift.machine.compute-hashes compute-hashes [target ...] [--json]`
+- `drift-status` — Read derived audit status for selected installed skill names, exact skill root paths, or all observed installed skills.
+  - `dispatcher --caller-skill skill-drift skill-drift.machine.drift-status status [target ...] [--json]`
 
 Owner-Facing LLM Interfaces:
 

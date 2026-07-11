@@ -133,11 +133,34 @@ def observed_skill_names(skills_root: Path) -> list[str]:
     )
 
 
+def blueprint_skill_names(skills_root: Path) -> list[str]:
+    """Return observed skills that have a local blueprint contract."""
+
+    return [
+        skill_name
+        for skill_name in observed_skill_names(skills_root)
+        if (skills_root / skill_name / "blueprint.yaml").is_file()
+    ]
+
+
 def skill_dir_for(skills_root: Path, skill_name: str) -> Path:
     skill_dir = skills_root / skill_name
     if not (skill_dir / "SKILL.md").is_file():
         raise DriftCheckError(f"skill `{skill_name}` does not exist or lacks SKILL.md")
     return skill_dir
+
+
+def is_path_like_target(value: str) -> bool:
+    return "/" in value or "\\" in value or value.startswith((".", "~"))
+
+
+def source_for_skill_root(skill_root: Path, *, source: str = "path") -> SkillSource:
+    skill_root = skill_root.expanduser().resolve()
+    if not (skill_root / "SKILL.md").is_file():
+        raise DriftCheckError(f"{skill_root.as_posix()} does not exist or lacks SKILL.md")
+    skills_root = skill_root.parent
+    package_root = skills_root.parent if skills_root.name == "skills" else skill_root
+    return SkillSource(source=source, package_root=package_root.resolve(), skills_root=skills_root.resolve())
 
 
 def load_blueprint(skill_dir: Path) -> dict[str, Any]:
@@ -479,13 +502,13 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--all", action="store_true", help="Check all observed skills.")
     status.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     status.add_argument("--repo-root", type=Path, default=REPO_ROOT, help=argparse.SUPPRESS)
-    status.add_argument("--skill-root", type=Path, help=argparse.SUPPRESS)
+    status.add_argument("--skill-root", type=Path, help="Check an exact installed skill root.")
     status.add_argument("--skills-root", type=Path, help=argparse.SUPPRESS)
     hashes = subparsers.add_parser("compute-hashes", help="Compute current hashes for blueprint-backed skills.")
     hashes.add_argument("skills", nargs="*")
     hashes.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     hashes.add_argument("--repo-root", type=Path, default=REPO_ROOT, help=argparse.SUPPRESS)
-    hashes.add_argument("--skill-root", type=Path, help=argparse.SUPPRESS)
+    hashes.add_argument("--skill-root", type=Path, help="Compute hashes for an exact installed skill root.")
     hashes.add_argument("--skills-root", type=Path, help=argparse.SUPPRESS)
     return parser
 
@@ -524,16 +547,7 @@ def run_compute_hashes(args: argparse.Namespace) -> int:
 
 def requested_skill_sources(args: argparse.Namespace) -> list[SkillSource]:
     if args.skill_root is not None:
-        skill_root = args.skill_root.resolve()
-        if skill_root.parent.name != "skills":
-            raise DriftCheckError("--skill-root must point at a skill directory under a skills root")
-        return [
-            SkillSource(
-                source="override",
-                package_root=skill_root.parent.parent.resolve(),
-                skills_root=skill_root.parent.resolve(),
-            )
-        ]
+        return [source_for_skill_root(args.skill_root, source="override")]
     if args.skills_root is not None:
         skills_root = args.skills_root.resolve()
         return [SkillSource(source="override", package_root=skills_root.parent, skills_root=skills_root)]
@@ -547,7 +561,13 @@ def reports_for_sources(sources: list[SkillSource], requested_skills: list[str])
     reports: list[SkillDriftReport] = []
     missing: list[str] = []
     if requested_skills:
-        for skill_name in requested_skills:
+        for requested in requested_skills:
+            if is_path_like_target(requested):
+                skill_root = Path(requested).expanduser().resolve()
+                source = source_for_skill_root(skill_root)
+                reports.append(check_skill(source, skill_root.name))
+                continue
+            skill_name = requested
             matches = [source for source in sources if (source.skills_root / skill_name / "SKILL.md").is_file()]
             if not matches:
                 missing.append(skill_name)
@@ -565,7 +585,13 @@ def hash_reports_for_sources(sources: list[SkillSource], requested_skills: list[
     reports: list[SkillHashReport] = []
     missing: list[str] = []
     if requested_skills:
-        for skill_name in requested_skills:
+        for requested in requested_skills:
+            if is_path_like_target(requested):
+                skill_root = Path(requested).expanduser().resolve()
+                source = source_for_skill_root(skill_root)
+                reports.append(hash_report_for_skill(source, skill_root.name))
+                continue
+            skill_name = requested
             matches = [source for source in sources if (source.skills_root / skill_name / "SKILL.md").is_file()]
             if not matches:
                 missing.append(skill_name)
@@ -574,7 +600,7 @@ def hash_reports_for_sources(sources: list[SkillSource], requested_skills: list[
                 reports.append(hash_report_for_skill(source, skill_name))
     else:
         for source in sources:
-            for skill_name in observed_skill_names(source.skills_root):
+            for skill_name in blueprint_skill_names(source.skills_root):
                 reports.append(hash_report_for_skill(source, skill_name))
     if missing:
         raise DriftCheckError(f"skill(s) not found in installed skill roots: {', '.join(missing)}")

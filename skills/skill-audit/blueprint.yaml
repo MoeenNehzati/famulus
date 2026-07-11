@@ -1,0 +1,80 @@
+# Canonical contract for skill-audit.
+
+category: skill-making-development-assistant
+interface_version: 1
+
+depends_on:
+  skill-drift:
+    major_version: 1
+    exports:
+      - skill-drift.machine.compute-hashes
+      - skill-drift.machine.drift-status
+  skill-maker:
+    major_version: 1
+    exports:
+      - skill-maker.machine.sync-blueprints
+
+suggested_permissions:
+  bash:
+    - command:
+        - python3
+        - -m
+        - officina.runtime.python_machine_interface_runner
+        - _rtx/_audit_certifier.py:Interface
+      reason: Run mechanical checks, compute audit hashes, and write audit records.
+  network: []
+
+skill_interface:
+  inputs:
+    - User request to certify audit records for one or more installed skills.
+    - Optional installed skill names or exact skill root paths.
+  outputs:
+    - Certification report listing written audit records or the first failed gate.
+  side_effects:
+    - Runs blueprint sync checks, validators, and tests.
+    - Writes .last_audit.json under certified target skill roots.
+
+interfaces:
+  machine:
+    certify:
+      description: Run audit gates and write fresh audit records for selected installed skills or all observed blueprint-backed installed skills.
+      usage: "certify [target ...] [--json]"
+      allow_all_skills: false
+      allowed_callers: []
+      patterns:
+        - min_positionals: 1
+          allow_stdin: false
+          allowed_flags:
+            - --json
+      runtime:
+        kind: python_machine_interface
+        entrypoint: _rtx/_audit_certifier.py:Interface
+      dependencies:
+        - kind: python
+          name: PyYAML
+          reason: "Parses skill blueprint files during semantic exactness checks."
+      uses_interfaces:
+        - skill-drift.machine.compute-hashes
+        - skill-drift.machine.drift-status
+        - skill-maker.machine.sync-blueprints
+      directly_reads:
+        - "$repo/skills/"
+        - "$repo/validators/"
+        - "$repo/tests/"
+        - "$repo/scripts/run-python-tests.py"
+      directly_executes:
+        - _rtx/_audit_certifier.py
+      directly_writes:
+        - "$repo/skills/"
+  llm:
+    default:
+      description: Primary LLM-facing skill instructions.
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      uses_interfaces:
+        - skill-audit.machine.certify
+      directly_reads:
+        - SKILL.md
+      directly_executes: []
+      directly_writes: []

@@ -23,6 +23,7 @@ PRECOMMIT_TEST_DIRS = [
     "skills/list-manager/tests",
     "skills/math-dependency-graph/tests",
     "skills/recurring-tasks/tests",
+    "skills/skill-audit/tests",
     "skills/skill-maker/tests",
 ]
 

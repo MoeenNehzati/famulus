@@ -30,8 +30,8 @@ skill_interface:
 interfaces:
   machine:
     drift-status:
-      description: Read derived audit status for selected installed skills or all observed installed skills.
-      usage: "status [skill-name ...] [--json]"
+      description: Read derived audit status for selected installed skill names, exact skill root paths, or all observed installed skills.
+      usage: "status [target ...] [--json]"
       allow_all_skills: true
       allowed_callers: []
       patterns:
@@ -40,6 +40,7 @@ interfaces:
           allowed_flags:
             - --json
             - --all
+            - --skill-root
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_check_drift_state.py:Interface
@@ -50,8 +51,8 @@ interfaces:
       directly_writes:
         - _build/
     compute-hashes:
-      description: Compute current audit hashes for selected installed blueprint-backed skills or all observed blueprint-backed skills.
-      usage: "compute-hashes [skill-name ...] [--json]"
+      description: Compute current audit hashes for selected installed skill names, exact skill root paths, or all observed blueprint-backed skills.
+      usage: "compute-hashes [target ...] [--json]"
       allow_all_skills: true
       allowed_callers: []
       patterns:
@@ -59,6 +60,7 @@ interfaces:
           allow_stdin: false
           allowed_flags:
             - --json
+            - --skill-root
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_check_drift_state.py:Interface
@@ -73,6 +75,9 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
+      uses_interfaces:
+        - skill-drift.machine.compute-hashes
+        - skill-drift.machine.drift-status
       directly_reads:
         - SKILL.md
       directly_executes: []

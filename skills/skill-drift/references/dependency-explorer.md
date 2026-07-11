@@ -24,6 +24,8 @@ At a high level, the recursive dependency set is:
 - a Markdown file includes existing address-like file references it mentions;
 - an interface includes its binding file, `directly_reads`,
   `directly_executes`, `directly_writes`, and discovered Python runtime files;
+- an interface includes machine interfaces declared in `uses_interfaces` by
+  recursively including those target interface hashes;
 - a PythonMachineInterface includes files loaded by `--route-smoke`, local
   same-skill imports, relevant `src/officina` imports, package `__init__.py`
   files, and declared `DispatchCall` targets;
@@ -62,6 +64,11 @@ The hashing helpers sit on top of the explorer:
 These helpers produce `sha256:<hex>` digests from `HashEntry` values. The hash
 input includes the entry kind, label, and bytes, separated with NUL bytes and
 sorted deterministically.
+
+Interface hashes also include `uses_interfaces` entries. Each entry stores the
+canonical machine-interface name and that target interface's hash. This means an
+LLM interface that routes work through a machine interface becomes stale when
+that machine interface or its recursive dependencies change.
 
 ## Declared Roots
 

@@ -101,6 +101,111 @@ def test_interface_hash_includes_binding_and_direct_roots(tmp_path: Path) -> Non
     assert first != second
 
 
+def test_interface_hash_includes_used_machine_interface_hash(tmp_path: Path) -> None:
+    repo = tmp_path
+    consumer = repo / "skills" / "consumer-skill"
+    provider = repo / "skills" / "provider-skill"
+    write(consumer / "SKILL.md", "Use the provider interface.\n")
+    write(provider / "_rtx" / "_worker.py", "VALUE = 'one'\n")
+    write(
+        provider / "blueprint.yaml",
+        "\n".join(
+            [
+                "category: development-assistant",
+                "interface_version: 1",
+                "interfaces:",
+                "  llm:",
+                "    default:",
+                "      description: Primary.",
+                "      binding:",
+                "        kind: skill_file",
+                "        path: SKILL.md",
+                "      directly_reads:",
+                "        - SKILL.md",
+                "      directly_executes: []",
+                "      directly_writes: []",
+                "  machine:",
+                "    worker:",
+                "      directly_reads: []",
+                "      directly_executes:",
+                "        - _rtx/_worker.py",
+                "      directly_writes: []",
+                "",
+            ]
+        ),
+    )
+    write(provider / "SKILL.md", "provider\n")
+    spec = {
+        "binding": {"kind": "skill_file", "path": "SKILL.md"},
+        "uses_interfaces": ["provider-skill.machine.worker"],
+        "directly_reads": ["SKILL.md"],
+        "directly_executes": [],
+        "directly_writes": [],
+    }
+
+    first = health_state.hash_interface(consumer, repo, spec)
+    write(provider / "_rtx" / "_worker.py", "VALUE = 'two'\n")
+    second = health_state.hash_interface(consumer, repo, spec)
+
+    assert first != second
+
+
+def test_interface_hash_includes_used_machine_interface_hash_recursively(tmp_path: Path) -> None:
+    repo = tmp_path
+    root = repo / "skills" / "root-skill"
+    middle = repo / "skills" / "middle-skill"
+    leaf = repo / "skills" / "leaf-skill"
+    write(root / "SKILL.md", "Use the middle interface.\n")
+    write(middle / "_rtx" / "_worker.py", "middle\n")
+    write(leaf / "_rtx" / "_leaf.py", "VALUE = 'one'\n")
+    for skill, interface_name, execute_path, uses in [
+        (middle, "worker", "_rtx/_worker.py", "      uses_interfaces:\n        - leaf-skill.machine.leaf\n"),
+        (leaf, "leaf", "_rtx/_leaf.py", ""),
+    ]:
+        write(skill / "SKILL.md", f"{skill.name}\n")
+        write(
+            skill / "blueprint.yaml",
+            "\n".join(
+                [
+                    "category: development-assistant",
+                    "interface_version: 1",
+                    "interfaces:",
+                    "  llm:",
+                    "    default:",
+                    "      description: Primary.",
+                    "      binding:",
+                    "        kind: skill_file",
+                    "        path: SKILL.md",
+                    "      directly_reads:",
+                    "        - SKILL.md",
+                    "      directly_executes: []",
+                    "      directly_writes: []",
+                    "  machine:",
+                    f"    {interface_name}:",
+                    uses.rstrip("\n"),
+                    "      directly_reads: []",
+                    "      directly_executes:",
+                    f"        - {execute_path}",
+                    "      directly_writes: []",
+                    "",
+                ]
+            ),
+        )
+    spec = {
+        "binding": {"kind": "skill_file", "path": "SKILL.md"},
+        "uses_interfaces": ["middle-skill.machine.worker"],
+        "directly_reads": ["SKILL.md"],
+        "directly_executes": [],
+        "directly_writes": [],
+    }
+
+    first = health_state.hash_interface(root, repo, spec)
+    write(leaf / "_rtx" / "_leaf.py", "VALUE = 'two'\n")
+    second = health_state.hash_interface(root, repo, spec)
+
+    assert first != second
+
+
 def test_skill_hash_collects_all_interface_roots(tmp_path: Path) -> None:
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"

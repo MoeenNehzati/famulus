@@ -28,7 +28,8 @@ interfaces:
         \ artifacts."
       usage: "[--check]"
       allow_all_skills: false
-      allowed_callers: []
+      allowed_callers:
+        - skill-audit
       patterns:
         - name: "sync"
           min_positionals: 0

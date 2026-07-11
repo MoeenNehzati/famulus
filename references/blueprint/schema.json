@@ -228,6 +228,9 @@
         "dependencies": {
           "$ref": "#/definitions/runtimeDependencies"
         },
+        "uses_interfaces": {
+          "$ref": "#/definitions/usedMachineInterfaceList"
+        },
         "directly_reads": {
           "$ref": "#/definitions/directEffectList"
         },
@@ -306,6 +309,9 @@
             "minLength": 1
           }
         },
+        "uses_interfaces": {
+          "$ref": "#/definitions/usedMachineInterfaceList"
+        },
         "directly_reads": {
           "$ref": "#/definitions/directEffectList"
         },
@@ -378,6 +384,18 @@
           }
         }
       ]
+    },
+    "usedMachineInterfaceList": {
+      "type": "array",
+      "description": "Canonical machine interfaces this interface may use or orchestrate. These interface hashes are included recursively in this interface's audit hash.",
+      "items": {
+        "$ref": "#/definitions/canonicalMachineInterfaceName"
+      },
+      "uniqueItems": true
+    },
+    "canonicalMachineInterfaceName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.machine\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
     },
     "directEffectList": {
       "type": "array",

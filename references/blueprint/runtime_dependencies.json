@@ -709,6 +709,20 @@
         }
       }
     },
+    "skill-audit": {
+      "interfaces": {
+        "certify": {
+          "id": "skill-audit.machine.certify",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Parses skill blueprint files during semantic exactness checks."
+            }
+          ]
+        }
+      }
+    },
     "skill-drift": {
       "interfaces": {
         "compute-hashes": {

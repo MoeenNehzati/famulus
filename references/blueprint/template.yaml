@@ -122,6 +122,10 @@ interfaces:
         - kind: python
           name: PyYAML
           reason: "Parses YAML input files read by this interface."
+      # Optional. Canonical machine interfaces this interface invokes or
+      # orchestrates. Their interface hashes are included recursively in this
+      # interface's audit hash.
+      uses_interfaces: []
       directly_reads:
         - "$repo/data/example.yaml"
       directly_executes:
@@ -234,6 +238,12 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
+      # Optional. Machine interfaces the LLM prompt surface may route work
+      # through. Use canonical names such as example-skill.machine.read-data.
+      # These interface hashes are included recursively in the LLM interface
+      # hash.
+      uses_interfaces:
+        - example-skill.machine.read-data
       directly_reads:
         - SKILL.md
       directly_executes: []

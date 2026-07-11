@@ -202,6 +202,7 @@ Each machine interface owns:
 - `allowed_callers`
 - `runtime`
 - `dependencies`
+- `uses_interfaces`
 - `directly_reads`
 - `directly_executes`
 - `directly_writes`
@@ -235,6 +236,24 @@ dependencies:
 
 These declarations are not permission suggestions. Keep developer-selected
 approval baselines in top-level `suggested_permissions`.
+
+### `uses_interfaces`
+
+Any machine or LLM interface may declare `uses_interfaces`, a list of canonical
+machine-interface names that this interface invokes or orchestrates:
+
+```yaml
+uses_interfaces:
+  - other-skill.machine.read-data
+```
+
+This is an interface-level dependency declaration. Skill-level `depends_on`
+authorizes which dependency interfaces the skill may use; `uses_interfaces`
+states which interfaces a specific interface actually uses.
+
+Audit hashing includes these used interface hashes recursively. If an LLM
+interface routes work through a machine interface and that machine interface
+changes, the LLM interface hash changes as well.
 
 ### Direct effect roots
 

@@ -205,6 +205,28 @@ def test_status_json_reports_stale_without_writing(tmp_path: Path, capsys) -> No
     assert not (tmp_path / "skills" / "demo-skill" / ".last_audit.json").exists()
 
 
+def test_status_accepts_exact_skill_root_as_target(tmp_path: Path, capsys) -> None:
+    skill = make_skill(tmp_path)
+
+    exit_code = checker.main(["status", str(skill), "--json", "--repo-root", str(tmp_path)])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["skills"][0]["skill"] == "demo-skill"
+    assert payload["skills"][0]["source"] == "path"
+
+
+def test_compute_hashes_accepts_exact_skill_root_as_target(tmp_path: Path, capsys) -> None:
+    skill = make_skill(tmp_path)
+
+    exit_code = checker.main(["compute-hashes", str(skill), "--json", "--repo-root", str(tmp_path)])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["skills"][0]["skill"] == "demo-skill"
+    assert payload["skills"][0]["source"] == "path"
+
+
 def test_status_text_reports_markdown_table(tmp_path: Path, capsys) -> None:
     first = make_skill(tmp_path, "first-skill")
     make_skill(tmp_path, "second-skill")
