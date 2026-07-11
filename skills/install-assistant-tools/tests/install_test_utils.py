@@ -68,7 +68,7 @@ def run_command(
 ) -> subprocess.CompletedProcess[str]:
     # Windows: npm installs CLIs as .cmd shims, which CreateProcess won't
     # find from a bare name — resolve through PATH explicitly.
-    resolved = shutil.which(cmd[0])
+    resolved = shutil.which(cmd[0], path=env.get("PATH") if env is not None else None)
     if resolved is not None:
         cmd = [resolved, *cmd[1:]]
     result = subprocess.run(
