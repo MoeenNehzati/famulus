@@ -124,6 +124,13 @@ Each of these three is also independently runnable via `scripts-scaffold`,
 `scripts-dev-link`, `scripts-launchers` for targeted repairs. On an
 unfamiliar machine, pass `--dry-run` to preview without writing anything.
 
+`scaffold` prints a final capability report for required shared launchers. If
+`dispatcher` or `invoke-skill` cannot be installed on the host, the report names
+the skipped capability, affected workflows, and reason, then exits nonzero. The
+phase-1 orchestrator stops there rather than continuing into `dev-link` or
+`launchers` with a broken universal floor. `--dry-run` reports the same
+capability status without writing files.
+
 Claude and Codex skill/reference visibility in **plugin mode** already comes
 from the plugin loader itself — `dev-link`'s symlinks are a dev-mode
 convenience, not something plugin-mode installs need or run.

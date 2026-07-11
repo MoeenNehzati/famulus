@@ -31,6 +31,7 @@ def _load_module_from_path(path: Path) -> ModuleType:
     if not path.is_file():
         raise InterfaceLoadError(f"interface module not found: {path}")
     module_name = _module_name_for_path(path)
+    _clear_conflicting_package_modules(path, module_name)
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise InterfaceLoadError(f"could not load interface module: {path}")
@@ -38,6 +39,30 @@ def _load_module_from_path(path: Path) -> ModuleType:
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _clear_conflicting_package_modules(path: Path, module_name: str) -> None:
+    """Remove cached package modules that point at a different interface tree."""
+    package_parts = module_name.split(".")[:-1]
+    if not package_parts:
+        return
+
+    current = path.resolve().parent
+    expected_inits: dict[str, Path] = {}
+    for index in range(len(package_parts) - 1, -1, -1):
+        package_name = ".".join(package_parts[: index + 1])
+        expected_inits[package_name] = current / "__init__.py"
+        current = current.parent
+
+    for package_name, expected_init in expected_inits.items():
+        module = sys.modules.get(package_name)
+        if module is None:
+            continue
+        module_file = getattr(module, "__file__", None)
+        if module_file is None or Path(module_file).resolve() != expected_init:
+            for cached_name in list(sys.modules):
+                if cached_name == package_name or cached_name.startswith(f"{package_name}."):
+                    del sys.modules[cached_name]
 
 
 def _module_name_for_path(path: Path) -> str:

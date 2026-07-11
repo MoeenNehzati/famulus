@@ -92,7 +92,7 @@ def run(
     repo_path: Path | None = None,
     agents: list[str] | None = None,
     default_llm: str | None = None,
-) -> None:
+) -> int:
     home = home or Path.home()
 
     if dev_mode is None:
@@ -117,7 +117,11 @@ def run(
         # pre-redesign behavior. <repo>/skills/install-assistant-tools/_rtx/_phase_entry.py
         repo_root = Path(__file__).resolve().parents[3]
 
-    scaffold.run(repo_root=repo_root, home=home, bin_dir=bin_dir, shell_rc=shell_rc, dry_run=dry_run)
+    scaffold_status = scaffold.run(repo_root=repo_root, home=home, bin_dir=bin_dir, shell_rc=shell_rc, dry_run=dry_run)
+    if scaffold_status:
+        log()
+        log("Installation stopped because scaffold failed.")
+        return scaffold_status
 
     log()
 
@@ -149,6 +153,7 @@ def run(
             "and set up recurring triage/planning — ask your assistant to walk "
             "you through it."
         )
+    return 0
 
 
 class Interface(PythonArgvMachineInterface):
@@ -183,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     agents = None
     if args.agents is not None:
         agents = [a.strip() for a in args.agents.split(",") if a.strip()]
-    run(
+    return run(
         home=Path(args.home) if args.home else None,
         bin_dir=Path(args.bin_dir) if args.bin_dir else None,
         shell_rc=Path(args.shell_rc) if args.shell_rc else None,
@@ -196,7 +201,6 @@ def main(argv: list[str] | None = None) -> int:
         agents=agents,
         default_llm=args.default_llm,
     )
-    return 0
 
 
 if __name__ == "__main__":

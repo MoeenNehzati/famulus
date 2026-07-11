@@ -41,6 +41,39 @@ def log(msg: str = "") -> None:
 RUNTIME_DEPENDENCIES_MANIFEST = Path("references") / "blueprint" / "runtime_dependencies.json"
 
 
+class CapabilityResult:
+    """Outcome for one scaffold capability that downstream workflows rely on."""
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        required: bool,
+        status: str,
+        workflows: tuple[str, ...],
+        reason: str = "",
+    ) -> None:
+        self.name = name
+        self.required = required
+        self.status = status
+        self.workflows = workflows
+        self.reason = reason
+
+    def blocks_install(self) -> bool:
+        """Return whether this outcome leaves a required capability unavailable."""
+        return self.required and self.status in {"skipped", "failed"}
+
+
+DISPATCHER_WORKFLOWS = (
+    "machine-interface dispatch",
+    "SKILL.md interface invocation",
+)
+INVOKE_SKILL_WORKFLOWS = (
+    "recurring automation",
+    "systemd/cron skill invocation",
+)
+
+
 def required_python_packages(repo_root: Path) -> list[str]:
     packages: set[str] = set()
     manifest = repo_root / RUNTIME_DEPENDENCIES_MANIFEST
@@ -76,7 +109,12 @@ def install_python_packages(repo_root: Path, dry_run: bool) -> None:
             log(f"  WARN: failed to install {package}: {result.stderr.strip()}")
 
 
-def install_dispatcher_launcher(repo_root: Path, bin_dir: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
+def install_dispatcher_launcher(
+    repo_root: Path,
+    bin_dir: Path,
+    dry_run: bool,
+    manifest: Manifest | None = None,
+) -> CapabilityResult:
     """Write a `dispatcher` launcher into the managed bin dir.
 
     First-party code is never pip-installed: the repo ($AI) is the single
@@ -86,8 +124,13 @@ def install_dispatcher_launcher(repo_root: Path, bin_dir: Path, dry_run: bool, m
     for contexts without it (systemd, cron).
     """
     if sys.platform == "win32":
-        log("Note: skipping dispatcher launcher (managed bin launchers are POSIX shell).")
-        return
+        return CapabilityResult(
+            name="dispatcher",
+            required=True,
+            status="skipped",
+            workflows=DISPATCHER_WORKFLOWS,
+            reason="managed bin launchers are POSIX shell on this host",
+        )
 
     launcher = bin_dir / "dispatcher"
     content = (
@@ -102,7 +145,12 @@ def install_dispatcher_launcher(repo_root: Path, bin_dir: Path, dry_run: bool, m
 
     if dry_run:
         log(f"Would write {launcher}")
-        return
+        return CapabilityResult(
+            name="dispatcher",
+            required=True,
+            status="would-install",
+            workflows=DISPATCHER_WORKFLOWS,
+        )
 
     bin_dir.mkdir(parents=True, exist_ok=True)
     launcher.write_text(content)
@@ -110,9 +158,19 @@ def install_dispatcher_launcher(repo_root: Path, bin_dir: Path, dry_run: bool, m
     log(f"  Wrote dispatcher launcher: {launcher}")
     if manifest is not None:
         manifest.record("file", path=str(launcher))
+    return CapabilityResult(
+        name="dispatcher",
+        required=True,
+        status="installed",
+        workflows=DISPATCHER_WORKFLOWS,
+    )
 
 
-def install_invoke_skill_launcher(bin_dir: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
+def install_invoke_skill_launcher(
+    bin_dir: Path,
+    dry_run: bool,
+    manifest: Manifest | None = None,
+) -> CapabilityResult:
     """Write an `invoke-skill` launcher into the managed bin dir.
 
     Used by AI_AGENT_COMMAND_TEMPLATE to invoke skills from systemd timers
@@ -121,8 +179,13 @@ def install_invoke_skill_launcher(bin_dir: Path, dry_run: bool, manifest: Manife
     time.
     """
     if sys.platform == "win32":
-        log("Note: skipping invoke-skill launcher (managed bin launchers are POSIX shell).")
-        return
+        return CapabilityResult(
+            name="invoke-skill",
+            required=True,
+            status="skipped",
+            workflows=INVOKE_SKILL_WORKFLOWS,
+            reason="managed bin launchers are POSIX shell on this host",
+        )
 
     launcher = bin_dir / "invoke-skill"
     content = (
@@ -152,7 +215,12 @@ def install_invoke_skill_launcher(bin_dir: Path, dry_run: bool, manifest: Manife
 
     if dry_run:
         log(f"Would write {launcher}")
-        return
+        return CapabilityResult(
+            name="invoke-skill",
+            required=True,
+            status="would-install",
+            workflows=INVOKE_SKILL_WORKFLOWS,
+        )
 
     bin_dir.mkdir(parents=True, exist_ok=True)
     launcher.write_text(content)
@@ -160,6 +228,41 @@ def install_invoke_skill_launcher(bin_dir: Path, dry_run: bool, manifest: Manife
     log(f"  Wrote invoke-skill launcher: {launcher}")
     if manifest is not None:
         manifest.record("file", path=str(launcher))
+    return CapabilityResult(
+        name="invoke-skill",
+        required=True,
+        status="installed",
+        workflows=INVOKE_SKILL_WORKFLOWS,
+    )
+
+
+def report_capabilities(results: list[CapabilityResult]) -> int:
+    """Print scaffold capability status and return the aggregate exit status."""
+    if not results:
+        return 0
+
+    log("")
+    log("Scaffold capability report:")
+    for result in results:
+        if result.blocks_install():
+            label = "FAILED"
+        elif result.status == "would-install":
+            label = "WOULD-INSTALL"
+        elif result.status == "installed":
+            label = "OK"
+        else:
+            label = result.status.upper()
+
+        log(f"  {label}: {result.name}")
+        if result.reason:
+            log(f"    reason: {result.reason}")
+        log(f"    affected workflows: {', '.join(result.workflows)}")
+
+    if any(result.blocks_install() for result in results):
+        log("")
+        log("Scaffold failed: required capabilities were not installed.")
+        return 1
+    return 0
 
 
 def ensure_path_windows(bin_dir: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
@@ -201,7 +304,7 @@ def run(
     shell_rc: Path | None = None,
     dry_run: bool = False,
     manifest: Manifest | None = None,
-) -> None:
+) -> int:
     home = home or Path.home()
     bin_dir = bin_dir or home / "Documents" / "_rtx" / "bin"
 
@@ -211,8 +314,10 @@ def run(
         manifest = None
 
     install_python_packages(repo_root, dry_run)
-    install_dispatcher_launcher(repo_root, bin_dir, dry_run, manifest)
-    install_invoke_skill_launcher(bin_dir, dry_run, manifest)
+    capability_results = [
+        install_dispatcher_launcher(repo_root, bin_dir, dry_run, manifest),
+        install_invoke_skill_launcher(bin_dir, dry_run, manifest),
+    ]
 
     if sys.platform == "win32":
         ensure_path_windows(bin_dir, dry_run, manifest)
@@ -231,9 +336,12 @@ def run(
     if manifest is not None:
         manifest.save()
 
+    status = report_capabilities(capability_results)
+
     log("")
-    log("Scaffold complete.")
+    log("Scaffold complete." if status == 0 else "Scaffold incomplete.")
     log(f"  Bin dir: {bin_dir}")
+    return status
 
 
 class Interface(PythonArgvMachineInterface):
@@ -255,14 +363,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    run(
+    return run(
         repo_root=Path(args.repo_root),
         home=Path(args.home) if args.home else None,
         bin_dir=Path(args.bin_dir) if args.bin_dir else None,
         shell_rc=Path(args.shell_rc) if args.shell_rc else None,
         dry_run=args.dry_run,
     )
-    return 0
 
 
 if __name__ == "__main__":

@@ -32,10 +32,11 @@ def test_run_writes_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch)
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("")
 
-    scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
+    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
 
     dispatcher = bin_dir / "dispatcher"
     invoke_skill = bin_dir / "invoke-skill"
+    assert status == 0
     assert dispatcher.is_file()
     assert invoke_skill.is_file()
     assert dispatcher.stat().st_mode & 0o111  # executable bits set
@@ -69,10 +70,51 @@ def test_run_dry_run_writes_nothing(tmp_path, monkeypatch):
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("")
 
-    scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=True)
+    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=True)
 
+    assert status == 0
     assert not (bin_dir / "dispatcher").exists()
     assert rc_file.read_text() == ""
+
+
+def test_run_dry_run_reports_required_capabilities(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "platform", "linux")
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    bin_dir = tmp_path / "bin"
+    rc_file = tmp_path / ".bashrc"
+    rc_file.write_text("")
+
+    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=True)
+
+    output = capsys.readouterr().out
+    assert status == 0
+    assert "Scaffold capability report:" in output
+    assert "WOULD-INSTALL: dispatcher" in output
+    assert "WOULD-INSTALL: invoke-skill" in output
+    assert "machine-interface dispatch" in output
+    assert "recurring automation" in output
+
+
+def test_run_fails_when_required_capabilities_are_skipped(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(scaffold, "ensure_path_windows", lambda *args, **kwargs: None)
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    bin_dir = tmp_path / "bin"
+
+    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, dry_run=False)
+
+    output = capsys.readouterr().out
+    assert status == 1
+    assert "FAILED: dispatcher" in output
+    assert "FAILED: invoke-skill" in output
+    assert "managed bin launchers are POSIX shell" in output
+    assert "machine-interface dispatch" in output
+    assert "recurring automation" in output
+    assert "Scaffold failed: required capabilities were not installed." in output
+    assert not (bin_dir / "dispatcher").exists()
+    assert not (bin_dir / "invoke-skill").exists()
 
 
 def test_run_reruns_idempotently(tmp_path, monkeypatch):

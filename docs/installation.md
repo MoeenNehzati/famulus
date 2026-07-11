@@ -78,6 +78,12 @@ Runs in every install, regardless of mode or which agents you want. Installs:
 - `PATH` — adds `<bin-dir>` to your shell rc (or the Windows registry) so
   `dispatcher` and the agent launchers resolve as bare commands.
 
+At the end of scaffold, the installer prints a capability report for required
+shared launchers. If a required capability such as `dispatcher` or
+`invoke-skill` is skipped on the host, scaffold exits nonzero and the phase-1
+orchestrator stops before `dev_link.py` or `launchers.py` runs. `--dry-run`
+prints the same capability report without writing files.
+
 ### `dev_link.py` — dev mode only
 
 Only runs if you said yes to dev mode and gave a repo path. Installs:

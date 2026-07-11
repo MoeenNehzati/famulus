@@ -1,6 +1,7 @@
 """Tests for the shared Python machine-interface runner."""
 from __future__ import annotations
 
+import importlib
 import sys
 from pathlib import Path
 
@@ -73,6 +74,43 @@ def test_load_interface_preserves_package_relative_imports(
     interface = load_interface("_rtx/_demo.py:Interface")
 
     assert interface.__class__.__name__ == "Interface"
+
+
+def test_load_interface_ignores_conflicting_cached_package(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    foreign_root = tmp_path / "foreign"
+    foreign_runtime = foreign_root / "_rtx"
+    foreign_runtime.mkdir(parents=True)
+    (foreign_runtime / "__init__.py").write_text("VALUE = 'wrong'\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(foreign_root))
+    sys.modules.pop("_rtx", None)
+    importlib.import_module("_rtx")
+
+    skill_root = tmp_path / "skill"
+    runtime = skill_root / "_rtx"
+    runtime.mkdir(parents=True)
+    (runtime / "__init__.py").write_text("VALUE = 'ok'\n", encoding="utf-8")
+    (runtime / "_demo.py").write_text(
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "from . import VALUE\n"
+        "\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    def __init__(self):\n"
+        "        self.value = VALUE\n"
+        "\n"
+        "    def run(self, args):\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(skill_root)
+
+    interface = load_interface("_rtx/_demo.py:Interface")
+
+    assert interface.value == "ok"
+    sys.modules.pop("_rtx", None)
+    sys.modules.pop("_rtx._demo", None)
 
 
 def test_route_smoke_builds_parser_but_does_not_require_normal_args(

@@ -214,7 +214,7 @@ Targets:
 
 Status:
 
-- not started in this repo
+- done
 
 Description:
 
@@ -225,6 +225,10 @@ What was done:
 - the dependency chain and the misleading downstream error shape were documented in the lessons archive
 - the implementation slice is now scoped: `dispatcher` is a required scaffold capability, `invoke-skill` is required for recurring automation, and skipped required capabilities should produce a structured install-time report instead of a low-signal note
 - the preferred behavior is an aggregated nonzero scaffold result rather than fail-fast, so users see all missing required capabilities and the dependent workflows affected by each one
+- `_install_scaffold.py` now returns structured capability results for `dispatcher` and `invoke-skill`, prints an aggregated scaffold capability report, and exits nonzero when a required capability is skipped
+- `_phase_entry.py` now stops the phase-1 install before `dev-link` or launcher installation if scaffold reports a required capability failure
+- focused installer tests cover successful Unix scaffold, dry-run capability reporting, unsupported-host required-capability failures, affected workflow names, and phase-entry stopping on scaffold failure
+- `docs/installation.md` and `skills/install-assistant-tools/SKILL.md` now document the required-capability report and nonzero failure behavior
 
 Prevention:
 
