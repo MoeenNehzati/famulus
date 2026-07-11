@@ -39,16 +39,17 @@ We should be able to:
 
 ## Current Sequence
 
-- current completed step: Python machine interfaces now use the shared `python_machine_interface` runner with dispatcher route-smoke coverage
-- current repo status: route-smoke, blueprint sync, validators, recurring-tasks tests, and focused installer tests pass; full pytest still has environment/unrelated failures for native secret storage, GitHub/network plugin install, read-only `.git/config`, and untracked secret-store files in copied-plugin tests
-- recommended next item: `Category 1 / Immediate Fix 5` — fail loudly when a required capability is skipped on a host
-- emphasis for the next slice: keep separating product/runtime failures from installer UX and test-harness-only host access problems
+- current completed step: `Category 2 / Longer Fix 3` now has Python-first launcher installation, a recurring-tasks scheduler backend boundary, Python recurring-task setup/job execution, native scheduler generation for Linux/systemd, macOS/launchd, and Windows Task Scheduler, and a live Linux/systemd schedule/unschedule smoke pass
+- current repo status: recurring-tasks tests pass after the scheduler/job-executor slice; focused installer launcher/scaffold tests pass after the Windows `invoke-skill.bat` slice; full pytest still has environment/unrelated failures for native secret storage, GitHub/network plugin install, read-only `.git/config`, and unrelated blueprint/schema migration dirt
+- recommended next item: watch the new native scheduler smoke in CI on macOS and Windows, then record whether those hosts pass or need backend fixes before declaring `Category 2 / Longer Fix 3` fully done
+- emphasis for the next slice: keep separating product/runtime fixes from native-host scheduler support and test-harness-only host access problems
 
 Why this is next:
 
-- it is the remaining immediate-fix item in this category
-- it addresses misleading downstream failures when installer prerequisites are skipped
-- it is bounded around installer reporting and validation, not a broad runtime redesign
+- launcher installation no longer depends on POSIX shell as the primary product surface
+- recurring-task Linux/systemd scheduling works through the new Python executor path
+- macOS and Windows scheduler backends now generate native scheduler entries, and CI has an opt-in live smoke step for those native hosts
+- the next decision is narrower than a broad rewrite: inspect the native CI smoke results and fix any launchd/Task Scheduler host-specific failures
 
 ## Tracking Format
 
@@ -345,17 +346,37 @@ What was done:
 - added an installer-local launcher bundle layer under `skills/install-assistant-tools/_rtx/_install_launcher/`, with Linux, macOS, and Windows implementations selected behind one neutral `platform_launcher_installer()` boundary
 - moved generated/static launcher file placement out of scaffold and agent launcher orchestration, so `dispatcher`, `invoke-skill`, agent launchers, `.bat` wrappers, and `tw` install through platform-specific launcher bundle contracts
 - made the scaffold install a Windows `dispatcher.bat` launcher instead of skipping the required dispatcher capability on Windows
-- changed Windows `invoke-skill` handling from a required scaffold failure to an explicit unsupported automation capability, because `recurring-tasks` remains systemd/Unix-only today
+- initially changed Windows `invoke-skill` handling from a required scaffold failure to an explicit unsupported automation capability while recurring-tasks was still systemd/Unix-only
 - changed Windows agent launcher file installation to copy the launcher bundle instead of relying on symlink creation, avoiding Developer Mode/admin symlink requirements for supported primary launchers
 - changed Windows `tw` handling to skip launcher installation up front rather than only skipping verification
-- added focused tests for generated launcher bundles, copy/link static launcher behavior, platform installer selection, Windows dispatcher installation, unsupported Windows invoke-skill, Windows copied agent launchers, and Windows `tw` skip behavior
+- added focused tests for generated launcher bundles, copy/link static launcher behavior, platform installer selection, Windows dispatcher installation, Windows copied agent launchers, and Windows `tw` skip behavior
 - updated install and launcher docs to describe platform-specific launcher bundle installation and the current recurring-automation support boundary
-- added a private recurring-tasks scheduler backend package under `skills/recurring-tasks/_rtx/_schedule_backend/`, with Linux/systemd implementing the existing behavior and macOS/Windows backends returning explicit unsupported errors
+- added a private recurring-tasks scheduler backend package under `skills/recurring-tasks/_rtx/_schedule_backend/`, first preserving Linux/systemd behavior behind the interface and then adding macOS/launchd and Windows Task Scheduler implementations
 - moved recurring-tasks unit sync, job test/status, and scheduler healthcheck probes behind the backend interface instead of direct `systemctl` calls in the command scripts
-- added focused recurring-tasks backend tests that pin Linux/systemd command generation and platform backend selection while keeping macOS launchd and Windows Task Scheduler as explicit unsupported backends
+- added focused recurring-tasks backend tests that pin Linux/systemd unit generation, macOS launchd plist/command generation, Windows Task Scheduler command generation, and platform backend selection
 - replaced the Linux/macOS generated `dispatcher` and `invoke-skill` shell launchers with extensionless Python launchers; `invoke-skill` no longer depends on a recurring-tasks `_agent_invoker.sh`
 - replaced recurring-tasks setup shell with a Python setup runner and removed stale `scripts-invoke-agent`, `_agent_invoker.sh`, `_run_job.sh`, and `_agent_env.sh` surfaces
 - changed generated systemd services to call a Python job executor instead of `/bin/bash -c` with shell redirection, and added tests that reject shell service generation
+- committed the main launcher/scheduler slice as `292f38b` (`Make recurring task launchers Python-first`)
+- ran a live Linux/systemd implementation smoke test using a temporary `ai-codex-live-smoke-*` timer/service generated with the new unit shape
+- the first live smoke test proved the timer was scheduled and fired, but exposed a real product bug: the direct systemd execution environment could not import `officina` because `_job_executor.py` assumed repo `src` was already on `PYTHONPATH`
+- fixed `_job_executor.py` so direct systemd execution bootstraps the repo `src` path itself, and added a regression test that invokes the executor directly with `PYTHONPATH` removed
+- reran the live smoke test successfully: the temporary timer became enabled/active, fired at the next minute boundary, wrote the marker through the Python executor, then cleanup disabled/removed the timer and service so post-checks reported `inactive`, `not-found`, and no remaining unit files
+- reran `python3 -m pytest -q skills/recurring-tasks/tests`, which passed with 114 tests after the executor bootstrap fix
+- implemented the macOS backend with per-user launchd LaunchAgent plist generation, `launchctl bootstrap`/`bootout`, `launchctl kickstart` testing, and launchd status/health checks
+- implemented the Windows backend with Task Scheduler `schtasks.exe` create/delete/run/query behavior under the root-level `Famulus-AI-ai-*` task-name prefix
+- added Linux-run unit tests for macOS launchd plist generation, launchd cron conversion, launchd load/remove/kickstart commands, Windows Task Scheduler cron conversion, task create/delete/run commands, and stale task cleanup
+- installed Windows recurring automation support at the launcher layer by generating `invoke-skill.bat` instead of reporting Windows `invoke-skill` as unsupported
+- updated the Python job executor to resolve Windows launcher shims such as `invoke-skill.bat` through PATH/PATHEXT before launching without a shell
+- updated install docs and installer tests so Windows expects both `dispatcher.bat` and `invoke-skill.bat`
+- added an opt-in live scheduler smoke test that creates one unique temporary scheduler entry, waits for the Python executor to write a marker file, then removes only that entry
+- wired GitHub Actions to run that live scheduler smoke on macOS and Windows after the normal full Python suite
+
+Still remaining:
+
+- macOS launchd scheduling has not been live-tested on a macOS host in this repo session; the new CI smoke should provide that result on push/PR
+- Windows Task Scheduler scheduling has not been live-tested on a Windows host in this repo session; the new CI smoke should provide that result on push/PR
+- the current local Linux-run tests validate generated native scheduler files/commands, but local Linux cannot prove launchd or Task Scheduler accepts and runs those entries on real hosts
 
 Prevention:
 
@@ -366,7 +387,9 @@ Prevention:
 - keep recurring automation entrypoints behind the scheduler backend interface; add macOS launchd and Windows Task Scheduler behavior inside backend implementations rather than new top-level `sys.platform` branches
 - keep backend tests as the place where host scheduler commands, generated files, and unsupported platform statuses are pinned
 - keep recurring-tasks POSIX regression tests checking blueprint runtime kinds, `_rtx` shell files, generated service content, and generated launcher content so CI fails on the host where a platform-specific assumption re-enters
-- decide explicitly how recurring automation should work on non-systemd hosts before changing `invoke-skill` from unsupported to supported there
+- keep a Linux/systemd live smoke test available for manual or CI use that creates one unique temporary timer/service, waits for execution, and verifies cleanup removes only that timer/service
+- keep the direct-executor import regression test so systemd-style execution cannot silently depend on the interactive shell's `PYTHONPATH`
+- keep the native-host smoke tests for macOS launchd and Windows Task Scheduler creating one unique temporary scheduler entry, waiting for execution, then verifying cleanup removes only that entry
 
 ### 4. Reduce shell-first shared runtime design in new and existing skills
 

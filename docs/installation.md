@@ -68,11 +68,10 @@ Runs in every install, regardless of mode or which agents you want. Installs:
   command (`dispatcher --caller-skill <skill> <skill> <interface> ...`), so
   this is the one piece of scaffolding almost everything else structurally
   depends on.
-- The `invoke-skill` launcher — used by `recurring-tasks` systemd/cron jobs
-  to invoke a skill by name without hardcoding an absolute path. This is
-  installed only on hosts where the current recurring-automation backend is
-  supported; Windows reports it as unsupported because recurring-tasks is
-  currently systemd/Unix-only.
+- The `invoke-skill` launcher — used by `recurring-tasks` scheduler jobs to
+  invoke a skill by name without hardcoding an absolute path. This is generated
+  as `<bin-dir>/invoke-skill` on Unix-like hosts and
+  `<bin-dir>/invoke-skill.bat` on Windows.
 - Required third-party Python packages from
   `references/blueprint/runtime_dependencies.json`, generated from executable
   interface dependency declarations. First-party code (`script_dispatcher`
@@ -85,10 +84,10 @@ Runs in every install, regardless of mode or which agents you want. Installs:
 At the end of scaffold, the installer prints a capability report for shared
 launchers. If a required capability such as `dispatcher` fails or is skipped,
 scaffold exits nonzero and the phase-1 orchestrator stops before `dev_link.py`
-or `launchers.py` runs. Platform-scoped capabilities such as `invoke-skill` on
-Windows are reported as unsupported with the affected workflows named, but they
-do not block the universal dispatcher floor. `--dry-run` prints the same
-capability report without writing files.
+or `launchers.py` runs. Platform-scoped capabilities that are unsupported on a
+host are reported with the affected workflows named, but they do not block the
+universal dispatcher floor. `--dry-run` prints the same capability report
+without writing files.
 
 ### `dev_link.py` — dev mode only
 

@@ -107,7 +107,7 @@ def test_osx_uses_unix_launcher_contract(tmp_path):
     assert not (bin_dir / "dispatcher.bat").exists()
 
 
-def test_windows_dispatcher_is_batch_and_invoke_skill_is_unsupported(tmp_path):
+def test_windows_dispatcher_and_invoke_skill_are_batch_launchers(tmp_path):
     installer = platform_launcher_installer("win32")
     repo_root = Path(r"C:\Users\tester\AI")
     bin_dir = tmp_path / "bin"
@@ -116,12 +116,14 @@ def test_windows_dispatcher_is_batch_and_invoke_skill_is_unsupported(tmp_path):
     invoke_skill = installer.install_invoke_skill_launcher(bin_dir, dry_run=False)
 
     content = (bin_dir / "dispatcher.bat").read_text(encoding="utf-8")
+    invoke_content = (bin_dir / "invoke-skill.bat").read_text(encoding="utf-8")
     assert dispatcher.status == "installed"
     assert "py -3 -m officina.dispatcher.cli %*" in content
     assert r"C:\Users\tester\AI" in content
     assert not (bin_dir / "dispatcher").exists()
-    assert invoke_skill.status == "unsupported"
-    assert invoke_skill.required is False
+    assert invoke_skill.status == "installed"
+    assert "assistant --local --claude" in invoke_content
+    assert "assistant --local --codex exec" in invoke_content
     assert not (bin_dir / "invoke-skill").exists()
 
 

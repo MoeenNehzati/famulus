@@ -44,7 +44,7 @@ def test_run_writes_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch)
     assert "_agent_invoker.sh" not in invoke_skill.read_text(encoding="utf-8")
 
 
-def test_run_writes_windows_dispatcher_and_reports_unsupported_invoke_skill(tmp_path, monkeypatch, capsys):
+def test_run_writes_windows_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(scaffold, "ensure_path_windows", lambda *args, **kwargs: None)
     repo_root = tmp_path / "repo"
@@ -55,12 +55,14 @@ def test_run_writes_windows_dispatcher_and_reports_unsupported_invoke_skill(tmp_
 
     output = capsys.readouterr().out
     dispatcher = bin_dir / "dispatcher.bat"
+    invoke_skill = bin_dir / "invoke-skill.bat"
     assert status == 0
     assert dispatcher.is_file()
+    assert invoke_skill.is_file()
     assert "py -3 -m officina.dispatcher.cli %*" in dispatcher.read_text(encoding="utf-8")
+    assert "assistant --local --claude" in invoke_skill.read_text(encoding="utf-8")
     assert "OK: dispatcher" in output
-    assert "UNSUPPORTED: invoke-skill" in output
-    assert "recurring-tasks is currently systemd/Unix-only" in output
+    assert "OK: invoke-skill" in output
     assert not (bin_dir / "dispatcher").exists()
     assert not (bin_dir / "invoke-skill").exists()
 

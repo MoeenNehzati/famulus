@@ -28,6 +28,34 @@ def _windows_dispatcher_content(repo_root: Path) -> str:
     )
 
 
+def _windows_invoke_skill_content() -> str:
+    return (
+        "@echo off\n"
+        "setlocal\n"
+        "if \"%~1\"==\"\" (\n"
+        "  echo Usage: invoke-skill ^<skill-name^> 1>&2\n"
+        "  exit /b 2\n"
+        ")\n"
+        "if not \"%~2\"==\"\" (\n"
+        "  echo Usage: invoke-skill ^<skill-name^> 1>&2\n"
+        "  exit /b 2\n"
+        ")\n"
+        "set \"SKILL=%~1\"\n"
+        "if \"%ASSISTANT_DEFAULT%\"==\"\" set \"ASSISTANT_DEFAULT=claude\"\n"
+        "if /I \"%ASSISTANT_DEFAULT%\"==\"claude\" (\n"
+        "  assistant --local --claude --permission-mode bypassPermissions -p \"/%SKILL%\"\n"
+        "  exit /b %ERRORLEVEL%\n"
+        ")\n"
+        "if /I \"%ASSISTANT_DEFAULT%\"==\"codex\" (\n"
+        "  set \"CODEX_SKILL=$%SKILL%\"\n"
+        "  assistant --local --codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox \"%CODEX_SKILL%\"\n"
+        "  exit /b %ERRORLEVEL%\n"
+        ")\n"
+        "echo Unknown ASSISTANT_DEFAULT backend: %ASSISTANT_DEFAULT% 1>&2\n"
+        "exit /b 2\n"
+    )
+
+
 class WindowsLauncherInstaller(LauncherInstallerBase):
     """Install launcher bundles on Windows without relying on symlink support."""
 
@@ -61,10 +89,14 @@ class WindowsLauncherInstaller(LauncherInstallerBase):
     ) -> LauncherInstallResult:
         bundle = LauncherBundleSpec(
             name="invoke-skill",
-            required=False,
             workflows=INVOKE_SKILL_WORKFLOWS,
-            files=[],
-            unsupported_reason="recurring-tasks is currently systemd/Unix-only",
+            files=[
+                LauncherFileSpec(
+                    destination=bin_dir / "invoke-skill.bat",
+                    mode="generate",
+                    content=_windows_invoke_skill_content(),
+                )
+            ],
         )
         return self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)
 
