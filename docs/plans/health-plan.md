@@ -147,6 +147,39 @@ That future skill should own semantic review, test execution, validator
 execution, and writing a fresh `.last_audit.json` only after the target skill has
 actually been checked.
 
+## Skill Audit Design
+
+The certifier/writer skill should be called `skill-audit`.
+
+`skill-audit` has two gates:
+
+1. Mechanical checks:
+   - blueprint sync check;
+   - validators;
+   - tests.
+2. Semantic blueprint exactness:
+   - every blueprint entry is correct;
+   - no behavior-relevant file, command, dependency, permission, state path, or
+     dispatch is missing from the blueprint;
+   - no declared file, command, dependency, permission, state path, or dispatch
+     is excess.
+
+Implicit references count. If skill instructions, docs, docstrings, runtime
+code, or tests describe behavior without a direct path, `skill-audit` must still
+trace the implied dependency and require the blueprint to declare it. For
+example, wording such as "look under this directory for executables" means the
+skill depends on executables under that directory; the blueprint should declare
+that directory or the relevant executable set. Likewise, prose that names a
+script family, helper module, generated artifact, config file, state directory,
+or external command surface should be treated as a candidate dependency even
+when the exact path is not written inline.
+
+The semantic rule is exactness, not minimal path syntax. A direct file path is
+only one way a dependency can be expressed. If the skill's behavior would change
+when an implicitly referenced file or executable changes, then omitting it from
+the blueprint is a miss; declaring files or permissions that the skill does not
+actually use is excess.
+
 ## Next Steps
 
 1. Implement the audit-record writer/certifier skill.
