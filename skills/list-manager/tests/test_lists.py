@@ -58,7 +58,7 @@ categories:
 
 def run(args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess:
     env = os.environ.copy()
-    env["PYTHONPATH"] = f"{REPO_SRC}:{SCRIPTS_DIR}"
+    env["PYTHONPATH"] = os.pathsep.join([str(REPO_SRC), str(SCRIPTS_DIR)])
     return subprocess.run(
         [sys.executable, str(LISTS_PY)] + args,
         input=stdin,
