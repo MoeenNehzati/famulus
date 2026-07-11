@@ -135,13 +135,18 @@ interfaces:
       directly_writes: []
     mutate-plan:
       description: Apply a mutation (hide, show, keep, remove, mark-done, reject,
-        set-deadline, add) to today's plan and display the refreshed result.
-      usage: '{hide,show,keep,remove,mark-done,reject,set-deadline,add} ...'
+        set-deadline, add) to a dated plan and display the refreshed result.
+        Defaults to today when --date is omitted.
+      usage: '[--date <M-D-YY|YYYY-MM-DD>] {hide,show,keep,remove,mark-done,reject,set-deadline,add} ...'
       allow_all_skills: false
       patterns:
         - min_positionals: 1
           allow_extra_positionals: true
           allow_stdin: false
+          allowed_flags:
+            - --date
+          flag_patterns:
+            --date: '^(\d{1,2}-\d{1,2}-\d{2}|\d{4}-\d{2}-\d{2})$'
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_state_patch.py:Interface

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 runtime_path = Path(__file__).parent.parent / "_rtx" / "_day_model.py"
@@ -10,10 +11,32 @@ assert spec.loader is not None
 spec.loader.exec_module(plan_runtime)
 
 
+def load_state_patch_module():
+    runtime_dir = Path(__file__).parent.parent / "_rtx"
+    state_patch_path = runtime_dir / "_state_patch.py"
+    sys.path.insert(0, str(runtime_dir))
+    try:
+        spec = importlib.util.spec_from_file_location("state_patch", state_patch_path)
+        state_patch = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(state_patch)
+        return state_patch
+    finally:
+        sys.path.remove(str(runtime_dir))
+
+
 def test_get_today_date_uses_shared_date_key_formatter(monkeypatch):
     monkeypatch.setattr(plan_runtime, "get_today_date_key", lambda: "1-5-07")
 
     assert plan_runtime.get_today_date() == "1-5-07"
+
+
+def test_normalize_plan_date_accepts_storage_key_and_iso(monkeypatch):
+    monkeypatch.setattr(plan_runtime, "get_today_date_key", lambda: "1-5-07")
+
+    assert plan_runtime.normalize_plan_date(None) == "1-5-07"
+    assert plan_runtime.normalize_plan_date("07-03-26") == "7-3-26"
+    assert plan_runtime.normalize_plan_date("2026-07-04") == "7-4-26"
 
 
 def test_initial_meta_filters_and_sorts():
@@ -123,3 +146,18 @@ def test_mutate_plan_mark_done_updates_master_list_and_hides_item(monkeypatch):
     result = plan_runtime.mutate_plan("7-2-26", "mark-done", section="actions", indices=[2])
     assert calls == [("todo", [{"id": "b", "state": "complete"}])]
     assert result == {"actions": [["a", "shown"], ["b", "hidden"]], "triage": []}
+
+
+def test_state_patch_uses_requested_date(monkeypatch, capsys):
+    state_patch = load_state_patch_module()
+    calls = []
+
+    monkeypatch.setattr(
+        state_patch,
+        "mutate_plan",
+        lambda date_key, command, **kwargs: calls.append((date_key, command, kwargs)) or "updated",
+    )
+
+    assert state_patch.main(["hide", "actions", "2", "--date", "2026-07-04"]) == 0
+    assert calls == [("7-4-26", "hide", {"section": "actions", "indices": [2]})]
+    assert capsys.readouterr().out == "updated"

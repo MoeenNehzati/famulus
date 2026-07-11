@@ -37,6 +37,20 @@ def parse_date_key(value: str) -> date:
     )
 
 
+def normalize_date_key(value: str) -> str:
+    """Normalize supported date input formats to the compact M-D-YY key."""
+    raw = value.strip()
+    try:
+        return format_date_key(parse_date_key(raw))
+    except ValueError:
+        pass
+
+    try:
+        return format_date_key(date.fromisoformat(raw))
+    except ValueError as exc:
+        raise ValueError(f"invalid date input: {value!r}") from exc
+
+
 def get_today_date_key() -> str:
     """Return today's date in the repo's compact M-D-YY storage-key format."""
     return format_date_key(date.today())

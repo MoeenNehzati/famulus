@@ -34,11 +34,11 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 try:
-    from officina.common.dates import get_today_date_key
+    from officina.common.dates import get_today_date_key, normalize_date_key
     from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface
 except ImportError:  # pragma: no cover - local checkout fallback
     sys.path.insert(0, str(REPO_ROOT / "src"))
-    from officina.common.dates import get_today_date_key
+    from officina.common.dates import get_today_date_key, normalize_date_key
     from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface
 
 MAX_ITEMS = 5
@@ -154,6 +154,15 @@ def run_dispatcher(target_skill: str, script_interface: str, *args: str, stdin: 
 
 def get_today_date() -> str:
     return get_today_date_key()
+
+
+def normalize_plan_date(value: str | None) -> str:
+    if value is None or not value.strip():
+        return get_today_date()
+    try:
+        return normalize_date_key(value)
+    except ValueError as exc:
+        raise PlanError("date must be M-D-YY or YYYY-MM-DD") from exc
 
 
 def plan_path(date_key: str) -> str:

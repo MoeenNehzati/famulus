@@ -27,8 +27,8 @@ Exported Interfaces: none
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `mutate-plan` — Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to today's plan and display the refreshed result.
-  - `dispatcher --caller-skill daily-plan daily-plan.machine.mutate-plan {hide,show,keep,remove,mark-done,reject,set-deadline,add} ...`
+- `mutate-plan` — Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to a dated plan and display the refreshed result. Defaults to today when --date is omitted.
+  - `dispatcher --caller-skill daily-plan daily-plan.machine.mutate-plan [--date <M-D-YY|YYYY-MM-DD>] {hide,show,keep,remove,mark-done,reject,set-deadline,add} ...`
 - `orchestrate` — Generate today's plan (or show the existing one, refreshing its Todo/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists.
   - `dispatcher --caller-skill daily-plan daily-plan.machine.orchestrate [--forced]`
 - `plan-storage` — Read, write, check existence of, or delete a plan file in cloud storage by date.
@@ -59,6 +59,7 @@ markers in the stored plan, saves the refreshed rendering, and prints it.
 Plan-local edits (`hide`, `show`, `keep`, `remove`, `add`) only change the
 plan metadata. Master-list edits (`mark-done`, `reject`, `set-deadline`) also
 propagate to the underlying lists through `list-manager`. Use the `mutate-plan`
-interface to apply these mutations.
+interface to apply these mutations. Omit `--date` for today's plan, or pass
+`--date M-D-YY` / `--date YYYY-MM-DD` to mutate a different stored plan.
 
 For the runtime algorithm and storage contract, see `plan_runtime.py` in the skill's scripts directory.
