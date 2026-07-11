@@ -42,8 +42,19 @@ from install_test_utils import (  # noqa: E402
 def platform_shell_command(command: str, args: list[str]) -> list[str]:
     if sys.platform == "win32":
         comspec = os.environ.get("COMSPEC", "cmd.exe")
-        return [comspec, "/d", "/s", "/c", subprocess.list2cmdline([command, *args])]
+        return [comspec, "/d", "/c", subprocess.list2cmdline([command, *args])]
     return ["/bin/sh", "-c", 'exec "$@"', "launcher-smoke", command, *args]
+
+
+def test_windows_platform_shell_command_avoids_cmd_s_quote_rewrite(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+
+    command = platform_shell_command("assistant", ["debug", "prompt-input", "Use $famulus:daily-plan."])
+
+    self_command = command[-1]
+    assert command[1:3] == ["/d", "/c"]
+    assert "/s" not in command
+    assert '"Use $famulus:daily-plan."' in self_command
 
 
 class CodexInstallTests(unittest.TestCase):
