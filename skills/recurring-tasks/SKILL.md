@@ -26,12 +26,12 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-disable <name>`
 - `scripts-enable` — Enable a job by setting enabled: true in jobs.yaml and syncing unit files.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-enable <name>`
-- `scripts-ensure-agent-env` — Idempotently ensure recurring-tasks' own PATH/env prerequisites and systemd AI_AGENT_COMMAND_TEMPLATE are in place. Also run automatically by scripts-setup.
+- `scripts-ensure-agent-env` — Idempotently ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE is in place. Also run automatically by scripts-setup.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-ensure-agent-env --repo-root DIR --home DIR --bin-dir DIR [--dry-run]`
 - `scripts-healthcheck` — Run pre-flight and per-job health checks for all enabled recurring tasks; sends a desktop notification on failure.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-healthcheck`
 - `scripts-setup` — Verify prerequisites, sync systemd unit files from jobs.yaml, install the healthcheck cron entry, and list active timers.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-setup`
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-setup [--migrate-cron]`
 - `scripts-status` — List all active ai-* timers, next fire times, and service status.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-status`
 - `scripts-sync` — Regenerate systemd unit files from jobs.yaml.
@@ -69,17 +69,17 @@ sync_units.py (generates systemd units)
     ↓
 systemd timer fires on schedule
     ↓
-systemd service runs: bash -c "<command from jobs.yaml>"
+systemd service runs the Python runner
     ↓
-Command typically: invoke-skill <job-name>
+Executor parses command from jobs.yaml (typically: invoke-skill <job-name>)
     ↓
 Logs to: logs/<job-name>/run.log
 ```
 
 **Key simplifications:**
-- ✓ No per-job runner scripts (command runs directly via bash -c)
+- ✓ No per-job shell runner scripts
 - ✓ No invoke-agent.sh/run-skill.sh layers (invoke-skill is on PATH)
-- ✓ Direct command invocation from systemd unit
+- ✓ Python executor appends logs without shell redirection
 - ✓ Environment inherited from systemd user session (AI_AGENT_COMMAND_TEMPLATE already set)
 
 ## Configuration

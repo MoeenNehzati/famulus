@@ -41,6 +41,7 @@ def test_run_writes_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch)
     assert invoke_skill.is_file()
     assert dispatcher.stat().st_mode & 0o111  # executable bits set
     assert str(repo_root) in dispatcher.read_text()
+    assert "_agent_invoker.sh" not in invoke_skill.read_text(encoding="utf-8")
 
 
 def test_run_writes_windows_dispatcher_and_reports_unsupported_invoke_skill(tmp_path, monkeypatch, capsys):

@@ -33,8 +33,9 @@ def _load(tmp_dir: Path):
 def test_systemd_manager_running_is_ok():
     with tempfile.TemporaryDirectory() as d:
         mod = _load(Path(d))
-        with mock.patch.object(mod.subprocess, "run") as run:
-            run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="running\n", stderr="")
+        backend = mock.Mock()
+        backend.check_manager.return_value = None
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
             assert mod.check_systemd_manager() is None
     print("PASS: systemd 'running' state is OK")
 
@@ -42,8 +43,9 @@ def test_systemd_manager_running_is_ok():
 def test_systemd_manager_degraded_is_ok():
     with tempfile.TemporaryDirectory() as d:
         mod = _load(Path(d))
-        with mock.patch.object(mod.subprocess, "run") as run:
-            run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="degraded\n", stderr="")
+        backend = mock.Mock()
+        backend.check_manager.return_value = None
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
             assert mod.check_systemd_manager() is None
     print("PASS: systemd 'degraded' state is OK")
 
@@ -51,8 +53,9 @@ def test_systemd_manager_degraded_is_ok():
 def test_systemd_manager_other_state_fails_with_reason():
     with tempfile.TemporaryDirectory() as d:
         mod = _load(Path(d))
-        with mock.patch.object(mod.subprocess, "run") as run:
-            run.return_value = subprocess.CompletedProcess(args=[], returncode=1, stdout="stopping\n", stderr="")
+        backend = mock.Mock()
+        backend.check_manager.return_value = "systemd user manager: stopping"
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
             reason = mod.check_systemd_manager()
         assert reason == "systemd user manager: stopping"
     print("PASS: unexpected systemd state returns a descriptive reason")
@@ -61,8 +64,9 @@ def test_systemd_manager_other_state_fails_with_reason():
 def test_systemd_manager_empty_output_reports_unresponsive():
     with tempfile.TemporaryDirectory() as d:
         mod = _load(Path(d))
-        with mock.patch.object(mod.subprocess, "run") as run:
-            run.return_value = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+        backend = mock.Mock()
+        backend.check_manager.return_value = "systemd user manager: unresponsive"
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
             reason = mod.check_systemd_manager()
         assert reason == "systemd user manager: unresponsive"
     print("PASS: empty systemctl output reports 'unresponsive'")
@@ -73,8 +77,9 @@ def test_systemd_manager_empty_output_reports_unresponsive():
 def test_environment_not_set_fails():
     with tempfile.TemporaryDirectory() as d:
         mod = _load(Path(d))
-        with mock.patch.object(mod.subprocess, "run") as run:
-            run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="OTHER_VAR=1\n", stderr="")
+        backend = mock.Mock()
+        backend.get_agent_command_template.return_value = None
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
             reason = mod.check_environment()
         assert reason == "AI_AGENT_COMMAND_TEMPLATE: not set"
     print("PASS: missing AI_AGENT_COMMAND_TEMPLATE fails")
@@ -83,12 +88,10 @@ def test_environment_not_set_fails():
 def test_environment_command_not_found_fails():
     with tempfile.TemporaryDirectory() as d:
         mod = _load(Path(d))
-        with mock.patch.object(mod.subprocess, "run") as run, \
+        backend = mock.Mock()
+        backend.get_agent_command_template.return_value = "invoke-skill {skill}"
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
              mock.patch.object(mod.shutil, "which", return_value=None):
-            run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0,
-                stdout="AI_AGENT_COMMAND_TEMPLATE=invoke-skill {skill}\n", stderr="",
-            )
             reason = mod.check_environment()
         assert reason == "AI_AGENT_COMMAND_TEMPLATE: command not found: invoke-skill"
     print("PASS: unresolvable command in template fails")
@@ -97,12 +100,10 @@ def test_environment_command_not_found_fails():
 def test_environment_ok_when_set_and_resolvable():
     with tempfile.TemporaryDirectory() as d:
         mod = _load(Path(d))
-        with mock.patch.object(mod.subprocess, "run") as run, \
+        backend = mock.Mock()
+        backend.get_agent_command_template.return_value = "invoke-skill {skill}"
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
              mock.patch.object(mod.shutil, "which", return_value="/usr/local/bin/invoke-skill"):
-            run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0,
-                stdout="AI_AGENT_COMMAND_TEMPLATE=invoke-skill {skill}\n", stderr="",
-            )
             assert mod.check_environment() is None
     print("PASS: set + resolvable template is OK")
 
@@ -110,12 +111,10 @@ def test_environment_ok_when_set_and_resolvable():
 def test_environment_strips_bash_quoting():
     with tempfile.TemporaryDirectory() as d:
         mod = _load(Path(d))
-        with mock.patch.object(mod.subprocess, "run") as run, \
+        backend = mock.Mock()
+        backend.get_agent_command_template.return_value = "invoke-skill {skill}"
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend), \
              mock.patch.object(mod.shutil, "which", return_value="/usr/bin/invoke-skill") as which:
-            run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0,
-                stdout="AI_AGENT_COMMAND_TEMPLATE=$'invoke-skill {skill}'\n", stderr="",
-            )
             assert mod.check_environment() is None
             which.assert_called_once_with("invoke-skill")
     print("PASS: bash $'...' quoting is stripped before resolving the command")
@@ -141,8 +140,9 @@ def test_check_job_fresh_log_and_active_timer_is_ok():
         log_file = mod.LOG_DIR / "test-job" / "run.log"
         log_file.parent.mkdir(parents=True)
         log_file.write_text("ran fine\n")
-        with mock.patch.object(mod.subprocess, "run") as run:
-            run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        backend = mock.Mock()
+        backend.check_job_active.return_value = True
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
             assert mod.check_job(_job()) is None
     print("PASS: fresh log + active timer is OK")
 
@@ -168,8 +168,9 @@ def test_check_job_inactive_timer_fails():
         log_file = mod.LOG_DIR / "test-job" / "run.log"
         log_file.parent.mkdir(parents=True)
         log_file.write_text("ran fine\n")
-        with mock.patch.object(mod.subprocess, "run") as run:
-            run.return_value = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+        backend = mock.Mock()
+        backend.check_job_active.return_value = False
+        with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
             reason = mod.check_job(_job())
         assert reason == "test-job: timer not active"
     print("PASS: inactive timer fails")

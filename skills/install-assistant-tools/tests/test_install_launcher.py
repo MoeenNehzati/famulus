@@ -86,6 +86,13 @@ def test_linux_dispatcher_and_invoke_skill_are_extensionless(tmp_path):
     assert (bin_dir / "dispatcher").is_file()
     assert (bin_dir / "invoke-skill").is_file()
     assert (bin_dir / "dispatcher").stat().st_mode & 0o111
+    dispatcher_text = (bin_dir / "dispatcher").read_text(encoding="utf-8")
+    invoke_text = (bin_dir / "invoke-skill").read_text(encoding="utf-8")
+    assert dispatcher_text.startswith("#!/usr/bin/env python3")
+    assert "runpy.run_module('officina.dispatcher.cli'" in dispatcher_text
+    assert invoke_text.startswith("#!/usr/bin/env python3")
+    assert "os.execvp(command[0], command)" in invoke_text
+    assert "_agent_invoker.sh" not in invoke_text
 
 
 def test_osx_uses_unix_launcher_contract(tmp_path):

@@ -5,7 +5,7 @@ flowchart TD
   subgraph SETUP ["Setup (run once per machine)"]
     direction TB
     JY[("jobs.yaml\nsource of truth")]
-    SH["_rtx/_setup_runner.sh"]
+    SH["_rtx/_setup_runner.py"]
     SU["_rtx/_unit_writer.py"]
     ENVC["~/.config/environment.d/\n20-ai-agent.conf\nsets AI_AGENT_COMMAND_TEMPLATE"]
     IAT["install-assistant-tools skill\n(separate — installs launcher)"]
@@ -21,7 +21,7 @@ flowchart TD
     direction TB
     TIMER["~/.config/systemd/user/\nai-NAME.timer\nOnCalendar + Persistent=true"]
     SVC["~/.config/systemd/user/\nai-NAME.service"]
-    RUNNER["systemd service command\nsets PATH, DBUS env\ncalls invoke-skill"]
+    RUNNER["systemd service command\nruns Python job executor"]
   end
 
   SU -->|creates| TIMER
@@ -31,18 +31,18 @@ flowchart TD
   %% ── Job execution ───────────────────────────────────────────────
   subgraph EXEC ["Job execution (per scheduled fire)"]
     direction TB
-    RSH["invoke-skill NAME\nresolves recurring-tasks runtime\ncalls agent invoker"]
-    IA["_rtx/_agent_invoker.sh NAME\nassistant --permission-mode bypassPermissions\n  -p /NAME"]
+    EXECUTOR["_rtx/_job_executor.py\nloads jobs.yaml\nparses env + argv"]
+    RSH["invoke-skill NAME\nPython launcher\nexecs selected assistant backend"]
     CLAUDE["assistant\nruns /NAME skill\nnon-interactively"]
     JOBLOG["logs/NAME/run.log\n(stdout + stderr)"]
   end
 
   TIMER -->|fires on schedule| SVC
   SVC -->|ExecStart| RUNNER
-    RUNNER -->|calls| RSH
+    RUNNER -->|calls| EXECUTOR
+    EXECUTOR -->|calls| RSH
     ENVC -.->|"env var checked at runtime"| RSH
-  RSH -->|exec| IA
-  IA -->|invokes| CLAUDE
+  RSH -->|invokes| CLAUDE
   CLAUDE -->|output appended to| JOBLOG
 
   %% ── Healthcheck ─────────────────────────────────────────────────
@@ -54,7 +54,7 @@ flowchart TD
       direction LR
       C1["systemd user manager\nreachable?"]
       C2["AI_AGENT_COMMAND_TEMPLATE\nset in systemd env?"]
-      C3["invoke-agent.sh\nexists + executable?"]
+      C3["invoke-skill\nresolves on PATH?"]
     end
 
     subgraph PER ["Per enabled job"]

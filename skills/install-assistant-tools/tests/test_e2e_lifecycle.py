@@ -37,6 +37,7 @@ from install_test_utils import (  # noqa: E402
 import _config_bridge as dev_link  # noqa: E402
 import _agent_launchers as launchers  # noqa: E402
 import _install_scaffold as scaffold  # noqa: E402
+from _install_launcher import platform_launcher_installer  # noqa: E402
 
 UNINSTALL = SCRIPT_DIR.parent / "_rtx" / "_install_uninstall.py"
 
@@ -137,11 +138,12 @@ def test_launchers_executable_after_install(homes):
     bin_dir.mkdir()
 
     source_bin = REPO_ROOT / "skills" / "install-assistant-tools" / "bin"
+    launcher_installer = platform_launcher_installer()
     buf = io.StringIO()
     with redirect_stdout(buf):
-        scaffold.install_dispatcher_launcher(REPO_ROOT, bin_dir, dry_run=False)
+        launcher_installer.install_dispatcher_launcher(REPO_ROOT, bin_dir, dry_run=False)
         for agent in ("assistant", "collab", "coauthor", "tw"):
-            launchers.install_bin_for_agent(source_bin, bin_dir, agent, dry_run=False, manifest=None)
+            launchers.install_agent_launcher_files(source_bin, bin_dir, agent, dry_run=False, manifest=None)
 
     env = python_test_env(homes["root"], {"HOME": str(homes["home"])})
     for cmd in ("assistant", "collab", "coauthor", "tw", "dispatcher"):

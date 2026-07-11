@@ -328,7 +328,7 @@ Prevention:
 Targets:
 
 - `skills/install-assistant-tools/_rtx/_install_scaffold.py`
-- `skills/recurring-tasks/_rtx/_agent_invoker.sh`
+- recurring-tasks setup and job execution surfaces
 - installed `dispatcher` / `invoke-skill` behavior
 
 Status:
@@ -350,6 +350,12 @@ What was done:
 - changed Windows `tw` handling to skip launcher installation up front rather than only skipping verification
 - added focused tests for generated launcher bundles, copy/link static launcher behavior, platform installer selection, Windows dispatcher installation, unsupported Windows invoke-skill, Windows copied agent launchers, and Windows `tw` skip behavior
 - updated install and launcher docs to describe platform-specific launcher bundle installation and the current recurring-automation support boundary
+- added a private recurring-tasks scheduler backend package under `skills/recurring-tasks/_rtx/_schedule_backend/`, with Linux/systemd implementing the existing behavior and macOS/Windows backends returning explicit unsupported errors
+- moved recurring-tasks unit sync, job test/status, and scheduler healthcheck probes behind the backend interface instead of direct `systemctl` calls in the command scripts
+- added focused recurring-tasks backend tests that pin Linux/systemd command generation and platform backend selection while keeping macOS launchd and Windows Task Scheduler as explicit unsupported backends
+- replaced the Linux/macOS generated `dispatcher` and `invoke-skill` shell launchers with extensionless Python launchers; `invoke-skill` no longer depends on a recurring-tasks `_agent_invoker.sh`
+- replaced recurring-tasks setup shell with a Python setup runner and removed stale `scripts-invoke-agent`, `_agent_invoker.sh`, `_run_job.sh`, and `_agent_env.sh` surfaces
+- changed generated systemd services to call a Python job executor instead of `/bin/bash -c` with shell redirection, and added tests that reject shell service generation
 
 Prevention:
 
@@ -357,6 +363,9 @@ Prevention:
 - keep supported host launcher installation behind `_rtx/_install_launcher/` instead of scattering `sys.platform` branches across installer phases
 - keep launcher bundle specs rather than single-file assumptions, so future generated launchers can include helper files without redesigning scaffold or launcher orchestration
 - require installer and launcher tests to verify promised host surfaces, including Windows `dispatcher.bat`, copied Windows agent launcher bundles, and explicit unsupported statuses for platform-scoped automation
+- keep recurring automation entrypoints behind the scheduler backend interface; add macOS launchd and Windows Task Scheduler behavior inside backend implementations rather than new top-level `sys.platform` branches
+- keep backend tests as the place where host scheduler commands, generated files, and unsupported platform statuses are pinned
+- keep recurring-tasks POSIX regression tests checking blueprint runtime kinds, `_rtx` shell files, generated service content, and generated launcher content so CI fails on the host where a platform-specific assumption re-enters
 - decide explicitly how recurring automation should work on non-systemd hosts before changing `invoke-skill` from unsupported to supported there
 
 ### 4. Reduce shell-first shared runtime design in new and existing skills

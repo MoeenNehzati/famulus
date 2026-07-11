@@ -58,7 +58,7 @@ def build_temp_job(job_name: str, skill_name: str, backend: str) -> dict:
             f'DBUS_SESSION_BUS_ADDRESS=unix:path={bus} '
             f'PATH=$HOME/.local/bin:$PATH '
             f'ASSISTANT_DEFAULT={backend} '
-            f'{{skill_dir}}/scripts/run-skill.sh {skill_name}'
+            f'invoke-skill {skill_name}'
         ),
         'schedule': '*/15 * * * *',
         'enabled': True,

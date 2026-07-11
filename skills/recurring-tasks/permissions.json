@@ -1,6 +1,6 @@
 {
   "bash": [
-    "Bash(_rtx/_setup_runner.sh:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_setup_runner.py:Interface:*)",
     "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_unit_writer.py:Interface:*)",
     "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_job_control.py:Interface:*)",
     "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_healthcheck_probe.py:Interface:*)",

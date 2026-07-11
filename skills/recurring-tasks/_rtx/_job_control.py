@@ -10,14 +10,11 @@ Usage:
   python3 manage_job.py view-logs <name>       # Tail job logs (default 50 lines)
   python3 manage_job.py view-logs <name> --lines 100
   python3 manage_job.py status                 # Show all timers and next fire times
-  python3 manage_job.py sync                   # Regenerate systemd units from jobs.yaml
+  python3 manage_job.py sync                   # Regenerate scheduler entries from jobs.yaml
 
-All operations sync systemd units after modifying jobs.yaml.
+All operations sync scheduler entries after modifying jobs.yaml.
 """
-import json
-import subprocess
 import sys
-import time
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -26,8 +23,22 @@ import yaml
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 SKILL_DIR = Path(__file__).parent.parent
+RTX_DIR = Path(__file__).resolve().parent
+if str(RTX_DIR) not in sys.path:
+    sys.path.insert(0, str(RTX_DIR))
+
+from _schedule_backend import (  # noqa: E402
+    ScheduleContext,
+    platform_schedule_backend,
+    schedule_jobs_from_mappings,
+)
+
 JOBS_FILE = SKILL_DIR / "jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"
+
+
+def schedule_context(jobs_file: Path = JOBS_FILE) -> ScheduleContext:
+    return ScheduleContext(skill_dir=SKILL_DIR, jobs_file=jobs_file, log_dir=LOG_DIR)
 
 
 def load_jobs(jobs_file: Path = JOBS_FILE) -> list:
@@ -43,11 +54,13 @@ def save_jobs(jobs: list, jobs_file: Path = JOBS_FILE) -> None:
 
 
 def sync_units(jobs_file: Path | None = None) -> None:
-    """Regenerate systemd units."""
-    cmd = [sys.executable, str(SKILL_DIR / "_rtx" / "_unit_writer.py")]
-    if jobs_file is not None:
-        cmd += ["--jobs-file", str(jobs_file)]
-    subprocess.run(cmd, check=True)
+    """Regenerate scheduler entries."""
+    selected_jobs_file = jobs_file or JOBS_FILE
+    context = schedule_context(selected_jobs_file)
+    platform_schedule_backend().sync(
+        schedule_jobs_from_mappings(load_jobs(selected_jobs_file)),
+        context,
+    )
 
 
 def enable_job(name: str, jobs_file: Path = JOBS_FILE, sync: bool = True) -> None:
@@ -80,20 +93,11 @@ def disable_job(name: str, jobs_file: Path = JOBS_FILE, sync: bool = True) -> No
 
 def test_job(name: str) -> bool:
     """Test a job immediately."""
-    result = subprocess.run(
-        ["systemctl", "--user", "start", "--wait", f"ai-{name}.service"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-    )
-    if result.returncode == 0:
+    if platform_schedule_backend().test(name, schedule_context()):
         print(f"✓ Test passed: {name}")
         return True
-    else:
-        print(f"✗ Test failed: {name}")
-        print("stderr:", result.stderr)
-        return False
+    print(f"✗ Test failed: {name}")
+    return False
 
 
 def view_logs(name: str, lines: int = 50) -> None:
@@ -110,15 +114,8 @@ def view_logs(name: str, lines: int = 50) -> None:
 
 
 def status() -> None:
-    """Show status of all timers."""
-    result = subprocess.run(
-        ["systemctl", "--user", "list-timers", "ai-*.timer", "--no-pager"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-    )
-    print(result.stdout)
+    """Show status of all scheduled recurring jobs."""
+    print(platform_schedule_backend().status(schedule_context()))
 
 
 class Interface(PythonArgvMachineInterface):
@@ -137,14 +134,14 @@ def main(argv: list[str] | None = None) -> int:
     enable_parser.add_argument("--jobs-file", type=Path, default=JOBS_FILE,
                                 help="jobs.yaml to modify (default: this skill's jobs.yaml)")
     enable_parser.add_argument("--no-sync", action="store_true",
-                                help="Skip regenerating systemd units after modifying jobs.yaml")
+                                help="Skip regenerating scheduler entries after modifying jobs.yaml")
 
     disable_parser = subparsers.add_parser("disable", help="Disable a job")
     disable_parser.add_argument("name")
     disable_parser.add_argument("--jobs-file", type=Path, default=JOBS_FILE,
                                  help="jobs.yaml to modify (default: this skill's jobs.yaml)")
     disable_parser.add_argument("--no-sync", action="store_true",
-                                 help="Skip regenerating systemd units after modifying jobs.yaml")
+                                 help="Skip regenerating scheduler entries after modifying jobs.yaml")
 
     subparsers.add_parser("test", help="Test a job").add_argument("name")
     view_logs_parser = subparsers.add_parser("view-logs", help="View job logs")

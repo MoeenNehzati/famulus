@@ -9,7 +9,7 @@ depends_on:
 
 suggested_permissions:
   bash:
-    - command: ["_rtx/_setup_runner.sh"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_setup_runner.py:Interface"]
       reason: "Initial setup: syncs unit files, installs healthcheck cron entry."
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_unit_writer.py:Interface"]
       reason: "Write/remove systemd user unit files to match jobs.yaml."
@@ -18,7 +18,7 @@ suggested_permissions:
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_healthcheck_probe.py:Interface"]
       reason: "Run pre-flight and per-job health checks."
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_ensure_agent_env.py:Interface"]
-      reason: "Ensure recurring-tasks' own PATH/env prerequisites are in place."
+      reason: "Ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE is in place."
     - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_job_utils.py:Interface"]
       reason: "Expose legacy recurring job helper module through the dispatcher runtime contract."
     - command: ["systemctl"]
@@ -154,14 +154,13 @@ interfaces:
     scripts-setup:
       description: Verify prerequisites, sync systemd unit files from jobs.yaml, install the healthcheck cron entry, and list
         active timers.
-      usage: ''
+      usage: '[--migrate-cron]'
       patterns:
       - name: owner
-        allow_extra_positionals: false
+        allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - _rtx/_setup_runner.sh
+        kind: python_machine_interface
+        entrypoint: _rtx/_setup_runner.py:Interface
       dependencies:
       - kind: python
         name: PyYAML
@@ -173,8 +172,8 @@ interfaces:
         name: crontab
         reason: Installs the recurring healthcheck cron entry.
     scripts-ensure-agent-env:
-      description: Idempotently ensure recurring-tasks' own PATH/env prerequisites and systemd AI_AGENT_COMMAND_TEMPLATE are
-        in place. Also run automatically by scripts-setup.
+      description: Idempotently ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE is in place. Also run automatically
+        by scripts-setup.
       usage: --repo-root DIR --home DIR --bin-dir DIR [--dry-run]
       patterns:
       - name: owner
@@ -192,13 +191,4 @@ interfaces:
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_job_utils.py:Interface
-      dependencies: []
-    scripts-invoke-agent:
-      patterns:
-      - name: owner
-        allow_extra_positionals: true
-      runtime:
-        kind: command
-        argv:
-        - _rtx/_agent_invoker.sh
       dependencies: []

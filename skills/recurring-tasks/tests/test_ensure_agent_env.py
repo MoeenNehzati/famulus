@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 import _ensure_agent_env as ensure_agent_env
 
 
-def test_writes_agent_env_with_bin_dir_on_path(tmp_path, monkeypatch):
+def test_does_not_write_legacy_agent_env_shell_script(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     repo_root = tmp_path / "repo"
     (repo_root / "skills" / "recurring-tasks" / "_rtx").mkdir(parents=True)
@@ -20,9 +20,7 @@ def test_writes_agent_env_with_bin_dir_on_path(tmp_path, monkeypatch):
     ensure_agent_env.run(repo_root=repo_root, home=home, bin_dir=bin_dir, dry_run=False)
 
     env_script = repo_root / "skills" / "recurring-tasks" / "_rtx" / "_agent_env.sh"
-    assert env_script.is_file()
-    assert str(bin_dir) in env_script.read_text()
-    assert env_script.stat().st_mode & 0o111
+    assert not env_script.exists()
 
 
 def test_writes_systemd_environment_file_scoped_to_home(tmp_path, monkeypatch):
@@ -49,5 +47,4 @@ def test_dry_run_writes_nothing(tmp_path, monkeypatch):
 
     ensure_agent_env.run(repo_root=repo_root, home=home, bin_dir=tmp_path / "bin", dry_run=True)
 
-    assert not (repo_root / "skills" / "recurring-tasks" / "_rtx" / "_agent_env.sh").exists()
     assert not (home / ".config" / "environment.d" / "20-ai-agent.conf").exists()

@@ -655,10 +655,6 @@
             }
           ]
         },
-        "scripts-invoke-agent": {
-          "id": "recurring-tasks.machine.scripts-invoke-agent",
-          "dependencies": []
-        },
         "scripts-job-utils": {
           "id": "recurring-tasks.machine.scripts-job-utils",
           "dependencies": []

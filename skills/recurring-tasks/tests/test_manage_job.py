@@ -116,26 +116,29 @@ def test_default_jobs_file_calls_sync_units_with_no_override():
     print("PASS: default jobs_file calls sync_units with no override")
 
 
-# ── sync_units: subprocess argument construction ───────────────────────────────
+# ── sync_units: backend dispatch ───────────────────────────────────────────────
 
-def test_sync_units_invokes_sync_units_script():
+def test_sync_units_invokes_platform_backend():
     mod = _load()
-    with mock.patch.object(mod.subprocess, "run") as run:
+    backend = mock.Mock()
+    with mock.patch.object(mod, "load_jobs", return_value=[]), \
+         mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
         mod.sync_units()
-        cmd = run.call_args[0][0]
-        assert cmd[0] == mod.sys.executable
-        assert cmd[1] == str(mod.SKILL_DIR / "_rtx" / "_unit_writer.py")
-        assert "--jobs-file" not in cmd
-    print("PASS: sync_units() with no override calls sync_units.py plainly")
+        backend.sync.assert_called_once()
+        context = backend.sync.call_args[0][1]
+        assert context.jobs_file == mod.JOBS_FILE
+    print("PASS: sync_units() with no override calls the platform backend")
 
 
 def test_sync_units_passes_jobs_file_override():
     mod = _load()
-    with mock.patch.object(mod.subprocess, "run") as run:
-        mod.sync_units(Path("/tmp/custom-jobs.yaml"))
-        cmd = run.call_args[0][0]
-        assert "--jobs-file" in cmd
-        assert str(Path("/tmp/custom-jobs.yaml")) in cmd
+    custom = Path("/tmp/custom-jobs.yaml")
+    backend = mock.Mock()
+    with mock.patch.object(mod, "load_jobs", return_value=[]), \
+         mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
+        mod.sync_units(custom)
+        context = backend.sync.call_args[0][1]
+        assert context.jobs_file == custom
     print("PASS: sync_units() passes through a jobs_file override")
 
 
@@ -143,20 +146,22 @@ def test_sync_units_passes_jobs_file_override():
 
 def test_test_job_reports_pass_on_zero_exit():
     mod = _load()
-    with mock.patch.object(mod.subprocess, "run") as run:
-        run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    backend = mock.Mock()
+    backend.test.return_value = True
+    with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
         assert mod.test_job("my-job") is True
-        cmd = run.call_args[0][0]
-        assert cmd == ["systemctl", "--user", "start", "--wait", "ai-my-job.service"]
-    print("PASS: test_job reports True and targets the right systemd unit")
+        backend.test.assert_called_once()
+        assert backend.test.call_args[0][0] == "my-job"
+    print("PASS: test_job reports True and delegates to the scheduler backend")
 
 
 def test_test_job_reports_failure_on_nonzero_exit():
     mod = _load()
-    with mock.patch.object(mod.subprocess, "run") as run:
-        run.return_value = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
+    backend = mock.Mock()
+    backend.test.return_value = False
+    with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
         assert mod.test_job("my-job") is False
-    print("PASS: test_job reports False on non-zero exit")
+    print("PASS: test_job reports False when the scheduler backend fails the test")
 
 
 # ── view_logs ───────────────────────────────────────────────────────────────────
@@ -189,16 +194,13 @@ def test_view_logs_tails_last_n_lines(capsys):
 
 def test_status_lists_ai_timers(capsys):
     mod = _load()
-    with mock.patch.object(mod.subprocess, "run") as run:
-        run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="NEXT LEFT LAST UNIT\nai-daily-plan.timer\n", stderr="",
-        )
+    backend = mock.Mock()
+    backend.status.return_value = "NEXT LEFT LAST UNIT\nai-daily-plan.timer\n"
+    with mock.patch.object(mod, "platform_schedule_backend", return_value=backend):
         mod.status()
-        cmd = run.call_args[0][0]
-        assert cmd == ["systemctl", "--user", "list-timers", "ai-*.timer", "--no-pager"]
     out = capsys.readouterr().out
     assert "ai-daily-plan.timer" in out
-    print("PASS: status lists ai-* timers via systemctl")
+    print("PASS: status prints scheduler backend status output")
 
 
 # ── CLI dispatch (main) ─────────────────────────────────────────────────────────
@@ -288,7 +290,7 @@ if __name__ == "__main__":
     test_enable_job_skips_sync_when_requested()
     test_disable_job_passes_custom_jobs_file_to_sync()
     test_default_jobs_file_calls_sync_units_with_no_override()
-    test_sync_units_invokes_sync_units_script()
+    test_sync_units_invokes_platform_backend()
     test_sync_units_passes_jobs_file_override()
     test_test_job_reports_pass_on_zero_exit()
     test_test_job_reports_failure_on_nonzero_exit()

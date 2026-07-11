@@ -148,9 +148,7 @@ def test_two_enabled_jobs_each_get_units():
 
 
 def test_no_per_job_runner_scripts_written():
-    """Simplified architecture: the command is embedded directly in the
-    service's ExecStart via bash -c; no per-job runner .sh script is
-    generated (see sync_units.py's module docstring)."""
+    """No per-job runner shell script is generated."""
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
         runners = list(Path(d).rglob("*.sh"))
@@ -158,13 +156,15 @@ def test_no_per_job_runner_scripts_written():
         print("PASS: no per-job runner scripts written")
 
 
-def test_service_embeds_command_directly():
+def test_service_runs_python_executor_without_shell():
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
         content = (Path(d) / "ai-test-job.service").read_text()
-        assert "ExecStart=/bin/bash -c '" in content
-        assert "/usr/bin/echo hello" in content
-        print("PASS: service ExecStart embeds the job command directly")
+        assert "ExecStart=/usr/bin/env python3" in content
+        assert "_job_executor.py --jobs-file" in content
+        assert "/bin/bash" not in content
+        assert ">>" not in content
+        print("PASS: service ExecStart uses the Python job executor without shell redirection")
 
 
 def test_orphaned_units_removed_when_job_disabled():
@@ -201,7 +201,7 @@ if __name__ == "__main__":
     test_disabled_job_produces_no_unit_files()
     test_two_enabled_jobs_each_get_units()
     test_no_per_job_runner_scripts_written()
-    test_service_embeds_command_directly()
+    test_service_runs_python_executor_without_shell()
     test_orphaned_units_removed_when_job_disabled()
     test_idempotent()
     print("\nAll tests passed.")

@@ -118,8 +118,8 @@ Do not rely on implicit glob expansion for the suite contract. The point of the 
   clobber it. A stale pip copy in an env can shadow nothing (the bin dir
   precedes it on PATH) and may be `pip uninstall`ed.
 - (Resolved 2026-07-06) install/uninstall tests used to run against the REAL
-  repo root, repeatedly deleting or overwriting the live generated
-  `skills/recurring-tasks/_rtx/_agent_env.sh` (breaking all recurring jobs).
+  repo root, repeatedly deleting or overwriting live recurring-tasks runtime
+  artifacts.
   Now: `test_uninstall.py` builds a fake repo and passes `--repo-root`;
   `setup_tools.run()` takes a `repo_root` parameter that in-process tests
   MUST pass (see its docstring). A regression test asserts the real generated

@@ -13,6 +13,12 @@ from pathlib import Path
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 SKILL_DIR = Path(__file__).parent.parent
+RTX_DIR = Path(__file__).resolve().parent
+if str(RTX_DIR) not in sys.path:
+    sys.path.insert(0, str(RTX_DIR))
+
+from _schedule_backend import ScheduleBackendUnsupported, platform_schedule_backend  # noqa: E402
+
 JOBS_FILE = SKILL_DIR / "jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"
 HEALTHCHECK_LOG = LOG_DIR / "healthcheck" / "run.log"
@@ -48,40 +54,26 @@ def log(msg: str) -> None:
 
 
 def check_systemd_manager() -> str | None:
-    """Verify systemd user manager is running. Returns a failure reason, or None if OK."""
-    result = subprocess.run(
-        ["systemctl", "--user", "is-system-running"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-    )
-    state = result.stdout.strip()
-    if state in ("running", "degraded"):
-        log("✓ systemd user manager: OK")
-        return None
-    reason = f"systemd user manager: {state or 'unresponsive'}"
-    log(f"✗ {reason}")
-    return reason
+    """Verify the host scheduler manager. Returns a failure reason, or None if OK."""
+    try:
+        reason = platform_schedule_backend().check_manager()
+    except ScheduleBackendUnsupported as e:
+        reason = str(e)
+    if reason:
+        log(f"✗ {reason}")
+        return reason
+    log("✓ scheduler manager: OK")
+    return None
 
 
 def check_environment() -> str | None:
     """Verify AI_AGENT_COMMAND_TEMPLATE is set and resolves. Returns a failure reason, or None if OK."""
-    result = subprocess.run(
-        ["systemctl", "--user", "show-environment"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-    )
-    template = None
-    for line in result.stdout.splitlines():
-        if line.startswith("AI_AGENT_COMMAND_TEMPLATE="):
-            template = line.split("=", 1)[1]
-            # Strip bash quoting ($'...')
-            if template.startswith("$'") and template.endswith("'"):
-                template = template[2:-1]
-            break
+    try:
+        template = platform_schedule_backend().get_agent_command_template()
+    except ScheduleBackendUnsupported as e:
+        reason = str(e)
+        log(f"✗ {reason}")
+        return reason
 
     if not template:
         reason = "AI_AGENT_COMMAND_TEMPLATE: not set"
@@ -121,15 +113,14 @@ def check_job(job: dict) -> str | None:
         log(f"  ⚠ {reason}")
         return reason
 
-    # Check systemd timer status
-    result = subprocess.run(
-        ["systemctl", "--user", "is-active", f"ai-{name}.timer"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-    )
-    if result.returncode != 0:
+    try:
+        is_active = platform_schedule_backend().check_job_active(name)
+    except ScheduleBackendUnsupported as e:
+        reason = str(e)
+        log(f"  ✗ {reason}")
+        return reason
+
+    if not is_active:
         reason = f"{name}: timer not active"
         log(f"  ✗ {reason}")
         return reason
