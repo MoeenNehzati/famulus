@@ -183,8 +183,9 @@ def test_config_toml_preserves_existing_machine_local_copy(tmp_path):
     assert (codex_home / "assistant.config.toml").read_text() == 'model = "user-edited"\n'
 
 
-def test_run_sets_assistant_default_in_rc(tmp_path, monkeypatch):
-    monkeypatch.setattr(sys, "platform", "linux")
+def test_run_sets_assistant_default_in_rc(tmp_path):
+    if sys.platform == "win32":
+        pytest.skip("Windows stores ASSISTANT_DEFAULT in the user registry")
     repo_root = _make_repo(tmp_path)
     bin_dir = tmp_path / "bin"
     codex_home = tmp_path / "codex"

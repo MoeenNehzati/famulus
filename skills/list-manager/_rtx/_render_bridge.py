@@ -10,6 +10,15 @@ from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
+
+def _configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
+_configure_stdio()
+
 try:
     from . import _cloud_transport as cloud_transport
 except ImportError:

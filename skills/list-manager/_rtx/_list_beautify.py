@@ -27,6 +27,15 @@ import datetime
 import sys
 import yaml
 
+
+def _configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
+_configure_stdio()
+
 try:
     from officina.runtime.python_machine_interface import PythonMachineInterface
 except ModuleNotFoundError:

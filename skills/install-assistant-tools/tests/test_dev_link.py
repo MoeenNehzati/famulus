@@ -16,9 +16,11 @@ import io
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "_rtx"
@@ -327,6 +329,8 @@ class SetupSymlinksTests(unittest.TestCase):
             self.assertIn("not a git checkout; skipping git hooks setup", output)
 
     def test_run_sets_ai_in_rc_file(self) -> None:
+        if sys.platform == "win32":
+            self.skipTest("Windows stores AI in the user registry")
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = self.make_repo_root(Path(tmp))
             home = Path(tmp) / "home"
@@ -348,6 +352,51 @@ class SetupSymlinksTests(unittest.TestCase):
             content = rc_file.read_text()
             self.assertIn(f'export AI="{repo_root}"', content)
             self.assertNotIn("ASSISTANT_DEFAULT", content)  # dev_link does not own this var
+
+    def test_run_sets_ai_in_windows_registry(self) -> None:
+        registry_calls = []
+
+        class FakeKey:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        fake_winreg = types.SimpleNamespace(
+            HKEY_CURRENT_USER=object(),
+            KEY_READ=1,
+            KEY_WRITE=2,
+            REG_SZ=1,
+            OpenKey=lambda *args, **kwargs: FakeKey(),
+            SetValueEx=lambda key, name, reserved, kind, value: registry_calls.append(
+                (name, kind, value)
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = self.make_repo_root(Path(tmp))
+            home = Path(tmp) / "home"
+            home.mkdir()
+            rc_file = home / ".bashrc"
+            rc_file.write_text("")
+            claude_home = home / "claude"
+            codex_home = home / "codex"
+
+            with mock.patch.object(dev_link.sys, "platform", "win32"), mock.patch.dict(
+                sys.modules, {"winreg": fake_winreg}
+            ):
+                self.capture_run(
+                    repo_root=repo_root,
+                    home=home,
+                    claude_home=claude_home,
+                    codex_home=codex_home,
+                    shell_rc=rc_file,
+                    dry_run=False,
+                )
+
+            self.assertEqual(registry_calls, [("AI", fake_winreg.REG_SZ, str(repo_root))])
+            self.assertEqual(rc_file.read_text(), "")
 
 
 if __name__ == "__main__":
