@@ -644,6 +644,7 @@ Examples:
 - Windows installer smoke that requires a working installed `dispatcher`
 - Windows launcher smoke that verifies `.bat` execution paths
 - Windows and macOS smoke tests for one real shared workflow, not just metadata validation
+- native keyring smoke on macOS and Windows with backend absence treated as a CI failure
 - calendar smoke once `g-calendar` is rewritten in Python
 - email-client smoke once the backend abstraction exists
 
@@ -651,6 +652,16 @@ Why this matters:
 
 - some behavior cannot be simulated faithfully on Linux
 - CI should remain the place where native host behavior is confirmed
+
+Implemented slice:
+
+- added `validators/skip_hygiene.py`, requiring every test skip to declare a
+  skip category, reason, and alternate coverage
+- added a strict macOS/Windows native keyring smoke step in CI via
+  `FAMULUS_REQUIRE_NATIVE_KEYRING=1`
+- strengthened the packaged Codex installer smoke to use paths with spaces and
+  invoke installed `dispatcher` and agent launchers through the host shell/PATH,
+  including Windows `.bat` execution
 
 ### E. Installer And Launcher Tests
 

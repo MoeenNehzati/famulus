@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import tomllib
@@ -32,17 +33,24 @@ from install_test_utils import (  # noqa: E402
     codex_env,
     copy_repo_tree,
     expected_skills,
-    launcher_path,
     python_test_env,
     read_json,
     run_command,
 )
 
 
+def platform_shell_command(command: str, args: list[str]) -> list[str]:
+    if sys.platform == "win32":
+        comspec = os.environ.get("COMSPEC", "cmd.exe")
+        return [comspec, "/d", "/s", "/c", subprocess.list2cmdline([command, *args])]
+    return ["/bin/sh", "-c", 'exec "$@"', "launcher-smoke", command, *args]
+
+
 class CodexInstallTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if shutil.which("codex") is None:
+            # famulus-skip: category=capability-unavailable; reason=packaged Codex install test requires the codex CLI; alternate=unit installer tests cover local installer behavior
             raise unittest.SkipTest("codex CLI is not installed")
 
     def test_codex_plugin_install_and_installed_tool_bootstrap(self) -> None:
@@ -50,7 +58,7 @@ class CodexInstallTests(unittest.TestCase):
         marketplace_name = f"{plugin_name}-local-test"
         expected = expected_skills()
 
-        with tempfile.TemporaryDirectory(prefix=f"{plugin_name}-codex-install-") as tmp:
+        with tempfile.TemporaryDirectory(prefix=f"{plugin_name}-codex install-") as tmp:
             tmp_root = Path(tmp)
             env = python_test_env(tmp_root)
             run_command([sys.executable, str(REPO_ROOT / "skills" / "skill-maker" / "validators" / "skill_metadata.py")], env=env)
@@ -58,9 +66,9 @@ class CodexInstallTests(unittest.TestCase):
 
             marketplace_root = tmp_root / "marketplace"
             repo_copy_root = marketplace_root / "plugins" / plugin_name
-            codex_home = tmp_root / "codex-home"
-            tmp_home = tmp_root / "home"
-            workdir = tmp_root / "work"
+            codex_home = tmp_root / "codex home"
+            tmp_home = tmp_root / "home dir"
+            workdir = tmp_root / "work dir"
             (marketplace_root / ".agents" / "plugins").mkdir(parents=True)
             codex_home.mkdir()
             tmp_home.mkdir()
@@ -173,12 +181,13 @@ class CodexInstallTests(unittest.TestCase):
                 )
 
             if not can_create_symlink():
+                # famulus-skip: category=capability-unavailable; reason=plugin install bootstrap verifies symlink behavior where supported; alternate=Windows copy launcher assertions run when symlinks are available
                 self.skipTest("symlink creation is unavailable on this machine")
 
-            install_home = tmp_root / "install-home"
-            install_codex_home = tmp_root / "install-codex-home"
-            install_claude_home = tmp_root / "install-claude-home"
-            install_bin = tmp_root / "install-bin"
+            install_home = tmp_root / "install home"
+            install_codex_home = tmp_root / "install codex home"
+            install_claude_home = tmp_root / "install claude home"
+            install_bin = tmp_root / "install bin"
             install_home.mkdir()
             install_codex_home.mkdir()
             install_claude_home.mkdir()
@@ -351,13 +360,20 @@ class CodexInstallTests(unittest.TestCase):
                     "PATH": str(install_bin) + os.pathsep + os.environ.get("PATH", ""),
                 },
             )
+            run_command(
+                platform_shell_command("dispatcher", ["--help"]),
+                env=launcher_env,
+                cwd=workdir,
+            )
             for agent in ("assistant", "collab", "coauthor"):
-                command = [
-                    str(launcher_path(install_bin, agent)),
+                command = platform_shell_command(
+                    agent,
+                    [
                     "debug",
                     "prompt-input",
                     f"Use ${plugin_name}:daily-plan.",
-                ]
+                    ],
+                )
                 prompt_result = run_command(command, env=launcher_env)
                 prompt = json.loads(prompt_result.stdout)
                 visible_text = json.dumps(prompt)

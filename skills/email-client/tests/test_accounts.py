@@ -116,6 +116,7 @@ def test_resolve_unknown_nickname_lists_known(config_dir):
     assert "work" in result.stderr
 
 
+# famulus-skip: category=platform-contract; reason=POSIX mode bits do not model Windows ACL ownership; alternate=registry creation behavior and keyring credential tests run on Windows
 @pytest.mark.skipif(
     sys.platform == "win32",
     reason="POSIX mode bits do not model Windows ACL ownership",

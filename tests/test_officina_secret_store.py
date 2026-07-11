@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import types
 import uuid
@@ -179,10 +180,14 @@ def test_default_backend_native_roundtrip_when_available() -> None:
     namespace = "officina-test"
     key = f"native:{uuid.uuid4()}"
     secret = f"secret:{uuid.uuid4()}"
+    require_native = os.environ.get("FAMULUS_REQUIRE_NATIVE_KEYRING") == "1"
 
     try:
         secret_store.store(namespace, key, secret)
     except secret_store.SecretStoreUnavailable as exc:
+        if require_native:
+            pytest.fail(f"native keyring backend required but unavailable: {exc}")
+        # famulus-skip: category=native-backend-unavailable; reason=generic CI may not provide a host keyring; alternate=fake keyring backend tests cover the shared contract
         pytest.skip(f"native keyring backend unavailable: {exc}")
 
     try:

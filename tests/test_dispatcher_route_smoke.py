@@ -169,6 +169,7 @@ interfaces:
 
 def test_live_blueprints_have_runner_interfaces_to_smoke_or_skip() -> None:
     if not _runner_interfaces():
+        # famulus-skip: category=empty-contract; reason=no live runner-backed machine interfaces exist; alternate=route-smoke extraction unit tests cover discovery logic
         pytest.skip(f"no machine interfaces currently invoke {RUNNER_MODULE}")
 
     assert _runner_interfaces()
@@ -177,6 +178,7 @@ def test_live_blueprints_have_runner_interfaces_to_smoke_or_skip() -> None:
 def test_python_machine_runner_interfaces_accept_route_smoke(tmp_path: Path) -> None:
     cases = _route_smoke_cases()
     if not cases:
+        # famulus-skip: category=empty-contract; reason=no python_machine_interface interfaces exist; alternate=route-smoke extraction unit tests cover case selection
         pytest.skip("no python_machine_interface machine interfaces currently exist")
 
     failures: list[str] = []

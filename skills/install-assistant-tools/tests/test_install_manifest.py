@@ -22,6 +22,7 @@ from _state_record import Manifest, manifest_path  # noqa: E402
 
 UNINSTALL = SCRIPTS / "_install_uninstall.py"
 
+# famulus-skip: category=capability-unavailable; reason=manifest tests exercise symlink entries and cleanup; alternate=Windows manifest tests cover copy and registry entries
 pytestmark = pytest.mark.skipif(not can_create_symlink(), reason="symlinks unavailable")
 
 

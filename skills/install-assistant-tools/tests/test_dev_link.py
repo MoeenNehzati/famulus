@@ -34,6 +34,7 @@ class SetupSymlinksTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if not can_create_symlink():
+            # famulus-skip: category=capability-unavailable; reason=dev-link tests verify symlink layout; alternate=installer launcher tests cover copy-based Windows behavior
             raise unittest.SkipTest("symlink creation is unavailable on this machine")
 
     def capture_run(self, **kwargs: object) -> str:
@@ -330,6 +331,7 @@ class SetupSymlinksTests(unittest.TestCase):
 
     def test_run_sets_ai_in_rc_file(self) -> None:
         if sys.platform == "win32":
+            # famulus-skip: category=platform-contract; reason=Windows stores AI in the user registry; alternate=test_run_sets_ai_in_windows_registry
             self.skipTest("Windows stores AI in the user registry")
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = self.make_repo_root(Path(tmp))

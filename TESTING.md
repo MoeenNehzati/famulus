@@ -91,13 +91,21 @@ Each job runs, in order:
 1. checkout
 2. Node setup
 3. Python setup
-4. `pip install pytest pyyaml jsonschema`
+4. `pip install pytest pyyaml jsonschema keyring`
 5. install Claude and Codex CLIs
 6. `python3 validators/runner.py`
 7. `python3 scripts/run-python-tests.py --suite full --verbose`
-8. macOS and Windows only: `FAMULUS_RUN_SCHEDULER_SMOKE=1 python3 -m pytest -q skills/recurring-tasks/tests/test_scheduler_live_smoke.py`
+8. macOS and Windows only: `FAMULUS_REQUIRE_NATIVE_KEYRING=1 python3 -m pytest -q tests/test_officina_secret_store.py::test_default_backend_native_roundtrip_when_available`
+9. macOS and Windows only: `FAMULUS_RUN_SCHEDULER_SMOKE=1 python3 -m pytest -q skills/recurring-tasks/tests/test_scheduler_live_smoke.py`
 
 Validators and tests intentionally share the same CI worker so setup happens once per operating system.
+
+The native keyring smoke is optional in normal local runs and strict in CI on
+macOS and Windows. Without `FAMULUS_REQUIRE_NATIVE_KEYRING=1`, the default
+native roundtrip test may skip when the host has no usable keyring backend;
+with that variable set, backend unavailability is a failure. Shared secret
+store behavior is still covered in every ordinary test run through fake
+usable, null, fail, and zero-priority keyring backends.
 
 The native recurring scheduler smoke is opt-in outside CI. In CI it uses an
 `always()` step condition on macOS and Windows so launchd/Task Scheduler
@@ -106,6 +114,35 @@ creates one unique temporary scheduler entry, triggers it through the native
 scheduler, waits for a marker file, and then removes only that entry. Normal
 local test runs skip it unless
 `FAMULUS_RUN_SCHEDULER_SMOKE=1` is set.
+
+## Skip Hygiene
+
+Skips are repo-level coverage decisions. New test skips must be visible to
+`validators/skip_hygiene.py`, which is run by `validators/runner.py` before
+the Python suite in both hooks and CI.
+
+Every `pytest.skip`, `pytest.mark.skipif`, `unittest.SkipTest`, `unittest.skip`
+or `self.skipTest` in the repo's test tree must have a nearby comment:
+
+```python
+# famulus-skip: category=platform-contract; reason=Windows uses registry env vars; alternate=test_windows_registry_env
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows uses registry")
+def test_shell_rc_env_var():
+    ...
+```
+
+The required fields are:
+
+- `category`: one of `capability-unavailable`, `empty-contract`,
+  `live-smoke-opt-in`, `native-backend-unavailable`, `platform-contract`, or
+  `unsupported-platform`
+- `reason`: what condition makes this skip correct
+- `alternate`: where equivalent or nearest practical coverage exists
+
+Use skip markers only when they describe the desired platform contract. Do not
+skip a failing test merely because a host exposes a product bug. If a platform
+uses a different supported mechanism, add or point to the alternate test for
+that mechanism.
 
 ## Adding or Moving Tests
 

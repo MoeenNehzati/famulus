@@ -40,6 +40,7 @@ class CodexGithubInstallTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if shutil.which("codex") is None:
+            # famulus-skip: category=capability-unavailable; reason=GitHub marketplace install test requires the codex CLI; alternate=local Codex install tests cover packaged install behavior
             raise unittest.SkipTest("codex CLI is not installed")
 
     def test_codex_plugin_install_from_github(self) -> None:

@@ -42,6 +42,7 @@ from _schedule_backend._windows_backend import (  # noqa: E402
 )
 
 
+# famulus-skip: category=live-smoke-opt-in; reason=live scheduler smoke mutates host scheduler state; alternate=scheduler backend unit tests run in the normal suite
 pytestmark = pytest.mark.skipif(
     os.environ.get("FAMULUS_RUN_SCHEDULER_SMOKE") != "1",
     reason="live scheduler smoke is opt-in; set FAMULUS_RUN_SCHEDULER_SMOKE=1",
@@ -57,6 +58,7 @@ def test_live_scheduler_fires_and_cleans_up():
     elif system == "Windows":
         _windows_smoke()
     else:
+        # famulus-skip: category=unsupported-platform; reason=no scheduler backend exists for this OS; alternate=Linux macOS and Windows backend tests cover supported systems
         pytest.skip(f"no recurring-tasks live scheduler smoke for {system}")
 
 
@@ -146,6 +148,7 @@ def _assert_marker_written(marker: Path, *, log_file: Path | None = None) -> Non
 def _linux_smoke() -> None:
     manager = _run(["systemctl", "--user", "is-system-running"], check=False)
     if manager.returncode != 0:
+        # famulus-skip: category=native-backend-unavailable; reason=systemd user manager is not available on this host; alternate=systemd unit generation tests cover backend output
         pytest.skip(f"systemd user manager unavailable: {manager.stderr.strip() or manager.stdout.strip()}")
 
     with tempfile.TemporaryDirectory(prefix="recurring-tasks-smoke-") as raw_tmp:
@@ -199,6 +202,7 @@ def _macos_smoke() -> None:
     backend = OSXScheduleBackend()
     manager = _run(["launchctl", "print", backend._target()], check=False)
     if manager.returncode != 0:
+        # famulus-skip: category=native-backend-unavailable; reason=launchd user manager is not available on this host; alternate=launchd plist generation tests cover backend output
         pytest.skip(f"launchd user manager unavailable: {manager.stderr.strip() or manager.stdout.strip()}")
 
     with tempfile.TemporaryDirectory(prefix="recurring-tasks-smoke-") as raw_tmp:
@@ -234,6 +238,7 @@ def _macos_smoke() -> None:
 def _windows_smoke() -> None:
     available = _run(["schtasks", "/Query", "/FO", "LIST"], check=False)
     if available.returncode != 0:
+        # famulus-skip: category=native-backend-unavailable; reason=Task Scheduler is not available on this host; alternate=Task Scheduler command generation tests cover backend output
         pytest.skip(f"Task Scheduler unavailable: {available.stderr.strip() or available.stdout.strip()}")
 
     with tempfile.TemporaryDirectory(prefix="recurring-tasks-smoke-") as raw_tmp:

@@ -258,6 +258,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
     def test_browser_smoke_for_core_interactions(self) -> None:
         chrome = shutil.which("google-chrome")
         if chrome is None:
+            # famulus-skip: category=capability-unavailable; reason=browser smoke requires google-chrome; alternate=HTML rendering unit tests cover generated interaction wiring
             self.skipTest("google-chrome is not available")
 
         doc = {
@@ -472,6 +473,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     capture_output=True,
                 )
             except subprocess.CalledProcessError as exc:
+                # famulus-skip: category=capability-unavailable; reason=headless Chrome can be unavailable in constrained hosts; alternate=HTML rendering unit tests cover generated interaction wiring
                 self.skipTest(f"headless Chrome failed in this environment: {exc}")
         self.assertIn('data-test-status="PASS"', result.stdout)
 

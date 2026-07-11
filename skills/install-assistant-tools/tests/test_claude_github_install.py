@@ -42,6 +42,7 @@ class ClaudeGithubInstallTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if shutil.which("claude") is None:
+            # famulus-skip: category=capability-unavailable; reason=GitHub marketplace install test requires the claude CLI; alternate=local Claude install tests cover packaged install behavior
             raise unittest.SkipTest("claude CLI is not installed")
 
     def test_claude_plugin_marketplace_install_from_github(self) -> None:

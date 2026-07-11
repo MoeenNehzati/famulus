@@ -185,6 +185,7 @@ def test_config_toml_preserves_existing_machine_local_copy(tmp_path):
 
 def test_run_sets_assistant_default_in_rc(tmp_path):
     if sys.platform == "win32":
+        # famulus-skip: category=platform-contract; reason=Windows stores ASSISTANT_DEFAULT in the user registry; alternate=test_run_sets_assistant_default_via_windows_registry
         pytest.skip("Windows stores ASSISTANT_DEFAULT in the user registry")
     repo_root = _make_repo(tmp_path)
     bin_dir = tmp_path / "bin"
@@ -296,6 +297,7 @@ def test_verify_install_reports_fail_for_missing_launcher(tmp_path, capsys):
 
 def test_tw_agent_links_both_tmux_workspace_and_tw_alias(tmp_path):
     if sys.platform == "win32" or not hasattr(os, "symlink"):
+        # famulus-skip: category=platform-contract; reason=tw symlink alias is Unix-only; alternate=Windows launcher copy tests cover supported Windows agents
         pytest.skip("tw symlink alias is Unix-only")
     repo_root = _make_repo(tmp_path)
     bin_dir = tmp_path / "bin"

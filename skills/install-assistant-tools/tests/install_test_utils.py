@@ -30,6 +30,27 @@ def github_owner_repo(repo_root: Path = REPO_ROOT) -> str:
 
 
 def expected_skills(repo_root: Path = REPO_ROOT) -> list[str]:
+    result = subprocess.run(
+        ["git", "ls-files", "-z", "--", "skills"],
+        cwd=repo_root,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout:
+        skill_names: set[str] = set()
+        for rel in result.stdout.decode("utf-8", errors="surrogateescape").split("\0"):
+            if not rel:
+                continue
+            parts = Path(rel).parts
+            if (
+                len(parts) == 3
+                and parts[0] == "skills"
+                and parts[2] == "SKILL.md"
+                and (repo_root / rel).is_file()
+            ):
+                skill_names.add(parts[1])
+        return sorted(skill_names)
+
     return sorted(
         skill_dir.name
         for skill_dir in (repo_root / "skills").iterdir()

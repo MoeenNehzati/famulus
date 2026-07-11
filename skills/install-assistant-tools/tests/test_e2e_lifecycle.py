@@ -41,6 +41,7 @@ from _install_launcher import platform_launcher_installer  # noqa: E402
 
 UNINSTALL = SCRIPT_DIR.parent / "_rtx" / "_install_uninstall.py"
 
+# famulus-skip: category=capability-unavailable; reason=dev-mode lifecycle test requires symlink creation; alternate=plugin-mode install tests cover copy-based Windows launcher behavior
 pytestmark = pytest.mark.skipif(
     not can_create_symlink(), reason="symlink creation unavailable"
 )
@@ -131,7 +132,11 @@ def test_dev_mode_exposes_all_skills_on_claude_and_codex(homes):
 
 # ── Launcher availability after install (real repo, read-only) ──────────────
 
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX launchers")
+# famulus-skip: category=platform-contract; reason=Windows uses .bat launcher wrappers instead of POSIX executables; alternate=test_codex_install exercises installed Windows launchers
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX launchers",
+)
 def test_launchers_executable_after_install(homes):
     skills_before = _tree_hash(REPO_ROOT / "skills")
     bin_dir = homes["root"] / "bin"

@@ -37,6 +37,7 @@ class ClaudeInstallTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if shutil.which("claude") is None:
+            # famulus-skip: category=capability-unavailable; reason=packaged Claude install test requires the claude CLI; alternate=unit installer tests cover local installer behavior
             raise unittest.SkipTest("claude CLI is not installed")
 
     def test_claude_plugin_marketplace_install_isolated(self) -> None:

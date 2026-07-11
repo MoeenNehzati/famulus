@@ -55,6 +55,7 @@ def hooks_for_host(host):
     return (_Hook(),)
 """
 
+# famulus-skip: category=capability-unavailable; reason=uninstall fixture exercises symlink preservation and removal; alternate=manifest and Windows launcher tests cover non-symlink installs
 pytestmark = pytest.mark.skipif(not can_create_symlink(), reason="symlinks unavailable")
 
 
@@ -212,6 +213,7 @@ def test_preserves_foreign_symlink(installed):
     assert (installed["claude_home"] / "foreign-link").is_symlink()
 
 
+# famulus-skip: category=platform-contract; reason=Windows installs dispatcher.bat rather than a POSIX dispatcher file; alternate=test_codex_install checks Windows dispatcher launcher
 @pytest.mark.skipif(sys.platform == "win32", reason="dispatcher launcher is POSIX-only by design; Windows uses .bat wrappers + registry PATH")
 def test_removes_bin_links_and_launcher(installed):
     assert (installed["bin_dir"] / "assistant").exists()
@@ -221,6 +223,7 @@ def test_removes_bin_links_and_launcher(installed):
     assert leftovers == [], f"bin dir not emptied: {leftovers}"
 
 
+# famulus-skip: category=platform-contract; reason=Windows installs manage PATH via registry not shell rc files; alternate=test_launchers covers Windows registry env behavior
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows installs manage PATH via registry, not shell rc")
 def test_strips_rc_block_preserving_user_lines(installed):
     text = installed["shell_rc"].read_text(encoding="utf-8")
