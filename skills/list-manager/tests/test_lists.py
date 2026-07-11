@@ -1,4 +1,5 @@
 """Integration tests for lists.py subcommands. All tests operate on local temp files."""
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -7,6 +8,8 @@ import pytest
 import yaml
 
 LISTS_PY = Path(__file__).parent.parent / "_rtx" / "_yaml_store.py"
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+SCRIPTS_DIR = LISTS_PY.parent
 
 # A valid todo YAML used by multiple tests.
 # Domain categories (Work, Personal) must have exactly the 6 task-list subcategories.
@@ -54,11 +57,14 @@ categories:
 
 
 def run(args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{REPO_SRC}:{SCRIPTS_DIR}"
     return subprocess.run(
         [sys.executable, str(LISTS_PY)] + args,
         input=stdin,
         capture_output=True,
         text=True,
+        env=env,
     )
 
 

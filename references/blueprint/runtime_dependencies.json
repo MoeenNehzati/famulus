@@ -734,6 +734,20 @@
           ]
         }
       }
+    },
+    "skill-maker": {
+      "interfaces": {
+        "sync-blueprints": {
+          "id": "skill-maker.machine.sync-blueprints",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "PyYAML",
+              "reason": "Parses skill blueprint YAML files."
+            }
+          ]
+        }
+      }
     }
   },
   "all": {

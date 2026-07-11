@@ -17,17 +17,17 @@ depends_on:
 
 suggested_permissions:
   bash:
-    - command: ["python3", "_rtx/_envelope_gate.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_envelope_gate.py:Interface"]
       reason: "Filters email-client mail-list JSON to strictly-after-watermark envelopes."
-    - command: ["_rtx/_watermark_floor.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_watermark_floor.py:Interface"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["_rtx/_watermark_writer.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_watermark_writer.py:Interface"]
       reason: "Migrated from legacy permissions.json."
     - command: ["_rtx/_decision_sink.sh"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["python3", "_rtx/_log_compactor.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_log_compactor.py:Interface"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["python3", "_rtx/_failure_sentinel.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_failure_sentinel.py:Interface"]
       reason: "Records a failed triage run so update-watermark refuses to advance and the scheduled health check can report it."
   network:
     []
@@ -51,10 +51,8 @@ interfaces:
         allow_extra_positionals: true
         allow_stdin: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_envelope_gate.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_envelope_gate.py:Interface
       dependencies: []
     scripts-get-cutoff:
       description: Return the cutoff date for the current triage run, with a fallback if no watermark exists.
@@ -63,10 +61,8 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_watermark_floor.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_watermark_floor.py:Interface
       dependencies: []
     scripts-log-decision:
       description: Append a triage classification decision for one email to triage.log.
@@ -86,10 +82,8 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_log_compactor.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_log_compactor.py:Interface
       dependencies: []
     scripts-update-watermark:
       description: Advance the triage watermark to the current timestamp. Refuses if scripts-mark-failure was called earlier
@@ -99,10 +93,8 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_watermark_writer.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_watermark_writer.py:Interface
       dependencies: []
     scripts-mark-failure:
       description: Record that this triage run failed, so update-watermark refuses to advance and the scheduled health check
@@ -112,8 +104,6 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_failure_sentinel.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_failure_sentinel.py:Interface
       dependencies: []

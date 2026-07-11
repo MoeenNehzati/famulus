@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from datetime import date, timedelta
@@ -8,10 +9,19 @@ from pathlib import Path
 import pytest
 
 READ_BEAUTIFY_PY = Path(__file__).parent.parent / "_rtx" / "_render_bridge.py"
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+SCRIPTS_DIR = READ_BEAUTIFY_PY.parent
 
 
 def run(args: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, str(READ_BEAUTIFY_PY)] + args, capture_output=True, text=True)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{REPO_SRC}:{SCRIPTS_DIR}"
+    return subprocess.run(
+        [sys.executable, str(READ_BEAUTIFY_PY)] + args,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
 
 
 @pytest.fixture

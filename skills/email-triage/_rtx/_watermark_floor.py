@@ -17,6 +17,8 @@ from datetime import date, timedelta
 from pathlib import Path
 import os
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 # State lives next to this script (SKILL_DIR/state), matching update_watermark.py,
 # so it stays portable across machines regardless of $HOME layout or caller cwd.
 SKILL_DIR = Path(__file__).resolve().parent.parent
@@ -38,19 +40,33 @@ def record_warning(message: str) -> None:
     STATUS_FILE.write_text(json.dumps({"result": "warning", "message": message}, indent=2))
 
 
-if "--days" in sys.argv:
-    idx = sys.argv.index("--days")
-    n = int(sys.argv[idx + 1])
-    cutoff = date.today() - timedelta(days=n + 1)
-    print(cutoff.isoformat())
-elif WATERMARK.exists():
-    with WATERMARK.open() as f:
-        watermark_date = date.fromisoformat(f.read().strip()[:10])
-    cutoff = watermark_date - timedelta(days=1)
-    print(cutoff.isoformat())
-else:
-    cutoff = date.today() - timedelta(days=2)
-    msg = "No watermark found — defaulting to 2-day lookback."
-    print(f"WARNING: {msg}", file=sys.stderr)
-    record_warning(msg)
-    print(cutoff.isoformat())
+class Interface(PythonArgvMachineInterface):
+    prog = "get_cutoff.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if "--days" in argv:
+        idx = argv.index("--days")
+        n = int(argv[idx + 1])
+        cutoff = date.today() - timedelta(days=n + 1)
+        print(cutoff.isoformat())
+    elif WATERMARK.exists():
+        with WATERMARK.open() as f:
+            watermark_date = date.fromisoformat(f.read().strip()[:10])
+        cutoff = watermark_date - timedelta(days=1)
+        print(cutoff.isoformat())
+    else:
+        cutoff = date.today() - timedelta(days=2)
+        msg = "No watermark found — defaulting to 2-day lookback."
+        print(f"WARNING: {msg}", file=sys.stderr)
+        record_warning(msg)
+        print(cutoff.isoformat())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

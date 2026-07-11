@@ -14,6 +14,8 @@ import re
 from pathlib import Path
 from typing import Iterable
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 
 BUILTIN_COMMANDS = {
     "begin",
@@ -391,6 +393,14 @@ def default_output_path(entrypoint: Path) -> Path:
 def write_macros(macros: dict[str, object], out_path: Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(macros, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+class Interface(PythonArgvMachineInterface):
+    prog = "tex_macro_reader.py"
+
+    def run(self, argv: list[str]) -> int:
+        main(argv)
+        return 0
 
 
 def main(argv: Iterable[str] | None = None) -> None:

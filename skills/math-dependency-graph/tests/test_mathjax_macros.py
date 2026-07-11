@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -11,12 +12,20 @@ from pathlib import Path
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
+REPO_SRC = SKILL_DIR.parents[1] / "src"
 SCRIPT_DIR = SKILL_DIR / "_rtx"
 FIXTURE_DIR = SKILL_DIR / "tests" / "fixtures" / "macro-paper"
+sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from _graph_builder import TYPE_STYLES, build_html_with_elk  # noqa: E402
 from _tex_macro_reader import default_output_path, extract_macros  # noqa: E402
+
+
+def script_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(REPO_SRC)
+    return env
 
 
 class MathJaxMacroExtractionTest(unittest.TestCase):
@@ -45,6 +54,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                 check=True,
                 text=True,
                 capture_output=True,
+                env=script_env(),
             )
             payload = json.loads(result.stdout)
 
@@ -76,6 +86,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                 check=True,
                 text=True,
                 capture_output=True,
+                env=script_env(),
             )
             payload = json.loads(result.stdout)
 

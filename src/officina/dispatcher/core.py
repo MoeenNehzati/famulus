@@ -253,7 +253,11 @@ def resolve_machine_interface(
     repo_root: Path | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     interface_spec, resolved_name = resolve_machine_interface_surface(target_blueprint, interface_name)
-    pattern_spec, pattern_name = find_matching_pattern(interface_spec, script_args, stdin_requested)
+    runtime = expect_mapping(interface_spec.get("runtime"), "runtime")
+    if runtime.get("kind") == "python_machine_interface" and script_args == ["--route-smoke"] and not stdin_requested:
+        pattern_spec, pattern_name = {}, "route-smoke"
+    else:
+        pattern_spec, pattern_name = find_matching_pattern(interface_spec, script_args, stdin_requested)
 
     allow_all_skills = interface_spec.get("allow_all_skills", False)
     allowed_callers = expect_string_list(interface_spec.get("allowed_callers"), "allowed_callers")
@@ -320,6 +324,37 @@ def build_machine_runtime(
         env["PYTHONPATH"] = os.pathsep.join(entries + ([current] if current else []))
         env["PYTHONIOENCODING"] = "utf-8:strict"
         return root, [sys.executable, "-m", module, *script_args], env
+    if kind == "python_machine_interface":
+        entrypoint = runtime.get("entrypoint")
+        if not isinstance(entrypoint, str) or not entrypoint.strip():
+            raise InvocationError(
+                f"{target_skill}.machine.{interface_name}: python_machine_interface runtime "
+                "needs non-empty `entrypoint`"
+            )
+        args_prefix = runtime.get("args_prefix", [])
+        if not isinstance(args_prefix, list) or not all(isinstance(token, str) and token for token in args_prefix):
+            raise InvocationError(
+                f"{target_skill}.machine.{interface_name}: python_machine_interface runtime "
+                "needs string list `args_prefix`"
+            )
+        env = os.environ.copy()
+        src_root = root / "src"
+        entries = [str(skill_root), str(src_root)]
+        current = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = os.pathsep.join(entries + ([current] if current else []))
+        env["PYTHONIOENCODING"] = "utf-8:strict"
+        return (
+            skill_root,
+            [
+                sys.executable,
+                "-m",
+                "officina.runtime.python_machine_interface_runner",
+                entrypoint,
+                *args_prefix,
+                *script_args,
+            ],
+            env,
+        )
     if kind == "command":
         argv = runtime.get("argv")
         if not isinstance(argv, list) or not all(isinstance(token, str) and token for token in argv):

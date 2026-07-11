@@ -4,18 +4,21 @@ failure reason or None), desktop notification wiring, and main()'s
 failure-aggregation/reporting."""
 import importlib.util
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
 from unittest import mock
 
 SKILL_DIR = Path(__file__).parent.parent
+REPO_SRC = SKILL_DIR.parents[1] / "src"
 SCRIPT = SKILL_DIR / "_rtx" / "_healthcheck_probe.py"
 
 
 def _load(tmp_dir: Path):
     """Load a fresh copy of the module with its log/jobs paths redirected
     into tmp_dir, so tests never touch this skill's real logs/jobs.yaml."""
+    sys.path.insert(0, str(REPO_SRC))
     spec = importlib.util.spec_from_file_location("healthcheck", SCRIPT)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

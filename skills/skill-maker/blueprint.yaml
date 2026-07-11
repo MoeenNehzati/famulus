@@ -25,4 +25,30 @@ skill_interface:
     - "May invoke local scripts or dependencies as described in SKILL.md."
 
 interfaces:
-  machine: {}
+  machine:
+    sync-blueprints:
+      description: "Validate skill blueprints and optionally refresh generated compatibility artifacts."
+      usage: "[--check]"
+      allow_all_skills: false
+      allowed_callers: []
+      patterns:
+        - name: "sync"
+          min_positionals: 0
+          max_positionals: 0
+          allow_stdin: false
+          forbidden_flags: ["--check"]
+          notes: "Refresh generated files from blueprint.yaml."
+        - name: "check"
+          min_positionals: 0
+          max_positionals: 0
+          allow_stdin: false
+          required_flags: ["--check"]
+          allowed_flags: ["--check"]
+          notes: "Validate blueprints and fail if generated files are out of sync."
+      runtime:
+        kind: python_machine_interface
+        entrypoint: _rtx/_blueprint_syncer.py:Interface
+      dependencies:
+        - kind: python
+          name: PyYAML
+          reason: "Parses skill blueprint YAML files."

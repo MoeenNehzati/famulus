@@ -23,6 +23,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 # Overridable via env var so tests can point at a tmp_path instead of the
 # real ~/.config/email-client/accounts.json.
 CONFIG_DIR = Path(os.environ["EMAIL_CLIENT_CONFIG_DIR"]) if os.environ.get("EMAIL_CLIENT_CONFIG_DIR") \
@@ -149,7 +151,14 @@ def cmd_resolve(args: argparse.Namespace) -> None:
     print(json.dumps(data[args.nickname], indent=2))
 
 
-def main() -> None:
+class Interface(PythonArgvMachineInterface):
+    prog = "accounts.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -190,9 +199,10 @@ def main() -> None:
     p_resolve.add_argument("--nickname", required=True)
     p_resolve.set_defaults(func=cmd_resolve)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     args.func(args)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

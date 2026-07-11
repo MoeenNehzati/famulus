@@ -7,6 +7,8 @@ import json
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 
 class NoCacheRequestHandler(SimpleHTTPRequestHandler):
     def end_headers(self) -> None:
@@ -20,7 +22,7 @@ class ReusableThreadingHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Serve graph HTML from a local directory with no-cache headers."
     )
@@ -40,11 +42,19 @@ def parse_args() -> argparse.Namespace:
         default=8765,
         help="Port to bind. Defaults to 8765.",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+class Interface(PythonArgvMachineInterface):
+    prog = "graph_server.py"
+
+    def run(self, argv: list[str]) -> int:
+        main(argv)
+        return 0
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
     directory = Path(args.directory).resolve()
     handler = functools.partial(NoCacheRequestHandler, directory=str(directory))
     server = ReusableThreadingHTTPServer((args.host, args.port), handler)

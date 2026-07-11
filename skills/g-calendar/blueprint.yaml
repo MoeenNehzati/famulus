@@ -9,9 +9,9 @@ depends_on: {}
 
 suggested_permissions:
   bash:
-    - command: ["python3", "_rtx/_oauth_bootstrap.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_oauth_bootstrap.py:Interface"]
       reason: "OAuth setup tool."
-    - command: ["python3", "_rtx/_ensure_oauth.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_ensure_oauth.py:Interface"]
       reason: "Check OAuth status and guide setup (relocated from install-assistant-tools)."
   network: []
 
@@ -36,8 +36,8 @@ interfaces:
         allow_extra_positionals: true
         allow_stdin: false
       runtime:
-        kind: python_module
-        module: _rtx._gcal_client
+        kind: python_machine_interface
+        entrypoint: _rtx/_gcal_client.py:Interface
       dependencies: []
     setup-oauth:
       description: Run the OAuth setup flow to generate or refresh Google Calendar credentials.
@@ -49,10 +49,8 @@ interfaces:
         allow_stdin: false
         notes: OAuth setup for Google Calendar access.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_oauth_bootstrap.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_oauth_bootstrap.py:Interface
       dependencies: []
     ensure-oauth:
       description: "Check g-calendar OAuth status; print setup guidance or launch browser authorization as needed. Relocated\
@@ -65,8 +63,6 @@ interfaces:
         allow_stdin: false
         notes: Check OAuth status and guide setup for g-calendar.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_ensure_oauth.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_ensure_oauth.py:Interface
       dependencies: []

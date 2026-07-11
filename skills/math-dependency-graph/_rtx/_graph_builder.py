@@ -38,12 +38,17 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 try:
-    from _tex_macro_reader import default_output_path, extract_macros, write_macros
+    from ._tex_macro_reader import default_output_path, extract_macros, write_macros
 except ImportError:  # pragma: no cover - only relevant when imported unusually
-    default_output_path = None
-    extract_macros = None
-    write_macros = None
+    try:
+        from _tex_macro_reader import default_output_path, extract_macros, write_macros
+    except ImportError:
+        default_output_path = None
+        extract_macros = None
+        write_macros = None
 
 
 TYPE_STYLES = {
@@ -2710,7 +2715,15 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 """
 
 
-def main() -> None:
+class Interface(PythonArgvMachineInterface):
+    prog = "graph_builder.py"
+
+    def run(self, argv: list[str]) -> int:
+        main(argv)
+        return 0
+
+
+def main(argv: list[str] | None = None) -> None:
     """CLI entry point for rendering canonical dependency JSON to HTML."""
     parser = argparse.ArgumentParser(description="Render an interactive HTML math dependency graph from canonical JSON.")
     parser.add_argument("source", help="Path to the canonical dependency-graph JSON file")
@@ -2735,7 +2748,7 @@ def main() -> None:
         action="store_true",
         help="Apply graph-theoretic transitive reduction before rendering",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     source_path = Path(args.source).resolve()
     if not source_path.exists():

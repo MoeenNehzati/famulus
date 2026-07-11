@@ -5,7 +5,12 @@ exercised manually against the live IMAP accounts, not here.
 """
 import email
 import importlib.util
+import sys
 from pathlib import Path
+
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+if str(REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(REPO_SRC))
 
 MAIL_PY = Path(__file__).parent.parent / "_rtx" / "_imap_gateway.py"
 spec = importlib.util.spec_from_file_location("mail", MAIL_PY)

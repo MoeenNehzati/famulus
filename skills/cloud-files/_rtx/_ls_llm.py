@@ -3,13 +3,25 @@ from __future__ import annotations
 
 import sys
 
-import _drive_gateway as cloud_files
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
+try:
+    from . import _drive_gateway as cloud_files
+except ImportError:
+    import _drive_gateway as cloud_files
 
 
-def main() -> int:
+class Interface(PythonArgvMachineInterface):
+    prog = "ls_llm.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
     return cloud_files.run_entrypoint(
         cloud_files.ls_entrypoint,
-        sys.argv[1:],
+        sys.argv[1:] if argv is None else argv,
         use_llm_root=True,
     )
 

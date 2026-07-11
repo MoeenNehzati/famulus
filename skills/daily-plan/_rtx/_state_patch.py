@@ -4,10 +4,22 @@ from __future__ import annotations
 import argparse
 import sys
 
-from _day_model import PlanError, get_today_date, mutate_plan, parse_indices
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
+try:
+    from ._day_model import PlanError, get_today_date, mutate_plan, parse_indices
+except ImportError:
+    from _day_model import PlanError, get_today_date, mutate_plan, parse_indices
 
 
-def main() -> int:
+class Interface(PythonArgvMachineInterface):
+    prog = "state_patch.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Mutate today's rendered daily plan and show the refreshed result.")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -25,7 +37,7 @@ def main() -> int:
     p_add.add_argument("section", choices=["actions", "triage"])
     p_add.add_argument("item_id")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     try:
         date_key = get_today_date()
         if args.command == "add":

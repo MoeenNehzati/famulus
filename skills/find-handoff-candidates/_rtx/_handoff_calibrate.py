@@ -34,7 +34,9 @@ import json
 import os
 import statistics
 
-from . import scan
+from officina.runtime.python_machine_interface import PythonMachineInterface
+
+from . import _handoff_scan as scan
 
 
 def _net_chars_for_file(path: str, opaque_field: str) -> tuple[int, int]:
@@ -91,15 +93,33 @@ def _print_stats(host_id: str, records: list, default_threshold: int):
     print()
 
 
-def main():
-    arg_parser = argparse.ArgumentParser(description=__doc__)
-    arg_parser.add_argument("--days", type=int, default=5, help="Lookback window in days (default: 5).")
-    args = arg_parser.parse_args()
+class Interface(PythonMachineInterface):
+    """Dispatcher machine interface for handoff-threshold calibration stats."""
 
-    results = collect(args.days)
-    for host_parser in scan.PARSERS:
-        _print_stats(host_parser.id, results[host_parser.id], host_parser.default_threshold)
+    description = __doc__ or ""
+    prog = "calibrate.py"
+
+    def build_parser(self) -> argparse.ArgumentParser:
+        """Build the calibration argument parser and include shared runtime flags."""
+
+        arg_parser = super().build_parser()
+        arg_parser.add_argument("--days", type=int, default=5, help="Lookback window in days (default: 5).")
+        return arg_parser
+
+    def run(self, args: argparse.Namespace) -> int:
+        """Collect and print per-host calibration statistics."""
+
+        results = collect(args.days)
+        for host_parser in scan.PARSERS:
+            _print_stats(host_parser.id, results[host_parser.id], host_parser.default_threshold)
+        return 0
+
+
+def main():
+    interface = Interface()
+    args = interface.build_parser().parse_args()
+    return interface.run(args)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -33,6 +33,7 @@ if str(REPO_SRC) not in sys.path:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from officina.common import toml_io
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 from _state_record import Manifest, manifest_path
 from _fs_links import log, make_link
@@ -280,7 +281,14 @@ def run(
     log(f"  Agents installed: {', '.join(agents) if agents else '(none)'}")
 
 
-def parse_args() -> argparse.Namespace:
+class Interface(PythonArgvMachineInterface):
+    prog = "agent_launchers.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo-root", metavar="DIR", required=True)
     parser.add_argument("--agents", metavar="LIST", default="",
@@ -292,11 +300,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--shell-rc", metavar="FILE")
     parser.add_argument("--default-llm", choices=["claude", "codex"], default="claude")
     parser.add_argument("--dry-run", action="store_true")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     agents = [a.strip() for a in args.agents.split(",") if a.strip()]
     invalid = set(agents) - set(ALL_AGENTS)
     if invalid:
@@ -312,7 +320,8 @@ def main() -> None:
         default_llm=args.default_llm,
         dry_run=args.dry_run,
     )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

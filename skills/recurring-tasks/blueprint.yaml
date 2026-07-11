@@ -11,14 +11,16 @@ suggested_permissions:
   bash:
     - command: ["_rtx/_setup_runner.sh"]
       reason: "Initial setup: syncs unit files, installs healthcheck cron entry."
-    - command: ["_rtx/_unit_writer.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_unit_writer.py:Interface"]
       reason: "Write/remove systemd user unit files to match jobs.yaml."
-    - command: ["_rtx/_job_control.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_job_control.py:Interface"]
       reason: "Consolidated interface: enable/disable/test/view-logs jobs."
-    - command: ["_rtx/_healthcheck_probe.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_healthcheck_probe.py:Interface"]
       reason: "Run pre-flight and per-job health checks."
-    - command: ["_rtx/_ensure_agent_env.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_ensure_agent_env.py:Interface"]
       reason: "Ensure recurring-tasks' own PATH/env prerequisites are in place."
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_job_utils.py:Interface"]
+      reason: "Expose legacy recurring job helper module through the dispatcher runtime contract."
     - command: ["systemctl"]
       reason: "Manage systemd user units."
     - command: ["journalctl"]
@@ -33,10 +35,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_job_control.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_job_control.py:Interface
+        args_prefix:
         - enable
       dependencies:
       - kind: python
@@ -52,10 +53,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_job_control.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_job_control.py:Interface
+        args_prefix:
         - disable
       dependencies:
       - kind: python
@@ -71,10 +71,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_job_control.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_job_control.py:Interface
+        args_prefix:
         - test
       dependencies:
       - kind: python
@@ -90,10 +89,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_job_control.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_job_control.py:Interface
+        args_prefix:
         - view-logs
       dependencies:
       - kind: python
@@ -106,10 +104,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: false
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_job_control.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_job_control.py:Interface
+        args_prefix:
         - status
       dependencies:
       - kind: python
@@ -125,10 +122,8 @@ interfaces:
       - name: owner
         allow_extra_positionals: false
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_unit_writer.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_unit_writer.py:Interface
       dependencies:
       - kind: python
         name: PyYAML
@@ -144,10 +139,8 @@ interfaces:
       - name: owner
         allow_extra_positionals: false
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_healthcheck_probe.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_healthcheck_probe.py:Interface
       dependencies:
       - kind: python
         name: PyYAML
@@ -186,10 +179,8 @@ interfaces:
       patterns:
       - name: owner
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_ensure_agent_env.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_ensure_agent_env.py:Interface
       dependencies:
       - kind: binary
         name: systemctl
@@ -199,10 +190,8 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_job_utils.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_job_utils.py:Interface
       dependencies: []
     scripts-invoke-agent:
       patterns:

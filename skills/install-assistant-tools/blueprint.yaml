@@ -11,7 +11,14 @@ depends_on: {}
 
 suggested_permissions:
   bash:
-    []
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_phase_entry.py:Interface"]
+      reason: "Run the phase-1 installer orchestrator through the shared Python machine-interface runner."
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_install_scaffold.py:Interface"]
+      reason: "Install dispatcher and invoke-skill launchers through the shared Python machine-interface runner."
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_config_bridge.py:Interface"]
+      reason: "Wire dev-mode config links and hooks through the shared Python machine-interface runner."
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_agent_launchers.py:Interface"]
+      reason: "Install selected assistant launchers through the shared Python machine-interface runner."
   network:
     []
 
@@ -32,10 +39,8 @@ interfaces:
       patterns:
       - name: owner
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_phase_entry.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_phase_entry.py:Interface
       dependencies:
       - kind: binary
         name: git
@@ -46,10 +51,8 @@ interfaces:
       patterns:
       - name: owner
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_install_scaffold.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_install_scaffold.py:Interface
       dependencies: []
     scripts-dev-link:
       description: Symlink Claude/Codex config dirs to a live repo checkout, register dev-mode hooks, set git hooksPath, export
@@ -59,10 +62,8 @@ interfaces:
       patterns:
       - name: owner
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_config_bridge.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_config_bridge.py:Interface
       dependencies:
       - kind: binary
         name: git
@@ -74,8 +75,6 @@ interfaces:
       patterns:
       - name: owner
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_agent_launchers.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_agent_launchers.py:Interface
       dependencies: []

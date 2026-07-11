@@ -19,13 +19,15 @@ depends_on:
 
 suggested_permissions:
   bash:
-    - command: ["python3", "_rtx/_yaml_store.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_yaml_store.py:Interface"]
       reason: "Core list operations; supports --cloud flag to handle cloud transport via the shared dispatcher automatically."
-    - command: ["python3", "_rtx/_list_beautify.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_yaml_store.py:DescribeSchemaInterface"]
+      reason: "Read-only schema descriptor exposed through the shared Python machine-interface runner."
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_list_beautify.py:BeautifyListInterface"]
       reason: "Pure formatter used for user-facing rendering of YAML output."
-    - command: ["python3", "_rtx/_render_bridge.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_render_bridge.py:Interface"]
       reason: "Default human-facing read path for lists; supports --cloud flag for cloud-backed lists."
-    - command: ["python3", "_rtx/_legacy_importer.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_legacy_importer.py:Interface"]
       reason: "One-time migration utility for importing legacy Markdown lists."
   network: []
 
@@ -59,10 +61,9 @@ interfaces:
         notes: First positional is the local YAML file; remaining positionals are filters. Filtered output is a pruned tree
           (or pruned list, if the input itself was a bare list), not a flat list of matches -- do not assume flat-list shape.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_yaml_store.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
         - read
       dependencies:
       - kind: python
@@ -80,11 +81,8 @@ interfaces:
         notes: First positional is the schema name (todo, triage, default); optional second positional is a field name, or
           '*'/omitted for all fields. Purely local and read-only -- no cloud variant needed.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_yaml_store.py
-        - describe-schema
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:DescribeSchemaInterface
       dependencies:
       - kind: python
         name: jsonschema
@@ -113,10 +111,9 @@ interfaces:
         - --file
         notes: Internal convenience mode for the owning skill when feeding YAML directly.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_yaml_store.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
         - update
       dependencies:
       - kind: python
@@ -139,10 +136,8 @@ interfaces:
         notes: 'Read a local YAML list file and immediately return pretty output. No allowed_flags restriction: --sort/-D/--markdown/--table/--diff/--no-ids/-o
           all pass through.'
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_render_bridge.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_render_bridge.py:Interface
       dependencies:
       - kind: python
         name: PyYAML
@@ -163,10 +158,8 @@ interfaces:
         notes: 'Reads YAML from stdin and renders user-facing list output. No allowed_flags restriction: -D/--markdown/--table/--diff/--relative-deadlines/--ids
           all pass through.'
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_list_beautify.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_list_beautify.py:BeautifyListInterface
       dependencies:
       - kind: python
         name: PyYAML
@@ -184,10 +177,9 @@ interfaces:
         allow_extra_positionals: true
         allow_stdin: false
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_yaml_store.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
         - init
       dependencies:
       - kind: python
@@ -217,10 +209,9 @@ interfaces:
         allowed_flags:
         - --entries
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_yaml_store.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
         - create-entry
       dependencies:
       - kind: python
@@ -239,10 +230,9 @@ interfaces:
         allow_extra_positionals: true
         allow_stdin: false
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_yaml_store.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
         - gen-id
       dependencies:
       - kind: python
@@ -258,10 +248,8 @@ interfaces:
         allow_extra_positionals: true
         allow_stdin: false
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_legacy_importer.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_legacy_importer.py:Interface
       dependencies:
       - kind: python
         name: PyYAML
@@ -295,10 +283,9 @@ interfaces:
         notes: Read cloud list by name (raw YAML), optionally filtered. Filtered output is a pruned tree, not a flat list
           of matches -- do not assume flat-list shape.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_yaml_store.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
         - read
       dependencies:
       - kind: python
@@ -335,10 +322,9 @@ interfaces:
           0: ^[a-zA-Z0-9_-]+$
           1: ^[a-zA-Z0-9_/-]+$
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_yaml_store.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
         - create-entry
       dependencies:
       - kind: python
@@ -378,10 +364,9 @@ interfaces:
           0: ^[a-zA-Z0-9_-]+$
         notes: Update cloud list entries from a stdin patch.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_yaml_store.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
         - update
       dependencies:
       - kind: python
@@ -410,10 +395,9 @@ interfaces:
           0: ^[a-zA-Z0-9_-]+$
         notes: Create a new list in cloud storage.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_yaml_store.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
         - init
       dependencies:
       - kind: python
@@ -440,10 +424,9 @@ interfaces:
           1: ^[0-9a-f]{6}$
         notes: Delete one or more entries by ID from a cloud list.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_yaml_store.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
         - delete
       dependencies:
       - kind: python
@@ -475,10 +458,8 @@ interfaces:
           0: ^[a-zA-Z0-9_-]+$
         notes: Read a cloud list by name and render it as nested bullet-list markdown by default, optionally filtered.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_render_bridge.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_render_bridge.py:Interface
       dependencies:
       - kind: python
         name: PyYAML

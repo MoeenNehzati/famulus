@@ -32,6 +32,8 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 SCOPE = "https://www.googleapis.com/auth/drive"
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -75,7 +77,15 @@ def build_auth_url(*, client_id: str, redirect_uri: str, state: str) -> str:
     return f"{AUTH_URL}?{urllib.parse.urlencode(params)}"
 
 
-def main() -> None:
+class Interface(PythonArgvMachineInterface):
+    prog = "setup_oauth.py"
+
+    def run(self, argv: list[str]) -> int:
+        main(argv)
+        return 0
+
+
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -87,7 +97,7 @@ def main() -> None:
         help=f"path to OAuth client JSON (default: {CLIENT_PATH})",
     )
     parser.add_argument("--port", type=int, default=8765)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     from_json = Path(args.from_json).expanduser() if args.from_json else None
     if from_json is None and not (args.client_id and args.client_secret):
@@ -192,4 +202,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

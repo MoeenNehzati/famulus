@@ -54,6 +54,46 @@ def test_python_module_runtime_gets_utf8_stdio_env(tmp_path: Path) -> None:
     assert resolved.env["PYTHONIOENCODING"] == "utf-8:strict"
 
 
+def test_python_machine_interface_runtime_uses_shared_runner(tmp_path: Path) -> None:
+    skill_root = tmp_path / "skills" / "demo-skill"
+    runtime_root = skill_root / "_rtx"
+    runtime_root.mkdir(parents=True)
+    (skill_root / "blueprint.yaml").write_text(
+        "category: workflow-general-assistant\n"
+        "interface_version: 1\n"
+        "interfaces:\n"
+        "  machine:\n"
+        "    ping:\n"
+        "      runtime:\n"
+        "        kind: python_machine_interface\n"
+        "        entrypoint: _rtx/_ping.py:Interface\n"
+        "        args_prefix: [ping]\n"
+        "      dependencies: []\n"
+        "      patterns:\n"
+        "        - name: any\n"
+        "          allow_extra_positionals: true\n",
+        encoding="utf-8",
+    )
+
+    resolved = resolve_dispatch(
+        caller_skill="demo-skill",
+        target="demo-skill.machine.ping",
+        args=["--route-smoke"],
+        repo_root=tmp_path,
+    )
+
+    assert resolved.cwd == skill_root
+    assert resolved.env is not None
+    assert resolved.env["PYTHONIOENCODING"] == "utf-8:strict"
+    assert resolved.command[:4] == [
+        sys.executable,
+        "-m",
+        "officina.runtime.python_machine_interface_runner",
+        "_rtx/_ping.py:Interface",
+    ]
+    assert resolved.command[4:] == ["ping", "--route-smoke"]
+
+
 def test_dispatch_text_mode_pins_utf8_strict(monkeypatch, tmp_path: Path) -> None:
     _write_skill(tmp_path)
     captured: dict[str, Any] = {}

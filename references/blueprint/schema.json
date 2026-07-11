@@ -350,20 +350,6 @@
       "oneOf": [
         {
           "type": "object",
-          "required": ["kind", "module"],
-          "additionalProperties": false,
-          "properties": {
-            "kind": {
-              "const": "python_module"
-            },
-            "module": {
-              "type": "string",
-              "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
-            }
-          }
-        },
-        {
-          "type": "object",
           "required": ["kind", "argv"],
           "additionalProperties": false,
           "properties": {
@@ -373,6 +359,28 @@
             "argv": {
               "type": "array",
               "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "entrypoint"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "python_machine_interface"
+            },
+            "entrypoint": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^_rtx/[A-Za-z_][A-Za-z0-9_]*\\.py:[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "args_prefix": {
+              "type": "array",
               "items": {
                 "type": "string",
                 "minLength": 1

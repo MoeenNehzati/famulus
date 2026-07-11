@@ -22,6 +22,8 @@ import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 # State lives next to this script (SKILL_DIR/state), matching get_cutoff.py and
 # update_watermark.py, so it stays portable across machines regardless of
 # $HOME layout or the caller's cwd.
@@ -74,11 +76,19 @@ def clear_stale_error():
             STATUS_FILE.write_text(json.dumps({"result": "ok", "message": "reset at start of new run"}, indent=2))
 
 
-def main():
-    if "-a" not in sys.argv:
+class Interface(PythonArgvMachineInterface):
+    prog = "filter_envelopes.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if "-a" not in argv:
         print("Usage: filter_envelopes.py -a <account>   < envelopes.json", file=sys.stderr)
-        sys.exit(1)
-    account = sys.argv[sys.argv.index("-a") + 1]
+        return 1
+    account = argv[argv.index("-a") + 1]
 
     clear_stale_error()
     cutoff_dt, warning = load_cutoff()
@@ -110,7 +120,8 @@ def main():
         print(json.dumps(kept, indent=2))
     else:
         print(f"(no new emails for {account} since {cutoff_dt.strftime('%Y-%m-%d %H:%M %Z')})")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

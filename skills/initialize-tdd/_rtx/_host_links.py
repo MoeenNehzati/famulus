@@ -20,28 +20,53 @@ Usage:
 """
 from __future__ import annotations
 
+import argparse
 import glob
 import importlib.util
 import os
 import sys
+from argparse import Namespace
+
+from officina.runtime.python_machine_interface import PythonMachineInterface
+
+
+class _UsageOnlyParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        self.print_usage(sys.stderr)
+        raise SystemExit(1)
+
+
+class Interface(PythonMachineInterface):
+    parser_class = _UsageOnlyParser
+    prog = "setup_compat_aliases.py"
+    usage = "%(prog)s <project-dir>"
+    add_help = False
+
+    def build_parser(self) -> argparse.ArgumentParser:
+        parser = super().build_parser()
+        parser.add_argument("project_dir", metavar="<project-dir>")
+        return parser
+
+    def run(self, args: Namespace) -> int:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        helpers = sorted(glob.glob(os.path.join(script_dir, "*_compat_symlink.py")))
+        for helper_path in helpers:
+            module_name = os.path.splitext(os.path.basename(helper_path))[0]
+            spec = importlib.util.spec_from_file_location(module_name, helper_path)
+            if spec is None or spec.loader is None:
+                raise RuntimeError(f"cannot load compat-alias helper: {helper_path}")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            mod.create_alias(args.project_dir)
+
+        return 0
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("usage: setup_compat_aliases.py <project-dir>", file=sys.stderr)
-        return 1
-    project_dir = sys.argv[1]
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    helpers = sorted(glob.glob(os.path.join(script_dir, "*_compat_symlink.py")))
-    for helper_path in helpers:
-        module_name = os.path.splitext(os.path.basename(helper_path))[0]
-        spec = importlib.util.spec_from_file_location(module_name, helper_path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        mod.create_alias(project_dir)
-
-    return 0
+    interface = Interface()
+    parser = interface.build_parser()
+    args = parser.parse_args()
+    return interface.run(args)
 
 
 if __name__ == "__main__":

@@ -24,12 +24,19 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+SRC_ROOT = REPO_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from officina.runtime.python_machine_interface import PythonMachineInterface
+from officina.runtime.python_machine_interface_runner import run_python_machine_interface
+
 SKILLS_ROOT = REPO_ROOT / "skills"
 CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
 CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
@@ -37,6 +44,9 @@ INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
 RUNTIME_DEPENDENCIES_PATH = REPO_ROOT / "references" / "blueprint" / "runtime_dependencies.json"
 DEPENDENCY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+\-\[\]]*$")
+PYTHON_MACHINE_INTERFACE_ENTRYPOINT_RE = re.compile(
+    r"^_rtx/[A-Za-z_][A-Za-z0-9_]*\.py:[A-Za-z_][A-Za-z0-9_]*$"
+)
 
 
 @dataclass(frozen=True)
@@ -89,21 +99,31 @@ def expect_list_of_strings(value: Any, context: str) -> list[str]:
 
 
 def expect_runtime(value: Any, context: str, errors: list[str]) -> None:
+    """Validate runtime metadata."""
     if not isinstance(value, dict):
         errors.append(f"{context}: expected mapping")
         return
     kind = value.get("kind")
-    if kind == "python_module":
-        module = value.get("module")
-        if not isinstance(module, str) or not module.strip():
-            errors.append(f"{context}: python_module runtime needs non-empty `module`")
+    if kind == "python_machine_interface":
+        target = value.get("entrypoint")
+        if not isinstance(target, str) or not target:
+            errors.append(f"{context}: python_machine_interface runtime needs non-empty `entrypoint`")
+            return
+        if not PYTHON_MACHINE_INTERFACE_ENTRYPOINT_RE.fullmatch(target):
+            errors.append(
+                f"{context}: python_machine_interface entrypoint must look like "
+                "`_rtx/file.py:Interface`"
+            )
+        args_prefix = value.get("args_prefix", [])
+        if not isinstance(args_prefix, list) or not all(isinstance(token, str) and token for token in args_prefix):
+            errors.append(f"{context}: python_machine_interface runtime needs string list `args_prefix`")
         return
     if kind == "command":
         argv = value.get("argv")
         if not isinstance(argv, list) or not all(isinstance(token, str) and token for token in argv):
             errors.append(f"{context}: command runtime needs non-empty string list `argv`")
         return
-    errors.append(f"{context}: runtime kind must be `python_module` or `command`")
+    errors.append(f"{context}: runtime kind must be `python_machine_interface` or `command`")
 
 
 def expect_runtime_dependencies(value: Any, context: str, errors: list[str]) -> None:
@@ -704,18 +724,24 @@ def sync_runtime_dependencies_manifest(
     return []
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Validate and sync skill blueprints.")
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help="Validate blueprints and fail if generated artifacts are out of sync.",
-    )
-    return parser.parse_args()
+class Interface(PythonMachineInterface):
+    description = "Validate and sync skill blueprints."
+    prog = "_blueprint_syncer.py"
+
+    def build_parser(self) -> argparse.ArgumentParser:
+        parser = super().build_parser()
+        parser.add_argument(
+            "--check",
+            action="store_true",
+            help="Validate blueprints and fail if generated artifacts are out of sync.",
+        )
+        return parser
+
+    def run(self, args: argparse.Namespace) -> int:
+        return run_sync(check_only=args.check)
 
 
-def main() -> int:
-    args = parse_args()
+def run_sync(*, check_only: bool) -> int:
     try:
         blueprints = load_blueprints()
     except BlueprintError as exc:
@@ -724,20 +750,24 @@ def main() -> int:
 
     errors = validate_blueprints(blueprints)
     for blueprint in blueprints.values():
-        errors.extend(sync_skill(blueprint, check_only=args.check))
-    errors.extend(sync_runtime_dependencies_manifest(blueprints, check_only=args.check))
+        errors.extend(sync_skill(blueprint, check_only=check_only))
+    errors.extend(sync_runtime_dependencies_manifest(blueprints, check_only=check_only))
 
     if errors:
         print("error: invalid or out-of-sync skill blueprints.", file=sys.stderr)
         for error in errors:
             print(f"  {error}", file=sys.stderr)
-        if args.check:
+        if check_only:
             print(
                 "Run `python3 skills/skill-maker/_rtx/_blueprint_syncer.py` to refresh generated artifacts.",
                 file=sys.stderr,
             )
         return 1
     return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    return run_python_machine_interface(Interface(), sys.argv[1:] if argv is None else argv)
 
 
 if __name__ == "__main__":

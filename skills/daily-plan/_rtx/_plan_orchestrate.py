@@ -5,13 +5,25 @@ from __future__ import annotations
 import argparse
 import sys
 
-from _day_model import PlanError, generate_plan, get_today_date, plan_exists, refresh_rendered_plan
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
+try:
+    from ._day_model import PlanError, generate_plan, get_today_date, plan_exists, refresh_rendered_plan
+except ImportError:
+    from _day_model import PlanError, generate_plan, get_today_date, plan_exists, refresh_rendered_plan
 
 
-def main() -> int:
+class Interface(PythonArgvMachineInterface):
+    prog = "plan_orchestrate.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate or show today's daily plan.")
     parser.add_argument("--forced", action="store_true", help="Regenerate the plan even if it already exists")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     try:
         date_key = get_today_date()

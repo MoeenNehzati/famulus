@@ -45,6 +45,8 @@ from datetime import datetime, timezone
 from email.header import decode_header
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 FOLDER_ALIASES = {
@@ -522,7 +524,14 @@ def cmd_folders(args: argparse.Namespace) -> None:
         conn.logout()
 
 
-def main() -> None:
+class Interface(PythonArgvMachineInterface):
+    prog = "mail.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -560,9 +569,10 @@ def main() -> None:
     p_folders.add_argument("-a", "--account", required=True)
     p_folders.set_defaults(func=cmd_folders)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     args.func(args)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

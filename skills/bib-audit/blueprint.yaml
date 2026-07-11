@@ -18,10 +18,12 @@ suggested_permissions:
       reason: "Migrated from legacy permissions.json."
     - command: ["bibtex-update"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["_rtx/_reference_pairs.py"]
-      reason: "Migrated from legacy permissions.json."
-    - command: ["_rtx/_syntax_checker.py"]
-      reason: "Migrated from legacy permissions.json."
+    - command: ["dispatcher"]
+      args_prefix: ["--caller-skill", "bib-audit", "bib-audit.machine.scripts-bib-similarity"]
+      reason: "Runs the local bib-audit duplicate/version candidate detector through the shared dispatcher runtime."
+    - command: ["dispatcher"]
+      args_prefix: ["--caller-skill", "bib-audit", "bib-audit.machine.scripts-bib-validate-bibtex"]
+      reason: "Runs the local bib-audit BibTeX/natbib validator through the shared dispatcher runtime."
   network:
     []
 
@@ -42,10 +44,8 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_reference_pairs.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_reference_pairs.py:SimilarityInterface
       dependencies:
       - kind: python
         name: bibtexparser
@@ -57,10 +57,8 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_syntax_checker.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_syntax_checker.py:ValidateBibtexInterface
       dependencies:
       - kind: python
         name: bibtexparser

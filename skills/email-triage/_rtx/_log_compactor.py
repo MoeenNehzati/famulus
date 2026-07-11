@@ -15,6 +15,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 LOGFILE = Path(__file__).resolve().parent.parent / "triage.log"
 CUTOFF_DAYS = 30
 
@@ -32,10 +34,17 @@ def parse_timestamp(line: str) -> datetime | None:
         return None
 
 
-def main() -> None:
+class Interface(PythonArgvMachineInterface):
+    prog = "prune_log.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(_argv: list[str] | None = None) -> int:
     if not LOGFILE.exists():
         print("Pruned 0 entries older than 30 days (0 kept).")
-        return
+        return 0
 
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(days=CUTOFF_DAYS)
@@ -60,7 +69,8 @@ def main() -> None:
 
     LOGFILE.write_text("".join(kept))
     print(f"Pruned {pruned} entries older than {CUTOFF_DAYS} days ({len(kept)} kept).")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

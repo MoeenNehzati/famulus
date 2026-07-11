@@ -16,6 +16,9 @@ import sys
 import json
 import re
 import argparse
+from argparse import Namespace
+
+from officina.runtime.python_machine_interface import PythonMachineInterface
 
 try:
     import bibtexparser
@@ -162,51 +165,64 @@ def check_duplicate_keys(entries):
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
-    ap = argparse.ArgumentParser(
-        description="Validate a BibTeX/natbib .bib file for syntax and required fields. "
-                    "Do not use for biblatex projects.")
-    ap.add_argument("bibfile")
-    args = ap.parse_args()
+class ValidateBibtexInterface(PythonMachineInterface):
+    description = (
+        "Validate a BibTeX/natbib .bib file for syntax and required fields. "
+        "Do not use for biblatex projects."
+    )
 
-    entries, parse_errors = load_bib(args.bibfile)
+    def build_parser(self) -> argparse.ArgumentParser:
+        parser = super().build_parser()
+        parser.add_argument("bibfile")
+        return parser
 
-    if not HAS_BIBTEXPARSER:
-        parse_errors.append({"level": "WARNING", "key": None, "field": None,
-                              "message": "bibtexparser not found; using fallback parser — some issues may be missed"})
+    def run(self, args: Namespace) -> int:
+        entries, parse_errors = load_bib(args.bibfile)
 
-    dup_keys = check_duplicate_keys(entries)
-    results = []
+        if not HAS_BIBTEXPARSER:
+            parse_errors.append({"level": "WARNING", "key": None, "field": None,
+                                  "message": "bibtexparser not found; using fallback parser — some issues may be missed"})
 
-    for e in entries:
-        key = e.get("ID", "?")
-        entry_issues = validate_entry(e)
-        for dk in dup_keys:
-            if key == dk:
-                entry_issues.insert(0, {"level": "ERROR", "field": "ID",
-                                         "message": f"Duplicate citation key '{key}'"})
-        results.append({
-            "key": key,
-            "type": e.get("ENTRYTYPE", "?"),
-            "issues": entry_issues,
-        })
+        dup_keys = check_duplicate_keys(entries)
+        results = []
 
-    counts = {"ERROR": 0, "WARNING": 0, "INFO": 0}
-    for r in results:
-        for issue in r["issues"]:
-            counts[issue["level"]] = counts.get(issue["level"], 0) + 1
-    for e in parse_errors:
-        counts[e.get("level", "ERROR")] = counts.get(e.get("level", "ERROR"), 0) + 1
+        for e in entries:
+            key = e.get("ID", "?")
+            entry_issues = validate_entry(e)
+            for dk in dup_keys:
+                if key == dk:
+                    entry_issues.insert(0, {"level": "ERROR", "field": "ID",
+                                             "message": f"Duplicate citation key '{key}'"})
+            results.append({
+                "key": key,
+                "type": e.get("ENTRYTYPE", "?"),
+                "issues": entry_issues,
+            })
 
-    print(json.dumps({
-        "bibfile": args.bibfile,
-        "backend": "bibtex/natbib",
-        "total_entries": len(entries),
-        "summary": counts,
-        "parse_errors": parse_errors,
-        "entries": results,
-    }, indent=2))
+        counts = {"ERROR": 0, "WARNING": 0, "INFO": 0}
+        for r in results:
+            for issue in r["issues"]:
+                counts[issue["level"]] = counts.get(issue["level"], 0) + 1
+        for e in parse_errors:
+            counts[e.get("level", "ERROR")] = counts.get(e.get("level", "ERROR"), 0) + 1
+
+        print(json.dumps({
+            "bibfile": args.bibfile,
+            "backend": "bibtex/natbib",
+            "total_entries": len(entries),
+            "summary": counts,
+            "parse_errors": parse_errors,
+            "entries": results,
+        }, indent=2))
+        return 0
+
+
+def main() -> int:
+    interface = ValidateBibtexInterface()
+    parser = interface.build_parser()
+    args = parser.parse_args()
+    return interface.run(args)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

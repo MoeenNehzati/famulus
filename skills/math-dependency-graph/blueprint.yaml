@@ -12,8 +12,12 @@ depends_on:
 
 suggested_permissions:
   bash:
-    - command: ["python3"]
-      reason: "Migrated from legacy permissions.json."
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_graph_builder.py:Interface"]
+      reason: "Render math dependency graph HTML from canonical JSON."
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_tex_macro_reader.py:Interface"]
+      reason: "Extract MathJax macro definitions from TeX sources."
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_graph_server.py:Interface"]
+      reason: "Serve graph HTML locally for inspection."
   network:
     []
 
@@ -34,10 +38,8 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_graph_builder.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_graph_builder.py:Interface
       dependencies: []
     scripts-extract-mathjax-macros:
       description: Extract MathJax macro definitions from a TeX entrypoint, recursively following \input/\include.
@@ -46,10 +48,8 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_tex_macro_reader.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_tex_macro_reader.py:Interface
       dependencies: []
     scripts-serve-graph:
       description: Serve graph HTML from a local directory with no-cache headers for repeated browser inspection.
@@ -58,8 +58,6 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_graph_server.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_graph_server.py:Interface
       dependencies: []

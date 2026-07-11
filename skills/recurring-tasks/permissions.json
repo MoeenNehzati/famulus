@@ -1,10 +1,11 @@
 {
   "bash": [
     "Bash(_rtx/_setup_runner.sh:*)",
-    "Bash(_rtx/_unit_writer.py:*)",
-    "Bash(_rtx/_job_control.py:*)",
-    "Bash(_rtx/_healthcheck_probe.py:*)",
-    "Bash(_rtx/_ensure_agent_env.py:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_unit_writer.py:Interface:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_job_control.py:Interface:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_healthcheck_probe.py:Interface:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_ensure_agent_env.py:Interface:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_job_utils.py:Interface:*)",
     "Bash(systemctl:*)",
     "Bash(journalctl:*)"
   ],

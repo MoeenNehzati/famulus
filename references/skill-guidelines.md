@@ -139,7 +139,7 @@ Do not invoke the `dispatcher` CLI from Python skill code, and do not modify
 dispatcher must know how to execute the interface, but it must not leak into
 user-facing generated docs. Typical runtime forms:
 
-- `kind: python_module` with `module: _rtx._handoff_scan`
+- `kind: python_machine_interface` with `entrypoint: _rtx/handoff_scan.py:HandoffScan`
 - `kind: command` with explicit argv for non-Python tools
 
 Every executable `interfaces.machine.<name>` entry must declare `dependencies`.
@@ -496,14 +496,17 @@ storage and display formats in the first-party helpers under
 skill. This is mechanically checked by `validators/portable_dates.py`.
 
 **14. Shared skill content must stay neutral about which specific AI-assistant
-host it runs under.** Enforced by `validators/platform_neutral.py`.
+host or operating system it runs under.** Enforced by
+`validators/platform_neutral.py`.
 
 - `SKILL.md`, `blueprint.yaml`, and any generically named runtime file must not
-  name a specific host.
-- If a skill genuinely needs host-specific logic, put that logic in a file
-  whose own filename names the host.
-- `__init__.py` remains the conventional aggregation seam for host-specific
-  modules.
+  name a specific host or operating system.
+- If a skill or shared package genuinely needs platform-specific logic, put
+  that logic in a file whose own filename names the platform, such as
+  `claude`, `codex`, `windows`, `osx`, or `linux`.
+- `__init__.py` remains the conventional aggregation seam for
+  platform-specific modules. It may import platform-named files and re-export
+  a host-neutral API for the rest of the codebase.
 
 ---
 

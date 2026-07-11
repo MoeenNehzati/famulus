@@ -9,17 +9,17 @@ depends_on: {}
 
 suggested_permissions:
   bash:
-    - command: ["python3", "_rtx/_read_llm_file.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_read_llm_file.py:Interface"]
       reason: "Read files from cloud storage under LLM root."
-    - command: ["python3", "_rtx/_write_llm_file.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_write_llm_file.py:Interface"]
       reason: "Write files to cloud storage under LLM root."
-    - command: ["python3", "_rtx/_delete_llm_file.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_delete_llm_file.py:Interface"]
       reason: "Delete files from cloud storage under LLM root."
-    - command: ["python3", "_rtx/_ls_llm.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_ls_llm.py:Interface"]
       reason: "List/check files in cloud storage."
-    - command: ["python3", "_rtx/_oauth_bootstrap.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_oauth_bootstrap.py:Interface"]
       reason: "OAuth setup for cloud access."
-    - command: ["python3", "_rtx/_ensure_oauth.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_ensure_oauth.py:Interface"]
       reason: "Check OAuth status and write config.json (relocated from install-assistant-tools)."
   network: []
 
@@ -48,10 +48,8 @@ interfaces:
           0: ^lists/.*
         notes: Read list files from cloud storage. Restricted to lists/ directory.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_read_llm_file.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_read_llm_file.py:Interface
       dependencies: []
     lists-write:
       description: Write content (from stdin) to a file in cloud storage under the lists/ directory.
@@ -68,10 +66,8 @@ interfaces:
           0: ^lists/.*
         notes: Write list files to cloud storage. Restricted to lists/ directory.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_write_llm_file.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_write_llm_file.py:Interface
       dependencies: []
     lists-delete:
       description: Delete a file from cloud storage under the lists/ directory.
@@ -87,10 +83,8 @@ interfaces:
           0: ^lists/.*
         notes: Delete list files from cloud storage. Restricted to lists/ directory.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_delete_llm_file.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_delete_llm_file.py:Interface
       dependencies: []
     plans-read:
       description: Read a file from cloud storage under the plans/ directory.
@@ -106,10 +100,8 @@ interfaces:
           0: ^plans/.*
         notes: Read plan files from cloud storage. Restricted to plans/ directory.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_read_llm_file.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_read_llm_file.py:Interface
       dependencies: []
     plans-write:
       description: Write content (from stdin) to a file in cloud storage under the plans/ directory.
@@ -125,10 +117,8 @@ interfaces:
           0: ^plans/.*
         notes: Write plan files to cloud storage. Restricted to plans/ directory.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_write_llm_file.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_write_llm_file.py:Interface
       dependencies: []
     plans-delete:
       description: Delete a file from cloud storage under the plans/ directory.
@@ -144,10 +134,8 @@ interfaces:
           0: ^plans/.*
         notes: Delete plan files from cloud storage. Restricted to plans/ directory.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_delete_llm_file.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_delete_llm_file.py:Interface
       dependencies: []
     setup-oauth:
       description: Run one-time OAuth2 setup for Google Drive access.
@@ -159,10 +147,8 @@ interfaces:
         allow_stdin: false
         notes: OAuth setup for Google Drive access.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_oauth_bootstrap.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_oauth_bootstrap.py:Interface
       dependencies: []
     ensure-oauth:
       description: "Check cloud-files OAuth status; print setup guidance or launch browser authorization as needed. Relocated\
@@ -177,10 +163,10 @@ interfaces:
           0: ^ensure-oauth$
         notes: Check OAuth status and guide setup for cloud-files.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_ensure_oauth.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_ensure_oauth.py:Interface
+        args_prefix:
+        - ensure-oauth
       dependencies: []
     write-config:
       description: Write ~/.config/cloud-files/config.json with the given remote LLM root. Relocated from install-assistant-tools.
@@ -194,8 +180,8 @@ interfaces:
           0: ^write-config$
         notes: Write cloud-files config.json.
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_ensure_oauth.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_ensure_oauth.py:Interface
+        args_prefix:
+        - write-config
       dependencies: []

@@ -9,14 +9,17 @@ argument passthrough) that aren't practical to exercise through subprocess."""
 import importlib.util
 import subprocess
 import tempfile
+import sys
 from pathlib import Path
 from unittest import mock
 
 SKILL_DIR = Path(__file__).parent.parent
+REPO_SRC = SKILL_DIR.parents[1] / "src"
 SCRIPT = SKILL_DIR / "_rtx" / "_job_control.py"
 
 
 def _load():
+    sys.path.insert(0, str(REPO_SRC))
     spec = importlib.util.spec_from_file_location("manage_job", SCRIPT)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -256,11 +259,7 @@ def test_cli_reports_error_and_exits_nonzero_on_exception():
     mod = _load()
     with mock.patch.object(mod.sys, "argv", ["manage_job.py", "test", "my-job"]), \
          mock.patch.object(mod, "test_job", side_effect=RuntimeError("kaboom")):
-        try:
-            mod.main()
-            assert False, "expected SystemExit"
-        except SystemExit as e:
-            assert e.code != 0
+        assert mod.main() != 0
     print("PASS: CLI reports an error and exits non-zero when a handler raises")
 
 

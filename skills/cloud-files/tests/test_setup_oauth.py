@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "_rtx"
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(SCRIPT_DIR))
 import _oauth_bootstrap as setup_oauth  # noqa: E402
 

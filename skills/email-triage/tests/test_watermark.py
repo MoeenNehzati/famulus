@@ -2,11 +2,13 @@
 EMAIL_TRIAGE_STATE_DIR so nothing here touches the real state/ directory.
 """
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).parent.parent / "_rtx"
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
 SCRIPT_NAMES = {
     "update_watermark.py": "_watermark_writer.py",
     "mark_failure.py": "_failure_sentinel.py",
@@ -15,10 +17,13 @@ SCRIPT_NAMES = {
 
 
 def run(script, state_dir, *args, input=None):
+    env = os.environ.copy()
+    env["EMAIL_TRIAGE_STATE_DIR"] = str(state_dir)
+    env["PYTHONPATH"] = str(REPO_SRC)
     return subprocess.run(
         [sys.executable, str(SCRIPTS_DIR / SCRIPT_NAMES[script]), *args],
         capture_output=True, text=True, input=input,
-        env={"EMAIL_TRIAGE_STATE_DIR": str(state_dir)},
+        env=env,
     )
 
 

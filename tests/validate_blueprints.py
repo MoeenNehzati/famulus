@@ -53,7 +53,10 @@ def test_machine_interface_without_dependencies_flagged_by_schema() -> None:
         "interfaces": {
             "machine": {
                 "scan": {
-                    "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
+                    "runtime": {
+                        "kind": "python_machine_interface",
+                        "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                    },
                 }
             }
         },
@@ -92,7 +95,10 @@ def test_machine_interface_dependency_objects_pass_schema() -> None:
         "interfaces": {
             "machine": {
                 "scan": {
-                    "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
+                    "runtime": {
+                        "kind": "python_machine_interface",
+                        "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                    },
                     "dependencies": [
                         {
                             "kind": "python",
@@ -113,6 +119,57 @@ def test_machine_interface_dependency_objects_pass_schema() -> None:
     errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
 
     assert errors == []
+
+
+def test_python_module_runtime_is_rejected_by_schema() -> None:
+    schema = _mod._load_schema()
+    assert schema is not None
+    blueprint = {
+        "category": "workflow-general-assistant",
+        "interface_version": 1,
+        "interfaces": {
+            "machine": {
+                "scan": {
+                    "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
+                    "dependencies": [],
+                }
+            }
+        },
+    }
+
+    errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
+
+    assert any("is not valid under any of the given schemas" in error for error in errors)
+
+
+def test_route_smoke_supported_flag_is_rejected_by_schema() -> None:
+    schema = _mod._load_schema()
+    assert schema is not None
+    blueprint = {
+        "category": "workflow-general-assistant",
+        "interface_version": 1,
+        "interfaces": {
+            "machine": {
+                "scan": {
+                    "runtime": {
+                        "kind": "command",
+                        "argv": [
+                            "python3",
+                            "-m",
+                            "officina.runtime.python_machine_interface_runner",
+                            "_rtx/scan.py:Scan",
+                        ],
+                    },
+                    "route_smoke": {"argv": [], "supported": True},
+                    "dependencies": [],
+                }
+            }
+        },
+    }
+
+    errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
+
+    assert any("route_smoke" in error and "Additional properties" in error for error in errors)
 
 
 def test_missing_jsonschema_is_reported_as_validator_error(monkeypatch) -> None:

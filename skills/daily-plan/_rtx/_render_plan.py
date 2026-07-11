@@ -22,6 +22,8 @@ import sys
 import re
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 
 def extract_blocks(yaml_content):
     """Extract named blocks from YAML. Returns dict of block_name -> content."""
@@ -103,31 +105,39 @@ def reassemble_command(plan_file, blocks_dir):
     return True
 
 
-def main():
-    if len(sys.argv) < 3:
-        print("Usage: python render_plan.py <extract|reassemble> <plan-file> <dir>", file=sys.stderr)
-        sys.exit(1)
+class Interface(PythonArgvMachineInterface):
+    prog = "render_plan.py"
 
-    command = sys.argv[1]
-    plan_file = sys.argv[2]
-    dir_arg = sys.argv[3] if len(sys.argv) > 3 else None
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if len(argv) < 2:
+        print("Usage: python render_plan.py <extract|reassemble> <plan-file> <dir>", file=sys.stderr)
+        return 1
+
+    command = argv[0]
+    plan_file = argv[1]
+    dir_arg = argv[2] if len(argv) > 2 else None
 
     if command == "extract":
         if not dir_arg:
             print("Error: output directory required for extract", file=sys.stderr)
-            sys.exit(1)
+            return 1
         success = extract_command(plan_file, dir_arg)
     elif command == "reassemble":
         if not dir_arg:
             print("Error: blocks directory required for reassemble", file=sys.stderr)
-            sys.exit(1)
+            return 1
         success = reassemble_command(plan_file, dir_arg)
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
-    sys.exit(0 if success else 1)
+    return 0 if success else 1
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

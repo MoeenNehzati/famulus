@@ -284,6 +284,10 @@ tw -h                   # Unix only
 
 # Confirm dispatcher resolves
 dispatcher --help
+
+# In a repo checkout, also verify dispatcher can route every converted
+# Python machine interface to its subprocess entrypoint.
+python3 -m pytest -q tests/test_dispatcher_route_smoke.py
 ```
 
 `launchers.py` already runs this same `--help` check automatically for every

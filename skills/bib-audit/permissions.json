@@ -3,8 +3,8 @@
     "Bash(biber:*)",
     "Bash(bibtex-check:*)",
     "Bash(bibtex-update:*)",
-    "Bash(_rtx/_reference_pairs.py:*)",
-    "Bash(_rtx/_syntax_checker.py:*)"
+    "Bash(dispatcher --caller-skill bib-audit bib-audit.machine.scripts-bib-similarity:*)",
+    "Bash(dispatcher --caller-skill bib-audit bib-audit.machine.scripts-bib-validate-bibtex:*)"
   ],
   "network": []
 }

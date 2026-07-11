@@ -58,7 +58,8 @@ if str(REPO_SRC) not in sys.path:
     sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from officina.common import toml_io
+from officina.common import codex_toml, toml_io
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 from _state_record import Manifest, manifest_path
 from _fs_links import make_link
@@ -364,7 +365,7 @@ def install_codex_hooks(codex_home: Path, repo_root: Path, dry_run: bool, manife
     """
     block = _codex_hooks_block(repo_root)
 
-    config_name = toml_io.codex_config_filename()
+    config_name = codex_toml.config_filename()
     config_file = codex_home / config_name
     log(f"\nInstalling Codex dev-mode hook: {config_file}")
 
@@ -562,7 +563,14 @@ def run(
 
 # ── Argument parsing + entry point ────────────────────────────────────────────
 
-def parse_args() -> argparse.Namespace:
+class Interface(PythonArgvMachineInterface):
+    prog = "config_bridge.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -575,11 +583,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-claude",   action="store_true", help="Skip Claude symlinks")
     parser.add_argument("--no-codex",    action="store_true", help="Skip Codex symlinks")
     parser.add_argument("--dry-run",     action="store_true", help="Print planned actions without writing")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     run(
         repo_root=Path(args.repo_root),
         home=Path(args.home) if args.home else None,
@@ -590,7 +598,8 @@ def main() -> None:
         do_codex=not args.no_codex,
         dry_run=args.dry_run,
     )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

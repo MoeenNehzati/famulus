@@ -8,6 +8,9 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+if str(REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(REPO_SRC))
 
 _SPEC = importlib.util.spec_from_file_location(
     "g_calendar_gcal",
@@ -290,9 +293,9 @@ def test_cmd_move_uses_destination_query(monkeypatch, capsys):
     assert capsys.readouterr().out == "Moved: Meeting  [id: evt-1]  -> calendar team/calendar\n"
 
 
-def test_gcal_python_module_preserves_help_surface():
+def test_gcal_python_interface_preserves_help_surface():
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(SKILL_ROOT)
+    env["PYTHONPATH"] = f"{REPO_SRC}:{SKILL_ROOT}"
     result = subprocess.run(
         [sys.executable, "-m", "_rtx._gcal_client", "--help"],
         cwd=SKILL_ROOT,

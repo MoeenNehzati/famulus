@@ -4,10 +4,13 @@ import importlib.util, subprocess, tempfile, os
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).parent.parent
+REPO_SRC = SKILL_DIR.parents[1] / "src"
 SCRIPT    = SKILL_DIR / "_rtx" / "_unit_writer.py"
 
 
 def _load():
+    import sys
+    sys.path.insert(0, str(REPO_SRC))
     spec = importlib.util.spec_from_file_location("sync_units", SCRIPT)
     mod  = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -95,7 +98,8 @@ def _run_sync(jobs_yaml: str, unit_dir: str) -> None:
     try:
         subprocess.run(
             ["python3", str(SCRIPT), "--unit-dir", unit_dir, "--jobs-file", jobs_path],
-            check=True
+            check=True,
+            env={**os.environ, "PYTHONPATH": str(REPO_SRC)},
         )
     finally:
         os.unlink(jobs_path)

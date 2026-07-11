@@ -15,6 +15,18 @@ Interface Version: 1
 Exported Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Owner-Facing Machine Interfaces:
+
+Use the installed `dispatcher` command for this skill's machine interfaces:
+- `sync-blueprints` — Validate skill blueprints and optionally refresh generated compatibility artifacts.
+  - `dispatcher --caller-skill skill-maker skill-maker.machine.sync-blueprints [--check]`
+  - sync: Refresh generated files from blueprint.yaml.
+  - check: Validate blueprints and fail if generated files are out of sync.
+
+<!-- END BLUEPRINT INTERFACES -->
 ## Research option when creating a skill
 
 When creating a new skill, before writing it, ask the user whether they want

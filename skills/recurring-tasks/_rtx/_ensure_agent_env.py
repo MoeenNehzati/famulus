@@ -18,6 +18,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 
 def log(msg: str = "") -> None:
     print(msg, flush=True)
@@ -96,24 +98,32 @@ def run(*, repo_root: Path, home: Path, bin_dir: Path, dry_run: bool = False) ->
     install_ai_agent_env(home, dry_run)
 
 
-def parse_args() -> argparse.Namespace:
+class Interface(PythonArgvMachineInterface):
+    prog = "ensure_agent_env.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", metavar="DIR", required=True)
     parser.add_argument("--home", metavar="DIR", required=True)
     parser.add_argument("--bin-dir", metavar="DIR", required=True)
     parser.add_argument("--dry-run", action="store_true")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     run(
         repo_root=Path(args.repo_root),
         home=Path(args.home),
         bin_dir=Path(args.bin_dir),
         dry_run=args.dry_run,
     )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -26,8 +26,14 @@ from pathlib import Path
 
 import yaml
 
-import _cloud_transport as cloud_transport
-import _get_schema as get_schema
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface, PythonMachineInterface
+
+try:
+    import _rtx._cloud_transport as cloud_transport
+    import _rtx._get_schema as get_schema
+except ModuleNotFoundError:
+    import _cloud_transport as cloud_transport
+    import _get_schema as get_schema
 
 try:
     import jsonschema
@@ -691,13 +697,7 @@ def build_parser() -> argparse.ArgumentParser:
         "describe-schema",
         help="Describe entry-level fields (types/required/enums) for a list schema",
     )
-    p_describe.add_argument("schema", help="Schema name (todo, triage, default)")
-    p_describe.add_argument(
-        "field",
-        nargs="?",
-        default="*",
-        help="Field name to describe, or omit / pass '*' for all fields",
-    )
+    build_describe_schema_parser(p_describe)
 
     p_init = sub.add_parser("init", help="Create a new empty list file")
     p_init.add_argument("file", help="Path to create, or cloud list name with --cloud")
@@ -736,9 +736,38 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def build_describe_schema_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.add_argument("schema", help="Schema name (todo, triage, default)")
+    parser.add_argument(
+        "field",
+        nargs="?",
+        default="*",
+        help="Field name to describe, or omit / pass '*' for all fields",
+    )
+    return parser
+
+
+class DescribeSchemaInterface(PythonMachineInterface):
+    prog = "lists.py describe-schema"
+
+    def build_parser(self) -> argparse.ArgumentParser:
+        return build_describe_schema_parser(super().build_parser())
+
+    def run(self, args: argparse.Namespace) -> int:
+        cmd_describe_schema(args)
+        return 0
+
+
+class Interface(PythonArgvMachineInterface):
+    prog = "lists.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     dispatch = {
         "init": cmd_init,
@@ -774,7 +803,8 @@ def main() -> None:
             shutil.rmtree(tmp_dir, ignore_errors=True)
     else:
         dispatch[args.command](args)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

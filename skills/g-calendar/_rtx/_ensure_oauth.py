@@ -13,6 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 CONFIG_DIR_NAME = "g-calendar"
 LABEL = "Google Calendar (g-calendar)"
 
@@ -76,18 +78,26 @@ def run(*, home: Path, dry_run: bool, stdin_isatty: bool | None = None) -> str:
     return "failed"
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--home", metavar="DIR", required=True)
     parser.add_argument("--dry-run", action="store_true")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+class Interface(PythonArgvMachineInterface):
+    prog = "ensure_oauth.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     status = run(home=Path(args.home), dry_run=args.dry_run)
     log(f"Status: {status}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

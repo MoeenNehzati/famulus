@@ -16,9 +16,9 @@ suggested_permissions:
   bash:
     - command: ["_rtx/_smtp_transport.sh"]
       reason: "Migrated from legacy permissions.json."
-    - command: ["python3", "_rtx/_imap_gateway.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_imap_gateway.py:Interface"]
       reason: "Read-side IMAP client (list/read/folders), stdlib-only, no external binary."
-    - command: ["python3", "_rtx/_email_accounts.py"]
+    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/_email_accounts.py:Interface"]
       reason: "Account registry: add/update/remove/list nicknames and set credentials."
   network:
     []
@@ -69,10 +69,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_imap_gateway.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_imap_gateway.py:Interface
+        args_prefix:
         - list
       dependencies:
       - kind: binary
@@ -87,10 +86,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_imap_gateway.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_imap_gateway.py:Interface
+        args_prefix:
         - read
       dependencies:
       - kind: binary
@@ -104,10 +102,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_imap_gateway.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_imap_gateway.py:Interface
+        args_prefix:
         - attachments
       dependencies:
       - kind: binary
@@ -122,10 +119,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_imap_gateway.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_imap_gateway.py:Interface
+        args_prefix:
         - save-attachments
       dependencies:
       - kind: binary
@@ -138,10 +134,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_imap_gateway.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_imap_gateway.py:Interface
+        args_prefix:
         - folders
       dependencies:
       - kind: binary
@@ -154,10 +149,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_email_accounts.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_email_accounts.py:Interface
+        args_prefix:
         - list
       dependencies: []
     accounts-add:
@@ -169,10 +163,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_email_accounts.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_email_accounts.py:Interface
+        args_prefix:
         - add
       dependencies: []
     accounts-update:
@@ -183,10 +176,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_email_accounts.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_email_accounts.py:Interface
+        args_prefix:
         - update
       dependencies: []
     accounts-remove:
@@ -196,10 +188,9 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_email_accounts.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_email_accounts.py:Interface
+        args_prefix:
         - remove
       dependencies:
       - kind: binary
@@ -213,10 +204,9 @@ interfaces:
       - name: owner
         allow_stdin: true
       runtime:
-        kind: command
-        argv:
-        - python3
-        - _rtx/_email_accounts.py
+        kind: python_machine_interface
+        entrypoint: _rtx/_email_accounts.py:Interface
+        args_prefix:
         - set-password
       dependencies:
       - kind: binary

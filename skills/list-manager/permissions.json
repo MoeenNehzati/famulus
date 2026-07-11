@@ -1,9 +1,10 @@
 {
   "bash": [
-    "Bash(python3 _rtx/_yaml_store.py:*)",
-    "Bash(python3 _rtx/_list_beautify.py:*)",
-    "Bash(python3 _rtx/_render_bridge.py:*)",
-    "Bash(python3 _rtx/_legacy_importer.py:*)"
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_yaml_store.py:Interface:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_yaml_store.py:DescribeSchemaInterface:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_list_beautify.py:BeautifyListInterface:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_render_bridge.py:Interface:*)",
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_legacy_importer.py:Interface:*)"
   ],
   "network": []
 }

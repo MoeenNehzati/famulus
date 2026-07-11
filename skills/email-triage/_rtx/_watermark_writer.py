@@ -15,6 +15,8 @@ from datetime import datetime
 from pathlib import Path
 import os
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 SKILL_DIR = Path(__file__).resolve().parent.parent
 # Overridable via env var so tests can point at a tmp_path instead of the
 # real state/ directory.
@@ -22,23 +24,36 @@ STATE_DIR = Path(os.environ["EMAIL_TRIAGE_STATE_DIR"]) if os.environ.get("EMAIL_
 WATERMARK = STATE_DIR / "last_run"
 STATUS_FILE = STATE_DIR / "status.json"
 
-STATE_DIR.mkdir(parents=True, exist_ok=True)
+class Interface(PythonArgvMachineInterface):
+    prog = "update_watermark.py"
 
-if STATUS_FILE.exists():
-    try:
-        status = json.loads(STATUS_FILE.read_text())
-    except (json.JSONDecodeError, OSError):
-        status = {}
-    if status.get("result") == "error":
-        print(
-            "error: last triage run was marked failed "
-            f"({status.get('message', 'no reason given')}). "
-            "Watermark NOT advanced to avoid skipping emails.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
 
-now = datetime.now().astimezone()
-WATERMARK.write_text(now.isoformat())
-STATUS_FILE.write_text(json.dumps({"result": "ok", "message": f"watermark advanced {now.isoformat()}"}, indent=2))
-print(f"Watermark updated: {now.isoformat()}")
+
+def main(_argv: list[str] | None = None) -> int:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+    if STATUS_FILE.exists():
+        try:
+            status = json.loads(STATUS_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            status = {}
+        if status.get("result") == "error":
+            print(
+                "error: last triage run was marked failed "
+                f"({status.get('message', 'no reason given')}). "
+                "Watermark NOT advanced to avoid skipping emails.",
+                file=sys.stderr,
+            )
+            return 1
+
+    now = datetime.now().astimezone()
+    WATERMARK.write_text(now.isoformat())
+    STATUS_FILE.write_text(json.dumps({"result": "ok", "message": f"watermark advanced {now.isoformat()}"}, indent=2))
+    print(f"Watermark updated: {now.isoformat()}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

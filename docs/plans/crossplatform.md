@@ -39,8 +39,8 @@ We should be able to:
 
 ## Current Sequence
 
-- current completed step: `g-calendar` no longer exports a Bash calendar runtime; `scripts-gcal` now dispatches to a stdlib Python module directly
-- current repo status: focused `g-calendar` tests and portability validators pass; the staged-aware validator runner is currently red on unrelated `initialize-tdd` route-smoke/schema work in the live tree
+- current completed step: Python machine interfaces now use the shared `python_machine_interface` runner with dispatcher route-smoke coverage
+- current repo status: route-smoke, blueprint sync, validators, recurring-tasks tests, and focused installer tests pass; full pytest still has environment/unrelated failures for native secret storage, GitHub/network plugin install, read-only `.git/config`, and untracked secret-store files in copied-plugin tests
 - recommended next item: `Category 1 / Immediate Fix 5` — fail loudly when a required capability is skipped on a host
 - emphasis for the next slice: keep separating product/runtime failures from installer UX and test-harness-only host access problems
 
@@ -254,14 +254,14 @@ What was done:
 
 - the lessons archive documented and validated a Python rewrite approach
 - this repo now has a stdlib Python calendar runtime in `skills/g-calendar/_rtx/_gcal_client.py`
-- `scripts-gcal` now uses a dispatcher `python_module` runtime instead of a command runtime pointing at a shell wrapper
+- `scripts-gcal` now uses a dispatcher `python_machine_interface` runtime instead of a command runtime pointing at a shell wrapper
 - the shell wrapper was removed from the tracked skill runtime files
 - `g-calendar` is now marked `cross_platform: true`
 - the generated permission artifact no longer asks for a Bash approval for the calendar query tool
 - the public skill text now describes the interface and setup interface instead of naming private runtime files
 - parallel all-calendar event fetching and retained event fields such as summary, time, location, description, status, and link were preserved in the Python path
 - the Python runtime now caps all-calendar worker fanout and skips thread-pool setup when the calendar list is empty
-- focused tests cover date-range resolution, merged multi-calendar fetches, empty-calendar behavior, worker-cap behavior, create/get/update/delete/move command behavior, and the Python module help surface
+- focused tests cover date-range resolution, merged multi-calendar fetches, empty-calendar behavior, worker-cap behavior, create/get/update/delete/move command behavior, and the Python interface help surface
 - local timing and request-breakdown measurements were run against the live calendar account to confirm that request latency and calendar-list discovery dominate runtime, not Python thread-pool overhead
 - skill-local verification passed:
   - `python3 -m pytest -q skills/g-calendar/tests`
@@ -269,7 +269,7 @@ What was done:
 
 Prevention:
 
-- keep `scripts-gcal` bound to a dispatcher `python_module` runtime rather than a shell wrapper
+- keep `scripts-gcal` bound to a dispatcher `python_machine_interface` runtime rather than a shell wrapper
 - keep `g-calendar` enrolled in the cross-platform validator so new tracked shell scripts or shell-script blueprint permissions fail validation
 - treat Bash-first shared runtimes as exceptions that require justification
 - keep focused unit tests on the Python runtime so future feature work does not drift back toward shell-only assumptions

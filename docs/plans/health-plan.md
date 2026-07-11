@@ -548,8 +548,8 @@ interfaces:
       description: "Read derived health status for one skill or all observed skills."
       usage: "status [skill-name] [--json]"
       runtime:
-        kind: python_module
-        module: _rtx._health_state
+        kind: python_machine_interface
+        entrypoint: _rtx/health_state.py:HealthStatus
       dependencies: []
       patterns:
         - min_positionals: 1
@@ -565,8 +565,8 @@ interfaces:
       description: "Invalidate a skill's current health certification."
       usage: "invalidate <skill-name> --reason <reason>"
       runtime:
-        kind: python_module
-        module: _rtx._health_state
+        kind: python_machine_interface
+        entrypoint: _rtx/health_state.py:HealthInvalidate
       dependencies: []
       patterns:
         - min_positionals: 2
@@ -585,8 +585,8 @@ interfaces:
       description: "Write a well health record after skill-doctor certifies a skill."
       usage: "certify <skill-name> --checker skill-doctor@1"
       runtime:
-        kind: python_module
-        module: _rtx._health_state
+        kind: python_machine_interface
+        entrypoint: _rtx/health_state.py:HealthCertify
       dependencies: []
       patterns:
         - min_positionals: 2
@@ -606,8 +606,8 @@ interfaces:
       description: "Initialize local unhealthy health records for observed skills."
       usage: "migrate-unhealthy [--all] --reason <reason>"
       runtime:
-        kind: python_module
-        module: _rtx._health_state
+        kind: python_machine_interface
+        entrypoint: _rtx/health_state.py:HealthMigrate
       dependencies: []
       patterns:
         - min_positionals: 1

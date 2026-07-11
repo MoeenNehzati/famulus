@@ -123,8 +123,8 @@ interfaces:
           allow_stdin: false
           notes: "First positional is the input file."
       runtime:
-        kind: python_module
-        module: _rtx._read_data
+        kind: python_machine_interface
+        entrypoint: _rtx/read_data.py:ReadData
       dependencies: []
 
   llm:
@@ -260,8 +260,8 @@ interfaces:
   machine:
     scan:
       runtime:
-        kind: python_module
-        module: _rtx._handoff_scan
+        kind: python_machine_interface
+        entrypoint: _rtx/handoff_scan.py:HandoffScan
       dependencies: []
 ```
 
@@ -271,17 +271,18 @@ documentation.
 
 Current standard runtime kinds:
 
-### `python_module`
+### `python_machine_interface`
 
 ```yaml
 runtime:
-  kind: python_module
-  module: _rtx._handoff_scan
+  kind: python_machine_interface
+  entrypoint: _rtx/handoff_scan.py:HandoffScan
 dependencies: []
 ```
 
-Use for Python skill code. The dispatcher runs it as a real module in a fresh
-subprocess, which allows normal relative imports inside `_rtx/`.
+Use for Python callable interfaces. The dispatcher runs the shared
+`officina.runtime.python_machine_interface_runner`, which preserves normal
+relative imports inside `_rtx/` and provides the standard route-smoke path.
 
 ### `command`
 
@@ -295,7 +296,12 @@ dependencies:
     reason: "Performs the conversion invoked by this interface."
 ```
 
-Use for non-Python tools.
+Use for non-Python tools or legacy command surfaces.
+
+For this runtime kind, route smoke is mandatory and built into
+`officina.runtime.python_machine_interface_runner`. The route-smoke test
+appends `--route-smoke`; the shared runner imports the interface class, builds
+its parser, and exits before normal interface execution.
 
 The blueprint sync tool generates `references/blueprint/runtime_dependencies.json`
 from all `interfaces.machine.<name>.dependencies` declarations. Installers
@@ -335,6 +341,10 @@ Runtime files currently remain direct children of `_rtx/`. Same-skill helpers
 can still use relative imports between direct `_rtx` modules; nested package
 directories need an explicit validator/policy update before use.
 
+Class-backed Python machine interfaces are declared with
+`runtime.kind: python_machine_interface`. That support is a contract
+declaration only; it does not migrate existing skill runtime files.
+
 ---
 
 ## Common machine-interface patterns
@@ -354,8 +364,8 @@ interfaces:
           allow_stdin: false
           notes: "First positional is the resource id."
       runtime:
-        kind: python_module
-        module: _rtx._read_data
+        kind: python_machine_interface
+        entrypoint: _rtx/read_data.py:ReadData
 ```
 
 ### Internal-only interface
@@ -367,8 +377,8 @@ interfaces:
       allow_all_skills: false
       allowed_callers: []
       runtime:
-        kind: python_module
-        module: _rtx._internal_worker
+        kind: python_machine_interface
+        entrypoint: _rtx/internal_worker.py:InternalWorker
 ```
 
 ### Restricted interface
@@ -387,8 +397,8 @@ interfaces:
             0: "^lists/.*"
           notes: "Only list paths under lists/ are allowed."
       runtime:
-        kind: python_module
-        module: _rtx._read_lists
+        kind: python_machine_interface
+        entrypoint: _rtx/read_lists.py:ReadLists
 ```
 
 ### Multiple calling conventions
@@ -411,8 +421,8 @@ interfaces:
           allow_stdin: true
           notes: "Caller pipes patch data to stdin."
       runtime:
-        kind: python_module
-        module: _rtx._update_data
+        kind: python_machine_interface
+        entrypoint: _rtx/update_data.py:UpdateData
 ```
 
 ---
@@ -532,8 +542,10 @@ For Python import resolution, keep the repo runtime model in sync with the IDE:
 3. Use relative imports for same-skill code and `officina.*` for shared code.
 4. Use `allow_all_skills: true` sparingly.
 5. Match major versions carefully.
-6. Prefer `python_module` runtime for Python skill code so relative imports
-   between same-skill runtime modules work naturally.
+6. Prefer `python_machine_interface` runtime for Python callable interfaces.
+   Its shared runner preserves same-skill `_rtx` relative imports and provides
+   the standard route-smoke path. Use `command` for non-Python wrappers or
+   legacy entrypoints that have not been migrated yet.
 
 ---
 

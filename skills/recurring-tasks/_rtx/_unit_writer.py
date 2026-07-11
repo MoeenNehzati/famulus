@@ -14,6 +14,8 @@ import yaml
 from pathlib import Path
 from argparse import ArgumentParser
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 SKILL_DIR = Path(__file__).parent.parent
 DEFAULT_JOBS = SKILL_DIR / "jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"
@@ -147,11 +149,18 @@ def sync_units(jobs: list, unit_dir: Path, log_dir: Path, live: bool = True) -> 
             print(f"Enabled {PREFIX}{name}.timer")
 
 
-def main() -> None:
+class Interface(PythonArgvMachineInterface):
+    prog = "unit_writer.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
     p = ArgumentParser(description=__doc__)
     p.add_argument("--unit-dir", default=None, help="Override unit dir (testing; skips systemctl)")
     p.add_argument("--jobs-file", default=str(DEFAULT_JOBS), help="Override jobs.yaml location")
-    args = p.parse_args()
+    args = p.parse_args(argv)
 
     live = args.unit_dir is None
     unit_dir = Path(args.unit_dir) if args.unit_dir else DEFAULT_UNIT_DIR
@@ -162,7 +171,8 @@ def main() -> None:
     sync_units(jobs, unit_dir, LOG_DIR, live=live)
     if live:
         print("Done.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

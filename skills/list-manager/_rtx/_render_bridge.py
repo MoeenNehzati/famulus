@@ -8,7 +8,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-import _cloud_transport as cloud_transport
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
+try:
+    from . import _cloud_transport as cloud_transport
+except ImportError:
+    import _cloud_transport as cloud_transport
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 LISTS_PY = SKILL_ROOT / "_rtx" / "_yaml_store.py"
@@ -24,7 +29,14 @@ def download_list(list_name: str, dest_path: Path) -> None:
         sys.exit(1)
 
 
-def main() -> int:
+class Interface(PythonArgvMachineInterface):
+    prog = "read_beautify.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="read_beautify.py")
     parser.add_argument("file", help="Path to local YAML list file, or cloud list name with --cloud")
     parser.add_argument("filters", nargs="*", help="key=value (exact/OR) or key~=value (regex) filters")
@@ -36,7 +48,7 @@ def main() -> int:
     parser.add_argument("--diff", action="store_true", help="Render the legacy ```diff```-fenced view instead of the default bullet list")
     parser.add_argument("--no-ids", action="store_true", help="Do not append each entry's #id (ids are shown by default)")
     parser.add_argument("-o", "--output", metavar="FILE", help="Write beautified output to file instead of stdout")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Cloud mode: the source positional is a list name → download → read → beautify
     file_to_read = args.file

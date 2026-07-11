@@ -60,6 +60,8 @@ import os
 import re
 import sys
 
+from officina.runtime.python_machine_interface import PythonMachineInterface
+
 from . import PARSERS
 
 STARTED_RE = re.compile(r"<!--\s*HANDOFF-SENTINEL:\s*STARTED\s*-->")
@@ -184,47 +186,65 @@ def scan(target_dates, gap_thresholds: dict, parsers=None):
     return results
 
 
+class Interface(PythonMachineInterface):
+    """Dispatcher machine interface for scanning handoff candidate sessions."""
+
+    description = __doc__ or ""
+    prog = "scan.py"
+
+    def build_parser(self) -> argparse.ArgumentParser:
+        """Build the scan argument parser and include shared runtime flags."""
+
+        arg_parser = super().build_parser()
+        arg_parser.add_argument(
+            "--min-gap-chars",
+            type=int,
+            default=None,
+            help=(
+                "Override every host's default gap threshold with a single "
+                "shared value (net chars since last completed handoff)."
+            ),
+        )
+        arg_parser.add_argument(
+            "--days",
+            type=int,
+            default=2,
+            help="Scan the trailing N days ending today, inclusive (default: 2). Ignored if --date is given.",
+        )
+        arg_parser.add_argument(
+            "--date",
+            default=None,
+            help="Pin to one exact date YYYY-MM-DD in local time, instead of the trailing --days window.",
+        )
+        return arg_parser
+
+    def run(self, args: argparse.Namespace) -> int:
+        """Run the mechanical handoff-candidate scan and print JSON results."""
+
+        if args.date:
+            target_dates = {args.date}
+        else:
+            today = datetime.date.today()
+            target_dates = {
+                (today - datetime.timedelta(days=i)).strftime("%Y-%m-%d") for i in range(args.days)
+            }
+
+        if args.min_gap_chars is not None:
+            thresholds = {p.id: args.min_gap_chars for p in PARSERS}
+        else:
+            thresholds = {p.id: p.default_threshold for p in PARSERS}
+
+        results = scan(target_dates, thresholds)
+        json.dump(results, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+
+
 def main():
-    arg_parser = argparse.ArgumentParser(description=__doc__)
-    arg_parser.add_argument(
-        "--min-gap-chars",
-        type=int,
-        default=None,
-        help=(
-            "Override every host's default gap threshold with a single "
-            "shared value (net chars since last completed handoff)."
-        ),
-    )
-    arg_parser.add_argument(
-        "--days",
-        type=int,
-        default=2,
-        help="Scan the trailing N days ending today, inclusive (default: 2). Ignored if --date is given.",
-    )
-    arg_parser.add_argument(
-        "--date",
-        default=None,
-        help="Pin to one exact date YYYY-MM-DD in local time, instead of the trailing --days window.",
-    )
-    args = arg_parser.parse_args()
-
-    if args.date:
-        target_dates = {args.date}
-    else:
-        today = datetime.date.today()
-        target_dates = {
-            (today - datetime.timedelta(days=i)).strftime("%Y-%m-%d") for i in range(args.days)
-        }
-
-    if args.min_gap_chars is not None:
-        thresholds = {p.id: args.min_gap_chars for p in PARSERS}
-    else:
-        thresholds = {p.id: p.default_threshold for p in PARSERS}
-
-    results = scan(target_dates, thresholds)
-    json.dump(results, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    interface = Interface()
+    args = interface.build_parser().parse_args()
+    return interface.run(args)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

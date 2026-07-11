@@ -116,8 +116,8 @@ interfaces:
       # Internal dispatcher-only runtime binding. This must not leak into
       # user-facing generated docs.
       runtime:
-        kind: python_module
-        module: _rtx._read_data
+        kind: python_machine_interface
+        entrypoint: _rtx/read_data.py:ReadData
       dependencies:
         - kind: python
           name: PyYAML
@@ -148,26 +148,43 @@ interfaces:
           forbidden_flags: ["--file"]
           notes: "Stdin mode: reads update data from stdin."
       runtime:
-        kind: python_module
-        module: _rtx._update_data
+        kind: python_machine_interface
+        entrypoint: _rtx/update_data.py:UpdateData
       dependencies:
         - kind: python
           name: jsonschema
           reason: "Validates update payloads before writing them."
 
     # ==========================================================================
-    # EXAMPLE 3: Internal-only machine interface
+    # EXAMPLE 3: Python class-backed command runtime
+    # ==========================================================================
+    analyze-data:
+      description: "Analyze an input file through a Python machine-interface class."
+      usage: "<file>"
+      allow_all_skills: true
+      allowed_callers: []
+      patterns:
+        - min_positionals: 1
+          max_positionals: 1
+          allow_stdin: false
+      runtime:
+        kind: python_machine_interface
+        entrypoint: _rtx/analyze_data.py:AnalyzeData
+      dependencies: []
+
+    # ==========================================================================
+    # EXAMPLE 4: Internal-only machine interface
     # ==========================================================================
     internal-worker:
       allow_all_skills: false
       allowed_callers: []
       runtime:
-        kind: python_module
-        module: _rtx._internal_worker
+        kind: python_machine_interface
+        entrypoint: _rtx/internal_worker.py:InternalWorker
       dependencies: []
 
     # ==========================================================================
-    # EXAMPLE 4: Restricted machine interface
+    # EXAMPLE 5: Restricted machine interface
     # ==========================================================================
     special-data:
       allow_all_skills: false
@@ -180,13 +197,13 @@ interfaces:
             0: "^special/.*"
           notes: "Only paths under special/ are accepted."
       runtime:
-        kind: python_module
-        module: _rtx._special_data
+        kind: python_machine_interface
+        entrypoint: _rtx/special_data.py:SpecialData
       dependencies: []
 
   llm:
     # ==========================================================================
-    # EXAMPLE 5: LLM-facing interface
+    # EXAMPLE 6: LLM-facing interface
     # ==========================================================================
     summarize:
       description: "Summarize the collected records for a handoff note."
@@ -200,7 +217,7 @@ interfaces:
         - "This interface is documented for the skill owner; dispatcher never executes it."
 
     # ==========================================================================
-    # EXAMPLE 6: External LLM-facing interface
+    # EXAMPLE 7: External LLM-facing interface
     # ==========================================================================
     summarize-remote:
       description: "Summarize records using a prompt surface published outside this repo."
@@ -217,10 +234,17 @@ interfaces:
 #
 # Current standard runtime kinds:
 #
-# 1. python_module
-#    - module: required dotted module name relative to the skill package
-#    - executes as a real module in a fresh subprocess
-#    - supports normal relative imports inside _rtx/
+# 1. python_machine_interface
+#    - entrypoint: required `_rtx/file.py:ClassName` binding
+#    - args_prefix: optional argv tokens inserted before caller-supplied args
+#    - dispatcher runs officina.runtime.python_machine_interface_runner
+#    - route-smoke is mandatory and built into the shared runner
+#
+# Example Python machine-interface runtime:
+#
+# runtime:
+#   kind: python_machine_interface
+#   entrypoint: _rtx/analyze_data.py:AnalyzeData
 #
 # 2. command
 #    - argv: required explicit argv list for non-Python tools
@@ -243,7 +267,7 @@ interfaces:
 #   - kind: binary
 #     name: curl
 #     reason: "Fetches data from the remote API."
-
+#
 # ==============================================================================
 # LLM INTERFACE BINDING KINDS
 # ==============================================================================
@@ -306,5 +330,7 @@ interfaces:
 # 4. Put truly shared first-party Python code under src/officina/, not in
 #    another skill's runtime directory.
 #
-# 5. Prefer `python_module` runtime for Python skill code so relative imports
-#    between same-skill runtime modules work naturally.
+# 5. Prefer `python_machine_interface` runtime for Python callable interfaces.
+#    Its shared runner preserves same-skill _rtx relative imports and provides
+#    the standard route-smoke path. Use `command` for non-Python wrappers or
+#    legacy entrypoints that have not been migrated yet.

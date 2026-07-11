@@ -18,6 +18,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 CONFIG_DIR_NAME = "cloud-files"
 LABEL = "Google Drive (cloud-files)"
 
@@ -126,7 +128,7 @@ def write_config(home: Path, *, remote_llm_root: str, dry_run: bool) -> None:
     config_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -139,17 +141,25 @@ def parse_args() -> argparse.Namespace:
     config_p.add_argument("--remote-llm-root", default="assistant/")
     config_p.add_argument("--dry-run", action="store_true")
 
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+class Interface(PythonArgvMachineInterface):
+    prog = "ensure_oauth.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     if args.command == "ensure-oauth":
         status = run(home=Path(args.home), dry_run=args.dry_run)
         log(f"Status: {status}")
     elif args.command == "write-config":
         write_config(Path(args.home), remote_llm_root=args.remote_llm_root, dry_run=args.dry_run)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

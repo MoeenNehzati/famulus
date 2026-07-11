@@ -25,7 +25,12 @@ from pathlib import Path
 import yaml
 import jsonschema
 
-import get_schema
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
+try:
+    from . import _get_schema as get_schema
+except ImportError:
+    import get_schema
 
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="jsonschema")
 
@@ -291,7 +296,14 @@ def migrate(src: Path, dst: Path, schema_name: str, name: str) -> None:
     print(f"migrated {src} → {dst}")
 
 
-def main() -> None:
+class Interface(PythonArgvMachineInterface):
+    prog = "migrate_md.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="migrate_md.py",
                                      description="Migrate Markdown list to YAML")
     parser.add_argument("src", help="Source Markdown file")
@@ -299,13 +311,14 @@ def main() -> None:
     parser.add_argument("--schema", required=True,
                         help="Target schema (todo, triage, default)")
     parser.add_argument("--name", help="List name (defaults to dst stem)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     src = Path(args.src)
     dst = Path(args.dst)
     name = args.name or dst.stem
     migrate(src, dst, args.schema, name)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

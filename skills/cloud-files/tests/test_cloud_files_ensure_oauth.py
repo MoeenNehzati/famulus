@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
+
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+if str(REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(REPO_SRC))
 
 # cloud-files and g-calendar each have their own _rtx/_ensure_oauth.py.
 # A bare `import ensure_oauth` after sys.path.insert would collide: whichever

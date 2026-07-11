@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 REPO_SCRIPTS = Path(__file__).resolve().parents[1] / "_rtx"
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
 
 STUB_CLOUD_FILES = r'''
 from __future__ import annotations
@@ -150,6 +151,7 @@ class ScriptEntryPointTests(unittest.TestCase):
 
             env = os.environ.copy()
             env["TEST_STORE"] = str(store)
+            env["PYTHONPATH"] = str(REPO_SRC)
 
             relpath = "scratch/roundtrip.txt"
             content = "script wrapper roundtrip\n"
@@ -227,6 +229,7 @@ class ScriptEntryPointTests(unittest.TestCase):
 
             env = os.environ.copy()
             env["TEST_STORE"] = str(store)
+            env["PYTHONPATH"] = str(REPO_SRC)
 
             local_src = tmpdir / "local.txt"
             local_src.write_text("roundtrip\n", encoding="utf-8")

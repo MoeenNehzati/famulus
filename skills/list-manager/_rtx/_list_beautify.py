@@ -27,6 +27,11 @@ import datetime
 import sys
 import yaml
 
+try:
+    from officina.runtime.python_machine_interface import PythonMachineInterface
+except ModuleNotFoundError:
+    PythonMachineInterface = None
+
 # ── Shared constants ──────────────────────────────────────────────────────────
 
 STATE_SYMBOL = {
@@ -468,10 +473,7 @@ def _markdown_render(data, show_desc: bool, relative_deadlines: bool) -> None:
     print("\n".join(lines))
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
-
-def main() -> None:
-    parser = argparse.ArgumentParser(prog="beautify.py")
+def _configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("-D", "--no-descriptions", action="store_true",
                         help="Hide entry descriptions (shown by default)")
     parser.add_argument("--diff", action="store_true",
@@ -485,14 +487,17 @@ def main() -> None:
                         help="Show relative deadline labels like [in 3d] or [2d overdue]")
     parser.add_argument("--ids", action="store_true",
                         help="Append each entry's #id so rows can be acted on by id")
-    args = parser.parse_args()
+    return parser
+
+
+def _run_from_args(args: argparse.Namespace) -> int:
 
     global _SHOW_IDS
     _SHOW_IDS = args.ids
 
     text = sys.stdin.read()
     if not text.strip():
-        return
+        return 0
 
     data = yaml.safe_load(text)
     show_desc = not args.no_descriptions
@@ -506,6 +511,25 @@ def main() -> None:
         _markdown_render(data, show_desc, args.relative_deadlines)
     else:
         _rich_render(data, show_desc, args.relative_deadlines)
+    return 0
+
+
+if PythonMachineInterface is not None:
+    class BeautifyListInterface(PythonMachineInterface):
+        prog = "beautify.py"
+
+        def build_parser(self) -> argparse.ArgumentParser:
+            return _configure_parser(super().build_parser())
+
+        def run(self, args: argparse.Namespace) -> int:
+            return _run_from_args(args)
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def main() -> None:
+    parser = _configure_parser(argparse.ArgumentParser(prog="beautify.py"))
+    raise SystemExit(_run_from_args(parser.parse_args()))
 
 
 if __name__ == "__main__":

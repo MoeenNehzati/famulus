@@ -25,7 +25,12 @@ import argparse
 import sys
 from pathlib import Path
 
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+if str(REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(Path(__file__).parent))
+
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 import _config_bridge as dev_link
 import _agent_launchers as launchers
@@ -146,7 +151,14 @@ def run(
         )
 
 
-def parse_args() -> argparse.Namespace:
+class Interface(PythonArgvMachineInterface):
+    prog = "phase_entry.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--home", metavar="DIR")
     parser.add_argument("--bin-dir", metavar="DIR")
@@ -163,11 +175,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--agents", metavar="LIST",
         help="Comma-separated subset of: " + ",".join(ALL_AGENTS))
     parser.add_argument("--default-llm", choices=["claude", "codex"])
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     agents = None
     if args.agents is not None:
         agents = [a.strip() for a in args.agents.split(",") if a.strip()]
@@ -184,7 +196,8 @@ def main() -> None:
         agents=agents,
         default_llm=args.default_llm,
     )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -45,8 +45,8 @@ interfaces:
             --date: "^\\d{4}-\\d{2}-\\d{2}$"
           notes: "No positionals. --min-gap-chars overrides every host's built-in default threshold (each host is calibrated separately, since they differ by roughly an order of magnitude in bytes per unit of work) with a single shared value. --days (default 2) scans the trailing N days ending today, inclusive; --date pins to one exact day instead (mutually exclusive with --days; mainly useful for backtesting/calibration). Output is a JSON array; each entry's handoff_status is one of none, started, complete -- a complete entry can still be flagged if gap_net_chars (conversation since that completion) exceeds the threshold."
       runtime:
-        kind: python_module
-        module: _rtx._handoff_scan
+        kind: python_machine_interface
+        entrypoint: _rtx/_handoff_scan.py:Interface
       dependencies: []
 
     calibrate:
@@ -63,6 +63,6 @@ interfaces:
             --days: "^[0-9]+$"
           notes: "No positionals. --days sets the lookback window (default 5). Output is human-readable per-host stats to stdout, not JSON -- this is a manual diagnostic tool, not meant for programmatic consumption."
       runtime:
-        kind: python_module
-        module: _rtx._handoff_calibrate
+        kind: python_machine_interface
+        entrypoint: _rtx/_handoff_calibrate.py:Interface
       dependencies: []

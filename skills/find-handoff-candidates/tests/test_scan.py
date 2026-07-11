@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).parent.parent
+REPO_SRC = SKILL_DIR.parents[1] / "src"
 
 def _clear_scripts_modules() -> None:
     for name in list(sys.modules):
@@ -25,9 +26,11 @@ def _clear_scripts_modules() -> None:
 def _load():
     _clear_scripts_modules()
     sys.path.insert(0, str(SKILL_DIR))
+    sys.path.insert(0, str(REPO_SRC))
     try:
         return importlib.import_module("_rtx._handoff_scan")
     finally:
+        sys.path.pop(0)
         sys.path.pop(0)
 
 

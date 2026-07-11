@@ -23,7 +23,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+if str(REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 from _state_record import Manifest, manifest_path
 from _shell_block import ensure_rc_vars
@@ -231,18 +236,25 @@ def run(
     log(f"  Bin dir: {bin_dir}")
 
 
-def parse_args() -> argparse.Namespace:
+class Interface(PythonArgvMachineInterface):
+    prog = "install_scaffold.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo-root", metavar="DIR", required=True, help="Path to the AI repo checkout")
     parser.add_argument("--home", metavar="DIR", help="Home directory (default: platform home)")
     parser.add_argument("--bin-dir", metavar="DIR", help="Bin dir for launchers (default: ~/Documents/scripts/bin)")
     parser.add_argument("--shell-rc", metavar="FILE", help="Shell rc file (auto-detected on Unix)")
     parser.add_argument("--dry-run", action="store_true", help="Print planned actions without writing")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     run(
         repo_root=Path(args.repo_root),
         home=Path(args.home) if args.home else None,
@@ -250,7 +262,8 @@ def main() -> None:
         shell_rc=Path(args.shell_rc) if args.shell_rc else None,
         dry_run=args.dry_run,
     )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

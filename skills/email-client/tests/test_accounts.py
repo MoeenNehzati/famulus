@@ -3,6 +3,7 @@ tmp_path config dir via EMAIL_CLIENT_CONFIG_DIR — never touch the real
 ~/.config/email-client/accounts.json.
 """
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -10,13 +11,18 @@ from pathlib import Path
 import pytest
 
 ACCOUNTS_PY = Path(__file__).parent.parent / "_rtx" / "_email_accounts.py"
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
 
 
 def run(config_dir, *args, input=None):
+    env = os.environ.copy()
+    env["EMAIL_CLIENT_CONFIG_DIR"] = str(config_dir)
+    env["PATH"] = "/usr/bin:/bin"
+    env["PYTHONPATH"] = str(REPO_SRC)
     return subprocess.run(
         [sys.executable, str(ACCOUNTS_PY), *args],
         capture_output=True, text=True, input=input,
-        env={"EMAIL_CLIENT_CONFIG_DIR": str(config_dir), "PATH": "/usr/bin:/bin"},
+        env=env,
     )
 
 
@@ -130,13 +136,14 @@ exit 0
 
 
 def run_with_stub(config_dir, stub_bin_dir, *args, input=None):
+    env = os.environ.copy()
+    env["EMAIL_CLIENT_CONFIG_DIR"] = str(config_dir)
+    env["PATH"] = f"{stub_bin_dir}:/usr/bin:/bin"
+    env["PYTHONPATH"] = str(REPO_SRC)
     return subprocess.run(
         [sys.executable, str(ACCOUNTS_PY), *args],
         capture_output=True, text=True, input=input,
-        env={
-            "EMAIL_CLIENT_CONFIG_DIR": str(config_dir),
-            "PATH": f"{stub_bin_dir}:/usr/bin:/bin",
-        },
+        env=env,
     )
 
 

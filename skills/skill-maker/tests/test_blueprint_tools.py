@@ -85,7 +85,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                     "interfaces": {
                         "machine": {
                             "scan": {
-                                "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
+                                "runtime": {
+                                    "kind": "python_machine_interface",
+                                    "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                                },
                             }
                         }
                     },
@@ -112,7 +115,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                     "interfaces": {
                         "machine": {
                             "scan": {
-                                "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
+                                "runtime": {
+                                    "kind": "python_machine_interface",
+                                    "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                                },
                                 "dependencies": [],
                             }
                         }
@@ -124,6 +130,130 @@ class SkillBlueprintToolTests(unittest.TestCase):
         errors = sync_module.validate_blueprints(blueprints)
 
         self.assertEqual(errors, [])
+
+    def test_sync_validator_rejects_python_module_runtime(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_python_module_rejected_test",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        blueprints = {
+            "demo-skill": sync_module.SkillBlueprint(
+                "demo-skill",
+                Path("skills/demo-skill/blueprint.yaml"),
+                {
+                    "category": "workflow-general-assistant",
+                    "interface_version": 1,
+                    "interfaces": {
+                        "machine": {
+                            "scan": {
+                                "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
+                                "dependencies": [],
+                            }
+                        }
+                    },
+                },
+            )
+        }
+
+        errors = sync_module.validate_blueprints(blueprints)
+
+        self.assertTrue(any("runtime kind must be `python_machine_interface` or `command`" in error for error in errors))
+
+    def test_sync_validator_accepts_python_machine_interface_runtime(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_python_machine_runtime_test",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        blueprints = {
+            "demo-skill": sync_module.SkillBlueprint(
+                "demo-skill",
+                Path("skills/demo-skill/blueprint.yaml"),
+                {
+                    "category": "workflow-general-assistant",
+                    "interface_version": 1,
+                    "interfaces": {
+                        "machine": {
+                            "scan": {
+                                "runtime": {
+                                    "kind": "python_machine_interface",
+                                    "entrypoint": "_rtx/scan.py:Interface",
+                                },
+                                "dependencies": [],
+                            }
+                        }
+                    },
+                },
+            )
+        }
+
+        errors = sync_module.validate_blueprints(blueprints)
+
+        self.assertEqual(errors, [])
+
+    def test_sync_validator_accepts_python_machine_interface_args_prefix(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_python_machine_args_prefix_test",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        blueprints = {
+            "demo-skill": sync_module.SkillBlueprint(
+                "demo-skill",
+                Path("skills/demo-skill/blueprint.yaml"),
+                {
+                    "category": "workflow-general-assistant",
+                    "interface_version": 1,
+                    "interfaces": {
+                        "machine": {
+                            "scan": {
+                                "runtime": {
+                                    "kind": "python_machine_interface",
+                                    "entrypoint": "_rtx/scan.py:Interface",
+                                    "args_prefix": ["--mode", "fast"],
+                                },
+                                "dependencies": [],
+                            }
+                        }
+                    },
+                },
+            )
+        }
+
+        errors = sync_module.validate_blueprints(blueprints)
+
+        self.assertEqual(errors, [])
+
+    def test_sync_validator_rejects_malformed_python_machine_interface_runtime(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_python_machine_bad_test",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        blueprints = {
+            "demo-skill": sync_module.SkillBlueprint(
+                "demo-skill",
+                Path("skills/demo-skill/blueprint.yaml"),
+                {
+                    "category": "workflow-general-assistant",
+                    "interface_version": 1,
+                    "interfaces": {
+                        "machine": {
+                            "scan": {
+                                "runtime": {
+                                    "kind": "python_machine_interface",
+                                    "entrypoint": "../scan.py:Interface",
+                                    "args_prefix": ["--mode", ""],
+                                },
+                                "dependencies": [],
+                            }
+                        }
+                    },
+                },
+            )
+        }
+
+        errors = sync_module.validate_blueprints(blueprints)
+
+        self.assertTrue(any("entrypoint must look like `_rtx/file.py:Interface`" in error for error in errors))
+        self.assertTrue(any("args_prefix" in error for error in errors))
 
     def test_sync_validator_rejects_script_interfaces(self) -> None:
         sync_module = load_module(
@@ -201,7 +331,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                     "interfaces": {
                         "machine": {
                             "scan": {
-                                "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
+                                "runtime": {
+                                    "kind": "python_machine_interface",
+                                    "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                                },
                                 "dependencies": [
                                     {
                                         "kind": "python",
@@ -253,8 +386,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertEqual(
             payload["command"],
             [
-                "python3",
-                "_rtx/_yaml_store.py",
+                sys.executable,
+                "-m",
+                "officina.runtime.python_machine_interface_runner",
+                "_rtx/_yaml_store.py:Interface",
                 "update",
                 "/tmp/todo.yaml",
                 "--file",

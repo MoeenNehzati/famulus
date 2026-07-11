@@ -20,6 +20,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from officina.runtime.python_machine_interface import PythonMachineInterface
+
 CREDS_FILE = Path.home() / ".config" / "g-calendar" / "credentials.json"
 API_BASE = "https://www.googleapis.com/calendar/v3"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -396,86 +398,102 @@ def cmd_move(args: argparse.Namespace) -> None:
     print(f"Moved: {moved.get('summary', '')}  [id: {moved.get('id', '')}]  -> calendar {args.to}")
 
 
+class Interface(PythonMachineInterface):
+    """Dispatcher machine interface for Google Calendar CLI operations."""
+
+    description = __doc__ or ""
+    formatter_class = argparse.RawDescriptionHelpFormatter
+    prog = "scripts-gcal"
+
+    def build_parser(self) -> argparse.ArgumentParser:
+        """Build the calendar CLI parser and include shared runtime flags."""
+
+        parser = super().build_parser()
+        sub = parser.add_subparsers(dest="cmd", required=True)
+
+        sub.add_parser("token").set_defaults(func=cmd_token)
+        sub.add_parser("calendars").set_defaults(func=cmd_calendars)
+
+        p_cc = sub.add_parser("create-calendar")
+        p_cc.add_argument("--summary", required=True)
+        p_cc.add_argument("--description", default="")
+        p_cc.add_argument("--color-id", default="")
+        p_cc.add_argument("--timezone")
+        p_cc.set_defaults(func=cmd_create_calendar)
+
+        p_agenda = sub.add_parser("agenda")
+        p_agenda.add_argument("--calendar")
+        p_agenda.add_argument("--from", dest="from_")
+        p_agenda.add_argument("--to")
+        p_agenda.add_argument("--days", default="1")
+        p_agenda.add_argument("--all-calendars", action="store_true")
+        p_agenda.set_defaults(func=cmd_agenda)
+
+        p_search = sub.add_parser("search")
+        p_search.add_argument("query")
+        p_search.add_argument("--calendar")
+        p_search.add_argument("--from", dest="from_")
+        p_search.add_argument("--to")
+        p_search.add_argument("--days")
+        p_search.add_argument("--all-calendars", action="store_true")
+        p_search.set_defaults(func=cmd_search)
+
+        p_get = sub.add_parser("get")
+        p_get.add_argument("--calendar", default="primary")
+        p_get.add_argument("--event-id", dest="event_id", required=True)
+        p_get.set_defaults(func=cmd_get)
+
+        p_create = sub.add_parser("create")
+        p_create.add_argument("--calendar", default="primary")
+        p_create.add_argument("--summary", required=True)
+        p_create.add_argument("--start", required=True)
+        p_create.add_argument("--end", required=True)
+        p_create.add_argument("--description")
+        p_create.add_argument("--location")
+        p_create.add_argument("--all-day", action="store_true")
+        p_create.add_argument("--timezone")
+        p_create.set_defaults(func=cmd_create)
+
+        p_update = sub.add_parser("update")
+        p_update.add_argument("--calendar", default="primary")
+        p_update.add_argument("--event-id", dest="event_id", required=True)
+        p_update.add_argument("--summary")
+        p_update.add_argument("--description")
+        p_update.add_argument("--location")
+        p_update.add_argument("--start")
+        p_update.add_argument("--end")
+        p_update.add_argument("--timezone")
+        p_update.set_defaults(func=cmd_update)
+
+        p_delete = sub.add_parser("delete")
+        p_delete.add_argument("--calendar", default="primary")
+        p_delete.add_argument("--event-id", dest="event_id", required=True)
+        p_delete.set_defaults(func=cmd_delete)
+
+        p_move = sub.add_parser("move")
+        p_move.add_argument("--event-id", dest="event_id", required=True)
+        p_move.add_argument("--from", dest="from_", default="primary")
+        p_move.add_argument("--to", required=True)
+        p_move.set_defaults(func=cmd_move)
+
+        return parser
+
+    def run(self, args: argparse.Namespace) -> int:
+        """Dispatch the parsed calendar subcommand."""
+
+        args.func(args)
+        return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="scripts-gcal",
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    sub = parser.add_subparsers(dest="cmd", required=True)
-
-    sub.add_parser("token").set_defaults(func=cmd_token)
-    sub.add_parser("calendars").set_defaults(func=cmd_calendars)
-
-    p_cc = sub.add_parser("create-calendar")
-    p_cc.add_argument("--summary", required=True)
-    p_cc.add_argument("--description", default="")
-    p_cc.add_argument("--color-id", default="")
-    p_cc.add_argument("--timezone")
-    p_cc.set_defaults(func=cmd_create_calendar)
-
-    p_agenda = sub.add_parser("agenda")
-    p_agenda.add_argument("--calendar")
-    p_agenda.add_argument("--from", dest="from_")
-    p_agenda.add_argument("--to")
-    p_agenda.add_argument("--days", default="1")
-    p_agenda.add_argument("--all-calendars", action="store_true")
-    p_agenda.set_defaults(func=cmd_agenda)
-
-    p_search = sub.add_parser("search")
-    p_search.add_argument("query")
-    p_search.add_argument("--calendar")
-    p_search.add_argument("--from", dest="from_")
-    p_search.add_argument("--to")
-    p_search.add_argument("--days")
-    p_search.add_argument("--all-calendars", action="store_true")
-    p_search.set_defaults(func=cmd_search)
-
-    p_get = sub.add_parser("get")
-    p_get.add_argument("--calendar", default="primary")
-    p_get.add_argument("--event-id", dest="event_id", required=True)
-    p_get.set_defaults(func=cmd_get)
-
-    p_create = sub.add_parser("create")
-    p_create.add_argument("--calendar", default="primary")
-    p_create.add_argument("--summary", required=True)
-    p_create.add_argument("--start", required=True)
-    p_create.add_argument("--end", required=True)
-    p_create.add_argument("--description")
-    p_create.add_argument("--location")
-    p_create.add_argument("--all-day", action="store_true")
-    p_create.add_argument("--timezone")
-    p_create.set_defaults(func=cmd_create)
-
-    p_update = sub.add_parser("update")
-    p_update.add_argument("--calendar", default="primary")
-    p_update.add_argument("--event-id", dest="event_id", required=True)
-    p_update.add_argument("--summary")
-    p_update.add_argument("--description")
-    p_update.add_argument("--location")
-    p_update.add_argument("--start")
-    p_update.add_argument("--end")
-    p_update.add_argument("--timezone")
-    p_update.set_defaults(func=cmd_update)
-
-    p_delete = sub.add_parser("delete")
-    p_delete.add_argument("--calendar", default="primary")
-    p_delete.add_argument("--event-id", dest="event_id", required=True)
-    p_delete.set_defaults(func=cmd_delete)
-
-    p_move = sub.add_parser("move")
-    p_move.add_argument("--event-id", dest="event_id", required=True)
-    p_move.add_argument("--from", dest="from_", default="primary")
-    p_move.add_argument("--to", required=True)
-    p_move.set_defaults(func=cmd_move)
-
-    return parser
+    return Interface().build_parser()
 
 
-def main() -> None:
-    args = build_parser().parse_args()
-    args.func(args)
+def main() -> int:
+    interface = Interface()
+    args = interface.build_parser().parse_args()
+    return interface.run(args)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

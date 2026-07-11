@@ -28,6 +28,8 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 SCOPE = "https://www.googleapis.com/auth/calendar"
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -35,7 +37,14 @@ CLIENT_PATH = os.path.expanduser("~/.config/g-calendar/client.json")
 CREDS_PATH = os.path.expanduser("~/.config/g-calendar/credentials.json")
 
 
-def main():
+class Interface(PythonArgvMachineInterface):
+    prog = "setup_oauth.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -44,7 +53,7 @@ def main():
     parser.add_argument("--client-secret")
     parser.add_argument("--from-json", help=f"path to OAuth client JSON (default: {CLIENT_PATH})")
     parser.add_argument("--port", type=int, default=8765)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if not args.from_json and not (args.client_id and args.client_secret):
         if os.path.exists(CLIENT_PATH):
@@ -156,7 +165,8 @@ def main():
     os.chmod(CREDS_PATH, 0o600)
 
     print(f"Saved credentials to {CREDS_PATH}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

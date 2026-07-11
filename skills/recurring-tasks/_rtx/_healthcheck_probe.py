@@ -10,6 +10,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 SKILL_DIR = Path(__file__).parent.parent
 JOBS_FILE = SKILL_DIR / "jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"
@@ -152,7 +154,18 @@ def parse_schedule_interval(schedule: str) -> int:
     return 60
 
 
-def main() -> None:
+class Interface(PythonArgvMachineInterface):
+    prog = "healthcheck_probe.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    if argv:
+        print(f"error: unexpected arguments: {' '.join(argv)}", file=sys.stderr)
+        return 2
+
     log("=== healthcheck start ===")
 
     import yaml
@@ -163,7 +176,7 @@ def main() -> None:
             jobs = (yaml.safe_load(f) or {}).get("jobs", [])
     except Exception as e:
         log(f"✗ Failed to load jobs.yaml: {e}")
-        return
+        return 0
 
     failures: list[str] = []
 
@@ -200,7 +213,8 @@ def main() -> None:
         notify_desktop("Recurring Tasks", body, urgency="critical")
 
     log("=== healthcheck done ===\n")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -6,11 +6,15 @@ tmp_path. Either way, nothing here touches the real email-triage/state/ dir.
 """
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 SCRIPT_PATH = Path(__file__).parent.parent / "_rtx" / "_envelope_gate.py"
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+if str(REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(REPO_SRC))
 MODULE_PATH = SCRIPT_PATH
 spec = importlib.util.spec_from_file_location("filter_envelopes", MODULE_PATH)
 fe = importlib.util.module_from_spec(spec)
@@ -90,10 +94,13 @@ def test_clear_stale_error_handles_corrupt_json(monkeypatch, tmp_path):
 # ── CLI: end-to-end date filtering (subprocess, isolated state dir) ─────────
 
 def run_cli(state_dir, *args, input_json):
+    env = os.environ.copy()
+    env["EMAIL_TRIAGE_STATE_DIR"] = str(state_dir)
+    env["PYTHONPATH"] = str(REPO_SRC)
     return subprocess.run(
         [sys.executable, str(SCRIPT_PATH), *args],
         capture_output=True, text=True, input=json.dumps(input_json),
-        env={"EMAIL_TRIAGE_STATE_DIR": str(state_dir)},
+        env=env,
     )
 
 

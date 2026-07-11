@@ -16,6 +16,9 @@ import re
 import math
 import argparse
 from itertools import combinations
+from argparse import Namespace
+
+from officina.runtime.python_machine_interface import PythonMachineInterface
 
 try:
     import bibtexparser
@@ -207,40 +210,52 @@ def score_pair(ea, eb):
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
-    ap = argparse.ArgumentParser(description="Detect duplicate/version candidate pairs in a .bib file.")
-    ap.add_argument("bibfile")
-    ap.add_argument("--threshold", type=float, default=0.3,
-                    help="Minimum pair score to report (default: 0.3). "
-                         "Set low to avoid missing candidates; LLM filters further.")
-    args = ap.parse_args()
+class SimilarityInterface(PythonMachineInterface):
+    description = "Detect duplicate/version candidate pairs in a .bib file."
 
-    entries = load_bib(args.bibfile)
+    def build_parser(self) -> argparse.ArgumentParser:
+        parser = super().build_parser()
+        parser.add_argument("bibfile")
+        parser.add_argument("--threshold", type=float, default=0.3,
+                            help="Minimum pair score to report (default: 0.3). "
+                                 "Set low to avoid missing candidates; LLM filters further.")
+        return parser
 
-    pairs = []
-    for ea, eb in combinations(entries, 2):
-        score, signals, confidence = score_pair(ea, eb)
-        if score >= args.threshold:
-            pairs.append({
-                "key_a": ea["ID"],
-                "key_b": eb["ID"],
-                "type_a": ea.get("ENTRYTYPE", "?"),
-                "type_b": eb.get("ENTRYTYPE", "?"),
-                "score": score,
-                "confidence": confidence,
-                "signals": signals,
-            })
+    def run(self, args: Namespace) -> int:
+        entries = load_bib(args.bibfile)
 
-    pairs.sort(key=lambda p: p["score"], reverse=True)
+        pairs = []
+        for ea, eb in combinations(entries, 2):
+            score, signals, confidence = score_pair(ea, eb)
+            if score >= args.threshold:
+                pairs.append({
+                    "key_a": ea["ID"],
+                    "key_b": eb["ID"],
+                    "type_a": ea.get("ENTRYTYPE", "?"),
+                    "type_b": eb.get("ENTRYTYPE", "?"),
+                    "score": score,
+                    "confidence": confidence,
+                    "signals": signals,
+                })
 
-    print(json.dumps({
-        "bibfile": args.bibfile,
-        "threshold": args.threshold,
-        "total_entries": len(entries),
-        "pairs_found": len(pairs),
-        "pairs": pairs,
-    }, indent=2))
+        pairs.sort(key=lambda p: p["score"], reverse=True)
+
+        print(json.dumps({
+            "bibfile": args.bibfile,
+            "threshold": args.threshold,
+            "total_entries": len(entries),
+            "pairs_found": len(pairs),
+            "pairs": pairs,
+        }, indent=2))
+        return 0
+
+
+def main() -> int:
+    interface = SimilarityInterface()
+    parser = interface.build_parser()
+    args = parser.parse_args()
+    return interface.run(args)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

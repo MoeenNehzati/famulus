@@ -3,6 +3,23 @@
 import re, sys
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
+
+class Interface(PythonArgvMachineInterface):
+    prog = "job_utils.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    if argv:
+        print(f"error: unexpected arguments: {' '.join(argv)}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def set_enabled(jobs_path: Path, name: str, value: str) -> None:
     """Flip the enabled field for a named job. Raises SystemExit on failure."""
     text = jobs_path.read_text()
@@ -17,3 +34,7 @@ def set_enabled(jobs_path: Path, name: str, value: str) -> None:
         print(f"Error: job '{name}' not found in {jobs_path}", file=sys.stderr)
         sys.exit(1)
     jobs_path.write_text(new)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

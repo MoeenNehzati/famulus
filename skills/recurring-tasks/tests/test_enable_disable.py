@@ -3,6 +3,7 @@ import subprocess, tempfile, os
 from pathlib import Path
 
 SCRIPTS = Path(__file__).parent.parent / "_rtx"
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
 MANAGE_JOB = SCRIPTS / "_job_control.py"
 
 JOBS_YAML = """\
@@ -17,7 +18,8 @@ jobs:
 def run_script(command: str, name: str, jobs_path: str):
     subprocess.run(
         ["python3", str(MANAGE_JOB), command, name, "--jobs-file", jobs_path, "--no-sync"],
-        check=True
+        check=True,
+        env={**os.environ, "PYTHONPATH": str(REPO_SRC)},
     )
 
 def test_disable():
@@ -52,7 +54,8 @@ def test_unknown_job_errors():
     try:
         r = subprocess.run(
             ["python3", str(MANAGE_JOB), "enable", "no-such-job", "--jobs-file", path, "--no-sync"],
-            capture_output=True, text=True
+            capture_output=True, text=True,
+            env={**os.environ, "PYTHONPATH": str(REPO_SRC)},
         )
         assert r.returncode != 0
         print("PASS: unknown job exits non-zero")
@@ -98,7 +101,8 @@ def test_prefix_name_no_cross_match():
     try:
         r = subprocess.run(
             ["python3", str(MANAGE_JOB), "disable", "email", "--jobs-file", path, "--no-sync"],
-            capture_output=True, text=True
+            capture_output=True, text=True,
+            env={**os.environ, "PYTHONPATH": str(REPO_SRC)},
         )
         assert r.returncode != 0, "Prefix name 'email' should not match 'email-triage'"
         print("PASS: prefix name does not cross-match")

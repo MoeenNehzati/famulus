@@ -23,6 +23,8 @@ from pathlib import Path
 
 import yaml
 
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
 SKILL_DIR = Path(__file__).parent.parent
 JOBS_FILE = SKILL_DIR / "jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"
@@ -119,7 +121,14 @@ def status() -> None:
     print(result.stdout)
 
 
-def main() -> None:
+class Interface(PythonArgvMachineInterface):
+    prog = "job_control.py"
+
+    def run(self, argv: list[str]) -> int:
+        return main(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
     p = ArgumentParser()
     subparsers = p.add_subparsers(dest="command", required=True)
 
@@ -144,7 +153,7 @@ def main() -> None:
     subparsers.add_parser("status", help="Show timer status")
     subparsers.add_parser("sync", help="Sync units")
 
-    args = p.parse_args()
+    args = p.parse_args(argv)
 
     try:
         if args.command == "enable":
@@ -159,10 +168,11 @@ def main() -> None:
             status()
         elif args.command == "sync":
             sync_units()
+        return 0
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
