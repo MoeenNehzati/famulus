@@ -39,9 +39,9 @@ We should be able to:
 
 ## Current Sequence
 
-- current completed step: `Category 2 / Longer Fix 3` now has Python-first launcher installation, a recurring-tasks scheduler backend boundary, Python recurring-task setup/job execution, native scheduler generation for Linux/systemd, macOS/launchd, and Windows Task Scheduler, and a live Linux/systemd schedule/unschedule smoke pass
-- current repo status: recurring-tasks tests pass after the scheduler/job-executor slice; focused installer launcher/scaffold tests pass after the Windows `invoke-skill.bat` slice; full pytest still has environment/unrelated failures for native secret storage, GitHub/network plugin install, read-only `.git/config`, and unrelated blueprint/schema migration dirt
-- recommended next item: watch the new native scheduler smoke in CI on macOS and Windows, then record whether those hosts pass or need backend fixes before declaring `Category 2 / Longer Fix 3` fully done
+- current completed step: `Category 2 / Longer Fix 3` now has Python-first launcher installation, a recurring-tasks scheduler backend boundary, Python recurring-task setup/job execution, native scheduler generation for Linux/systemd, macOS/launchd, and Windows Task Scheduler, a live Linux/systemd schedule/unschedule smoke pass, and a CI native scheduler smoke step for macOS/Windows
+- current repo status: recurring-tasks tests pass after the scheduler/job-executor slice; focused installer launcher/scaffold tests pass after the Windows `invoke-skill.bat` slice; the first CI push exposed follow-up recurring-tasks test-harness issues and unrelated baseline failures before native smoke could report
+- recommended next item: watch the updated native scheduler smoke in CI on macOS and Windows; it now runs with an `always()` condition so launchd/Task Scheduler results are collected even if the broader suite has unrelated failures
 - emphasis for the next slice: keep separating product/runtime fixes from native-host scheduler support and test-harness-only host access problems
 
 Why this is next:
@@ -371,11 +371,12 @@ What was done:
 - updated install docs and installer tests so Windows expects both `dispatcher.bat` and `invoke-skill.bat`
 - added an opt-in live scheduler smoke test that creates one unique temporary scheduler entry, waits for the Python executor to write a marker file, then removes only that entry
 - wired GitHub Actions to run that live scheduler smoke on macOS and Windows after the normal full Python suite
+- after the first CI push, fixed recurring-tasks test-harness assumptions that still treated `_unit_writer.py` as Linux/systemd-only on every host, made healthcheck/job-control status output ASCII-safe for Windows console encodings, hardened macOS backend tests on Windows by avoiding a hard `os.getuid()` requirement, and changed the CI smoke step to use `always()` so unrelated full-suite failures do not hide native scheduler smoke results
 
 Still remaining:
 
-- macOS launchd scheduling has not been live-tested on a macOS host in this repo session; the new CI smoke should provide that result on push/PR
-- Windows Task Scheduler scheduling has not been live-tested on a Windows host in this repo session; the new CI smoke should provide that result on push/PR
+- macOS launchd scheduling has not yet produced a CI live-smoke result after the `always()` workflow fix; the next push/PR should provide that result even if unrelated tests fail earlier
+- Windows Task Scheduler scheduling has not yet produced a CI live-smoke result after the `always()` workflow fix; the next push/PR should provide that result even if unrelated tests fail earlier
 - the current local Linux-run tests validate generated native scheduler files/commands, but local Linux cannot prove launchd or Task Scheduler accepts and runs those entries on real hosts
 
 Prevention:

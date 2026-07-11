@@ -94,9 +94,9 @@ def disable_job(name: str, jobs_file: Path = JOBS_FILE, sync: bool = True) -> No
 def test_job(name: str) -> bool:
     """Test a job immediately."""
     if platform_schedule_backend().test(name, schedule_context()):
-        print(f"✓ Test passed: {name}")
+        print(f"OK: Test passed: {name}")
         return True
-    print(f"✗ Test failed: {name}")
+    print(f"FAIL: Test failed: {name}")
     return False
 
 

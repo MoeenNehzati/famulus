@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -39,7 +40,8 @@ def test_run_writes_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch)
     assert status == 0
     assert dispatcher.is_file()
     assert invoke_skill.is_file()
-    assert dispatcher.stat().st_mode & 0o111  # executable bits set
+    if os.name != "nt":
+        assert dispatcher.stat().st_mode & 0o111  # executable bits set
     assert str(repo_root) in dispatcher.read_text()
     assert "_agent_invoker.sh" not in invoke_skill.read_text(encoding="utf-8")
 

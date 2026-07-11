@@ -40,7 +40,7 @@ jobs:
         run: python3 scripts/run-python-tests.py --suite full --verbose
 
       - name: Run native recurring scheduler smoke
-        if: matrix.os == 'macos-latest' || matrix.os == 'windows-latest'
+        if: always() && (matrix.os == 'macos-latest' || matrix.os == 'windows-latest')
         env:
           FAMULUS_RUN_SCHEDULER_SMOKE: '1'
         run: python3 -m pytest -q skills/recurring-tasks/tests/test_scheduler_live_smoke.py

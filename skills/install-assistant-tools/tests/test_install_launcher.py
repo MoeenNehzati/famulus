@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -35,7 +36,8 @@ def test_generated_launcher_bundle_writes_file(tmp_path):
     launcher = tmp_path / "bin" / "demo"
     assert result.status == "installed"
     assert launcher.read_text(encoding="utf-8") == "#!/bin/sh\necho demo\n"
-    assert launcher.stat().st_mode & 0o111
+    if os.name != "nt":
+        assert launcher.stat().st_mode & 0o111
 
 
 def test_copy_mode_replaces_old_symlink_with_real_file(tmp_path):
@@ -85,7 +87,8 @@ def test_linux_dispatcher_and_invoke_skill_are_extensionless(tmp_path):
     assert invoke_skill.status == "installed"
     assert (bin_dir / "dispatcher").is_file()
     assert (bin_dir / "invoke-skill").is_file()
-    assert (bin_dir / "dispatcher").stat().st_mode & 0o111
+    if os.name != "nt":
+        assert (bin_dir / "dispatcher").stat().st_mode & 0o111
     dispatcher_text = (bin_dir / "dispatcher").read_text(encoding="utf-8")
     invoke_text = (bin_dir / "invoke-skill").read_text(encoding="utf-8")
     assert dispatcher_text.startswith("#!/usr/bin/env python3")

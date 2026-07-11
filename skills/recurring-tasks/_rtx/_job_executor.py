@@ -36,7 +36,11 @@ def parse_command(command: str, *, platform: str = sys.platform) -> tuple[dict[s
     """Parse a job command string into leading environment assignments and argv."""
     tokens = shlex.split(command, posix=(platform != "win32"))
     if platform == "win32":
-        tokens = [_strip_matching_quotes(token) for token in tokens]
+        posix_tokens = shlex.split(command, posix=True)
+        if posix_tokens and ENV_ASSIGNMENT_RE.fullmatch(posix_tokens[0]):
+            tokens = posix_tokens
+        else:
+            tokens = [_strip_matching_quotes(token) for token in tokens]
     env: dict[str, str] = {}
     index = 0
     for token in tokens:

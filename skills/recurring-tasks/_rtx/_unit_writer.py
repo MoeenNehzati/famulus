@@ -13,6 +13,7 @@ if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
 from _schedule_backend import (  # noqa: E402
+    ScheduleBackend,
     ScheduleContext,
     platform_schedule_backend,
     schedule_jobs_from_mappings,
@@ -35,6 +36,7 @@ def sync_units(
     log_dir: Path,
     live: bool = True,
     jobs_file: Path = DEFAULT_JOBS,
+    backend: ScheduleBackend | None = None,
 ) -> None:
     """Generate or update host scheduler entries to match jobs.yaml."""
     context = ScheduleContext(
@@ -44,7 +46,8 @@ def sync_units(
         unit_dir=unit_dir,
         live=live,
     )
-    platform_schedule_backend().sync(schedule_jobs_from_mappings(jobs), context)
+    selected_backend = backend or platform_schedule_backend()
+    selected_backend.sync(schedule_jobs_from_mappings(jobs), context)
 
 
 class Interface(PythonArgvMachineInterface):

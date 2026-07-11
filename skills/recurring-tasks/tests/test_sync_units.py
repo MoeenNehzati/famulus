@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tests for sync_units.py: unit file generation and cron->systemd conversion."""
-import importlib.util, subprocess, tempfile, os
+import importlib.util, tempfile, os
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).parent.parent
@@ -96,10 +96,20 @@ def _run_sync(jobs_yaml: str, unit_dir: str) -> None:
         f.write(jobs_yaml)
         jobs_path = f.name
     try:
-        subprocess.run(
-            ["python3", str(SCRIPT), "--unit-dir", unit_dir, "--jobs-file", jobs_path],
-            check=True,
-            env={**os.environ, "PYTHONPATH": str(REPO_SRC)},
+        mod = _load()
+        from _schedule_backend._linux_backend import LinuxScheduleBackend
+
+        with open(jobs_path, encoding="utf-8") as jobs_stream:
+            import yaml
+
+            jobs = (yaml.safe_load(jobs_stream) or {}).get("jobs", [])
+        mod.sync_units(
+            jobs,
+            Path(unit_dir),
+            mod.LOG_DIR,
+            live=False,
+            jobs_file=Path(jobs_path),
+            backend=LinuxScheduleBackend(),
         )
     finally:
         os.unlink(jobs_path)

@@ -99,9 +99,11 @@ Each job runs, in order:
 
 Validators and tests intentionally share the same CI worker so setup happens once per operating system.
 
-The native recurring scheduler smoke is opt-in outside CI. It creates one
-unique temporary scheduler entry, waits for a marker file, and then removes
-only that entry. Normal local test runs skip it unless
+The native recurring scheduler smoke is opt-in outside CI. In CI it uses an
+`always()` step condition on macOS and Windows so launchd/Task Scheduler
+results are still collected when unrelated full-suite tests fail first. It
+creates one unique temporary scheduler entry, waits for a marker file, and then
+removes only that entry. Normal local test runs skip it unless
 `FAMULUS_RUN_SCHEDULER_SMOKE=1` is set.
 
 ## Adding or Moving Tests

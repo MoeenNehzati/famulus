@@ -60,9 +60,9 @@ def check_systemd_manager() -> str | None:
     except ScheduleBackendUnsupported as e:
         reason = str(e)
     if reason:
-        log(f"✗ {reason}")
+        log(f"FAIL: {reason}")
         return reason
-    log("✓ scheduler manager: OK")
+    log("OK: scheduler manager")
     return None
 
 
@@ -72,22 +72,22 @@ def check_environment() -> str | None:
         template = platform_schedule_backend().get_agent_command_template()
     except ScheduleBackendUnsupported as e:
         reason = str(e)
-        log(f"✗ {reason}")
+        log(f"FAIL: {reason}")
         return reason
 
     if not template:
         reason = "AI_AGENT_COMMAND_TEMPLATE: not set"
-        log(f"✗ {reason}")
+        log(f"FAIL: {reason}")
         return reason
 
     # Extract command name (first token)
     cmd = template.split()[0] if template else ""
     if not shutil.which(cmd):
         reason = f"AI_AGENT_COMMAND_TEMPLATE: command not found: {cmd}"
-        log(f"✗ {reason}")
+        log(f"FAIL: {reason}")
         return reason
 
-    log(f"✓ AI_AGENT_COMMAND_TEMPLATE: {template}")
+    log(f"OK: AI_AGENT_COMMAND_TEMPLATE: {template}")
     return None
 
 
@@ -98,7 +98,7 @@ def check_job(job: dict) -> str | None:
 
     if not log_file.exists():
         reason = f"{name}: no log file"
-        log(f"  ✗ {reason}")
+        log(f"  FAIL: {reason}")
         return reason
 
     # Check if log is fresh (within 2x scheduled interval)
@@ -110,22 +110,22 @@ def check_job(job: dict) -> str | None:
 
     if age > stale_threshold:
         reason = f"{name}: log stale ({age.total_seconds() / 60:.0f}m old)"
-        log(f"  ⚠ {reason}")
+        log(f"  WARN: {reason}")
         return reason
 
     try:
         is_active = platform_schedule_backend().check_job_active(name)
     except ScheduleBackendUnsupported as e:
         reason = str(e)
-        log(f"  ✗ {reason}")
+        log(f"  FAIL: {reason}")
         return reason
 
     if not is_active:
         reason = f"{name}: timer not active"
-        log(f"  ✗ {reason}")
+        log(f"  FAIL: {reason}")
         return reason
 
-    log(f"  ✓ {name}: OK")
+    log(f"  OK: {name}")
     return None
 
 
@@ -166,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
         with open(JOBS_FILE) as f:
             jobs = (yaml.safe_load(f) or {}).get("jobs", [])
     except Exception as e:
-        log(f"✗ Failed to load jobs.yaml: {e}")
+        log(f"FAIL: Failed to load jobs.yaml: {e}")
         return 0
 
     failures: list[str] = []
@@ -192,15 +192,15 @@ def main(argv: list[str] | None = None) -> int:
 
     # Report
     if problems == 0:
-        log("✓ All checks passed")
+        log("OK: All checks passed")
         notify_desktop("Recurring Tasks", "All checks passed", urgency="low")
     else:
-        log(f"✗ {problems} problem(s) found")
+        log(f"FAIL: {problems} problem(s) found")
         MAX_LISTED = 5
         listed = failures[:MAX_LISTED]
         body = f"{problems} health check problem(s):\n" + "\n".join(f"- {f}" for f in listed)
         if problems > MAX_LISTED:
-            body += f"\n(+{problems - MAX_LISTED} more — see healthcheck log)"
+            body += f"\n(+{problems - MAX_LISTED} more - see healthcheck log)"
         notify_desktop("Recurring Tasks", body, urgency="critical")
 
     log("=== healthcheck done ===\n")

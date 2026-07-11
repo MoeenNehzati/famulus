@@ -111,7 +111,8 @@ class OSXScheduleBackend:
     name = "macos-launchd"
 
     def _target(self) -> str:
-        return f"gui/{os.getuid()}"
+        getuid = getattr(os, "getuid", lambda: 0)
+        return f"gui/{getuid()}"
 
     def sync(self, jobs: list[ScheduleJob], context: ScheduleContext) -> None:
         unit_dir = context.unit_dir or default_launch_agents_dir()
