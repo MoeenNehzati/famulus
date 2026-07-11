@@ -39,17 +39,17 @@ We should be able to:
 
 ## Current Sequence
 
-- current completed step: `Category 2 / Longer Fix 3` now has Python-first launcher installation, a recurring-tasks scheduler backend boundary, Python recurring-task setup/job execution, native scheduler generation for Linux/systemd, macOS/launchd, and Windows Task Scheduler, a live Linux/systemd schedule/unschedule smoke pass, and a CI native scheduler smoke step for macOS/Windows
-- current repo status: recurring-tasks tests pass after the scheduler/job-executor slice; focused installer launcher/scaffold tests pass after the Windows `invoke-skill.bat` slice; the first CI push exposed follow-up recurring-tasks test-harness issues and unrelated baseline failures before native smoke could report
-- recommended next item: watch the updated native scheduler smoke in CI on macOS and Windows; it now runs with an `always()` condition so launchd/Task Scheduler results are collected even if the broader suite has unrelated failures
+- current completed step: `Category 2 / Longer Fix 3` now has Python-first launcher installation, a recurring-tasks scheduler backend boundary, Python recurring-task setup/job execution, native scheduler generation for Linux/systemd, macOS/launchd, and Windows Task Scheduler, a live Linux/systemd schedule/unschedule smoke pass, and passing CI native scheduler smoke steps for macOS/launchd and Windows Task Scheduler
+- current repo status: recurring-tasks tests pass after the scheduler/job-executor slice; focused installer launcher/scaffold tests pass after the Windows `invoke-skill.bat` slice; CI native scheduler smoke passes on macOS and Windows; the overall CI workflow still fails because the broader full suite has unrelated baseline failures
+- recommended next item: move to the next cross-platform plan item or, if desired, separately triage the unrelated CI full-suite failures outside `Category 2 / Longer Fix 3`
 - emphasis for the next slice: keep separating product/runtime fixes from native-host scheduler support and test-harness-only host access problems
 
 Why this is next:
 
 - launcher installation no longer depends on POSIX shell as the primary product surface
 - recurring-task Linux/systemd scheduling works through the new Python executor path
-- macOS and Windows scheduler backends now generate native scheduler entries, and CI has an opt-in live smoke step for those native hosts
-- the next decision is narrower than a broad rewrite: inspect the native CI smoke results and fix any launchd/Task Scheduler host-specific failures
+- macOS and Windows scheduler backends now generate native scheduler entries, and CI has a passing opt-in live smoke step for those native hosts
+- the remaining CI failures shown by the latest run are not the native scheduler smoke; they are broader test-suite portability/baseline failures to triage separately
 
 ## Tracking Format
 
@@ -373,12 +373,13 @@ What was done:
 - wired GitHub Actions to run that live scheduler smoke on macOS and Windows after the normal full Python suite
 - after the first CI push, fixed recurring-tasks test-harness assumptions that still treated `_unit_writer.py` as Linux/systemd-only on every host, made healthcheck/job-control status output ASCII-safe for Windows console encodings, hardened macOS backend tests on Windows by avoiding a hard `os.getuid()` requirement, and changed the CI smoke step to use `always()` so unrelated full-suite failures do not hide native scheduler smoke results
 - after the first macOS/Windows native smoke run, changed the live smoke to trigger the created entry through the native scheduler immediately and include scheduler log content when marker creation fails, rather than depending on CI wall-clock timing for a next-minute schedule
+- fixed native scheduled-job command generation to use the current Python executable path for macOS launchd and Windows Task Scheduler entries, avoiding sparse scheduler PATH assumptions such as `/usr/bin/env python3` under launchd or `py -3` under Task Scheduler
+- reran CI on commit `d08ae89`; both native scheduler smoke steps passed: macOS `launchctl` and Windows `schtasks` each created a unique temporary scheduler entry, triggered it through the native scheduler, observed the marker write, and removed the entry
 
 Still remaining:
 
-- macOS launchd scheduling has not yet produced a CI live-smoke result after the `always()` workflow fix; the next push/PR should provide that result even if unrelated tests fail earlier
-- Windows Task Scheduler scheduling has not yet produced a CI live-smoke result after the `always()` workflow fix; the next push/PR should provide that result even if unrelated tests fail earlier
-- the current local Linux-run tests validate generated native scheduler files/commands, but local Linux cannot prove launchd or Task Scheduler accepts and runs those entries on real hosts
+- no known remaining `Category 2 / Longer Fix 3` launcher/scheduler product fix is left from this slice
+- the latest CI run still fails in the broader full Python suite on unrelated portability/baseline issues; handle those as separate plan items rather than mixing them into launcher/scheduler redesign
 
 Prevention:
 
