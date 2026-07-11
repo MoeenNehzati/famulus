@@ -31,6 +31,7 @@ from _schedule_backend._linux_backend import (  # noqa: E402
 )
 from _schedule_backend._osx_backend import (  # noqa: E402
     OSXScheduleBackend,
+    launchd_label,
     plist_content,
     plist_name,
 )
@@ -128,6 +129,20 @@ def _wait_for_marker(marker: Path, timeout: int = 120) -> str:
     raise AssertionError(f"scheduler marker was not written: {marker}")
 
 
+def _missing_marker_message(marker: Path, log_file: Path | None = None) -> str:
+    detail = f"scheduler marker was not written: {marker}"
+    if log_file and log_file.exists():
+        detail += f"\n--- scheduler log ---\n{log_file.read_text(encoding='utf-8', errors='replace')}"
+    return detail
+
+
+def _assert_marker_written(marker: Path, *, log_file: Path | None = None) -> None:
+    try:
+        assert json.loads(_wait_for_marker(marker))["ran_at"]
+    except AssertionError as exc:
+        raise AssertionError(_missing_marker_message(marker, log_file)) from exc
+
+
 def _linux_smoke() -> None:
     manager = _run(["systemctl", "--user", "is-system-running"], check=False)
     if manager.returncode != 0:
@@ -162,7 +177,7 @@ def _linux_smoke() -> None:
             )
             _run(["systemctl", "--user", "daemon-reload"])
             _run(["systemctl", "--user", "enable", "--now", timer_name])
-            assert json.loads(_wait_for_marker(marker))["ran_at"]
+            _assert_marker_written(marker, log_file=tmp_dir / "run.log")
         finally:
             _run(["systemctl", "--user", "disable", "--now", timer_name], check=False)
             service_path.unlink(missing_ok=True)
@@ -208,7 +223,8 @@ def _macos_smoke() -> None:
                 )
             )
             _run(["launchctl", "bootstrap", backend._target(), str(plist_path)])
-            assert json.loads(_wait_for_marker(marker))["ran_at"]
+            _run(["launchctl", "kickstart", "-k", f"{backend._target()}/{launchd_label(job_name)}"])
+            _assert_marker_written(marker, log_file=log_file)
         finally:
             _run(["launchctl", "bootout", backend._target(), str(plist_path)], check=False)
             plist_path.unlink(missing_ok=True)
@@ -251,7 +267,8 @@ def _windows_smoke() -> None:
                     *cron_to_schtasks_args(schedule),
                 ]
             )
-            assert json.loads(_wait_for_marker(marker))["ran_at"]
+            _run(["schtasks", "/Run", "/TN", name])
+            _assert_marker_written(marker, log_file=tmp_dir / job_name / "run.log")
         finally:
             _run(["schtasks", "/Delete", "/TN", name, "/F"], check=False)
             post = _run(["schtasks", "/Query", "/TN", name], check=False)

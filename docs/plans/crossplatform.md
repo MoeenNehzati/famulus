@@ -369,9 +369,10 @@ What was done:
 - installed Windows recurring automation support at the launcher layer by generating `invoke-skill.bat` instead of reporting Windows `invoke-skill` as unsupported
 - updated the Python job executor to resolve Windows launcher shims such as `invoke-skill.bat` through PATH/PATHEXT before launching without a shell
 - updated install docs and installer tests so Windows expects both `dispatcher.bat` and `invoke-skill.bat`
-- added an opt-in live scheduler smoke test that creates one unique temporary scheduler entry, waits for the Python executor to write a marker file, then removes only that entry
+- added an opt-in live scheduler smoke test that creates one unique temporary scheduler entry, triggers it through the native scheduler, waits for the Python executor to write a marker file, then removes only that entry
 - wired GitHub Actions to run that live scheduler smoke on macOS and Windows after the normal full Python suite
 - after the first CI push, fixed recurring-tasks test-harness assumptions that still treated `_unit_writer.py` as Linux/systemd-only on every host, made healthcheck/job-control status output ASCII-safe for Windows console encodings, hardened macOS backend tests on Windows by avoiding a hard `os.getuid()` requirement, and changed the CI smoke step to use `always()` so unrelated full-suite failures do not hide native scheduler smoke results
+- after the first macOS/Windows native smoke run, changed the live smoke to trigger the created entry through the native scheduler immediately and include scheduler log content when marker creation fails, rather than depending on CI wall-clock timing for a next-minute schedule
 
 Still remaining:
 
