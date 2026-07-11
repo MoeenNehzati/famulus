@@ -18,6 +18,7 @@ settings.local.json
 settings.json
 
 # Skill runtime state
+skills/*/.last_audit.json
 skills/email-triage/state/
 skills/email-triage/triage.log
 

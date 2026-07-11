@@ -1,7 +1,7 @@
-"""Dependency exploration and hash helpers for skill health records.
+"""Dependency exploration and hash helpers for skill drift reports.
 
 This module discovers relevant files for skills, interfaces, and files, then
-hashes the discovered files deterministically for future health-record checks.
+hashes the discovered files deterministically for audit-record comparison.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 HASH_PREFIX = "sha256:"
-DEFAULT_EXCLUDE_NAMES = {"__pycache__", ".pytest_cache", ".DS_Store", ".health.json"}
+DEFAULT_EXCLUDE_NAMES = {"__pycache__", ".pytest_cache", ".DS_Store", ".last_audit.json"}
 DEFAULT_EXCLUDE_SUFFIXES = {".pyc"}
 DIRECT_FIELDS = ("directly_reads", "directly_executes", "directly_writes")
 MARKDOWN_SUFFIXES = {".md", ".markdown"}

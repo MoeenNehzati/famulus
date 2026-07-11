@@ -1,0 +1,6 @@
+{
+  "bash": [
+    "Bash(python3 -m officina.runtime.python_machine_interface_runner _rtx/_check_drift_state.py:Interface:*)"
+  ],
+  "network": []
+}

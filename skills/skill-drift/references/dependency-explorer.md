@@ -1,9 +1,8 @@
-# Skill Health Runtime Module
+# Skill Drift Runtime Module
 
 This document describes the internal dependency-explorer module for
-`skill-health`. The current module is not a complete health checker yet. It
-provides the dependency-exploration and deterministic hashing machinery that the
-later health-record command will use.
+`skill-drift`. It provides the dependency-exploration and deterministic hashing
+machinery used by the current drift status command.
 
 The core idea is:
 
@@ -11,10 +10,10 @@ The core idea is:
    root.
 2. Convert those files into deterministic hash entries.
 3. Hash the entries in a stable order.
-4. Later, compare the stored health record against a newly computed hash state.
+4. Compare the stored audit record against a newly computed hash state.
 
-The module is intentionally split so dependency discovery can be tested before
-the user-facing health verdict exists.
+The module is intentionally split so dependency discovery can be tested
+independently from report rendering and installed-skill discovery.
 
 ## What Is Matched Recursively
 
@@ -82,7 +81,7 @@ Root resolution is deliberately narrow:
 - paths containing `..` are rejected;
 - paths that escape their base after resolution are rejected.
 
-This keeps the health hash bounded to the repository and avoids accidentally
+This keeps the drift hash bounded to the repository and avoids accidentally
 hashing arbitrary machine-local state.
 
 ## File and Directory Discovery
@@ -98,10 +97,10 @@ The explorer skips generated or irrelevant local artifacts:
 - `__pycache__`
 - `.pytest_cache`
 - `.DS_Store`
-- `.health.json`
+- `.last_audit.json`
 - `*.pyc`
 
-The `.health.json` exclusion matters because the health record must not change
+The `.last_audit.json` exclusion matters because the audit record must not change
 the hash that it is recording.
 
 Missing paths are treated differently by layer:
@@ -210,7 +209,7 @@ roots are represented only by the declared-root hash path.
 ## Tests
 
 The dependency behavior is covered by
-`skills/skill-health/tests/test_dependency_explorer.py`.
+`skills/skill-drift/tests/test_dependency_explorer.py`.
 
 That suite checks:
 
@@ -228,7 +227,7 @@ That suite checks:
 - branching dispatch dependencies.
 
 Hash-specific behavior is covered by
-`skills/skill-health/tests/test_health_hash.py`.
+`skills/skill-drift/tests/test_drift_hash.py`.
 
 Runtime dispatch and validator behavior is covered by:
 
@@ -238,8 +237,9 @@ Runtime dispatch and validator behavior is covered by:
 
 ## Known Boundaries
 
-This module does not yet read or write a health record. It only computes the
-dependency and hash state needed for that future command.
+This module computes dependency and hash state. The status checker owns
+audit-record reads, status derivation, JSON rendering, and Markdown report
+writing.
 
 The main known limitations are:
 
@@ -252,14 +252,14 @@ The main known limitations are:
 - The dependency explorer reports existing files; missing-path hash entries are
   added by the declared-root hash layer.
 
-These limits are acceptable for the current slice because the goal is to
-assemble a conservative, testable dependency set before implementing the actual
-health verdict workflow.
+These limits are acceptable for the current first pass because the goal is to
+raise conservative audit-stale flags, not to certify that every possible
+behavioral dependency has been captured.
 
 ## Deferred Correctness Fixes
 
 The current implementation is a first pass. It is good enough to build the
-end-to-end health-check workflow, but it is not yet strong enough to certify
+end-to-end drift-check workflow, but it is not yet strong enough to certify
 that every relevant skill/interface change is tracked. These are known follow-up
 items from the dependency-explorer audit.
 
@@ -289,7 +289,7 @@ items from the dependency-explorer audit.
 
 4. Raw-dispatch validation needs broader negative coverage.
 
-   Health tracing only follows declared `DispatchCall` values. The validators
+   Drift tracing only follows declared `DispatchCall` values. The validators
    therefore need to reliably block raw dispatcher usage in runtime code. Current
    coverage should be expanded for alternate import shapes such as importing the
    `dispatcher` module through `officina`, star imports, or dynamic imports.
@@ -308,5 +308,5 @@ items from the dependency-explorer audit.
    design, but it can miss ordinary nested relative links. If nested Markdown
    files become important dependency surfaces, this rule should be revisited.
 
-Before treating health results as authoritative, add regression tests for the
+Before treating audit results as authoritative, add regression tests for the
 first five items and decide whether the Markdown base rule should remain as-is.

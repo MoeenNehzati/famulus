@@ -169,7 +169,7 @@ Lastly, run `docker compose up` and Compose will start and run your entire app.
 """,
     "skill_specific_leakage": """
 When certifying the skill, run scripts/check_skill.py with the target skill.
-Then execute python3 skills/skill-health/scripts/health.py status --json.
+Then execute python3 dispatcher --caller-skill skill-drift skill-drift.machine.drift-status status --json.
 If needed, run the following commanx chmod x before using the script.
 """,
 }
@@ -224,7 +224,7 @@ The Python version of Compose is available under the v1 branch.
 Use the doctor-check interface and use its JSON verdict for certification.
 Only certify if the verdict says tests, validators, blueprint sync, dependency review,
 and guideline review passed.
-The health-status interface reports the current state.
+The drift-status interface reports the current state.
 """,
     "skill_outcome_language": """
 The check interface must report that repository-state checks passed.

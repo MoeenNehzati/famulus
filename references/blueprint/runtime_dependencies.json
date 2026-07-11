@@ -736,6 +736,14 @@
         }
       }
     },
+    "skill-drift": {
+      "interfaces": {
+        "drift-status": {
+          "id": "skill-drift.machine.drift-status",
+          "dependencies": []
+        }
+      }
+    },
     "skill-maker": {
       "interfaces": {
         "sync-blueprints": {

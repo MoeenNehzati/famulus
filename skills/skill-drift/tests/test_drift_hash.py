@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "_rtx" / "_get_health_state.py"
-SPEC = importlib.util.spec_from_file_location("skill_get_health_state", MODULE_PATH)
+MODULE_PATH = Path(__file__).resolve().parents[1] / "_rtx" / "_drift_hashes.py"
+SPEC = importlib.util.spec_from_file_location("skill_drift_hashes", MODULE_PATH)
 health_state = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 sys.modules[SPEC.name] = health_state
@@ -50,7 +50,7 @@ def test_directory_hash_is_recursive_and_ignores_health_record(tmp_path: Path) -
     skill = repo / "skills" / "demo-skill"
     write(skill / "references" / "a.txt", "a\n")
     write(skill / "references" / "nested" / "b.txt", "b\n")
-    write(skill / ".health.json", "{}\n")
+    write(skill / ".last_audit.json", "{}\n")
 
     first = health_state.hash_declared_roots(skill, repo, ["references/"])
     write(skill / "references" / "nested" / "b.txt", "changed\n")
@@ -86,16 +86,16 @@ def test_interface_hash_includes_binding_and_direct_roots(tmp_path: Path) -> Non
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"
     write(skill / "SKILL.md", "skill\n")
-    write(skill / "_rtx" / "_get_health_state.py", "print('x')\n")
+    write(skill / "_rtx" / "_drift_hashes.py", "print('x')\n")
     spec = {
         "binding": {"kind": "skill_file", "path": "SKILL.md"},
         "directly_reads": ["SKILL.md"],
-        "directly_executes": ["_rtx/_get_health_state.py"],
+        "directly_executes": ["_rtx/_drift_hashes.py"],
         "directly_writes": [],
     }
 
     first = health_state.hash_interface(skill, repo, spec)
-    write(skill / "_rtx" / "_get_health_state.py", "print('y')\n")
+    write(skill / "_rtx" / "_drift_hashes.py", "print('y')\n")
     second = health_state.hash_interface(skill, repo, spec)
 
     assert first != second

@@ -6,8 +6,8 @@ from pathlib import Path
 
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "_rtx" / "_get_health_state.py"
-SPEC = importlib.util.spec_from_file_location("skill_get_health_state", MODULE_PATH)
+MODULE_PATH = Path(__file__).resolve().parents[1] / "_rtx" / "_drift_hashes.py"
+SPEC = importlib.util.spec_from_file_location("skill_drift_hashes", MODULE_PATH)
 health_state = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 sys.modules[SPEC.name] = health_state
