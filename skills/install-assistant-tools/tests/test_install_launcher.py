@@ -114,6 +114,7 @@ def test_windows_dispatcher_and_invoke_skill_are_batch_launchers(tmp_path):
     installer = platform_launcher_installer("win32")
     repo_root = Path(r"C:\Users\tester\AI")
     bin_dir = tmp_path / "bin"
+    python = LauncherInstallerBase._batch_path(Path(sys.executable))
 
     dispatcher = installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run=False)
     invoke_skill = installer.install_invoke_skill_launcher(bin_dir, dry_run=False)
@@ -121,7 +122,8 @@ def test_windows_dispatcher_and_invoke_skill_are_batch_launchers(tmp_path):
     content = (bin_dir / "dispatcher.bat").read_text(encoding="utf-8")
     invoke_content = (bin_dir / "invoke-skill.bat").read_text(encoding="utf-8")
     assert dispatcher.status == "installed"
-    assert "py -3 -m officina.dispatcher.cli %*" in content
+    assert f'"{python}" -m officina.dispatcher.cli %*' in content
+    assert "py -3" not in content
     assert r"C:\Users\tester\AI" in content
     assert not (bin_dir / "dispatcher").exists()
     assert invoke_skill.status == "installed"

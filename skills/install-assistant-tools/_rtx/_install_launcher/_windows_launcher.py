@@ -1,6 +1,7 @@
 """Windows launcher bundle installer."""
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from _state_record import Manifest
@@ -18,13 +19,14 @@ from ._base_launcher import (
 
 def _windows_dispatcher_content(repo_root: Path) -> str:
     repo = LauncherInstallerBase._batch_path(repo_root)
+    python = LauncherInstallerBase._batch_path(Path(sys.executable))
     return (
         "@echo off\n"
         "setlocal\n"
         "set \"AI=%AI%\"\n"
         f"if \"%AI%\"==\"\" set \"AI={repo}\"\n"
         "set \"PYTHONPATH=%AI%\\src;%PYTHONPATH%\"\n"
-        "py -3 -m officina.dispatcher.cli %*\n"
+        f"\"{python}\" -m officina.dispatcher.cli %*\n"
     )
 
 

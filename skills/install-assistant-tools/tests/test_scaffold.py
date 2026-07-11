@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
 import _install_scaffold as scaffold
+from _install_launcher._base_launcher import LauncherInstallerBase
 
 
 def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[str]) -> None:
@@ -52,6 +53,7 @@ def test_run_writes_windows_dispatcher_and_invoke_skill_launchers(tmp_path, monk
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     bin_dir = tmp_path / "bin"
+    python = LauncherInstallerBase._batch_path(Path(sys.executable))
 
     status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, dry_run=False)
 
@@ -61,7 +63,9 @@ def test_run_writes_windows_dispatcher_and_invoke_skill_launchers(tmp_path, monk
     assert status == 0
     assert dispatcher.is_file()
     assert invoke_skill.is_file()
-    assert "py -3 -m officina.dispatcher.cli %*" in dispatcher.read_text(encoding="utf-8")
+    dispatcher_text = dispatcher.read_text(encoding="utf-8")
+    assert f'"{python}" -m officina.dispatcher.cli %*' in dispatcher_text
+    assert "py -3" not in dispatcher_text
     assert "assistant --local --claude" in invoke_skill.read_text(encoding="utf-8")
     assert "OK: dispatcher" in output
     assert "OK: invoke-skill" in output
