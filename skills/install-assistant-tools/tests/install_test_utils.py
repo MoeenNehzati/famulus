@@ -18,6 +18,14 @@ from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
+DISPATCHER_CONTEXT_MARKERS = [
+    "## Skill System",
+    "Do not invoke these scripts directly.",
+    "dispatcher --caller-skill <caller> <callee> <interface-id> [args...]",
+    "Use --dry-run to preview without executing.",
+    "`skill-maker` skill",
+]
+
 
 def read_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -138,6 +146,11 @@ def launcher_path(bin_dir: Path, agent: str) -> Path:
     if os.name == "nt":
         return bin_dir / f"{agent}.bat"
     return bin_dir / agent
+
+
+def contains_dispatcher_context(payload: object) -> bool:
+    text = json.dumps(payload)
+    return all(marker in text for marker in DISPATCHER_CONTEXT_MARKERS)
 
 
 def _home_env(home: Path) -> dict[str, str]:

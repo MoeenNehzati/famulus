@@ -109,6 +109,12 @@ class CodexGithubInstallTests(unittest.TestCase):
                 installed_path / "agents" / "assistant.md",
                 installed_path / "agents" / "collab.md",
                 installed_path / "agents" / "coauthor.md",
+                # Packaging contract only: Codex does not currently expose a
+                # hook-event stream here, so this test does not assert session
+                # attachment.
+                installed_path / "hooks" / "hooks.json",
+                installed_path / "hooks" / "inject_dispatcher_context.py",
+                installed_path / "llmhooks" / "inject_dispatcher_context.py",
                 installed_path / "profiles" / "assistant.config.toml",
                 installed_path / "profiles" / "collab.config.toml",
                 installed_path / "profiles" / "coauthor.config.toml",

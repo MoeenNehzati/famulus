@@ -31,6 +31,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from install_test_utils import (  # noqa: E402
     REPO_ROOT,
     claude_env,
+    contains_dispatcher_context,
     expected_skills,
     github_owner_repo,
     read_json,
@@ -128,7 +129,10 @@ class ClaudeGithubInstallTests(unittest.TestCase):
             for agent_name in ("assistant", "collab", "coauthor"):
                 self.assertIn(agent_name, details_text)
 
-            # Claude plugin mode should fire SessionStart and emit our hook context
+            # Claude exposes hook_started/hook_response events before auth
+            # failure, so this is a real session-attachment check. Codex's
+            # local debug surface does not expose equivalent hook telemetry;
+            # Codex plugin tests only assert packaging, not attachment.
             session = run_command(
                 [
                     "claude",
@@ -158,8 +162,8 @@ class ClaudeGithubInstallTests(unittest.TestCase):
             self.assertTrue(hook_responses, "Expected SessionStart hook_response event in Claude plugin mode")
             self.assertTrue(any(item.get("hook_event") == "SessionStart" for item in hook_started))
             self.assertTrue(
-                any("Skill System" in json.dumps(item) for item in hook_responses),
-                "Expected dispatcher-context payload in Claude plugin hook response",
+                contains_dispatcher_context(hook_responses),
+                "Expected dispatcher instructions in Claude plugin hook response",
             )
 
             # ── Uninstall phase: plugin removal must clean up completely ──

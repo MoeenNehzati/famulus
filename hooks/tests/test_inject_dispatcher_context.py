@@ -1,7 +1,10 @@
 """Tests for the cross-host dispatcher-context hook entrypoint.
 
-These tests validate the live hook contract for explicit --codex / --claude /
---cursor entrypoints and the shared install metadata exposed by the hook class.
+These tests validate the hook payload contract for explicit --codex /
+--claude / --cursor entrypoints and the shared install metadata exposed by the
+hook class. They do not prove that a host attached the hook to a session. That
+requires host-observed hook telemetry; the plugin install shard currently has
+that for Claude via hook_started/hook_response events, but not for Codex.
 """
 
 from __future__ import annotations
@@ -23,6 +26,20 @@ _spec = importlib.util.spec_from_file_location("llmhooks.inject_dispatcher_conte
 _mod = importlib.util.module_from_spec(_spec)
 assert _spec.loader is not None
 _spec.loader.exec_module(_mod)
+
+
+_DISPATCHER_CONTEXT_MARKERS = [
+    "## Skill System — Module Boundaries",
+    "Do not invoke these scripts directly.",
+    "dispatcher --caller-skill <caller> <callee> <interface-id> [args...]",
+    "Use --dry-run to preview without executing.",
+    "`skill-maker` skill",
+]
+
+
+def _assert_dispatcher_context(text: str) -> None:
+    missing = [marker for marker in _DISPATCHER_CONTEXT_MARKERS if marker not in text]
+    assert missing == []
 
 
 def _available(*, cli: bool = True, pkg: bool = True):
@@ -62,7 +79,7 @@ class TestOutputs:
         )
         assert "hookSpecificOutput" in output
         assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
-        assert output["hookSpecificOutput"]["additionalContext"].strip()
+        _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])
 
     def test_claude_output_matches_same_nested_shape(self):
         hook = _mod.InjectDispatcherContextHook()
@@ -74,7 +91,7 @@ class TestOutputs:
         )
         assert "hookSpecificOutput" in output
         assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
-        assert output["hookSpecificOutput"]["additionalContext"].strip()
+        _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])
 
     def test_cursor_output_uses_snake_case(self):
         hook = _mod.InjectDispatcherContextHook()
@@ -85,7 +102,7 @@ class TestOutputs:
             result,
         )
         assert "additional_context" in output
-        assert output["additional_context"].strip()
+        _assert_dispatcher_context(output["additional_context"])
 
     def test_missing_dispatcher_emits_system_message(self):
         hook = _mod.InjectDispatcherContextHook()
@@ -132,6 +149,7 @@ class TestEntryPoint:
         output = json.loads(result.stdout)
         assert "hookSpecificOutput" in output
         assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+        _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])
 
     def test_claude_entrypoint_is_stable_under_noisy_env(self):
         result = self._run_script(
@@ -142,6 +160,7 @@ class TestEntryPoint:
         output = json.loads(result.stdout)
         assert "hookSpecificOutput" in output
         assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+        _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])
 
     def test_missing_platform_selector_exits_nonzero(self):
         result = self._run_script(check=False)
@@ -169,11 +188,13 @@ class TestPluginShim:
         output = self._run_shim({"PLUGIN_ROOT": "/tmp/plugin", "CLAUDE_PLUGIN_ROOT": ""})
         assert "hookSpecificOutput" in output
         assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+        _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])
 
     def test_claude_plugin_root_selects_claude_shape_without_explicit_flag(self):
         output = self._run_shim({"PLUGIN_ROOT": "", "CLAUDE_PLUGIN_ROOT": "/tmp/plugin"})
         assert "hookSpecificOutput" in output
         assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+        _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])
 
 
 if __name__ == "__main__":
