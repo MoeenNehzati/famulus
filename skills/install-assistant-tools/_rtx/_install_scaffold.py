@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -39,6 +40,7 @@ def log(msg: str = "") -> None:
 
 
 RUNTIME_DEPENDENCIES_MANIFEST = Path("references") / "blueprint" / "runtime_dependencies.json"
+DEFAULT_PIP_INSTALL_TIMEOUT_SECONDS = 60
 
 
 def required_python_packages(repo_root: Path) -> list[str]:
@@ -52,6 +54,17 @@ def required_python_packages(repo_root: Path) -> list[str]:
     return sorted(packages, key=str.lower)
 
 
+def pip_install_timeout_seconds() -> int:
+    raw = os.environ.get("FAMULUS_PIP_INSTALL_TIMEOUT_SECONDS", "")
+    if not raw:
+        return DEFAULT_PIP_INSTALL_TIMEOUT_SECONDS
+    try:
+        timeout = int(raw)
+    except ValueError:
+        return DEFAULT_PIP_INSTALL_TIMEOUT_SECONDS
+    return max(1, timeout)
+
+
 def install_python_packages(repo_root: Path, dry_run: bool) -> None:
     """Ensure required third-party Python packages are installed.
 
@@ -59,21 +72,27 @@ def install_python_packages(repo_root: Path, dry_run: bool) -> None:
     here — it runs from the repo via the dispatcher launcher below.
     """
     log("\nInstalling required Python packages...")
+    timeout = pip_install_timeout_seconds()
     for package in required_python_packages(repo_root):
         if dry_run:
             log(f"  (dry-run) Would install: {package}")
             continue
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", package, "--quiet"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-        )
-        if result.returncode == 0:
-            log(f"  OK: {package}")
-        else:
-            log(f"  WARN: failed to install {package}: {result.stderr.strip()}")
+        log(f"  Installing: {package}")
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", package, "--quiet"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="strict",
+                timeout=timeout,
+            )
+            if result.returncode == 0:
+                log(f"  OK: {package}")
+            else:
+                log(f"  WARN: failed to install {package}: {result.stderr.strip()}")
+        except subprocess.TimeoutExpired:
+            log(f"  WARN: timed out installing {package} after {timeout}s")
 
 
 def report_capabilities(results: list[LauncherInstallResult]) -> int:

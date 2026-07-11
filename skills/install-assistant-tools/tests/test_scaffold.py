@@ -176,3 +176,25 @@ def test_run_installs_python_packages_from_runtime_dependency_manifest(tmp_path,
     assert any("PyYAML" in cmd for cmd in installed)
     assert any("jsonschema" in cmd for cmd in installed)
     assert not any(" rg " in f" {cmd} " for cmd in installed)
+
+
+def test_python_package_install_timeout_warns_and_continues(tmp_path, monkeypatch, capsys):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    write_runtime_dependencies_manifest(repo_root, ["marker-pdf", "rich"])
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if "marker-pdf" in cmd:
+            raise scaffold.subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+        return type("R", (), {"returncode": 0, "stderr": ""})()
+
+    monkeypatch.setenv("FAMULUS_PIP_INSTALL_TIMEOUT_SECONDS", "1")
+    monkeypatch.setattr(scaffold.subprocess, "run", fake_run)
+
+    scaffold.install_python_packages(repo_root, dry_run=False)
+
+    output = capsys.readouterr().out
+    assert "WARN: timed out installing marker-pdf after 1s" in output
+    assert any("rich" in cmd for cmd in calls)
