@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import mimetypes
 import smtplib
 import ssl
@@ -16,7 +17,18 @@ from typing import Callable, Sequence
 from officina.common import secret_store
 from officina.runtime.python_machine_interface import PythonMachineInterface
 
-from . import _email_accounts
+try:
+    from . import _email_accounts, _oauth_tokens
+except ImportError:
+    SCRIPT_DIR = Path(__file__).resolve().parent
+    _accounts_spec = importlib.util.spec_from_file_location("_email_accounts", SCRIPT_DIR / "_email_accounts.py")
+    _email_accounts = importlib.util.module_from_spec(_accounts_spec)
+    assert _accounts_spec.loader is not None
+    _accounts_spec.loader.exec_module(_email_accounts)
+    _oauth_spec = importlib.util.spec_from_file_location("_oauth_tokens", SCRIPT_DIR / "_oauth_tokens.py")
+    _oauth_tokens = importlib.util.module_from_spec(_oauth_spec)
+    assert _oauth_spec.loader is not None
+    _oauth_spec.loader.exec_module(_oauth_tokens)
 
 
 SECRET_NAMESPACE = "email-client"
@@ -151,6 +163,25 @@ def open_smtp_connection(account: dict):
     return smtplib.SMTP_SSL(host, port, context=context, timeout=SMTP_TIMEOUT_SECONDS)
 
 
+def authenticate_smtp(
+    client: object,
+    nickname: str,
+    account: dict,
+    password_resolver: Callable[[str, dict], str] = get_smtp_password,
+    access_token_resolver: Callable[[str, dict], str] = _oauth_tokens.refresh_google_access_token,
+) -> None:
+    if _oauth_tokens.is_gmail_oauth(account):
+        try:
+            access_token = access_token_resolver(nickname, account)
+        except _oauth_tokens.OAuthError as exc:
+            raise SendEmailError(str(exc)) from exc
+        client.auth("XOAUTH2", lambda _challenge=None: _oauth_tokens.xoauth2_string(account["email"], access_token))
+        return
+
+    password = password_resolver(nickname, account)
+    client.login(account["email"], password)
+
+
 def deliver_message(
     request: SendEmailRequest,
     body: str,
@@ -159,11 +190,10 @@ def deliver_message(
     smtp_opener: Callable[[dict], object] = open_smtp_connection,
 ) -> None:
     account = account_resolver(request.nickname)
-    password = password_resolver(request.nickname, account)
     message = build_message(request, account, body)
 
     with smtp_opener(account) as client:
-        client.login(account["email"], password)
+        authenticate_smtp(client, request.nickname, account, password_resolver=password_resolver)
         client.send_message(message, from_addr=account["email"], to_addrs=request.to_addrs)
 
 

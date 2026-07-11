@@ -133,9 +133,29 @@
             }
           ]
         },
+        "accounts-setup-oauth": {
+          "id": "email-client.machine.accounts-setup-oauth",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "keyring",
+              "reason": "Stores Gmail OAuth refresh tokens and client secrets in the host credential store."
+            }
+          ]
+        },
         "accounts-update": {
           "id": "email-client.machine.accounts-update",
           "dependencies": []
+        },
+        "live-smoke": {
+          "id": "email-client.machine.live-smoke",
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "keyring",
+              "reason": "Reads account credentials from the host credential store during live checks."
+            }
+          ]
         },
         "mail-attachments": {
           "id": "email-client.machine.mail-attachments",

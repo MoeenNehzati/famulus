@@ -36,6 +36,7 @@ import email
 import email.message
 import email.utils
 import imaplib
+import importlib.util
 import json
 import re
 import subprocess
@@ -48,6 +49,15 @@ from officina.common import secret_store
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+
+try:
+    from . import _oauth_tokens
+except ImportError:
+    spec = importlib.util.spec_from_file_location("_oauth_tokens", SCRIPT_DIR / "_oauth_tokens.py")
+    _oauth_tokens = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(_oauth_tokens)
+
 SECRET_NAMESPACE = "email-client"
 
 FOLDER_ALIASES = {
@@ -98,11 +108,24 @@ def get_password(nickname: str, account: dict) -> str:
     die(f"no credential in host credential store for account={nickname}; checked keys: {', '.join(checked_keys)}")
 
 
+def authenticate_imap(conn: imaplib.IMAP4_SSL, nickname: str, account: dict) -> None:
+    if _oauth_tokens.is_gmail_oauth(account):
+        try:
+            access_token = _oauth_tokens.refresh_google_access_token(nickname, account)
+        except _oauth_tokens.OAuthError as exc:
+            die(str(exc))
+        auth_bytes = _oauth_tokens.xoauth2_bytes(account["email"], access_token)
+        conn.authenticate("XOAUTH2", lambda _challenge: auth_bytes)
+        return
+
+    password = get_password(nickname, account)
+    conn.login(account["email"], password)
+
+
 def connect(nickname: str) -> tuple[imaplib.IMAP4_SSL, dict]:
     account = resolve_account(nickname)
-    password = get_password(nickname, account)
     conn = imaplib.IMAP4_SSL(account["imap"]["host"], account["imap"]["port"])
-    conn.login(account["email"], password)
+    authenticate_imap(conn, nickname, account)
     return conn, account
 
 

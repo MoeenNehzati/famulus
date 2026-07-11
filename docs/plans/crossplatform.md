@@ -291,6 +291,8 @@ Targets:
 - `skills/email-client/_rtx/_email_accounts.py`
 - `skills/email-client/_rtx/_imap_gateway.py`
 - `skills/email-client/_rtx/_smtp_transport.py`
+- `skills/email-client/_rtx/_oauth_tokens.py`
+- `skills/email-client/_rtx/_email_smoke.py`
 - `src/officina/common/secret_store.py`
 
 Status:
@@ -310,13 +312,16 @@ What was done:
 - `imap_service`/`smtp_service` registry fields remain honored as secondary secret keys during migration, but through the shared secret-store namespace rather than raw host commands
 - `blueprint.yaml`, generated `SKILL.md`, `permissions.json`, and `references/blueprint/runtime_dependencies.json` now declare `keyring` for secret-using email-client interfaces and no longer declare `secret-tool`, `msmtp`, `base64`, or `file` for email-client send/read paths
 - focused tests cover secret-store writes/clears, IMAP canonical and secondary credential lookup, SMTP message construction, attachment display names, STARTTLS versus SMTP_SSL selection, and send/login behavior
+- Gmail OAuth is available through `accounts-setup-oauth`; app-password auth remains the default and the public read/send interfaces select the right auth path from account metadata
+- `live-smoke` provides explicit IMAP and SMTP-auth provider checks that do not send mail unless `--send-self` is requested
 
 Prevention:
 
 - keep skills behind `officina.common.secret_store` rather than importing `keyring` directly or shelling out to host credential commands
 - keep send-mail behavior behind the stable `send-email` dispatcher interface while using Python stdlib SMTP primitives internally
 - keep email-client enrolled in blueprint/runtime dependency checks so old host-specific binaries cannot return as undeclared assumptions
-- add OAuth as a separate future feature decision rather than weakening the current app-password behavior guarantee
+- keep OAuth enrollment as an explicit account-management action, not an implicit change to existing app-password accounts
+- keep live provider checks behind explicit smoke-test flags so verification does not accidentally send mail
 
 ### 3. Redesign launcher and automation surfaces that currently assume POSIX shell
 

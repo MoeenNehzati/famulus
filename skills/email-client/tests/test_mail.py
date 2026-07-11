@@ -125,6 +125,23 @@ def test_get_password_falls_back_to_legacy_imap_service(monkeypatch):
     ]
 
 
+def test_authenticate_imap_uses_xoauth2_for_gmail_oauth(monkeypatch):
+    calls = []
+
+    class FakeConn:
+        def authenticate(self, mechanism, authobject):
+            calls.append((mechanism, authobject(b"")))
+
+        def login(self, username, password):
+            calls.append(("login", username, password))
+
+    monkeypatch.setattr(mail._oauth_tokens, "refresh_google_access_token", lambda nickname, account: "access-token")
+
+    mail.authenticate_imap(FakeConn(), "work", {"auth": "gmail-oauth", "email": "me@example.com", "oauth": {}})
+
+    assert calls == [("XOAUTH2", b"user=me@example.com\x01auth=Bearer access-token\x01\x01")]
+
+
 # ── attachment helpers ──────────────────────────────────────────────────────
 
 def test_format_size_uses_human_units():
@@ -433,6 +450,26 @@ def test_smtp_password_falls_back_to_service_key_via_secret_store(monkeypatch):
         ("email-client", "work:smtp"),
         ("email-client", "email-client-work-smtp"),
     ]
+
+
+def test_authenticate_smtp_uses_xoauth2_for_gmail_oauth(monkeypatch):
+    calls = []
+
+    class FakeClient:
+        def auth(self, mechanism, authobject):
+            calls.append((mechanism, authobject()))
+
+        def login(self, username, password):
+            calls.append(("login", username, password))
+
+    smtp.authenticate_smtp(
+        FakeClient(),
+        "work",
+        {"auth": "gmail-oauth", "email": "me@example.com", "oauth": {}},
+        access_token_resolver=lambda nickname, account: "access-token",
+    )
+
+    assert calls == [("XOAUTH2", "user=me@example.com\x01auth=Bearer access-token\x01\x01")]
 
 
 def test_open_smtp_connection_uses_ssl_when_starttls_false(monkeypatch):

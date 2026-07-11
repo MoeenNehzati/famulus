@@ -52,8 +52,15 @@ def test_add_defaults_to_gmail_settings(config_dir):
     record = json.loads(result.stdout)
     assert record["imap"] == {"host": "imap.gmail.com", "port": 993}
     assert record["smtp"] == {"host": "smtp.gmail.com", "port": 465, "starttls": False}
+    assert record["auth"] == "app-password"
     assert record["imap_service"] == "email-client-work-imap"
     assert record["smtp_service"] == "email-client-work-smtp"
+
+
+def test_add_can_select_gmail_oauth(config_dir):
+    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com", "--auth", "gmail-oauth")
+    record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
+    assert record["auth"] == "gmail-oauth"
 
 
 def test_add_explicit_non_gmail_settings(config_dir):
@@ -76,11 +83,12 @@ def test_add_duplicate_nickname_fails(config_dir):
 
 def test_update_changes_fields(config_dir):
     run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
-    result = run(config_dir, "update", "--nickname", "work", "--display-name", "New Name")
+    result = run(config_dir, "update", "--nickname", "work", "--display-name", "New Name", "--auth", "gmail-oauth")
     assert result.returncode == 0
     record = json.loads(run(config_dir, "resolve", "--nickname", "work").stdout)
     assert record["display_name"] == "New Name"
     assert record["email"] == "me@example.com"  # untouched fields survive
+    assert record["auth"] == "gmail-oauth"
 
 
 def test_update_unknown_nickname_fails(config_dir):

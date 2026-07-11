@@ -13,9 +13,11 @@ Subcommands:
           [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P]
   remove  --nickname N [--purge-credentials]
   set-password --nickname N --purpose imap|smtp   (secret read from stdin)
+  setup-oauth --nickname N --client-config PATH    (Gmail OAuth loopback setup)
   resolve --nickname N                        -> JSON full record (for other scripts)
 """
 import argparse
+import importlib.util
 import json
 import os
 import sys
@@ -23,6 +25,14 @@ from pathlib import Path
 
 from officina.common import secret_store
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+
+try:
+    from . import _oauth_tokens
+except ImportError:
+    _oauth_spec = importlib.util.spec_from_file_location("_oauth_tokens", Path(__file__).resolve().parent / "_oauth_tokens.py")
+    _oauth_tokens = importlib.util.module_from_spec(_oauth_spec)
+    assert _oauth_spec.loader is not None
+    _oauth_spec.loader.exec_module(_oauth_tokens)
 
 # Overridable via env var so tests can point at a tmp_path instead of the
 # real ~/.config/email-client/accounts.json.
@@ -75,6 +85,7 @@ def clear_credentials(nickname: str, record: dict) -> None:
     for purpose in ("imap", "smtp"):
         for key in credential_keys(nickname, purpose, record):
             secret_store.clear(SECRET_NAMESPACE, key)
+    _oauth_tokens.clear_oauth_credentials(nickname)
 
 
 def cmd_list(args: argparse.Namespace) -> None:
@@ -102,14 +113,19 @@ def cmd_add(args: argparse.Namespace) -> None:
             "port": args.smtp_port or GMAIL_DEFAULTS["smtp"]["port"],
             "starttls": bool(args.starttls),
         },
+        "auth": args.auth,
         "imap_service": f"email-client-{args.nickname}-imap",
         "smtp_service": f"email-client-{args.nickname}-smtp",
     }
     data[args.nickname] = record
     save(data)
-    print(f"Added account '{args.nickname}'. Now set credentials:")
-    print(f"  echo -n '<app-password>' | dispatcher ... accounts set-password --nickname {args.nickname} --purpose imap")
-    print(f"  echo -n '<app-password>' | dispatcher ... accounts set-password --nickname {args.nickname} --purpose smtp")
+    print(f"Added account '{args.nickname}'.")
+    if args.auth == _oauth_tokens.AUTH_GMAIL_OAUTH:
+        print("Now run setup-oauth with a Google desktop OAuth client JSON file.")
+    else:
+        print("Now set credentials:")
+        print(f"  echo -n '<app-password>' | dispatcher ... accounts set-password --nickname {args.nickname} --purpose imap")
+        print(f"  echo -n '<app-password>' | dispatcher ... accounts set-password --nickname {args.nickname} --purpose smtp")
 
 
 def cmd_update(args: argparse.Namespace) -> None:
@@ -129,6 +145,8 @@ def cmd_update(args: argparse.Namespace) -> None:
         record["smtp"]["host"] = args.smtp_host
     if args.smtp_port:
         record["smtp"]["port"] = args.smtp_port
+    if args.auth:
+        record["auth"] = args.auth
     save(data)
     print(f"Updated account '{args.nickname}'")
 
@@ -165,6 +183,23 @@ def cmd_set_password(args: argparse.Namespace) -> None:
     print(f"Stored {args.purpose} credential for '{args.nickname}'")
 
 
+def cmd_setup_oauth(args: argparse.Namespace) -> None:
+    data = load()
+    if args.nickname not in data:
+        die(f"no account '{args.nickname}'; use 'add' first")
+    try:
+        _oauth_tokens.run_google_oauth_setup(
+            args.nickname,
+            data[args.nickname],
+            Path(args.client_config),
+            open_browser=not args.no_open_browser,
+        )
+    except (OSError, json.JSONDecodeError, secret_store.SecretStoreError, _oauth_tokens.OAuthError) as exc:
+        die(f"OAuth setup failed for '{args.nickname}': {exc}")
+    save(data)
+    print(f"Stored Gmail OAuth credentials for '{args.nickname}'")
+
+
 def cmd_resolve(args: argparse.Namespace) -> None:
     data = load()
     if args.nickname not in data:
@@ -194,6 +229,8 @@ def main(argv: list[str] | None = None) -> int:
     p_add.add_argument("--smtp-host")
     p_add.add_argument("--smtp-port", type=int)
     p_add.add_argument("--starttls", action="store_true")
+    p_add.add_argument("--auth", choices=(_oauth_tokens.AUTH_APP_PASSWORD, _oauth_tokens.AUTH_GMAIL_OAUTH),
+                       default=_oauth_tokens.AUTH_APP_PASSWORD)
     p_add.set_defaults(func=cmd_add)
 
     p_update = sub.add_parser("update")
@@ -204,6 +241,7 @@ def main(argv: list[str] | None = None) -> int:
     p_update.add_argument("--imap-port", type=int)
     p_update.add_argument("--smtp-host")
     p_update.add_argument("--smtp-port", type=int)
+    p_update.add_argument("--auth", choices=(_oauth_tokens.AUTH_APP_PASSWORD, _oauth_tokens.AUTH_GMAIL_OAUTH))
     p_update.set_defaults(func=cmd_update)
 
     p_remove = sub.add_parser("remove")
@@ -215,6 +253,12 @@ def main(argv: list[str] | None = None) -> int:
     p_setpw.add_argument("--nickname", required=True)
     p_setpw.add_argument("--purpose", required=True)
     p_setpw.set_defaults(func=cmd_set_password)
+
+    p_oauth = sub.add_parser("setup-oauth")
+    p_oauth.add_argument("--nickname", required=True)
+    p_oauth.add_argument("--client-config", required=True)
+    p_oauth.add_argument("--no-open-browser", action="store_true")
+    p_oauth.set_defaults(func=cmd_setup_oauth)
 
     p_resolve = sub.add_parser("resolve")
     p_resolve.add_argument("--nickname", required=True)

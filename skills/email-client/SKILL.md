@@ -20,16 +20,20 @@ Exported Interfaces: none
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `accounts-add` — Register a new account nickname. Gmail IMAP/SMTP settings are the default; pass explicit host/port flags for other providers. Follow with accounts-set-password for imap and smtp.
-  - `dispatcher --caller-skill email-client email-client.machine.accounts-add --nickname <nick> --email <addr> [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls]`
+- `accounts-add` — Register a new account nickname. Gmail IMAP/SMTP settings are the default; pass explicit host/port flags for other providers. App-password auth is the default; use --auth gmail-oauth for Gmail OAuth.
+  - `dispatcher --caller-skill email-client email-client.machine.accounts-add --nickname <nick> --email <addr> [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls] [--auth app-password|gmail-oauth]`
 - `accounts-list` — List registered account nicknames with their email/display name (no secrets).
   - `dispatcher --caller-skill email-client email-client.machine.accounts-list`
 - `accounts-remove` — Remove an account nickname from the registry; optionally purge its stored credentials too.
   - `dispatcher --caller-skill email-client email-client.machine.accounts-remove --nickname <nick> [--purge-credentials]`
 - `accounts-set-password` — Store the IMAP or SMTP credential for an account in the host credential store. The secret is read from stdin, never a CLI argument.
   - `dispatcher --caller-skill email-client email-client.machine.accounts-set-password --nickname <nick> --purpose imap|smtp`
+- `accounts-setup-oauth` — Complete Gmail OAuth setup for an account using a Google desktop OAuth client JSON file. Stores refresh token and client secret in the host credential store.
+  - `dispatcher --caller-skill email-client email-client.machine.accounts-setup-oauth --nickname <nick> --client-config <path> [--no-open-browser]`
 - `accounts-update` — Update fields on an existing account nickname.
-  - `dispatcher --caller-skill email-client email-client.machine.accounts-update --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P]`
+  - `dispatcher --caller-skill email-client email-client.machine.accounts-update --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--auth app-password|gmail-oauth]`
+- `live-smoke` — Run explicit live provider smoke checks for one account. --imap and --smtp-auth authenticate without sending; --send-self sends a test email to the account's own address.
+  - `dispatcher --caller-skill email-client email-client.machine.live-smoke -a <nickname> [--imap] [--smtp-auth] [--send-self] [--body <text>]`
 - `mail-attachments` — List attachment metadata for one or more emails as JSON. Returns one record per requested UID with attachment entries containing filename, content_type, size_bytes, size_human, and disposition.
   - `dispatcher --caller-skill email-client email-client.machine.mail-attachments -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...]`
 - `mail-folders` — List IMAP folders for an account (JSON).
@@ -136,17 +140,22 @@ straight to `send-email`, no extra lookup:
 - `--references <refs>` — override `References` explicitly (deep threads with multiple ancestors)
 - Subject should be `Re: <original subject>` to match the thread in Gmail
 
-## Managing accounts — `accounts-list` / `accounts-add` / `accounts-update` / `accounts-remove` / `accounts-set-password`
+## Managing accounts — `accounts-list` / `accounts-add` / `accounts-update` / `accounts-remove` / `accounts-set-password` / `accounts-setup-oauth`
 
 The registry lives at `~/.config/email-client/accounts.json` (outside the skill
-directory — it's per-machine and not source-controlled). Passwords are never stored
-there; they stay in the host credential store.
+directory — it's per-machine and not source-controlled). Passwords, OAuth client
+secrets, and OAuth refresh tokens are never stored there; they stay in the host
+credential store.
 
 ```bash
 accounts-list
 
 # Add a Gmail account (IMAP/SMTP settings default to Gmail's)
 accounts-add --nickname work --email me@company.com --display-name "Me at Work"
+
+# Add a Gmail account that authenticates with OAuth instead of app passwords
+accounts-add --nickname work-oauth --email me@company.com --auth gmail-oauth
+accounts-setup-oauth --nickname work-oauth --client-config /path/to/google-desktop-client.json
 
 # Add a non-Gmail account — pass explicit host/port
 accounts-add --nickname other --email me@example.com \
@@ -165,7 +174,19 @@ Each account gets its own secret keys (`<nickname>:imap` and `<nickname>:smtp`) 
 credentials never collide across accounts. Existing `imap_service`/`smtp_service`
 registry fields are still honored as secondary secret keys during migration.
 
+Gmail OAuth uses the `https://mail.google.com/` scope because Gmail's IMAP/SMTP
+XOAUTH2 mechanism requires that full-mail scope. `accounts-setup-oauth` uses a
+local loopback browser flow and stores the resulting refresh token through
+`officina.common.secret_store`.
+
+## Live smoke checks — `live-smoke`
+
+Use `live-smoke -a <nickname> --imap --smtp-auth` to verify that the configured
+account can authenticate to both providers without sending mail. `--send-self`
+is the only smoke mode that sends a message, and it sends to the account's own
+address.
+
 ## Config Files
 
 - Account registry: `~/.config/email-client/accounts.json`
-- App passwords stored in the host credential store via `officina.common.secret_store`
+- App passwords, OAuth client secrets, and OAuth refresh tokens stored in the host credential store via `officina.common.secret_store`
