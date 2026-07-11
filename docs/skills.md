@@ -57,6 +57,7 @@ The graph gives a visual overview of the live skill set. The sections below are 
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings
 - `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine
 - `refactor-skills` — Audit and refactor existing skills against local conventions
+- `skill-health` — Reading, invalidating, migrating, or recording the local health state of Famulus skills
 - `skill-maker` — Author new skills that conform to the repo's skill-writing guideline
 - `update-skill-guidelines` — Change the skill-writing standard and its mechanical checks in lockstep
 
