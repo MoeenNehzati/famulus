@@ -353,6 +353,7 @@ Local LLM interface Markdown beyond `SKILL.md` lives under
 `_rtx/`: use `llm_interfaces/` for local LLM-facing instruction surfaces, and
 use `references/` for supporting behavior sources such as checklists, examples,
 parser notes, templates, or policy material loaded by those interfaces.
+For decomposition guidance, see `references/llm-interface-design.md`.
 
 Use `binding`, not `invocation`, because LLM interfaces are descriptive routing
 surfaces rather than dispatcher-executed programs. `invocation` is forbidden under
