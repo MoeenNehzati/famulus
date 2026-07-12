@@ -355,7 +355,7 @@ interfaces:
       description: "Summarize the collected records for a handoff note."
       binding:
         kind: markdown_file
-        path: interfaces/summarize.md
+        path: llm_interfaces/summarize.md
       direct_io:
         reads:
           - medium: prompt
@@ -497,7 +497,8 @@ interfaces:
 #
 # 2. markdown_file
 #    - path: required path relative to the directory containing blueprint.yaml
-#    - use when the prompt/interface definition lives inside this repo
+#    - use llm_interfaces/<name>.md when the LLM interface instruction surface
+#      lives inside this repo
 #
 # 3. uri
 #    - uri: required absolute URI

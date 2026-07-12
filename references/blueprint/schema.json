@@ -368,7 +368,7 @@
         "file": {
           "type": "string",
           "minLength": 1,
-          "pattern": "^(?!/).+"
+          "pattern": "^llm_interfaces/.+\\.md$"
         },
         "allow_all_skills": {
           "type": "boolean",
@@ -443,7 +443,7 @@
             "path": {
               "type": "string",
               "minLength": 1,
-              "pattern": "^(?!/).+"
+              "pattern": "^llm_interfaces/.+\\.md$"
             }
           }
         },

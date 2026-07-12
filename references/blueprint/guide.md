@@ -138,7 +138,7 @@ interfaces:
       description: "Summarize the collected records."
       binding:
         kind: markdown_file
-        path: interfaces/summarize.md
+        path: llm_interfaces/summarize.md
 ```
 
 ---
@@ -465,13 +465,13 @@ Each llm interface typically owns:
 LLM interfaces are documented and routed by skill logic. The dispatcher never
 executes them.
 
-The local Markdown form is a relative path from the directory containing
-`blueprint.yaml`:
+The local Markdown form is a relative path under `llm_interfaces/`, the
+skill-local directory for LLM interface instructions:
 
 ```yaml
 binding:
   kind: markdown_file
-  path: interfaces/summarize.md
+  path: llm_interfaces/summarize.md
 ```
 
 The default skill-file form explicitly names `SKILL.md`, also relative to the

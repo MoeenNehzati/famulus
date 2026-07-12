@@ -83,7 +83,8 @@ specification.
   - `interfaces.machine.<name>` defines a dispatcher-callable machine
     interface.
   - `interfaces.llm.<name>` defines an LLM-facing interface documented through
-    a separate file, never executed through the dispatcher.
+    `SKILL.md` or a local `llm_interfaces/` Markdown file, never executed
+    through the dispatcher.
     Every blueprint must include `interfaces.llm.default`, backed by
     `SKILL.md`.
   - every interface declares `version`; the skill version is
@@ -341,11 +342,17 @@ Typical LLM bindings:
 
 - `kind: skill_file` for the mandatory `interfaces.llm.default` surface,
   with `path: SKILL.md`
-- `kind: markdown_file` with `path: interfaces/summarize.md`
+- `kind: markdown_file` with `path: llm_interfaces/summarize.md`
 - `kind: uri` with `uri: https://example.com/skills/summarize.md`
 
 All local binding paths are relative to the directory containing
 `blueprint.yaml`.
+
+Local LLM interface Markdown beyond `SKILL.md` lives under
+`skills/<skill-name>/llm_interfaces/`. It is the Markdown counterpart to
+`_rtx/`: use `llm_interfaces/` for local LLM-facing instruction surfaces, and
+use `references/` for supporting behavior sources such as checklists, examples,
+parser notes, templates, or policy material loaded by those interfaces.
 
 Use `binding`, not `invocation`, because LLM interfaces are descriptive routing
 surfaces rather than dispatcher-executed programs. `invocation` is forbidden under
@@ -363,12 +370,12 @@ interfaces:
         path: SKILL.md
 ```
 
-For migration, `file: interfaces/name.md` may be accepted as a shorthand for:
+For migration, `file: llm_interfaces/name.md` may be accepted as a shorthand for:
 
 ```yaml
 binding:
   kind: markdown_file
-  path: interfaces/name.md
+  path: llm_interfaces/name.md
 ```
 
 **Dispatcher role**

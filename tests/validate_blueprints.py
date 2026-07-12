@@ -944,6 +944,61 @@ def test_llm_interface_uses_interfaces_pass_schema() -> None:
     assert errors == []
 
 
+def test_llm_markdown_file_binding_must_live_under_llm_interfaces() -> None:
+    schema = _mod._load_schema()
+    assert schema is not None
+    blueprint = {
+        "category": "workflow-general-assistant",
+        **_taxonomy(),
+        "interfaces": {
+            "llm": {
+                **_default_llm(),
+                "summarize": {
+                    "version": 1,
+                    "description": "Summarize records.",
+                    "binding": {"kind": "markdown_file", "path": "interfaces/summarize.md"},
+                    "behavior_sources": [],
+                    **_empty_direct_io(),
+                    **_empty_ownership(),
+                },
+            }
+        },
+    }
+
+    errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
+
+    assert any("interfaces.llm.summarize.binding" in error for error in errors)
+
+
+def test_llm_markdown_file_binding_accepts_llm_interfaces_path() -> None:
+    schema = _mod._load_schema()
+    assert schema is not None
+    blueprint = {
+        "category": "workflow-general-assistant",
+        **_taxonomy(),
+        "interfaces": {
+            "llm": {
+                **_default_llm(),
+                "summarize": {
+                    "version": 1,
+                    "description": "Summarize records.",
+                    "binding": {
+                        "kind": "markdown_file",
+                        "path": "llm_interfaces/summarize.md",
+                    },
+                    "behavior_sources": [],
+                    **_empty_direct_io(),
+                    **_empty_ownership(),
+                },
+            }
+        },
+    }
+
+    errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
+
+    assert errors == []
+
+
 def test_machine_uses_interfaces_rejects_llm_targets_by_schema() -> None:
     schema = _mod._load_schema()
     assert schema is not None

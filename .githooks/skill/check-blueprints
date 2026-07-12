@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Guideline §1 and §LLM interfaces — blueprint.yaml owns interface definitions;
+# local LLM interface Markdown bindings must live under llm_interfaces/.
+set -uo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+python3 "$repo_root/skills/skill-maker/validators/blueprints.py"
