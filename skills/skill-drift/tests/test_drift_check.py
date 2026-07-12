@@ -106,6 +106,25 @@ def matching_record(repo: Path, skill_name: str = "demo-skill") -> dict[str, obj
     )
 
 
+def write_validator_runner(repo: Path, *, passing: bool = True) -> None:
+    exit_code = 0 if passing else 1
+    write(
+        repo / "validators" / "runner.py",
+        "from __future__ import annotations\n"
+        "import sys\n"
+        f"print('validator exit {exit_code}')\n"
+        f"raise SystemExit({exit_code})\n",
+    )
+
+
+def write_skill_test(repo: Path, skill_name: str = "demo-skill", *, passing: bool = True) -> None:
+    assertion = "assert True" if passing else "assert False"
+    write(
+        repo / "skills" / skill_name / "tests" / "test_health.py",
+        f"def test_health() -> None:\n    {assertion}\n",
+    )
+
+
 def concern_kinds(report: object) -> set[str]:
     return {concern.kind for concern in report.concerns}
 
@@ -256,7 +275,84 @@ def test_status_json_reports_stale_without_writing(tmp_path: Path, capsys) -> No
     payload = json.loads(capsys.readouterr().out)
     assert payload["summary"] == {"audit-current": 0, "audit-stale": 1}
     assert payload["skills"][0]["derived_status"] == "audit-stale"
+    assert "overall_status" not in payload["skills"][0]
     assert not (tmp_path / "skills" / "demo-skill" / ".last_audit.json").exists()
+
+
+def test_status_with_test_validate_reports_overall_ok_when_audit_and_health_pass(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    skill = make_skill(tmp_path)
+    write_validator_runner(tmp_path, passing=True)
+    write_skill_test(tmp_path, passing=True)
+    write_json(skill / ".last_audit.json", matching_record(tmp_path))
+
+    exit_code = checker.main(
+        ["status", "demo-skill", "--json", "--with-test-validate", "--repo-root", str(tmp_path)]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"] == {
+        "audit-current": 1,
+        "audit-stale": 0,
+        "health-passed": 1,
+        "health-failed": 0,
+        "needs-attention": 0,
+        "ok": 1,
+    }
+    report = payload["skills"][0]
+    assert report["derived_status"] == "audit-current"
+    assert report["health_status"] == "health-passed"
+    assert report["overall_status"] == "ok"
+
+
+def test_status_with_test_validate_ors_failing_tests_with_current_audit(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    skill = make_skill(tmp_path)
+    write_validator_runner(tmp_path, passing=True)
+    write_skill_test(tmp_path, passing=False)
+    write_json(skill / ".last_audit.json", matching_record(tmp_path))
+
+    exit_code = checker.main(
+        ["status", "demo-skill", "--json", "--with-test-validate", "--repo-root", str(tmp_path)]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    report = payload["skills"][0]
+    assert report["derived_status"] == "audit-current"
+    assert report["health_status"] == "health-failed"
+    assert report["overall_status"] == "needs-attention"
+    assert payload["summary"]["needs-attention"] == 1
+    failed = [check for check in report["health_checks"] if not check["passed"]]
+    assert [check["name"] for check in failed] == ["skill-tests"]
+
+
+def test_status_with_test_validate_ors_failing_validators_with_current_audit(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    skill = make_skill(tmp_path)
+    write_validator_runner(tmp_path, passing=False)
+    write_skill_test(tmp_path, passing=True)
+    write_json(skill / ".last_audit.json", matching_record(tmp_path))
+
+    exit_code = checker.main(
+        ["status", "demo-skill", "--json", "--with-test-validate", "--repo-root", str(tmp_path)]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    report = payload["skills"][0]
+    assert report["derived_status"] == "audit-current"
+    assert report["health_status"] == "health-failed"
+    assert report["overall_status"] == "needs-attention"
+    failed = [check for check in report["health_checks"] if not check["passed"]]
+    assert [check["name"] for check in failed] == ["validators"]
 
 
 def test_status_accepts_exact_skill_root_as_target(tmp_path: Path, capsys) -> None:

@@ -31,7 +31,7 @@ interfaces:
   machine:
     drift-status:
       description: Read derived audit status for selected installed skill names, exact skill root paths, or all observed installed skills.
-      usage: "status [target ...] [--json]"
+      usage: "status [target ...] [--json] [--with-test-validate]"
       allow_all_skills: true
       allowed_callers: []
       patterns:
@@ -39,6 +39,7 @@ interfaces:
           allow_stdin: false
           allowed_flags:
             - --json
+            - --with-test-validate
             - --all
             - --skill-root
       runtime:

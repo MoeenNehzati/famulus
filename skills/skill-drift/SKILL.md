@@ -25,7 +25,7 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `compute-hashes` — Compute current audit hashes for selected installed skill names, exact skill root paths, or all observed blueprint-backed skills.
   - `dispatcher --caller-skill skill-drift skill-drift.machine.compute-hashes compute-hashes [target ...] [--json]`
 - `drift-status` — Read derived audit status for selected installed skill names, exact skill root paths, or all observed installed skills.
-  - `dispatcher --caller-skill skill-drift skill-drift.machine.drift-status status [target ...] [--json]`
+  - `dispatcher --caller-skill skill-drift skill-drift.machine.drift-status status [target ...] [--json] [--with-test-validate]`
 
 Owner-Facing LLM Interfaces:
 
@@ -38,8 +38,24 @@ Use the exported hash-computation machine interface when another skill needs the
 current audit hashes without reading or comparing audit records.
 
 This skill compares the hashes recorded in an installed skill's local audit
-record with hashes computed from the currently installed skill files. With no
-target skill names, the checker scans every supported assistant host's
+record with hashes computed from the currently installed skill files. This is
+the audit signal: it answers whether the existing certification record still
+matches the certified artifact and audit standards.
+
+The optional `--with-test-validate` flag adds a separate health signal by
+running repo validators and each target skill's tests when those check surfaces
+are available. Health failures are not audit drift: they mean the current repo
+does not pass checks now. When health checks are requested, `overall_status`
+uses the combined attention rule:
+
+```text
+needs-attention = audit-stale OR health-failed
+```
+
+Keep these signals separate when reporting results. Do not say a skill is
+audit-stale merely because tests or validators failed.
+
+With no target skill names, the checker scans every supported assistant host's
 installed skill roots and reports every discovered skill. The default status
 output is a Markdown table and is saved under `_build/<date-time>.md`; `--json`
 keeps the machine-readable output on stdout. Report the generated result

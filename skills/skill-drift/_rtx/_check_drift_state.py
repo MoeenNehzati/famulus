@@ -4,11 +4,23 @@
 The checker compares installed skills against their local audit records. JSON
 mode writes only to stdout; the default human-readable mode also saves a
 timestamped Markdown report under the skill's ignored ``_build`` directory.
+
+The audit signal and health signal are intentionally separate:
+
+- audit status answers whether the readable audit record still matches the
+  certified artifact and audit standards;
+- optional health checks answer whether repo validators and skill tests pass
+  right now.
+
+When health checks are requested, ``overall_status`` is the OR of those two
+conditions: a stale audit or a failed health check both require attention. A
+health failure does not rewrite or reinterpret the audit record as stale.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -58,6 +70,32 @@ class Concern:
 
 
 @dataclass(frozen=True)
+class HealthCheck:
+    name: str
+    passed: bool
+    command: list[str]
+    returncode: int | None = None
+    skipped: bool = False
+    message: str | None = None
+    output: str | None = None
+
+    def as_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "name": self.name,
+            "passed": self.passed,
+            "skipped": self.skipped,
+            "command": self.command,
+        }
+        if self.returncode is not None:
+            payload["returncode"] = self.returncode
+        if self.message is not None:
+            payload["message"] = self.message
+        if self.output:
+            payload["output"] = self.output
+        return payload
+
+
+@dataclass(frozen=True)
 class SkillDriftReport:
     skill: str
     derived_status: str
@@ -69,9 +107,22 @@ class SkillDriftReport:
     package_root: Path
     skills_root: Path
     timestamp: str | None = None
+    health_checks: list[HealthCheck] | None = None
+
+    @property
+    def health_status(self) -> str:
+        if self.health_checks is None:
+            return "not-run"
+        return "health-passed" if all(check.passed for check in self.health_checks) else "health-failed"
+
+    @property
+    def overall_status(self) -> str:
+        if self.derived_status == "audit-stale" or self.health_status == "health-failed":
+            return "needs-attention"
+        return "ok"
 
     def as_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "skill": self.skill,
             "source": self.source,
             "derived_status": self.derived_status,
@@ -83,6 +134,11 @@ class SkillDriftReport:
             "recorded_hashes": self.recorded_hashes,
             "current_hashes": self.current_hashes,
         }
+        if self.health_checks is not None:
+            payload["health_status"] = self.health_status
+            payload["overall_status"] = self.overall_status
+            payload["health_checks"] = [check.as_payload() for check in self.health_checks]
+        return payload
 
 
 @dataclass(frozen=True)
@@ -335,7 +391,83 @@ def compare_hashes(recorded_hashes: dict[str, Any] | None, current_hashes: dict[
     return concerns
 
 
-def check_skill(source: SkillSource, skill_name: str) -> SkillDriftReport:
+def _output_tail(stdout: str, stderr: str, *, limit: int = 4000) -> str:
+    combined = "\n".join(part for part in (stdout.strip(), stderr.strip()) if part)
+    if len(combined) <= limit:
+        return combined
+    return combined[-limit:]
+
+
+def _run_health_command(name: str, command: list[str], cwd: Path) -> HealthCheck:
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
+        check=False,
+    )
+    return HealthCheck(
+        name=name,
+        passed=result.returncode == 0,
+        command=command,
+        returncode=result.returncode,
+        output=_output_tail(result.stdout, result.stderr),
+    )
+
+
+def run_validator_health(source: SkillSource) -> HealthCheck:
+    """Run repo-level validators as a health signal, not as audit evidence."""
+
+    runner = source.package_root / "validators" / "runner.py"
+    command = [sys.executable, runner.as_posix()]
+    if not runner.is_file():
+        return HealthCheck(
+            name="validators",
+            passed=True,
+            skipped=True,
+            command=command,
+            message=f"{display_path(runner, source.package_root)} is not available",
+        )
+    return _run_health_command("validators", command, source.package_root)
+
+
+def run_skill_test_health(source: SkillSource, skill_name: str) -> HealthCheck:
+    """Run a skill's own tests as a health signal, not as audit evidence."""
+
+    tests_dir = source.skills_root / skill_name / "tests"
+    command = [sys.executable, "-m", "pytest", "-q", tests_dir.as_posix()]
+    if not tests_dir.is_dir():
+        return HealthCheck(
+            name="skill-tests",
+            passed=True,
+            skipped=True,
+            command=command,
+            message=f"{display_path(tests_dir, source.package_root)} is not available",
+        )
+    return _run_health_command("skill-tests", command, source.package_root)
+
+
+def health_checks_for_skill(
+    source: SkillSource,
+    skill_name: str,
+    *,
+    validator_health: HealthCheck | None = None,
+) -> list[HealthCheck]:
+    return [
+        validator_health if validator_health is not None else run_validator_health(source),
+        run_skill_test_health(source, skill_name),
+    ]
+
+
+def check_skill(
+    source: SkillSource,
+    skill_name: str,
+    *,
+    with_test_validate: bool = False,
+    validator_health: HealthCheck | None = None,
+) -> SkillDriftReport:
     skill_dir = skill_dir_for(source.skills_root, skill_name)
     record_path = skill_dir / AUDIT_RECORD_NAME
     record, read_concern = read_record(record_path)
@@ -371,6 +503,11 @@ def check_skill(source: SkillSource, skill_name: str) -> SkillDriftReport:
         package_root=source.package_root,
         skills_root=source.skills_root,
         timestamp=timestamp,
+        health_checks=(
+            health_checks_for_skill(source, skill_name, validator_health=validator_health)
+            if with_test_validate
+            else None
+        ),
     )
 
 
@@ -378,6 +515,12 @@ def build_payload(reports: list[SkillDriftReport]) -> dict[str, Any]:
     summary = {"audit-current": 0, "audit-stale": 0}
     for report in reports:
         summary[report.derived_status] += 1
+    if any(report.health_checks is not None for report in reports):
+        summary.update({"health-passed": 0, "health-failed": 0, "needs-attention": 0, "ok": 0})
+        for report in reports:
+            if report.health_status in {"health-passed", "health-failed"}:
+                summary[report.health_status] += 1
+            summary[report.overall_status] += 1
     return {
         "schema_version": OUTPUT_SCHEMA_VERSION,
         "checked_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -396,30 +539,58 @@ def build_hash_payload(reports: list[SkillHashReport]) -> dict[str, Any]:
 
 def render_text(reports: list[SkillDriftReport]) -> str:
     payload = build_payload(reports)
+    include_health = any(report.health_checks is not None for report in reports)
     lines = [
         "# Skill Drift Report",
         "",
         f"Observed skills: {len(reports)}",
         f"Audit current: {payload['summary']['audit-current']}",
         f"Audit stale: {payload['summary']['audit-stale']}",
-        "",
-        "| Source | Skill | Audit status | Record | Concerns |",
-        "|---|---|---|---|---|",
     ]
+    if include_health:
+        lines.extend(
+            [
+                f"Health passed: {payload['summary']['health-passed']}",
+                f"Health failed: {payload['summary']['health-failed']}",
+                f"Needs attention: {payload['summary']['needs-attention']}",
+                f"OK: {payload['summary']['ok']}",
+            ]
+        )
+    lines.append("")
+    if include_health:
+        lines.extend(
+            [
+                "| Source | Skill | Audit status | Health status | Overall status | Record | Concerns |",
+                "|---|---|---|---|---|---|---|",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "| Source | Skill | Audit status | Record | Concerns |",
+                "|---|---|---|---|---|",
+            ]
+        )
     for report in reports:
-        lines.append(
-            "| "
-            + " | ".join(
+        cells = [
+            markdown_cell(report.source),
+            markdown_cell(report.skill),
+            markdown_cell(report.derived_status),
+        ]
+        if include_health:
+            cells.extend(
                 [
-                    markdown_cell(report.source),
-                    markdown_cell(report.skill),
-                    markdown_cell(report.derived_status),
-                    markdown_cell(display_path(report.record_path, report.package_root)),
-                    markdown_cell(render_concerns_cell(report)),
+                    markdown_cell(report.health_status),
+                    markdown_cell(report.overall_status),
                 ]
             )
-            + " |"
+        cells.extend(
+            [
+                markdown_cell(display_path(report.record_path, report.package_root)),
+                markdown_cell(render_concerns_cell(report)),
+            ]
         )
+        lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines) + "\n"
 
 
@@ -466,12 +637,18 @@ def markdown_cell(value: str) -> str:
 
 
 def render_concerns_cell(report: SkillDriftReport) -> str:
-    if not report.concerns:
-        return "none"
     rendered: list[str] = []
-    for concern in report.concerns:
-        detail = f" [{concern.key}]" if concern.key else ""
-        rendered.append(f"{concern.kind}{detail}: {concern.message}")
+    if report.concerns:
+        for concern in report.concerns:
+            detail = f" [{concern.key}]" if concern.key else ""
+            rendered.append(f"{concern.kind}{detail}: {concern.message}")
+    if report.health_checks is not None:
+        for check in report.health_checks:
+            if check.passed:
+                continue
+            rendered.append(f"health-check-failed [{check.name}]: returncode {check.returncode}")
+    if not rendered:
+        return "none"
     return "<br>".join(rendered)
 
 
@@ -494,6 +671,13 @@ def render_one_text(report: SkillDriftReport) -> str:
             lines.append(f"  - {concern.kind}{detail}: {concern.message}")
     else:
         lines.append("  none")
+    if report.health_checks is not None:
+        lines.extend(["", "Health:"])
+        lines.append(f"  status: {report.health_status}")
+        lines.append(f"  overall: {report.overall_status}")
+        for check in report.health_checks:
+            detail = "skipped" if check.skipped else f"returncode {check.returncode}"
+            lines.append(f"  - {check.name}: {'passed' if check.passed else 'failed'} ({detail})")
     lines.extend(["", "Hashes:"])
     for key, value in sorted(flatten_hashes(report.current_hashes).items()):
         recorded_value = flatten_hashes(report.recorded_hashes or {}).get(key)
@@ -515,6 +699,11 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("skills", nargs="*")
     status.add_argument("--all", action="store_true", help="Check all observed skills.")
     status.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    status.add_argument(
+        "--with-test-validate",
+        action="store_true",
+        help="Also run repo validators and each target skill's tests, then OR failures with audit staleness.",
+    )
     status.add_argument("--repo-root", type=Path, default=REPO_ROOT, help=argparse.SUPPRESS)
     status.add_argument("--skill-root", type=Path, help="Check an exact installed skill root.")
     status.add_argument("--skills-root", type=Path, help=argparse.SUPPRESS)
@@ -535,7 +724,7 @@ def run_status(args: argparse.Namespace) -> int:
     if not sources:
         raise DriftCheckError("no installed skill roots were found")
 
-    reports = reports_for_sources(sources, list(args.skills))
+    reports = reports_for_sources(sources, list(args.skills), with_test_validate=args.with_test_validate)
     if args.json:
         print(json.dumps(build_payload(reports), indent=2, sort_keys=True))
     else:
@@ -571,25 +760,63 @@ def requested_skill_sources(args: argparse.Namespace) -> list[SkillSource]:
     return observed_skill_sources()
 
 
-def reports_for_sources(sources: list[SkillSource], requested_skills: list[str]) -> list[SkillDriftReport]:
+def reports_for_sources(
+    sources: list[SkillSource],
+    requested_skills: list[str],
+    *,
+    with_test_validate: bool = False,
+) -> list[SkillDriftReport]:
     reports: list[SkillDriftReport] = []
     missing: list[str] = []
+    validator_cache: dict[Path, HealthCheck] = {}
+
+    def validator_health_for(source: SkillSource) -> HealthCheck | None:
+        if not with_test_validate:
+            return None
+        key = source.package_root
+        if key not in validator_cache:
+            validator_cache[key] = run_validator_health(source)
+        return validator_cache[key]
+
     if requested_skills:
         for requested in requested_skills:
             if is_path_like_target(requested):
                 skill_root = Path(requested).expanduser().resolve()
                 source = source_for_skill_root(skill_root)
-                reports.append(check_skill(source, skill_root.name))
+                reports.append(
+                    check_skill(
+                        source,
+                        skill_root.name,
+                        with_test_validate=with_test_validate,
+                        validator_health=validator_health_for(source),
+                    )
+                )
                 continue
             skill_name = requested
             matches = [source for source in sources if (source.skills_root / skill_name / "SKILL.md").is_file()]
             if not matches:
                 missing.append(skill_name)
                 continue
-            reports.extend(check_skill(source, skill_name) for source in matches)
+            reports.extend(
+                check_skill(
+                    source,
+                    skill_name,
+                    with_test_validate=with_test_validate,
+                    validator_health=validator_health_for(source),
+                )
+                for source in matches
+            )
     else:
         for source in sources:
-            reports.extend(check_skill(source, skill_name) for skill_name in observed_skill_names(source.skills_root))
+            reports.extend(
+                check_skill(
+                    source,
+                    skill_name,
+                    with_test_validate=with_test_validate,
+                    validator_health=validator_health_for(source),
+                )
+                for skill_name in observed_skill_names(source.skills_root)
+            )
     if missing:
         raise DriftCheckError(f"skill(s) not found in installed skill roots: {', '.join(missing)}")
     return reports
