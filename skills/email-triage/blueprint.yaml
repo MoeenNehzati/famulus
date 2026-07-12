@@ -1,150 +1,201 @@
-# Canonical contract for email-triage.
-# This file was migrated from legacy skill metadata.
-# Tighten the placeholder machine interfaces as each runtime contract becomes clearer.
-
 category: productivity-general-assistant
-# Bump this major version whenever the exported contract changes in a
-# breaking way for dependent skills.
-interface_version: 1
-
+role: productivity
+kind: triager
 cross_platform: false
-
-depends_on:
-  email-client:
-    major_version: 3
-  list-manager:
-    major_version: 1
-
 suggested_permissions:
   bash:
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_envelope_gate.py:Interface"]
-      reason: "Filters email-client mail-list JSON to strictly-after-watermark envelopes."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_watermark_floor.py:Interface"]
-      reason: "Suggested approval for the email triage runtime."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_watermark_writer.py:Interface"]
-      reason: "Suggested approval for the email triage runtime."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_decision_sink.py:Interface"]
-      reason: "Suggested approval for the email triage runtime."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_log_compactor.py:Interface"]
-      reason: "Suggested approval for the email triage runtime."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_failure_sentinel.py:Interface"]
-      reason: "Records a failed triage run so update-watermark refuses to advance\
-        \ and the scheduled health check can report it."
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_envelope_gate.py:Interface
+    reason: Filters email-client mail-list JSON to strictly-after-watermark envelopes.
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_watermark_floor.py:Interface
+    reason: Suggested approval for the email triage runtime.
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_watermark_writer.py:Interface
+    reason: Suggested approval for the email triage runtime.
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_decision_sink.py:Interface
+    reason: Suggested approval for the email triage runtime.
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_log_compactor.py:Interface
+    reason: Suggested approval for the email triage runtime.
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_failure_sentinel.py:Interface
+    reason: Records a failed triage run so update-watermark refuses to advance and
+      the scheduled health check can report it.
   network: []
-
 skill_interface:
   inputs:
-    - "User requests that match the SKILL.md description for this skill."
+  - User requests that match the SKILL.md description for this skill.
   outputs:
-    - "Responses, artifacts, or side effects described by this skill's workflow."
+  - Responses, artifacts, or side effects described by this skill's workflow.
   side_effects:
-    - "May invoke local scripts or dependencies as described in SKILL.md."
-
+  - May invoke local scripts or dependencies as described in SKILL.md.
 interfaces:
   machine:
     scripts-filter-envelopes:
+      version: 1
       description: Filter JSON envelopes (from email-client's mail-list, piped via
         stdin) to those strictly after the triage watermark.
       usage: -a <account>   < envelopes.json
       patterns:
-        - name: owner
-          allow_extra_positionals: true
-          allow_stdin: true
+      - name: owner
+        allow_extra_positionals: true
+        allow_stdin: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_envelope_gate.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_envelope_gate.py
+      - _rtx/_envelope_gate.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     scripts-get-cutoff:
+      version: 1
       description: Return the cutoff date for the current triage run, with a fallback
         if no watermark exists.
       usage: ''
       patterns:
-        - name: owner
-          allow_extra_positionals: true
+      - name: owner
+        allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_watermark_floor.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_watermark_floor.py
+      - _rtx/_watermark_floor.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     scripts-log-decision:
+      version: 1
       description: Append a triage classification decision for one email to triage.log.
       usage: <account> <id> <from> <subject> <DECISION> <reason>
       patterns:
-        - name: owner
-          allow_extra_positionals: true
+      - name: owner
+        allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_decision_sink.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_decision_sink.py
+      - _rtx/_decision_sink.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     scripts-prune-log:
+      version: 1
       description: Drop triage.log entries older than 30 days and print a one-line
         summary.
       usage: ''
       patterns:
-        - name: owner
-          allow_extra_positionals: true
+      - name: owner
+        allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_log_compactor.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_log_compactor.py
+      - _rtx/_log_compactor.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     scripts-update-watermark:
+      version: 1
       description: Advance the triage watermark to the current timestamp. Refuses
         if scripts-mark-failure was called earlier in this run.
       usage: ''
       patterns:
-        - name: owner
-          allow_extra_positionals: true
+      - name: owner
+        allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_watermark_writer.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_watermark_writer.py
+      - _rtx/_watermark_writer.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     scripts-mark-failure:
+      version: 1
       description: Record that this triage run failed, so update-watermark refuses
         to advance and the scheduled health check reports it.
       usage: <reason>
       patterns:
-        - name: owner
-          allow_extra_positionals: true
+      - name: owner
+        allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_failure_sentinel.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_failure_sentinel.py
+      - _rtx/_failure_sentinel.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
   llm:
     default:
+      version: 1
       description: Primary LLM-facing skill instructions.
       binding:
         kind: skill_file
         path: SKILL.md
       directly_reads:
-        - SKILL.md
+      - SKILL.md
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
+      allow_all_skills: true
+      uses_interfaces:
+      - interface: email-client.llm.default
+        version: 3
+      - interface: list-manager.llm.default
+        version: 1

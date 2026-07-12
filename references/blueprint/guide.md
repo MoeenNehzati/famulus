@@ -2,8 +2,9 @@
 
 ## Overview
 
-A **blueprint** defines the contract of a skill: what it depends on, what
-interfaces it exports, and how those interfaces are validated and executed.
+A **blueprint** defines the contract of a skill: what interfaces it exposes,
+which version-pinned interfaces those interfaces use, and how the interfaces
+are validated and executed.
 
 Blueprints serve two purposes:
 1. **Document** the skill's API and constraints
@@ -20,8 +21,9 @@ Validation is split into two independent layers.
 
 Validates individual blueprint files in isolation:
 
-- Is `interface_version` a positive integer?
+- Does every interface declare a positive integer `version`?
 - Is `category` a known taxonomy node?
+- Are `role` and `kind` known documentation taxonomy values?
 - Does `interfaces.machine` / `interfaces.llm` have the right shape?
 - Are interface names valid?
 - Are patterns well-formed?
@@ -33,10 +35,10 @@ Validates individual blueprint files in isolation:
 
 Validates constraints that span multiple blueprints:
 
-1. No skill depends on itself
-2. `major_version` matches the dependency's `interface_version`
-3. Exported canonical interface names exist
-4. Restricted interfaces are only exported to allowed callers
+1. Version-pinned `uses_interfaces` targets exist
+2. Pinned versions match target interface versions
+3. LLM interfaces only use same-skill machine interfaces or LLM interfaces
+4. Machine interfaces only use machine interfaces
 5. Duplicate YAML keys are rejected before they can mask interfaces
 
 ---
@@ -94,14 +96,9 @@ Representative structure:
 
 ```yaml
 category: research-assistant
-interface_version: 1
+role: research-writing
+kind: reviewer
 cross_platform: true
-
-depends_on:
-  list-manager:
-    major_version: 1
-    exports:
-      - list-manager.machine.read-list
 
 skill_interface:
   inputs:
@@ -114,6 +111,7 @@ skill_interface:
 interfaces:
   machine:
     read-data:
+      version: 1
       description: "Read an input file."
       usage: "<file>"
       allow_all_skills: true
@@ -133,6 +131,7 @@ interfaces:
 
   llm:
     default:
+      version: 1
       description: "Primary LLM-facing skill instructions."
       binding:
         kind: skill_file
@@ -143,6 +142,7 @@ interfaces:
       directly_writes: []
 
     summarize:
+      version: 1
       description: "Summarize the collected records."
       binding:
         kind: markdown_file
@@ -161,10 +161,34 @@ interfaces:
 
 Required single string from the typed enum in `schema.json`.
 
-### `interface_version`
+### `role`
 
-Positive integer. Increment when breaking changes occur. Dependents must match
-this version in `depends_on.<skill>.major_version`.
+Required single string from the typed enum in `schema.json`. This is the
+primary user-facing domain the skill serves, such as `productivity`,
+`math-reasoning`, `document-processing`, `development-assistant`,
+`system-operations`, `integration`, `meta-skill`, `automation`, or `mode`.
+
+Use `role` for generated docs grouping and graph clustering. Keep `category`
+during migration for compatibility with existing generated blocks and tools.
+
+### `kind`
+
+Required single string from the typed enum in `schema.json`. This is the
+primary shape of help the skill provides, such as `reviewer`, `auditor`,
+`planner`, `client`, `storage`, `scheduler`, `converter`, `renderer`,
+`triager`, `analyzer`, or `maintenance`.
+
+Use `kind` for user-facing filters like "show reviewer skills" or "show
+scheduler skills". If a skill has many interface-level behaviors, choose the
+dominant user-facing kind at the skill level and reserve finer interface kinds
+for the later interface metadata migration.
+
+### Interface `version`
+
+Every machine and LLM interface declares a positive integer `version`.
+Increment it when that interface's exported contract changes in a breaking way.
+The skill version is the version of `interfaces.llm.default`; there is no
+separate top-level skill version.
 
 ### `cross_platform`
 
@@ -172,18 +196,6 @@ Optional boolean. Default behavior is `true`.
 
 - `true` = the skill is expected to satisfy the shared cross-platform validator
 - `false` = the skill is intentionally platform-specific and is exempt
-
-### `depends_on`
-
-Map of skill name → dependency spec.
-
-For each dependency with a blueprint, declare:
-
-- `major_version`
-- `exports`
-
-Each `exports` entry is the fully qualified canonical interface name, e.g.
-`other-skill.machine.read-data`.
 
 ### `skill_interface`
 
@@ -195,6 +207,7 @@ Map of machine-interface name → invocation contract.
 
 Each machine interface owns:
 
+- `version`
 - `description`
 - `usage`
 - `patterns`
@@ -206,6 +219,8 @@ Each machine interface owns:
 - `directly_reads`
 - `directly_executes`
 - `directly_writes`
+- `direct_io`
+- `owns_filesystem`
 
 Machine interfaces are the executable interface model. The legacy
 `script_interfaces` key is no longer accepted by the schema or sync validator.
@@ -239,17 +254,23 @@ approval baselines in top-level `suggested_permissions`.
 
 ### `uses_interfaces`
 
-Any machine or LLM interface may declare `uses_interfaces`, a list of canonical
-machine-interface names that this interface invokes or orchestrates:
+Any machine or LLM interface may declare `uses_interfaces`, a list of
+version-pinned canonical interfaces that this interface invokes or orchestrates:
 
 ```yaml
 uses_interfaces:
-  - other-skill.machine.read-data
+  - interface: other-skill.machine.read-data
+    version: 1
 ```
 
-This is an interface-level dependency declaration. Skill-level `depends_on`
-authorizes which dependency interfaces the skill may use; `uses_interfaces`
-states which interfaces a specific interface actually uses.
+This is the only dependency declaration for blueprint interfaces. There is no
+top-level `depends_on`.
+
+Machine interfaces may use same-skill or cross-skill machine interfaces. They
+must not use LLM interfaces.
+
+LLM interfaces may use their own skill's machine interfaces and any skill's LLM
+interfaces. They must not directly use another skill's machine interfaces.
 
 Audit hashing includes these used interface hashes recursively. If an LLM
 interface routes work through a machine interface and that machine interface
@@ -274,6 +295,66 @@ separate recursive flag.
 For machine interfaces, `directly_executes` must include the runtime entrypoint
 file when the runtime resolves to a skill-local file.
 
+### `direct_io`
+
+Every machine and LLM interface must declare `direct_io` with all three lists:
+
+```yaml
+direct_io:
+  reads: []
+  writes: []
+  network: []
+```
+
+`direct_io` is immediate-only semantic metadata for generated docs, search,
+graphs, and safety summaries. It describes what the interface itself reads,
+writes, sends, downloads, deletes, or requests. Do not copy IO from dependency
+interfaces; transitive IO is generated by recursively following
+`uses_interfaces`.
+
+Use empty lists only after checking that the interface has no direct IO of that
+kind. `directly_reads`, `directly_executes`, and `directly_writes` remain the
+mechanical file-root contract for health hashing; `direct_io` is the semantic
+contract.
+
+Use coarse `content` values. `content` names the user-meaningful object for
+docs, search, and graphs, not an internal field of that object. Use
+`content: email`, not separate values for subject, body, title, date, headers,
+or IDs. Add a finer content value only when users will filter or visualize that
+object independently.
+
+### `owns_filesystem`
+
+Every machine and LLM interface must declare `owns_filesystem`. Use `[]` when
+the interface owns no filesystem paths.
+
+Ownership is immediate and interface-scoped. If an interface owns a filesystem
+path, only that interface may write matching `direct_io.writes` entries. Only
+that interface and the canonical interfaces listed in `allowed_readers` may read
+matching `direct_io.reads` entries.
+
+Two different interfaces must not own overlapping filesystem paths. Ownership
+is a single-writer authority, not a shared label.
+
+Ownership entries support exact paths and regexes:
+
+```yaml
+owns_filesystem:
+  - match: exact
+    path: "$repo/data/private.yaml"
+    allowed_readers:
+      - other-skill.machine.read-private-data
+    reason: "This interface is the sole writer for private data."
+
+  - match: regex
+    path: "_build/reports/.*\\.json"
+    allowed_readers: []
+```
+
+Plain paths are skill-root-relative. Use `$repo/`, `$home/`, or `$tmp/` when the
+owned filesystem path lives outside the skill directory. For `match: regex`,
+the pattern is matched against the declared `direct_io` path string.
+
 ### `interfaces.llm`
 
 Map of llm-interface name → documented prompt/interface contract.
@@ -293,6 +374,21 @@ interfaces:
         - SKILL.md
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads:
+          - medium: prompt
+            access: read
+            content: document
+            format: text
+            sensitivity: user-private
+        writes:
+          - medium: prompt
+            access: write
+            content: response
+            format: markdown
+            sensitivity: derived-private
+        network: []
+      owns_filesystem: []
 ```
 
 Each llm interface typically owns:
@@ -301,6 +397,8 @@ Each llm interface typically owns:
 - `binding`
 - `allow_all_skills`
 - `allowed_callers`
+- `direct_io`
+- `owns_filesystem`
 - optional `routing_hints`
 
 LLM interfaces are documented and routed by skill logic. The dispatcher never
@@ -595,11 +693,12 @@ skills/my-skill/blueprint.yaml:
   interfaces.machine.read-data: if allow_all_skills is true, allowed_callers must be empty
 ```
 
-**Relationship error: export does not exist**
+**Relationship error: used interface does not exist**
 
 ```
-skills/my-skill/blueprint.yaml: depends_on.other-skill.exports includes
-  other-skill.machine.read-data, but that interface does not exist
+skills/my-skill/blueprint.yaml: my-skill.machine.read-data
+  uses_interfaces.0.interface targets unknown interface
+  'other-skill.machine.read-data'
 ```
 
 **Validation error: duplicate YAML key masked an interface**

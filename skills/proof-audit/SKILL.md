@@ -20,11 +20,12 @@ description: |
 
 Category: research-assistant
 
-Dependencies: none
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces: none
 
-Exported Interfaces: none
+Public Interfaces:
+- `proof-audit.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->

@@ -14,12 +14,21 @@ description: |
 
 Category: productivity-general-assistant
 
-Dependencies:
-- cloud-files
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces:
+- `list-manager.machine.cloud-create-entry -> cloud-files.machine.lists-read@1`
+- `list-manager.machine.cloud-create-entry -> cloud-files.machine.lists-write@1`
+- `list-manager.machine.cloud-delete -> cloud-files.machine.lists-read@1`
+- `list-manager.machine.cloud-delete -> cloud-files.machine.lists-write@1`
+- `list-manager.machine.cloud-init -> cloud-files.machine.lists-write@1`
+- `list-manager.machine.cloud-read -> cloud-files.machine.lists-read@1`
+- `list-manager.machine.cloud-read-beautify -> cloud-files.machine.lists-read@1`
+- `list-manager.machine.cloud-update -> cloud-files.machine.lists-read@1`
+- `list-manager.machine.cloud-update -> cloud-files.machine.lists-write@1`
 
-Exported Interfaces: none
+Public Interfaces:
+- `list-manager.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.

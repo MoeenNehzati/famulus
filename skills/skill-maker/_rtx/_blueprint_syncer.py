@@ -296,6 +296,108 @@ def validate_access_surface(
             errors.append(str(exc))
 
 
+def expect_interface_version(value: Any, context: str, errors: list[str]) -> int | None:
+    if not isinstance(value, int) or value < 1:
+        errors.append(f"{context}.version: must be a positive integer")
+        return None
+    return value
+
+
+def default_llm_version(data: dict[str, Any], context: str, errors: list[str] | None = None) -> int | None:
+    try:
+        _machine, llm = normalized_interface_maps(data, context)
+    except BlueprintError as exc:
+        if errors is not None:
+            errors.append(str(exc))
+        return None
+    default = llm.get("default")
+    if not isinstance(default, dict):
+        if errors is not None:
+            errors.append(f"{context}: interfaces.llm.default is required")
+        return None
+    version = default.get("version")
+    if not isinstance(version, int) or version < 1:
+        if errors is not None:
+            errors.append(f"{context}: interfaces.llm.default.version must be a positive integer")
+        return None
+    return version
+
+
+def canonical_interface_versions(skill_name: str, data: dict[str, Any]) -> dict[str, int]:
+    machine, llm = normalized_interface_maps(data, f"{skill_name}.interfaces")
+    versions: dict[str, int] = {}
+    for namespace, specs in (("machine", machine), ("llm", llm)):
+        for interface_name, spec in specs.items():
+            if not isinstance(spec, dict):
+                continue
+            version = spec.get("version")
+            if isinstance(version, int) and version >= 1:
+                versions[f"{skill_name}.{namespace}.{interface_name}"] = version
+    return versions
+
+
+def split_canonical_interface(name: str) -> tuple[str, str, str] | None:
+    parts = name.split(".")
+    if len(parts) != 3:
+        return None
+    skill_name, namespace, interface_name = parts
+    if not skill_name or namespace not in {"machine", "llm"} or not interface_name:
+        return None
+    return skill_name, namespace, interface_name
+
+
+def validate_interface_uses(blueprints: dict[str, SkillBlueprint]) -> list[str]:
+    errors: list[str] = []
+    versions: dict[str, int] = {}
+    for skill_name, blueprint in blueprints.items():
+        try:
+            versions.update(canonical_interface_versions(skill_name, blueprint.data))
+        except BlueprintError:
+            continue
+
+    for skill_name, blueprint in blueprints.items():
+        try:
+            machine, llm = normalized_interface_maps(blueprint.data, str(blueprint.path))
+        except BlueprintError:
+            continue
+        for namespace, specs in (("machine", machine), ("llm", llm)):
+            for interface_name, spec in specs.items():
+                if not isinstance(spec, dict):
+                    continue
+                context = f"{blueprint.path}: interfaces.{namespace}.{interface_name}.uses_interfaces"
+                raw_uses = spec.get("uses_interfaces", [])
+                if not isinstance(raw_uses, list):
+                    errors.append(f"{context}: expected list")
+                    continue
+                for idx, entry in enumerate(raw_uses):
+                    entry_context = f"{context}[{idx}]"
+                    if not isinstance(entry, dict):
+                        errors.append(f"{entry_context}: expected mapping with `interface` and `version`")
+                        continue
+                    target = entry.get("interface")
+                    pinned = entry.get("version")
+                    if not isinstance(target, str) or not target:
+                        errors.append(f"{entry_context}.interface: expected non-empty string")
+                        continue
+                    parsed = split_canonical_interface(target)
+                    if parsed is None:
+                        errors.append(f"{entry_context}.interface: must be `skill.machine.name` or `skill.llm.name`")
+                        continue
+                    target_skill, target_namespace, _target_name = parsed
+                    if namespace == "machine" and target_namespace != "machine":
+                        errors.append(f"{entry_context}.interface targets {target}; machine interfaces may only use machine interfaces")
+                    if namespace == "llm" and target_namespace == "machine" and target_skill != skill_name:
+                        errors.append(
+                            f"{entry_context}.interface targets {target}; LLM interfaces may only use same-skill machine interfaces"
+                        )
+                    actual = versions.get(target)
+                    if actual is None:
+                        errors.append(f"{entry_context}.interface targets unknown interface {target}")
+                    elif pinned != actual:
+                        errors.append(f"{entry_context} pins {target} version {pinned}, but target version is {actual}")
+    return errors
+
+
 def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
     errors: list[str] = []
     for name, blueprint in blueprints.items():
@@ -305,53 +407,14 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
         except BlueprintError as exc:
             errors.append(str(exc))
 
-        version = data.get("interface_version")
-        if not isinstance(version, int) or version < 1:
-            errors.append(f"{blueprint.path}: `interface_version` must be a positive integer")
+        if "interface_version" in data:
+            errors.append(f"{blueprint.path}: top-level `interface_version` has been removed; set interface `version` fields")
+        if "depends_on" in data:
+            errors.append(f"{blueprint.path}: top-level `depends_on` has been removed; use interface `uses_interfaces`")
         if "script_interfaces" in data:
             errors.append(f"{blueprint.path}: `script_interfaces` has been removed; use `interfaces.machine`")
         if not isinstance(data.get("interfaces"), dict):
             errors.append(f"{blueprint.path}: `interfaces` must be a mapping")
-
-        depends_on = expect_mapping(data.get("depends_on"), f"{blueprint.path}:depends_on")
-        for dep_name, dep_spec in depends_on.items():
-            if not isinstance(dep_name, str):
-                errors.append(f"{blueprint.path}: dependency names must be strings")
-                continue
-            if dep_name == name:
-                errors.append(f"{blueprint.path}: skill cannot depend on itself")
-                continue
-            if dep_spec is None:
-                dep_spec = {}
-            if not isinstance(dep_spec, dict):
-                errors.append(f"{blueprint.path}: depends_on.{dep_name} must be a mapping")
-                continue
-            major_version = dep_spec.get("major_version")
-            exports = dep_spec.get("exports")
-            if major_version is not None and (not isinstance(major_version, int) or major_version < 1):
-                errors.append(
-                    f"{blueprint.path}: depends_on.{dep_name}.major_version must be a positive integer"
-                )
-            if exports is not None:
-                try:
-                    expect_list_of_strings(exports, f"{blueprint.path}: depends_on.{dep_name}.exports")
-                except BlueprintError as exc:
-                    errors.append(str(exc))
-
-            callee = blueprints.get(dep_name)
-            if callee is None:
-                continue
-            callee_version = callee.data.get("interface_version")
-            if major_version is None:
-                errors.append(
-                    f"{blueprint.path}: depends_on.{dep_name} must declare major_version because {dep_name} has a blueprint"
-                )
-                continue
-            if major_version != callee_version:
-                errors.append(
-                    f"{blueprint.path}: depends_on.{dep_name}.major_version={major_version} "
-                    f"does not match {dep_name} interface_version={callee_version}"
-                )
 
         suggested_permissions = expect_mapping(
             data.get("suggested_permissions"), f"{blueprint.path}:suggested_permissions"
@@ -397,6 +460,7 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
             if not isinstance(interface_spec, dict):
                 errors.append(f"{context}: expected mapping")
                 continue
+            expect_interface_version(interface_spec.get("version"), context, errors)
             validate_access_surface(errors, interface_spec, context, allow_id=False)
             expect_runtime(interface_spec.get("runtime"), f"{context}.runtime", errors)
             expect_runtime_dependencies(interface_spec.get("dependencies"), f"{context}.dependencies", errors)
@@ -411,6 +475,7 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
             if not isinstance(interface_spec, dict):
                 errors.append(f"{context}: expected mapping")
                 continue
+            expect_interface_version(interface_spec.get("version"), context, errors)
             if not isinstance(interface_spec.get("description"), str) or not interface_spec["description"].strip():
                 errors.append(f"{context}: missing non-empty `description`")
             binding = interface_spec.get("binding")
@@ -447,6 +512,7 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
             directly_reads = default_llm.get("directly_reads")
             if not isinstance(directly_reads, list) or "SKILL.md" not in directly_reads:
                 errors.append(f"{blueprint.path}: interfaces.llm.default.directly_reads must include `SKILL.md`")
+    errors.extend(validate_interface_uses(blueprints))
     return errors
 
 
@@ -501,8 +567,20 @@ def owner_interfaces(
 
 def generated_contract_block(skill_name: str, data: dict[str, Any]) -> str:
     categories = normalized_categories(data, "generated_contract_block")
-    depends_on = sorted(expect_mapping(data.get("depends_on"), "depends_on"))
-    version = data["interface_version"]
+    version = default_llm_version(data, "generated_contract_block") or 1
+    machine, llm = normalized_interface_maps(data, "interfaces")
+    uses: list[str] = []
+    for namespace, specs in (("machine", machine), ("llm", llm)):
+        for interface_name, spec in sorted(specs.items()):
+            if not isinstance(spec, dict):
+                continue
+            for entry in spec.get("uses_interfaces", []) or []:
+                if isinstance(entry, dict) and isinstance(entry.get("interface"), str):
+                    pinned = entry.get("version")
+                    if isinstance(pinned, int):
+                        uses.append(f"{skill_name}.{namespace}.{interface_name} -> {entry['interface']}@{pinned}")
+                    else:
+                        uses.append(f"{skill_name}.{namespace}.{interface_name} -> {entry['interface']}")
     exports = exported_interfaces(skill_name, data)
 
     lines = [
@@ -513,19 +591,22 @@ def generated_contract_block(skill_name: str, data: dict[str, Any]) -> str:
     lines.extend(f"Category: {category}" for category in categories)
     lines.append("")
 
-    if depends_on:
-        lines.append("Dependencies:")
-        lines.extend(f"- {name}" for name in depends_on)
+    lines.append(f"Skill Version: {version}")
+    lines.append("")
+
+    if uses:
+        lines.append("Uses Interfaces:")
+        lines.extend(f"- `{name}`" for name in sorted(set(uses)))
     else:
-        lines.append("Dependencies: none")
-    lines.extend(["", f"Interface Version: {version}", ""])
+        lines.append("Uses Interfaces: none")
+    lines.append("")
 
     if exports:
-        lines.append("Exported Interfaces:")
+        lines.append("Public Interfaces:")
         for name in exports:
             lines.append(f"- `{name}`")
     else:
-        lines.append("Exported Interfaces: none")
+        lines.append("Public Interfaces: none")
 
     lines.extend([CONTRACT_END, ""])
     return "\n".join(lines)

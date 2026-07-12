@@ -1,118 +1,151 @@
-# Canonical contract for install-assistant-tools.
-# This file was migrated from legacy skill metadata.
-# Tighten the placeholder machine interfaces as each runtime contract becomes clearer.
-
 category: skill-making-development-assistant
-# Bump this major version whenever the exported contract changes in a
-# breaking way for dependent skills.
-interface_version: 2
-
-depends_on: {}
-
+role: system-operations
+kind: installer
 suggested_permissions:
   bash:
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_phase_entry.py:Interface"]
-      reason: "Run the phase-1 installer orchestrator through the shared Python machine-interface\
-        \ runner."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_install_scaffold.py:Interface"]
-      reason: "Install dispatcher and invoke-skill launchers through the shared Python\
-        \ machine-interface runner."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_config_bridge.py:Interface"]
-      reason: "Wire dev-mode config links and hooks through the shared Python machine-interface\
-        \ runner."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_agent_launchers.py:Interface"]
-      reason: "Install selected assistant launchers through the shared Python machine-interface\
-        \ runner."
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_phase_entry.py:Interface
+    reason: Run the phase-1 installer orchestrator through the shared Python machine-interface
+      runner.
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_install_scaffold.py:Interface
+    reason: Install dispatcher and invoke-skill launchers through the shared Python
+      machine-interface runner.
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_config_bridge.py:Interface
+    reason: Wire dev-mode config links and hooks through the shared Python machine-interface
+      runner.
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_agent_launchers.py:Interface
+    reason: Install selected assistant launchers through the shared Python machine-interface
+      runner.
   network: []
-
 skill_interface:
   inputs:
-    - "User requests that match the SKILL.md description for this skill."
+  - User requests that match the SKILL.md description for this skill.
   outputs:
-    - "Responses, artifacts, or side effects described by this skill's workflow."
+  - Responses, artifacts, or side effects described by this skill's workflow.
   side_effects:
-    - "May invoke local scripts or dependencies as described in SKILL.md."
-
+  - May invoke local scripts or dependencies as described in SKILL.md.
 interfaces:
   machine:
     scripts-install:
+      version: 2
       description: 'Phase-1 orchestrator: asks the dev-mode question, then runs scaffold,
         optionally dev-link, then launchers.'
       usage: '[--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path
         DIR] [--agents LIST] [--default-llm {claude,codex}] [--home DIR] [--bin-dir
         DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]'
       patterns:
-        - name: owner
+      - name: owner
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_phase_entry.py:Interface
       dependencies:
-        - kind: binary
-          name: git
-          reason: Configures repository hook settings during development installs.
+      - kind: binary
+        name: git
+        reason: Configures repository hook settings during development installs.
       directly_reads: []
       directly_executes:
-        - _rtx/_phase_entry.py
+      - _rtx/_phase_entry.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     scripts-scaffold:
+      version: 2
       description: Install the dispatcher + invoke-skill launchers and put the bin
         dir on PATH. Universal floor, mode-independent.
       usage: --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]
       patterns:
-        - name: owner
+      - name: owner
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_install_scaffold.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_install_scaffold.py
+      - _rtx/_install_scaffold.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     scripts-dev-link:
+      version: 2
       description: Symlink Claude/Codex config dirs to a live repo checkout, register
         dev-mode hooks, set git hooksPath, export $AI. Requires an explicit repo path.
       usage: --repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home
         DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]
       patterns:
-        - name: owner
+      - name: owner
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_config_bridge.py:Interface
       dependencies:
-        - kind: binary
-          name: git
-          reason: Configures repository hook settings during development installs.
+      - kind: binary
+        name: git
+        reason: Configures repository hook settings during development installs.
       directly_reads: []
       directly_executes:
-        - _rtx/_config_bridge.py
+      - _rtx/_config_bridge.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     scripts-launchers:
+      version: 2
       description: Install per-agent bin launcher, profile config, worker dir, and
         ASSISTANT_DEFAULT for the given agents.
       usage: --repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home
         DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}]
         [--dry-run]
       patterns:
-        - name: owner
+      - name: owner
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_agent_launchers.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_agent_launchers.py
+      - _rtx/_agent_launchers.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
   llm:
     default:
+      version: 2
       description: Primary LLM-facing skill instructions.
       binding:
         kind: skill_file
         path: SKILL.md
       directly_reads:
-        - SKILL.md
+      - SKILL.md
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
+      allow_all_skills: true

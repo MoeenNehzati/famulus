@@ -217,11 +217,13 @@ def test_dispatch_dependency_resolver_follows_transitive_dispatches(tmp_path: Pa
     write(
         tmp_path / "skills" / "source-skill" / "blueprint.yaml",
         "category: workflow-general-assistant\n"
-        "interface_version: 1\n"
-        "depends_on:\n"
-        "  middle-skill:\n"
-        "    major_version: 1\n"
-        "    exports: [middle-skill.machine.middle]\n",
+        "interfaces:\n"
+        "  machine:\n"
+        "    source:\n"
+        "      version: 1\n"
+        "      uses_interfaces:\n"
+        "        - interface: middle-skill.machine.middle\n"
+        "          version: 1\n",
     )
     write(tmp_path / "skills" / "middle-skill" / "_rtx" / "__init__.py", "")
     write(
@@ -242,15 +244,14 @@ def test_dispatch_dependency_resolver_follows_transitive_dispatches(tmp_path: Pa
     write(
         tmp_path / "skills" / "middle-skill" / "blueprint.yaml",
         "category: workflow-general-assistant\n"
-        "interface_version: 1\n"
-        "depends_on:\n"
-        "  leaf-skill:\n"
-        "    major_version: 1\n"
-        "    exports: [leaf-skill.machine.leaf]\n"
         "interfaces:\n"
         "  machine:\n"
         "    middle:\n"
+        "      version: 1\n"
         "      allowed_callers: [source-skill]\n"
+        "      uses_interfaces:\n"
+        "        - interface: leaf-skill.machine.leaf\n"
+        "          version: 1\n"
         "      runtime:\n"
         "        kind: python_machine_interface\n"
         "        entrypoint: _rtx/_middle.py:Interface\n",
@@ -267,10 +268,10 @@ def test_dispatch_dependency_resolver_follows_transitive_dispatches(tmp_path: Pa
     write(
         tmp_path / "skills" / "leaf-skill" / "blueprint.yaml",
         "category: workflow-general-assistant\n"
-        "interface_version: 1\n"
         "interfaces:\n"
         "  machine:\n"
         "    leaf:\n"
+        "      version: 1\n"
         "      allowed_callers: [middle-skill]\n"
         "      runtime:\n"
         "        kind: python_machine_interface\n"

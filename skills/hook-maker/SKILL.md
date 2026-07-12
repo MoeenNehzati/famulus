@@ -8,11 +8,12 @@ description: Use when designing, creating, installing, or refactoring assistant 
 
 Category: skill-making-development-assistant
 
-Dependencies: none
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces: none
 
-Exported Interfaces: none
+Public Interfaces:
+- `hook-maker.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.

@@ -1,35 +1,32 @@
-# Canonical contract for tight-mode.
-# This file was migrated from legacy skill metadata.
-# Tighten the placeholder machine interfaces as each runtime contract becomes clearer.
-
 category: workflow-general-assistant
-# Bump this major version whenever the exported contract changes in a
-# breaking way for dependent skills.
-interface_version: 1
-
-depends_on: {}
-
+role: mode
+kind: mode
 suggested_permissions:
   bash: []
   network: []
-
 skill_interface:
   inputs:
-    - "User requests that match the SKILL.md description for this skill."
+  - User requests that match the SKILL.md description for this skill.
   outputs:
-    - "Responses, artifacts, or side effects described by this skill's workflow."
+  - Responses, artifacts, or side effects described by this skill's workflow.
   side_effects:
-    - "May invoke local scripts or dependencies as described in SKILL.md."
-
+  - May invoke local scripts or dependencies as described in SKILL.md.
 interfaces:
   machine: {}
   llm:
     default:
+      version: 1
       description: Primary LLM-facing skill instructions.
       binding:
         kind: skill_file
         path: SKILL.md
       directly_reads:
-        - SKILL.md
+      - SKILL.md
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
+      allow_all_skills: true

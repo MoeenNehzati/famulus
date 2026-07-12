@@ -1,82 +1,97 @@
-# Canonical contract for pdf-to-markdown.
-# This file was migrated from legacy skill metadata.
-# Tighten the placeholder machine interfaces as each runtime contract becomes clearer.
-
 category: system-assistant
-# Bump this major version whenever the exported contract changes in a
-# breaking way for dependent skills.
-interface_version: 1
-
+role: document-processing
+kind: converter
 cross_platform: false
-
-depends_on: {}
-
 suggested_permissions:
   bash:
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_source_fetcher.py:Interface"]
-      reason: "Suggested approval for the PDF conversion runtime."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_marker_probe.py:Interface"]
-      reason: "Suggested approval for the PDF conversion runtime."
-    - command: ["marker_single"]
-      reason: "Suggested approval for the PDF conversion runtime."
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_source_fetcher.py:Interface
+    reason: Suggested approval for the PDF conversion runtime.
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_marker_probe.py:Interface
+    reason: Suggested approval for the PDF conversion runtime.
+  - command:
+    - marker_single
+    reason: Suggested approval for the PDF conversion runtime.
   network:
-    - kind: web_search
-      reason: "Suggested approval for the PDF conversion runtime."
-    - kind: web_fetch
-      domains: ["arxiv.org"]
-      reason: "Suggested approval for the PDF conversion runtime."
-
+  - kind: web_search
+    reason: Suggested approval for the PDF conversion runtime.
+  - kind: web_fetch
+    domains:
+    - arxiv.org
+    reason: Suggested approval for the PDF conversion runtime.
 skill_interface:
   inputs:
-    - "User requests that match the SKILL.md description for this skill."
+  - User requests that match the SKILL.md description for this skill.
   outputs:
-    - "Responses, artifacts, or side effects described by this skill's workflow."
+  - Responses, artifacts, or side effects described by this skill's workflow.
   side_effects:
-    - "May invoke local scripts or dependencies as described in SKILL.md."
-
+  - May invoke local scripts or dependencies as described in SKILL.md.
 interfaces:
   machine:
     scripts-check-marker-models:
+      version: 1
       description: Check whether required Marker/Surya models are downloaded and cached
         locally.
       usage: ''
       patterns:
-        - name: owner
+      - name: owner
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_marker_probe.py:Interface
       dependencies:
-        - kind: python
-          name: marker-pdf
-          reason: Provides the Surya settings module used to locate Marker model checkpoints.
+      - kind: python
+        name: marker-pdf
+        reason: Provides the Surya settings module used to locate Marker model checkpoints.
       directly_reads: []
       directly_executes:
-        - _rtx/_marker_probe.py
+      - _rtx/_marker_probe.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     scripts-fetch-arxiv-source:
+      version: 1
       description: Download and extract the LaTeX source tarball for a paper from
         arXiv.
       usage: <arxiv-id> <output-dir>
       patterns:
-        - name: owner
+      - name: owner
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_source_fetcher.py:Interface
-      dependencies:
-        []
+      dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_source_fetcher.py
+      - _rtx/_source_fetcher.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
   llm:
     default:
+      version: 1
       description: Primary LLM-facing skill instructions.
       binding:
         kind: skill_file
         path: SKILL.md
       directly_reads:
-        - SKILL.md
+      - SKILL.md
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
+      allow_all_skills: true

@@ -25,10 +25,10 @@ def _write_skill(repo_root: Path) -> None:
     )
     (skill_root / "blueprint.yaml").write_text(
         "category: workflow-general-assistant\n"
-        "interface_version: 1\n"
         "interfaces:\n"
         "  machine:\n"
         "    echo-text:\n"
+        "      version: 1\n"
         "      runtime:\n"
         "        kind: python_module\n"
         "        module: _rtx._echo_text\n"
@@ -60,10 +60,10 @@ def test_python_machine_interface_runtime_uses_shared_runner(tmp_path: Path) -> 
     runtime_root.mkdir(parents=True)
     (skill_root / "blueprint.yaml").write_text(
         "category: workflow-general-assistant\n"
-        "interface_version: 1\n"
         "interfaces:\n"
         "  machine:\n"
         "    ping:\n"
+        "      version: 1\n"
         "      runtime:\n"
         "        kind: python_machine_interface\n"
         "        entrypoint: _rtx/_ping.py:Interface\n"

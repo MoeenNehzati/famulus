@@ -8,13 +8,14 @@ description: Use when reading or checking the local audit state of Famulus skill
 
 Category: skill-making-development-assistant
 
-Dependencies: none
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces: none
 
-Exported Interfaces:
+Public Interfaces:
 - `skill-drift.machine.compute-hashes`
 - `skill-drift.machine.drift-status`
+- `skill-drift.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.

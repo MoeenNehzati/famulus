@@ -1,107 +1,131 @@
-# Canonical contract for find-handoff-candidates.
-
 category: workflow-general-assistant
-interface_version: 1
-
-depends_on:
-  prepare-handoff:
-    major_version: 1
-
+role: automation
+kind: analyzer
 suggested_permissions:
   bash:
-    - command: ["dispatcher"]
-      args_prefix: ["--caller-skill", "find-handoff-candidates", "find-handoff-candidates.machine.scan"]
-      reason: "Read-only scan of local session transcript files; no writes, no network."
-    - command: ["dispatcher"]
-      args_prefix: ["--caller-skill", "find-handoff-candidates", "find-handoff-candidates.machine.calibrate"]
-      reason: "Read-only diagnostic tool for re-deriving default threshold reference\
-        \ numbers; no writes, no network."
+  - command:
+    - dispatcher
+    args_prefix:
+    - --caller-skill
+    - find-handoff-candidates
+    - find-handoff-candidates.machine.scan
+    reason: Read-only scan of local session transcript files; no writes, no network.
+  - command:
+    - dispatcher
+    args_prefix:
+    - --caller-skill
+    - find-handoff-candidates
+    - find-handoff-candidates.machine.calibrate
+    reason: Read-only diagnostic tool for re-deriving default threshold reference
+      numbers; no writes, no network.
   network: []
-
 skill_interface:
   inputs:
-    - "Optional scan window (default: trailing 2 days) or a single exact date, and\
-      \ a shared gap-chars threshold override."
+  - 'Optional scan window (default: trailing 2 days) or a single exact date, and a
+    shared gap-chars threshold override.'
   outputs:
-    - "scan: JSON array of session records needing handoff attention: session_id,\
-      \ source, project, start_time, last_activity, line_count, gap_net_chars, handoff_status,\
-      \ handoff_started_at, resume_hint."
-    - "calibrate: human-readable per-host reference statistics for re-tuning scan's\
-      \ default thresholds."
+  - 'scan: JSON array of session records needing handoff attention: session_id, source,
+    project, start_time, last_activity, line_count, gap_net_chars, handoff_status,
+    handoff_started_at, resume_hint.'
+  - 'calibrate: human-readable per-host reference statistics for re-tuning scan''s
+    default thresholds.'
   side_effects:
-    - "None. Read-only: scans local session transcript files."
-
+  - 'None. Read-only: scans local session transcript files.'
 interfaces:
   machine:
     scan:
-      description: "Scan session transcripts across every configured host (default:\
-        \ trailing 2 days), and report sessions whose conversation since their last\
-        \ completed handoff exceeds a per-host threshold, using mechanical extraction\
-        \ only (no LLM judgment)."
-      usage: "[--min-gap-chars N] [--days N | --date YYYY-MM-DD]"
+      version: 1
+      description: 'Scan session transcripts across every configured host (default:
+        trailing 2 days), and report sessions whose conversation since their last
+        completed handoff exceeds a per-host threshold, using mechanical extraction
+        only (no LLM judgment).'
+      usage: '[--min-gap-chars N] [--days N | --date YYYY-MM-DD]'
       allow_all_skills: true
       allowed_callers: []
       patterns:
-        - min_positionals: 0
-          max_positionals: 0
-          allow_stdin: false
-          allowed_flags: ["--min-gap-chars", "--days", "--date"]
-          flag_patterns:
-            --min-gap-chars: "^[0-9]+$"
-            --days: "^[0-9]+$"
-            --date: "^\\d{4}-\\d{2}-\\d{2}$"
-          notes: "No positionals. --min-gap-chars overrides every host's built-in\
-            \ default threshold (each host is calibrated separately, since they differ\
-            \ by roughly an order of magnitude in bytes per unit of work) with a single\
-            \ shared value. --days (default 2) scans the trailing N days ending today,\
-            \ inclusive; --date pins to one exact day instead (mutually exclusive\
-            \ with --days; mainly useful for backtesting/calibration). Output is a\
-            \ JSON array; each entry's handoff_status is one of none, started, complete\
-            \ -- a complete entry can still be flagged if gap_net_chars (conversation\
-            \ since that completion) exceeds the threshold."
+      - min_positionals: 0
+        max_positionals: 0
+        allow_stdin: false
+        allowed_flags:
+        - --min-gap-chars
+        - --days
+        - --date
+        flag_patterns:
+          --min-gap-chars: ^[0-9]+$
+          --days: ^[0-9]+$
+          --date: ^\d{4}-\d{2}-\d{2}$
+        notes: No positionals. --min-gap-chars overrides every host's built-in default
+          threshold (each host is calibrated separately, since they differ by roughly
+          an order of magnitude in bytes per unit of work) with a single shared value.
+          --days (default 2) scans the trailing N days ending today, inclusive; --date
+          pins to one exact day instead (mutually exclusive with --days; mainly useful
+          for backtesting/calibration). Output is a JSON array; each entry's handoff_status
+          is one of none, started, complete -- a complete entry can still be flagged
+          if gap_net_chars (conversation since that completion) exceeds the threshold.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_handoff_scan.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_handoff_scan.py
+      - _rtx/_handoff_scan.py
       directly_writes: []
-
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     calibrate:
-      description: "Re-derive reference median/p75/p90 gap-size statistics per host\
-        \ from real transcripts in a lookback window, to check whether scan's default\
-        \ thresholds still make sense. Diagnostic only -- does not modify any parser\
-        \ file; read the output and edit the relevant parser's default_threshold by\
-        \ hand if it suggests new numbers."
-      usage: "[--days N]"
+      version: 1
+      description: Re-derive reference median/p75/p90 gap-size statistics per host
+        from real transcripts in a lookback window, to check whether scan's default
+        thresholds still make sense. Diagnostic only -- does not modify any parser
+        file; read the output and edit the relevant parser's default_threshold by
+        hand if it suggests new numbers.
+      usage: '[--days N]'
       allow_all_skills: false
       allowed_callers: []
       patterns:
-        - min_positionals: 0
-          max_positionals: 0
-          allow_stdin: false
-          allowed_flags: ["--days"]
-          flag_patterns:
-            --days: "^[0-9]+$"
-          notes: "No positionals. --days sets the lookback window (default 5). Output\
-            \ is human-readable per-host stats to stdout, not JSON -- this is a manual\
-            \ diagnostic tool, not meant for programmatic consumption."
+      - min_positionals: 0
+        max_positionals: 0
+        allow_stdin: false
+        allowed_flags:
+        - --days
+        flag_patterns:
+          --days: ^[0-9]+$
+        notes: No positionals. --days sets the lookback window (default 5). Output
+          is human-readable per-host stats to stdout, not JSON -- this is a manual
+          diagnostic tool, not meant for programmatic consumption.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_handoff_calibrate.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_handoff_calibrate.py
+      - _rtx/_handoff_calibrate.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
   llm:
     default:
+      version: 1
       description: Primary LLM-facing skill instructions.
       binding:
         kind: skill_file
         path: SKILL.md
       directly_reads:
-        - SKILL.md
+      - SKILL.md
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
+      allow_all_skills: true
+      uses_interfaces:
+      - interface: prepare-handoff.llm.default
+        version: 1

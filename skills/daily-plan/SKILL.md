@@ -11,15 +11,52 @@ description: |
 
 Category: workflow-general-assistant
 
-Dependencies:
-- cloud-files
-- g-calendar
-- get-weather
-- list-manager
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces:
+- `daily-plan.machine.mutate-plan -> cloud-files.machine.lists-read@1`
+- `daily-plan.machine.mutate-plan -> cloud-files.machine.lists-write@1`
+- `daily-plan.machine.mutate-plan -> cloud-files.machine.plans-delete@1`
+- `daily-plan.machine.mutate-plan -> cloud-files.machine.plans-read@1`
+- `daily-plan.machine.mutate-plan -> cloud-files.machine.plans-write@1`
+- `daily-plan.machine.mutate-plan -> g-calendar.machine.scripts-gcal@1`
+- `daily-plan.machine.mutate-plan -> get-weather.machine.scripts-weather@1`
+- `daily-plan.machine.mutate-plan -> list-manager.machine.read-beautify@1`
+- `daily-plan.machine.mutate-plan -> list-manager.machine.read-list@1`
+- `daily-plan.machine.mutate-plan -> list-manager.machine.update-list@1`
+- `daily-plan.machine.orchestrate -> cloud-files.machine.lists-read@1`
+- `daily-plan.machine.orchestrate -> cloud-files.machine.lists-write@1`
+- `daily-plan.machine.orchestrate -> cloud-files.machine.plans-delete@1`
+- `daily-plan.machine.orchestrate -> cloud-files.machine.plans-read@1`
+- `daily-plan.machine.orchestrate -> cloud-files.machine.plans-write@1`
+- `daily-plan.machine.orchestrate -> g-calendar.machine.scripts-gcal@1`
+- `daily-plan.machine.orchestrate -> get-weather.machine.scripts-weather@1`
+- `daily-plan.machine.orchestrate -> list-manager.machine.read-beautify@1`
+- `daily-plan.machine.orchestrate -> list-manager.machine.read-list@1`
+- `daily-plan.machine.orchestrate -> list-manager.machine.update-list@1`
+- `daily-plan.machine.plan-storage -> cloud-files.machine.lists-read@1`
+- `daily-plan.machine.plan-storage -> cloud-files.machine.lists-write@1`
+- `daily-plan.machine.plan-storage -> cloud-files.machine.plans-delete@1`
+- `daily-plan.machine.plan-storage -> cloud-files.machine.plans-read@1`
+- `daily-plan.machine.plan-storage -> cloud-files.machine.plans-write@1`
+- `daily-plan.machine.plan-storage -> g-calendar.machine.scripts-gcal@1`
+- `daily-plan.machine.plan-storage -> get-weather.machine.scripts-weather@1`
+- `daily-plan.machine.plan-storage -> list-manager.machine.read-beautify@1`
+- `daily-plan.machine.plan-storage -> list-manager.machine.read-list@1`
+- `daily-plan.machine.plan-storage -> list-manager.machine.update-list@1`
+- `daily-plan.machine.render-plan -> cloud-files.machine.lists-read@1`
+- `daily-plan.machine.render-plan -> cloud-files.machine.lists-write@1`
+- `daily-plan.machine.render-plan -> cloud-files.machine.plans-delete@1`
+- `daily-plan.machine.render-plan -> cloud-files.machine.plans-read@1`
+- `daily-plan.machine.render-plan -> cloud-files.machine.plans-write@1`
+- `daily-plan.machine.render-plan -> g-calendar.machine.scripts-gcal@1`
+- `daily-plan.machine.render-plan -> get-weather.machine.scripts-weather@1`
+- `daily-plan.machine.render-plan -> list-manager.machine.read-beautify@1`
+- `daily-plan.machine.render-plan -> list-manager.machine.read-list@1`
+- `daily-plan.machine.render-plan -> list-manager.machine.update-list@1`
 
-Exported Interfaces: none
+Public Interfaces:
+- `daily-plan.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.

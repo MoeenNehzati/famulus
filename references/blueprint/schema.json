@@ -3,7 +3,7 @@
   "title": "Skill Blueprint Schema",
   "description": "Schema for blueprint.yaml files that define skill contracts, dependencies, and interfaces.",
   "type": "object",
-  "required": ["category", "interface_version", "interfaces"],
+  "required": ["category", "role", "kind", "interfaces"],
   "additionalProperties": false,
   "properties": {
     "category": {
@@ -19,49 +19,15 @@
         "system-assistant"
       ]
     },
-    "interface_version": {
-      "type": "integer",
-      "minimum": 1
+    "role": {
+      "$ref": "#/definitions/skillRole"
+    },
+    "kind": {
+      "$ref": "#/definitions/skillKind"
     },
     "cross_platform": {
       "type": "boolean",
       "default": true
-    },
-    "depends_on": {
-      "type": "object",
-      "propertyNames": {
-        "$ref": "#/definitions/skillName"
-      },
-      "additionalProperties": {
-        "oneOf": [
-          {
-            "type": "null"
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "major_version": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "exports": {
-                "type": "array",
-                "items": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/definitions/canonicalInterfaceName"
-                    },
-                    {
-                      "$ref": "#/definitions/interfaceName"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        ]
-      }
     },
     "skill_interface": {
       "type": "object",
@@ -161,6 +127,52 @@
     }
   },
   "definitions": {
+    "skillRole": {
+      "type": "string",
+      "description": "Primary user-facing domain the skill serves.",
+      "enum": [
+        "productivity",
+        "research-writing",
+        "math-reasoning",
+        "document-processing",
+        "development-assistant",
+        "system-operations",
+        "integration",
+        "meta-skill",
+        "automation",
+        "mode"
+      ]
+    },
+    "skillKind": {
+      "type": "string",
+      "description": "Primary shape of help the skill provides.",
+      "enum": [
+        "workflow",
+        "tool",
+        "reviewer",
+        "auditor",
+        "generator",
+        "installer",
+        "planner",
+        "client",
+        "storage",
+        "scheduler",
+        "scaffold",
+        "guide",
+        "mode",
+        "diagnostic",
+        "orchestrator",
+        "triager",
+        "converter",
+        "renderer",
+        "builder",
+        "syncer",
+        "setup",
+        "state-manager",
+        "analyzer",
+        "maintenance"
+      ]
+    },
     "skillName": {
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+$"
@@ -194,9 +206,12 @@
     },
     "machineInterface": {
       "type": "object",
-      "required": ["runtime", "dependencies", "directly_reads", "directly_executes", "directly_writes"],
+      "required": ["version", "runtime", "dependencies", "directly_reads", "directly_executes", "directly_writes", "direct_io", "owns_filesystem"],
       "additionalProperties": false,
       "properties": {
+        "version": {
+          "$ref": "#/definitions/interfaceVersion"
+        },
         "description": {
           "type": "string",
           "minLength": 1
@@ -239,6 +254,12 @@
         },
         "directly_writes": {
           "$ref": "#/definitions/directEffectList"
+        },
+        "direct_io": {
+          "$ref": "#/definitions/directIo"
+        },
+        "owns_filesystem": {
+          "$ref": "#/definitions/filesystemOwnershipList"
         }
       },
       "allOf": [
@@ -276,9 +297,12 @@
     },
     "llmInterface": {
       "type": "object",
-      "required": ["description", "directly_reads", "directly_executes", "directly_writes"],
+      "required": ["version", "description", "directly_reads", "directly_executes", "directly_writes", "direct_io", "owns_filesystem"],
       "additionalProperties": false,
       "properties": {
+        "version": {
+          "$ref": "#/definitions/interfaceVersion"
+        },
         "description": {
           "type": "string",
           "minLength": 1
@@ -310,7 +334,7 @@
           }
         },
         "uses_interfaces": {
-          "$ref": "#/definitions/usedMachineInterfaceList"
+          "$ref": "#/definitions/usedInterfaceList"
         },
         "directly_reads": {
           "$ref": "#/definitions/directEffectList"
@@ -320,6 +344,12 @@
         },
         "directly_writes": {
           "$ref": "#/definitions/directEffectList"
+        },
+        "direct_io": {
+          "$ref": "#/definitions/directIo"
+        },
+        "owns_filesystem": {
+          "$ref": "#/definitions/filesystemOwnershipList"
         }
       },
       "allOf": [
@@ -385,13 +415,51 @@
         }
       ]
     },
-    "usedMachineInterfaceList": {
+    "interfaceVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "usedInterfaceList": {
       "type": "array",
-      "description": "Canonical machine interfaces this interface may use or orchestrate. These interface hashes are included recursively in this interface's audit hash.",
+      "description": "Version-pinned canonical interfaces this interface may use or orchestrate. These interface hashes are included recursively in this interface's audit hash.",
       "items": {
-        "$ref": "#/definitions/canonicalMachineInterfaceName"
+        "$ref": "#/definitions/usedInterface"
       },
       "uniqueItems": true
+    },
+    "usedMachineInterfaceList": {
+      "type": "array",
+      "description": "Version-pinned canonical machine interfaces this machine interface may use or orchestrate.",
+      "items": {
+        "$ref": "#/definitions/usedMachineInterface"
+      },
+      "uniqueItems": true
+    },
+    "usedInterface": {
+      "type": "object",
+      "required": ["interface", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "interface": {
+          "$ref": "#/definitions/canonicalInterfaceName"
+        },
+        "version": {
+          "$ref": "#/definitions/interfaceVersion"
+        }
+      }
+    },
+    "usedMachineInterface": {
+      "type": "object",
+      "required": ["interface", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "interface": {
+          "$ref": "#/definitions/canonicalMachineInterfaceName"
+        },
+        "version": {
+          "$ref": "#/definitions/interfaceVersion"
+        }
+      }
     },
     "canonicalMachineInterfaceName": {
       "type": "string",
@@ -406,6 +474,303 @@
         "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
       },
       "uniqueItems": true
+    },
+    "directIo": {
+      "type": "object",
+      "description": "Immediate semantic IO for this interface only. Transitive IO is generated from uses_interfaces.",
+      "required": ["reads", "writes", "network"],
+      "additionalProperties": false,
+      "properties": {
+        "reads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/directIoEntry"
+          }
+        },
+        "writes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/directIoEntry"
+          }
+        },
+        "network": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/directIoEntry"
+          }
+        }
+      }
+    },
+    "directIoEntry": {
+      "type": "object",
+      "required": ["medium", "access", "content", "sensitivity"],
+      "additionalProperties": false,
+      "properties": {
+        "medium": {
+          "$ref": "#/definitions/metadataMedium"
+        },
+        "access": {
+          "$ref": "#/definitions/metadataAccess"
+        },
+        "system": {
+          "$ref": "#/definitions/metadataSystem"
+        },
+        "content": {
+          "$ref": "#/definitions/metadataContent"
+        },
+        "format": {
+          "$ref": "#/definitions/metadataFormat"
+        },
+        "auth": {
+          "$ref": "#/definitions/metadataAuthRequirement"
+        },
+        "sensitivity": {
+          "$ref": "#/definitions/metadataSensitivity"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "filesystemOwnershipList": {
+      "type": "array",
+      "description": "Filesystem paths this interface owns. Only the owner may write matching paths; only the owner and allowed_readers may read them.",
+      "items": {
+        "$ref": "#/definitions/filesystemOwnership"
+      },
+      "uniqueItems": true
+    },
+    "filesystemOwnership": {
+      "type": "object",
+      "required": ["match", "path", "allowed_readers"],
+      "additionalProperties": false,
+      "properties": {
+        "match": {
+          "enum": ["exact", "regex"]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_readers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/canonicalInterfaceName"
+          },
+          "uniqueItems": true
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "metadataMedium": {
+      "type": "string",
+      "enum": [
+        "local-filesystem",
+        "remote-filesystem",
+        "network-request",
+        "prompt",
+        "stdin",
+        "stdout",
+        "stderr",
+        "local-system"
+      ]
+    },
+    "metadataAccess": {
+      "type": "string",
+      "enum": [
+        "read",
+        "write",
+        "read-write",
+        "execute",
+        "configure",
+        "request",
+        "download",
+        "upload",
+        "send",
+        "delete"
+      ]
+    },
+    "metadataSystem": {
+      "type": "string",
+      "enum": [
+        "filesystem",
+        "google-calendar",
+        "google-drive",
+        "email-imap",
+        "email-smtp",
+        "weather-service",
+        "arxiv",
+        "web-search",
+        "web-fetch",
+        "model-cache",
+        "systemd",
+        "launchd",
+        "task-scheduler",
+        "cron",
+        "system-log",
+        "git",
+        "shell",
+        "browser",
+        "local-http-server",
+        "desktop-notification",
+        "keyring",
+        "oauth",
+        "agent-runtime",
+        "agent-home",
+        "assistant-home",
+        "tmux",
+        "openai-api"
+      ]
+    },
+    "metadataContent": {
+      "type": "string",
+      "enum": [
+        "document",
+        "source",
+        "bibliography",
+        "proof",
+        "notation",
+        "prose",
+        "flow",
+        "theorem",
+        "argument",
+        "docstring",
+        "latex-project",
+        "report",
+        "graph",
+        "plan",
+        "plan-request",
+        "list",
+        "email",
+        "email-attachment",
+        "email-account",
+        "message",
+        "response",
+        "attachment",
+        "mailbox",
+        "account",
+        "credential",
+        "environment-variable",
+        "event",
+        "forecast",
+        "metadata",
+        "log",
+        "transcript",
+        "watermark",
+        "decision",
+        "token",
+        "config",
+        "service",
+        "timer",
+        "job",
+        "schedule",
+        "checkpoint",
+        "patch",
+        "project",
+        "repository",
+        "profile",
+        "hook",
+        "launcher",
+        "shell-profile",
+        "path-entry",
+        "symlink",
+        "alias",
+        "skill",
+        "blueprint",
+        "validator",
+        "test-suite",
+        "runtime-dependency-manifest",
+        "generated-artifact",
+        "installed-skill",
+        "audit-record",
+        "dependency-record",
+        "drift-report",
+        "hash",
+        "macro-definitions",
+        "sync-state",
+        "filter",
+        "diagnostic-report"
+      ]
+    },
+    "metadataFormat": {
+      "type": "string",
+      "enum": [
+        "text",
+        "markdown",
+        "html",
+        "json",
+        "yaml",
+        "toml",
+        "ini",
+        "pdf",
+        "tex",
+        "bibtex",
+        "svg",
+        "png",
+        "rfc822",
+        "ics",
+        "env",
+        "stdout-text",
+        "stderr-text"
+      ]
+    },
+    "metadataAuthKind": {
+      "type": "string",
+      "enum": [
+        "none",
+        "google-calendar-oauth",
+        "google-drive-oauth",
+        "gmail-oauth",
+        "email-account",
+        "app-password",
+        "rclone-config",
+        "api-key",
+        "keyring-entry",
+        "local-user-session",
+        "system-user",
+        "agent-profile"
+      ]
+    },
+    "metadataAuthMode": {
+      "type": "string",
+      "enum": [
+        "none",
+        "uses-existing",
+        "creates",
+        "updates",
+        "deletes",
+        "checks"
+      ]
+    },
+    "metadataAuthRequirement": {
+      "type": "object",
+      "required": ["kind", "mode"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/metadataAuthKind"
+        },
+        "mode": {
+          "$ref": "#/definitions/metadataAuthMode"
+        }
+      }
+    },
+    "metadataSensitivity": {
+      "type": "string",
+      "enum": [
+        "public",
+        "user-private",
+        "secret",
+        "derived-private"
+      ]
     },
     "runtime": {
       "type": "object",

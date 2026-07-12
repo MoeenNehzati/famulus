@@ -8,11 +8,12 @@ description: Use when auditing or refactoring an existing skill for convention c
 
 Category: skill-making-development-assistant
 
-Dependencies: none
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces: none
 
-Exported Interfaces: none
+Public Interfaces:
+- `refactor-skills.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->

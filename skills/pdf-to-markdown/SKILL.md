@@ -10,11 +10,12 @@ tools:
 
 Category: system-assistant
 
-Dependencies: none
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces: none
 
-Exported Interfaces: none
+Public Interfaces:
+- `pdf-to-markdown.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->

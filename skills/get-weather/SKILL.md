@@ -10,12 +10,13 @@ description: |
 
 Category: productivity-general-assistant
 
-Dependencies: none
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces: none
 
-Exported Interfaces:
+Public Interfaces:
 - `get-weather.machine.scripts-weather`
+- `get-weather.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.

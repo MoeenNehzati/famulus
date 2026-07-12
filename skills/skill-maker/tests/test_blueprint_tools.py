@@ -21,6 +21,7 @@ DISPATCHER_SRC = REPO_ROOT / "script_dispatcher" / "src"
 def default_llm_interface() -> dict:
     return {
         "default": {
+            "version": 1,
             "description": "Primary LLM-facing skill instructions.",
             "binding": {"kind": "skill_file", "path": "SKILL.md"},
             "directly_reads": ["SKILL.md"],
@@ -70,7 +71,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
     def test_blueprint_template_exists_and_is_comment_rich(self) -> None:
         self.assertTrue(BLUEPRINT_TEMPLATE.exists(), "reference blueprint template is missing")
         text = BLUEPRINT_TEMPLATE.read_text(encoding="utf-8")
-        self.assertIn("interface_version:", text)
+        self.assertIn("version: 1", text)
         self.assertIn("interfaces:", text)
         self.assertIn("machine:", text)
         self.assertIn("llm:", text)
@@ -93,10 +94,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 Path("skills/demo-skill/blueprint.yaml"),
                 {
                     "category": "workflow-general-assistant",
-                    "interface_version": 1,
                     "interfaces": {
                         "machine": {
                             "scan": {
+                                "version": 1,
                                 "runtime": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/_handoff_scan.py:Interface",
@@ -123,10 +124,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 Path("skills/demo-skill/blueprint.yaml"),
                 {
                     "category": "workflow-general-assistant",
-                    "interface_version": 1,
                     "interfaces": {
                         "machine": {
                             "scan": {
+                                "version": 1,
                                 "runtime": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/_handoff_scan.py:Interface",
@@ -158,10 +159,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 Path("skills/demo-skill/blueprint.yaml"),
                 {
                     "category": "workflow-general-assistant",
-                    "interface_version": 1,
                     "interfaces": {
                         "machine": {
                             "scan": {
+                                "version": 1,
                                 "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
                                 "dependencies": [],
                             }
@@ -186,10 +187,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 Path("skills/demo-skill/blueprint.yaml"),
                 {
                     "category": "workflow-general-assistant",
-                    "interface_version": 1,
                     "interfaces": {
                         "machine": {
                             "scan": {
+                                "version": 1,
                                 "runtime": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/scan.py:Interface",
@@ -221,10 +222,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 Path("skills/demo-skill/blueprint.yaml"),
                 {
                     "category": "workflow-general-assistant",
-                    "interface_version": 1,
                     "interfaces": {
                         "machine": {
                             "scan": {
+                                "version": 1,
                                 "runtime": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/scan.py:Interface",
@@ -258,10 +259,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 Path("skills/demo-skill/blueprint.yaml"),
                 {
                     "category": "workflow-general-assistant",
-                    "interface_version": 1,
                     "interfaces": {
                         "machine": {
                             "scan": {
+                                "version": 1,
                                 "runtime": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/scan.py:Interface",
@@ -294,10 +295,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 Path("skills/demo-skill/blueprint.yaml"),
                 {
                     "category": "workflow-general-assistant",
-                    "interface_version": 1,
                     "interfaces": {
                         "machine": {
                             "scan": {
+                                "version": 1,
                                 "runtime": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "../scan.py:Interface",
@@ -327,7 +328,6 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 Path("skills/demo-skill/blueprint.yaml"),
                 {
                     "category": "workflow-general-assistant",
-                    "interface_version": 1,
                     "interfaces": {"machine": {}},
                     "script_interfaces": {
                         "scan": {
@@ -354,10 +354,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 Path("skills/demo-skill/blueprint.yaml"),
                 {
                     "category": "workflow-general-assistant",
-                    "interface_version": 1,
                     "interfaces": {
                         "machine": {
                             "scan": {
+                                "version": 1,
                                 "runtime": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/_scan_tool.py:Interface",
@@ -391,10 +391,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 Path("skills/demo-skill/blueprint.yaml"),
                 {
                     "category": "workflow-general-assistant",
-                    "interface_version": 1,
                     "interfaces": {
                         "machine": {
                             "scan": {
+                                "version": 1,
                                 "runtime": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/_handoff_scan.py:Interface",

@@ -1,170 +1,266 @@
-# Canonical contract for daily-plan.
-
 category: workflow-general-assistant
-interface_version: 1
-
+role: productivity
+kind: planner
 cross_platform: false
-
-depends_on:
-  cloud-files:
-    major_version: 1
-    exports:
-      - plans-read
-      - plans-write
-      - plans-delete
-      - lists-read
-      - lists-write
-  g-calendar:
-    major_version: 1
-    exports:
-      - scripts-gcal
-  get-weather:
-    major_version: 1
-    exports:
-      - scripts-weather
-  list-manager:
-    major_version: 1
-    exports:
-      - read-list
-      - read-beautify
-      - update-list
-
 suggested_permissions:
   bash:
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_plan_orchestrate.py:Interface"]
-      reason: "Main orchestration script for plan generation via dispatcher."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_render_plan.py:Interface"]
-      reason: "Plan rendering helper for display formatting."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_state_patch.py:Interface"]
-      reason: "Apply plan-local or master-list-backed mutations and show the refreshed\
-        \ plan."
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_plan_orchestrate.py:Interface
+    reason: Main orchestration script for plan generation via dispatcher.
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_render_plan.py:Interface
+    reason: Plan rendering helper for display formatting.
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_state_patch.py:Interface
+    reason: Apply plan-local or master-list-backed mutations and show the refreshed
+      plan.
   network: []
-
 skill_interface:
   inputs:
-    - User requests to plan today.
-    - Calendar, todo, and weather data.
+  - User requests to plan today.
+  - Calendar, todo, and weather data.
   outputs:
-    - Persisted daily plan file.
-    - Display-ready plan content.
+  - Persisted daily plan file.
+  - Display-ready plan content.
   side_effects:
-    - Writes plan file to cloud storage.
-    - May update todo list via list-manager.
-
+  - Writes plan file to cloud storage.
+  - May update todo list via list-manager.
 interfaces:
   machine:
     orchestrate:
+      version: 1
+      uses_interfaces:
+      - interface: cloud-files.machine.plans-read
+        version: 1
+      - interface: cloud-files.machine.plans-write
+        version: 1
+      - interface: cloud-files.machine.plans-delete
+        version: 1
+      - interface: cloud-files.machine.lists-read
+        version: 1
+      - interface: cloud-files.machine.lists-write
+        version: 1
+      - interface: g-calendar.machine.scripts-gcal
+        version: 1
+      - interface: get-weather.machine.scripts-weather
+        version: 1
+      - interface: list-manager.machine.read-list
+        version: 1
+      - interface: list-manager.machine.read-beautify
+        version: 1
+      - interface: list-manager.machine.update-list
+        version: 1
       description: Generate today's plan (or show the existing one, refreshing its
         Todo/Triage blocks from current list state). Pass --forced to regenerate even
         if a plan already exists.
       usage: '[--forced]'
       allow_all_skills: false
       patterns:
-        - min_positionals: 0
-          max_positionals: 0
-          allow_stdin: false
-        - min_positionals: 0
-          max_positionals: 0
-          allow_stdin: false
-          required_flags:
-            - --forced
-          allowed_flags:
-            - --forced
+      - min_positionals: 0
+        max_positionals: 0
+        allow_stdin: false
+      - min_positionals: 0
+        max_positionals: 0
+        allow_stdin: false
+        required_flags:
+        - --forced
+        allowed_flags:
+        - --forced
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_plan_orchestrate.py:Interface
       dependencies:
-        - kind: python
-          name: PyYAML
-          reason: Reads and writes YAML plan/list data through plan_runtime.
+      - kind: python
+        name: PyYAML
+        reason: Reads and writes YAML plan/list data through plan_runtime.
       directly_reads: []
       directly_executes:
-        - _rtx/_plan_orchestrate.py
+      - _rtx/_plan_orchestrate.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     plan-storage:
+      version: 1
+      uses_interfaces:
+      - interface: cloud-files.machine.plans-read
+        version: 1
+      - interface: cloud-files.machine.plans-write
+        version: 1
+      - interface: cloud-files.machine.plans-delete
+        version: 1
+      - interface: cloud-files.machine.lists-read
+        version: 1
+      - interface: cloud-files.machine.lists-write
+        version: 1
+      - interface: g-calendar.machine.scripts-gcal
+        version: 1
+      - interface: get-weather.machine.scripts-weather
+        version: 1
+      - interface: list-manager.machine.read-list
+        version: 1
+      - interface: list-manager.machine.read-beautify
+        version: 1
+      - interface: list-manager.machine.update-list
+        version: 1
       description: Read, write, check existence of, or delete a plan file in cloud
         storage by date.
       usage: read|write|exists|delete <date>
       allow_all_skills: false
       patterns:
-        - name: read
-          min_positionals: 2
-          max_positionals: 2
-          allow_stdin: false
-        - name: write
-          min_positionals: 2
-          max_positionals: 2
-          allow_stdin: true
-        - name: exists
-          min_positionals: 2
-          max_positionals: 2
-          allow_stdin: false
-        - name: delete
-          min_positionals: 2
-          max_positionals: 2
-          allow_stdin: false
+      - name: read
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+      - name: write
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: true
+      - name: exists
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
+      - name: delete
+        min_positionals: 2
+        max_positionals: 2
+        allow_stdin: false
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_plan_storage.py:Interface
       dependencies:
-        - kind: binary
-          name: rclone
-          reason: Reads and writes plan files in the configured GDrive remote.
+      - kind: binary
+        name: rclone
+        reason: Reads and writes plan files in the configured GDrive remote.
       directly_reads: []
       directly_executes:
-        - _rtx/_plan_storage.py
+      - _rtx/_plan_storage.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     render-plan:
+      version: 1
+      uses_interfaces:
+      - interface: cloud-files.machine.plans-read
+        version: 1
+      - interface: cloud-files.machine.plans-write
+        version: 1
+      - interface: cloud-files.machine.plans-delete
+        version: 1
+      - interface: cloud-files.machine.lists-read
+        version: 1
+      - interface: cloud-files.machine.lists-write
+        version: 1
+      - interface: g-calendar.machine.scripts-gcal
+        version: 1
+      - interface: get-weather.machine.scripts-weather
+        version: 1
+      - interface: list-manager.machine.read-list
+        version: 1
+      - interface: list-manager.machine.read-beautify
+        version: 1
+      - interface: list-manager.machine.update-list
+        version: 1
       description: Extract or reassemble sections of a plan file for rendering.
       usage: <extract|reassemble> <plan-file> <dir>
       allow_all_skills: false
       patterns:
-        - min_positionals: 0
-          allow_extra_positionals: true
-          allow_stdin: true
+      - min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_render_plan.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_render_plan.py
+      - _rtx/_render_plan.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     mutate-plan:
+      version: 1
+      uses_interfaces:
+      - interface: cloud-files.machine.plans-read
+        version: 1
+      - interface: cloud-files.machine.plans-write
+        version: 1
+      - interface: cloud-files.machine.plans-delete
+        version: 1
+      - interface: cloud-files.machine.lists-read
+        version: 1
+      - interface: cloud-files.machine.lists-write
+        version: 1
+      - interface: g-calendar.machine.scripts-gcal
+        version: 1
+      - interface: get-weather.machine.scripts-weather
+        version: 1
+      - interface: list-manager.machine.read-list
+        version: 1
+      - interface: list-manager.machine.read-beautify
+        version: 1
+      - interface: list-manager.machine.update-list
+        version: 1
       description: Apply a mutation (hide, show, keep, remove, mark-done, reject,
-        set-deadline, add) to a dated plan and display the refreshed result.
-        Defaults to today when --date is omitted.
-      usage: '[--date <M-D-YY|YYYY-MM-DD>] {hide,show,keep,remove,mark-done,reject,set-deadline,add} ...'
+        set-deadline, add) to a dated plan and display the refreshed result. Defaults
+        to today when --date is omitted.
+      usage: '[--date <M-D-YY|YYYY-MM-DD>] {hide,show,keep,remove,mark-done,reject,set-deadline,add}
+        ...'
       allow_all_skills: false
       patterns:
-        - min_positionals: 1
-          allow_extra_positionals: true
-          allow_stdin: false
-          allowed_flags:
-            - --date
-          flag_patterns:
-            --date: '^(\d{1,2}-\d{1,2}-\d{2}|\d{4}-\d{2}-\d{2})$'
+      - min_positionals: 1
+        allow_extra_positionals: true
+        allow_stdin: false
+        allowed_flags:
+        - --date
+        flag_patterns:
+          --date: ^(\d{1,2}-\d{1,2}-\d{2}|\d{4}-\d{2}-\d{2})$
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_state_patch.py:Interface
       dependencies:
-        - kind: python
-          name: PyYAML
-          reason: Reads and writes YAML plan/list data through plan_runtime.
+      - kind: python
+        name: PyYAML
+        reason: Reads and writes YAML plan/list data through plan_runtime.
       directly_reads: []
       directly_executes:
-        - _rtx/_state_patch.py
+      - _rtx/_state_patch.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
   llm:
     default:
+      version: 1
       description: Primary LLM-facing skill instructions.
       binding:
         kind: skill_file
         path: SKILL.md
       directly_reads:
-        - SKILL.md
+      - SKILL.md
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
+      allow_all_skills: true

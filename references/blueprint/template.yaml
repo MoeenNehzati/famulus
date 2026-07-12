@@ -8,32 +8,18 @@
 # references/blueprint/schema.json.
 category: research-assistant
 
-# Required positive integer. Bump this major version only when the exported
-# contract changes in a breaking way for dependent skills.
-interface_version: 1
+# Required single string. Primary user-facing domain the skill serves. Must be
+# one of the skillRole enum values in references/blueprint/schema.json.
+role: research-writing
+
+# Required single string. Primary shape of help the skill provides. Must be one
+# of the skillKind enum values in references/blueprint/schema.json.
+kind: reviewer
 
 # Optional boolean. Default: true.
 # Set this to false only when the skill is intentionally platform-specific and
 # should be exempt from the shared cross-platform validator.
 cross_platform: true
-
-# Map of dependency skill name -> dependency contract.
-# Use {} only for legacy dependencies that do not yet have a blueprint.
-# For a blueprint-migrated dependency:
-# - major_version: required positive integer, pinned to the dependency's current
-#   exported interface version
-# - exports: optional list of canonical interface names that this skill is
-#   allowed to use through that dependency
-#
-# Canonical interface names are:
-# - dependency.machine.name
-# - dependency.llm.name
-depends_on:
-  example-dependency:
-    major_version: 1
-    exports:
-      - example-dependency.machine.read-data
-  legacy-dependency: {}
 
 # Structured permission suggestions for smoother execution.
 # These are not grants; they are advisory blueprint metadata.
@@ -93,6 +79,11 @@ interfaces:
     # EXAMPLE 1: Read-only machine interface
     # ==========================================================================
     read-data:
+      # Required positive integer. Bump only when this interface's exported
+      # contract changes in a breaking way. The skill version is the version of
+      # interfaces.llm.default.
+      version: 1
+
       # Human-facing summary injected into generated SKILL.md.
       description: "Read an input file and optionally apply extra filters."
 
@@ -122,20 +113,41 @@ interfaces:
         - kind: python
           name: PyYAML
           reason: "Parses YAML input files read by this interface."
-      # Optional. Canonical machine interfaces this interface invokes or
-      # orchestrates. Their interface hashes are included recursively in this
-      # interface's audit hash.
+      # Optional. Version-pinned canonical machine interfaces this machine
+      # interface invokes or orchestrates. Their interface hashes are included
+      # recursively in this interface's audit hash.
       uses_interfaces: []
       directly_reads:
         - "$repo/data/example.yaml"
       directly_executes:
         - _rtx/read_data.py
       directly_writes: []
+      # Required. Immediate semantic IO for this interface only. Do not copy IO
+      # from interfaces named in uses_interfaces; tooling computes transitive IO
+      # by following uses_interfaces recursively.
+      direct_io:
+        reads:
+          - medium: local-filesystem
+            access: read
+            system: filesystem
+            content: source
+            format: yaml
+            path: "$repo/data/example.yaml"
+            sensitivity: user-private
+        writes:
+          - medium: stdout
+            access: write
+            content: report
+            format: text
+            sensitivity: derived-private
+        network: []
+      owns_filesystem: []
 
     # ==========================================================================
     # EXAMPLE 2: Multiple calling conventions
     # ==========================================================================
     update-data:
+      version: 1
       description: "Update a target resource from file or stdin input."
       usage: "<target> --file /tmp/patch.yaml"
       allow_all_skills: true
@@ -169,11 +181,41 @@ interfaces:
         - _rtx/update_data.py
       directly_writes:
         - "$repo/data/example.yaml"
+      direct_io:
+        reads:
+          - medium: local-filesystem
+            access: read
+            system: filesystem
+            content: source
+            format: yaml
+            path: "$repo/data/example.yaml"
+            sensitivity: user-private
+          - medium: stdin
+            access: read
+            content: patch
+            format: yaml
+            sensitivity: user-private
+        writes:
+          - medium: local-filesystem
+            access: write
+            system: filesystem
+            content: source
+            format: yaml
+            path: "$repo/data/example.yaml"
+            sensitivity: user-private
+        network: []
+      owns_filesystem:
+        - match: exact
+          path: "$repo/data/example.yaml"
+          allowed_readers:
+            - example-skill.machine.read-data
+          reason: "This interface is the sole writer for the example data file."
 
     # ==========================================================================
     # EXAMPLE 3: Python class-backed machine interface
     # ==========================================================================
     analyze-data:
+      version: 1
       description: "Analyze an input file through a Python machine-interface class."
       usage: "<file>"
       allow_all_skills: true
@@ -190,11 +232,28 @@ interfaces:
       directly_executes:
         - _rtx/analyze_data.py
       directly_writes: []
+      direct_io:
+        reads:
+          - medium: local-filesystem
+            access: read
+            system: filesystem
+            content: source
+            path: "<file>"
+            sensitivity: user-private
+        writes:
+          - medium: stdout
+            access: write
+            content: report
+            format: text
+            sensitivity: derived-private
+        network: []
+      owns_filesystem: []
 
     # ==========================================================================
     # EXAMPLE 4: Internal-only machine interface
     # ==========================================================================
     internal-worker:
+      version: 1
       allow_all_skills: false
       allowed_callers: []
       runtime:
@@ -205,11 +264,17 @@ interfaces:
       directly_executes:
         - _rtx/internal_worker.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
 
     # ==========================================================================
     # EXAMPLE 5: Restricted machine interface
     # ==========================================================================
     special-data:
+      version: 1
       allow_all_skills: false
       allowed_callers:
         - skill-a
@@ -228,31 +293,67 @@ interfaces:
       directly_executes:
         - _rtx/special_data.py
       directly_writes: []
+      direct_io:
+        reads:
+          - medium: local-filesystem
+            access: read
+            system: filesystem
+            content: source
+            path: "special/"
+            sensitivity: user-private
+        writes:
+          - medium: stdout
+            access: write
+            content: report
+            format: text
+            sensitivity: derived-private
+        network: []
+      owns_filesystem: []
 
   llm:
     # ==========================================================================
     # EXAMPLE 6: Default LLM-facing skill interface
     # ==========================================================================
     default:
+      version: 1
       description: "Primary LLM-facing skill instructions."
       binding:
         kind: skill_file
         path: SKILL.md
-      # Optional. Machine interfaces the LLM prompt surface may route work
-      # through. Use canonical names such as example-skill.machine.read-data.
-      # These interface hashes are included recursively in the LLM interface
-      # hash.
+      # Optional. Version-pinned interfaces this LLM prompt surface may route
+      # through. LLM interfaces may use their own skill's machine interfaces and
+      # other skills' LLM interfaces. They must not directly use another skill's
+      # machine interfaces.
       uses_interfaces:
-        - example-skill.machine.read-data
+        - interface: example-skill.machine.read-data
+          version: 1
+        - interface: other-skill.llm.default
+          version: 1
       directly_reads:
         - SKILL.md
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads:
+          - medium: prompt
+            access: read
+            content: document
+            format: text
+            sensitivity: user-private
+        writes:
+          - medium: prompt
+            access: write
+            content: response
+            format: markdown
+            sensitivity: derived-private
+        network: []
+      owns_filesystem: []
 
     # ==========================================================================
     # EXAMPLE 7: LLM-facing interface
     # ==========================================================================
     summarize:
+      version: 1
       description: "Summarize the collected records for a handoff note."
       binding:
         kind: markdown_file
@@ -261,6 +362,21 @@ interfaces:
         - interfaces/summarize.md
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads:
+          - medium: prompt
+            access: read
+            content: report
+            format: text
+            sensitivity: user-private
+        writes:
+          - medium: prompt
+            access: write
+            content: response
+            format: markdown
+            sensitivity: derived-private
+        network: []
+      owns_filesystem: []
       allow_all_skills: true
       allowed_callers: []
       routing_hints:
@@ -271,6 +387,7 @@ interfaces:
     # EXAMPLE 8: External LLM-facing interface
     # ==========================================================================
     summarize-remote:
+      version: 1
       description: "Summarize records using a prompt surface published outside this repo."
       binding:
         kind: uri
@@ -278,6 +395,21 @@ interfaces:
       directly_reads: []
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads:
+          - medium: prompt
+            access: read
+            content: report
+            format: text
+            sensitivity: user-private
+        writes:
+          - medium: prompt
+            access: write
+            content: response
+            format: markdown
+            sensitivity: derived-private
+        network: []
+      owns_filesystem: []
       allow_all_skills: false
       allowed_callers:
         - prepare-handoff
@@ -327,6 +459,23 @@ interfaces:
 #   - _rtx/read_data.py
 # directly_writes: []
 #
+# direct_io describes immediate semantic IO for generated docs, search, graphs,
+# and safety summaries. It is required on every machine and LLM interface. Use
+# empty lists only after verifying that the interface has no direct IO of that
+# kind. Do not duplicate IO from interfaces listed in uses_interfaces.
+#
+# direct_io:
+#   reads: []
+#   writes: []
+#   network: []
+#
+# owns_filesystem declares exclusive ownership of local-filesystem paths. Use
+# [] when the interface owns no filesystem paths. If an interface owns a path,
+# only that interface may write matching direct_io local-filesystem entries, and
+# only that interface plus allowed_readers may read them.
+#
+# owns_filesystem: []
+#
 # ==============================================================================
 # LLM INTERFACE BINDING KINDS
 # ==============================================================================
@@ -352,14 +501,10 @@ interfaces:
 # When a caller invokes a machine interface via the dispatcher:
 #
 # 1. Parse the canonical target <skill>.machine.<name>.
-# 2. Verify caller declared the dependency in depends_on.
-# 3. Verify depends_on.major_version matches the dependency's interface_version.
-# 4. Verify the canonical interface name appears in depends_on.exports (if
-#    caller specified exports).
-# 5. Verify allow_all_skills / allowed_callers.
-# 6. Match the invocation against declared patterns.
-# 7. Resolve the inline runtime binding.
-# 8. Execute without depending on the caller's working directory.
+# 2. Verify allow_all_skills / allowed_callers.
+# 3. Match the invocation against declared patterns.
+# 4. Resolve the inline runtime binding.
+# 5. Execute without depending on the caller's working directory.
 #
 # If any check fails, the dispatcher rejects the invocation with an error.
 

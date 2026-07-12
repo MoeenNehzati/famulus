@@ -8,13 +8,15 @@ description: Use when certifying local skill audit state after mechanical checks
 
 Category: skill-making-development-assistant
 
-Dependencies:
-- skill-drift
-- skill-maker
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces:
+- `skill-audit.machine.certify -> skill-drift.machine.compute-hashes@1`
+- `skill-audit.machine.certify -> skill-drift.machine.drift-status@1`
+- `skill-audit.machine.certify -> skill-maker.machine.sync-blueprints@1`
 
-Exported Interfaces: none
+Public Interfaces:
+- `skill-audit.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.

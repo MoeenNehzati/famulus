@@ -8,11 +8,12 @@ description: Use when the user invokes "tight mode" or asks for rigorous, exact,
 
 Category: workflow-general-assistant
 
-Dependencies: none
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces: none
 
-Exported Interfaces: none
+Public Interfaces:
+- `tight-mode.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->

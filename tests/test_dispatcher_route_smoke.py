@@ -113,10 +113,10 @@ def test_discovers_python_machine_runner_interfaces(tmp_path: Path) -> None:
     (skill_root / "blueprint.yaml").write_text(
         """
 category: coding-development-assistant
-interface_version: 1
 interfaces:
   machine:
     route-check:
+      version: 1
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/demo.py:Interface
@@ -135,16 +135,17 @@ def test_route_smoke_cases_include_all_python_machine_interfaces(tmp_path: Path)
     (skill_root / "blueprint.yaml").write_text(
         """
 category: coding-development-assistant
-interface_version: 1
 interfaces:
   machine:
     route-check:
+      version: 1
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/demo.py:Interface
       patterns:
         - min_positionals: 1
     requires-project:
+      version: 1
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/demo.py:Interface

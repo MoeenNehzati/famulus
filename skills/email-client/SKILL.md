@@ -8,11 +8,12 @@ description: Use when reading, listing, searching, or sending email for the user
 
 Category: productivity-general-assistant
 
-Dependencies: none
+Skill Version: 3
 
-Interface Version: 3
+Uses Interfaces: none
 
-Exported Interfaces: none
+Public Interfaces:
+- `email-client.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.

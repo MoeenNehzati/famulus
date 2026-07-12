@@ -8,11 +8,12 @@ description: Install or update the assistant, collab, coauthor, and tw/tmux-work
 
 Category: skill-making-development-assistant
 
-Dependencies: none
+Skill Version: 2
 
-Interface Version: 2
+Uses Interfaces: none
 
-Exported Interfaces: none
+Public Interfaces:
+- `install-assistant-tools.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.

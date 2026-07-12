@@ -8,11 +8,12 @@ description: Use when the user invokes "loose mode" or asks for broad exploratio
 
 Category: workflow-general-assistant
 
-Dependencies: none
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces: none
 
-Exported Interfaces: none
+Public Interfaces:
+- `loose-mode.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->

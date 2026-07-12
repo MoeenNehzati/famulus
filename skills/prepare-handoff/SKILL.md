@@ -8,11 +8,12 @@ description: Use when the user explicitly invokes this skill to prepare a handof
 
 Category: workflow-general-assistant
 
-Dependencies: none
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces: none
 
-Exported Interfaces: none
+Public Interfaces:
+- `prepare-handoff.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->

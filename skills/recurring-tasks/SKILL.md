@@ -8,12 +8,13 @@ description: Manage recurring AI job automation via systemd timers. Define jobs 
 
 Category: system-assistant
 
-Dependencies:
-- install-assistant-tools
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces:
+- `recurring-tasks.llm.default -> install-assistant-tools.llm.default@2`
 
-Exported Interfaces: none
+Public Interfaces:
+- `recurring-tasks.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->

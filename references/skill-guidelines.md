@@ -41,8 +41,8 @@ then customize it in place. The blueprint is hand-authored and comment-rich. It
 is the source of truth for:
 
 - `category`
-- `interface_version`
-- `depends_on`
+- `role`
+- `kind`
 - `suggested_permissions`
 - `skill_interface`
 - `interfaces`
@@ -51,15 +51,11 @@ For blueprint skills, the top-of-file contract block in `SKILL.md` is generated
 from `blueprint.yaml`. The blueprint is canonical; generated blocks and
 repo-level manifests must match it exactly.
 
-Every exact skill-name mention in the body of `SKILL.md` must also match the
-dependency set. Do not mention a skill as an invoked collaborator unless it is
-in both the generated `Dependencies:` block and `blueprint.yaml:depends_on`.
-
-Dependencies authorize skill invocation and, for blueprint-migrated
-dependencies, interface calls through the installed `dispatcher` command (CLI)
-or declared `DispatchCall` entries used through `PythonMachineInterface.dispatch()`
-(Python). A dependency never authorizes direct access to another skill's files
-or raw script paths.
+Cross-skill use is declared on the interface that performs it, through
+`uses_interfaces`. Do not add top-level skill dependency lists. If an LLM
+surface delegates to another skill, point to that skill's LLM interface. If a
+machine interface calls another machine interface, declare that exact
+version-pinned machine interface edge.
 
 **Blueprint authoring — REQUIRED: Initialize by copying the template**
 
@@ -73,13 +69,12 @@ specification.
 
 - `category`: required single string from the typed enum in
   `references/blueprint/schema.json`.
-- `interface_version`: required positive integer. Bump only when the exported
-  contract changes in a breaking way.
-- `depends_on`: mapping from skill name to dependency contract. Use
-  `major_version` for blueprint dependencies and `{}` only for legacy
-  non-blueprint dependencies. Include `exports` to name which interfaces this
-  skill is allowed to use. Each export is the canonical fully qualified
-  interface name: `dependency.machine.name` or `dependency.llm.name`.
+- `role`: required single string from the typed enum in
+  `references/blueprint/schema.json`; it names the primary user-facing domain
+  for generated docs and graph clustering.
+- `kind`: required single string from the typed enum in
+  `references/blueprint/schema.json`; it names the primary shape of help the
+  skill provides for generated docs and filters.
 - `suggested_permissions`: advisory mapping with `bash` and `network` lists.
   Every entry must include a `reason`.
 - `skill_interface`: three plain-language lists (`inputs`, `outputs`,
@@ -91,6 +86,8 @@ specification.
     a separate file, never executed through the dispatcher.
     Every blueprint must include `interfaces.llm.default`, backed by
     `SKILL.md`.
+  - every interface declares `version`; the skill version is
+    `interfaces.llm.default.version`.
 
 **Canonical interface names**
 
@@ -146,6 +143,7 @@ dispatcher imports and CLI dispatch from skill runtime code, and
 
 `interfaces.machine.<name>` is the dispatcher-executable contract. It owns:
 
+- `version` — the major version of this interface contract
 - `description` — what the interface does
 - `usage` — complete invocation argument template
 - `patterns` — positional/flag/stdin constraints
@@ -155,6 +153,10 @@ dispatcher imports and CLI dispatch from skill runtime code, and
 - `directly_reads` — direct file roots read by this interface
 - `directly_executes` — direct file roots executed by this interface
 - `directly_writes` — direct file roots written by this interface
+- `direct_io` — immediate semantic IO for generated docs, search, graphs, and
+  safety summaries
+- `owns_filesystem` — interface-owned filesystem paths and explicitly allowed
+  reader interfaces
 
 `runtime` is **internal metadata**. It belongs in the blueprint because the
 dispatcher must know how to execute the interface, but it must not leak into
@@ -198,6 +200,30 @@ are direct roots only: health tooling expands directories and referenced files
 recursively when it computes hashes. A machine interface whose runtime resolves
 to a skill-local file must include that file in `directly_executes`.
 
+Every machine and LLM interface must declare `version`. Bump it only when that
+interface's exported contract changes in a breaking way. A skill's version is
+the version of `interfaces.llm.default`; there is no separate top-level skill
+version field.
+
+Every machine and LLM interface must also declare `direct_io` with `reads`,
+`writes`, and `network` lists. `direct_io` is immediate-only: describe only the
+IO performed by that interface itself, and never copy IO from interfaces listed
+in `uses_interfaces`. Generated documentation and graphs derive transitive IO by
+recursively following `uses_interfaces`.
+
+`direct_io.content` must stay coarse and user-meaningful. It names the object
+for docs, search, and graphs, not internal fields. Use values such as `email`,
+`calendar-event`, `proof`, `report`, or `credential`; do not introduce
+field-level values such as `email-subject`, `email-body`, `event-title`, or
+`document-id`.
+
+Every machine and LLM interface must declare `owns_filesystem`. Use `[]` when
+the interface owns no filesystem paths. If an interface owns a path, only that
+interface may write matching `direct_io.writes` entries; only that interface and
+the canonical interfaces named in `allowed_readers` may read matching
+`direct_io.reads` entries. Ownership paths can be exact strings or regexes.
+Two different interfaces must not own overlapping filesystem paths.
+
 For `kind: python_machine_interface`, health dependency exploration combines
 three surfaces:
 
@@ -223,11 +249,14 @@ reintroduce grouped parent interfaces with hidden subinterface ids.
 `interfaces.llm.<name>` is not callable through the dispatcher. It documents a
 skill-owned prompt surface routed by higher-level skill logic. It owns:
 
+- `version`
 - `description`
 - `binding` — where the interface definition lives
 - `directly_reads`
 - `directly_executes`
 - `directly_writes`
+- `direct_io`
+- `owns_filesystem`
 - `allow_all_skills` / `allowed_callers` — access control for other skills
 - optional routing or documentation metadata
 
@@ -280,12 +309,10 @@ dispatcher runtime's job is to:
 1. Parse the target canonical name `skill.machine.name`
 2. Resolve the callee `blueprint.yaml`
 3. Load `interfaces.machine.<name>`
-4. Verify the caller declared the dependency with matching major version
-5. Verify the interface appears in `depends_on.exports` when required
-6. Verify `allow_all_skills` / `allowed_callers`
-7. Match the invocation against declared patterns
-8. Resolve the internal `runtime`
-9. Execute the runtime without depending on the caller's working directory
+4. Verify `allow_all_skills` / `allowed_callers`
+5. Match the invocation against declared patterns
+6. Resolve the internal `runtime`
+7. Execute the runtime without depending on the caller's working directory
 
 The pattern-based approach enables compile-time validation: git hooks verify
 that only allowed skills can export restricted interfaces, catching misuse
@@ -466,8 +493,11 @@ That generated content is not user-authored. Do not edit it by hand. These
 checks are enforced on every commit by `validators/runner.py` (called from
 `.githooks/pre-commit`) via the skill-maker validators.
 
-**2. Skill categories** — declare `category` in `blueprint.yaml`. Must be one
-of the typed enum values in `references/blueprint/schema.json`.
+**2. Skill taxonomy** — declare `category`, `role`, and `kind` in
+`blueprint.yaml`. Each must be one of the typed enum values in
+`references/blueprint/schema.json`. `category` remains compatibility metadata
+during the migration; `role` and `kind` are the user-facing documentation and
+graph taxonomy.
 
 For `research-assistant` skills applied to `.tex` files: check whether a
 top-of-document profile comment exists before proceeding; if not, use
@@ -484,8 +514,8 @@ is named `my-X`. Every `my-X` skill must follow this layout:
 `blueprint.yaml`, not in per-skill sidecar files. `suggested_permissions` is
 advisory, not a grant. It should explain what is safe and useful to pre-approve
 for smoother execution. Do not cascade another skill's suggested permissions
-here; list that skill in `depends_on` instead and let permission tooling derive
-transitive grants from declared dependencies.
+here; declare the actual interface edge in `uses_interfaces` and let permission
+tooling derive transitive grants from the interface graph.
 
 **5. Frontmatter `description:` is a trigger declaration, not a summary** —
 write it as "Use when..." followed by the triggering conditions and symptoms
@@ -546,7 +576,10 @@ commit, and push to `origin`.
   - `skill_interface` describes the skill-level contract
   - `interfaces.machine` describes dispatcher-callable interfaces
   - `interfaces.llm` describes LLM-facing interfaces
-  - `interface_version` is the major version of that public contract
+  - `direct_io` describes immediate semantic IO for each interface
+  - `owns_filesystem` declares interface-owned filesystem paths and permitted
+    readers
+  - `version` on each interface is the major version of that public contract
 
 **10. No code in SKILL.md — runtime files only, with one exception** — skill files
 must not contain executable code logic. Any logic belongs in a dedicated file

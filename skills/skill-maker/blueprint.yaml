@@ -1,66 +1,72 @@
-# Canonical contract for skill-maker.
-# This file was migrated from legacy skill metadata.
-# Tighten the placeholder machine interfaces as each runtime contract becomes clearer.
-
 category: skill-making-development-assistant
-# Bump this major version whenever the exported contract changes in a
-# breaking way for dependent skills.
-interface_version: 1
-
-depends_on: {}
-
+role: meta-skill
+kind: generator
 suggested_permissions:
   bash: []
   network: []
-
 skill_interface:
   inputs:
-    - "User requests that match the SKILL.md description for this skill."
+  - User requests that match the SKILL.md description for this skill.
   outputs:
-    - "Responses, artifacts, or side effects described by this skill's workflow."
+  - Responses, artifacts, or side effects described by this skill's workflow.
   side_effects:
-    - "May invoke local scripts or dependencies as described in SKILL.md."
-
+  - May invoke local scripts or dependencies as described in SKILL.md.
 interfaces:
   machine:
     sync-blueprints:
-      description: "Validate skill blueprints and optionally refresh generated artifacts."
-      usage: "[--check]"
+      version: 1
+      description: Validate skill blueprints and optionally refresh generated artifacts.
+      usage: '[--check]'
       allow_all_skills: false
       allowed_callers:
-        - skill-audit
+      - skill-audit
       patterns:
-        - name: "sync"
-          min_positionals: 0
-          max_positionals: 0
-          allow_stdin: false
-          forbidden_flags: ["--check"]
-          notes: "Refresh generated files from blueprint.yaml."
-        - name: "check"
-          min_positionals: 0
-          max_positionals: 0
-          allow_stdin: false
-          required_flags: ["--check"]
-          allowed_flags: ["--check"]
-          notes: "Validate blueprints and fail if generated files are out of sync."
+      - name: sync
+        min_positionals: 0
+        max_positionals: 0
+        allow_stdin: false
+        forbidden_flags:
+        - --check
+        notes: Refresh generated files from blueprint.yaml.
+      - name: check
+        min_positionals: 0
+        max_positionals: 0
+        allow_stdin: false
+        required_flags:
+        - --check
+        allowed_flags:
+        - --check
+        notes: Validate blueprints and fail if generated files are out of sync.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_blueprint_syncer.py:Interface
       dependencies:
-        - kind: python
-          name: PyYAML
-          reason: "Parses skill blueprint YAML files."
+      - kind: python
+        name: PyYAML
+        reason: Parses skill blueprint YAML files.
       directly_reads: []
       directly_executes:
-        - _rtx/_blueprint_syncer.py
+      - _rtx/_blueprint_syncer.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
   llm:
     default:
+      version: 1
       description: Primary LLM-facing skill instructions.
       binding:
         kind: skill_file
         path: SKILL.md
       directly_reads:
-        - SKILL.md
+      - SKILL.md
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
+      allow_all_skills: true

@@ -243,6 +243,39 @@ def resolve_machine_interface_surface(
     return spec, interface_name
 
 
+def _interface_version(interface_spec: dict[str, Any], context: str) -> int:
+    version = interface_spec.get("version")
+    if not isinstance(version, int) or version < 1:
+        raise InvocationError(f"{context}: interface `version` must be a positive integer")
+    return version
+
+
+def _declared_machine_uses(
+    caller_blueprint: dict[str, Any],
+    caller_skill: str,
+    canonical_target: str,
+    target_version: int,
+) -> bool:
+    interfaces = expect_mapping(caller_blueprint.get("interfaces"), f"{caller_skill}.interfaces")
+    machine = expect_mapping(interfaces.get("machine"), f"{caller_skill}.interfaces.machine")
+    for interface_name, interface_spec in machine.items():
+        if not isinstance(interface_spec, dict):
+            continue
+        uses = expect_list(
+            interface_spec.get("uses_interfaces"),
+            f"{caller_skill}.machine.{interface_name}.uses_interfaces",
+        )
+        for entry in uses:
+            if not isinstance(entry, dict):
+                raise InvocationError(
+                    f"{caller_skill}.machine.{interface_name}.uses_interfaces: "
+                    "entries must declare `interface` and `version`"
+                )
+            if entry.get("interface") == canonical_target and entry.get("version") == target_version:
+                return True
+    return False
+
+
 def resolve_machine_interface(
     target_skill: str,
     target_blueprint: dict[str, Any],
@@ -262,6 +295,7 @@ def resolve_machine_interface(
     allow_all_skills = interface_spec.get("allow_all_skills", False)
     allowed_callers = expect_string_list(interface_spec.get("allowed_callers"), "allowed_callers")
     canonical_target = f"{target_skill}.machine.{resolved_name}"
+    target_version = _interface_version(interface_spec, canonical_target)
 
     if caller_skill == target_skill:
         return interface_spec, pattern_spec, pattern_name
@@ -275,28 +309,10 @@ def resolve_machine_interface(
         )
 
     caller_blueprint = load_blueprint(caller_skill, repo_root=repo_root)
-    depends_on = expect_mapping(caller_blueprint.get("depends_on"), f"{caller_skill}.depends_on")
-    dep_spec = depends_on.get(target_skill)
-    if not isinstance(dep_spec, dict):
+    if not _declared_machine_uses(caller_blueprint, caller_skill, canonical_target, target_version):
         raise InvocationError(
-            f"caller skill `{caller_skill}` does not declare dependency on `{target_skill}`"
-        )
-
-    target_version = target_blueprint.get("interface_version")
-    declared_version = dep_spec.get("major_version")
-    if declared_version != target_version:
-        raise InvocationError(
-            f"caller skill `{caller_skill}` depends on `{target_skill}` version "
-            f"{declared_version}, but target exports version {target_version}"
-        )
-
-    allowed_exports = expect_string_list(
-        dep_spec.get("exports"),
-        f"{caller_skill}.depends_on.{target_skill}.exports",
-    )
-    if canonical_target not in allowed_exports and resolved_name not in allowed_exports:
-        raise InvocationError(
-            f"caller skill `{caller_skill}` is not allowed to invoke `{canonical_target}`"
+            f"caller skill `{caller_skill}` does not declare uses_interfaces entry "
+            f"for `{canonical_target}` version {target_version}"
         )
 
     return interface_spec, pattern_spec, pattern_name

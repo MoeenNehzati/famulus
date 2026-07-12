@@ -124,15 +124,17 @@ The checked-in schema is in [references/blueprint/schema.json](../../references/
 At the top level, the live blueprint contract currently covers:
 
 - `category`
-- `interface_version`
+- `role`
+- `kind`
 - `cross_platform`
-- `depends_on`
 - `skill_interface`
 - `suggested_permissions`
 - `interfaces`
 
-`category` is still the live classification field. The checked-in schema does
-not currently define top-level `role` or `kind` fields.
+`category` is compatibility classification. `role` and `kind` are the
+documentation and graph taxonomy fields. There is no top-level
+`interface_version` or `depends_on`; each interface declares its own `version`,
+and cross-skill use is declared through version-pinned `uses_interfaces`.
 
 The most important high-friction part is `interfaces.machine`, because that is
 where the repo makes executable boundaries explicit. Each machine interface

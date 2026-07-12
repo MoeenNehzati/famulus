@@ -8,13 +8,14 @@ description: Use when asked to triage email, process the inbox, or surface actio
 
 Category: productivity-general-assistant
 
-Dependencies:
-- email-client
-- list-manager
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces:
+- `email-triage.llm.default -> email-client.llm.default@3`
+- `email-triage.llm.default -> list-manager.llm.default@1`
 
-Exported Interfaces: none
+Public Interfaces:
+- `email-triage.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.

@@ -1,4 +1,4 @@
-"""Validate relationships between blueprints (inter-YAML constraints)."""
+"""Validate inter-blueprint interface-use constraints."""
 from __future__ import annotations
 
 import sys
@@ -43,115 +43,121 @@ def _expect_string_list(value: Any, context: str) -> list[str]:
     return value
 
 
-def _resolve_callable_surface(
-    skill_name: str,
-    blueprint: dict[str, Any],
-    export_id: str,
-) -> tuple[str, dict[str, Any]]:
-    parts = export_id.split(".")
-    if len(parts) == 3:
-        target_skill, kind, interface_name = parts
-        if target_skill != skill_name:
-            raise BlueprintError(f"canonical interface `{export_id}` names `{target_skill}`, expected `{skill_name}`")
-        interfaces = _expect_mapping(blueprint.get("interfaces"), "interfaces")
-        if kind not in {"machine", "llm"}:
-            raise BlueprintError(f"unsupported interface kind `{kind}`")
-        namespace = _expect_mapping(interfaces.get(kind), f"interfaces.{kind}")
-        spec = namespace.get(interface_name)
-        if not isinstance(spec, dict):
-            raise BlueprintError(f"{kind} interface `{interface_name}` is not defined")
-        return f"{target_skill}.{kind}.{interface_name}", spec
-    if len(parts) != 1:
-        raise BlueprintError(f"interface `{export_id}` must be a local name or skill.kind.name")
-    interfaces = _expect_mapping(blueprint.get("interfaces"), "interfaces")
-    machine = _expect_mapping(interfaces.get("machine"), "interfaces.machine")
-    spec = machine.get(export_id)
-    if not isinstance(spec, dict):
-        raise BlueprintError(f"machine interface `{export_id}` is not defined")
-    return f"{skill_name}.machine.{export_id}", spec
+def _split_canonical_interface(name: str) -> tuple[str, str, str] | None:
+    parts = name.split(".")
+    if len(parts) != 3:
+        return None
+    skill_name, namespace, interface_name = parts
+    if not skill_name or namespace not in {"machine", "llm"} or not interface_name:
+        return None
+    return skill_name, namespace, interface_name
+
+
+def _interfaces(data: dict[str, Any], namespace: str) -> dict[str, Any]:
+    interfaces = _expect_mapping(data.get("interfaces"), "interfaces")
+    return _expect_mapping(interfaces.get(namespace), f"interfaces.{namespace}")
+
+
+def _canonical_interfaces(
+    blueprints: dict[str, dict[str, Any]]
+) -> dict[str, tuple[str, str, str, dict[str, Any], int]]:
+    result: dict[str, tuple[str, str, str, dict[str, Any], int]] = {}
+    for skill_name, blueprint in blueprints.items():
+        for namespace in ("machine", "llm"):
+            try:
+                specs = _interfaces(blueprint, namespace)
+            except BlueprintError:
+                continue
+            for interface_name, spec in specs.items():
+                if not isinstance(spec, dict):
+                    continue
+                version = spec.get("version")
+                if isinstance(version, int) and version >= 1:
+                    result[f"{skill_name}.{namespace}.{interface_name}"] = (
+                        skill_name,
+                        namespace,
+                        interface_name,
+                        spec,
+                        version,
+                    )
+    return result
 
 
 def validate_relationships(
     blueprints: dict[str, dict[str, Any]], skills_root: Path
 ) -> list[str]:
-    """Validate inter-blueprint constraints."""
+    """Validate version-pinned uses_interfaces edges."""
     errors: list[str] = []
+    canonical = _canonical_interfaces(blueprints)
 
     for skill_name, blueprint in blueprints.items():
         blueprint_path = skills_root / skill_name / "blueprint.yaml"
-        depends_on = blueprint.get("depends_on") or {}
+        if "depends_on" in blueprint:
+            errors.append(f"{blueprint_path}: top-level `depends_on` has been removed; use `uses_interfaces`")
 
-        if not isinstance(depends_on, dict):
-            continue
-
-        for dep_name, dep_spec in depends_on.items():
-            if not isinstance(dep_name, str):
+        for namespace in ("machine", "llm"):
+            try:
+                specs = _interfaces(blueprint, namespace)
+            except BlueprintError:
                 continue
-
-            if dep_name == skill_name:
-                errors.append(f"{blueprint_path}: skill cannot depend on itself")
-                continue
-
-            if dep_spec is None:
-                dep_spec = {}
-            if not isinstance(dep_spec, dict):
-                continue
-
-            major_version = dep_spec.get("major_version")
-            exports = dep_spec.get("exports") or []
-            if not isinstance(exports, list):
-                exports = []
-
-            dep_blueprint = blueprints.get(dep_name)
-            if dep_blueprint is not None:
-                if major_version is None:
-                    errors.append(
-                        f"{blueprint_path}: depends_on.{dep_name} must declare "
-                        f"major_version because {dep_name} has a blueprint"
-                    )
+            for interface_name, spec in specs.items():
+                if not isinstance(spec, dict):
                     continue
-
-                dep_interface_version = dep_blueprint.get("interface_version")
-                if major_version != dep_interface_version:
-                    errors.append(
-                        f"{blueprint_path}: depends_on.{dep_name}.major_version="
-                        f"{major_version} does not match {dep_name} "
-                        f"interface_version={dep_interface_version}"
-                    )
-
-            if dep_blueprint is not None and exports:
-                for export_name in exports:
-                    if not isinstance(export_name, str):
+                context = f"{blueprint_path}: interfaces.{namespace}.{interface_name}.uses_interfaces"
+                raw_uses = spec.get("uses_interfaces", [])
+                if not isinstance(raw_uses, list):
+                    errors.append(f"{context}: expected list")
+                    continue
+                for idx, entry in enumerate(raw_uses):
+                    entry_context = f"{context}[{idx}]"
+                    if not isinstance(entry, dict):
+                        errors.append(f"{entry_context}: expected mapping with `interface` and `version`")
                         continue
-                    try:
-                        resolved_id, surface_spec = _resolve_callable_surface(dep_name, dep_blueprint, export_name)
-                    except BlueprintError:
+                    target = entry.get("interface")
+                    pinned_version = entry.get("version")
+                    if not isinstance(target, str) or not target:
+                        errors.append(f"{entry_context}.interface: expected non-empty string")
+                        continue
+                    parsed = _split_canonical_interface(target)
+                    if parsed is None:
+                        errors.append(f"{entry_context}.interface: must be `skill.machine.name` or `skill.llm.name`")
+                        continue
+                    target_skill, target_namespace, _target_name = parsed
+                    target_record = canonical.get(target)
+                    if target_record is None:
+                        errors.append(f"{entry_context}.interface targets unknown interface `{target}`")
+                        continue
+
+                    _target_skill, _namespace, _name, target_spec, actual_version = target_record
+                    if pinned_version != actual_version:
                         errors.append(
-                            f"{blueprint_path}: depends_on.{dep_name}.exports includes "
-                            f"`{export_name}`, which is not defined in {dep_name}"
+                            f"{entry_context} pins `{target}` version {pinned_version}, "
+                            f"but target version is {actual_version}"
                         )
-                        continue
 
-                    allow_all_skills = surface_spec.get("allow_all_skills", False)
+                    if namespace == "machine" and target_namespace != "machine":
+                        errors.append(f"{entry_context}.interface targets `{target}`; machine interfaces may only use machine interfaces")
+                    if namespace == "llm" and target_namespace == "machine" and target_skill != skill_name:
+                        errors.append(
+                            f"{entry_context}.interface targets `{target}`; "
+                            "LLM interfaces may only use same-skill machine interfaces"
+                        )
+
+                    if target_skill == skill_name:
+                        continue
+                    allow_all_skills = bool(target_spec.get("allow_all_skills", False))
                     try:
                         allowed_callers = _expect_string_list(
-                            surface_spec.get("allowed_callers"),
-                            f"{dep_name}:{resolved_id}.allowed_callers",
+                            target_spec.get("allowed_callers"),
+                            f"{target}.allowed_callers",
                         )
                     except BlueprintError as exc:
                         errors.append(str(exc))
                         continue
-
-                    if not allow_all_skills and not allowed_callers:
+                    if not allow_all_skills and skill_name not in allowed_callers:
                         errors.append(
-                            f"{blueprint_path}: depends_on.{dep_name}.exports includes "
-                            f"`{resolved_id}`, which is internal-only in {dep_name}"
-                        )
-                    elif not allow_all_skills and skill_name not in allowed_callers:
-                        errors.append(
-                            f"{blueprint_path}: skill {skill_name} is not in "
-                            f"allowed_callers for {dep_name}.{resolved_id}. "
-                            f"Allowed: {allowed_callers}"
+                            f"{entry_context}.interface targets `{target}`, but `{skill_name}` "
+                            f"is not allowed by target access control"
                         )
 
     return errors

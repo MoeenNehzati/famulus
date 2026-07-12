@@ -1,55 +1,63 @@
-# Canonical contract for get-weather.
-
 category: productivity-general-assistant
-interface_version: 1
-
+role: productivity
+kind: client
 cross_platform: false
-
-depends_on: {}
-
 suggested_permissions:
   bash:
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_weather_client.py:Interface"]
-      reason: "Weather lookup tool."
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_weather_client.py:Interface
+    reason: Weather lookup tool.
   network: []
-
 skill_interface:
   inputs:
-    - User requests for weather information.
+  - User requests for weather information.
   outputs:
-    - Current weather data and forecasts.
+  - Current weather data and forecasts.
   side_effects:
-    - May query weather APIs.
-
+  - May query weather APIs.
 interfaces:
   machine:
     scripts-weather:
+      version: 1
       description: Fetch weather data for a location and date range, returning hourly
         forecast JSON.
       usage: '[--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]'
       allow_all_skills: true
       allowed_callers: []
       patterns:
-        - min_positionals: 0
-          allow_extra_positionals: true
-          allow_stdin: false
+      - min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_weather_client.py:Interface
-      dependencies:
-        []
+      dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_weather_client.py
+      - _rtx/_weather_client.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
   llm:
     default:
+      version: 1
       description: Primary LLM-facing skill instructions.
       binding:
         kind: skill_file
         path: SKILL.md
       directly_reads:
-        - SKILL.md
+      - SKILL.md
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
+      allow_all_skills: true

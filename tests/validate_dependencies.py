@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-from textwrap import dedent
+
+import yaml
 
 _VALIDATOR = (
     Path(__file__).resolve().parents[1]
@@ -17,18 +18,27 @@ _spec.loader.exec_module(_mod)
 def _skill(
     tmp_path: Path,
     name: str,
-    deps_block: str = "Dependencies: none",
     body: str = "",
-    blueprint_deps: list[str] | None = None,
+    blueprint_uses: list[str] | None = None,
 ) -> Path:
     skill_dir = tmp_path / "skills" / name
     skill_dir.mkdir(parents=True)
-    skill_md = f"---\nname: {name}\n---\n{deps_block}\n\n{body}\n"
+    skill_md = f"---\nname: {name}\n---\n{body}\n"
     (skill_dir / "SKILL.md").write_text(skill_md)
-    deps = blueprint_deps or []
-    dep_lines = "\n".join(f"  {dep}: {{}}" for dep in deps)
-    depends_block = f"depends_on:\n{dep_lines}\n" if deps else "depends_on: {}\n"
-    (skill_dir / "blueprint.yaml").write_text(dedent(depends_block))
+    uses = blueprint_uses or []
+    default = {
+        "version": 1,
+        "description": "Primary LLM-facing skill instructions.",
+        "binding": {"kind": "skill_file", "path": "SKILL.md"},
+        "directly_reads": ["SKILL.md"],
+        "directly_executes": [],
+        "directly_writes": [],
+    }
+    if uses:
+        default["uses_interfaces"] = [
+            {"interface": f"{dep}.llm.default", "version": 1} for dep in uses
+        ]
+    (skill_dir / "blueprint.yaml").write_text(yaml.dump({"interfaces": {"llm": {"default": default}}}))
     return skill_dir
 
 
@@ -42,29 +52,32 @@ def test_valid_no_deps_passes(tmp_path: Path) -> None:
     assert _mod.validate(tmp_path) == []
 
 
-def test_missing_deps_block_flagged(tmp_path: Path) -> None:
+def test_missing_dependency_block_is_allowed(tmp_path: Path) -> None:
     skill_dir = tmp_path / "skills" / "my-skill"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("---\nname: my-skill\n---\nBody.\n")
-    (skill_dir / "blueprint.yaml").write_text("depends_on: {}\n")
-    errors = _mod.validate(tmp_path)
-    assert any("missing Dependencies block" in e for e in errors)
-
-
-def test_mismatched_deps_flagged(tmp_path: Path) -> None:
-    _skill(tmp_path, "my-skill", deps_block="Dependencies:\n- other-skill")
-    errors = _mod.validate(tmp_path)
-    assert any("Dependencies block does not match" in e for e in errors)
+    (skill_dir / "blueprint.yaml").write_text("interfaces: {}\n")
+    assert _mod.validate(tmp_path) == []
 
 
 def test_body_mentions_not_in_sidecar_flagged(tmp_path: Path) -> None:
     _skill(
         tmp_path,
         "my-skill",
-        deps_block="Dependencies: none",
         body="Use other-skill for this.",
     )
     # Create other-skill so it appears in skill_names
     (tmp_path / "skills" / "other-skill").mkdir(parents=True)
     errors = _mod.validate(tmp_path)
     assert any("exact skill-name mentions" in e for e in errors)
+
+
+def test_body_mentions_declared_interface_use_pass(tmp_path: Path) -> None:
+    _skill(
+        tmp_path,
+        "my-skill",
+        body="Use other-skill for this.",
+        blueprint_uses=["other-skill"],
+    )
+    (tmp_path / "skills" / "other-skill").mkdir(parents=True)
+    assert _mod.validate(tmp_path) == []

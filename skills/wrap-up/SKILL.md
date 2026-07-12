@@ -11,15 +11,16 @@ description: |
 
 Category: workflow-general-assistant
 
-Dependencies:
-- daily-plan
-- find-handoff-candidates
-- list-manager
-- prepare-handoff
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces:
+- `wrap-up.llm.default -> daily-plan.llm.default@1`
+- `wrap-up.llm.default -> find-handoff-candidates.llm.default@1`
+- `wrap-up.llm.default -> list-manager.llm.default@1`
+- `wrap-up.llm.default -> prepare-handoff.llm.default@1`
 
-Exported Interfaces: none
+Public Interfaces:
+- `wrap-up.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.

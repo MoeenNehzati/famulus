@@ -1,95 +1,223 @@
-# Canonical contract for g-calendar.
-
 category: productivity-general-assistant
-interface_version: 1
-
+role: productivity
+kind: client
 cross_platform: true
-
-depends_on: {}
-
 suggested_permissions:
   bash:
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_oauth_bootstrap.py:Interface"]
-      reason: "OAuth setup tool."
-    - command: ["python3", "-m", "officina.runtime.python_machine_interface_runner",
-        "_rtx/_ensure_oauth.py:Interface"]
-      reason: "Check OAuth status and guide setup (relocated from install-assistant-tools)."
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_oauth_bootstrap.py:Interface
+    reason: OAuth setup tool.
+  - command:
+    - python3
+    - -m
+    - officina.runtime.python_machine_interface_runner
+    - _rtx/_ensure_oauth.py:Interface
+    reason: Check OAuth status and guide setup (relocated from install-assistant-tools).
   network: []
-
 skill_interface:
   inputs:
-    - User requests for calendar data.
+  - User requests for calendar data.
   outputs:
-    - Calendar event data and agenda information.
+  - Calendar event data and agenda information.
   side_effects:
-    - May interact with Google Calendar API.
-
+  - May interact with Google Calendar API.
 interfaces:
   machine:
     scripts-gcal:
+      version: 1
       description: Query or modify Google Calendar events via the Python calendar
         CLI (agenda, search, create, update, delete, etc.).
       usage: <command> [options]
       allow_all_skills: false
       allowed_callers:
-        - daily-plan
+      - daily-plan
       patterns:
-        - min_positionals: 0
-          allow_extra_positionals: true
-          allow_stdin: false
+      - min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_gcal_client.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_gcal_client.py
+      - _rtx/_gcal_client.py
       directly_writes: []
+      direct_io:
+        reads:
+        - medium: network-request
+          access: read
+          system: google-calendar
+          content: event
+          format: json
+          auth:
+            kind: google-calendar-oauth
+            mode: uses-existing
+          sensitivity: user-private
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: credential
+          format: json
+          path: $home/.config/g-calendar/credentials.json
+          auth:
+            kind: google-calendar-oauth
+            mode: uses-existing
+          sensitivity: secret
+        writes:
+        - medium: network-request
+          access: write
+          system: google-calendar
+          content: event
+          format: json
+          auth:
+            kind: google-calendar-oauth
+            mode: uses-existing
+          sensitivity: user-private
+        network:
+        - medium: network-request
+          access: request
+          system: google-calendar
+          content: event
+          format: json
+          auth:
+            kind: google-calendar-oauth
+            mode: uses-existing
+          sensitivity: user-private
+      owns_filesystem: []
     setup-oauth:
+      version: 1
       description: Run the OAuth setup flow to generate or refresh Google Calendar
         credentials.
       usage: '[--from-json /path/to/client.json]'
       allow_all_skills: false
       patterns:
-        - min_positionals: 0
-          max_positionals: 0
-          allow_stdin: false
-          notes: OAuth setup for Google Calendar access.
+      - min_positionals: 0
+        max_positionals: 0
+        allow_stdin: false
+        notes: OAuth setup for Google Calendar access.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_oauth_bootstrap.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_oauth_bootstrap.py
+      - _rtx/_oauth_bootstrap.py
       directly_writes: []
+      direct_io:
+        reads:
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: credential
+          format: json
+          path: $home/.config/g-calendar/client.json
+          sensitivity: secret
+        writes:
+        - medium: local-filesystem
+          access: write
+          system: filesystem
+          content: credential
+          format: json
+          path: $home/.config/g-calendar/credentials.json
+          auth:
+            kind: google-calendar-oauth
+            mode: creates
+          sensitivity: secret
+        network:
+        - medium: network-request
+          access: request
+          system: oauth
+          content: credential
+          format: json
+          auth:
+            kind: google-calendar-oauth
+            mode: creates
+          sensitivity: secret
+      owns_filesystem:
+      - match: exact
+        path: $home/.config/g-calendar/credentials.json
+        allowed_readers:
+        - g-calendar.machine.scripts-gcal
+        - g-calendar.machine.ensure-oauth
+        reason: setup-oauth is the declared writer for regenerated calendar OAuth
+          credentials.
     ensure-oauth:
+      version: 1
       description: "Check g-calendar OAuth status; print setup guidance or launch\
         \ browser authorization as needed. Relocated from install-assistant-tools\
-        \ — invoke directly (caller-skill g-calendar) as part of connecting remotes."
+        \ \u2014 invoke directly (caller-skill g-calendar) as part of connecting remotes."
       usage: --home <dir> [--dry-run]
       allow_all_skills: false
       patterns:
-        - min_positionals: 0
-          allow_extra_positionals: true
-          allow_stdin: false
-          notes: Check OAuth status and guide setup for g-calendar.
+      - min_positionals: 0
+        allow_extra_positionals: true
+        allow_stdin: false
+        notes: Check OAuth status and guide setup for g-calendar.
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_ensure_oauth.py:Interface
       dependencies: []
       directly_reads: []
       directly_executes:
-        - _rtx/_ensure_oauth.py
+      - _rtx/_ensure_oauth.py
       directly_writes: []
+      direct_io:
+        reads:
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: credential
+          format: json
+          path: $home/.config/g-calendar/credentials.json
+          auth:
+            kind: google-calendar-oauth
+            mode: checks
+          sensitivity: secret
+        writes:
+        - medium: stdout
+          access: write
+          content: response
+          format: text
+          sensitivity: derived-private
+        network:
+        - medium: network-request
+          access: request
+          system: oauth
+          content: credential
+          format: json
+          auth:
+            kind: google-calendar-oauth
+            mode: checks
+          sensitivity: secret
+      owns_filesystem: []
   llm:
     default:
+      version: 1
       description: Primary LLM-facing skill instructions.
       binding:
         kind: skill_file
         path: SKILL.md
       directly_reads:
-        - SKILL.md
+      - SKILL.md
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads:
+        - medium: prompt
+          access: read
+          content: document
+          format: text
+          sensitivity: user-private
+        writes:
+        - medium: prompt
+          access: write
+          content: response
+          format: markdown
+          sensitivity: derived-private
+        network: []
+      owns_filesystem: []
+      allow_all_skills: true

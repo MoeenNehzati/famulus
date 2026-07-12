@@ -727,11 +727,23 @@
       "interfaces": {
         "compute-hashes": {
           "id": "skill-drift.machine.compute-hashes",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "markdown-it-py",
+              "reason": "Parses Markdown dependency references for audit hash computation."
+            }
+          ]
         },
         "drift-status": {
           "id": "skill-drift.machine.drift-status",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python",
+              "name": "markdown-it-py",
+              "reason": "Parses Markdown dependency references for audit hash computation."
+            }
+          ]
         }
       }
     },
@@ -757,6 +769,7 @@
       "dateparser",
       "jsonschema",
       "keyring",
+      "markdown-it-py",
       "marker-pdf",
       "rich"
     ],

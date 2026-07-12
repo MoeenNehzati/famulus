@@ -1,85 +1,105 @@
-# Canonical contract for bib-audit.
-# This file was migrated from legacy skill metadata.
-# Tighten the placeholder machine interfaces as each runtime contract becomes clearer.
-
 category: research-assistant
-# Bump this major version whenever the exported contract changes in a
-# breaking way for dependent skills.
-interface_version: 1
-
-depends_on: {}
-
+role: document-processing
+kind: auditor
 suggested_permissions:
   bash:
-    - command: ["biber"]
-      reason: "Suggested approval for bibliography audit helpers."
-    - command: ["bibtex-check"]
-      reason: "Suggested approval for bibliography audit helpers."
-    - command: ["bibtex-update"]
-      reason: "Suggested approval for bibliography audit helpers."
-    - command: ["dispatcher"]
-      args_prefix: ["--caller-skill", "bib-audit", "bib-audit.machine.scripts-bib-similarity"]
-      reason: "Runs the local bib-audit duplicate/version candidate detector through\
-        \ the shared dispatcher runtime."
-    - command: ["dispatcher"]
-      args_prefix: ["--caller-skill", "bib-audit", "bib-audit.machine.scripts-bib-validate-bibtex"]
-      reason: "Runs the local bib-audit BibTeX/natbib validator through the shared\
-        \ dispatcher runtime."
+  - command:
+    - biber
+    reason: Suggested approval for bibliography audit helpers.
+  - command:
+    - bibtex-check
+    reason: Suggested approval for bibliography audit helpers.
+  - command:
+    - bibtex-update
+    reason: Suggested approval for bibliography audit helpers.
+  - command:
+    - dispatcher
+    args_prefix:
+    - --caller-skill
+    - bib-audit
+    - bib-audit.machine.scripts-bib-similarity
+    reason: Runs the local bib-audit duplicate/version candidate detector through
+      the shared dispatcher runtime.
+  - command:
+    - dispatcher
+    args_prefix:
+    - --caller-skill
+    - bib-audit
+    - bib-audit.machine.scripts-bib-validate-bibtex
+    reason: Runs the local bib-audit BibTeX/natbib validator through the shared dispatcher
+      runtime.
   network: []
-
 skill_interface:
   inputs:
-    - "User requests that match the SKILL.md description for this skill."
+  - User requests that match the SKILL.md description for this skill.
   outputs:
-    - "Responses, artifacts, or side effects described by this skill's workflow."
+  - Responses, artifacts, or side effects described by this skill's workflow.
   side_effects:
-    - "May invoke local scripts or dependencies as described in SKILL.md."
-
+  - May invoke local scripts or dependencies as described in SKILL.md.
 interfaces:
   machine:
     scripts-bib-similarity:
+      version: 1
       description: Detect duplicate and version-pair candidates in a .bib file by
         scoring all entry pairs.
       usage: <file.bib> [--threshold 0.3]
       patterns:
-        - name: owner
-          allow_extra_positionals: true
+      - name: owner
+        allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_reference_pairs.py:SimilarityInterface
       dependencies:
-        - kind: python
-          name: bibtexparser
-          reason: Parses BibTeX entries more accurately than the fallback parser.
+      - kind: python
+        name: bibtexparser
+        reason: Parses BibTeX entries more accurately than the fallback parser.
       directly_reads: []
       directly_executes:
-        - _rtx/_reference_pairs.py
+      - _rtx/_reference_pairs.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
     scripts-bib-validate-bibtex:
+      version: 1
       description: Validate a BibTeX/natbib .bib file for syntax errors and missing
         required fields (not for biblatex projects).
       usage: <file.bib>
       patterns:
-        - name: owner
-          allow_extra_positionals: true
+      - name: owner
+        allow_extra_positionals: true
       runtime:
         kind: python_machine_interface
         entrypoint: _rtx/_syntax_checker.py:ValidateBibtexInterface
       dependencies:
-        - kind: python
-          name: bibtexparser
-          reason: Parses BibTeX entries more accurately than the fallback parser.
+      - kind: python
+        name: bibtexparser
+        reason: Parses BibTeX entries more accurately than the fallback parser.
       directly_reads: []
       directly_executes:
-        - _rtx/_syntax_checker.py
+      - _rtx/_syntax_checker.py
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
   llm:
     default:
+      version: 1
       description: Primary LLM-facing skill instructions.
       binding:
         kind: skill_file
         path: SKILL.md
       directly_reads:
-        - SKILL.md
+      - SKILL.md
       directly_executes: []
       directly_writes: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
+      allow_all_skills: true

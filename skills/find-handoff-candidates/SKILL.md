@@ -8,13 +8,14 @@ description: Use when you need a mechanical, non-interpretive scan of today's (o
 
 Category: workflow-general-assistant
 
-Dependencies:
-- prepare-handoff
+Skill Version: 1
 
-Interface Version: 1
+Uses Interfaces:
+- `find-handoff-candidates.llm.default -> prepare-handoff.llm.default@1`
 
-Exported Interfaces:
+Public Interfaces:
 - `find-handoff-candidates.machine.scan`
+- `find-handoff-candidates.llm.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
