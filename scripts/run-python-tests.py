@@ -11,35 +11,33 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-PRECOMMIT_TEST_DIRS = [
+BASE_TEST_DIRS = [
     "tests",
     "hooks/tests",
-    "skills/cloud-files/tests",
-    "skills/daily-plan/tests",
-    "skills/email-client/tests",
-    "skills/email-triage/tests",
-    "skills/find-handoff-candidates/tests",
-    "skills/g-calendar/tests",
-    "skills/list-manager/tests",
-    "skills/math-dependency-graph/tests",
-    "skills/recurring-tasks/tests",
-    "skills/skill-audit/tests",
-    "skills/skill-maker/tests",
 ]
 
-FULL_TEST_DIRS = [
-    *PRECOMMIT_TEST_DIRS,
+PRECOMMIT_EXCLUDED_TEST_DIRS = {
     "skills/install-assistant-tools/tests",
-]
-
-SUITES = {
-    "precommit": PRECOMMIT_TEST_DIRS,
-    "full": FULL_TEST_DIRS,
 }
+
+SUITES = {"precommit", "full"}
+
+
+def _discover_skill_test_dirs() -> list[str]:
+    skills_root = REPO_ROOT / "skills"
+    return sorted(
+        str(path.relative_to(REPO_ROOT))
+        for path in skills_root.glob("*/tests")
+        if path.is_dir()
+    )
 
 
 def _resolve_suite(name: str) -> list[str]:
-    test_dirs = SUITES[name]
+    test_dirs = [*BASE_TEST_DIRS, *_discover_skill_test_dirs()]
+    if name == "precommit":
+        test_dirs = [
+            path for path in test_dirs if path not in PRECOMMIT_EXCLUDED_TEST_DIRS
+        ]
     missing = [path for path in test_dirs if not (REPO_ROOT / path).exists()]
     if missing:
         raise SystemExit(f"configured test paths are missing: {', '.join(missing)}")

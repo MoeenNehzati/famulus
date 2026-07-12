@@ -193,9 +193,9 @@ The current writer is useful, but still incomplete as a certifier:
   dependencies and can conservatively flag prose that needs human review.
 - It does not currently validate `uses_interfaces` against all code-level
   `DispatchCall` declarations.
-- It runs a global mechanical gate, but that gate depends on the explicit test
-  list in `scripts/run-python-tests.py`; skill tests omitted from that list are
-  not run.
+- It runs a global mechanical gate through `scripts/run-python-tests.py`. The
+  precommit suite discovers all skill test directories by default and excludes
+  only known heavy or special suites, currently `skills/install-assistant-tools/tests`.
 - It certifies the current filesystem state, not a clean git tree. The git
   commit recorded in `.last_audit.json` is evidence, not the sole source of
   truth.
@@ -251,10 +251,9 @@ treated as a strong certification artifact:
   subset of blueprint exactness. It should eventually prove no missing or excess
   file roots, interface calls, runtime dependencies, permissions, state paths,
   and execution surfaces.
-- **Test coverage surface:** the repository's Python test runner uses an
-  explicit directory list. Skill tests are not automatically discovered unless
-  their directory appears in that list, so `skills/skill-drift/tests` should be
-  added to the mechanical gate.
+- **Test coverage surface:** the repository's Python test runner now discovers
+  skill test directories for the precommit gate. The exclusion list should stay
+  narrow and deliberate so new skill tests are included automatically.
 
 ## Recommended Fix Order
 
@@ -268,8 +267,6 @@ treated as a strong certification artifact:
 4. Validate `uses_interfaces` against machine-interface `DispatchCall`
    declarations, or derive equivalent used-interface hash entries from dispatch
    tracing.
-5. Add `skills/skill-drift/tests` to the mechanical test suite used by
-   `skill-audit`.
-6. Expand `skill-audit` semantic exactness checks from first-pass heuristics to
+5. Expand `skill-audit` semantic exactness checks from first-pass heuristics to
    explicit missing/excess checks for roots, permissions, runtime dependencies,
    state paths, and interface calls.
