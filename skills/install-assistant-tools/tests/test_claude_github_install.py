@@ -34,6 +34,8 @@ from install_test_utils import (  # noqa: E402
     contains_dispatcher_context,
     expected_skills,
     github_owner_repo,
+    install_minimum_scaffold,
+    prepend_path,
     read_json,
     run_command,
 )
@@ -128,6 +130,15 @@ class ClaudeGithubInstallTests(unittest.TestCase):
                 self.assertIn(skill_name, details_text)
             for agent_name in ("assistant", "collab", "coauthor"):
                 self.assertIn(agent_name, details_text)
+
+            scaffold_bin = install_minimum_scaffold(
+                installed_path,
+                tmp_root,
+                home=home,
+                env=plugin_env,
+            )
+            plugin_env = prepend_path(plugin_env, scaffold_bin)
+            run_command(["dispatcher", "--help"], env=plugin_env)
 
             # Claude exposes hook_started/hook_response events before auth
             # failure, so this is a real session-attachment check. Codex's

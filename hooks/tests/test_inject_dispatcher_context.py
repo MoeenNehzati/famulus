@@ -21,6 +21,7 @@ import pytest
 
 
 _HOOK = Path(__file__).resolve().parents[2] / "llmhooks" / "inject_dispatcher_context.py"
+_REPO_ROOT = _HOOK.parents[1]
 sys.path.insert(0, str(_HOOK.parents[1]))
 _spec = importlib.util.spec_from_file_location("llmhooks.inject_dispatcher_context", _HOOK)
 _mod = importlib.util.module_from_spec(_spec)
@@ -49,6 +50,32 @@ def _available(*, cli: bool = True, pkg: bool = True):
     if not pkg:
         missing.append("script_dispatcher Python package not importable")
     return patch.object(_mod, "dispatcher_available", return_value=(not missing, missing))
+
+
+def _env_with_generated_dispatcher(tmp_path: Path) -> dict[str, str]:
+    installer_dir = _REPO_ROOT / "skills" / "install-assistant-tools" / "_rtx"
+    installer_dir_str = str(installer_dir)
+    inserted = installer_dir_str not in sys.path
+    if inserted:
+        sys.path.insert(0, installer_dir_str)
+    try:
+        from _install_launcher import platform_launcher_installer
+    finally:
+        if inserted:
+            sys.path.remove(installer_dir_str)
+
+    bin_dir = tmp_path / "bin"
+    result = platform_launcher_installer().install_dispatcher_launcher(
+        _REPO_ROOT,
+        bin_dir,
+        dry_run=False,
+        manifest=None,
+    )
+    assert not result.blocks_install(), result.reason
+    env = os.environ.copy()
+    env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+    env["PYTHONPATH"] = str(_REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    return env
 
 
 class TestHookMetadata:
@@ -121,10 +148,11 @@ class TestEntryPoint:
         self,
         *args: str,
         stdin_obj: dict | None = None,
+        env_base: dict[str, str] | None = None,
         env_overrides: dict[str, str] | None = None,
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
-        env = os.environ.copy()
+        env = dict(env_base) if env_base is not None else os.environ.copy()
         env["PYTHONPATH"] = str(_HOOK.parents[1]) + os.pathsep + env.get("PYTHONPATH", "")
         if env_overrides:
             env.update(env_overrides)
@@ -141,20 +169,22 @@ class TestEntryPoint:
             )
         return result
 
-    def test_codex_entrypoint_emits_valid_json_with_nested_output(self):
+    def test_codex_entrypoint_emits_valid_json_with_nested_output(self, tmp_path):
         result = self._run_script(
             "--codex",
             stdin_obj={"hook_event_name": "SessionStart", "source": "startup"},
+            env_base=_env_with_generated_dispatcher(tmp_path),
         )
         output = json.loads(result.stdout)
         assert "hookSpecificOutput" in output
         assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
         _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])
 
-    def test_claude_entrypoint_is_stable_under_noisy_env(self):
+    def test_claude_entrypoint_is_stable_under_noisy_env(self, tmp_path):
         result = self._run_script(
             "--claude",
             stdin_obj={"hook_event_name": "SessionStart", "source": "startup"},
+            env_base=_env_with_generated_dispatcher(tmp_path),
             env_overrides={"CLAUDECODE": "", "CLAUDE_PLUGIN_ROOT": "", "COPILOT_CLI": "1"},
         )
         output = json.loads(result.stdout)
@@ -170,8 +200,8 @@ class TestEntryPoint:
 class TestPluginShim:
     _SHIM = Path(__file__).resolve().parents[1] / "inject_dispatcher_context.py"
 
-    def _run_shim(self, env_overrides: dict[str, str]) -> dict:
-        env = os.environ.copy()
+    def _run_shim(self, env_overrides: dict[str, str], tmp_path: Path) -> dict:
+        env = _env_with_generated_dispatcher(tmp_path)
         env["PYTHONPATH"] = str(self._SHIM.parents[1]) + os.pathsep + env.get("PYTHONPATH", "")
         env.update(env_overrides)
         result = subprocess.run(
@@ -184,14 +214,14 @@ class TestPluginShim:
         assert result.returncode == 0, result.stderr
         return json.loads(result.stdout)
 
-    def test_plugin_root_selects_codex_shape_without_explicit_flag(self):
-        output = self._run_shim({"PLUGIN_ROOT": "/tmp/plugin", "CLAUDE_PLUGIN_ROOT": ""})
+    def test_plugin_root_selects_codex_shape_without_explicit_flag(self, tmp_path):
+        output = self._run_shim({"PLUGIN_ROOT": "/tmp/plugin", "CLAUDE_PLUGIN_ROOT": ""}, tmp_path)
         assert "hookSpecificOutput" in output
         assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
         _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])
 
-    def test_claude_plugin_root_selects_claude_shape_without_explicit_flag(self):
-        output = self._run_shim({"PLUGIN_ROOT": "", "CLAUDE_PLUGIN_ROOT": "/tmp/plugin"})
+    def test_claude_plugin_root_selects_claude_shape_without_explicit_flag(self, tmp_path):
+        output = self._run_shim({"PLUGIN_ROOT": "", "CLAUDE_PLUGIN_ROOT": "/tmp/plugin"}, tmp_path)
         assert "hookSpecificOutput" in output
         assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
         _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])

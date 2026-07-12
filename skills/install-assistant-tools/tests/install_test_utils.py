@@ -148,6 +148,37 @@ def launcher_path(bin_dir: Path, agent: str) -> Path:
     return bin_dir / agent
 
 
+def install_minimum_scaffold(
+    installed_path: Path,
+    tmp_root: Path,
+    *,
+    home: Path,
+    env: dict[str, str],
+) -> Path:
+    """Run the packaged scaffold installer and return its generated bin dir."""
+    bin_dir = tmp_root / "minimum-scaffold-bin"
+    cmd = [
+        sys.executable,
+        str(installed_path / "skills" / "install-assistant-tools" / "_rtx" / "_install_scaffold.py"),
+        "--repo-root",
+        str(installed_path),
+        "--home",
+        str(home),
+        "--bin-dir",
+        str(bin_dir),
+    ]
+    if os.name != "nt":
+        cmd.extend(["--shell-rc", str(tmp_root / "minimum-scaffold.bashrc")])
+    run_command(cmd, env=env)
+    return bin_dir
+
+
+def prepend_path(env: dict[str, str], path: Path) -> dict[str, str]:
+    updated = dict(env)
+    updated["PATH"] = str(path) + os.pathsep + updated.get("PATH", "")
+    return updated
+
+
 def contains_dispatcher_context(payload: object) -> bool:
     text = json.dumps(payload)
     return all(marker in text for marker in DISPATCHER_CONTEXT_MARKERS)

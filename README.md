@@ -29,7 +29,15 @@ codex plugin marketplace add MoeenNehzati/famulus --json
 codex plugin add famulus@nullkit --json
 ```
 
-Then run `install-assistant-tools` to add the local scaffold that plugin installation does not create by itself: `dispatcher`, `invoke-skill`, optional agent launchers, profile files, and PATH wiring.
+Then run the `install-assistant-tools` skill to add the local scaffold that plugin installation does not create by itself: `dispatcher`, `invoke-skill`, optional agent launchers, profile files, and PATH wiring.
+
+For minimum non-interactive setup, run the Python scaffold installer directly from the installed plugin or checkout:
+
+```bash
+python3 <FAMULUS_DIR>/skills/install-assistant-tools/_rtx/_install_scaffold.py --repo-root <FAMULUS_DIR>
+```
+
+Pass `--home DIR`, `--bin-dir DIR`, and `--shell-rc FILE` when provisioning into a custom environment.
 
 For development mode, repair flows, and more installation detail, see [docs/installation.md](docs/installation.md).
 
