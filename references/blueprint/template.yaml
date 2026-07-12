@@ -106,6 +106,10 @@ interfaces:
 
       # Internal dispatcher-only invocation binding. This must not leak into
       # user-facing generated docs.
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
       invocation:
         kind: python_machine_interface
         entrypoint: _rtx/read_data.py:ReadData
@@ -113,6 +117,11 @@ interfaces:
       dependencies:
         - kind: python-package
           name: PyYAML
+          version: ">=6"
+          platforms:
+            linux: true
+            macos: true
+            windows: true
           reason: "Parses YAML input files read by this interface."
       # Optional. Version-pinned canonical machine interfaces this machine
       # interface invokes or orchestrates. Their interface hashes are included
@@ -171,6 +180,11 @@ interfaces:
       dependencies:
         - kind: python-package
           name: jsonschema
+          version: any
+          platforms:
+            linux: true
+            macos: true
+            windows: true
           reason: "Validates update payloads before writing them."
       direct_io:
         reads:
@@ -419,9 +433,19 @@ interfaces:
 # dependencies:
 #   - kind: python-package
 #     name: PyYAML
+#     version: ">=6"
+#     platforms:
+#       linux: true
+#       macos: true
+#       windows: true
 #     reason: "Reads YAML input files."
 #   - kind: binary
 #     name: curl
+#     version: any
+#     platforms:
+#       linux: true
+#       macos: true
+#       windows: true
 #     reason: "Fetches data from the remote API."
 #
 # Every interface must declare behavior sources. LLM interfaces use

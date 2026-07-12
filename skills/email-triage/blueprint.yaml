@@ -70,6 +70,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_envelope_gate.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-get-cutoff:
       version: 1
       description: Return the cutoff date for the current triage run, with a fallback
@@ -88,6 +92,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_watermark_floor.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-log-decision:
       version: 1
       description: Append a triage classification decision for one email to triage.log.
@@ -105,6 +113,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_decision_sink.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-prune-log:
       version: 1
       description: Drop triage.log entries older than 30 days and print a one-line
@@ -123,6 +135,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_log_compactor.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-update-watermark:
       version: 1
       description: Advance the triage watermark to the current timestamp. Refuses
@@ -141,6 +157,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_watermark_writer.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-mark-failure:
       version: 1
       description: Record that this triage run failed, so update-watermark refuses
@@ -159,6 +179,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_failure_sentinel.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
   llm:
     default:
       version: 1

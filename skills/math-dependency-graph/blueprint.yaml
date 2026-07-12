@@ -50,6 +50,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_graph_builder.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     scripts-extract-mathjax-macros:
       version: 1
       description: Extract MathJax macro definitions from a TeX entrypoint, recursively
@@ -68,6 +72,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_tex_macro_reader.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     scripts-serve-graph:
       version: 1
       description: Serve graph HTML from a local directory with no-cache headers for
@@ -86,6 +94,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_graph_server.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
   llm:
     default:
       version: 1

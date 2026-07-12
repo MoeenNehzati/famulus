@@ -72,6 +72,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_handoff_scan.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     calibrate:
       version: 1
       description: Re-derive reference median/p75/p90 gap-size statistics per host
@@ -103,6 +107,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_handoff_calibrate.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
   llm:
     default:
       version: 1

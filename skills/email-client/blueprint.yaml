@@ -50,6 +50,11 @@ interfaces:
       - kind: python-package
         name: keyring
         reason: Retrieves the SMTP credential from the host credential store.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: stdin
@@ -82,6 +87,10 @@ interfaces:
         entrypoint: _rtx/_smtp_transport.py:Interface
         args_prefix: []
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     mail-list:
       version: 1
       description: "List email envelopes for an account as JSON (fields: id, flags,\
@@ -101,6 +110,11 @@ interfaces:
       - kind: python-package
         name: keyring
         reason: Retrieves the IMAP credential from the host credential store.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-system
@@ -134,6 +148,10 @@ interfaces:
         args_prefix:
         - list
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     mail-read:
       version: 1
       description: Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/
@@ -149,6 +167,11 @@ interfaces:
       - kind: python-package
         name: keyring
         reason: Retrieves the IMAP credential from the host credential store.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-system
@@ -182,6 +205,10 @@ interfaces:
         args_prefix:
         - read
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     mail-attachments:
       version: 1
       description: List attachment metadata for one or more emails as JSON. Returns
@@ -196,6 +223,11 @@ interfaces:
       - kind: python-package
         name: keyring
         reason: Retrieves the IMAP credential from the host credential store.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-system
@@ -229,6 +261,10 @@ interfaces:
         args_prefix:
         - attachments
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     mail-save-attachments:
       version: 1
       description: Save attachments from one or more emails into a directory. Use
@@ -243,6 +279,11 @@ interfaces:
       - kind: python-package
         name: keyring
         reason: Retrieves the IMAP credential from the host credential store.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-system
@@ -281,6 +322,10 @@ interfaces:
         args_prefix:
         - save-attachments
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     mail-folders:
       version: 1
       description: List IMAP folders for an account (JSON).
@@ -292,6 +337,11 @@ interfaces:
       - kind: python-package
         name: keyring
         reason: Retrieves the IMAP credential from the host credential store.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-system
@@ -325,6 +375,10 @@ interfaces:
         args_prefix:
         - folders
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     accounts-list:
       version: 1
       description: List registered account nicknames with their email/display name
@@ -355,6 +409,10 @@ interfaces:
         args_prefix:
         - list
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     accounts-add:
       version: 1
       description: Register a new account nickname. Gmail IMAP/SMTP settings are the
@@ -382,6 +440,10 @@ interfaces:
         args_prefix:
         - add
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     accounts-update:
       version: 1
       description: Update fields on an existing account nickname.
@@ -412,6 +474,10 @@ interfaces:
         args_prefix:
         - update
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     accounts-remove:
       version: 1
       description: Remove an account nickname from the registry; optionally purge
@@ -424,6 +490,11 @@ interfaces:
       - kind: python-package
         name: keyring
         reason: Clears stored account credentials when requested.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-system
@@ -450,6 +521,10 @@ interfaces:
         args_prefix:
         - remove
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     accounts-set-password:
       version: 1
       description: Store the IMAP or SMTP credential for an account in the host credential
@@ -462,6 +537,11 @@ interfaces:
       - kind: python-package
         name: keyring
         reason: Stores IMAP or SMTP credentials in the host credential store.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: stdin
@@ -486,6 +566,10 @@ interfaces:
         args_prefix:
         - set-password
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     accounts-setup-oauth:
       version: 1
       description: Complete Gmail OAuth setup for an account using a Google desktop
@@ -500,6 +584,11 @@ interfaces:
         name: keyring
         reason: Stores Gmail OAuth refresh tokens and client secrets in the host credential
           store.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-filesystem
@@ -534,6 +623,10 @@ interfaces:
         args_prefix:
         - setup-oauth
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     live-smoke:
       version: 1
       description: Run explicit live provider smoke checks for one account. --imap
@@ -548,6 +641,11 @@ interfaces:
         name: keyring
         reason: Reads account credentials from the host credential store during live
           checks.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-system
@@ -596,6 +694,10 @@ interfaces:
         entrypoint: _rtx/_email_smoke.py:Interface
         args_prefix: []
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
   llm:
     default:
       version: 3

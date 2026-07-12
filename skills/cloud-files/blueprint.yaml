@@ -98,6 +98,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_read_llm_file.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     lists-write:
       version: 1
       description: Write content (from stdin) to a file in cloud storage under the
@@ -148,6 +152,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_write_llm_file.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     lists-delete:
       version: 1
       description: Delete a file from cloud storage under the lists/ directory.
@@ -191,6 +199,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_delete_llm_file.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     plans-read:
       version: 1
       description: Read a file from cloud storage under the plans/ directory.
@@ -239,6 +251,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_read_llm_file.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     plans-write:
       version: 1
       description: Write content (from stdin) to a file in cloud storage under the
@@ -288,6 +304,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_write_llm_file.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     plans-delete:
       version: 1
       description: Delete a file from cloud storage under the plans/ directory.
@@ -331,6 +351,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_delete_llm_file.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     setup-oauth:
       version: 1
       description: Run one-time OAuth2 setup for Google Drive access.
@@ -378,6 +402,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_oauth_bootstrap.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     ensure-oauth:
       version: 1
       description: "Check cloud-files OAuth status; print setup guidance or launch\
@@ -436,6 +464,10 @@ interfaces:
         args_prefix:
         - ensure-oauth
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     write-config:
       version: 1
       description: Write ~/.config/cloud-files/config.json with the given remote LLM
@@ -478,6 +510,10 @@ interfaces:
         args_prefix:
         - write-config
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
   llm:
     default:
       version: 1

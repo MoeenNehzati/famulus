@@ -202,6 +202,7 @@ Each machine interface owns:
 - `patterns`
 - `allow_all_skills`
 - `allowed_callers`
+- `platform_support`
 - `invocation`
 - `dependencies`
 - `uses_interfaces`
@@ -219,22 +220,52 @@ interface has no non-stdlib runtime dependencies.
 
 Each dependency is a factual runtime requirement with:
 
-- `kind`: `python-package` for installable Python packages, or `binary` for
-  executable tools expected on `PATH`
+- `kind`: one of the closed dependency-kind values
 - `name`: package or executable name
+- `version`: version constraint or `any` when unconstrained
+- `platforms`: required `linux`/`macos`/`windows` booleans
 - `reason`: short human explanation used by docs and review
 
 Examples:
 
 ```yaml
+platform_support:
+  linux: true
+  macos: true
+  windows: false
+
 dependencies:
   - kind: python-package
     name: PyYAML
+    version: ">=6"
+    platforms:
+      linux: true
+      macos: true
+      windows: false
     reason: "Reads YAML list files."
   - kind: binary
     name: curl
+    version: any
+    platforms:
+      linux: true
+      macos: true
+      windows: false
     reason: "Fetches remote JSON from the weather API."
 ```
+
+Allowed dependency kinds are:
+
+- `python-package`
+- `binary`
+- `system-service`
+- `system-library`
+- `external-application`
+- `runtime`
+- `model-data`
+
+Do not use dependency kinds for APIs, OAuth, credentials, or network access.
+Represent those through `direct_io.network`, auth metadata, and setup
+interfaces.
 
 These declarations are not permission suggestions. Keep developer-selected
 approval baselines in top-level `suggested_permissions`.

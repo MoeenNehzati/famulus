@@ -206,7 +206,7 @@
     },
     "machineInterface": {
       "type": "object",
-      "required": ["version", "invocation", "dependencies", "direct_io", "owns_filesystem"],
+      "required": ["version", "platform_support", "invocation", "dependencies", "direct_io", "owns_filesystem"],
       "additionalProperties": false,
       "properties": {
         "version": {
@@ -236,6 +236,9 @@
             "$ref": "#/definitions/skillName"
           },
           "default": []
+        },
+        "platform_support": {
+          "$ref": "#/definitions/platformSupport"
         },
         "invocation": {
           "$ref": "#/definitions/invocation"
@@ -269,20 +272,56 @@
     },
     "runtimeDependency": {
       "type": "object",
-      "required": ["kind", "name", "reason"],
+      "required": ["kind", "name", "version", "platforms", "reason"],
       "additionalProperties": false,
       "properties": {
         "kind": {
-          "enum": ["python-package", "binary"]
+          "$ref": "#/definitions/runtimeDependencyKind"
         },
         "name": {
           "type": "string",
           "minLength": 1,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.+\\-\\[\\]]*$"
         },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platforms": {
+          "$ref": "#/definitions/platformSupport"
+        },
         "reason": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "runtimeDependencyKind": {
+      "type": "string",
+      "enum": [
+        "python-package",
+        "binary",
+        "system-service",
+        "system-library",
+        "external-application",
+        "runtime",
+        "model-data"
+      ]
+    },
+    "platformSupport": {
+      "type": "object",
+      "description": "Explicit operating-system support flags. Each boolean must be present so unsupported platforms are represented deliberately.",
+      "required": ["linux", "macos", "windows"],
+      "additionalProperties": false,
+      "properties": {
+        "linux": {
+          "type": "boolean"
+        },
+        "macos": {
+          "type": "boolean"
+        },
+        "windows": {
+          "type": "boolean"
         }
       }
     },

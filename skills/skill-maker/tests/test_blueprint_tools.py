@@ -29,6 +29,10 @@ def default_llm_interface() -> dict:
     }
 
 
+def platform_support() -> dict:
+    return {"linux": True, "macos": True, "windows": True}
+
+
 def load_module(module_name: str, path: Path):
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
@@ -96,6 +100,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
+                                "platform_support": platform_support(),
                                 "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/_handoff_scan.py:Interface",
@@ -127,6 +132,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
+                                "platform_support": platform_support(),
                                 "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/_handoff_scan.py:Interface",
@@ -160,6 +166,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
+                                "platform_support": platform_support(),
                                 "invocation": {"kind": "python_module", "module": "_rtx._handoff_scan"},
                                 "dependencies": [],
                             }
@@ -188,6 +195,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
+                                "platform_support": platform_support(),
                                 "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/scan.py:Interface",
@@ -221,6 +229,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
+                                "platform_support": platform_support(),
                                 "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/scan.py:Interface",
@@ -255,6 +264,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
+                                "platform_support": platform_support(),
                                 "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/scan.py:Interface",
@@ -289,6 +299,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
+                                "platform_support": platform_support(),
                                 "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "../scan.py:Interface",
@@ -349,6 +360,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
+                                "platform_support": platform_support(),
                                 "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/_scan_tool.py:Interface",
@@ -387,6 +399,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
+                                "platform_support": platform_support(),
                                 "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/_handoff_scan.py:Interface",
@@ -396,11 +409,15 @@ class SkillBlueprintToolTests(unittest.TestCase):
                                     {
                                         "kind": "python-package",
                                         "name": "PyYAML",
+                                        "version": ">=6",
+                                        "platforms": platform_support(),
                                         "reason": "Parses YAML inputs.",
                                     },
                                     {
                                         "kind": "binary",
                                         "name": "rg",
+                                        "version": "any",
+                                        "platforms": platform_support(),
                                         "reason": "Searches local text quickly.",
                                     },
                                 ],
@@ -413,12 +430,35 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
         manifest = sync_module.generated_runtime_dependencies_manifest(blueprints)
 
-        self.assertEqual(manifest["all"], {"python-package": ["PyYAML"], "binary": ["rg"]})
+        self.assertEqual(
+            manifest["all"],
+            {
+                "python-package": ["PyYAML"],
+                "binary": ["rg"],
+                "system-service": [],
+                "system-library": [],
+                "external-application": [],
+                "runtime": [],
+                "model-data": [],
+            },
+        )
         self.assertEqual(
             manifest["skills"]["demo-skill"]["interfaces"]["scan"]["dependencies"],
             [
-                {"kind": "python-package", "name": "PyYAML", "reason": "Parses YAML inputs."},
-                {"kind": "binary", "name": "rg", "reason": "Searches local text quickly."},
+                {
+                    "kind": "python-package",
+                    "name": "PyYAML",
+                    "version": ">=6",
+                    "platforms": platform_support(),
+                    "reason": "Parses YAML inputs.",
+                },
+                {
+                    "kind": "binary",
+                    "name": "rg",
+                    "version": "any",
+                    "platforms": platform_support(),
+                    "reason": "Searches local text quickly.",
+                },
             ],
         )
 

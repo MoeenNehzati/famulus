@@ -79,6 +79,11 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML plan/list data through plan_runtime.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       direct_io:
         reads: []
         writes: []
@@ -88,6 +93,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_plan_orchestrate.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     plan-storage:
       version: 1
       uses_interfaces:
@@ -136,6 +145,11 @@ interfaces:
       - kind: binary
         name: rclone
         reason: Reads and writes plan files in the configured GDrive remote.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       direct_io:
         reads: []
         writes: []
@@ -145,6 +159,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_plan_storage.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     render-plan:
       version: 1
       uses_interfaces:
@@ -185,6 +203,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_render_plan.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     mutate-plan:
       version: 1
       uses_interfaces:
@@ -226,6 +248,11 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML plan/list data through plan_runtime.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       direct_io:
         reads: []
         writes: []
@@ -235,6 +262,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_state_patch.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
   llm:
     default:
       version: 1

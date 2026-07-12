@@ -9,6 +9,12 @@
             {
               "kind": "python-package",
               "name": "bibtexparser",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Parses BibTeX entries more accurately than the fallback parser."
             }
           ]
@@ -19,6 +25,12 @@
             {
               "kind": "python-package",
               "name": "bibtexparser",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Parses BibTeX entries more accurately than the fallback parser."
             }
           ]
@@ -73,6 +85,12 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Reads and writes YAML plan/list data through plan_runtime."
             }
           ]
@@ -83,6 +101,12 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Reads and writes YAML plan/list data through plan_runtime."
             }
           ]
@@ -93,6 +117,12 @@
             {
               "kind": "binary",
               "name": "rclone",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Reads and writes plan files in the configured GDrive remote."
             }
           ]
@@ -119,6 +149,12 @@
             {
               "kind": "python-package",
               "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Clears stored account credentials when requested."
             }
           ]
@@ -129,6 +165,12 @@
             {
               "kind": "python-package",
               "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Stores IMAP or SMTP credentials in the host credential store."
             }
           ]
@@ -139,6 +181,12 @@
             {
               "kind": "python-package",
               "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Stores Gmail OAuth refresh tokens and client secrets in the host credential store."
             }
           ]
@@ -153,6 +201,12 @@
             {
               "kind": "python-package",
               "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Reads account credentials from the host credential store during live checks."
             }
           ]
@@ -163,6 +217,12 @@
             {
               "kind": "python-package",
               "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Retrieves the IMAP credential from the host credential store."
             }
           ]
@@ -173,6 +233,12 @@
             {
               "kind": "python-package",
               "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Retrieves the IMAP credential from the host credential store."
             }
           ]
@@ -183,6 +249,12 @@
             {
               "kind": "python-package",
               "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Retrieves the IMAP credential from the host credential store."
             }
           ]
@@ -193,6 +265,12 @@
             {
               "kind": "python-package",
               "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Retrieves the IMAP credential from the host credential store."
             }
           ]
@@ -203,6 +281,12 @@
             {
               "kind": "python-package",
               "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Retrieves the IMAP credential from the host credential store."
             }
           ]
@@ -213,6 +297,12 @@
             {
               "kind": "python-package",
               "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Retrieves the SMTP credential from the host credential store."
             }
           ]
@@ -299,6 +389,12 @@
             {
               "kind": "binary",
               "name": "git",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Configures repository hook settings during development installs."
             }
           ]
@@ -309,6 +405,12 @@
             {
               "kind": "binary",
               "name": "git",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Configures repository hook settings during development installs."
             }
           ]
@@ -331,11 +433,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Reads YAML list data from stdin."
             },
             {
               "kind": "python-package",
               "name": "rich",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Renders nested list output for terminal display."
             }
           ]
@@ -346,11 +460,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Reads and writes YAML list data downloaded from cloud storage."
             },
             {
               "kind": "python-package",
               "name": "jsonschema",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Validates new entries before upload."
             }
           ]
@@ -361,6 +487,12 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Reads and writes YAML list data downloaded from cloud storage."
             }
           ]
@@ -371,11 +503,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Writes YAML list data for upload."
             },
             {
               "kind": "python-package",
               "name": "jsonschema",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Validates initialized list data before upload."
             }
           ]
@@ -386,6 +530,12 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Reads YAML list data downloaded from cloud storage."
             }
           ]
@@ -396,11 +546,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Reads YAML list data downloaded from cloud storage."
             },
             {
               "kind": "python-package",
               "name": "rich",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Renders nested list output for terminal display."
             }
           ]
@@ -411,11 +573,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Reads and writes YAML list data downloaded from cloud storage."
             },
             {
               "kind": "python-package",
               "name": "jsonschema",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Validates list mutations before upload."
             }
           ]
@@ -426,11 +600,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Reads and writes YAML list files."
             },
             {
               "kind": "python-package",
               "name": "jsonschema",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Validates new entries before writing."
             }
           ]
@@ -441,6 +627,12 @@
             {
               "kind": "python-package",
               "name": "jsonschema",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Resolves and reports JSON Schema metadata for list entries."
             }
           ]
@@ -451,6 +643,12 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Reads YAML list files to avoid ID collisions."
             }
           ]
@@ -461,11 +659,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Writes YAML list files."
             },
             {
               "kind": "python-package",
               "name": "jsonschema",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Validates initialized list data before writing."
             }
           ]
@@ -476,16 +686,34 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Writes migrated YAML list files."
             },
             {
               "kind": "python-package",
               "name": "jsonschema",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Validates migrated entries before writing."
             },
             {
               "kind": "python-package",
               "name": "dateparser",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Parses natural-language legacy Markdown deadlines."
             }
           ]
@@ -496,11 +724,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Reads YAML list data before rendering."
             },
             {
               "kind": "python-package",
               "name": "rich",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Renders nested list output for terminal display."
             }
           ]
@@ -511,6 +751,12 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Reads YAML list files."
             }
           ]
@@ -521,11 +767,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Reads and writes YAML list files."
             },
             {
               "kind": "python-package",
               "name": "jsonschema",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Validates list mutations before writing."
             }
           ]
@@ -556,6 +814,12 @@
             {
               "kind": "python-package",
               "name": "marker-pdf",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Provides the Surya settings module used to locate Marker model checkpoints."
             }
           ]
@@ -574,11 +838,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Reads and writes jobs.yaml."
             },
             {
               "kind": "binary",
               "name": "systemctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Disables generated user timers."
             }
           ]
@@ -589,11 +865,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Reads and writes jobs.yaml."
             },
             {
               "kind": "binary",
               "name": "systemctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Enables and starts generated user timers."
             }
           ]
@@ -604,6 +892,12 @@
             {
               "kind": "binary",
               "name": "systemctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Publishes recurring-task environment variables to the user manager when available."
             }
           ]
@@ -614,16 +908,34 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Reads jobs.yaml for enabled jobs."
             },
             {
               "kind": "binary",
               "name": "systemctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Checks user service and timer health."
             },
             {
               "kind": "binary",
               "name": "journalctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Reports recent service logs for failing jobs."
             }
           ]
@@ -638,16 +950,34 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Validates that jobs.yaml tooling can load YAML."
             },
             {
               "kind": "binary",
               "name": "systemctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Lists and manages generated user timers."
             },
             {
               "kind": "binary",
               "name": "crontab",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Installs the recurring healthcheck cron entry."
             }
           ]
@@ -658,11 +988,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Loads jobs.yaml in the management CLI."
             },
             {
               "kind": "binary",
               "name": "systemctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Lists active generated user timers."
             }
           ]
@@ -673,11 +1015,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Reads jobs.yaml while generating unit files."
             },
             {
               "kind": "binary",
               "name": "systemctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Reloads and enables generated user timers."
             }
           ]
@@ -688,11 +1042,23 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Reads jobs.yaml before running the job."
             },
             {
               "kind": "binary",
               "name": "systemctl",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Starts the generated user service immediately."
             }
           ]
@@ -703,6 +1069,12 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              },
               "reason": "Loads jobs.yaml before locating the run log."
             }
           ]
@@ -717,6 +1089,12 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Parses skill blueprint files during semantic exactness checks."
             }
           ]
@@ -743,6 +1121,12 @@
             {
               "kind": "python-package",
               "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Parses skill blueprint YAML files."
             }
           ]
@@ -766,6 +1150,11 @@
       "journalctl",
       "rclone",
       "systemctl"
-    ]
+    ],
+    "system-service": [],
+    "system-library": [],
+    "external-application": [],
+    "runtime": [],
+    "model-data": []
   }
 }

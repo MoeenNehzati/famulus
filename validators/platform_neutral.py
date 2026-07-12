@@ -43,6 +43,28 @@ _EXCLUDED_PATHS = {
     Path("skills/latex-workshop"),
     Path("skills/recurring-tasks"),
 }
+_PLATFORM_METADATA_TOOLING_PATHS = {
+    Path("skills/skill-maker/_rtx/_blueprint_syncer.py"),
+}
+_HOST_PATTERN = re.compile(r"(?i:(\.claude|claude|\.codex|codex))")
+_PLATFORM_METADATA_LINE_RE = re.compile(
+    r"^\s*(?:#\s*)?[\"']?(?:linux|macos|windows)[\"']?\s*:\s*(?:true|false|\{)"
+)
+
+
+def _is_allowed_platform_metadata_line(rel_path: Path, line: str) -> bool:
+    """Allow explicit OS support metadata without weakening host-name checks."""
+    if _HOST_PATTERN.search(line):
+        return False
+    if rel_path.name == "blueprint.yaml" and _PLATFORM_METADATA_LINE_RE.search(line):
+        return True
+    if rel_path == Path("references/blueprint/runtime_dependencies.json"):
+        return _PLATFORM_METADATA_LINE_RE.search(line) is not None
+    if rel_path.parts[:2] == ("references", "blueprint"):
+        return True
+    if rel_path in _PLATFORM_METADATA_TOOLING_PATHS:
+        return True
+    return False
 
 
 def _forbidden_pattern_for(path: Path) -> re.Pattern[str] | None:
@@ -114,8 +136,10 @@ def validate(repo_root: Path) -> list[str]:
         except UnicodeDecodeError:
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
+            rel = path.relative_to(repo_root)
+            if _is_allowed_platform_metadata_line(rel, line):
+                continue
             if pattern.search(line):
-                rel = path.relative_to(repo_root)
                 errors.append(f"{rel}:{lineno}: {line.strip()}")
     return errors
 

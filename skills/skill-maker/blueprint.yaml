@@ -41,6 +41,11 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Parses skill blueprint YAML files.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads: []
         writes: []
@@ -50,6 +55,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_blueprint_syncer.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
   llm:
     default:
       version: 1

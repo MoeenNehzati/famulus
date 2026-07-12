@@ -85,6 +85,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_gcal_client.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     setup-oauth:
       version: 1
       description: Run the OAuth setup flow to generate or refresh Google Calendar
@@ -139,6 +143,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_oauth_bootstrap.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     ensure-oauth:
       version: 1
       description: "Check g-calendar OAuth status; print setup guidance or launch\
@@ -185,6 +193,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_ensure_oauth.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
   llm:
     default:
       version: 1

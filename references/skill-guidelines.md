@@ -148,6 +148,8 @@ dispatcher imports and CLI dispatch from skill runtime code, and
 - `usage` — complete invocation argument template
 - `patterns` — positional/flag/stdin constraints
 - `allow_all_skills` / `allowed_callers` — access control
+- `platform_support` — explicit Linux/macOS/Windows support booleans for this
+  machine interface
 - `invocation` — internal execution metadata
 - `dependencies` — factual runtime package and executable requirements
 - `invocation.behavior_sources` — non-code files that can change how a machine
@@ -171,21 +173,65 @@ Use `dependencies: []` when the interface has no non-stdlib Python package or
 external executable requirements. Otherwise list one object per requirement:
 
 ```yaml
+platform_support:
+  linux: true
+  macos: true
+  windows: false
+
 dependencies:
   - kind: python-package
     name: PyYAML
+    version: ">=6"
+    platforms:
+      linux: true
+      macos: true
+      windows: false
     reason: "Reads YAML input files."
   - kind: binary
     name: curl
+    version: any
+    platforms:
+      linux: true
+      macos: true
+      windows: false
     reason: "Fetches remote JSON from the API."
 ```
 
-`kind: python-package` names an installable Python package. `kind: binary` names an
-executable expected on `PATH`. `reason` is required and should explain why the
-interface needs that dependency; it is used for docs and review. Runtime
-dependencies are factual environment requirements. They are separate from
-top-level `suggested_permissions`, which remains developer judgment about a
-good baseline approval set and must not be inferred from code.
+`platform_support` is required on every machine interface. It is an explicit
+three-boolean object, not a free-form OS list:
+
+- `linux`
+- `macos`
+- `windows`
+
+Set each boolean deliberately. Do not omit unsupported platforms. Use `macos`,
+not `osx`.
+
+Every dependency must declare `kind`, `name`, `version`, `platforms`, and
+`reason`. `platforms` uses the same required booleans as `platform_support` and
+must not claim a platform that the owning interface does not support. Use
+`version: any` only when there is no known lower bound, exact version, or useful
+human-readable constraint.
+
+Allowed dependency kinds are closed and non-overlapping:
+
+- `python-package` — installable Python package requirement. `name` is the
+  package/runtime requirement name, not necessarily the import name.
+- `binary` — executable expected on `PATH`.
+- `system-service` — service manager or daemon facility such as `systemd` or
+  `launchd`.
+- `system-library` — native/shared library requirement outside Python.
+- `external-application` — installed GUI or full application such as Chrome or
+  Audiveris.
+- `runtime` — language/runtime requirement such as Python, Node, Java, or a
+  shell runtime.
+- `model-data` — local model, checkpoint, cache, or other required data bundle.
+
+Do not encode APIs, OAuth, credentials, or network access as dependency kinds.
+Represent those through `direct_io.network`, auth metadata, and setup
+interfaces. Runtime dependencies are factual environment requirements. They are
+separate from top-level `suggested_permissions`, which remains developer
+judgment about a good baseline approval set and must not be inferred from code.
 
 The blueprint sync tool generates `references/blueprint/runtime_dependencies.json`
 from these declarations. Installers and other non-YAML consumers should read
@@ -627,11 +673,18 @@ storage and display formats in the first-party helpers under
 skill. This is mechanically checked by `validators/portable_dates.py`.
 
 **14. Shared skill content must stay neutral about which specific AI-assistant
-host or operating system it runs under.** Enforced by
+host it runs under, and must mention operating systems only in explicit
+platform-support metadata or platform-named implementation files.** Enforced by
 `validators/platform_neutral.py`.
 
-- `SKILL.md`, `blueprint.yaml`, and any generically named runtime file must not
-  name a specific host or operating system.
+- `SKILL.md` and any generically named runtime file must not name a specific
+  host or operating system.
+- `blueprint.yaml` may name operating systems only in structured
+  `platform_support` and dependency `platforms` metadata. Do not put
+  platform-specific prose or implementation guidance in generic blueprint
+  fields.
+- Blueprint schema documentation and blueprint validation/sync tooling may name
+  the allowed platform keys because they define and enforce that metadata.
 - If a skill or shared package genuinely needs platform-specific logic, put
   that logic in a file whose own filename names the platform, such as
   `claude`, `codex`, `windows`, `osx`, or `linux`.

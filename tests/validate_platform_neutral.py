@@ -145,6 +145,59 @@ def test_generically_named_file_may_not_mention_operating_system(tmp_path: Path)
     assert "Windows" in errors[0]
 
 
+def test_blueprint_platform_support_metadata_is_allowed(tmp_path: Path) -> None:
+    d = tmp_path / "skills" / "a-skill"
+    d.mkdir(parents=True)
+    (d / "blueprint.yaml").write_text(
+        "interfaces:\n"
+        "  machine:\n"
+        "    run:\n"
+        "      platform_support:\n"
+        "        linux: true\n"
+        "        macos: false\n"
+        "        windows: false\n"
+        "      dependencies:\n"
+        "        - kind: binary\n"
+        "          platforms:\n"
+        "            linux: true\n"
+        "            macos: false\n"
+        "            windows: false\n"
+    )
+    assert validate(tmp_path) == []
+
+
+def test_blueprint_generic_platform_prose_is_still_rejected(tmp_path: Path) -> None:
+    d = tmp_path / "skills" / "a-skill"
+    d.mkdir(parents=True)
+    (d / "blueprint.yaml").write_text("description: Uses Linux-specific paths.\n")
+    errors = validate(tmp_path)
+    assert len(errors) == 1
+    assert "Linux-specific" in errors[0]
+
+
+def test_blueprint_reference_docs_can_define_platform_metadata(tmp_path: Path) -> None:
+    refs = tmp_path / "references" / "blueprint"
+    refs.mkdir(parents=True)
+    (refs / "guide.md").write_text("Use `linux`/`macos`/`windows` booleans for support metadata.\n")
+    assert validate(tmp_path) == []
+
+
+def test_blueprint_reference_docs_still_reject_host_names(tmp_path: Path) -> None:
+    refs = tmp_path / "references" / "blueprint"
+    refs.mkdir(parents=True)
+    (refs / "guide.md").write_text("Use Codex for this flow.\n")
+    errors = validate(tmp_path)
+    assert len(errors) == 1
+    assert "Codex" in errors[0]
+
+
+def test_blueprint_syncer_can_define_platform_keys(tmp_path: Path) -> None:
+    d = tmp_path / "skills" / "skill-maker" / "_rtx"
+    d.mkdir(parents=True)
+    (d / "_blueprint_syncer.py").write_text('PLATFORM_NAMES = ("linux", "macos", "windows")\n')
+    assert validate(tmp_path) == []
+
+
 def test_init_py_always_exempt(tmp_path: Path) -> None:
     d = tmp_path / "skills" / "a-skill" / "_rtx"
     d.mkdir(parents=True)

@@ -61,9 +61,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes jobs.yaml.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       - kind: binary
         name: systemctl
         reason: Enables and starts generated user timers.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       direct_io:
         reads: []
         writes: []
@@ -75,6 +85,10 @@ interfaces:
         args_prefix:
         - enable
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-disable:
       version: 1
       description: 'Disable a job by setting enabled: false in jobs.yaml and syncing
@@ -87,9 +101,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes jobs.yaml.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       - kind: binary
         name: systemctl
         reason: Disables generated user timers.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       direct_io:
         reads: []
         writes: []
@@ -101,6 +125,10 @@ interfaces:
         args_prefix:
         - disable
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-test:
       version: 1
       description: Trigger a job immediately via systemd, show output and status.
@@ -112,9 +140,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads jobs.yaml before running the job.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       - kind: binary
         name: systemctl
         reason: Starts the generated user service immediately.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       direct_io:
         reads: []
         writes: []
@@ -126,6 +164,10 @@ interfaces:
         args_prefix:
         - test
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-view-logs:
       version: 1
       description: Tail the run log for a job (default 50 lines).
@@ -137,6 +179,11 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Loads jobs.yaml before locating the run log.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       direct_io:
         reads: []
         writes: []
@@ -148,6 +195,10 @@ interfaces:
         args_prefix:
         - view-logs
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-status:
       version: 1
       description: List all active ai-* timers, next fire times, and service status.
@@ -159,9 +210,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Loads jobs.yaml in the management CLI.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       - kind: binary
         name: systemctl
         reason: Lists active generated user timers.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       direct_io:
         reads: []
         writes: []
@@ -173,6 +234,10 @@ interfaces:
         args_prefix:
         - status
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-sync:
       version: 1
       description: Regenerate systemd unit files from jobs.yaml.
@@ -184,9 +249,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads jobs.yaml while generating unit files.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       - kind: binary
         name: systemctl
         reason: Reloads and enables generated user timers.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       direct_io:
         reads: []
         writes: []
@@ -196,6 +271,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_unit_writer.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-healthcheck:
       version: 1
       description: Run pre-flight and per-job health checks for all enabled recurring
@@ -208,12 +287,27 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads jobs.yaml for enabled jobs.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       - kind: binary
         name: systemctl
         reason: Checks user service and timer health.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       - kind: binary
         name: journalctl
         reason: Reports recent service logs for failing jobs.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       direct_io:
         reads: []
         writes: []
@@ -223,6 +317,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_healthcheck_probe.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-setup:
       version: 1
       description: Verify prerequisites, sync systemd unit files from jobs.yaml, install
@@ -235,12 +333,27 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Validates that jobs.yaml tooling can load YAML.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       - kind: binary
         name: systemctl
         reason: Lists and manages generated user timers.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       - kind: binary
         name: crontab
         reason: Installs the recurring healthcheck cron entry.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       direct_io:
         reads: []
         writes: []
@@ -250,6 +363,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_setup_runner.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-ensure-agent-env:
       version: 1
       description: Idempotently ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE
@@ -262,6 +379,11 @@ interfaces:
         name: systemctl
         reason: Publishes recurring-task environment variables to the user manager
           when available.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       direct_io:
         reads: []
         writes: []
@@ -271,6 +393,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_ensure_agent_env.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-job-utils:
       version: 1
       patterns:
@@ -286,6 +412,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_job_utils.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
   llm:
     default:
       version: 1

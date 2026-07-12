@@ -50,6 +50,11 @@ interfaces:
       - kind: python-package
         name: bibtexparser
         reason: Parses BibTeX entries more accurately than the fallback parser.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads: []
         writes: []
@@ -59,6 +64,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_reference_pairs.py:SimilarityInterface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     scripts-bib-validate-bibtex:
       version: 1
       description: Validate a BibTeX/natbib .bib file for syntax errors and missing
@@ -71,6 +80,11 @@ interfaces:
       - kind: python-package
         name: bibtexparser
         reason: Parses BibTeX entries more accurately than the fallback parser.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads: []
         writes: []
@@ -80,6 +94,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_syntax_checker.py:ValidateBibtexInterface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
   llm:
     default:
       version: 1

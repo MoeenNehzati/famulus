@@ -54,6 +54,11 @@ interfaces:
       - kind: binary
         name: git
         reason: Configures repository hook settings during development installs.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads: []
         writes: []
@@ -63,6 +68,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_phase_entry.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     scripts-scaffold:
       version: 2
       description: Install the dispatcher + invoke-skill launchers and put the bin
@@ -80,6 +89,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_install_scaffold.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     scripts-dev-link:
       version: 2
       description: Symlink Claude/Codex config dirs to a live repo checkout, register
@@ -92,6 +105,11 @@ interfaces:
       - kind: binary
         name: git
         reason: Configures repository hook settings during development installs.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads: []
         writes: []
@@ -101,6 +119,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_config_bridge.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     scripts-launchers:
       version: 2
       description: Install per-agent bin launcher, profile config, worker dir, and
@@ -120,6 +142,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_agent_launchers.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
   llm:
     default:
       version: 2

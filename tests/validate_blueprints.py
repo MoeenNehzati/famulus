@@ -73,6 +73,26 @@ def _empty_ownership() -> dict:
     return {"owns_filesystem": []}
 
 
+def _platform_support() -> dict:
+    return {
+        "platform_support": {
+            "linux": True,
+            "macos": True,
+            "windows": True,
+        }
+    }
+
+
+def _dependency_platforms() -> dict:
+    return {
+        "platforms": {
+            "linux": True,
+            "macos": True,
+            "windows": True,
+        }
+    }
+
+
 def test_no_skills_passes(tmp_path: Path) -> None:
     (tmp_path / "skills").mkdir()
     _make_template(tmp_path)
@@ -600,14 +620,19 @@ def test_machine_interface_dependency_objects_pass_schema() -> None:
                         {
                             "kind": "python-package",
                             "name": "PyYAML",
+                            "version": ">=6",
+                            **_dependency_platforms(),
                             "reason": "Reads YAML files.",
                         },
                         {
                             "kind": "binary",
                             "name": "curl",
+                            "version": "any",
+                            **_dependency_platforms(),
                             "reason": "Fetches remote JSON.",
                         },
                     ],
+                    **_platform_support(),
                     **_empty_direct_io(),
                     **_empty_ownership(),
                 }
@@ -637,6 +662,7 @@ def test_llm_interface_uses_interfaces_pass_schema() -> None:
                         "behavior_sources": [],
                     },
                     "dependencies": [],
+                    **_platform_support(),
                     **_empty_direct_io(),
                     **_empty_ownership(),
                 }

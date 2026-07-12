@@ -46,6 +46,11 @@ interfaces:
       - kind: python-package
         name: marker-pdf
         reason: Provides the Surya settings module used to locate Marker model checkpoints.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       direct_io:
         reads: []
         writes: []
@@ -55,6 +60,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_marker_probe.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
     scripts-fetch-arxiv-source:
       version: 1
       description: Download and extract the LaTeX source tarball for a paper from
@@ -72,6 +81,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_source_fetcher.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: false
+        windows: false
   llm:
     default:
       version: 1

@@ -47,6 +47,16 @@ PYTHON_MACHINE_INTERFACE_ENTRYPOINT_RE = re.compile(
 )
 RELATIVE_PATH_RE = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$)).+")
 REMOVED_DIRECT_FIELDS = ("directly_reads", "directly_executes", "directly_writes")
+PLATFORM_NAMES = ("linux", "macos", "windows")
+RUNTIME_DEPENDENCY_KINDS = (
+    "python-package",
+    "binary",
+    "system-service",
+    "system-library",
+    "external-application",
+    "runtime",
+    "model-data",
+)
 
 
 @dataclass(frozen=True)
@@ -186,13 +196,19 @@ def expect_runtime_dependencies(value: Any, context: str, errors: list[str]) -> 
             continue
         kind = entry.get("kind")
         name = entry.get("name")
+        version = entry.get("version")
+        platforms = entry.get("platforms")
         reason = entry.get("reason")
-        if kind not in {"python-package", "binary"}:
-            errors.append(f"{entry_context}.kind: must be `python-package` or `binary`")
+        if kind not in RUNTIME_DEPENDENCY_KINDS:
+            allowed = "`, `".join(RUNTIME_DEPENDENCY_KINDS)
+            errors.append(f"{entry_context}.kind: must be one of `{allowed}`")
         if not isinstance(name, str) or not name.strip():
             errors.append(f"{entry_context}.name: must be a non-empty string")
         elif not DEPENDENCY_NAME_RE.fullmatch(name):
             errors.append(f"{entry_context}.name: must be a package or executable name, not a path or shell command")
+        if not isinstance(version, str) or not version.strip():
+            errors.append(f"{entry_context}.version: must be a non-empty string, use `any` when unconstrained")
+        expect_platform_support(platforms, f"{entry_context}.platforms", errors)
         if not isinstance(reason, str) or not reason.strip():
             errors.append(f"{entry_context}.reason: must be a non-empty string")
         if isinstance(kind, str) and isinstance(name, str):
@@ -200,6 +216,23 @@ def expect_runtime_dependencies(value: Any, context: str, errors: list[str]) -> 
             if key in seen:
                 errors.append(f"{entry_context}: duplicate dependency `{kind}:{name}`")
             seen.add(key)
+
+
+def expect_platform_support(value: Any, context: str, errors: list[str]) -> dict[str, bool] | None:
+    if not isinstance(value, dict):
+        errors.append(f"{context}: expected mapping with linux/macos/windows booleans")
+        return None
+    result: dict[str, bool] = {}
+    extra = set(value) - set(PLATFORM_NAMES)
+    if extra:
+        errors.append(f"{context}: unsupported platform keys {sorted(extra)}")
+    for platform in PLATFORM_NAMES:
+        item = value.get(platform)
+        if not isinstance(item, bool):
+            errors.append(f"{context}.{platform}: must be boolean")
+        else:
+            result[platform] = item
+    return result
 
 
 def reject_removed_direct_fields(spec: dict[str, Any], context: str, errors: list[str]) -> None:
@@ -467,10 +500,28 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                 continue
             expect_interface_version(interface_spec.get("version"), context, errors)
             validate_access_surface(errors, interface_spec, context, allow_id=False)
+            interface_platforms = expect_platform_support(
+                interface_spec.get("platform_support"),
+                f"{context}.platform_support",
+                errors,
+            )
             if "runtime" in interface_spec:
                 errors.append(f"{context}.runtime: renamed to `invocation`")
             expect_invocation(interface_spec.get("invocation"), f"{context}.invocation", errors)
             expect_runtime_dependencies(interface_spec.get("dependencies"), f"{context}.dependencies", errors)
+            if interface_platforms is not None:
+                for idx, dependency in enumerate(interface_spec.get("dependencies") or []):
+                    if not isinstance(dependency, dict):
+                        continue
+                    dependency_platforms = dependency.get("platforms")
+                    if not isinstance(dependency_platforms, dict):
+                        continue
+                    for platform in PLATFORM_NAMES:
+                        if dependency_platforms.get(platform) is True and interface_platforms.get(platform) is not True:
+                            errors.append(
+                                f"{context}.dependencies[{idx}].platforms.{platform}: "
+                                "dependency cannot support a platform the interface does not support"
+                            )
             reject_removed_direct_fields(interface_spec, context, errors)
         for interface_name, interface_spec in llm_interfaces.items():
             context = f"{blueprint.path}: interfaces.llm.{interface_name}"
@@ -774,10 +825,7 @@ def sync_skill(blueprint: SkillBlueprint, check_only: bool) -> list[str]:
 def generated_runtime_dependencies_manifest(blueprints: dict[str, SkillBlueprint]) -> dict[str, Any]:
     """Build the stdlib-readable dependency manifest from blueprint interfaces."""
     skills: dict[str, Any] = {}
-    all_dependencies: dict[str, set[str]] = {
-        "python-package": set(),
-        "binary": set(),
-    }
+    all_dependencies: dict[str, set[str]] = {kind: set() for kind in RUNTIME_DEPENDENCY_KINDS}
 
     for skill_name, blueprint in sorted(blueprints.items()):
         generated_interfaces: dict[str, Any] = {}
@@ -799,10 +847,30 @@ def generated_runtime_dependencies_manifest(blueprints: dict[str, SkillBlueprint
                         continue
                     kind = entry.get("kind")
                     name = entry.get("name")
+                    version = entry.get("version")
+                    platforms = entry.get("platforms")
                     reason = entry.get("reason")
-                    if kind not in all_dependencies or not isinstance(name, str) or not isinstance(reason, str):
+                    if (
+                        kind not in all_dependencies
+                        or not isinstance(name, str)
+                        or not isinstance(version, str)
+                        or not isinstance(platforms, dict)
+                        or not isinstance(reason, str)
+                    ):
                         continue
-                    dependencies.append({"kind": kind, "name": name, "reason": reason})
+                    clean_platforms = {
+                        platform: bool(platforms.get(platform))
+                        for platform in PLATFORM_NAMES
+                    }
+                    dependencies.append(
+                        {
+                            "kind": kind,
+                            "name": name,
+                            "version": version,
+                            "platforms": clean_platforms,
+                            "reason": reason,
+                        }
+                    )
                     all_dependencies[kind].add(name)
 
             generated_interfaces[interface_name] = {
@@ -816,10 +884,7 @@ def generated_runtime_dependencies_manifest(blueprints: dict[str, SkillBlueprint
     return {
         "version": 1,
         "skills": skills,
-        "all": {
-            "python-package": sorted(all_dependencies["python-package"]),
-            "binary": sorted(all_dependencies["binary"]),
-        },
+        "all": {kind: sorted(all_dependencies[kind]) for kind in RUNTIME_DEPENDENCY_KINDS},
     }
 
 

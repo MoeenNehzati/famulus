@@ -74,6 +74,11 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads YAML list files.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-filesystem
@@ -97,6 +102,10 @@ interfaces:
         args_prefix:
         - read
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     describe-schema:
       version: 1
       description: Describe entry-level fields (types/required/enums) for a list schema.
@@ -114,6 +123,11 @@ interfaces:
       - kind: python-package
         name: jsonschema
         reason: Resolves and reports JSON Schema metadata for list entries.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads: []
         writes:
@@ -128,6 +142,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_yaml_store.py:DescribeSchemaInterface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     update-list:
       version: 1
       description: Update entries in a local YAML list file from a patch file (keyed
@@ -157,9 +175,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list files.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       - kind: python-package
         name: jsonschema
         reason: Validates list mutations before writing.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-filesystem
@@ -197,6 +225,10 @@ interfaces:
         args_prefix:
         - update
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     read-beautify:
       version: 1
       description: Read a local YAML list file and render it for display (nested bullet-list
@@ -218,9 +250,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads YAML list data before rendering.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       - kind: python-package
         name: rich
         reason: Renders nested list output for terminal display.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-filesystem
@@ -249,6 +291,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_render_bridge.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     beautify-list:
       version: 1
       description: Render YAML list entries from stdin (nested bullet-list markdown
@@ -269,9 +315,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads YAML list data from stdin.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       - kind: python-package
         name: rich
         reason: Renders nested list output for terminal display.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: stdin
@@ -291,6 +347,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_list_beautify.py:BeautifyListInterface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     init-list:
       version: 1
       description: Create a new empty local YAML list file.
@@ -305,9 +365,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Writes YAML list files.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       - kind: python-package
         name: jsonschema
         reason: Validates initialized list data before writing.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: prompt
@@ -331,6 +401,10 @@ interfaces:
         args_prefix:
         - init
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     create-entry:
       version: 1
       description: Add entries to a local YAML list under a category path.
@@ -356,9 +430,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list files.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       - kind: python-package
         name: jsonschema
         reason: Validates new entries before writing.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-filesystem
@@ -396,6 +480,10 @@ interfaces:
         args_prefix:
         - create-entry
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     generate-id:
       version: 1
       description: Generate one or more collision-free 6-char entry IDs against a
@@ -411,6 +499,11 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads YAML list files to avoid ID collisions.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-filesystem
@@ -434,6 +527,10 @@ interfaces:
         args_prefix:
         - gen-id
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     migrate-markdown:
       version: 1
       description: Migrate a legacy Markdown list to YAML format.
@@ -448,12 +545,27 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Writes migrated YAML list files.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       - kind: python-package
         name: jsonschema
         reason: Validates migrated entries before writing.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       - kind: python-package
         name: dateparser
         reason: Parses natural-language legacy Markdown deadlines.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-filesystem
@@ -477,6 +589,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_legacy_importer.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     cloud-read:
       version: 1
       uses_interfaces:
@@ -509,6 +625,11 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads YAML list data downloaded from cloud storage.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads: []
         writes:
@@ -525,6 +646,10 @@ interfaces:
         args_prefix:
         - read
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     cloud-create-entry:
       version: 1
       uses_interfaces:
@@ -565,9 +690,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list data downloaded from cloud storage.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       - kind: python-package
         name: jsonschema
         reason: Validates new entries before upload.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-filesystem
@@ -596,6 +731,10 @@ interfaces:
         args_prefix:
         - create-entry
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     cloud-update:
       version: 1
       uses_interfaces:
@@ -636,9 +775,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list data downloaded from cloud storage.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       - kind: python-package
         name: jsonschema
         reason: Validates list mutations before upload.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: local-filesystem
@@ -667,6 +816,10 @@ interfaces:
         args_prefix:
         - update
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     cloud-init:
       version: 1
       uses_interfaces:
@@ -694,9 +847,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Writes YAML list data for upload.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       - kind: python-package
         name: jsonschema
         reason: Validates initialized list data before upload.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: prompt
@@ -718,6 +881,10 @@ interfaces:
         args_prefix:
         - init
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     cloud-delete:
       version: 1
       uses_interfaces:
@@ -746,6 +913,11 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list data downloaded from cloud storage.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads:
         - medium: prompt
@@ -767,6 +939,10 @@ interfaces:
         args_prefix:
         - delete
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     cloud-read-beautify:
       version: 1
       uses_interfaces:
@@ -802,9 +978,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads YAML list data downloaded from cloud storage.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       - kind: python-package
         name: rich
         reason: Renders nested list output for terminal display.
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
       direct_io:
         reads: []
         writes:
@@ -819,6 +1005,10 @@ interfaces:
         kind: python_machine_interface
         entrypoint: _rtx/_render_bridge.py:Interface
         behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
   llm:
     default:
       version: 1
