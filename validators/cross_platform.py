@@ -9,8 +9,10 @@ It currently checks:
 - no obvious Python runtime shell usage such as ``shell=True``, ``os.system``,
   or ``subprocess`` calls with literal platform-specific commands
 
-Skills can opt out by setting ``cross_platform: false`` in their blueprint when
-platform-specific behavior is an intentional part of the skill contract.
+Blueprint-level portability is interface-scoped. Machine interfaces whose
+``platform_support`` enables Linux, macOS, and Windows are checked for portable
+invocation metadata. Platform-specific machine interfaces are allowed to name
+platform-specific scheduler and host tools in their own dependency metadata.
 """
 
 from __future__ import annotations
@@ -50,6 +52,19 @@ FORBIDDEN_COMMANDS = {
     "defaults",
 }
 PYTHON_SUFFIX = ".py"
+_PLATFORM_COMMAND_ALIASES = {
+    "linux": {"linux"},
+    "macos": {"osx", "macos", "darwin"},
+    "windows": {"windows", "win32"},
+}
+_PLATFORM_COMMAND_ALLOWLIST = {
+    "linux": {"systemctl", "journalctl", "notify-send"},
+    "macos": {"launchctl", "osascript", "open", "pbcopy", "pbpaste", "defaults"},
+    "windows": {"cmd", "cmd.exe", "powershell", "powershell.exe", "robocopy", "xcopy", "clip", "schtasks"},
+}
+_CROSS_PLATFORM_ADAPTER_FILES = {
+    Path("skills/recurring-tasks/_rtx/_assistant_desktop_notify.py"),
+}
 
 _SKIP_PARTS = {"tests", "validators", "__pycache__", ".git", ".claude-plugin", ".codex-plugin", "logs"}
 _SUBPROCESS_ATTRS = {"run", "Popen", "call", "check_call", "check_output"}
@@ -76,41 +91,11 @@ def _is_excluded(rel_path: Path) -> bool:
     return False
 
 
-def _skill_root_for(rel_path: Path) -> Path | None:
-    parts = rel_path.parts
-    if len(parts) >= 2 and parts[0] == "skills":
-        return Path(parts[0]) / parts[1]
-    return None
-
-
-def _load_blueprint(repo_root: Path, skill_root: Path) -> dict | None:
-    path = repo_root / skill_root / "blueprint.yaml"
-    if not path.exists():
-        return None
-    try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError:
-        return None
-    return raw if isinstance(raw, dict) else None
-
-
-def _is_cross_platform_enabled(repo_root: Path, skill_root: Path, cache: dict[Path, bool]) -> bool:
-    if skill_root in cache:
-        return cache[skill_root]
-    blueprint = _load_blueprint(repo_root, skill_root)
-    enabled = True
-    if blueprint is not None:
-        enabled = blueprint.get("cross_platform", True) is not False
-    cache[skill_root] = enabled
-    return enabled
-
-
 def _iter_skill_files(repo_root: Path):
     tracked = _tracked_files(repo_root)
     skills_root = repo_root / "skills"
     if not skills_root.is_dir():
         return
-    enabled_cache: dict[Path, bool] = {}
     for path in skills_root.rglob("*"):
         if not path.is_file():
             continue
@@ -118,9 +103,6 @@ def _iter_skill_files(repo_root: Path):
             continue
         rel_path = path.relative_to(repo_root)
         if _is_excluded(rel_path):
-            continue
-        skill_root = _skill_root_for(rel_path)
-        if skill_root is not None and not _is_cross_platform_enabled(repo_root, skill_root, enabled_cache):
             continue
         yield path
 
@@ -130,8 +112,20 @@ def _is_runtime_script(rel_path: Path) -> bool:
     return len(parts) >= 4 and parts[0] == "skills" and parts[2] == "_rtx"
 
 
-def _command_violations(tokens: list[str], context: str) -> list[str]:
+def _allowed_platform_commands(rel_path: Path) -> set[str]:
+    if rel_path in _CROSS_PLATFORM_ADAPTER_FILES:
+        return set().union(*_PLATFORM_COMMAND_ALLOWLIST.values())
+    name_lower = rel_path.name.lower()
+    allowed: set[str] = set()
+    for platform, aliases in _PLATFORM_COMMAND_ALIASES.items():
+        if any(alias in name_lower for alias in aliases):
+            allowed.update(_PLATFORM_COMMAND_ALLOWLIST[platform])
+    return allowed
+
+
+def _command_violations(tokens: list[str], context: str, allowed_commands: set[str] | None = None) -> list[str]:
     errors: list[str] = []
+    allowed_commands = allowed_commands or set()
     lowered = [token.strip() for token in tokens if isinstance(token, str)]
     for token in lowered:
         leaf = Path(token).name
@@ -139,7 +133,7 @@ def _command_violations(tokens: list[str], context: str) -> list[str]:
             errors.append(f"{context}: shell script token `{token}` is not allowed")
     if lowered:
         command = Path(lowered[0]).name
-        if command in FORBIDDEN_COMMANDS:
+        if command in FORBIDDEN_COMMANDS and command not in allowed_commands:
             errors.append(f"{context}: command `{command}` is not cross-platform")
     return errors
 
@@ -159,6 +153,8 @@ def _validate_blueprint(path: Path, rel_path: Path) -> list[str]:
         if isinstance(machine_interfaces, dict):
             for interface_name, spec in machine_interfaces.items():
                 if not isinstance(spec, dict):
+                    continue
+                if not _supports_all_platforms(spec):
                     continue
                 invocation = spec.get("invocation") or {}
                 if not isinstance(invocation, dict):
@@ -182,6 +178,13 @@ def _validate_blueprint(path: Path, rel_path: Path) -> list[str]:
                         errors.append(error)
 
     return errors
+
+
+def _supports_all_platforms(spec: dict) -> bool:
+    platforms = spec.get("platform_support")
+    if not isinstance(platforms, dict):
+        return True
+    return all(platforms.get(platform) is True for platform in ("linux", "macos", "windows"))
 
 
 def _literal_string_tokens(node: ast.AST) -> list[str] | None:
@@ -220,6 +223,7 @@ def _is_os_system(node: ast.Call) -> bool:
 
 def _validate_python(path: Path, rel_path: Path) -> list[str]:
     errors: list[str] = []
+    allowed_commands = _allowed_platform_commands(rel_path)
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     except SyntaxError as exc:
@@ -245,7 +249,7 @@ def _validate_python(path: Path, rel_path: Path) -> list[str]:
         tokens = _literal_string_tokens(node.args[0])
         if not tokens:
             continue
-        for error in _command_violations(tokens, f"{rel_path}:{node.lineno}"):
+        for error in _command_violations(tokens, f"{rel_path}:{node.lineno}", allowed_commands):
             errors.append(error)
 
     return errors

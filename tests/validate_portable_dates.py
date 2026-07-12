@@ -34,11 +34,10 @@ def test_local_explicit_python_date_formatting_passes(tmp_path: Path) -> None:
     assert validate(tmp_path) == []
 
 
-def test_gnu_strftime_padding_modifier_is_rejected_even_when_skill_opts_out(tmp_path: Path) -> None:
+def test_gnu_strftime_padding_modifier_is_rejected_in_skill_runtime(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "daily-plan"
     script = skill / "_rtx" / "_day_model.py"
     script.parent.mkdir(parents=True)
-    (skill / "blueprint.yaml").write_text("cross_platform: false\n", encoding="utf-8")
     script.write_text(
         "from datetime import datetime\n"
         "def get_today_date():\n"

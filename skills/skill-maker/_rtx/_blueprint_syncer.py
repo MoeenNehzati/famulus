@@ -57,6 +57,12 @@ RUNTIME_DEPENDENCY_KINDS = (
     "runtime",
     "model-data",
 )
+RUNTIME_SYSTEM_SERVICE_NAMES = (
+    "systemd-user",
+    "launchd",
+    "task-scheduler",
+    "cron",
+)
 
 
 @dataclass(frozen=True)
@@ -206,6 +212,9 @@ def expect_runtime_dependencies(value: Any, context: str, errors: list[str]) -> 
             errors.append(f"{entry_context}.name: must be a non-empty string")
         elif not DEPENDENCY_NAME_RE.fullmatch(name):
             errors.append(f"{entry_context}.name: must be a package or executable name, not a path or shell command")
+        elif kind == "system-service" and name not in RUNTIME_SYSTEM_SERVICE_NAMES:
+            allowed = "`, `".join(RUNTIME_SYSTEM_SERVICE_NAMES)
+            errors.append(f"{entry_context}.name: system-service must be one of `{allowed}`")
         if not isinstance(version, str) or not version.strip():
             errors.append(f"{entry_context}.version: must be a non-empty string, use `any` when unconstrained")
         expect_platform_support(platforms, f"{entry_context}.platforms", errors)

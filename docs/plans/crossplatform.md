@@ -127,7 +127,7 @@ What was done:
 - added focused shared-helper and daily-plan tests for exact date-key behavior, including a one-digit month/day and a two-digit year with a leading zero
 - removed the stale daily-plan `date` permission from `blueprint.yaml` and regenerated-equivalent `permissions.json`
 - added `validators/portable_dates.py`, a repo validator that flags host-specific `strftime` padding modifiers in runtime Python
-- added validator tests covering GNU-style `%-d` and Windows-style `%#d`, including a `cross_platform: false` skill so this class is not hidden by broad opt-outs
+- added validator tests covering GNU-style `%-d` and Windows-style `%#d`, and kept this class independent of broad platform opt-outs
 - updated `references/skill-guidelines.md` to document the date/time IO formatting rule, point authors to `officina.common.dates`, and link the mechanical validator
 
 Prevention:
@@ -265,7 +265,7 @@ What was done:
 - this repo now has a stdlib Python calendar runtime in `skills/g-calendar/_rtx/_gcal_client.py`
 - `scripts-gcal` now uses a dispatcher `python_machine_interface` runtime instead of a command runtime pointing at a shell wrapper
 - the shell wrapper was removed from the tracked skill runtime files
-- `g-calendar` is now marked `cross_platform: true`
+- `g-calendar` now exposes a portable machine interface through interface-level platform metadata
 - the generated permission artifact no longer asks for a Bash approval for the calendar query tool
 - the public skill text now describes the interface and setup interface instead of naming private runtime files
 - parallel all-calendar event fetching and retained event fields such as summary, time, location, description, status, and link were preserved in the Python path
@@ -538,24 +538,30 @@ Meaning:
 - if a host is not supported for a capability, say so clearly
 - do not quietly skip a foundational component and let failures surface several layers later
 
-### 7. `cross_platform: false` should be intentional, narrow, and reviewed
+### 7. Platform support should be interface-level, intentional, and reviewed
 
 Status:
 
-- proposed standard
+- partially implemented
 
 Description:
 
-- opt-out flags are useful, but they can also hide drift if not treated as conscious contract decisions
+- skill-level opt-out flags hide too much. Platform support belongs on machine
+  interfaces, because one skill can expose both portable and platform-specific
+  capabilities.
 
 What was done:
 
-- the plan now records this as a review expectation
+- `cross_platform` was removed from the blueprint schema and current blueprints
+- machine interfaces now carry explicit `platform_support` booleans
+- docs, validators, and generated dependency manifests use interface-level
+  platform support as the source of truth
 
 Meaning:
 
-- the flag should not become a hiding place for portability debt in broadly useful shared skills
-- if a skill is excluded, we should know whether that is temporary debt or a permanent contract choice
+- generated skill-level summaries should be derived from machine interfaces
+- a platform-specific interface is acceptable when its contract says so directly
+- a broadly portable interface should not hide host-specific command assumptions
 
 ### 8. Prefer behavioral guarantees over weakened assertions
 
@@ -612,7 +618,8 @@ Examples:
 - detect undeclared Python package dependencies
 - flag risky subprocess text usage without explicit encoding where appropriate
 - flag GNU/POSIX shell assumptions in code paths that are meant to be cross-platform
-- require justification for `cross_platform: false`
+- validate interface-level `platform_support` and ensure dependencies do not
+  claim broader platform support than the owning interface
 
 Why this matters:
 

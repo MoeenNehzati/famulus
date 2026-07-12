@@ -1,7 +1,6 @@
 category: productivity-general-assistant
 role: productivity
 kind: triager
-cross_platform: false
 suggested_permissions:
   bash:
   - command:
@@ -62,8 +61,39 @@ interfaces:
         allow_stdin: true
       dependencies: []
       direct_io:
-        reads: []
-        writes: []
+        reads:
+        - medium: stdin
+          access: read
+          content: email
+          format: json
+          sensitivity: user-private
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: watermark
+          format: text
+          path: state/watermark
+          sensitivity: user-private
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: diagnostic-report
+          format: json
+          path: state/status.json
+          sensitivity: derived-private
+        writes:
+        - medium: stdout
+          access: write
+          content: email
+          format: json
+          sensitivity: user-private
+        - medium: local-filesystem
+          access: write
+          system: filesystem
+          content: diagnostic-report
+          format: json
+          path: state/status.json
+          sensitivity: derived-private
         network: []
       owns_filesystem: []
       invocation:
@@ -72,8 +102,8 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
     scripts-get-cutoff:
       version: 1
       description: Return the cutoff date for the current triage run, with a fallback
@@ -84,8 +114,27 @@ interfaces:
         allow_extra_positionals: true
       dependencies: []
       direct_io:
-        reads: []
-        writes: []
+        reads:
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: watermark
+          format: text
+          path: state/watermark
+          sensitivity: user-private
+        writes:
+        - medium: stdout
+          access: write
+          content: watermark
+          format: text
+          sensitivity: derived-private
+        - medium: local-filesystem
+          access: write
+          system: filesystem
+          content: diagnostic-report
+          format: json
+          path: state/status.json
+          sensitivity: derived-private
         network: []
       owns_filesystem: []
       invocation:
@@ -94,8 +143,8 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
     scripts-log-decision:
       version: 1
       description: Append a triage classification decision for one email to triage.log.
@@ -106,7 +155,14 @@ interfaces:
       dependencies: []
       direct_io:
         reads: []
-        writes: []
+        writes:
+        - medium: local-filesystem
+          access: write
+          system: filesystem
+          content: decision
+          format: text
+          path: triage.log
+          sensitivity: user-private
         network: []
       owns_filesystem: []
       invocation:
@@ -115,8 +171,8 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
     scripts-prune-log:
       version: 1
       description: Drop triage.log entries older than 30 days and print a one-line
@@ -127,8 +183,27 @@ interfaces:
         allow_extra_positionals: true
       dependencies: []
       direct_io:
-        reads: []
-        writes: []
+        reads:
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: log
+          format: text
+          path: triage.log
+          sensitivity: user-private
+        writes:
+        - medium: local-filesystem
+          access: write
+          system: filesystem
+          content: log
+          format: text
+          path: triage.log
+          sensitivity: user-private
+        - medium: stdout
+          access: write
+          content: response
+          format: text
+          sensitivity: derived-private
         network: []
       owns_filesystem: []
       invocation:
@@ -137,8 +212,8 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
     scripts-update-watermark:
       version: 1
       description: Advance the triage watermark to the current timestamp. Refuses
@@ -149,8 +224,29 @@ interfaces:
         allow_extra_positionals: true
       dependencies: []
       direct_io:
-        reads: []
-        writes: []
+        reads:
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: diagnostic-report
+          format: json
+          path: state/status.json
+          sensitivity: derived-private
+        writes:
+        - medium: local-filesystem
+          access: write
+          system: filesystem
+          content: watermark
+          format: text
+          path: state/watermark
+          sensitivity: user-private
+        - medium: local-filesystem
+          access: write
+          system: filesystem
+          content: diagnostic-report
+          format: json
+          path: state/status.json
+          sensitivity: derived-private
         network: []
       owns_filesystem: []
       invocation:
@@ -159,8 +255,8 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
     scripts-mark-failure:
       version: 1
       description: Record that this triage run failed, so update-watermark refuses
@@ -172,7 +268,14 @@ interfaces:
       dependencies: []
       direct_io:
         reads: []
-        writes: []
+        writes:
+        - medium: local-filesystem
+          access: write
+          system: filesystem
+          content: diagnostic-report
+          format: json
+          path: state/status.json
+          sensitivity: derived-private
         network: []
       owns_filesystem: []
       invocation:
@@ -181,8 +284,8 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
   llm:
     default:
       version: 1
@@ -191,8 +294,18 @@ interfaces:
         kind: skill_file
         path: SKILL.md
       direct_io:
-        reads: []
-        writes: []
+        reads:
+        - medium: prompt
+          access: read
+          content: email
+          format: text
+          sensitivity: user-private
+        writes:
+        - medium: prompt
+          access: write
+          content: response
+          format: markdown
+          sensitivity: derived-private
         network: []
       owns_filesystem: []
       allow_all_skills: true

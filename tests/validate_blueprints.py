@@ -323,6 +323,217 @@ def test_direct_io_rejects_field_level_content_values() -> None:
     ]
 
 
+def test_direct_io_accepts_glob_path_and_format_family_by_schema() -> None:
+    schema = _mod._load_schema()
+    assert schema is not None
+    blueprint = {
+        "category": "workflow-general-assistant",
+        **_taxonomy(),
+        "interfaces": {
+            "machine": {
+                "scan": {
+                    "version": 1,
+                    "description": "Scan generated reports.",
+                    "usage": "",
+                    "invocation": {
+                        "kind": "python_machine_interface",
+                        "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                        "behavior_sources": [],
+                    },
+                    "dependencies": [],
+                    **_platform_support(),
+                    "direct_io": {
+                        "reads": [],
+                        "writes": [
+                            {
+                                "medium": "local-filesystem",
+                                "access": "write",
+                                "system": "filesystem",
+                                "content": "report",
+                                "formats": ["markdown", "pdf"],
+                                "path": "_build/reports/**/*.{md,pdf}",
+                                "path_match": "glob",
+                                "sensitivity": "derived-private",
+                            }
+                        ],
+                        "network": [],
+                    },
+                    **_empty_ownership(),
+                }
+            },
+            "llm": _default_llm(),
+        },
+    }
+
+    errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
+
+    assert errors == []
+
+
+def test_direct_io_rejects_format_and_formats_together_by_schema() -> None:
+    schema = _mod._load_schema()
+    assert schema is not None
+    blueprint = {
+        "category": "workflow-general-assistant",
+        **_taxonomy(),
+        "interfaces": {
+            "llm": {
+                "default": {
+                    "version": 1,
+                    "description": "Primary LLM-facing skill instructions.",
+                    "binding": {"kind": "skill_file", "path": "SKILL.md"},
+                    "behavior_sources": [],
+                    "direct_io": {
+                        "reads": [
+                            {
+                                "medium": "prompt",
+                                "access": "read",
+                                "content": "document",
+                                "format": "markdown",
+                                "formats": ["markdown", "pdf"],
+                                "sensitivity": "user-private",
+                            }
+                        ],
+                        "writes": [],
+                        "network": [],
+                    },
+                    **_empty_ownership(),
+                }
+            }
+        },
+    }
+
+    errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
+
+    assert any("direct_io.reads.0" in error and "should not be valid" in error for error in errors)
+
+
+def test_direct_io_path_patterns_accept_inferred_glob_formats() -> None:
+    blueprint = {
+        "interfaces": {
+            "machine": {
+                "render": {
+                    "direct_io": {
+                        "reads": [],
+                        "writes": [
+                            {
+                                "medium": "local-filesystem",
+                                "access": "write",
+                                "content": "report",
+                                "path": "_build/reports/**/*.{md,pdf}",
+                                "path_match": "glob",
+                                "sensitivity": "derived-private",
+                            }
+                        ],
+                        "network": [],
+                    }
+                }
+            }
+        }
+    }
+
+    errors = _mod._validate_direct_io_path_patterns(Path("blueprint.yaml"), blueprint)
+
+    assert errors == []
+
+
+def test_direct_io_path_patterns_reject_mismatched_declared_formats() -> None:
+    blueprint = {
+        "interfaces": {
+            "machine": {
+                "render": {
+                    "direct_io": {
+                        "reads": [],
+                        "writes": [
+                            {
+                                "medium": "local-filesystem",
+                                "access": "write",
+                                "content": "report",
+                                "formats": ["markdown"],
+                                "path": "_build/reports/**/*.{md,pdf}",
+                                "path_match": "glob",
+                                "sensitivity": "derived-private",
+                            }
+                        ],
+                        "network": [],
+                    }
+                }
+            }
+        }
+    }
+
+    errors = _mod._validate_direct_io_path_patterns(Path("blueprint.yaml"), blueprint)
+
+    assert errors == [
+        "blueprint.yaml: machine interface 'render' direct_io.writes.0.path "
+        "'_build/reports/**/*.{md,pdf}' implies format(s) [markdown, pdf] but "
+        "declares [markdown]"
+    ]
+
+
+def test_direct_io_path_patterns_reject_nonstandard_extension_glob() -> None:
+    blueprint = {
+        "interfaces": {
+            "machine": {
+                "render": {
+                    "direct_io": {
+                        "reads": [],
+                        "writes": [
+                            {
+                                "medium": "local-filesystem",
+                                "access": "write",
+                                "content": "report",
+                                "path": "_build/reports/*.[md|pdf]",
+                                "path_match": "glob",
+                                "sensitivity": "derived-private",
+                            }
+                        ],
+                        "network": [],
+                    }
+                }
+            }
+        }
+    }
+
+    errors = _mod._validate_direct_io_path_patterns(Path("blueprint.yaml"), blueprint)
+
+    assert errors == [
+        "blueprint.yaml: machine interface 'render' direct_io.writes.0.path "
+        "'_build/reports/*.[md|pdf]' is invalid: glob paths do not support [] "
+        "character classes; use '*.{md,pdf}' for extension families"
+    ]
+
+
+def test_direct_io_path_patterns_reject_invalid_regex() -> None:
+    blueprint = {
+        "interfaces": {
+            "machine": {
+                "render": {
+                    "direct_io": {
+                        "reads": [],
+                        "writes": [
+                            {
+                                "medium": "local-filesystem",
+                                "access": "write",
+                                "content": "report",
+                                "path": "[",
+                                "path_match": "regex",
+                                "sensitivity": "derived-private",
+                            }
+                        ],
+                        "network": [],
+                    }
+                }
+            }
+        }
+    }
+
+    errors = _mod._validate_direct_io_path_patterns(Path("blueprint.yaml"), blueprint)
+
+    assert len(errors) == 1
+    assert "direct_io.writes.0.path regex '[' is invalid" in errors[0]
+
+
 def test_owns_filesystem_is_required_by_schema() -> None:
     schema = _mod._load_schema()
     assert schema is not None
@@ -631,6 +842,13 @@ def test_machine_interface_dependency_objects_pass_schema() -> None:
                             **_dependency_platforms(),
                             "reason": "Fetches remote JSON.",
                         },
+                        {
+                            "kind": "system-service",
+                            "name": "systemd-user",
+                            "version": "any",
+                            **_dependency_platforms(),
+                            "reason": "Provides the user service manager.",
+                        },
                     ],
                     **_platform_support(),
                     **_empty_direct_io(),
@@ -644,6 +862,44 @@ def test_machine_interface_dependency_objects_pass_schema() -> None:
     errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
 
     assert errors == []
+
+
+def test_machine_interface_rejects_unknown_system_service_dependency_name() -> None:
+    schema = _mod._load_schema()
+    assert schema is not None
+    blueprint = {
+        "category": "workflow-general-assistant",
+        **_taxonomy(),
+        "interfaces": {
+            "machine": {
+                "scan": {
+                    "version": 1,
+                    "invocation": {
+                        "kind": "python_machine_interface",
+                        "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                        "behavior_sources": [],
+                    },
+                    "dependencies": [
+                        {
+                            "kind": "system-service",
+                            "name": "systemd",
+                            "version": "any",
+                            **_dependency_platforms(),
+                            "reason": "Provides scheduling.",
+                        },
+                    ],
+                    **_platform_support(),
+                    **_empty_direct_io(),
+                    **_empty_ownership(),
+                }
+            },
+            "llm": _default_llm(),
+        },
+    }
+
+    errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
+
+    assert any("systemd" in error and "is not one of" in error for error in errors)
 
 
 def test_llm_interface_uses_interfaces_pass_schema() -> None:

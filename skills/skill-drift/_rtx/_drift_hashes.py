@@ -16,17 +16,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
-import yaml
-
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from officina.blueprint_search import BlueprintSearchError, load_blueprint_record, strip_selected_paths
+
 HASH_PREFIX = "sha256:"
 DEFAULT_EXCLUDE_NAMES = {"__pycache__", ".pytest_cache", ".DS_Store", ".last_audit.json"}
 DEFAULT_EXCLUDE_SUFFIXES = {".pyc"}
+NON_HASHABLE_BLUEPRINT_SELECTORS = ("**.direct_io",)
 CANONICAL_INTERFACE_RE = re.compile(
     r"^(?P<skill>[a-z0-9]+(?:-[a-z0-9]+)+)\."
     r"(?P<namespace>machine|llm)\."
@@ -192,15 +193,6 @@ class DependencyExplorer:
 
         skill_root = skill_dir.resolve()
         files: list[DependencyFile] = []
-        blueprint_path = skill_root / "blueprint.yaml"
-        if blueprint_path.exists() or blueprint_path.is_symlink():
-            files.append(
-                DependencyFile(
-                    label=path_label(blueprint_path, self.repo_root),
-                    path=blueprint_path,
-                    reason="skill blueprint",
-                )
-            )
         interfaces = blueprint.get("interfaces")
         if isinstance(interfaces, dict):
             for namespace in ("llm", "machine"):
@@ -345,7 +337,11 @@ def interface_entries(
 def interface_metadata_entry(interface_spec: dict[str, Any]) -> HashEntry:
     """Return the canonical structured blueprint declaration for an interface."""
 
-    return HashEntry("blueprint-interface", "json", canonical_json_bytes(interface_spec))
+    return HashEntry(
+        "blueprint-interface",
+        "json",
+        canonical_json_bytes(strip_selected_paths(interface_spec, NON_HASHABLE_BLUEPRINT_SELECTORS)),
+    )
 
 
 def used_interface_hash_entries(
@@ -362,7 +358,7 @@ def used_interface_hash_entries(
             raise HashRootError(f"uses_interfaces cycle includes {canonical_name}")
         target_skill, namespace, target_interface_name = parse_canonical_interface(canonical_name)
         target_skill_dir = repo_root / "skills" / target_skill
-        target_blueprint = load_blueprint(target_skill_dir)
+        target_blueprint = load_blueprint(target_skill_dir, repo_root)
         target_spec = interface_spec_by_name(target_blueprint, target_skill, namespace, target_interface_name)
         target_hash = hash_interface(
             target_skill_dir,
@@ -400,14 +396,14 @@ def parse_canonical_interface(canonical_name: str) -> tuple[str, str, str]:
     return match.group("skill"), match.group("namespace"), match.group("interface")
 
 
-def load_blueprint(skill_dir: Path) -> dict[str, Any]:
+def load_blueprint(skill_dir: Path, repo_root: Path) -> dict[str, Any]:
     path = skill_dir / "blueprint.yaml"
     if not path.is_file():
         raise HashRootError(f"{skill_dir.name}: missing blueprint.yaml")
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if not isinstance(raw, dict):
-        raise HashRootError(f"{path}: top level must be a mapping")
-    return raw
+    try:
+        return load_blueprint_record(path, repo_root=repo_root, skill=skill_dir.name).data
+    except BlueprintSearchError as exc:
+        raise HashRootError(str(exc)) from exc
 
 
 def interface_spec_by_name(
@@ -448,7 +444,14 @@ def skill_roots(blueprint: dict[str, Any]) -> list[str]:
 def hash_skill(skill_dir: Path, repo_root: Path, blueprint: dict[str, Any]) -> str:
     """Hash a skill from all blueprint-declared interface roots."""
 
-    entries = entries_for_dependency_files(DependencyExplorer(repo_root).explore_skill(skill_dir, blueprint), repo_root)
+    entries = [
+        HashEntry(
+            "blueprint",
+            "json",
+            canonical_json_bytes(strip_selected_paths(blueprint, NON_HASHABLE_BLUEPRINT_SELECTORS)),
+        )
+    ]
+    entries.extend(entries_for_dependency_files(DependencyExplorer(repo_root).explore_skill(skill_dir, blueprint), repo_root))
     for interface_name, interface_spec in iter_blueprint_interface_specs(blueprint):
         interface_hash = hash_interface(skill_dir, repo_root, interface_spec)
         entries.append(HashEntry(f"interface:{interface_name}", "interface-hash", interface_hash.encode("utf-8")))

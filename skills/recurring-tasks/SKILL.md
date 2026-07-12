@@ -23,21 +23,21 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `scripts-disable` — Disable a job by setting enabled: false in jobs.yaml and syncing unit files.
+- `scripts-disable` — Disable a job by setting enabled: false in jobs.yaml and syncing native scheduler entries.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-disable <name>`
-- `scripts-enable` — Enable a job by setting enabled: true in jobs.yaml and syncing unit files.
+- `scripts-enable` — Enable a job by setting enabled: true in jobs.yaml and syncing native scheduler entries.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-enable <name>`
 - `scripts-ensure-agent-env` — Idempotently ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE is in place. Also run automatically by scripts-setup.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-ensure-agent-env --repo-root DIR --home DIR --bin-dir DIR [--dry-run]`
 - `scripts-healthcheck` — Run pre-flight and per-job health checks for all enabled recurring tasks; sends a desktop notification on failure.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-healthcheck`
-- `scripts-setup` — Verify prerequisites, sync systemd unit files from jobs.yaml, install the healthcheck cron entry, and list active timers.
+- `scripts-setup` — Verify prerequisites, sync native scheduler entries from jobs.yaml, install recurring health checks, and list active timers/tasks.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-setup [--migrate-cron]`
-- `scripts-status` — List all active ai-* timers, next fire times, and service status.
+- `scripts-status` — List active recurring scheduler entries, next fire times, and service status.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-status`
-- `scripts-sync` — Regenerate systemd unit files from jobs.yaml.
+- `scripts-sync` — Regenerate native scheduler entries from jobs.yaml.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-sync`
-- `scripts-test` — Trigger a job immediately via systemd, show output and status.
+- `scripts-test` — Trigger a job immediately through the native scheduler, show output and status.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-test <name>`
 - `scripts-view-logs` — Tail the run log for a job (default 50 lines).
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-view-logs <job-name> [--lines N]`

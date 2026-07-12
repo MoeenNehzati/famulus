@@ -126,7 +126,6 @@ At the top level, the live blueprint contract currently covers:
 - `category`
 - `role`
 - `kind`
-- `cross_platform`
 - `skill_interface`
 - `suggested_permissions`
 - `interfaces`

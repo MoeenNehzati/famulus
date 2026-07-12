@@ -1,7 +1,6 @@
 category: system-assistant
 role: document-processing
 kind: converter
-cross_platform: false
 suggested_permissions:
   bash:
   - command:
@@ -52,8 +51,19 @@ interfaces:
           macos: false
           windows: false
       direct_io:
-        reads: []
-        writes: []
+        reads:
+        - medium: local-filesystem
+          access: read
+          system: model-cache
+          content: checkpoint
+          path: $home/.cache/datalab/models/
+          sensitivity: user-private
+        writes:
+        - medium: stdout
+          access: write
+          content: diagnostic-report
+          format: text
+          sensitivity: derived-private
         network: []
       owns_filesystem: []
       invocation:
@@ -74,8 +84,26 @@ interfaces:
       dependencies: []
       direct_io:
         reads: []
-        writes: []
-        network: []
+        writes:
+        - medium: local-filesystem
+          access: write
+          system: filesystem
+          content: source
+          format: tex
+          path: <output-dir>
+          sensitivity: public
+        - medium: stdout
+          access: write
+          content: diagnostic-report
+          format: text
+          sensitivity: derived-private
+        network:
+        - medium: network-request
+          access: download
+          system: arxiv
+          content: source
+          format: tex
+          sensitivity: public
       owns_filesystem: []
       invocation:
         kind: python_machine_interface
@@ -93,8 +121,18 @@ interfaces:
         kind: skill_file
         path: SKILL.md
       direct_io:
-        reads: []
-        writes: []
+        reads:
+        - medium: prompt
+          access: read
+          content: document
+          format: pdf
+          sensitivity: user-private
+        writes:
+        - medium: prompt
+          access: write
+          content: document
+          format: markdown
+          sensitivity: derived-private
         network: []
       owns_filesystem: []
       allow_all_skills: true

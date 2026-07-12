@@ -466,7 +466,6 @@ Root-level allowed fields:
 blueprint_schema_version
 category
 version
-cross_platform
 depends_on
 owns_extra
 requires_extra

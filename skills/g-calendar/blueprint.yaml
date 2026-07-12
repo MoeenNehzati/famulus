@@ -1,7 +1,6 @@
 category: productivity-general-assistant
 role: productivity
 kind: client
-cross_platform: true
 suggested_permissions:
   bash:
   - command:
@@ -70,6 +69,11 @@ interfaces:
             kind: google-calendar-oauth
             mode: uses-existing
           sensitivity: user-private
+        - medium: stdout
+          access: write
+          content: event
+          format: text
+          sensitivity: user-private
         network:
         - medium: network-request
           access: request
@@ -110,6 +114,13 @@ interfaces:
           format: json
           path: $home/.config/g-calendar/client.json
           sensitivity: secret
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: credential
+          format: json
+          path: <client-json>
+          sensitivity: secret
         writes:
         - medium: local-filesystem
           access: write
@@ -121,6 +132,11 @@ interfaces:
             kind: google-calendar-oauth
             mode: creates
           sensitivity: secret
+        - medium: stdout
+          access: write
+          content: response
+          format: text
+          sensitivity: derived-private
         network:
         - medium: network-request
           access: request

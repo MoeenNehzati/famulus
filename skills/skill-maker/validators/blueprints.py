@@ -151,6 +151,91 @@ _FIELD_LEVEL_CONTENT_SUFFIXES = frozenset({
     "title",
 })
 
+_FORMAT_BY_EXTENSION: dict[str, str] = {
+    "bib": "bibtex",
+    "bibtex": "bibtex",
+    "env": "env",
+    "html": "html",
+    "ics": "ics",
+    "ini": "ini",
+    "json": "json",
+    "md": "markdown",
+    "markdown": "markdown",
+    "pdf": "pdf",
+    "png": "png",
+    "rfc822": "rfc822",
+    "svg": "svg",
+    "tex": "tex",
+    "text": "text",
+    "toml": "toml",
+    "txt": "text",
+    "yaml": "yaml",
+    "yml": "yaml",
+}
+
+
+def _declared_entry_formats(entry: dict[str, Any]) -> set[str]:
+    format_value = entry.get("format")
+    formats_value = entry.get("formats")
+    declared: set[str] = set()
+    if isinstance(format_value, str):
+        declared.add(format_value)
+    if isinstance(formats_value, list):
+        declared.update(item for item in formats_value if isinstance(item, str))
+    return declared
+
+
+def _formats_from_path_suffix(path: str) -> set[str]:
+    brace_match = re.search(r"\.\{([^{}]+)\}$", path)
+    extensions: list[str]
+    if brace_match:
+        extensions = brace_match.group(1).split(",")
+    else:
+        suffix_match = re.search(r"\.([A-Za-z0-9]+)$", path)
+        if not suffix_match:
+            return set()
+        extensions = [suffix_match.group(1)]
+
+    formats: set[str] = set()
+    for extension in extensions:
+        normalized = extension.strip().lower().lstrip(".")
+        if not normalized:
+            return set()
+        mapped = _FORMAT_BY_EXTENSION.get(normalized)
+        if mapped is None:
+            return set()
+        formats.add(mapped)
+    return formats
+
+
+def _validate_glob_path(path: str) -> list[str]:
+    errors: list[str] = []
+    if "[" in path or "]" in path:
+        errors.append(
+            "glob paths do not support [] character classes; use '*.{md,pdf}' "
+            "for extension families"
+        )
+    if "?" in path:
+        errors.append("glob paths do not support '?' wildcards; use '*' or '**'")
+    for segment in path.split("/"):
+        if "**" in segment and segment != "**":
+            errors.append("glob '**' must be a complete path segment")
+    if "{" in path or "}" in path:
+        brace_matches = list(re.finditer(r"\{([^{}]+)\}", path))
+        if len(brace_matches) != 1 or brace_matches[0].end() != len(path):
+            errors.append("glob brace groups are only allowed as a final extension family")
+        else:
+            items = brace_matches[0].group(1).split(",")
+            if len(items) < 2:
+                errors.append("glob extension family must contain at least two extensions")
+            for item in items:
+                if not re.fullmatch(r"[A-Za-z0-9]+", item):
+                    errors.append(
+                        "glob extension family entries must be comma-separated bare extensions"
+                    )
+                    break
+    return errors
+
 
 def _validate_direct_io_content_granularity(
     blueprint_path: Path,
@@ -187,6 +272,65 @@ def _validate_direct_io_content_granularity(
                             f"{blueprint_path}: {namespace} interface '{iface_name}' "
                             f"direct_io.{section}.{index}.content uses field-level value "
                             f"'{content}'; use a coarser aggregate content value"
+                        )
+    return errors
+
+
+def _validate_direct_io_path_patterns(
+    blueprint_path: Path,
+    blueprint: dict[str, Any],
+) -> list[str]:
+    """Validate direct_io path matching mode and suffix-derived formats."""
+    errors: list[str] = []
+    interfaces = blueprint.get("interfaces") or {}
+    if not isinstance(interfaces, dict):
+        return errors
+    for namespace in ("machine", "llm"):
+        namespace_interfaces = interfaces.get(namespace) or {}
+        if not isinstance(namespace_interfaces, dict):
+            continue
+        for iface_name, spec in namespace_interfaces.items():
+            if not isinstance(spec, dict):
+                continue
+            direct_io = spec.get("direct_io") or {}
+            if not isinstance(direct_io, dict):
+                continue
+            for section in ("reads", "writes", "network"):
+                entries = direct_io.get(section) or []
+                if not isinstance(entries, list):
+                    continue
+                for index, entry in enumerate(entries):
+                    if not isinstance(entry, dict):
+                        continue
+                    path = entry.get("path")
+                    if not isinstance(path, str):
+                        continue
+                    context = (
+                        f"{blueprint_path}: {namespace} interface '{iface_name}' "
+                        f"direct_io.{section}.{index}"
+                    )
+                    path_match = entry.get("path_match", "exact")
+                    if path_match == "regex":
+                        try:
+                            re.compile(path)
+                        except re.error as exc:
+                            errors.append(f"{context}.path regex '{path}' is invalid: {exc}")
+                    elif path_match == "glob":
+                        for message in _validate_glob_path(path):
+                            errors.append(f"{context}.path '{path}' is invalid: {message}")
+                    elif path_match != "exact":
+                        continue
+
+                    declared_formats = _declared_entry_formats(entry)
+                    inferred_formats = (
+                        set() if path_match == "regex" else _formats_from_path_suffix(path)
+                    )
+                    if declared_formats and inferred_formats and declared_formats != inferred_formats:
+                        declared = ", ".join(sorted(declared_formats))
+                        inferred = ", ".join(sorted(inferred_formats))
+                        errors.append(
+                            f"{context}.path '{path}' implies format(s) [{inferred}] "
+                            f"but declares [{declared}]"
                         )
     return errors
 
@@ -470,6 +614,7 @@ def validate(repo_root: Path) -> list[str]:
             errors.extend(_validate_category_hierarchy(blueprint_path, blueprint))
             errors.extend(_validate_interface_cross_fields(blueprint_path, blueprint))
             errors.extend(_validate_direct_io_content_granularity(blueprint_path, blueprint))
+            errors.extend(_validate_direct_io_path_patterns(blueprint_path, blueprint))
 
         # ── SKILL.md marker checks ────────────────────────────────────────────
         text = skill_file.read_text(encoding="utf-8")

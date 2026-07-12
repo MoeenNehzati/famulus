@@ -207,6 +207,11 @@ three-boolean object, not a free-form OS list:
 Set each boolean deliberately. Do not omit unsupported platforms. Use `macos`,
 not `osx`.
 
+Do not declare skill-level platform support. Skill-level summaries for docs,
+graphs, installers, and validators must be derived from
+`interfaces.machine.*.platform_support`. A skill may have both portable and
+platform-specific machine interfaces.
+
 Every dependency must declare `kind`, `name`, `version`, `platforms`, and
 `reason`. `platforms` uses the same required booleans as `platform_support` and
 must not claim a platform that the owning interface does not support. Use
@@ -226,6 +231,15 @@ Allowed dependency kinds are closed and non-overlapping:
 - `runtime` — language/runtime requirement such as Python, Node, Java, or a
   shell runtime.
 - `model-data` — local model, checkpoint, cache, or other required data bundle.
+
+Where a dependency subfield has a bounded vocabulary, use the schema's finite
+options rather than inventing adjacent names. For `kind: system-service`,
+`name` must be one of:
+
+- `systemd-user`
+- `launchd`
+- `task-scheduler`
+- `cron`
 
 Do not encode APIs, OAuth, credentials, or network access as dependency kinds.
 Represent those through `direct_io.network`, auth metadata, and setup
@@ -271,6 +285,15 @@ for docs, search, and graphs, not internal fields. Use values such as `email`,
 `calendar-event`, `proof`, `report`, or `credential`; do not introduce
 field-level values such as `email-subject`, `email-body`, `event-title`, or
 `document-id`.
+
+Use `direct_io.format` for one known format and `direct_io.formats` for a
+finite family of possible formats. Never set both on the same entry. When a path
+describes a family of files, set `path_match: glob` and use the documented
+minimal glob syntax: `*` within a segment, `**` as a complete segment, and a
+final extension family such as `*.{md,pdf}`. Prefer this over broad values such
+as `mixed`. Do not use nonstandard forms such as `*.[md|pdf]`. Use
+`path_match: regex` only when a glob cannot express the family; regex paths
+must compile and should declare explicit `format` or `formats` values.
 
 Every machine and LLM interface must declare `owns_filesystem`. Use `[]` when
 the interface owns no filesystem paths. If an interface owns a path, only that
@@ -688,6 +711,9 @@ platform-support metadata or platform-named implementation files.** Enforced by
 - If a skill or shared package genuinely needs platform-specific logic, put
   that logic in a file whose own filename names the platform, such as
   `claude`, `codex`, `windows`, `osx`, or `linux`.
+- A small cross-platform adapter may temporarily dispatch to platform-specific
+  commands while a backend split is pending, but new platform-specific command
+  bodies should live in platform-named files.
 - `__init__.py` remains the conventional aggregation seam for
   platform-specific modules. It may import platform-named files and re-export
   a host-neutral API for the rest of the codebase.

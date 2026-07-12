@@ -100,6 +100,17 @@ def test_python_macos_subprocess_is_rejected(tmp_path: Path) -> None:
     assert any("command `osascript` is not cross-platform" in error for error in errors)
 
 
+def test_platform_named_python_file_may_use_platform_command(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "scheduler-skill" / "_rtx"
+    skill.mkdir(parents=True)
+    (skill / "_osx_backend.py").write_text(
+        "import subprocess\nsubprocess.run(['launchctl', 'list'])\n",
+        encoding="utf-8",
+    )
+
+    assert validate(tmp_path) == []
+
+
 def test_python_shell_true_is_rejected(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "bad-skill" / "_rtx"
     skill.mkdir(parents=True)
@@ -122,23 +133,43 @@ def test_python_unix_subprocess_is_rejected(tmp_path: Path) -> None:
     assert any("command `grep` is not cross-platform" in error for error in errors)
 
 
-def test_cross_platform_false_skips_skill(tmp_path: Path) -> None:
-    skill = tmp_path / "skills" / "daily-plan" / "_rtx"
+def test_platform_specific_interface_command_is_allowed(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "scheduler-skill"
     skill.mkdir(parents=True)
-    (tmp_path / "skills" / "daily-plan" / "blueprint.yaml").write_text(
-        "cross_platform: false\n",
+    (skill / "blueprint.yaml").write_text(
+        "interfaces:\n"
+        "  machine:\n"
+        "    sync:\n"
+        "      platform_support:\n"
+        "        linux: true\n"
+        "        macos: false\n"
+        "        windows: false\n"
+        "      invocation:\n"
+        "        kind: command\n"
+        "        argv: [\"systemctl\", \"--user\", \"daemon-reload\"]\n",
         encoding="utf-8",
     )
-    (skill / "plans.sh").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
     assert validate(tmp_path) == []
 
 
-def test_cross_platform_defaults_to_true(tmp_path: Path) -> None:
-    skill = tmp_path / "skills" / "default-skill" / "_rtx"
+def test_all_platform_interface_command_is_rejected(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "scheduler-skill"
     skill.mkdir(parents=True)
-    (skill / "run.sh").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+    (skill / "blueprint.yaml").write_text(
+        "interfaces:\n"
+        "  machine:\n"
+        "    sync:\n"
+        "      platform_support:\n"
+        "        linux: true\n"
+        "        macos: true\n"
+        "        windows: true\n"
+        "      invocation:\n"
+        "        kind: command\n"
+        "        argv: [\"launchctl\", \"list\"]\n",
+        encoding="utf-8",
+    )
     errors = validate(tmp_path)
-    assert any("shell scripts are not allowed" in error for error in errors)
+    assert any("command `launchctl` is not cross-platform" in error for error in errors)
 
 
 def test_runner_reports_cross_platform_errors(tmp_path: Path) -> None:
@@ -153,4 +184,3 @@ def test_runner_reports_cross_platform_errors(tmp_path: Path) -> None:
         check=False,
     )
     assert result.returncode == 1
-    assert "cross_platform" in (result.stdout + result.stderr)

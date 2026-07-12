@@ -211,11 +211,12 @@ For blueprint-backed skills, interface hashes include:
 - declared dispatch dependencies discovered by the Python interface resolver;
 - interface hashes declared in `uses_interfaces`, recursively.
 
-`direct_io` declarations are part of the structured interface metadata hash, but
-their live subject data is not content-hashed. `direct_io` describes operational
-data read or written during an invocation, such as inboxes, calendars, user
-documents, stdout, remote files, and API responses. `skill-drift` must not hash
-the live operational data named by `direct_io`.
+`direct_io` is not hash input, either as live subject data or as declaration
+metadata. It describes operational data read or written during an invocation,
+such as inboxes, calendars, user documents, stdout, remote files, and API
+responses. `skill-drift` must not hash the live operational data named by
+`direct_io`, and `direct_io` declaration edits should not by themselves stale an
+audit record.
 
 Legacy compatibility sidecars such as `depends_on_skills` and
 `permissions.json` are not drift inputs. Dependency and suggested-permission
@@ -333,9 +334,9 @@ The current baseline has these design choices implemented:
   remain executed health gates.
 - Interface hashes include canonical structured blueprint metadata plus declared
   file roots, traced Python dependencies, and recursive `uses_interfaces`
-  targets.
-- `direct_io` declarations are hash inputs through structured metadata; live
-  operational data named by `direct_io` is not content-hashed.
+  targets, excluding `direct_io`.
+- `direct_io` is operational IO metadata only. Neither its declaration nor the
+  live operational data it names is content-hashed.
 
 ## Current Design Findings
 
@@ -348,8 +349,11 @@ treated as a strong certification artifact:
   evidence whose gates passed. Future hardening could add local signatures if
   digest self-consistency is not strong enough.
 - **Interface-use validation:** machine-interface `DispatchCall` declarations
-  should either be mirrored in `uses_interfaces` and validated, or the hash
-  layer should derive equivalent target-interface hashes from dispatch tracing.
+  should be mirrored in `uses_interfaces` and validated. This belongs in the
+  validator/audit layer, not the drift hash contract: `skill-drift` should trust
+  the blueprint while a mechanical validator independently route-smokes Python
+  machine interfaces, extracts direct `DispatchCall` targets, and compares them
+  with direct `uses_interfaces` declarations.
 - **Semantic exactness:** `skill-audit` currently checks only a deterministic
   subset of blueprint exactness. It should eventually prove no missing or excess
   behavior sources, interface calls, runtime dependencies, permissions, state
@@ -360,9 +364,11 @@ treated as a strong certification artifact:
 
 ## Recommended Fix Order
 
-1. Validate `uses_interfaces` against machine-interface `DispatchCall`
-   declarations, or derive equivalent used-interface hash entries from dispatch
-   tracing.
+1. Add a validator that checks direct machine-interface dependency agreement:
+   route-smoke each Python machine interface, collect its direct `DispatchCall`
+   targets, and require the same direct machine interfaces in blueprint
+   `uses_interfaces`. Keep recursive dependency hashing in `skill-drift`; keep
+   dependency correctness in validators/`skill-audit`.
 2. Expand `skill-audit` semantic exactness checks from first-pass heuristics to
    explicit missing/excess checks for behavior sources, permissions, runtime
    dependencies, state paths, and interface calls.

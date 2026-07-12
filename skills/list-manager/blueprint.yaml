@@ -74,7 +74,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads YAML list files.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true
@@ -123,7 +123,7 @@ interfaces:
       - kind: python-package
         name: jsonschema
         reason: Resolves and reports JSON Schema metadata for list entries.
-        version: any
+        version: ">=4"
         platforms:
           linux: true
           macos: true
@@ -175,7 +175,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list files.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true
@@ -183,7 +183,7 @@ interfaces:
       - kind: python-package
         name: jsonschema
         reason: Validates list mutations before writing.
-        version: any
+        version: ">=4"
         platforms:
           linux: true
           macos: true
@@ -250,7 +250,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads YAML list data before rendering.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true
@@ -315,7 +315,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads YAML list data from stdin.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true
@@ -365,7 +365,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Writes YAML list files.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true
@@ -373,7 +373,7 @@ interfaces:
       - kind: python-package
         name: jsonschema
         reason: Validates initialized list data before writing.
-        version: any
+        version: ">=4"
         platforms:
           linux: true
           macos: true
@@ -430,7 +430,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list files.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true
@@ -438,7 +438,7 @@ interfaces:
       - kind: python-package
         name: jsonschema
         reason: Validates new entries before writing.
-        version: any
+        version: ">=4"
         platforms:
           linux: true
           macos: true
@@ -499,7 +499,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads YAML list files to avoid ID collisions.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true
@@ -545,7 +545,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Writes migrated YAML list files.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true
@@ -553,7 +553,7 @@ interfaces:
       - kind: python-package
         name: jsonschema
         reason: Validates migrated entries before writing.
-        version: any
+        version: ">=4"
         platforms:
           linux: true
           macos: true
@@ -625,7 +625,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads YAML list data downloaded from cloud storage.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true
@@ -690,7 +690,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list data downloaded from cloud storage.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true
@@ -698,7 +698,7 @@ interfaces:
       - kind: python-package
         name: jsonschema
         reason: Validates new entries before upload.
-        version: any
+        version: ">=4"
         platforms:
           linux: true
           macos: true
@@ -775,7 +775,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list data downloaded from cloud storage.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true
@@ -783,7 +783,7 @@ interfaces:
       - kind: python-package
         name: jsonschema
         reason: Validates list mutations before upload.
-        version: any
+        version: ">=4"
         platforms:
           linux: true
           macos: true
@@ -847,7 +847,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Writes YAML list data for upload.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true
@@ -855,7 +855,7 @@ interfaces:
       - kind: python-package
         name: jsonschema
         reason: Validates initialized list data before upload.
-        version: any
+        version: ">=4"
         platforms:
           linux: true
           macos: true
@@ -913,7 +913,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list data downloaded from cloud storage.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true
@@ -978,7 +978,7 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads YAML list data downloaded from cloud storage.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: true

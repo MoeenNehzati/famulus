@@ -25,10 +25,6 @@
     "kind": {
       "$ref": "#/definitions/skillKind"
     },
-    "cross_platform": {
-      "type": "boolean",
-      "default": true
-    },
     "skill_interface": {
       "type": "object",
       "additionalProperties": false,
@@ -294,7 +290,26 @@
           "type": "string",
           "minLength": 1
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "system-service"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/runtimeSystemServiceName"
+              }
+            }
+          }
+        }
+      ]
     },
     "runtimeDependencyKind": {
       "type": "string",
@@ -324,6 +339,16 @@
           "type": "boolean"
         }
       }
+    },
+    "runtimeSystemServiceName": {
+      "type": "string",
+      "description": "Standardized service-manager or daemon facility names for runtime dependencies.",
+      "enum": [
+        "systemd-user",
+        "launchd",
+        "task-scheduler",
+        "cron"
+      ]
     },
     "llmInterface": {
       "type": "object",
@@ -575,6 +600,14 @@
         "format": {
           "$ref": "#/definitions/metadataFormat"
         },
+        "formats": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/metadataFormat"
+          },
+          "uniqueItems": true
+        },
         "auth": {
           "$ref": "#/definitions/metadataAuthRequirement"
         },
@@ -585,10 +618,17 @@
           "type": "string",
           "minLength": 1
         },
+        "path_match": {
+          "enum": ["exact", "glob", "regex"],
+          "default": "exact"
+        },
         "reason": {
           "type": "string",
           "minLength": 1
         }
+      },
+      "not": {
+        "required": ["format", "formats"]
       }
     },
     "filesystemOwnershipList": {

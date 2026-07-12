@@ -1,7 +1,6 @@
 category: workflow-general-assistant
 role: productivity
 kind: planner
-cross_platform: false
 suggested_permissions:
   bash:
   - command:
@@ -79,14 +78,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML plan/list data through plan_runtime.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: false
           windows: false
       direct_io:
         reads: []
-        writes: []
+        writes:
+        - medium: stdout
+          access: write
+          content: plan
+          format: markdown
+          sensitivity: user-private
         network: []
       owns_filesystem: []
       invocation:
@@ -151,9 +155,58 @@ interfaces:
           macos: false
           windows: false
       direct_io:
-        reads: []
-        writes: []
-        network: []
+        reads:
+        - medium: remote-filesystem
+          access: read
+          system: google-drive
+          content: plan
+          format: markdown
+          path: plans/<date>.md
+          auth:
+            kind: rclone-config
+            mode: uses-existing
+          sensitivity: user-private
+        - medium: stdin
+          access: read
+          content: plan
+          format: markdown
+          sensitivity: user-private
+        writes:
+        - medium: remote-filesystem
+          access: write
+          system: google-drive
+          content: plan
+          format: markdown
+          path: plans/<date>.md
+          auth:
+            kind: rclone-config
+            mode: uses-existing
+          sensitivity: user-private
+        - medium: remote-filesystem
+          access: delete
+          system: google-drive
+          content: plan
+          format: markdown
+          path: plans/<date>.md
+          auth:
+            kind: rclone-config
+            mode: uses-existing
+          sensitivity: user-private
+        - medium: stdout
+          access: write
+          content: response
+          format: text
+          sensitivity: derived-private
+        network:
+        - medium: network-request
+          access: read-write
+          system: google-drive
+          content: plan
+          format: markdown
+          auth:
+            kind: rclone-config
+            mode: uses-existing
+          sensitivity: user-private
       owns_filesystem: []
       invocation:
         kind: python_machine_interface
@@ -195,8 +248,34 @@ interfaces:
         allow_stdin: true
       dependencies: []
       direct_io:
-        reads: []
-        writes: []
+        reads:
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: plan
+          format: markdown
+          path: <plan-file>
+          sensitivity: user-private
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: plan
+          format: markdown
+          path: <dir>
+          sensitivity: user-private
+        writes:
+        - medium: local-filesystem
+          access: write
+          system: filesystem
+          content: plan
+          format: markdown
+          path: <dir>
+          sensitivity: user-private
+        - medium: stdout
+          access: write
+          content: plan
+          format: markdown
+          sensitivity: user-private
         network: []
       owns_filesystem: []
       invocation:
@@ -248,14 +327,19 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML plan/list data through plan_runtime.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
           macos: false
           windows: false
       direct_io:
         reads: []
-        writes: []
+        writes:
+        - medium: stdout
+          access: write
+          content: plan
+          format: markdown
+          sensitivity: user-private
         network: []
       owns_filesystem: []
       invocation:
@@ -274,8 +358,18 @@ interfaces:
         kind: skill_file
         path: SKILL.md
       direct_io:
-        reads: []
-        writes: []
+        reads:
+        - medium: prompt
+          access: read
+          content: plan-request
+          format: text
+          sensitivity: user-private
+        writes:
+        - medium: prompt
+          access: write
+          content: plan
+          format: markdown
+          sensitivity: derived-private
         network: []
       owns_filesystem: []
       allow_all_skills: true

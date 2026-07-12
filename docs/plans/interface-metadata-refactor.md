@@ -805,7 +805,8 @@ interface metadata:
 - transitive skill systems: recursive union through `uses_interfaces`;
 - skill auth requirements: union of interface `direct_io.*.auth`;
 - skill contents read/written: union of interface `direct_io.*.content`;
-- skill formats: union of interface `direct_io.*.format`;
+- skill formats: union of interface `direct_io.*.format` and
+  `direct_io.*.formats`;
 - skill risk/effect badges: inferred from interface `direct_io.*.access`,
   `direct_io.*.medium`, `direct_io.*.system`, and
   `direct_io.*.sensitivity`;
@@ -853,20 +854,30 @@ blueprints.
    paths should compile, normalize relative roots, reject overlapping owners,
    and enforce that matching local-filesystem reads/writes respect owner and
    `allowed_readers` rules.
-7. Prune the `content` enum after several real migrations. Remove values that
+7. Add a same-skill shared-state ownership model. The current
+   `owns_filesystem` contract is interface-owner oriented: one interface owns a
+   path, only that interface writes it, and named readers may read it. Real
+   skills such as `email-triage` have a shared state family where several
+   same-skill interfaces legitimately write related files such as a watermark,
+   status sentinel, or log. Future implementation should model that explicitly,
+   either by adding `allowed_writers` to ownership entries or by introducing a
+   separate skill-local state block with declared readers and writers. Until
+   then, leave these shared paths unowned rather than falsely naming one
+   interface as the sole writer.
+8. Prune the `content` enum after several real migrations. Remove values that
    are too field-level, too format-like, or unused; add only coarse semantic
    values that support docs/search/graphs.
-8. Extend blueprint sync/docs tooling so generated docs can read interface
+9. Extend blueprint sync/docs tooling so generated docs can read interface
    metadata.
-9. Migrate a small slice first:
+10. Migrate a small slice first:
    - `g-calendar`;
    - `get-weather`;
    - `cloud-files`;
    - `daily-plan`;
    - `recurring-tasks`.
-10. Use the migrated slice to generate one new docs view or graph, likely a
+11. Use the migrated slice to generate one new docs view or graph, likely a
    remote systems/auth graph.
-11. Migrate the remaining skills once the vocabulary and validators have proven
+12. Migrate the remaining skills once the vocabulary and validators have proven
    stable.
 
 During migration, do not mechanically copy an old skill-level dependency list
@@ -983,6 +994,10 @@ the target interface and required version.
 - `direct_io.network` is not redundant with reads/writes. It is the graph edge
   for external service contact; reads/writes describe the semantic resource
   moved or mutated.
+- Format families should stay finite. Use `format` for one format and
+  `formats` for a finite list, with `path_match: glob` and final suffix families
+  such as `*.{md,pdf}` when the path itself describes the family. This avoids
+  broad `mixed` values while keeping docs/search/graphs mechanically useful.
 - `uses_interfaces` is the right mechanism for transitive IO. Without it,
   callers either omit important effects or duplicate callee metadata.
 - The search API needs a grouped projection mode, likely "select each matching

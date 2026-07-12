@@ -1,7 +1,6 @@
 category: skill-making-development-assistant
 role: meta-skill
 kind: generator
-cross_platform: true
 suggested_permissions:
   bash: []
   network: []

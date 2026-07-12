@@ -10,7 +10,7 @@ Query shape::
     {
         "filter": {
             "all": [
-                {"path": "cross_platform", "op": "eq", "value": True},
+                {"path": "interfaces.machine.*.platform_support.windows", "op": "eq", "value": True},
                 {
                     "any": [
                         {"path": "category", "op": "regex", "pattern": "development"},
@@ -36,15 +36,16 @@ Query shape::
 
 Filters support ``all`` (AND), ``any`` (OR), ``not``, and predicate nodes.
 Selectors use dotted paths with ``*`` wildcards over mapping values or list
-items. PyYAML drops comments when parsing; ``comments: raw`` includes the
-original source text under ``raw`` instead of attempting comment-preserving
-structured fragments.
+items, and ``**`` for recursive descendant matches. PyYAML drops comments when
+parsing; ``comments: raw`` includes the original source text under ``raw``
+instead of attempting comment-preserving structured fragments.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence
@@ -97,28 +98,46 @@ def iter_blueprints(
         skill = blueprint_path.parent.name
         if skill.startswith(".") and not include_hidden:
             continue
-        raw = blueprint_path.read_text(encoding="utf-8")
-        try:
-            loaded = yaml.safe_load(raw) or {}
-        except yaml.YAMLError as exc:
-            rel = _relative_path(blueprint_path, root)
-            raise BlueprintSearchError(f"{rel}: invalid YAML: {exc}") from exc
-        if not isinstance(loaded, dict):
-            rel = _relative_path(blueprint_path, root)
-            raise BlueprintSearchError(f"{rel}: top-level YAML value must be a mapping")
-        yield BlueprintRecord(
-            skill=skill,
-            path=_relative_path(blueprint_path, root),
-            data=loaded,
-            raw=raw,
-        )
+        yield load_blueprint_record(blueprint_path, repo_root=root, skill=skill)
+
+
+def load_blueprint_record(
+    blueprint_path: Path | str,
+    *,
+    repo_root: Path | str | None = None,
+    skill: str | None = None,
+) -> BlueprintRecord:
+    """Load one blueprint YAML file into a parsed record.
+
+    This is the single shared parsing boundary for blueprint files. Callers that
+    need exact-path loading should use this instead of reading YAML directly.
+    """
+
+    path = Path(blueprint_path)
+    root = Path(repo_root) if repo_root is not None else _infer_repo_root(path)
+    raw = path.read_text(encoding="utf-8")
+    try:
+        loaded = yaml.safe_load(raw) or {}
+    except yaml.YAMLError as exc:
+        rel = _relative_path(path, root)
+        raise BlueprintSearchError(f"{rel}: invalid YAML: {exc}") from exc
+    if not isinstance(loaded, dict):
+        rel = _relative_path(path, root)
+        raise BlueprintSearchError(f"{rel}: top-level YAML value must be a mapping")
+    return BlueprintRecord(
+        skill=skill or path.parent.name,
+        path=_relative_path(path, root),
+        data=loaded,
+        raw=raw,
+    )
 
 
 def select_values(data: Any, selector: str) -> list[tuple[str, Any]]:
     """Resolve a dotted selector against parsed YAML data.
 
-    ``*`` expands all mapping values or list items. Numeric path segments select
-    list indexes. Missing selectors return an empty list.
+    ``*`` expands all mapping values or list items at one level. ``**`` expands
+    descendants at any depth. Numeric path segments select list indexes. Missing
+    selectors return an empty list.
     """
 
     if not selector:
@@ -126,15 +145,29 @@ def select_values(data: Any, selector: str) -> list[tuple[str, Any]]:
     if selector.startswith("$"):
         raise BlueprintSearchError(f"{selector}: built-in selectors are handled at transform time")
 
-    values: list[tuple[str, Any]] = [("", data)]
-    for part in selector.split("."):
-        next_values: list[tuple[str, Any]] = []
-        for current_path, current_value in values:
-            next_values.extend(_select_child(current_path, current_value, part))
-        values = next_values
-        if not values:
-            break
-    return values
+    return _select_parts("", data, selector.split("."))
+
+
+def strip_selected_paths(data: Any, selectors: Sequence[str] | str) -> Any:
+    """Return a deep copy of parsed YAML data with selected paths removed.
+
+    Selectors use the same dotted syntax as :func:`select_values`. This is useful
+    when callers need a canonical projection of a YAML document before hashing or
+    comparing it.
+    """
+
+    if isinstance(selectors, str):
+        selectors = [selectors]
+    selected_paths: set[str] = set()
+    for selector in selectors:
+        if not isinstance(selector, str) or not selector:
+            raise BlueprintSearchError("strip selectors must be non-empty strings")
+        selected_paths.update(path for path, _value in select_values(data, selector))
+
+    stripped = deepcopy(data)
+    for path in sorted(selected_paths, key=_delete_order_key, reverse=True):
+        _delete_path(stripped, path.split("."))
+    return stripped
 
 
 def matches_filter(
@@ -277,11 +310,44 @@ def _skill_sort_key(path: Path) -> str:
     return path.parent.name
 
 
+def _infer_repo_root(path: Path) -> Path:
+    resolved = path.resolve(strict=False)
+    if resolved.name == "blueprint.yaml" and resolved.parent.parent.name == "skills":
+        return resolved.parent.parent.parent
+    return resolved.parent
+
+
 def _relative_path(path: Path, root: Path) -> str:
     try:
         return path.relative_to(root).as_posix()
     except ValueError:
         return path.as_posix()
+
+
+def _select_parts(path: str, value: Any, parts: Sequence[str]) -> list[tuple[str, Any]]:
+    if not parts:
+        return [(path, value)]
+
+    part = parts[0]
+    rest = parts[1:]
+    if part == "**":
+        matches = _select_parts(path, value, rest)
+        for child_path, child in _iter_children(path, value):
+            matches.extend(_select_parts(child_path, child, parts))
+        return matches
+
+    matches: list[tuple[str, Any]] = []
+    for child_path, child in _select_child(path, value, part):
+        matches.extend(_select_parts(child_path, child, rest))
+    return matches
+
+
+def _iter_children(path: str, value: Any) -> list[tuple[str, Any]]:
+    if isinstance(value, Mapping):
+        return [(_join_path(path, str(key)), child) for key, child in value.items()]
+    if isinstance(value, list):
+        return [(_join_path(path, str(index)), child) for index, child in enumerate(value)]
+    return []
 
 
 def _select_child(path: str, value: Any, part: str) -> list[tuple[str, Any]]:
@@ -302,6 +368,35 @@ def _select_child(path: str, value: Any, part: str) -> list[tuple[str, Any]]:
         if 0 <= index < len(value):
             return [(_join_path(path, part), value[index])]
     return []
+
+
+def _delete_order_key(path: str) -> tuple[int, str]:
+    return (len(path.split(".")), path)
+
+
+def _delete_path(value: Any, parts: Sequence[str]) -> None:
+    if not parts:
+        return
+    if len(parts) == 1:
+        part = parts[0]
+        if isinstance(value, dict):
+            value.pop(part, None)
+        elif isinstance(value, list) and part.isdigit():
+            index = int(part)
+            if 0 <= index < len(value):
+                value.pop(index)
+        return
+
+    part = parts[0]
+    if isinstance(value, dict):
+        child = value.get(part)
+    elif isinstance(value, list) and part.isdigit():
+        index = int(part)
+        child = value[index] if 0 <= index < len(value) else None
+    else:
+        child = None
+    if child is not None:
+        _delete_path(child, parts[1:])
 
 
 def _join_path(parent: str, child: str) -> str:

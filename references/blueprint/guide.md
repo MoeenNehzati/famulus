@@ -98,7 +98,6 @@ Representative structure:
 category: research-assistant
 role: research-writing
 kind: reviewer
-cross_platform: true
 
 skill_interface:
   inputs:
@@ -179,13 +178,6 @@ Increment it when that interface's exported contract changes in a breaking way.
 The skill version is the version of `interfaces.llm.default`; there is no
 separate top-level skill version.
 
-### `cross_platform`
-
-Optional boolean. Default behavior is `true`.
-
-- `true` = the skill is expected to satisfy the shared cross-platform validator
-- `false` = the skill is intentionally platform-specific and is exempt
-
 ### `skill_interface`
 
 High-level contract in plain language. Lists inputs, outputs, side effects.
@@ -212,6 +204,10 @@ Each machine interface owns:
 
 Machine interfaces are the executable interface model. The legacy
 `script_interfaces` key is no longer accepted by the schema or sync validator.
+
+Skill-level platform support is derived from `interfaces.machine.*.platform_support`.
+Do not add a top-level platform flag. A skill can have a mix of portable and
+platform-specific machine interfaces.
 
 ### `dependencies`
 
@@ -262,6 +258,13 @@ Allowed dependency kinds are:
 - `external-application`
 - `runtime`
 - `model-data`
+
+For `kind: system-service`, `name` is also closed. Allowed values are:
+
+- `systemd-user`
+- `launchd`
+- `task-scheduler`
+- `cron`
 
 Do not use dependency kinds for APIs, OAuth, credentials, or network access.
 Represent those through `direct_io.network`, auth metadata, and setup
@@ -359,6 +362,31 @@ docs, search, and graphs, not an internal field of that object. Use
 `content: email`, not separate values for subject, body, title, date, headers,
 or IDs. Add a finer content value only when users will filter or visualize that
 object independently.
+
+Use `format` for one known format and `formats` for a finite family of possible
+formats. Do not set both on the same `direct_io` entry:
+
+```yaml
+direct_io:
+  writes:
+    - medium: local-filesystem
+      access: write
+      system: filesystem
+      content: report
+      formats: [markdown, pdf]
+      path: "_build/reports/**/*.{md,pdf}"
+      path_match: glob
+      sensitivity: derived-private
+```
+
+`path_match` is optional and defaults to `exact`. Use `path_match: glob` for a
+small documented glob syntax: `*` within a path segment, `**` as a full path
+segment, and a final extension family such as `*.{md,pdf}`. Do not use
+`*.[md|pdf]`; bracket character classes are intentionally not part of the
+blueprint glob syntax. Use `path_match: regex` only when the family cannot be
+expressed as a glob. Regex paths must compile, and explicit `format` or
+`formats` values are preferred because suffix inference is only reliable for
+exact and glob paths.
 
 ### `owns_filesystem`
 

@@ -223,7 +223,7 @@ def test_interface_hash_includes_structured_blueprint_metadata(tmp_path: Path) -
     assert first != second
 
 
-def test_interface_hash_includes_direct_io_declaration_not_live_contents(tmp_path: Path) -> None:
+def test_interface_hash_does_not_hash_direct_io_declaration(tmp_path: Path) -> None:
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"
     write(skill / "SKILL.md", "skill\n")
@@ -250,7 +250,7 @@ def test_interface_hash_includes_direct_io_declaration_not_live_contents(tmp_pat
     changed["direct_io"]["reads"][0]["path"] = "$repo/inbox/other.txt"
     second = health_state.hash_interface(skill, repo, changed)
 
-    assert first != second
+    assert first == second
 
 
 def test_interface_hash_includes_used_machine_interface_hash(tmp_path: Path) -> None:
@@ -417,12 +417,12 @@ def test_skill_hash_collects_all_interface_roots(tmp_path: Path) -> None:
     assert first != second
 
 
-def test_skill_hash_changes_when_blueprint_file_changes(tmp_path: Path) -> None:
+def test_skill_hash_changes_when_hashable_blueprint_metadata_changes(tmp_path: Path) -> None:
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"
     write(skill / "SKILL.md", "skill\n")
-    write(skill / "blueprint.yaml", "interface_version: 1\n")
     blueprint = {
+        "category": "development-assistant",
         "interfaces": {
             "llm": {
                 "default": {
@@ -434,7 +434,44 @@ def test_skill_hash_changes_when_blueprint_file_changes(tmp_path: Path) -> None:
     }
 
     first = health_state.hash_skill(skill, repo, blueprint)
-    write(skill / "blueprint.yaml", "interface_version: 2\n")
-    second = health_state.hash_skill(skill, repo, blueprint)
+    changed = copy.deepcopy(blueprint)
+    changed["category"] = "skill-making-development-assistant"
+    second = health_state.hash_skill(skill, repo, changed)
 
     assert first != second
+
+
+def test_skill_hash_does_not_hash_direct_io_declaration(tmp_path: Path) -> None:
+    repo = tmp_path
+    skill = repo / "skills" / "demo-skill"
+    write(skill / "SKILL.md", "skill\n")
+    blueprint = {
+        "interfaces": {
+            "llm": {
+                "default": {
+                    "binding": {"kind": "skill_file", "path": "SKILL.md"},
+                    "behavior_sources": [],
+                    "direct_io": {
+                        "reads": [
+                            {
+                                "medium": "local-filesystem",
+                                "path": "$repo/inbox/message.txt",
+                                "content": "email",
+                                "access": "read",
+                                "sensitivity": "user-private",
+                            }
+                        ],
+                        "writes": [],
+                        "network": [],
+                    },
+                }
+            }
+        }
+    }
+
+    first = health_state.hash_skill(skill, repo, blueprint)
+    changed = copy.deepcopy(blueprint)
+    changed["interfaces"]["llm"]["default"]["direct_io"]["reads"][0]["path"] = "$repo/inbox/other.txt"
+    second = health_state.hash_skill(skill, repo, changed)
+
+    assert first == second

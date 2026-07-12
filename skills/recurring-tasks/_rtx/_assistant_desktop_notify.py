@@ -18,7 +18,7 @@ Supported platforms:
       System.Windows.Forms balloon-tip fallback.
 
 Lives in recurring-tasks/scripts/ (this skill opts out of the repo's
-cross-platform validator via `cross_platform: false` in blueprint.yaml,
+cross-platform validator via interface-level `platform_support` in blueprint.yaml,
 since dispatching per-OS commands is the intentional point of this tool).
 Other scripts in this skill (e.g. healthcheck.py) call it as a sibling
 script; it has no dependency on being installed or on PATH.

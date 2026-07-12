@@ -19,7 +19,7 @@ rows = search_blueprints(
     {
         "filter": {
             "all": [
-                {"path": "cross_platform", "op": "eq", "value": True},
+                {"path": "interfaces.machine.*.platform_support.windows", "op": "eq", "value": True},
                 {
                     "any": [
                         {"path": "category", "op": "regex", "pattern": "development"},
@@ -37,13 +37,17 @@ rows = search_blueprints(
             "skill",
             "path",
             "category",
-            "cross_platform",
+            {"as": "windows_support", "path": "interfaces.machine.*.platform_support.windows"},
             {"as": "invocation_kinds", "path": "interfaces.machine.*.invocation.kind"},
         ],
         "explain": True,
     },
 )
 ```
+
+For exact-path callers, use `load_blueprint_record(path, repo_root=...)` rather
+than reading YAML directly. It returns the same parsed `BlueprintRecord` shape
+used by repository-wide search.
 
 ## CLI
 
@@ -71,7 +75,7 @@ Boolean filter nodes:
 
 ```yaml
 all:
-  - path: cross_platform
+  - path: interfaces.machine.*.platform_support.windows
     op: eq
     value: true
   - path: category
@@ -92,7 +96,7 @@ any:
 
 ```yaml
 not:
-  path: cross_platform
+  path: interfaces.machine.*.platform_support.windows
   op: eq
   value: false
 ```
@@ -110,14 +114,22 @@ Predicate operations:
 Selector syntax:
 
 - `category`
-- `cross_platform`
+- `interfaces.machine.*.platform_support.windows`
 - `interfaces.machine.*.uses_interfaces.*.version`
 - `interfaces.machine.*.invocation.kind`
+- `**.direct_io`
 - `suggested_permissions.bash.*.command.0`
 
 `.` descends through mapping keys. `*` expands mapping values or list items.
-Numeric path segments select list indexes. Wildcard projections always return a
-list, even when exactly one value matches.
+`**` matches descendants recursively at any depth. Numeric path segments select
+list indexes. Wildcard projections always return a list, even when exactly one
+value matches.
+
+The Python API also exposes `strip_selected_paths(data, selectors)`, which
+returns a deep copy with every selected path removed. Callers use this to build
+stable YAML projections before comparing or hashing structured data. For
+example, `skill-drift` hashes blueprint metadata after stripping
+`**.direct_io`.
 
 ## Comments
 

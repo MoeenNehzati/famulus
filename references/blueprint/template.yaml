@@ -16,11 +16,6 @@ role: research-writing
 # of the skillKind enum values in references/blueprint/schema.json.
 kind: reviewer
 
-# Optional boolean. Default: true.
-# Set this to false only when the skill is intentionally platform-specific and
-# should be exempt from the shared cross-platform validator.
-cross_platform: true
-
 # Structured permission suggestions for smoother execution.
 # These are not grants; they are advisory blueprint metadata.
 #
@@ -139,6 +134,18 @@ interfaces:
             format: yaml
             path: "$repo/data/example.yaml"
             sensitivity: user-private
+          # Use `formats` plus `path_match: glob` when one entry describes a
+          # finite family of file formats. The accepted glob syntax is small:
+          # `*`, `**` as a full path segment, and final extension families like
+          # `*.{md,pdf}`.
+          # - medium: local-filesystem
+          #   access: read
+          #   system: filesystem
+          #   content: report
+          #   formats: [markdown, pdf]
+          #   path: "_build/reports/**/*.{md,pdf}"
+          #   path_match: glob
+          #   sensitivity: user-private
         writes:
           - medium: stdout
             access: write
@@ -464,6 +471,12 @@ interfaces:
 #   reads: []
 #   writes: []
 #   network: []
+#
+# Use `format` for one known format and `formats` for a finite family. Do not
+# set both on one entry. If a path describes a file family, set `path_match:
+# glob` and use the small blueprint glob syntax: `*`, `**` as a full path
+# segment, and final extension families such as `*.{md,pdf}`. Use
+# `path_match: regex` only when the family cannot be expressed as a glob.
 #
 # owns_filesystem declares exclusive ownership of local-filesystem paths. Use
 # [] when the interface owns no filesystem paths. If an interface owns a path,

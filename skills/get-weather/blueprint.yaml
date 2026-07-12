@@ -1,7 +1,6 @@
 category: productivity-general-assistant
 role: productivity
 kind: client
-cross_platform: false
 suggested_permissions:
   bash:
   - command:
@@ -34,8 +33,19 @@ interfaces:
       dependencies: []
       direct_io:
         reads: []
-        writes: []
-        network: []
+        writes:
+        - medium: stdout
+          access: write
+          content: forecast
+          format: json
+          sensitivity: user-private
+        network:
+        - medium: network-request
+          access: request
+          system: weather-service
+          content: forecast
+          format: json
+          sensitivity: user-private
       owns_filesystem: []
       invocation:
         kind: python_machine_interface
@@ -43,8 +53,8 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
   llm:
     default:
       version: 1
@@ -53,8 +63,18 @@ interfaces:
         kind: skill_file
         path: SKILL.md
       direct_io:
-        reads: []
-        writes: []
+        reads:
+        - medium: prompt
+          access: read
+          content: plan-request
+          format: text
+          sensitivity: user-private
+        writes:
+        - medium: prompt
+          access: write
+          content: forecast
+          format: markdown
+          sensitivity: derived-private
         network: []
       owns_filesystem: []
       allow_all_skills: true

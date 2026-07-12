@@ -21,10 +21,11 @@ At a high level, the recursive dependency set is:
 
 - a file root includes that file;
 - a directory root includes every file and symlink below it;
-- the whole-skill hash includes the skill's own `blueprint.yaml`;
+- the whole-skill hash includes canonical blueprint metadata with `direct_io`
+  declarations removed;
 - an interface includes a canonical structured metadata entry for its blueprint
-  declaration, its binding file, declared behavior sources, and discovered
-  Python runtime files;
+  declaration with `direct_io` removed, its binding file, declared behavior
+  sources, and discovered Python runtime files;
 - an interface includes interfaces declared in `uses_interfaces` by
   recursively including those target interface hashes;
 - a PythonMachineInterface includes files loaded by `--route-smoke`, local
@@ -65,6 +66,11 @@ These helpers produce `sha256:<hex>` digests from `HashEntry` values. The hash
 input includes the entry kind, label, and bytes, separated with NUL bytes and
 sorted deterministically.
 
+Blueprint YAML parsing is owned by the shared extractor in
+`src/officina/blueprint_search.py`. `skill-drift` uses
+`load_blueprint_record()` for exact blueprint paths and uses
+`strip_selected_paths()` for selector-based metadata projection before hashing.
+
 Interface hashes also include `uses_interfaces` entries. Each entry stores the
 canonical interface name and that target interface's hash. This means an LLM
 interface that routes work through a machine interface becomes stale when that
@@ -81,11 +87,10 @@ templates, examples, parser tables, policies, validation rules, and similar
 material. They are not ordinary user subject inputs. Python imports and
 dispatcher targets are discovered mechanically.
 
-`direct_io` entries are not behavior roots. Their declarations are included in
-the structured interface metadata hash, but the live resources are not
-content-hashed. They describe operational data the interface reads or writes
-during an invocation, such as inboxes, calendars, stdout, user documents, remote
-files, or API responses.
+`direct_io` entries are not behavior roots and are not hash inputs. They
+describe operational data the interface reads or writes during an invocation,
+such as inboxes, calendars, stdout, user documents, remote files, or API
+responses. Neither the declaration nor the live resources are content-hashed.
 
 Root resolution is deliberately narrow:
 
@@ -177,11 +182,12 @@ import the behavior-relevant module cheaply and without real side effects.
 - directory: recursively emits child file and symlink entries;
 - other special filesystem object: `kind="special"`, empty bytes.
 
-`interface_metadata_entry` adds the interface blueprint declaration as
-`kind="json"` with deterministic JSON bytes. This catches metadata-only changes
-to fields such as descriptions, patterns, access control, invocation arguments,
-runtime dependencies, behavior-source declarations, `direct_io`, ownership, and
-`uses_interfaces`.
+`interface_metadata_entry` adds the interface blueprint declaration, with
+`direct_io` removed through the shared YAML selector projection
+`strip_selected_paths(..., "**.direct_io")`, as `kind="json"` with deterministic
+JSON bytes. This catches metadata-only changes to fields such as descriptions,
+patterns, access control, invocation arguments, runtime dependencies,
+behavior-source declarations, ownership, and `uses_interfaces`.
 
 `digest_entries` sorts entries before hashing, so traversal order does not
 affect the final digest. The hash uses the entry kind and label as well as the
@@ -194,7 +200,8 @@ those files as hash entries. This separation is deliberate: tests can ask
 
 ## Skill-Level Hashing
 
-`hash_skill` walks all blueprint interfaces under:
+`hash_skill` hashes canonical blueprint metadata with `direct_io` removed by the
+same selector projection, then walks all blueprint interfaces under:
 
 - `interfaces.llm`
 - `interfaces.machine`
@@ -282,7 +289,16 @@ items from the dependency-explorer audit.
    coverage should be expanded for alternate import shapes such as importing the
    `dispatcher` module through `officina`, star imports, or dynamic imports.
 
-4. Python tracing should derive `src/officina` from the requested `repo_root`.
+4. `uses_interfaces` should be validated against direct `DispatchCall` targets.
+
+   `skill-drift` hashes the interfaces declared in `uses_interfaces` and should
+   continue treating the blueprint as the contract. A validator should
+   route-smoke each Python machine interface, inspect its direct `DispatchCall`
+   declarations, and compare those direct targets with the interface's direct
+   `uses_interfaces` entries. Recursive closure belongs to hashing; local
+   declaration agreement belongs to validators and `skill-audit`.
+
+5. Python tracing should derive `src/officina` from the requested `repo_root`.
 
    The current tracer uses the module-global `SRC_ROOT` from the live checkout.
    For alternate checkouts or synthetic test repositories, it should use

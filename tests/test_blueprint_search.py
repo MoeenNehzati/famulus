@@ -13,8 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from officina.blueprint_search import (  # noqa: E402
     BlueprintSearchError,
     iter_blueprints,
+    load_blueprint_record,
     search_blueprints,
     select_values,
+    strip_selected_paths,
 )
 
 
@@ -64,6 +66,40 @@ def test_iter_blueprints_yields_sorted_skill_records(tmp_path: Path) -> None:
     assert records[0].data["category"] == "development-assistant"
 
 
+def test_load_blueprint_record_reads_exact_path_with_repo_relative_path(tmp_path: Path) -> None:
+    _write_blueprint(
+        tmp_path,
+        "alpha",
+        """
+        category: development-assistant
+        interface_version: 1
+        interfaces: {}
+        """,
+    )
+
+    record = load_blueprint_record(
+        tmp_path / "skills" / "alpha" / "blueprint.yaml",
+        repo_root=tmp_path,
+    )
+
+    assert record.skill == "alpha"
+    assert record.path == "skills/alpha/blueprint.yaml"
+    assert record.data["category"] == "development-assistant"
+
+
+def test_load_blueprint_record_reports_invalid_yaml_path(tmp_path: Path) -> None:
+    path = tmp_path / "skills" / "broken" / "blueprint.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text("category: [\n", encoding="utf-8")
+
+    try:
+        load_blueprint_record(path, repo_root=tmp_path)
+    except BlueprintSearchError as exc:
+        assert "skills/broken/blueprint.yaml: invalid YAML" in str(exc)
+    else:
+        raise AssertionError("expected BlueprintSearchError")
+
+
 def test_select_values_resolves_nested_wildcards_and_list_indexes() -> None:
     data = {
         "interfaces": {
@@ -90,6 +126,51 @@ def test_select_values_resolves_nested_wildcards_and_list_indexes() -> None:
     ]
 
 
+def test_select_values_supports_recursive_wildcard() -> None:
+    data = {
+        "interfaces": {
+            "llm": {"default": {"direct_io": {"reads": []}}},
+            "machine": {"scan": {"direct_io": {"writes": []}}},
+        },
+        "direct_io": {"network": []},
+    }
+
+    assert select_values(data, "**.direct_io") == [
+        ("direct_io", {"network": []}),
+        ("interfaces.llm.default.direct_io", {"reads": []}),
+        ("interfaces.machine.scan.direct_io", {"writes": []}),
+    ]
+
+
+def test_strip_selected_paths_removes_recursive_matches_without_mutating_input() -> None:
+    data = {
+        "interfaces": {
+            "llm": {
+                "default": {
+                    "description": "Default interface.",
+                    "direct_io": {"reads": [{"path": "/tmp/input"}]},
+                }
+            },
+            "machine": {
+                "scan": {
+                    "invocation": {"kind": "python_machine_interface"},
+                    "direct_io": {"writes": []},
+                }
+            },
+        }
+    }
+
+    stripped = strip_selected_paths(data, "**.direct_io")
+
+    assert stripped == {
+        "interfaces": {
+            "llm": {"default": {"description": "Default interface."}},
+            "machine": {"scan": {"invocation": {"kind": "python_machine_interface"}}},
+        }
+    }
+    assert "direct_io" in data["interfaces"]["llm"]["default"]
+
+
 def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path,
@@ -97,11 +178,14 @@ def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path
         """
         category: system-assistant
         interface_version: 1
-        cross_platform: false
         interfaces:
           machine:
             sync:
               description: Sync systemd units from jobs.yaml.
+              platform_support:
+                linux: true
+                macos: false
+                windows: false
               invocation:
                 kind: python_machine_interface
         """,
@@ -112,11 +196,14 @@ def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path
         """
         category: development-assistant
         interface_version: 1
-        cross_platform: true
         interfaces:
           machine:
             inspect:
               description: Inspect blueprint data.
+              platform_support:
+                linux: true
+                macos: true
+                windows: true
               invocation:
                 kind: python_module
         """,
@@ -127,7 +214,7 @@ def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path
         {
             "filter": {
                 "all": [
-                    {"path": "cross_platform", "op": "eq", "value": False},
+                    {"path": "interfaces.machine.*.platform_support.macos", "op": "eq", "value": False},
                     {
                         "any": [
                             {
@@ -145,7 +232,7 @@ def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path
                 "skill",
                 "path",
                 "category",
-                "cross_platform",
+                {"as": "macos_support", "path": "interfaces.machine.*.platform_support.macos"},
                 {"as": "invocation_kinds", "path": "interfaces.machine.*.invocation.kind"},
             ],
             "explain": True,
@@ -158,14 +245,14 @@ def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path
             "path": "skills/linux-skill/blueprint.yaml",
             "values": {
                 "category": "system-assistant",
-                "cross_platform": False,
+                "macos_support": [False],
                 "invocation_kinds": ["python_machine_interface"],
             },
             "matches": [
                 {
-                    "selector": "cross_platform",
+                    "selector": "interfaces.machine.*.platform_support.macos",
                     "op": "eq",
-                    "path": "cross_platform",
+                    "path": "interfaces.machine.sync.platform_support.macos",
                     "value": False,
                 },
                 {
@@ -285,8 +372,8 @@ def test_missing_filter_matches_absent_selector(tmp_path: Path) -> None:
     rows = search_blueprints(
         tmp_path,
         {
-            "filter": {"path": "cross_platform", "op": "missing"},
-            "select": ["skill", "cross_platform"],
+            "filter": {"path": "display_description", "op": "missing"},
+            "select": ["skill", "display_description"],
             "explain": True,
         },
     )
@@ -295,12 +382,12 @@ def test_missing_filter_matches_absent_selector(tmp_path: Path) -> None:
         {
             "skill": "minimal",
             "path": "skills/minimal/blueprint.yaml",
-            "values": {"cross_platform": []},
+            "values": {"display_description": []},
             "matches": [
                 {
-                    "selector": "cross_platform",
+                    "selector": "display_description",
                     "op": "missing",
-                    "path": "cross_platform",
+                    "path": "display_description",
                     "value": None,
                 }
             ],

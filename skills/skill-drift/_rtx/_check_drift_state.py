@@ -27,8 +27,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
 
-import yaml
-
 RTX_DIR = Path(__file__).resolve().parent
 if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
@@ -36,6 +34,7 @@ if str(RTX_DIR) not in sys.path:
 from _drift_hashes import HashEntry, digest_entries, entries_for_path, hash_interface, hash_skill
 from _skill_sources import SkillSource, observed_skill_sources
 from officina.common.audit_records import RECORD_DIGEST_FIELD, record_digest_matches
+from officina.blueprint_search import BlueprintSearchError, load_blueprint_record
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -210,10 +209,11 @@ def load_blueprint(skill_dir: Path) -> dict[str, Any]:
     path = skill_dir / "blueprint.yaml"
     if not path.is_file():
         raise DriftCheckError(f"{skill_dir.name}: missing blueprint.yaml")
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if not isinstance(raw, dict):
-        raise DriftCheckError(f"{path}: top level must be a mapping")
-    return raw
+    repo_root = skill_dir.parent.parent if skill_dir.parent.name == "skills" else skill_dir.parent
+    try:
+        return load_blueprint_record(path, repo_root=repo_root, skill=skill_dir.name).data
+    except BlueprintSearchError as exc:
+        raise DriftCheckError(str(exc)) from exc
 
 
 def compute_policy_hash(repo_root: Path) -> str:

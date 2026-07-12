@@ -370,6 +370,8 @@ class SkillBlueprintToolTests(unittest.TestCase):
                                     {
                                         "kind": "binary",
                                         "name": "rg --files",
+                                        "version": "any",
+                                        "platforms": platform_support(),
                                         "reason": "Searches local files.",
                                     }
                                 ],
@@ -383,6 +385,47 @@ class SkillBlueprintToolTests(unittest.TestCase):
         errors = sync_module.validate_blueprints(blueprints)
 
         self.assertTrue(any("not a path or shell command" in error for error in errors))
+
+    def test_sync_validator_rejects_unknown_system_service_name(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_bad_system_service_test",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        blueprints = {
+            "demo-skill": sync_module.SkillBlueprint(
+                "demo-skill",
+                Path("skills/demo-skill/blueprint.yaml"),
+                {
+                    "category": "workflow-general-assistant",
+                    "interfaces": {
+                        "machine": {
+                            "scan": {
+                                "version": 1,
+                                "platform_support": platform_support(),
+                                "invocation": {
+                                    "kind": "python_machine_interface",
+                                    "entrypoint": "_rtx/_scan_tool.py:Interface",
+                                    "behavior_sources": [],
+                                },
+                                "dependencies": [
+                                    {
+                                        "kind": "system-service",
+                                        "name": "systemd",
+                                        "version": "any",
+                                        "platforms": platform_support(),
+                                        "reason": "Schedules jobs.",
+                                    }
+                                ],
+                            }
+                        }
+                    },
+                },
+            )
+        }
+
+        errors = sync_module.validate_blueprints(blueprints)
+
+        self.assertTrue(any("system-service must be one of" in error for error in errors))
 
     def test_runtime_dependency_manifest_is_generated_from_machine_interfaces(self) -> None:
         sync_module = load_module(

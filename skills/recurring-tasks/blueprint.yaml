@@ -1,7 +1,6 @@
 category: system-assistant
 role: system-operations
 kind: scheduler
-cross_platform: false
 suggested_permissions:
   bash:
   - command:
@@ -52,7 +51,7 @@ interfaces:
     scripts-enable:
       version: 1
       description: 'Enable a job by setting enabled: true in jobs.yaml and syncing
-        unit files.'
+        native scheduler entries.'
       usage: <name>
       patterns:
       - name: owner
@@ -61,11 +60,35 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes jobs.yaml.
+        version: ">=6"
+        platforms:
+          linux: true
+          macos: true
+          windows: true
+      - kind: system-service
+        name: systemd-user
+        reason: Provides the user timer manager that owns generated recurring-task units.
         version: any
         platforms:
           linux: true
           macos: false
           windows: false
+      - kind: system-service
+        name: launchd
+        reason: Provides the per-user scheduler that owns generated recurring-task entries.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: system-service
+        name: task-scheduler
+        reason: Provides the per-user scheduler that owns generated recurring-task entries.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       - kind: binary
         name: systemctl
         reason: Enables and starts generated user timers.
@@ -74,6 +97,22 @@ interfaces:
           linux: true
           macos: false
           windows: false
+      - kind: binary
+        name: launchctl
+        reason: Enables and starts generated user scheduler entries.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: binary
+        name: schtasks
+        reason: Enables and starts generated user scheduler entries.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       direct_io:
         reads: []
         writes: []
@@ -87,12 +126,12 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
     scripts-disable:
       version: 1
       description: 'Disable a job by setting enabled: false in jobs.yaml and syncing
-        unit files.'
+        native scheduler entries.'
       usage: <name>
       patterns:
       - name: owner
@@ -101,11 +140,35 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads and writes jobs.yaml.
+        version: ">=6"
+        platforms:
+          linux: true
+          macos: true
+          windows: true
+      - kind: system-service
+        name: systemd-user
+        reason: Provides the user timer manager that owns generated recurring-task units.
         version: any
         platforms:
           linux: true
           macos: false
           windows: false
+      - kind: system-service
+        name: launchd
+        reason: Provides the per-user scheduler that owns generated recurring-task entries.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: system-service
+        name: task-scheduler
+        reason: Provides the per-user scheduler that owns generated recurring-task entries.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       - kind: binary
         name: systemctl
         reason: Disables generated user timers.
@@ -114,6 +177,22 @@ interfaces:
           linux: true
           macos: false
           windows: false
+      - kind: binary
+        name: launchctl
+        reason: Disables generated user scheduler entries.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: binary
+        name: schtasks
+        reason: Disables generated user scheduler entries.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       direct_io:
         reads: []
         writes: []
@@ -127,11 +206,11 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
     scripts-test:
       version: 1
-      description: Trigger a job immediately via systemd, show output and status.
+      description: Trigger a job immediately through the native scheduler, show output and status.
       usage: <name>
       patterns:
       - name: owner
@@ -140,11 +219,35 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads jobs.yaml before running the job.
+        version: ">=6"
+        platforms:
+          linux: true
+          macos: true
+          windows: true
+      - kind: system-service
+        name: systemd-user
+        reason: Provides the user service manager used to trigger jobs.
         version: any
         platforms:
           linux: true
           macos: false
           windows: false
+      - kind: system-service
+        name: launchd
+        reason: Provides the per-user scheduler used to trigger jobs.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: system-service
+        name: task-scheduler
+        reason: Provides the per-user scheduler used to trigger jobs.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       - kind: binary
         name: systemctl
         reason: Starts the generated user service immediately.
@@ -153,6 +256,22 @@ interfaces:
           linux: true
           macos: false
           windows: false
+      - kind: binary
+        name: launchctl
+        reason: Starts the generated scheduler entry immediately.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: binary
+        name: schtasks
+        reason: Starts the generated scheduler entry immediately.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       direct_io:
         reads: []
         writes: []
@@ -166,8 +285,8 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
     scripts-view-logs:
       version: 1
       description: Tail the run log for a job (default 50 lines).
@@ -179,11 +298,11 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Loads jobs.yaml before locating the run log.
-        version: any
+        version: ">=6"
         platforms:
           linux: true
-          macos: false
-          windows: false
+          macos: true
+          windows: true
       direct_io:
         reads: []
         writes: []
@@ -197,11 +316,11 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
     scripts-status:
       version: 1
-      description: List all active ai-* timers, next fire times, and service status.
+      description: List active recurring scheduler entries, next fire times, and service status.
       usage: ''
       patterns:
       - name: owner
@@ -210,11 +329,35 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Loads jobs.yaml in the management CLI.
+        version: ">=6"
+        platforms:
+          linux: true
+          macos: true
+          windows: true
+      - kind: system-service
+        name: systemd-user
+        reason: Provides the user timer manager queried for recurring-task status.
         version: any
         platforms:
           linux: true
           macos: false
           windows: false
+      - kind: system-service
+        name: launchd
+        reason: Provides the per-user scheduler queried for recurring-task status.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: system-service
+        name: task-scheduler
+        reason: Provides the per-user scheduler queried for recurring-task status.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       - kind: binary
         name: systemctl
         reason: Lists active generated user timers.
@@ -223,6 +366,22 @@ interfaces:
           linux: true
           macos: false
           windows: false
+      - kind: binary
+        name: launchctl
+        reason: Lists active generated user scheduler entries.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: binary
+        name: schtasks
+        reason: Lists active generated user scheduler entries.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       direct_io:
         reads: []
         writes: []
@@ -236,11 +395,11 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
     scripts-sync:
       version: 1
-      description: Regenerate systemd unit files from jobs.yaml.
+      description: Regenerate native scheduler entries from jobs.yaml.
       usage: ''
       patterns:
       - name: owner
@@ -249,11 +408,35 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads jobs.yaml while generating unit files.
+        version: ">=6"
+        platforms:
+          linux: true
+          macos: true
+          windows: true
+      - kind: system-service
+        name: systemd-user
+        reason: Provides the user timer manager that loads generated unit files.
         version: any
         platforms:
           linux: true
           macos: false
           windows: false
+      - kind: system-service
+        name: launchd
+        reason: Provides the per-user scheduler that loads generated entries.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: system-service
+        name: task-scheduler
+        reason: Provides the per-user scheduler that loads generated entries.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       - kind: binary
         name: systemctl
         reason: Reloads and enables generated user timers.
@@ -262,6 +445,22 @@ interfaces:
           linux: true
           macos: false
           windows: false
+      - kind: binary
+        name: launchctl
+        reason: Loads generated user scheduler entries.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: binary
+        name: schtasks
+        reason: Creates or updates generated user scheduler entries.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       direct_io:
         reads: []
         writes: []
@@ -273,8 +472,8 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
     scripts-healthcheck:
       version: 1
       description: Run pre-flight and per-job health checks for all enabled recurring
@@ -287,11 +486,35 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Reads jobs.yaml for enabled jobs.
+        version: ">=6"
+        platforms:
+          linux: true
+          macos: true
+          windows: true
+      - kind: system-service
+        name: systemd-user
+        reason: Provides the user service and timer state checked by health probes.
         version: any
         platforms:
           linux: true
           macos: false
           windows: false
+      - kind: system-service
+        name: launchd
+        reason: Provides the per-user scheduler state checked by health probes.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: system-service
+        name: task-scheduler
+        reason: Provides the per-user scheduler state checked by health probes.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       - kind: binary
         name: systemctl
         reason: Checks user service and timer health.
@@ -300,6 +523,22 @@ interfaces:
           linux: true
           macos: false
           windows: false
+      - kind: binary
+        name: launchctl
+        reason: Checks generated user scheduler health.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: binary
+        name: schtasks
+        reason: Checks generated user scheduler health.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       - kind: binary
         name: journalctl
         reason: Reports recent service logs for failing jobs.
@@ -319,12 +558,12 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
     scripts-setup:
       version: 1
-      description: Verify prerequisites, sync systemd unit files from jobs.yaml, install
-        the healthcheck cron entry, and list active timers.
+      description: Verify prerequisites, sync native scheduler entries from jobs.yaml,
+        install recurring health checks, and list active timers/tasks.
       usage: '[--migrate-cron]'
       patterns:
       - name: owner
@@ -333,11 +572,35 @@ interfaces:
       - kind: python-package
         name: PyYAML
         reason: Validates that jobs.yaml tooling can load YAML.
+        version: ">=6"
+        platforms:
+          linux: true
+          macos: true
+          windows: true
+      - kind: system-service
+        name: systemd-user
+        reason: Provides the user timer manager configured during setup.
         version: any
         platforms:
           linux: true
           macos: false
           windows: false
+      - kind: system-service
+        name: launchd
+        reason: Provides the per-user scheduler configured during setup.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: system-service
+        name: task-scheduler
+        reason: Provides the per-user scheduler configured during setup.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       - kind: binary
         name: systemctl
         reason: Lists and manages generated user timers.
@@ -346,6 +609,22 @@ interfaces:
           linux: true
           macos: false
           windows: false
+      - kind: binary
+        name: launchctl
+        reason: Lists and manages generated user scheduler entries.
+        version: any
+        platforms:
+          linux: false
+          macos: true
+          windows: false
+      - kind: binary
+        name: schtasks
+        reason: Lists and manages generated user scheduler entries.
+        version: any
+        platforms:
+          linux: false
+          macos: false
+          windows: true
       - kind: binary
         name: crontab
         reason: Installs the recurring healthcheck cron entry.
@@ -365,8 +644,8 @@ interfaces:
         behavior_sources: []
       platform_support:
         linux: true
-        macos: false
-        windows: false
+        macos: true
+        windows: true
     scripts-ensure-agent-env:
       version: 1
       description: Idempotently ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE
@@ -375,6 +654,14 @@ interfaces:
       patterns:
       - name: owner
       dependencies:
+      - kind: system-service
+        name: systemd-user
+        reason: Owns the user manager environment updated for recurring-task jobs.
+        version: any
+        platforms:
+          linux: true
+          macos: false
+          windows: false
       - kind: binary
         name: systemctl
         reason: Publishes recurring-task environment variables to the user manager

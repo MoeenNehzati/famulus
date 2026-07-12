@@ -1,7 +1,6 @@
 category: productivity-general-assistant
 role: productivity
 kind: client
-cross_platform: true
 suggested_permissions:
   bash:
   - command:
