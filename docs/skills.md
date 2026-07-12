@@ -57,6 +57,7 @@ The graph gives a visual overview of the live skill set. The sections below are 
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings
 - `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine
 - `refactor-skills` — Audit and refactor existing skills against local conventions
+- `regenerate-blueprints` — A refreshed blueprint.yaml for an existing skill generated under /tmp without modifying the skill
 - `skill-audit` — Certifying local skill audit state after mechanical checks and blueprint exactness checks should write fresh audit records
 - `skill-drift` — Reading or checking the local audit state of Famulus skills
 - `skill-maker` — Author new skills that conform to the repo's skill-writing guideline
