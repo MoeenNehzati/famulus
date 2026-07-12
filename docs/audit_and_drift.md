@@ -76,13 +76,14 @@ The intended split is:
 
 The audit record written by `skill-audit` currently contains:
 
-- schema version;
 - skill name;
 - timestamp;
-- writer identifier;
+- audit policy hash;
 - current git commit when available;
 - mechanical and semantic check evidence;
-- current skill, policy, and interface hashes from `skill-drift`.
+- current skill and interface hashes from `skill-drift`;
+- record digest computed over the canonical record contents, excluding the
+  digest field itself.
 
 The semantic checks currently include:
 
@@ -95,10 +96,10 @@ The semantic checks currently include:
 These checks are intentionally only a first pass. They do not yet prove full
 semantic exactness.
 
-The intended record trust model is stricter than the current reader. In the end,
-`audit-current` should mean "this target still matches a record written by the
-current certifier under the current audit policy", not merely "the hash values in
-some JSON file happen to match".
+`audit-current` means the target still matches a digest-protected record under
+the current audit policy. Editing a readable check status or other
+trust-relevant field by hand makes the record digest mismatch unless the digest
+is deliberately regenerated.
 
 ## Drift Inputs
 
@@ -183,7 +184,7 @@ review of whether the blueprint exactly represents behavior.
 
 ## Current Skill-Audit Gaps
 
-The current writer is useful, but still incomplete as a certifier:
+The current certifier is useful, but still incomplete:
 
 - It does not yet prove that every blueprint declaration is used by actual
   behavior, so excess declarations can pass.
@@ -207,8 +208,9 @@ The current writer is useful, but still incomplete as a certifier:
 
 The current reader/checker is useful, but still incomplete as a stale detector:
 
-- It currently accepts matching hash records without requiring the expected
-  `skill-audit` writer or check evidence.
+- It rejects records whose digest does not match their canonical contents, but
+  this is an integrity check rather than a cryptographic trust boundary.
+  Strong tamper resistance would require a future signature scheme.
 - Interface hashes do not yet include all structured blueprint metadata. Changes
   to patterns, access control, runtime dependency declarations, runtime argument
   prefixes, or descriptions may not stale the record unless they also alter a
@@ -232,9 +234,10 @@ The current implementation is a first-pass audit/drift system. The core
 architecture is sound, but these gaps remain before `.last_audit.json` should be
 treated as a strong certification artifact:
 
-- **Record trust:** `audit-current` should mean "current under the current
-  certifier", not merely "hashes match". Drift should require the expected
-  `skill-audit` writer and a valid checks payload, likely with a schema bump.
+- **Record trust:** `audit-current` now requires a matching record digest,
+  current audit policy hash, current skill/interface hashes, and readable check
+  evidence whose gates passed. Future hardening could add local signatures if
+  digest self-consistency is not strong enough.
 - **Policy hash breadth:** the policy hash should cover the whole audit
   standard. That includes `skill-audit`, `skill-drift`, shared skill
   guidelines, blueprint guide/template/schema, generated dependency metadata,
@@ -257,16 +260,15 @@ treated as a strong certification artifact:
 
 ## Recommended Fix Order
 
-1. Strengthen audit-record trust: bump the record schema and require the current
-   `skill-audit` writer plus valid check evidence before reporting
-   `audit-current`.
-2. Broaden the policy hash to include the full audit standard, especially
+1. Broaden the policy hash to include the full audit standard, especially
    `skill-audit`, shared skill guidelines, blueprint guide/template/schema,
    generated metadata, validators, hooks, tests, and audit reference docs.
-3. Add canonical structured blueprint metadata entries to interface hashes.
-4. Validate `uses_interfaces` against machine-interface `DispatchCall`
+2. Add canonical structured blueprint metadata entries to interface hashes.
+3. Validate `uses_interfaces` against machine-interface `DispatchCall`
    declarations, or derive equivalent used-interface hash entries from dispatch
    tracing.
-5. Expand `skill-audit` semantic exactness checks from first-pass heuristics to
+4. Expand `skill-audit` semantic exactness checks from first-pass heuristics to
    explicit missing/excess checks for roots, permissions, runtime dependencies,
    state paths, and interface calls.
+5. Consider signed audit records if digest self-consistency is not enough
+   protection against intentional local edits.

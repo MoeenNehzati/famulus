@@ -15,6 +15,7 @@ from typing import Any, Protocol, Sequence
 
 import yaml
 
+from officina.common.audit_records import attach_record_digest
 from officina.runtime.python_machine_interface import (
     DispatchCall,
     PythonArgvMachineInterface,
@@ -22,8 +23,7 @@ from officina.runtime.python_machine_interface import (
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 AUDIT_RECORD_NAME = ".last_audit.json"
-SCHEMA_VERSION = 1
-WRITER = "skill-audit@1"
+OUTPUT_SCHEMA_VERSION = 1
 TEXT_FILE_SUFFIXES = {".md", ".markdown", ".py", ".txt", ".yaml", ".yml", ".json"}
 IMPLICIT_DIRECTORY_PATTERNS = (
     re.compile(r"\b(?:look|scan|search|inspect|read)\s+under\s+([A-Za-z0-9_./\\-]+)", re.IGNORECASE),
@@ -534,14 +534,17 @@ def build_record(
     *,
     mechanical_checks: Sequence[CommandResult],
     semantic_results: Sequence[Finding],
-    recorded_at: str | None = None,
+    timestamp: str | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
-    return {
-        "schema_version": SCHEMA_VERSION,
+    hashes = dict(target.hashes)
+    audit_policy_hash = hashes.pop("policy", None)
+    if not isinstance(audit_policy_hash, str):
+        raise AuditError(f"{target.skill}: hash payload is missing policy hash")
+    record = {
         "skill": target.skill,
-        "recorded_at": recorded_at or datetime.now().astimezone().isoformat(timespec="seconds"),
-        "writer": WRITER,
+        "timestamp": timestamp or datetime.now().astimezone().isoformat(timespec="seconds"),
+        "audit_policy_hash": audit_policy_hash,
         "git_commit": git_commit(repo_root),
         "checks": {
             "mechanical": [result.as_payload() for result in mechanical_checks],
@@ -550,8 +553,9 @@ def build_record(
                 "findings": [finding.as_payload() for finding in semantic_results],
             },
         },
-        "hashes": target.hashes,
+        "hashes": hashes,
     }
+    return attach_record_digest(record)
 
 
 def write_record(path: Path, record: dict[str, Any]) -> bytes | None:
@@ -597,7 +601,7 @@ def certify(
     targets: Sequence[str],
     repo_root: Path = REPO_ROOT,
     skip_mechanical: bool = False,
-    recorded_at: str | None = None,
+    timestamp: str | None = None,
 ) -> tuple[list[CommandResult], list[AuditOutcome]]:
     mechanical = [] if skip_mechanical else run_mechanical_checks(dispatcher, repo_root=repo_root)
     resolved_targets = collect_targets(dispatcher, targets)
@@ -610,7 +614,7 @@ def certify(
         record_path = target.skill_root / AUDIT_RECORD_NAME
         previous = write_record(
             record_path,
-            build_record(target, mechanical_checks=mechanical, semantic_results=findings, recorded_at=recorded_at),
+            build_record(target, mechanical_checks=mechanical, semantic_results=findings, timestamp=timestamp),
         )
         try:
             verify_post_write(dispatcher, target)
@@ -663,7 +667,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("targets", nargs="*")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     parser.add_argument("--skip-mechanical", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--recorded-at", help=argparse.SUPPRESS)
+    parser.add_argument("--timestamp", help=argparse.SUPPRESS)
     return parser
 
 
@@ -676,7 +680,7 @@ def main(argv: Sequence[str] | None = None, dispatcher: Dispatcher | None = None
             runtime,
             targets=args.targets,
             skip_mechanical=args.skip_mechanical,
-            recorded_at=args.recorded_at,
+            timestamp=args.timestamp,
         )
     except AuditError as exc:
         if args.json:
@@ -687,7 +691,7 @@ def main(argv: Sequence[str] | None = None, dispatcher: Dispatcher | None = None
 
     payload = {
         "ok": True,
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": OUTPUT_SCHEMA_VERSION,
         "mechanical": [result.as_payload() for result in mechanical],
         "certified": [outcome.as_payload() for outcome in outcomes],
     }

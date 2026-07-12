@@ -54,6 +54,6 @@ state.
 Hash computation is stricter than status reporting: it requires the target skill
 to have a blueprint and fails if `blueprint.yaml` is missing.
 
-Writing or refreshing audit records belongs to a separate writer/certifier
-skill, not this skill. The `_build/` report artifact is only a local rendered
-status report.
+Writing or refreshing audit records belongs to a separate certifier skill, not
+this skill. The `_build/` report artifact is only a local rendered status
+report.

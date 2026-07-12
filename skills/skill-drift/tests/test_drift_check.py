@@ -7,6 +7,12 @@ from pathlib import Path
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "_rtx" / "_check_drift_state.py"
+SRC_ROOT = MODULE_PATH.parents[3] / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from officina.common.audit_records import attach_record_digest
+
 SPEC = importlib.util.spec_from_file_location("skill_check_drift_state", MODULE_PATH)
 checker = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -81,13 +87,23 @@ def source_for(repo: Path) -> object:
 
 
 def matching_record(repo: Path, skill_name: str = "demo-skill") -> dict[str, object]:
-    return {
-        "schema_version": checker.SCHEMA_VERSION,
-        "skill": skill_name,
-        "recorded_at": "2026-07-11T16:10:00-04:00",
-        "writer": "skill-doctor@first-pass",
-        "hashes": checker.compute_audit_hashes(repo, repo / "skills", skill_name),
-    }
+    hashes = dict(checker.compute_audit_hashes(repo, repo / "skills", skill_name))
+    audit_policy_hash = hashes.pop("policy")
+    return attach_record_digest(
+        {
+            "skill": skill_name,
+            "timestamp": "2026-07-11T16:10:00-04:00",
+            "audit_policy_hash": audit_policy_hash,
+            "checks": {
+                "mechanical": [
+                    {"name": "validators", "passed": True},
+                    {"name": "tests", "passed": True},
+                ],
+                "semantic": {"passed": True, "findings": []},
+            },
+            "hashes": hashes,
+        }
+    )
 
 
 def concern_kinds(report: object) -> set[str]:
@@ -163,6 +179,30 @@ def test_hash_change_is_stale(tmp_path: Path) -> None:
     assert {concern.key for concern in changed} >= {"skill", "interfaces.machine.worker"}
 
 
+def test_changed_check_status_without_new_digest_is_stale(tmp_path: Path) -> None:
+    skill = make_skill(tmp_path)
+    record = matching_record(tmp_path)
+    record["checks"]["semantic"]["passed"] = False  # type: ignore[index]
+    write_json(skill / ".last_audit.json", record)
+
+    report = checker.check_skill(source_for(tmp_path), "demo-skill")
+
+    assert report.derived_status == "audit-stale"
+    assert "record-digest-mismatch" in concern_kinds(report)
+
+
+def test_regenerated_digest_with_failed_check_is_stale(tmp_path: Path) -> None:
+    skill = make_skill(tmp_path)
+    record = matching_record(tmp_path)
+    record["checks"]["semantic"]["passed"] = False  # type: ignore[index]
+    write_json(skill / ".last_audit.json", attach_record_digest(record))
+
+    report = checker.check_skill(source_for(tmp_path), "demo-skill")
+
+    assert report.derived_status == "audit-stale"
+    assert "failed-check" in concern_kinds(report)
+
+
 def test_missing_recorded_hash_is_stale(tmp_path: Path) -> None:
     skill = make_skill(tmp_path)
     record = matching_record(tmp_path)
@@ -191,6 +231,20 @@ def test_extra_recorded_hash_is_stale(tmp_path: Path) -> None:
         concern.kind == "extra-recorded-hash" and concern.key == "interfaces.machine.old"
         for concern in report.concerns
     )
+
+
+def test_policy_hash_changes_when_skill_audit_changes(tmp_path: Path) -> None:
+    write(tmp_path / "references" / "skill-guidelines.md", "guidelines\n")
+    write(tmp_path / "references" / "blueprint" / "schema.json", "{}\n")
+    write(tmp_path / "references" / "blueprint" / "template.yaml", "template\n")
+    write(tmp_path / "references" / "blueprint" / "guide.md", "guide\n")
+    write(tmp_path / "skills" / "skill-audit" / "_rtx" / "_audit_certifier.py", "one\n")
+
+    first = checker.compute_policy_hash(tmp_path)
+    write(tmp_path / "skills" / "skill-audit" / "_rtx" / "_audit_certifier.py", "two\n")
+    second = checker.compute_policy_hash(tmp_path)
+
+    assert first != second
 
 
 def test_status_json_reports_stale_without_writing(tmp_path: Path, capsys) -> None:
@@ -394,7 +448,7 @@ def test_compute_hashes_json_reports_current_hashes_without_reading_record(tmp_p
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["schema_version"] == checker.SCHEMA_VERSION
+    assert payload["schema_version"] == checker.OUTPUT_SCHEMA_VERSION
     assert len(payload["skills"]) == 1
     report = payload["skills"][0]
     assert report["skill"] == "demo-skill"

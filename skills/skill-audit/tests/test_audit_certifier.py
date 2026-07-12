@@ -12,6 +12,9 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "_rtx" / "_audit_certifier.p
 SRC_ROOT = MODULE_PATH.parents[3] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
+
+from officina.common.audit_records import record_digest_matches
+
 SPEC = importlib.util.spec_from_file_location("skill_audit_certifier", MODULE_PATH)
 certifier = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -157,14 +160,19 @@ def test_certify_writes_audit_record_for_skill_name(tmp_path: Path, monkeypatch)
         fake,
         targets=["demo-skill"],
         skip_mechanical=True,
-        recorded_at="2026-07-11T12:00:00-04:00",
+        timestamp="2026-07-11T12:00:00-04:00",
     )
 
     record = json.loads((skill / ".last_audit.json").read_text(encoding="utf-8"))
     assert outcomes[0].skill == "demo-skill"
-    assert record["writer"] == "skill-audit@1"
+    assert "writer" not in record
+    assert "schema_version" not in record
+    assert record["timestamp"] == "2026-07-11T12:00:00-04:00"
+    assert record["audit_policy_hash"] == "sha256:policy"
     assert record["git_commit"] == "abc123"
     assert record["hashes"]["skill"] == "sha256:skill"
+    assert "policy" not in record["hashes"]
+    assert record_digest_matches(record)
 
 
 def test_certify_resolves_exact_skill_root_target(tmp_path: Path) -> None:

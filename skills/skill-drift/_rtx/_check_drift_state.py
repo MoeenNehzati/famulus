@@ -23,26 +23,15 @@ if str(RTX_DIR) not in sys.path:
 
 from _drift_hashes import HashEntry, digest_entries, entries_for_path, hash_interface, hash_skill
 from _skill_sources import SkillSource, observed_skill_sources
+from officina.common.audit_records import RECORD_DIGEST_FIELD, record_digest_matches
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SKILL_ROOT = RTX_DIR.parent
 BUILD_DIR = SKILL_ROOT / "_build"
 AUDIT_RECORD_NAME = ".last_audit.json"
-SCHEMA_VERSION = 1
-POLICY_PATTERNS = (
-    "references/skill-guidelines.md",
-    "references/blueprint/schema.json",
-    "references/blueprint/template.yaml",
-    "references/blueprint/guide.md",
-    "docs/plans/health-plan.md",
-    "skills/skill-maker/validators/**/*.py",
-    "validators/**/*.py",
-    ".githooks/pre-commit",
-    ".githooks/skill/**",
-    "skills/skill-drift/_rtx/*.py",
-    "skills/skill-drift/references/**/*.md",
-)
+OUTPUT_SCHEMA_VERSION = 1
+POLICY_ROOTS_PATH = SKILL_ROOT / "references" / "policy-hash-roots.json"
 
 
 class DriftCheckError(RuntimeError):
@@ -79,8 +68,7 @@ class SkillDriftReport:
     source: str
     package_root: Path
     skills_root: Path
-    recorded_at: str | None = None
-    writer: str | None = None
+    timestamp: str | None = None
 
     def as_payload(self) -> dict[str, Any]:
         return {
@@ -91,8 +79,7 @@ class SkillDriftReport:
             "record_path": display_path(self.record_path, self.package_root),
             "package_root": self.package_root.as_posix(),
             "skills_root": self.skills_root.as_posix(),
-            "recorded_at": self.recorded_at,
-            "writer": self.writer,
+            "timestamp": self.timestamp,
             "recorded_hashes": self.recorded_hashes,
             "current_hashes": self.current_hashes,
         }
@@ -174,8 +161,8 @@ def load_blueprint(skill_dir: Path) -> dict[str, Any]:
 
 
 def compute_policy_hash(repo_root: Path) -> str:
-    entries: list[HashEntry] = []
-    for pattern in POLICY_PATTERNS:
+    entries: list[HashEntry] = list(entries_for_path(POLICY_ROOTS_PATH, REPO_ROOT))
+    for pattern in load_policy_patterns():
         if any(char in pattern for char in "*?[]"):
             paths = sorted(repo_root.glob(pattern), key=lambda item: item.as_posix())
         else:
@@ -185,6 +172,13 @@ def compute_policy_hash(repo_root: Path) -> str:
                 continue
             entries.extend(entries_for_path(path, repo_root))
     return digest_entries(entries)
+
+
+def load_policy_patterns() -> list[str]:
+    raw = json.loads(POLICY_ROOTS_PATH.read_text(encoding="utf-8"))
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise DriftCheckError(f"{POLICY_ROOTS_PATH.as_posix()} must contain a JSON string list")
+    return raw
 
 
 def compute_interface_hashes(skill_dir: Path, repo_root: Path, blueprint: dict[str, Any]) -> dict[str, str]:
@@ -226,17 +220,14 @@ def read_record(path: Path) -> tuple[dict[str, Any] | None, Concern | None]:
 
 def validate_record_shape(record: dict[str, Any], skill_name: str) -> list[Concern]:
     concerns: list[Concern] = []
-    schema_version = record.get("schema_version")
-    if schema_version != SCHEMA_VERSION:
-        if "schema_version" in record:
-            concerns.append(
-                Concern(
-                    "unsupported-schema",
-                    f"record schema_version {schema_version!r} is not supported",
-                )
-            )
-        else:
-            concerns.append(Concern("corrupt-record", "record is missing schema_version"))
+    if not isinstance(record.get("timestamp"), str):
+        concerns.append(Concern("corrupt-record", "record is missing string timestamp"))
+    if not isinstance(record.get("audit_policy_hash"), str):
+        concerns.append(Concern("corrupt-record", "record is missing string audit_policy_hash"))
+    if not isinstance(record.get(RECORD_DIGEST_FIELD), str):
+        concerns.append(Concern("corrupt-record", f"record is missing string {RECORD_DIGEST_FIELD}"))
+    elif not record_digest_matches(record):
+        concerns.append(Concern("record-digest-mismatch", "record_digest does not match record contents"))
 
     record_skill = record.get("skill")
     if not isinstance(record_skill, str):
@@ -255,15 +246,47 @@ def validate_record_shape(record: dict[str, Any], skill_name: str) -> list[Conce
         return concerns
     if "skill" in hashes and not isinstance(hashes["skill"], str):
         concerns.append(Concern("corrupt-record", "hashes.skill must be a string"))
-    if "policy" in hashes and not isinstance(hashes["policy"], str):
-        concerns.append(Concern("corrupt-record", "hashes.policy must be a string"))
     interfaces = hashes.get("interfaces")
     if "interfaces" in hashes and not (
         isinstance(interfaces, dict)
         and all(isinstance(key, str) and isinstance(value, str) for key, value in interfaces.items())
     ):
         concerns.append(Concern("corrupt-record", "hashes.interfaces must be an object of string hashes"))
+    concerns.extend(validate_checks(record.get("checks")))
     return concerns
+
+
+def validate_checks(checks: Any) -> list[Concern]:
+    concerns: list[Concern] = []
+    if not isinstance(checks, dict):
+        return [Concern("corrupt-record", "record is missing checks object")]
+    mechanical = checks.get("mechanical")
+    if not isinstance(mechanical, list):
+        concerns.append(Concern("corrupt-record", "checks.mechanical must be a list"))
+    else:
+        for index, result in enumerate(mechanical):
+            if not isinstance(result, dict):
+                concerns.append(Concern("corrupt-record", f"checks.mechanical[{index}] must be an object"))
+                continue
+            if result.get("passed") is not True:
+                concerns.append(Concern("failed-check", f"mechanical check {index} is not passed"))
+    semantic = checks.get("semantic")
+    if not isinstance(semantic, dict):
+        concerns.append(Concern("corrupt-record", "checks.semantic must be an object"))
+    elif semantic.get("passed") is not True:
+        concerns.append(Concern("failed-check", "semantic exactness check is not passed"))
+    return concerns
+
+
+def recorded_hashes_from_record(record: dict[str, Any]) -> dict[str, Any] | None:
+    hashes = record.get("hashes")
+    if not isinstance(hashes, dict):
+        return None
+    recorded = dict(hashes)
+    audit_policy_hash = record.get("audit_policy_hash")
+    if isinstance(audit_policy_hash, str):
+        recorded["policy"] = audit_policy_hash
+    return recorded
 
 
 def flatten_hashes(hashes: dict[str, Any]) -> dict[str, str]:
@@ -327,20 +350,15 @@ def check_skill(source: SkillSource, skill_name: str) -> SkillDriftReport:
         concerns.append(read_concern)
 
     recorded_hashes: dict[str, Any] | None = None
-    recorded_at: str | None = None
-    writer: str | None = None
+    timestamp: str | None = None
     if record is not None:
         concerns.extend(validate_record_shape(record, skill_name))
-        hashes = record.get("hashes")
-        if isinstance(hashes, dict):
-            recorded_hashes = hashes
+        recorded_hashes = recorded_hashes_from_record(record)
+        if recorded_hashes is not None:
             concerns.extend(compare_hashes(recorded_hashes, current_hashes))
-        recorded_at_raw = record.get("recorded_at")
-        if isinstance(recorded_at_raw, str):
-            recorded_at = recorded_at_raw
-        writer_raw = record.get("writer")
-        if isinstance(writer_raw, str):
-            writer = writer_raw
+        timestamp_raw = record.get("timestamp")
+        if isinstance(timestamp_raw, str):
+            timestamp = timestamp_raw
 
     return SkillDriftReport(
         skill=skill_name,
@@ -352,8 +370,7 @@ def check_skill(source: SkillSource, skill_name: str) -> SkillDriftReport:
         source=source.source,
         package_root=source.package_root,
         skills_root=source.skills_root,
-        recorded_at=recorded_at,
-        writer=writer,
+        timestamp=timestamp,
     )
 
 
@@ -362,7 +379,7 @@ def build_payload(reports: list[SkillDriftReport]) -> dict[str, Any]:
     for report in reports:
         summary[report.derived_status] += 1
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": OUTPUT_SCHEMA_VERSION,
         "checked_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "summary": summary,
         "skills": [report.as_payload() for report in reports],
@@ -371,7 +388,7 @@ def build_payload(reports: list[SkillDriftReport]) -> dict[str, Any]:
 
 def build_hash_payload(reports: list[SkillHashReport]) -> dict[str, Any]:
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": OUTPUT_SCHEMA_VERSION,
         "computed_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "skills": [report.as_payload() for report in reports],
     }
@@ -467,12 +484,9 @@ def render_one_text(report: SkillDriftReport) -> str:
         f"Audit status: {report.derived_status}",
         f"Record: {display_path(report.record_path, report.package_root)}",
     ]
-    if report.recorded_at or report.writer:
+    if report.timestamp:
         lines.extend(["", "Recorded state:"])
-        if report.recorded_at:
-            lines.append(f"  recorded_at: {report.recorded_at}")
-        if report.writer:
-            lines.append(f"  writer: {report.writer}")
+        lines.append(f"  timestamp: {report.timestamp}")
     lines.extend(["", "Concerns:"])
     if report.concerns:
         for concern in report.concerns:
