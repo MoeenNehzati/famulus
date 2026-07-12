@@ -23,9 +23,10 @@ def _write_blueprint(path: Path, data: dict) -> None:
 def _machine_interface(version: int = 1, **extra: object) -> dict:
     interface = {
         "version": version,
-        "runtime": {
+        "invocation": {
             "kind": "python_machine_interface",
             "entrypoint": "_rtx/_tool_entry.py:Interface",
+            "behavior_sources": [],
         },
         "dependencies": [],
     }
@@ -38,9 +39,7 @@ def _llm_interface(version: int = 1, **extra: object) -> dict:
         "version": version,
         "description": "Primary LLM-facing skill instructions.",
         "binding": {"kind": "skill_file", "path": "SKILL.md"},
-        "directly_reads": ["SKILL.md"],
-        "directly_executes": [],
-        "directly_writes": [],
+        "behavior_sources": [],
     }
     interface.update(extra)
     return interface

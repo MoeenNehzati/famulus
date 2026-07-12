@@ -20,7 +20,7 @@ def test_clean_python_skill_passes(tmp_path: Path) -> None:
         "interfaces:\n"
         "  machine:\n"
         "    run:\n"
-        "      runtime:\n"
+        "      invocation:\n"
         "        kind: python_machine_interface\n"
         "        entrypoint: _rtx/_run_tool.py:Interface\n"
         "      dependencies: []\n",
@@ -48,7 +48,7 @@ def test_blueprint_shell_command_is_rejected(tmp_path: Path) -> None:
         "interfaces:\n"
         "  machine:\n"
         "    run:\n"
-        "      runtime:\n"
+        "      invocation:\n"
         "        kind: command\n"
         "        argv: [\"_rtx/_run_tool.sh\"]\n"
         "      dependencies: []\n",
@@ -79,7 +79,7 @@ def test_blueprint_windows_command_is_rejected(tmp_path: Path) -> None:
         "interfaces:\n"
         "  machine:\n"
         "    run:\n"
-        "      runtime:\n"
+        "      invocation:\n"
         "        kind: command\n"
         "        argv: [\"powershell.exe\", \"-File\", \"_rtx/_run_tool.ps1\"]\n"
         "      dependencies: []\n",

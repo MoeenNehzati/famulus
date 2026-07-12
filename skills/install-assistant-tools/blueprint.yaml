@@ -50,22 +50,19 @@ interfaces:
         DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]'
       patterns:
       - name: owner
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_phase_entry.py:Interface
       dependencies:
       - kind: binary
         name: git
         reason: Configures repository hook settings during development installs.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_phase_entry.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_phase_entry.py:Interface
+        behavior_sources: []
     scripts-scaffold:
       version: 2
       description: Install the dispatcher + invoke-skill launchers and put the bin
@@ -73,19 +70,16 @@ interfaces:
       usage: --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]
       patterns:
       - name: owner
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_install_scaffold.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_install_scaffold.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_install_scaffold.py:Interface
+        behavior_sources: []
     scripts-dev-link:
       version: 2
       description: Symlink Claude/Codex config dirs to a live repo checkout, register
@@ -94,22 +88,19 @@ interfaces:
         DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]
       patterns:
       - name: owner
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_config_bridge.py:Interface
       dependencies:
       - kind: binary
         name: git
         reason: Configures repository hook settings during development installs.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_config_bridge.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_config_bridge.py:Interface
+        behavior_sources: []
     scripts-launchers:
       version: 2
       description: Install per-agent bin launcher, profile config, worker dir, and
@@ -119,19 +110,16 @@ interfaces:
         [--dry-run]
       patterns:
       - name: owner
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_agent_launchers.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_agent_launchers.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_agent_launchers.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 2
@@ -139,13 +127,10 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

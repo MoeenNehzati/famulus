@@ -62,19 +62,16 @@ interfaces:
           for backtesting/calibration). Output is a JSON array; each entry's handoff_status
           is one of none, started, complete -- a complete entry can still be flagged
           if gap_net_chars (conversation since that completion) exceeds the threshold.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_handoff_scan.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_handoff_scan.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_handoff_scan.py:Interface
+        behavior_sources: []
     calibrate:
       version: 1
       description: Re-derive reference median/p75/p90 gap-size statistics per host
@@ -96,19 +93,16 @@ interfaces:
         notes: No positionals. --days sets the lookback window (default 5). Output
           is human-readable per-host stats to stdout, not JSON -- this is a manual
           diagnostic tool, not meant for programmatic consumption.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_handoff_calibrate.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_handoff_calibrate.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_handoff_calibrate.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -116,10 +110,6 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
@@ -129,3 +119,4 @@ interfaces:
       uses_interfaces:
       - interface: prepare-handoff.llm.default
         version: 1
+      behavior_sources: []

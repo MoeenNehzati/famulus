@@ -46,18 +46,10 @@ interfaces:
       patterns:
       - name: owner
         allow_stdin: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_smtp_transport.py:Interface
-        args_prefix: []
       dependencies:
-      - kind: python
+      - kind: python-package
         name: keyring
         reason: Retrieves the SMTP credential from the host credential store.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_smtp_transport.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: stdin
@@ -85,6 +77,11 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_smtp_transport.py:Interface
+        args_prefix: []
+        behavior_sources: []
     mail-list:
       version: 1
       description: "List email envelopes for an account as JSON (fields: id, flags,\
@@ -100,19 +97,10 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_imap_gateway.py:Interface
-        args_prefix:
-        - list
       dependencies:
-      - kind: python
+      - kind: python-package
         name: keyring
         reason: Retrieves the IMAP credential from the host credential store.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_imap_gateway.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-system
@@ -140,6 +128,12 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_imap_gateway.py:Interface
+        args_prefix:
+        - list
+        behavior_sources: []
     mail-read:
       version: 1
       description: Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/
@@ -151,19 +145,10 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_imap_gateway.py:Interface
-        args_prefix:
-        - read
       dependencies:
-      - kind: python
+      - kind: python-package
         name: keyring
         reason: Retrieves the IMAP credential from the host credential store.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_imap_gateway.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-system
@@ -191,6 +176,12 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_imap_gateway.py:Interface
+        args_prefix:
+        - read
+        behavior_sources: []
     mail-attachments:
       version: 1
       description: List attachment metadata for one or more emails as JSON. Returns
@@ -201,19 +192,10 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_imap_gateway.py:Interface
-        args_prefix:
-        - attachments
       dependencies:
-      - kind: python
+      - kind: python-package
         name: keyring
         reason: Retrieves the IMAP credential from the host credential store.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_imap_gateway.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-system
@@ -241,6 +223,12 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_imap_gateway.py:Interface
+        args_prefix:
+        - attachments
+        behavior_sources: []
     mail-save-attachments:
       version: 1
       description: Save attachments from one or more emails into a directory. Use
@@ -251,19 +239,10 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_imap_gateway.py:Interface
-        args_prefix:
-        - save-attachments
       dependencies:
-      - kind: python
+      - kind: python-package
         name: keyring
         reason: Retrieves the IMAP credential from the host credential store.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_imap_gateway.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-system
@@ -296,6 +275,12 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_imap_gateway.py:Interface
+        args_prefix:
+        - save-attachments
+        behavior_sources: []
     mail-folders:
       version: 1
       description: List IMAP folders for an account (JSON).
@@ -303,19 +288,10 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_imap_gateway.py:Interface
-        args_prefix:
-        - folders
       dependencies:
-      - kind: python
+      - kind: python-package
         name: keyring
         reason: Retrieves the IMAP credential from the host credential store.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_imap_gateway.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-system
@@ -343,6 +319,12 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_imap_gateway.py:Interface
+        args_prefix:
+        - folders
+        behavior_sources: []
     accounts-list:
       version: 1
       description: List registered account nicknames with their email/display name
@@ -351,16 +333,7 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_email_accounts.py:Interface
-        args_prefix:
-        - list
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_email_accounts.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-system
@@ -376,6 +349,12 @@ interfaces:
           sensitivity: user-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_email_accounts.py:Interface
+        args_prefix:
+        - list
+        behavior_sources: []
     accounts-add:
       version: 1
       description: Register a new account nickname. Gmail IMAP/SMTP settings are the
@@ -386,16 +365,7 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_email_accounts.py:Interface
-        args_prefix:
-        - add
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_email_accounts.py
-      directly_writes: []
       direct_io:
         reads: []
         writes:
@@ -406,6 +376,12 @@ interfaces:
           sensitivity: user-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_email_accounts.py:Interface
+        args_prefix:
+        - add
+        behavior_sources: []
     accounts-update:
       version: 1
       description: Update fields on an existing account nickname.
@@ -414,16 +390,7 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_email_accounts.py:Interface
-        args_prefix:
-        - update
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_email_accounts.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-system
@@ -439,6 +406,12 @@ interfaces:
           sensitivity: user-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_email_accounts.py:Interface
+        args_prefix:
+        - update
+        behavior_sources: []
     accounts-remove:
       version: 1
       description: Remove an account nickname from the registry; optionally purge
@@ -447,19 +420,10 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_email_accounts.py:Interface
-        args_prefix:
-        - remove
       dependencies:
-      - kind: python
+      - kind: python-package
         name: keyring
         reason: Clears stored account credentials when requested.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_email_accounts.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-system
@@ -480,6 +444,12 @@ interfaces:
           sensitivity: secret
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_email_accounts.py:Interface
+        args_prefix:
+        - remove
+        behavior_sources: []
     accounts-set-password:
       version: 1
       description: Store the IMAP or SMTP credential for an account in the host credential
@@ -488,19 +458,10 @@ interfaces:
       patterns:
       - name: owner
         allow_stdin: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_email_accounts.py:Interface
-        args_prefix:
-        - set-password
       dependencies:
-      - kind: python
+      - kind: python-package
         name: keyring
         reason: Stores IMAP or SMTP credentials in the host credential store.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_email_accounts.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: stdin
@@ -519,6 +480,12 @@ interfaces:
           sensitivity: secret
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_email_accounts.py:Interface
+        args_prefix:
+        - set-password
+        behavior_sources: []
     accounts-setup-oauth:
       version: 1
       description: Complete Gmail OAuth setup for an account using a Google desktop
@@ -528,20 +495,11 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_email_accounts.py:Interface
-        args_prefix:
-        - setup-oauth
       dependencies:
-      - kind: python
+      - kind: python-package
         name: keyring
         reason: Stores Gmail OAuth refresh tokens and client secrets in the host credential
           store.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_email_accounts.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-filesystem
@@ -570,6 +528,12 @@ interfaces:
             mode: creates
           sensitivity: secret
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_email_accounts.py:Interface
+        args_prefix:
+        - setup-oauth
+        behavior_sources: []
     live-smoke:
       version: 1
       description: Run explicit live provider smoke checks for one account. --imap
@@ -579,19 +543,11 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_email_smoke.py:Interface
-        args_prefix: []
       dependencies:
-      - kind: python
+      - kind: python-package
         name: keyring
         reason: Reads account credentials from the host credential store during live
           checks.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_email_smoke.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-system
@@ -635,6 +591,11 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_email_smoke.py:Interface
+        args_prefix: []
+        behavior_sources: []
   llm:
     default:
       version: 3
@@ -642,10 +603,6 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads:
         - medium: prompt
@@ -662,3 +619,4 @@ interfaces:
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

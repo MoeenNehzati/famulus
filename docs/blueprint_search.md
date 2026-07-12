@@ -24,7 +24,7 @@ rows = search_blueprints(
                     "any": [
                         {"path": "category", "op": "regex", "pattern": "development"},
                         {
-                            "path": "interfaces.machine.*.runtime.kind",
+                            "path": "interfaces.machine.*.invocation.kind",
                             "op": "regex",
                             "pattern": "python",
                             "flags": "i",
@@ -38,7 +38,7 @@ rows = search_blueprints(
             "path",
             "category",
             "cross_platform",
-            {"as": "runtime_kinds", "path": "interfaces.machine.*.runtime.kind"},
+            {"as": "invocation_kinds", "path": "interfaces.machine.*.invocation.kind"},
         ],
         "explain": True,
     },
@@ -112,7 +112,7 @@ Selector syntax:
 - `category`
 - `cross_platform`
 - `interfaces.machine.*.uses_interfaces.*.version`
-- `interfaces.machine.*.runtime.kind`
+- `interfaces.machine.*.invocation.kind`
 - `suggested_permissions.bash.*.command.0`
 
 `.` descends through mapping keys. `*` expands mapping values or list items.

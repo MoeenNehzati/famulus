@@ -60,19 +60,16 @@ interfaces:
       - name: owner
         allow_extra_positionals: true
         allow_stdin: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_envelope_gate.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_envelope_gate.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_envelope_gate.py:Interface
+        behavior_sources: []
     scripts-get-cutoff:
       version: 1
       description: Return the cutoff date for the current triage run, with a fallback
@@ -81,19 +78,16 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_watermark_floor.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_watermark_floor.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_watermark_floor.py:Interface
+        behavior_sources: []
     scripts-log-decision:
       version: 1
       description: Append a triage classification decision for one email to triage.log.
@@ -101,19 +95,16 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_decision_sink.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_decision_sink.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_decision_sink.py:Interface
+        behavior_sources: []
     scripts-prune-log:
       version: 1
       description: Drop triage.log entries older than 30 days and print a one-line
@@ -122,19 +113,16 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_log_compactor.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_log_compactor.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_log_compactor.py:Interface
+        behavior_sources: []
     scripts-update-watermark:
       version: 1
       description: Advance the triage watermark to the current timestamp. Refuses
@@ -143,19 +131,16 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_watermark_writer.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_watermark_writer.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_watermark_writer.py:Interface
+        behavior_sources: []
     scripts-mark-failure:
       version: 1
       description: Record that this triage run failed, so update-watermark refuses
@@ -164,19 +149,16 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_failure_sentinel.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_failure_sentinel.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_failure_sentinel.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -184,10 +166,6 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
@@ -199,3 +177,4 @@ interfaces:
         version: 3
       - interface: list-manager.llm.default
         version: 1
+      behavior_sources: []

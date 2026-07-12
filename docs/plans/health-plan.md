@@ -95,17 +95,26 @@ For Famulus-style skills with `blueprint.yaml`, the checker computes:
 
 The dependency explorer recursively includes:
 
-- declared `directly_reads`, `directly_executes`, and `directly_writes`;
-- declared `uses_interfaces`, whose target machine-interface hashes are included
+- file-backed LLM binding files such as `SKILL.md`;
+- declared `behavior_sources` and `invocation.behavior_sources`;
+- declared `uses_interfaces`, whose target interface hashes are included
   recursively in the declaring interface hash;
-- LLM binding files such as `SKILL.md`;
-- Markdown address-like references that resolve to existing files;
-- Python runtime imports loaded by `route_smoke`;
+- Python invocation entrypoints and imports loaded by `route_smoke`;
 - relevant shared `officina` imports;
 - package `__init__.py` files;
 - declared `DispatchCall` targets, including nested dispatch chains;
-- blueprint metadata and generated repo-level manifests such as
-  `references/blueprint/runtime_dependencies.json`.
+- the skill's `blueprint.yaml`.
+
+The explorer does not parse Markdown/prose references as hash inputs. If an
+instruction starts telling the LLM to use another file, the binding or behavior
+source that contains that instruction changes and the audit becomes stale.
+`skill-audit` must then decide whether the newly referenced file belongs in the
+blueprint's behavior sources before writing a fresh audit record.
+
+`direct_io` resources are not content-hashed. They describe operational data
+read or written during an invocation, such as inboxes, calendars, user files,
+remote files, API responses, and stdout. `skill-drift` hashes the blueprint
+declaration that such IO exists, not the live subject data itself.
 
 See `skills/skill-drift/references/dependency-explorer.md` for the detailed
 recursive matching rules and known limitations.
@@ -116,20 +125,31 @@ The current reader expects:
 
 ```json
 {
-  "schema_version": 1,
   "skill": "skill-name",
-  "recorded_at": "2026-07-11T16:10:00-04:00",
-  "writer": "skill-doctor@first-pass",
+  "timestamp": "2026-07-11T16:10:00-04:00",
+  "audit_policy_hash": "sha256:...",
+  "checks": {
+    "mechanical": [
+      {"name": "validators", "passed": true},
+      {"name": "tests", "passed": true}
+    ],
+    "semantic": {"passed": true, "findings": []}
+  },
   "hashes": {
     "skill": "sha256:...",
-    "policy": "sha256:...",
     "interfaces": {
       "llm.default": "sha256:...",
       "machine.some-interface": "sha256:..."
     }
-  }
+  },
+  "record_digest": "sha256:..."
 }
 ```
+
+The digest is computed over the canonical record contents excluding
+`record_digest`. Editing readable trust-relevant fields by hand, such as check
+status or hashes, makes the record stale unless the digest is deliberately
+regenerated.
 
 `.last_audit.json` is local state and must stay gitignored:
 
@@ -148,10 +168,9 @@ hashes and reports drift concerns.
 It writes only rendered Markdown reports under `_build/`. It never writes or
 refreshes `.last_audit.json`.
 
-The audit record writer should be a separate skill, probably `skill-doctor`.
-That future skill should own semantic review, test execution, validator
-execution, and writing a fresh `.last_audit.json` only after the target skill has
-actually been checked.
+The audit record writer is `skill-audit`. It owns semantic review, test
+execution, validator execution, and writing a fresh `.last_audit.json` only
+after the target skill has actually been checked.
 
 ## Skill Audit Design
 
@@ -176,10 +195,10 @@ copy.
    - tests.
 2. Semantic blueprint exactness:
    - every blueprint entry is correct;
-   - no behavior-relevant file, command, dependency, permission, state path, or
+   - no behavior source, command, dependency, permission, state path, or
      interface call is missing from the blueprint;
-   - no declared file, command, dependency, permission, state path, or interface
-     call is excess.
+   - no declared behavior source, command, dependency, permission, state path,
+     or interface call is excess.
    - `SKILL.md` contains only user interaction, decision flow, and interface
      orchestration; executable behavior is encapsulated behind declared
      interfaces.
@@ -212,7 +231,8 @@ exempt from this prose check because it is derived from the blueprint itself.
 2. Decide whether non-Famulus external/plugin skills should be excluded from the
    default all-skill report or kept with `hash-unavailable` concerns.
 3. Tighten the known dependency-explorer limitations listed in
-   `references/dependency-explorer.md`.
+   `skills/skill-drift/references/dependency-explorer.md`.
 4. Add a report option if callers need the Markdown path without printing the
    full table to stdout.
-5. Add a migration command only when the writer/certifier exists.
+5. Add an audit-record migration or repair command only if the record schema
+   changes again.

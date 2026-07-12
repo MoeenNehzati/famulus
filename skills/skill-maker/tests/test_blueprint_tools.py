@@ -24,9 +24,7 @@ def default_llm_interface() -> dict:
             "version": 1,
             "description": "Primary LLM-facing skill instructions.",
             "binding": {"kind": "skill_file", "path": "SKILL.md"},
-            "directly_reads": ["SKILL.md"],
-            "directly_executes": [],
-            "directly_writes": [],
+            "behavior_sources": [],
         }
     }
 
@@ -98,9 +96,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
-                                "runtime": {
+                                "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                                    "behavior_sources": [],
                                 },
                             }
                         }
@@ -128,14 +127,12 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
-                                "runtime": {
+                                "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                                    "behavior_sources": [],
                                 },
                                 "dependencies": [],
-                                "directly_reads": [],
-                                "directly_executes": ["_rtx/_handoff_scan.py"],
-                                "directly_writes": [],
                             }
                         },
                         "llm": default_llm_interface(),
@@ -163,7 +160,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
-                                "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
+                                "invocation": {"kind": "python_module", "module": "_rtx._handoff_scan"},
                                 "dependencies": [],
                             }
                         }
@@ -174,7 +171,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
         errors = sync_module.validate_blueprints(blueprints)
 
-        self.assertTrue(any("runtime kind must be `python_machine_interface` or `command`" in error for error in errors))
+        self.assertTrue(any("invocation kind must be `python_machine_interface`" in error for error in errors))
 
     def test_sync_validator_accepts_python_machine_interface_runtime(self) -> None:
         sync_module = load_module(
@@ -191,14 +188,12 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
-                                "runtime": {
+                                "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/scan.py:Interface",
+                                    "behavior_sources": [],
                                 },
                                 "dependencies": [],
-                                "directly_reads": [],
-                                "directly_executes": ["_rtx/scan.py"],
-                                "directly_writes": [],
                             }
                         },
                         "llm": default_llm_interface(),
@@ -211,7 +206,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
-    def test_sync_validator_requires_runtime_entrypoint_directly_executed(self) -> None:
+    def test_sync_validator_requires_invocation_behavior_sources(self) -> None:
         sync_module = load_module(
             "sync_skill_blueprints_python_machine_runtime_direct_test",
             REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
@@ -226,14 +221,11 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
-                                "runtime": {
+                                "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/scan.py:Interface",
                                 },
                                 "dependencies": [],
-                                "directly_reads": [],
-                                "directly_executes": [],
-                                "directly_writes": [],
                             }
                         },
                         "llm": default_llm_interface(),
@@ -245,7 +237,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         errors = sync_module.validate_blueprints(blueprints)
 
         self.assertTrue(
-            any("interfaces.machine.scan.directly_executes" in error and "_rtx/scan.py" in error for error in errors)
+            any("interfaces.machine.scan.invocation.behavior_sources" in error for error in errors)
         )
 
     def test_sync_validator_accepts_python_machine_interface_args_prefix(self) -> None:
@@ -263,15 +255,13 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
-                                "runtime": {
+                                "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/scan.py:Interface",
+                                    "behavior_sources": [],
                                     "args_prefix": ["--mode", "fast"],
                                 },
                                 "dependencies": [],
-                                "directly_reads": [],
-                                "directly_executes": ["_rtx/scan.py"],
-                                "directly_writes": [],
                             }
                         },
                         "llm": default_llm_interface(),
@@ -299,9 +289,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
-                                "runtime": {
+                                "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "../scan.py:Interface",
+                                    "behavior_sources": [],
                                     "args_prefix": ["--mode", ""],
                                 },
                                 "dependencies": [],
@@ -358,9 +349,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
-                                "runtime": {
+                                "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/_scan_tool.py:Interface",
+                                    "behavior_sources": [],
                                 },
                                 "dependencies": [
                                     {
@@ -395,13 +387,14 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "machine": {
                             "scan": {
                                 "version": 1,
-                                "runtime": {
+                                "invocation": {
                                     "kind": "python_machine_interface",
                                     "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                                    "behavior_sources": [],
                                 },
                                 "dependencies": [
                                     {
-                                        "kind": "python",
+                                        "kind": "python-package",
                                         "name": "PyYAML",
                                         "reason": "Parses YAML inputs.",
                                     },
@@ -420,11 +413,11 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
         manifest = sync_module.generated_runtime_dependencies_manifest(blueprints)
 
-        self.assertEqual(manifest["all"], {"python": ["PyYAML"], "binary": ["rg"]})
+        self.assertEqual(manifest["all"], {"python-package": ["PyYAML"], "binary": ["rg"]})
         self.assertEqual(
             manifest["skills"]["demo-skill"]["interfaces"]["scan"]["dependencies"],
             [
-                {"kind": "python", "name": "PyYAML", "reason": "Parses YAML inputs."},
+                {"kind": "python-package", "name": "PyYAML", "reason": "Parses YAML inputs."},
                 {"kind": "binary", "name": "rg", "reason": "Searches local text quickly."},
             ],
         )
@@ -655,9 +648,10 @@ class SkillBlueprintToolTests(unittest.TestCase):
                         "read-data": {
                             "description": "Read an input file.",
                             "usage": "<path>",
-                            "runtime": {
+                            "invocation": {
                                 "kind": "python_machine_interface",
                                 "entrypoint": "_rtx/_tool_entry.py:Interface",
+                                "behavior_sources": [],
                             },
                             "dependencies": [],
                         }

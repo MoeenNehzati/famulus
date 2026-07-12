@@ -30,9 +30,7 @@ def _skill(
         "version": 1,
         "description": "Primary LLM-facing skill instructions.",
         "binding": {"kind": "skill_file", "path": "SKILL.md"},
-        "directly_reads": ["SKILL.md"],
-        "directly_executes": [],
-        "directly_writes": [],
+        "behavior_sources": [],
     }
     if uses:
         default["uses_interfaces"] = [

@@ -39,23 +39,16 @@ interfaces:
         - --with-test-validate
         - --all
         - --skill-root
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_check_drift_state.py:Interface
-      dependencies:
-      - kind: python
-        name: markdown-it-py
-        reason: Parses Markdown dependency references for audit hash computation.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_check_drift_state.py
-      directly_writes:
-      - _build/
+      dependencies: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_check_drift_state.py:Interface
+        behavior_sources: []
     compute-hashes:
       description: Compute current audit hashes for selected installed skill names,
         exact skill root paths, or all observed blueprint-backed skills.
@@ -69,22 +62,16 @@ interfaces:
         allowed_flags:
         - --json
         - --skill-root
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_check_drift_state.py:Interface
-      dependencies:
-      - kind: python
-        name: markdown-it-py
-        reason: Parses Markdown dependency references for audit hash computation.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_check_drift_state.py
-      directly_writes: []
+      dependencies: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_check_drift_state.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -92,13 +79,10 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

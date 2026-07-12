@@ -21,10 +21,10 @@ At a high level, the recursive dependency set is:
 
 - a file root includes that file;
 - a directory root includes every file and symlink below it;
-- a Markdown file includes existing address-like file references it mentions;
-- an interface includes its binding file, `directly_reads`,
-  `directly_executes`, `directly_writes`, and discovered Python runtime files;
-- an interface includes machine interfaces declared in `uses_interfaces` by
+- the whole-skill hash includes the skill's own `blueprint.yaml`;
+- an interface includes its binding file, declared behavior sources, and
+  discovered Python runtime files;
+- an interface includes interfaces declared in `uses_interfaces` by
   recursively including those target interface hashes;
 - a PythonMachineInterface includes files loaded by `--route-smoke`, local
   same-skill imports, relevant `src/officina` imports, package `__init__.py`
@@ -65,19 +65,25 @@ input includes the entry kind, label, and bytes, separated with NUL bytes and
 sorted deterministically.
 
 Interface hashes also include `uses_interfaces` entries. Each entry stores the
-canonical machine-interface name and that target interface's hash. This means an
-LLM interface that routes work through a machine interface becomes stale when
-that machine interface or its recursive dependencies change.
+canonical interface name and that target interface's hash. This means an LLM
+interface that routes work through a machine interface becomes stale when that
+machine interface or its recursive dependencies change.
 
-## Declared Roots
+## Behavior Sources
 
-Declared roots come from the blueprint interface fields:
+Declared behavior roots come from `behavior_sources` on LLM interfaces and
+`invocation.behavior_sources` on machine interfaces. LLM interfaces also include
+their binding file, for example `SKILL.md`.
 
-- `directly_reads`
-- `directly_executes`
-- `directly_writes`
+These are behavior-shaping files and directories: instruction Markdown, schemas,
+templates, examples, parser tables, policies, validation rules, and similar
+material. They are not ordinary user subject inputs. Python imports and
+dispatcher targets are discovered mechanically.
 
-LLM interfaces also include their binding file, for example `SKILL.md`.
+`direct_io` entries are not behavior roots. They describe operational data the
+interface reads or writes during an invocation, such as inboxes, calendars,
+stdout, user documents, remote files, or API responses. The live contents of
+those resources are not hash inputs.
 
 Root resolution is deliberately narrow:
 
@@ -112,37 +118,20 @@ the hash that it is recording.
 Missing paths are treated differently by layer:
 
 - `DependencyExplorer` only returns existing files.
-- `collect_declared_root_entries` records missing declared roots as `missing`
-  hash entries, so adding a formerly missing declared root changes the hash.
+- `collect_declared_root_entries` records missing declared behavior sources as
+  `missing` hash entries, so adding a formerly missing source changes the hash.
 
-## Markdown References
+## Prose References
 
-Markdown files are scanned for address-like references. The scanner is simple by
-design: it performs pattern matching, then includes the token only if it resolves
-to an existing file under the repository root.
+The dependency explorer deliberately does not parse Markdown, prose, inline code,
+or other LLM-readable references. `skill-drift` is a mechanical checker: it
+trusts the blueprint accepted at certification time and hashes declared roots,
+runtime dependencies, used interfaces, and explicit audit-policy modules.
 
-Recognized shapes include:
-
-- `@A.B`
-- `A.B`
-- `A/B`
-- `A\B`
-
-The token is resolved relative to the `base_dir` passed into exploration. For a
-declared skill root, that is normally the declaring skill directory or the root's
-parent directory. Recursive Markdown references keep the same base directory.
-
-This is intentionally semantic-light. If prose mentions a file-shaped token and
-that file exists, the file is included, because an LLM may reasonably treat that
-mention as a dependency.
-
-Current limits:
-
-- only `.md` and `.markdown` files are scanned;
-- URLs and absolute paths are ignored;
-- missing references are ignored by the explorer;
-- this does not parse Markdown links semantically, it only recognizes
-  address-like tokens.
+If skill instructions tell the LLM to read another file, editing those
+instructions changes the skill hash and makes the audit record stale.
+`skill-audit` must then decide whether that referenced file belongs in the
+blueprint-declared surface before writing a fresh record.
 
 ## Python Runtime Dependencies
 
@@ -214,8 +203,8 @@ The dependency behavior is covered by
 
 That suite checks:
 
-- Markdown reference recursion;
-- interface union of direct roots and Python dependencies;
+- absence of Markdown/prose reference chasing;
+- interface union of behavior sources and Python dependencies;
 - whole-skill union of LLM interfaces, machine interfaces, and compatibility
   files;
 - same-skill Python imports;
@@ -244,8 +233,8 @@ writing.
 
 The main known limitations are:
 
-- Markdown discovery is pattern-based, not a full Markdown parser.
-- Non-Markdown prose files are not scanned for references.
+- Prose and Markdown references are not scanned by design; `skill-audit` owns
+  blueprint-completeness judgment.
 - Python dependency discovery depends on `route_smoke` importing the relevant
   same-skill modules.
 - Declared dispatch menus may conservatively over-include dependencies when a
@@ -253,9 +242,9 @@ The main known limitations are:
 - The dependency explorer reports existing files; missing-path hash entries are
   added by the declared-root hash layer.
 
-These limits are acceptable for the current first pass because the goal is to
-raise conservative audit-stale flags, not to certify that every possible
-behavioral dependency has been captured.
+These limits are acceptable for the current first pass because `skill-drift`
+raises mechanical audit-stale flags while `skill-audit` owns certification of
+blueprint exactness.
 
 ## Deferred Correctness Fixes
 
@@ -264,20 +253,19 @@ end-to-end drift-check workflow, but it is not yet strong enough to certify
 that every relevant skill/interface change is tracked. These are known follow-up
 items from the dependency-explorer audit.
 
-1. Dispatched target direct roots are not explored yet.
+1. Behavior-source coverage depends on blueprint accuracy.
 
-   When an interface declares a `DispatchCall`, the tracer follows the resolved
-   command file and any PythonMachineInterface route-smoke imports for the
-   target. It does not yet include the target interface's own `directly_reads`,
-   `directly_executes`, or `directly_writes`. A change to a dispatched target's
-   declared non-Python file could therefore be missed by the caller's hash.
+   The explorer now follows `uses_interfaces` hashes recursively, so a caller
+   can see a target interface's behavior-source changes through the target hash.
+   This still depends on each blueprint declaring its non-code behavior sources
+   accurately.
 
 2. Interface and skill hashes do not include structured blueprint metadata.
 
    `hash_interface()` and `hash_skill()` currently hash discovered filesystem
    entries only. They should also include a canonical serialized representation
    of the relevant interface or skill metadata. Otherwise changes to policy or
-   routing fields, such as patterns, allowed callers, runtime metadata,
+   routing fields, such as patterns, allowed callers, invocation metadata,
    dependencies, or missing declared root names, can be invisible when the
    discovered files do not change.
 
@@ -302,12 +290,5 @@ items from the dependency-explorer audit.
    `repo_root / "src"` so dependency labels and imports correspond to the repo
    being checked.
 
-6. Markdown reference bases are intentionally simple but can miss nested links.
-
-   Recursive Markdown references keep the original base directory instead of the
-   parent directory of the referencing Markdown file. That matches the current
-   design, but it can miss ordinary nested relative links. If nested Markdown
-   files become important dependency surfaces, this rule should be revisited.
-
-Before treating audit results as authoritative, add regression tests for the
-first five items and decide whether the Markdown base rule should remain as-is.
+Before treating audit results as authoritative, add regression tests for these
+items.

@@ -45,7 +45,8 @@ DEPENDENCY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+\-\[\]]*$")
 PYTHON_MACHINE_INTERFACE_ENTRYPOINT_RE = re.compile(
     r"^_rtx/[A-Za-z_][A-Za-z0-9_]*\.py:[A-Za-z_][A-Za-z0-9_]*$"
 )
-DIRECT_EFFECT_RE = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$)).+")
+RELATIVE_PATH_RE = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$)).+")
+REMOVED_DIRECT_FIELDS = ("directly_reads", "directly_executes", "directly_writes")
 
 
 @dataclass(frozen=True)
@@ -97,8 +98,8 @@ def expect_list_of_strings(value: Any, context: str) -> list[str]:
     return value
 
 
-def expect_runtime(value: Any, context: str, errors: list[str]) -> None:
-    """Validate runtime metadata."""
+def expect_invocation(value: Any, context: str, errors: list[str]) -> None:
+    """Validate machine-interface invocation metadata."""
     if not isinstance(value, dict):
         errors.append(f"{context}: expected mapping")
         return
@@ -106,7 +107,7 @@ def expect_runtime(value: Any, context: str, errors: list[str]) -> None:
     if kind == "python_machine_interface":
         target = value.get("entrypoint")
         if not isinstance(target, str) or not target:
-            errors.append(f"{context}: python_machine_interface runtime needs non-empty `entrypoint`")
+            errors.append(f"{context}: python_machine_interface invocation needs non-empty `entrypoint`")
             return
         if not PYTHON_MACHINE_INTERFACE_ENTRYPOINT_RE.fullmatch(target):
             errors.append(
@@ -115,17 +116,13 @@ def expect_runtime(value: Any, context: str, errors: list[str]) -> None:
             )
         args_prefix = value.get("args_prefix", [])
         if not isinstance(args_prefix, list) or not all(isinstance(token, str) and token for token in args_prefix):
-            errors.append(f"{context}: python_machine_interface runtime needs string list `args_prefix`")
+            errors.append(f"{context}: python_machine_interface invocation needs string list `args_prefix`")
+        expect_behavior_sources(value.get("behavior_sources"), f"{context}.behavior_sources", errors)
         return
-    if kind == "command":
-        argv = value.get("argv")
-        if not isinstance(argv, list) or not all(isinstance(token, str) and token for token in argv):
-            errors.append(f"{context}: command runtime needs non-empty string list `argv`")
-        return
-    errors.append(f"{context}: runtime kind must be `python_machine_interface` or `command`")
+    errors.append(f"{context}: invocation kind must be `python_machine_interface`")
 
 
-def runtime_entrypoint_file(value: Any) -> str | None:
+def invocation_entrypoint_file(value: Any) -> str | None:
     if not isinstance(value, dict):
         return None
     kind = value.get("kind")
@@ -134,18 +131,43 @@ def runtime_entrypoint_file(value: Any) -> str | None:
         if isinstance(entrypoint, str) and ":" in entrypoint:
             return entrypoint.split(":", 1)[0]
         return None
-    if kind != "command":
-        return None
-    argv = value.get("argv")
-    if not isinstance(argv, list):
-        return None
-    for token in argv:
-        if not isinstance(token, str):
-            continue
-        path = token.split(":", 1)[0]
-        if path.startswith(("_rtx/", "scripts/", "$repo/")):
-            return path
     return None
+
+
+def expect_behavior_sources(value: Any, context: str, errors: list[str]) -> list[str]:
+    if value is None:
+        errors.append(f"{context}: required list, use [] when there are no behavior sources")
+        return []
+    if not isinstance(value, list):
+        errors.append(f"{context}: expected list")
+        return []
+    paths: list[str] = []
+    seen: set[str] = set()
+    for idx, entry in enumerate(value):
+        entry_context = f"{context}[{idx}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{entry_context}: expected mapping")
+            continue
+        path = entry.get("path")
+        content = entry.get("content")
+        fmt = entry.get("format")
+        reason = entry.get("reason")
+        if not isinstance(path, str) or not path:
+            errors.append(f"{entry_context}.path: expected non-empty string")
+        elif not RELATIVE_PATH_RE.fullmatch(path):
+            errors.append(f"{entry_context}.path: must be relative and must not contain `..` path segments")
+        elif path in seen:
+            errors.append(f"{entry_context}.path: duplicate behavior source `{path}`")
+        else:
+            seen.add(path)
+            paths.append(path)
+        if not isinstance(content, str) or not content:
+            errors.append(f"{entry_context}.content: expected non-empty string")
+        if not isinstance(fmt, str) or not fmt:
+            errors.append(f"{entry_context}.format: expected non-empty string")
+        if not isinstance(reason, str) or not reason.strip():
+            errors.append(f"{entry_context}.reason: expected non-empty string")
+    return paths
 
 
 def expect_runtime_dependencies(value: Any, context: str, errors: list[str]) -> None:
@@ -165,8 +187,8 @@ def expect_runtime_dependencies(value: Any, context: str, errors: list[str]) -> 
         kind = entry.get("kind")
         name = entry.get("name")
         reason = entry.get("reason")
-        if kind not in {"python", "binary"}:
-            errors.append(f"{entry_context}.kind: must be `python` or `binary`")
+        if kind not in {"python-package", "binary"}:
+            errors.append(f"{entry_context}.kind: must be `python-package` or `binary`")
         if not isinstance(name, str) or not name.strip():
             errors.append(f"{entry_context}.name: must be a non-empty string")
         elif not DEPENDENCY_NAME_RE.fullmatch(name):
@@ -180,30 +202,13 @@ def expect_runtime_dependencies(value: Any, context: str, errors: list[str]) -> 
             seen.add(key)
 
 
-def validate_direct_effects(spec: dict[str, Any], field: str, context: str, errors: list[str]) -> list[str]:
-    value = spec.get(field)
-    field_context = f"{context}.{field}"
-    if value is None:
-        errors.append(f"{field_context}: required list, use [] when there are no direct roots")
-        return []
-    if not isinstance(value, list):
-        errors.append(f"{field_context}: expected list")
-        return []
-
-    result: list[str] = []
-    seen: set[str] = set()
-    for idx, item in enumerate(value):
-        item_context = f"{field_context}[{idx}]"
-        if not isinstance(item, str) or not item:
-            errors.append(f"{item_context}: expected non-empty string")
-            continue
-        if not DIRECT_EFFECT_RE.fullmatch(item):
-            errors.append(f"{item_context}: must be relative and must not contain `..` path segments")
-        if item in seen:
-            errors.append(f"{item_context}: duplicate direct root `{item}`")
-        seen.add(item)
-        result.append(item)
-    return result
+def reject_removed_direct_fields(spec: dict[str, Any], context: str, errors: list[str]) -> None:
+    for field in REMOVED_DIRECT_FIELDS:
+        if field in spec:
+            errors.append(
+                f"{context}.{field}: removed; use `direct_io` for immediate I/O and "
+                "`behavior_sources` for behavior-shaping files"
+            )
 
 
 def expect_llm_binding(value: Any, context: str, errors: list[str]) -> None:
@@ -462,14 +467,11 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                 continue
             expect_interface_version(interface_spec.get("version"), context, errors)
             validate_access_surface(errors, interface_spec, context, allow_id=False)
-            expect_runtime(interface_spec.get("runtime"), f"{context}.runtime", errors)
+            if "runtime" in interface_spec:
+                errors.append(f"{context}.runtime: renamed to `invocation`")
+            expect_invocation(interface_spec.get("invocation"), f"{context}.invocation", errors)
             expect_runtime_dependencies(interface_spec.get("dependencies"), f"{context}.dependencies", errors)
-            validate_direct_effects(interface_spec, "directly_reads", context, errors)
-            directly_executes = validate_direct_effects(interface_spec, "directly_executes", context, errors)
-            validate_direct_effects(interface_spec, "directly_writes", context, errors)
-            entrypoint_file = runtime_entrypoint_file(interface_spec.get("runtime"))
-            if entrypoint_file and entrypoint_file not in directly_executes:
-                errors.append(f"{context}.directly_executes: must include runtime entrypoint `{entrypoint_file}`")
+            reject_removed_direct_fields(interface_spec, context, errors)
         for interface_name, interface_spec in llm_interfaces.items():
             context = f"{blueprint.path}: interfaces.llm.{interface_name}"
             if not isinstance(interface_spec, dict):
@@ -488,7 +490,10 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
             else:
                 expect_llm_binding(binding, f"{context}.binding", errors)
             if "runtime" in interface_spec:
-                errors.append(f"{context}: llm interfaces must not define `runtime`")
+                errors.append(f"{context}.runtime: llm interfaces must not define `runtime`")
+            if "invocation" in interface_spec:
+                errors.append(f"{context}.invocation: llm interfaces must not define `invocation`")
+            expect_behavior_sources(interface_spec.get("behavior_sources"), f"{context}.behavior_sources", errors)
             if "allow_all_skills" in interface_spec and not isinstance(interface_spec["allow_all_skills"], bool):
                 errors.append(f"{context}: `allow_all_skills` must be a boolean")
             if "allowed_callers" in interface_spec:
@@ -496,9 +501,7 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                     expect_list_of_strings(interface_spec["allowed_callers"], f"{context}.allowed_callers")
                 except BlueprintError as exc:
                     errors.append(str(exc))
-            validate_direct_effects(interface_spec, "directly_reads", context, errors)
-            validate_direct_effects(interface_spec, "directly_executes", context, errors)
-            validate_direct_effects(interface_spec, "directly_writes", context, errors)
+            reject_removed_direct_fields(interface_spec, context, errors)
         default_llm = llm_interfaces.get("default")
         if not isinstance(default_llm, dict):
             errors.append(f"{blueprint.path}: interfaces.llm.default is required")
@@ -509,9 +512,6 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                     f"{blueprint.path}: interfaces.llm.default.binding must be "
                     "`{kind: skill_file, path: SKILL.md}`"
                 )
-            directly_reads = default_llm.get("directly_reads")
-            if not isinstance(directly_reads, list) or "SKILL.md" not in directly_reads:
-                errors.append(f"{blueprint.path}: interfaces.llm.default.directly_reads must include `SKILL.md`")
     errors.extend(validate_interface_uses(blueprints))
     return errors
 
@@ -775,7 +775,7 @@ def generated_runtime_dependencies_manifest(blueprints: dict[str, SkillBlueprint
     """Build the stdlib-readable dependency manifest from blueprint interfaces."""
     skills: dict[str, Any] = {}
     all_dependencies: dict[str, set[str]] = {
-        "python": set(),
+        "python-package": set(),
         "binary": set(),
     }
 
@@ -817,7 +817,7 @@ def generated_runtime_dependencies_manifest(blueprints: dict[str, SkillBlueprint
         "version": 1,
         "skills": skills,
         "all": {
-            "python": sorted(all_dependencies["python"]),
+            "python-package": sorted(all_dependencies["python-package"]),
             "binary": sorted(all_dependencies["binary"]),
         },
     }

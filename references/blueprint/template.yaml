@@ -104,24 +104,20 @@ interfaces:
             0: ".*"
           notes: "First positional is the input file; additional positionals are filters."
 
-      # Internal dispatcher-only runtime binding. This must not leak into
+      # Internal dispatcher-only invocation binding. This must not leak into
       # user-facing generated docs.
-      runtime:
+      invocation:
         kind: python_machine_interface
         entrypoint: _rtx/read_data.py:ReadData
+        behavior_sources: []
       dependencies:
-        - kind: python
+        - kind: python-package
           name: PyYAML
           reason: "Parses YAML input files read by this interface."
       # Optional. Version-pinned canonical machine interfaces this machine
       # interface invokes or orchestrates. Their interface hashes are included
       # recursively in this interface's audit hash.
       uses_interfaces: []
-      directly_reads:
-        - "$repo/data/example.yaml"
-      directly_executes:
-        - _rtx/read_data.py
-      directly_writes: []
       # Required. Immediate semantic IO for this interface only. Do not copy IO
       # from interfaces named in uses_interfaces; tooling computes transitive IO
       # by following uses_interfaces recursively.
@@ -168,19 +164,14 @@ interfaces:
           allow_stdin: true
           forbidden_flags: ["--file"]
           notes: "Stdin mode: reads update data from stdin."
-      runtime:
+      invocation:
         kind: python_machine_interface
         entrypoint: _rtx/update_data.py:UpdateData
+        behavior_sources: []
       dependencies:
-        - kind: python
+        - kind: python-package
           name: jsonschema
           reason: "Validates update payloads before writing them."
-      directly_reads:
-        - "$repo/data/example.yaml"
-      directly_executes:
-        - _rtx/update_data.py
-      directly_writes:
-        - "$repo/data/example.yaml"
       direct_io:
         reads:
           - medium: local-filesystem
@@ -224,14 +215,11 @@ interfaces:
         - min_positionals: 1
           max_positionals: 1
           allow_stdin: false
-      runtime:
+      invocation:
         kind: python_machine_interface
         entrypoint: _rtx/analyze_data.py:AnalyzeData
+        behavior_sources: []
       dependencies: []
-      directly_reads: []
-      directly_executes:
-        - _rtx/analyze_data.py
-      directly_writes: []
       direct_io:
         reads:
           - medium: local-filesystem
@@ -256,14 +244,11 @@ interfaces:
       version: 1
       allow_all_skills: false
       allowed_callers: []
-      runtime:
+      invocation:
         kind: python_machine_interface
         entrypoint: _rtx/internal_worker.py:InternalWorker
+        behavior_sources: []
       dependencies: []
-      directly_reads: []
-      directly_executes:
-        - _rtx/internal_worker.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
@@ -284,15 +269,11 @@ interfaces:
           positional_patterns:
             0: "^special/.*"
           notes: "Only paths under special/ are accepted."
-      runtime:
+      invocation:
         kind: python_machine_interface
         entrypoint: _rtx/special_data.py:SpecialData
+        behavior_sources: []
       dependencies: []
-      directly_reads:
-        - special/
-      directly_executes:
-        - _rtx/special_data.py
-      directly_writes: []
       direct_io:
         reads:
           - medium: local-filesystem
@@ -329,10 +310,6 @@ interfaces:
           version: 1
         - interface: other-skill.llm.default
           version: 1
-      directly_reads:
-        - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads:
           - medium: prompt
@@ -358,10 +335,6 @@ interfaces:
       binding:
         kind: markdown_file
         path: interfaces/summarize.md
-      directly_reads:
-        - interfaces/summarize.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads:
           - medium: prompt
@@ -392,9 +365,6 @@ interfaces:
       binding:
         kind: uri
         uri: https://example.com/officina/interfaces/summarize-remote.md
-      directly_reads: []
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads:
           - medium: prompt
@@ -415,49 +385,51 @@ interfaces:
         - prepare-handoff
 
 # ==============================================================================
-# MACHINE INTERFACE RUNTIME KIND
+# MACHINE INTERFACE INVOCATION KIND
 # ==============================================================================
 #
-# Current standard runtime kind:
+# Current standard invocation kind:
 #
 # python_machine_interface
 #    - entrypoint: required `_rtx/file.py:ClassName` binding
+#    - behavior_sources: required list of non-code behavior-shaping files
 #    - args_prefix: optional argv tokens inserted before caller-supplied args
 #    - dispatcher runs officina.runtime.python_machine_interface_runner
 #    - route-smoke is mandatory and built into the shared runner
 #
-# Example Python machine-interface runtime:
+# Example Python machine-interface invocation:
 #
-# runtime:
+# invocation:
 #   kind: python_machine_interface
 #   entrypoint: _rtx/analyze_data.py:AnalyzeData
+#   behavior_sources:
+#     - path: schemas/input.schema.json
+#       content: validator
+#       format: json
+#       reason: "Defines the accepted input shape."
 #
 # Machine interfaces must use python_machine_interface. External tools may be
-# called from Python runtime code when they are declared as dependencies, but
-# raw command runtimes are not allowed.
+# called from Python interface code when they are declared as dependencies, but
+# raw command invocation is not allowed.
 #
 # Every executable interface must also declare runtime dependencies. Use []
 # when it has no non-stdlib Python packages or external executables. These are
 # factual runtime requirements, not permission suggestions.
 #
 # dependencies:
-#   - kind: python
+#   - kind: python-package
 #     name: PyYAML
 #     reason: "Reads YAML input files."
 #   - kind: binary
 #     name: curl
 #     reason: "Fetches data from the remote API."
 #
-# Every interface must also declare direct effect roots. Use [] when there are no
-# direct roots. Paths are relative to the directory containing blueprint.yaml;
-# use $repo/ for paths relative to the repository root. Recursive hashing is
-# handled by tooling, so a directory root covers all files below it.
-#
-# directly_reads:
-#   - SKILL.md
-# directly_executes:
-#   - _rtx/read_data.py
-# directly_writes: []
+# Every interface must declare behavior sources. LLM interfaces use
+# behavior_sources directly. Machine interfaces use invocation.behavior_sources.
+# These are behavior-shaping files, not ordinary subject inputs: schemas,
+# templates, examples, policy/checklist Markdown, parser tables, and similar
+# files loaded to decide how the interface behaves. Python imports, _rtx
+# entrypoints, and dispatcher targets are discovered mechanically.
 #
 # direct_io describes immediate semantic IO for generated docs, search, graphs,
 # and safety summaries. It is required on every machine and LLM interface. Use
@@ -503,7 +475,7 @@ interfaces:
 # 1. Parse the canonical target <skill>.machine.<name>.
 # 2. Verify allow_all_skills / allowed_callers.
 # 3. Match the invocation against declared patterns.
-# 4. Resolve the inline runtime binding.
+# 4. Resolve the inline invocation binding.
 # 5. Execute without depending on the caller's working directory.
 #
 # If any check fails, the dispatcher rejects the invocation with an error.
@@ -531,7 +503,7 @@ interfaces:
 #    several public interface ids behind a grouped command surface.
 #
 # 2. Keep public interface documentation (`description`, `usage`, `notes`)
-#    separate from private runtime metadata (`runtime`).
+#    separate from private invocation metadata (`invocation`).
 #
 # 3. Use relative imports for same-skill Python code inside _rtx/.
 #

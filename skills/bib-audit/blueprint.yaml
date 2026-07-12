@@ -46,22 +46,19 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_reference_pairs.py:SimilarityInterface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: bibtexparser
         reason: Parses BibTeX entries more accurately than the fallback parser.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_reference_pairs.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_reference_pairs.py:SimilarityInterface
+        behavior_sources: []
     scripts-bib-validate-bibtex:
       version: 1
       description: Validate a BibTeX/natbib .bib file for syntax errors and missing
@@ -70,22 +67,19 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_syntax_checker.py:ValidateBibtexInterface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: bibtexparser
         reason: Parses BibTeX entries more accurately than the fallback parser.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_syntax_checker.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_syntax_checker.py:ValidateBibtexInterface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -93,13 +87,10 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

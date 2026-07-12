@@ -19,7 +19,7 @@ def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[s
             {
                 "version": 1,
                 "skills": {},
-                "all": {"python": python_packages, "binary": ["rg"]},
+                "all": {"python-package": python_packages, "binary": ["rg"]},
             }
         ),
         encoding="utf-8",

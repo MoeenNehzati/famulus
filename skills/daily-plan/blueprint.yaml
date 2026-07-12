@@ -75,22 +75,19 @@ interfaces:
         - --forced
         allowed_flags:
         - --forced
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_plan_orchestrate.py:Interface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML plan/list data through plan_runtime.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_plan_orchestrate.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_plan_orchestrate.py:Interface
+        behavior_sources: []
     plan-storage:
       version: 1
       uses_interfaces:
@@ -135,22 +132,19 @@ interfaces:
         min_positionals: 2
         max_positionals: 2
         allow_stdin: false
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_plan_storage.py:Interface
       dependencies:
       - kind: binary
         name: rclone
         reason: Reads and writes plan files in the configured GDrive remote.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_plan_storage.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_plan_storage.py:Interface
+        behavior_sources: []
     render-plan:
       version: 1
       uses_interfaces:
@@ -181,19 +175,16 @@ interfaces:
       - min_positionals: 0
         allow_extra_positionals: true
         allow_stdin: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_render_plan.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_render_plan.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_render_plan.py:Interface
+        behavior_sources: []
     mutate-plan:
       version: 1
       uses_interfaces:
@@ -231,22 +222,19 @@ interfaces:
         - --date
         flag_patterns:
           --date: ^(\d{1,2}-\d{1,2}-\d{2}|\d{4}-\d{2}-\d{2})$
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_state_patch.py:Interface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML plan/list data through plan_runtime.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_state_patch.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_state_patch.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -254,13 +242,10 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

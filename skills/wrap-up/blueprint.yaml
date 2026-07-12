@@ -20,10 +20,6 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
@@ -39,3 +35,4 @@ interfaces:
         version: 1
       - interface: prepare-handoff.llm.default
         version: 1
+      behavior_sources: []

@@ -7,7 +7,7 @@
           "id": "bib-audit.machine.scripts-bib-similarity",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "bibtexparser",
               "reason": "Parses BibTeX entries more accurately than the fallback parser."
             }
@@ -17,7 +17,7 @@
           "id": "bib-audit.machine.scripts-bib-validate-bibtex",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "bibtexparser",
               "reason": "Parses BibTeX entries more accurately than the fallback parser."
             }
@@ -71,7 +71,7 @@
           "id": "daily-plan.machine.mutate-plan",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads and writes YAML plan/list data through plan_runtime."
             }
@@ -81,7 +81,7 @@
           "id": "daily-plan.machine.orchestrate",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads and writes YAML plan/list data through plan_runtime."
             }
@@ -117,7 +117,7 @@
           "id": "email-client.machine.accounts-remove",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "keyring",
               "reason": "Clears stored account credentials when requested."
             }
@@ -127,7 +127,7 @@
           "id": "email-client.machine.accounts-set-password",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "keyring",
               "reason": "Stores IMAP or SMTP credentials in the host credential store."
             }
@@ -137,7 +137,7 @@
           "id": "email-client.machine.accounts-setup-oauth",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "keyring",
               "reason": "Stores Gmail OAuth refresh tokens and client secrets in the host credential store."
             }
@@ -151,7 +151,7 @@
           "id": "email-client.machine.live-smoke",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "keyring",
               "reason": "Reads account credentials from the host credential store during live checks."
             }
@@ -161,7 +161,7 @@
           "id": "email-client.machine.mail-attachments",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "keyring",
               "reason": "Retrieves the IMAP credential from the host credential store."
             }
@@ -171,7 +171,7 @@
           "id": "email-client.machine.mail-folders",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "keyring",
               "reason": "Retrieves the IMAP credential from the host credential store."
             }
@@ -181,7 +181,7 @@
           "id": "email-client.machine.mail-list",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "keyring",
               "reason": "Retrieves the IMAP credential from the host credential store."
             }
@@ -191,7 +191,7 @@
           "id": "email-client.machine.mail-read",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "keyring",
               "reason": "Retrieves the IMAP credential from the host credential store."
             }
@@ -201,7 +201,7 @@
           "id": "email-client.machine.mail-save-attachments",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "keyring",
               "reason": "Retrieves the IMAP credential from the host credential store."
             }
@@ -211,7 +211,7 @@
           "id": "email-client.machine.send-email",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "keyring",
               "reason": "Retrieves the SMTP credential from the host credential store."
             }
@@ -329,12 +329,12 @@
           "id": "list-manager.machine.beautify-list",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads YAML list data from stdin."
             },
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "rich",
               "reason": "Renders nested list output for terminal display."
             }
@@ -344,12 +344,12 @@
           "id": "list-manager.machine.cloud-create-entry",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads and writes YAML list data downloaded from cloud storage."
             },
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "jsonschema",
               "reason": "Validates new entries before upload."
             }
@@ -359,7 +359,7 @@
           "id": "list-manager.machine.cloud-delete",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads and writes YAML list data downloaded from cloud storage."
             }
@@ -369,12 +369,12 @@
           "id": "list-manager.machine.cloud-init",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Writes YAML list data for upload."
             },
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "jsonschema",
               "reason": "Validates initialized list data before upload."
             }
@@ -384,7 +384,7 @@
           "id": "list-manager.machine.cloud-read",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads YAML list data downloaded from cloud storage."
             }
@@ -394,12 +394,12 @@
           "id": "list-manager.machine.cloud-read-beautify",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads YAML list data downloaded from cloud storage."
             },
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "rich",
               "reason": "Renders nested list output for terminal display."
             }
@@ -409,12 +409,12 @@
           "id": "list-manager.machine.cloud-update",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads and writes YAML list data downloaded from cloud storage."
             },
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "jsonschema",
               "reason": "Validates list mutations before upload."
             }
@@ -424,12 +424,12 @@
           "id": "list-manager.machine.create-entry",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads and writes YAML list files."
             },
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "jsonschema",
               "reason": "Validates new entries before writing."
             }
@@ -439,7 +439,7 @@
           "id": "list-manager.machine.describe-schema",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "jsonschema",
               "reason": "Resolves and reports JSON Schema metadata for list entries."
             }
@@ -449,7 +449,7 @@
           "id": "list-manager.machine.generate-id",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads YAML list files to avoid ID collisions."
             }
@@ -459,12 +459,12 @@
           "id": "list-manager.machine.init-list",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Writes YAML list files."
             },
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "jsonschema",
               "reason": "Validates initialized list data before writing."
             }
@@ -474,17 +474,17 @@
           "id": "list-manager.machine.migrate-markdown",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Writes migrated YAML list files."
             },
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "jsonschema",
               "reason": "Validates migrated entries before writing."
             },
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "dateparser",
               "reason": "Parses natural-language legacy Markdown deadlines."
             }
@@ -494,12 +494,12 @@
           "id": "list-manager.machine.read-beautify",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads YAML list data before rendering."
             },
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "rich",
               "reason": "Renders nested list output for terminal display."
             }
@@ -509,7 +509,7 @@
           "id": "list-manager.machine.read-list",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads YAML list files."
             }
@@ -519,12 +519,12 @@
           "id": "list-manager.machine.update-list",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads and writes YAML list files."
             },
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "jsonschema",
               "reason": "Validates list mutations before writing."
             }
@@ -554,7 +554,7 @@
           "id": "pdf-to-markdown.machine.scripts-check-marker-models",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "marker-pdf",
               "reason": "Provides the Surya settings module used to locate Marker model checkpoints."
             }
@@ -572,7 +572,7 @@
           "id": "recurring-tasks.machine.scripts-disable",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads and writes jobs.yaml."
             },
@@ -587,7 +587,7 @@
           "id": "recurring-tasks.machine.scripts-enable",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads and writes jobs.yaml."
             },
@@ -612,7 +612,7 @@
           "id": "recurring-tasks.machine.scripts-healthcheck",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads jobs.yaml for enabled jobs."
             },
@@ -636,7 +636,7 @@
           "id": "recurring-tasks.machine.scripts-setup",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Validates that jobs.yaml tooling can load YAML."
             },
@@ -656,7 +656,7 @@
           "id": "recurring-tasks.machine.scripts-status",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Loads jobs.yaml in the management CLI."
             },
@@ -671,7 +671,7 @@
           "id": "recurring-tasks.machine.scripts-sync",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads jobs.yaml while generating unit files."
             },
@@ -686,7 +686,7 @@
           "id": "recurring-tasks.machine.scripts-test",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Reads jobs.yaml before running the job."
             },
@@ -701,7 +701,7 @@
           "id": "recurring-tasks.machine.scripts-view-logs",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Loads jobs.yaml before locating the run log."
             }
@@ -715,7 +715,7 @@
           "id": "skill-audit.machine.certify",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Parses skill blueprint files during semantic exactness checks."
             }
@@ -727,23 +727,11 @@
       "interfaces": {
         "compute-hashes": {
           "id": "skill-drift.machine.compute-hashes",
-          "dependencies": [
-            {
-              "kind": "python",
-              "name": "markdown-it-py",
-              "reason": "Parses Markdown dependency references for audit hash computation."
-            }
-          ]
+          "dependencies": []
         },
         "drift-status": {
           "id": "skill-drift.machine.drift-status",
-          "dependencies": [
-            {
-              "kind": "python",
-              "name": "markdown-it-py",
-              "reason": "Parses Markdown dependency references for audit hash computation."
-            }
-          ]
+          "dependencies": []
         }
       }
     },
@@ -753,7 +741,7 @@
           "id": "skill-maker.machine.sync-blueprints",
           "dependencies": [
             {
-              "kind": "python",
+              "kind": "python-package",
               "name": "PyYAML",
               "reason": "Parses skill blueprint YAML files."
             }
@@ -763,13 +751,12 @@
     }
   },
   "all": {
-    "python": [
+    "python-package": [
       "PyYAML",
       "bibtexparser",
       "dateparser",
       "jsonschema",
       "keyring",
-      "markdown-it-py",
       "marker-pdf",
       "rich"
     ],

@@ -37,22 +37,19 @@ interfaces:
         allowed_flags:
         - --check
         notes: Validate blueprints and fail if generated files are out of sync.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_blueprint_syncer.py:Interface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Parses skill blueprint YAML files.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_blueprint_syncer.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_blueprint_syncer.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -60,13 +57,10 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

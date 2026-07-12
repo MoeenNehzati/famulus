@@ -111,10 +111,10 @@ class DispatchDependencyResolver:
 
         blueprint = load_blueprint(skill_name, repo_root=self.repo_root)
         interface_spec, _resolved_name = resolve_machine_interface_surface(blueprint, interface_name)
-        runtime = expect_mapping(interface_spec.get("runtime"), "runtime")
-        if runtime.get("kind") != "python_machine_interface":
+        invocation = expect_mapping(interface_spec.get("invocation"), "invocation")
+        if invocation.get("kind") != "python_machine_interface":
             return None
-        entrypoint = runtime.get("entrypoint")
+        entrypoint = invocation.get("entrypoint")
         if not isinstance(entrypoint, str) or not entrypoint.strip():
             return None
 

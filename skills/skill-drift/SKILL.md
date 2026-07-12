@@ -71,6 +71,12 @@ state.
 Hash computation is stricter than status reporting: it requires the target skill
 to have a blueprint and fails if `blueprint.yaml` is missing.
 
+Interface hashes follow file-backed LLM bindings, declared `behavior_sources`,
+machine `invocation.behavior_sources`, Python invocation entrypoints, traced
+Python dependencies, and recursively declared `uses_interfaces`. Runtime
+`direct_io` resources such as inboxes, calendars, user files, remote files, and
+API responses are declarations only; their live contents are not hash inputs.
+
 Writing or refreshing audit records belongs to a separate certifier skill, not
 this skill. The `_build/` report artifact is only a local rendered status
 report.

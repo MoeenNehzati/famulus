@@ -26,8 +26,8 @@ Reason:
 
 - different interfaces in the same skill can read, write, authenticate, or
   mutate different things;
-- interface-level metadata can be validated against `directly_reads`,
-  `directly_writes`, `dependencies`, `uses_interfaces`, and runtime bindings;
+- interface-level metadata can be validated against `behavior_sources`,
+  `dependencies`, `uses_interfaces`, and invocation bindings;
 - skill-level documentation can be inferred from the union of interface
   metadata.
 
@@ -187,9 +187,31 @@ only that interface plus `allowed_readers` may read matching
 local-filesystem `direct_io.reads` entries. Two different interfaces must not
 own overlapping filesystem paths.
 
-`directly_reads`, `directly_executes`, and `directly_writes` remain the
-mechanical file-root contract used for audit hashing and runtime dependency
-tracking. `direct_io` is the semantic documentation/search/graph contract.
+`behavior_sources` is the mechanical behavior-root contract used for audit
+hashing and runtime dependency tracking. `direct_io` is the semantic
+documentation/search/graph contract.
+
+### Behavior Sources
+
+Interfaces have two different modes of reading files.
+
+Some reads are the subject being transformed, checked, rendered, or summarized:
+a user-provided `.bib` file, a PDF being converted, a TeX document being
+reviewed, or a YAML list file being updated. These reads are operational inputs.
+Their contents change from call to call and should not by themselves mean the
+interface contract changed. They belong in `direct_io`, not in
+`behavior_sources`.
+
+Other reads are reference material that controls how the interface behaves:
+JSON Schema files, prompt/instruction Markdown, templates, policy files, parser
+tables, examples, or skill-owned config files. Changes to these files can change
+the behavior of the interface and should trigger review or recertification.
+These belong in `behavior_sources`.
+
+LLM interfaces declare `behavior_sources` directly. Machine interfaces declare
+`invocation.behavior_sources` because the files are read by the invoked runtime.
+Python imports, `_rtx` entrypoints, and dispatcher targets are discovered
+mechanically and should not be duplicated in behavior sources.
 
 ### Immediate vs Transitive IO
 
@@ -230,6 +252,7 @@ interfaces:
         reads:
           - medium: prompt
             access: read
+            read_role: subject
             content: plan-request
             format: text
             sensitivity: user-private
@@ -278,15 +301,13 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-        - SKILL.md
-      directly_executes: []
-      directly_writes: []
+      behavior_sources: []
 
       direct_io:
         reads:
           - medium: prompt
             access: read
+            read_role: subject
             content: proof
             format: text
             sensitivity: user-private
@@ -301,11 +322,31 @@ interfaces:
 ```
 
 `direct_io.reads` and `direct_io.writes` describe semantic resource movement.
+Put an entry in `reads` when the interface directly consumes information from a
+resource: a prompt, stdin, a local file, a remote file, an API response, a log,
+or existing system state. Put an entry in `writes` when it directly emits or
+mutates information: stdout, stderr, a local file, a remote file, an email,
+calendar event, config value, or system state.
 
 `direct_io.network` records every immediate network boundary. If an interface
 reads a remote file through Google Drive, sends SMTP, calls a weather API, or
 fetches arXiv, it gets a `direct_io.network` entry even when the same operation
 also appears under `direct_io.reads` or `direct_io.writes`.
+
+That means `network` is not a third data-flow direction. It is the network
+boundary annotation for remote effects. The read/write direction still belongs
+in `reads` or `writes`.
+
+Examples:
+
+- local YAML read: `direct_io.reads` only, with `medium: local-filesystem`;
+- stdout JSON output: `direct_io.writes` only, with `medium: stdout`;
+- Google Drive download: `direct_io.reads` with `medium: remote-filesystem`,
+  plus `direct_io.network` with `medium: network-request`,
+  `system: google-drive`, and `access: download`;
+- SMTP send: `direct_io.writes` with `medium: network-request`,
+  `system: email-smtp`, `access: send`, plus a matching `direct_io.network`
+  boundary entry.
 
 ## Proposed Vocabularies
 
@@ -377,7 +418,7 @@ files, directories, and globs.
 Do not use `medium` for implementation mechanisms such as subprocesses.
 If process execution matters to the public contract, represent it as
 `medium: local-system` with `access: execute`. Routine runtime execution is
-already covered by `runtime` and `directly_executes`. Environment variables are
+already covered by `invocation` and Python dependency discovery. Environment variables are
 `medium: local-system` with `content: environment-variable`.
 
 ### `access`
@@ -421,10 +462,8 @@ The named external, local, or remote system touched.
 - `desktop-notification`
 - `keyring`
 - `oauth`
-- `codex`
-- `claude`
-- `codex-home`
-- `claude-home`
+- `agent-runtime`
+- `agent-home`
 - `assistant-home`
 - `tmux`
 - `openai-api`
@@ -531,8 +570,7 @@ The authentication or credential requirement.
 - `keyring-entry`
 - `local-user-session`
 - `system-user`
-- `codex-profile`
-- `claude-profile`
+- `agent-profile`
 
 ## Schema Update Rules
 
@@ -598,10 +636,8 @@ Add shared definitions to `references/blueprint/schema.json`:
         "desktop-notification",
         "keyring",
         "oauth",
-        "codex",
-        "claude",
-        "codex-home",
-        "claude-home",
+        "agent-runtime",
+        "agent-home",
         "assistant-home",
         "tmux",
         "openai-api"
@@ -743,20 +779,18 @@ Existing fields remain the mechanical contract:
 
 - `dependencies`
 - `uses_interfaces`
-- `directly_reads`
-- `directly_executes`
-- `directly_writes`
-- runtime `kind` and `entrypoint`
+- `behavior_sources` / `invocation.behavior_sources`
+- invocation `kind` and `entrypoint`
 
 New `direct_io` metadata is semantic and documentation/search oriented, but
 should be validated against the mechanical fields where possible.
 
 Examples:
 
-- a `direct_io.reads` entry with `medium: local-filesystem` should usually
-  correspond to `directly_reads`;
-- a `direct_io.writes` entry with `medium: local-filesystem` should usually
-  correspond to `directly_writes`;
+- a behavior-shaping local file should appear in `behavior_sources`, not only
+  in `direct_io.reads`;
+- a subject input such as `<file>` should appear in `direct_io.reads`, not in
+  `behavior_sources`;
 - a `direct_io.network` entry should usually correspond to a declared runtime
   dependency, auth requirement, or permission path that performs network work;
 - an interface that declares `auth` should be discoverable in docs and setup
@@ -809,21 +843,38 @@ blueprints.
    controlled vocabulary guidance.
 3. Update `references/blueprint/guide.md` and
    `references/skill-guidelines.md`.
-4. Add validators for controlled vocabulary, path roots, and consistency
-   between file-like `direct_io` entries and `directly_reads` /
-   `directly_writes`.
-5. Extend blueprint sync/docs tooling so generated docs can read interface
+4. Add validators for controlled vocabulary, behavior-source path roots, and
+   consistency between file-like `direct_io` entries and filesystem ownership.
+5. Add version-impact validation. When a relevant interface contract changes,
+   the owning interface version should bump; callers must keep
+   `uses_interfaces[*].version` pinned to the target version. This should detect
+   both stale pins and changed contracts without version bumps.
+6. Add stronger filesystem ownership validation. Exact and regex ownership
+   paths should compile, normalize relative roots, reject overlapping owners,
+   and enforce that matching local-filesystem reads/writes respect owner and
+   `allowed_readers` rules.
+7. Prune the `content` enum after several real migrations. Remove values that
+   are too field-level, too format-like, or unused; add only coarse semantic
+   values that support docs/search/graphs.
+8. Extend blueprint sync/docs tooling so generated docs can read interface
    metadata.
-6. Migrate a small slice first:
+9. Migrate a small slice first:
    - `g-calendar`;
    - `get-weather`;
    - `cloud-files`;
    - `daily-plan`;
    - `recurring-tasks`.
-7. Use the migrated slice to generate one new docs view or graph, likely a
+10. Use the migrated slice to generate one new docs view or graph, likely a
    remote systems/auth graph.
-8. Migrate the remaining skills once the vocabulary and validators have proven
+11. Migrate the remaining skills once the vocabulary and validators have proven
    stable.
+
+During migration, do not mechanically copy an old skill-level dependency list
+onto every interface. Add a `uses_interfaces` edge only to the interface that
+directly calls, dispatches to, or routes through the target interface. If the
+current code path is unclear, leave the edge out and add a migration note rather
+than over-declaring it. Over-declared edges make generated transitive IO,
+permission summaries, and graphs falsely broad.
 
 ## Resolved Compatibility Decisions
 
@@ -939,8 +990,8 @@ the target interface and required version.
   projection is acceptable for simple filtering but not for readable generated
   documentation.
 - Validator coverage should next target local filesystem IO path/root
-  consistency against `directly_reads` and `directly_writes`, plus recursive
-  version-impact checks over `uses_interfaces`.
+  consistency against filesystem ownership, plus recursive version-impact
+  checks over `uses_interfaces`.
 
 ## Open Questions
 

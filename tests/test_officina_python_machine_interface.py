@@ -252,7 +252,7 @@ def test_dispatch_dependency_resolver_follows_transitive_dispatches(tmp_path: Pa
         "      uses_interfaces:\n"
         "        - interface: leaf-skill.machine.leaf\n"
         "          version: 1\n"
-        "      runtime:\n"
+        "      invocation:\n"
         "        kind: python_machine_interface\n"
         "        entrypoint: _rtx/_middle.py:Interface\n",
     )
@@ -273,7 +273,7 @@ def test_dispatch_dependency_resolver_follows_transitive_dispatches(tmp_path: Pa
         "    leaf:\n"
         "      version: 1\n"
         "      allowed_callers: [middle-skill]\n"
-        "      runtime:\n"
+        "      invocation:\n"
         "        kind: python_machine_interface\n"
         "        entrypoint: _rtx/_leaf.py:Interface\n",
     )

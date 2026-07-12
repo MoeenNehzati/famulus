@@ -14,7 +14,7 @@ def test_recurring_tasks_blueprint_has_no_shell_runtime_interfaces():
 
     assert "scripts-invoke-agent" not in machine
     for name, spec in machine.items():
-        runtime = spec["runtime"]
+        runtime = spec["invocation"]
         assert runtime["kind"] == "python_machine_interface", name
         assert not any(str(value).endswith(".sh") for value in runtime.values())
 

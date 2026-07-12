@@ -64,14 +64,7 @@ interfaces:
         positional_patterns:
           0: ^lists/.*
         notes: Read list files from cloud storage. Restricted to lists/ directory.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_read_llm_file.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_read_llm_file.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: remote-filesystem
@@ -101,6 +94,10 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_read_llm_file.py:Interface
+        behavior_sources: []
     lists-write:
       version: 1
       description: Write content (from stdin) to a file in cloud storage under the
@@ -117,14 +114,7 @@ interfaces:
         positional_patterns:
           0: ^lists/.*
         notes: Write list files to cloud storage. Restricted to lists/ directory.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_write_llm_file.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_write_llm_file.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: stdin
@@ -154,6 +144,10 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_write_llm_file.py:Interface
+        behavior_sources: []
     lists-delete:
       version: 1
       description: Delete a file from cloud storage under the lists/ directory.
@@ -168,14 +162,7 @@ interfaces:
         positional_patterns:
           0: ^lists/.*
         notes: Delete list files from cloud storage. Restricted to lists/ directory.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_delete_llm_file.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_delete_llm_file.py
-      directly_writes: []
       direct_io:
         reads: []
         writes:
@@ -200,6 +187,10 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_delete_llm_file.py:Interface
+        behavior_sources: []
     plans-read:
       version: 1
       description: Read a file from cloud storage under the plans/ directory.
@@ -214,14 +205,7 @@ interfaces:
         positional_patterns:
           0: ^plans/.*
         notes: Read plan files from cloud storage. Restricted to plans/ directory.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_read_llm_file.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_read_llm_file.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: remote-filesystem
@@ -251,6 +235,10 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_read_llm_file.py:Interface
+        behavior_sources: []
     plans-write:
       version: 1
       description: Write content (from stdin) to a file in cloud storage under the
@@ -266,14 +254,7 @@ interfaces:
         positional_patterns:
           0: ^plans/.*
         notes: Write plan files to cloud storage. Restricted to plans/ directory.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_write_llm_file.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_write_llm_file.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: stdin
@@ -303,6 +284,10 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_write_llm_file.py:Interface
+        behavior_sources: []
     plans-delete:
       version: 1
       description: Delete a file from cloud storage under the plans/ directory.
@@ -317,14 +302,7 @@ interfaces:
         positional_patterns:
           0: ^plans/.*
         notes: Delete plan files from cloud storage. Restricted to plans/ directory.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_delete_llm_file.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_delete_llm_file.py
-      directly_writes: []
       direct_io:
         reads: []
         writes:
@@ -349,6 +327,10 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_delete_llm_file.py:Interface
+        behavior_sources: []
     setup-oauth:
       version: 1
       description: Run one-time OAuth2 setup for Google Drive access.
@@ -360,14 +342,7 @@ interfaces:
         max_positionals: 0
         allow_stdin: false
         notes: OAuth setup for Google Drive access.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_oauth_bootstrap.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_oauth_bootstrap.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-filesystem
@@ -399,6 +374,10 @@ interfaces:
             mode: creates
           sensitivity: secret
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_oauth_bootstrap.py:Interface
+        behavior_sources: []
     ensure-oauth:
       version: 1
       description: "Check cloud-files OAuth status; print setup guidance or launch\
@@ -414,16 +393,7 @@ interfaces:
         positional_patterns:
           0: ^ensure-oauth$
         notes: Check OAuth status and guide setup for cloud-files.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_ensure_oauth.py:Interface
-        args_prefix:
-        - ensure-oauth
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_ensure_oauth.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-filesystem
@@ -460,6 +430,12 @@ interfaces:
             mode: checks
           sensitivity: secret
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_ensure_oauth.py:Interface
+        args_prefix:
+        - ensure-oauth
+        behavior_sources: []
     write-config:
       version: 1
       description: Write ~/.config/cloud-files/config.json with the given remote LLM
@@ -473,16 +449,7 @@ interfaces:
         positional_patterns:
           0: ^write-config$
         notes: Write cloud-files config.json.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_ensure_oauth.py:Interface
-        args_prefix:
-        - write-config
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_ensure_oauth.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: prompt
@@ -505,6 +472,12 @@ interfaces:
         allowed_readers:
         - cloud-files.machine.ensure-oauth
         reason: write-config is the declared writer for the cloud-files config.
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_ensure_oauth.py:Interface
+        args_prefix:
+        - write-config
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -512,10 +485,6 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads:
         - medium: prompt
@@ -532,3 +501,4 @@ interfaces:
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

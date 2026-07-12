@@ -48,7 +48,7 @@ def required_python_packages(repo_root: Path) -> list[str]:
     manifest = repo_root / RUNTIME_DEPENDENCIES_MANIFEST
     if manifest.exists():
         data = json.loads(manifest.read_text(encoding="utf-8"))
-        manifest_packages = data.get("all", {}).get("python", [])
+        manifest_packages = data.get("all", {}).get("python-package", [])
         if isinstance(manifest_packages, list):
             packages.update(package for package in manifest_packages if isinstance(package, str) and package)
     return sorted(packages, key=str.lower)

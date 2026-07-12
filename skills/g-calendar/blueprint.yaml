@@ -38,14 +38,7 @@ interfaces:
       - min_positionals: 0
         allow_extra_positionals: true
         allow_stdin: false
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_gcal_client.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_gcal_client.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: network-request
@@ -88,6 +81,10 @@ interfaces:
             mode: uses-existing
           sensitivity: user-private
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_gcal_client.py:Interface
+        behavior_sources: []
     setup-oauth:
       version: 1
       description: Run the OAuth setup flow to generate or refresh Google Calendar
@@ -99,14 +96,7 @@ interfaces:
         max_positionals: 0
         allow_stdin: false
         notes: OAuth setup for Google Calendar access.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_oauth_bootstrap.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_oauth_bootstrap.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-filesystem
@@ -145,6 +135,10 @@ interfaces:
         - g-calendar.machine.ensure-oauth
         reason: setup-oauth is the declared writer for regenerated calendar OAuth
           credentials.
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_oauth_bootstrap.py:Interface
+        behavior_sources: []
     ensure-oauth:
       version: 1
       description: "Check g-calendar OAuth status; print setup guidance or launch\
@@ -157,14 +151,7 @@ interfaces:
         allow_extra_positionals: true
         allow_stdin: false
         notes: Check OAuth status and guide setup for g-calendar.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_ensure_oauth.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_ensure_oauth.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-filesystem
@@ -194,6 +181,10 @@ interfaces:
             mode: checks
           sensitivity: secret
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_ensure_oauth.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -201,10 +192,6 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads:
         - medium: prompt
@@ -221,3 +208,4 @@ interfaces:
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

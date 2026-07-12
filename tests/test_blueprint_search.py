@@ -68,8 +68,8 @@ def test_select_values_resolves_nested_wildcards_and_list_indexes() -> None:
     data = {
         "interfaces": {
             "machine": {
-                "read": {"runtime": {"kind": "python_machine_interface"}},
-                "write": {"runtime": {"kind": "python_module"}},
+                "read": {"invocation": {"kind": "python_machine_interface"}},
+                "write": {"invocation": {"kind": "python_module"}},
             }
         },
         "suggested_permissions": {
@@ -80,9 +80,9 @@ def test_select_values_resolves_nested_wildcards_and_list_indexes() -> None:
         },
     }
 
-    assert select_values(data, "interfaces.machine.*.runtime.kind") == [
-        ("interfaces.machine.read.runtime.kind", "python_machine_interface"),
-        ("interfaces.machine.write.runtime.kind", "python_module"),
+    assert select_values(data, "interfaces.machine.*.invocation.kind") == [
+        ("interfaces.machine.read.invocation.kind", "python_machine_interface"),
+        ("interfaces.machine.write.invocation.kind", "python_module"),
     ]
     assert select_values(data, "suggested_permissions.bash.*.command.0") == [
         ("suggested_permissions.bash.0.command.0", "dispatcher"),
@@ -102,7 +102,7 @@ def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path
           machine:
             sync:
               description: Sync systemd units from jobs.yaml.
-              runtime:
+              invocation:
                 kind: python_machine_interface
         """,
     )
@@ -117,7 +117,7 @@ def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path
           machine:
             inspect:
               description: Inspect blueprint data.
-              runtime:
+              invocation:
                 kind: python_module
         """,
     )
@@ -146,7 +146,7 @@ def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path
                 "path",
                 "category",
                 "cross_platform",
-                {"as": "runtime_kinds", "path": "interfaces.machine.*.runtime.kind"},
+                {"as": "invocation_kinds", "path": "interfaces.machine.*.invocation.kind"},
             ],
             "explain": True,
         },
@@ -159,7 +159,7 @@ def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path
             "values": {
                 "category": "system-assistant",
                 "cross_platform": False,
-                "runtime_kinds": ["python_machine_interface"],
+                "invocation_kinds": ["python_machine_interface"],
             },
             "matches": [
                 {

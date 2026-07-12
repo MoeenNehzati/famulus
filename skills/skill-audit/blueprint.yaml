@@ -40,27 +40,19 @@ interfaces:
         allow_stdin: false
         allowed_flags:
         - --json
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_audit_certifier.py:Interface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Parses skill blueprint files during semantic exactness checks.
-      directly_reads:
-      - $repo/skills/
-      - $repo/validators/
-      - $repo/tests/
-      - $repo/scripts/run-python-tests.py
-      directly_executes:
-      - _rtx/_audit_certifier.py
-      directly_writes:
-      - $repo/skills/
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_audit_certifier.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -68,13 +60,10 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

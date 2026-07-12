@@ -31,19 +31,16 @@ interfaces:
       - min_positionals: 0
         allow_extra_positionals: true
         allow_stdin: false
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_weather_client.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_weather_client.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_weather_client.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -51,13 +48,10 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

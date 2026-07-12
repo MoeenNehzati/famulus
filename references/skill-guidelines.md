@@ -148,21 +148,20 @@ dispatcher imports and CLI dispatch from skill runtime code, and
 - `usage` — complete invocation argument template
 - `patterns` — positional/flag/stdin constraints
 - `allow_all_skills` / `allowed_callers` — access control
-- `runtime` — internal execution metadata
+- `invocation` — internal execution metadata
 - `dependencies` — factual runtime package and executable requirements
-- `directly_reads` — direct file roots read by this interface
-- `directly_executes` — direct file roots executed by this interface
-- `directly_writes` — direct file roots written by this interface
+- `invocation.behavior_sources` — non-code files that can change how a machine
+  interface behaves
 - `direct_io` — immediate semantic IO for generated docs, search, graphs, and
   safety summaries
 - `owns_filesystem` — interface-owned filesystem paths and explicitly allowed
   reader interfaces
 
-`runtime` is **internal metadata**. It belongs in the blueprint because the
+`invocation` is **internal metadata**. It belongs in the blueprint because the
 dispatcher must know how to execute the interface, but it must not leak into
-user-facing generated docs. The only accepted runtime form is
+user-facing generated docs. The only accepted invocation form is
 `kind: python_machine_interface` with an `entrypoint` such as
-`_rtx/handoff_scan.py:HandoffScan`. Raw command runtimes are not allowed. If an
+`_rtx/handoff_scan.py:HandoffScan`. Raw command invocation is not allowed. If an
 interface needs an external binary, wrap the behavior in Python, declare the
 binary under `dependencies`, and keep argument parsing, validation, and host
 handling in the Python interface.
@@ -173,7 +172,7 @@ external executable requirements. Otherwise list one object per requirement:
 
 ```yaml
 dependencies:
-  - kind: python
+  - kind: python-package
     name: PyYAML
     reason: "Reads YAML input files."
   - kind: binary
@@ -181,7 +180,7 @@ dependencies:
     reason: "Fetches remote JSON from the API."
 ```
 
-`kind: python` names an installable Python package. `kind: binary` names an
+`kind: python-package` names an installable Python package. `kind: binary` names an
 executable expected on `PATH`. `reason` is required and should explain why the
 interface needs that dependency; it is used for docs and review. Runtime
 dependencies are factual environment requirements. They are separate from
@@ -192,13 +191,23 @@ The blueprint sync tool generates `references/blueprint/runtime_dependencies.jso
 from these declarations. Installers and other non-YAML consumers should read
 that JSON manifest instead of parsing blueprint YAML at runtime.
 
-Every machine interface must also declare `directly_reads`,
-`directly_executes`, and `directly_writes`. Use `[]` when there are no direct
-roots. Paths are relative to the directory containing `blueprint.yaml` unless
-they start with `$repo/`, which is relative to the repository root. These fields
-are direct roots only: health tooling expands directories and referenced files
-recursively when it computes hashes. A machine interface whose runtime resolves
-to a skill-local file must include that file in `directly_executes`.
+Every interface must declare behavior sources. LLM interfaces declare
+`behavior_sources` directly. Machine interfaces declare
+`invocation.behavior_sources`.
+
+Behavior sources are files or directories that the interface reads as
+instructions, rules, schemas, templates, examples, parser tables, checklists, or
+other behavior-shaping material. They are not the user's subject input. A
+Markdown interface should list the Markdown files it points to and loads. A
+Python machine interface should list non-code files such as JSON schemas,
+prompt templates, examples, policy files, and config files that affect behavior.
+Python imports, `_rtx/` entrypoint files, and dispatcher targets are discovered
+mechanically; do not duplicate them in behavior sources.
+
+Use `behavior_sources: []` only after checking that the interface has no
+non-code behavior-shaping files. Paths are relative to the directory containing
+`blueprint.yaml` unless they start with `$repo/`, which is relative to the
+repository root.
 
 Every machine and LLM interface must declare `version`. Bump it only when that
 interface's exported contract changes in a breaking way. A skill's version is
@@ -227,8 +236,8 @@ Two different interfaces must not own overlapping filesystem paths.
 For `kind: python_machine_interface`, health dependency exploration combines
 three surfaces:
 
-- `directly_reads`, `directly_executes`, and `directly_writes` for declared
-  file roots, including non-Python files;
+- `invocation.behavior_sources` for non-code behavior-shaping files, including
+  schemas, templates, examples, policy files, and parser tables;
 - class-level `dispatches = {...}` entries made of `DispatchCall(...)` for
   cross-skill machine-interface dependencies, followed recursively through
   dispatcher resolution;
@@ -236,8 +245,9 @@ three surfaces:
   performs lazily.
 
 If a Python file can affect behavior and is not otherwise covered by declared
-roots or `DispatchCall`, the interface's `route_smoke()` must import the code
-path cheaply and without real side effects. Health exploration does not execute
+imports or `DispatchCall`, the interface's `route_smoke()` must import the code
+path cheaply and without real side effects. Non-code behavior files must be
+declared in `invocation.behavior_sources`. Health exploration does not execute
 normal `run(...)` just to discover dependencies.
 
 Pattern semantics are per interface, not per grouped command. Every
@@ -252,9 +262,7 @@ skill-owned prompt surface routed by higher-level skill logic. It owns:
 - `version`
 - `description`
 - `binding` — where the interface definition lives
-- `directly_reads`
-- `directly_executes`
-- `directly_writes`
+- `behavior_sources` — additional non-code files that shape prompt behavior
 - `direct_io`
 - `owns_filesystem`
 - `allow_all_skills` / `allowed_callers` — access control for other skills
@@ -270,8 +278,8 @@ Typical LLM bindings:
 All local binding paths are relative to the directory containing
 `blueprint.yaml`.
 
-Use `binding`, not `runtime`, because LLM interfaces are descriptive routing
-surfaces rather than dispatcher-executed programs. `runtime` is forbidden under
+Use `binding`, not `invocation`, because LLM interfaces are descriptive routing
+surfaces rather than dispatcher-executed programs. `invocation` is forbidden under
 `interfaces.llm.*`.
 
 Every blueprint must define:
@@ -284,10 +292,6 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-        - SKILL.md
-      directly_executes: []
-      directly_writes: []
 ```
 
 For migration, `file: interfaces/name.md` may be accepted as a shorthand for:
@@ -311,8 +315,8 @@ dispatcher runtime's job is to:
 3. Load `interfaces.machine.<name>`
 4. Verify `allow_all_skills` / `allowed_callers`
 5. Match the invocation against declared patterns
-6. Resolve the internal `runtime`
-7. Execute the runtime without depending on the caller's working directory
+6. Resolve the internal `invocation`
+7. Execute the interface without depending on the caller's working directory
 
 The pattern-based approach enables compile-time validation: git hooks verify
 that only allowed skills can export restricted interfaces, catching misuse

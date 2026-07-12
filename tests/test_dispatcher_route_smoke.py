@@ -38,8 +38,8 @@ def _dispatcher_env() -> dict[str, str]:
     return env
 
 
-def _runtime_invokes_python_runner(runtime: dict[str, Any]) -> bool:
-    return runtime.get("kind") == "python_machine_interface"
+def _runtime_invokes_python_runner(invocation: dict[str, Any]) -> bool:
+    return invocation.get("kind") == "python_machine_interface"
 
 
 def _iter_blueprints(repo_root: Path = REPO_ROOT) -> Iterable[tuple[str, dict[str, Any]]]:
@@ -61,7 +61,7 @@ def _runner_interfaces(repo_root: Path = REPO_ROOT) -> list[RouteSmokeCase]:
         for interface_name, interface_spec in machine.items():
             if not isinstance(interface_name, str) or not isinstance(interface_spec, dict):
                 continue
-            runtime = interface_spec.get("runtime")
+            runtime = interface_spec.get("invocation")
             if isinstance(runtime, dict) and _runtime_invokes_python_runner(runtime):
                 cases.append(RouteSmokeCase(skill=skill_name, interface=interface_name))
     return cases
@@ -79,7 +79,7 @@ def _route_smoke_cases(repo_root: Path = REPO_ROOT) -> list[RouteSmokeCase]:
         for interface_name, interface_spec in machine.items():
             if not isinstance(interface_name, str) or not isinstance(interface_spec, dict):
                 continue
-            runtime = interface_spec.get("runtime")
+            runtime = interface_spec.get("invocation")
             if isinstance(runtime, dict) and _runtime_invokes_python_runner(runtime):
                 cases.append(RouteSmokeCase(skill=skill_name, interface=interface_name))
     return cases
@@ -117,7 +117,7 @@ interfaces:
   machine:
     route-check:
       version: 1
-      runtime:
+      invocation:
         kind: python_machine_interface
         entrypoint: _rtx/demo.py:Interface
       patterns:
@@ -139,14 +139,14 @@ interfaces:
   machine:
     route-check:
       version: 1
-      runtime:
+      invocation:
         kind: python_machine_interface
         entrypoint: _rtx/demo.py:Interface
       patterns:
         - min_positionals: 1
     requires-project:
       version: 1
-      runtime:
+      invocation:
         kind: python_machine_interface
         entrypoint: _rtx/demo.py:Interface
       patterns:

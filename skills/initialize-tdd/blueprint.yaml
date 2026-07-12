@@ -37,19 +37,16 @@ interfaces:
         notes: First positional is the scaffolded project's directory path. Discovers
           and runs every compat-alias helper next to this script; adding a new host's
           alias later needs no change here.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_host_links.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_host_links.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_host_links.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -57,13 +54,10 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

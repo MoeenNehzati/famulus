@@ -27,13 +27,10 @@ if str(SRC_ROOT) not in sys.path:
 HASH_PREFIX = "sha256:"
 DEFAULT_EXCLUDE_NAMES = {"__pycache__", ".pytest_cache", ".DS_Store", ".last_audit.json"}
 DEFAULT_EXCLUDE_SUFFIXES = {".pyc"}
-DIRECT_FIELDS = ("directly_reads", "directly_executes", "directly_writes")
-MARKDOWN_SUFFIXES = {".md", ".markdown"}
-MARKDOWN_REFERENCE_RE = re.compile(
-    r"@?[A-Za-z0-9_.-]+(?:[/\\][A-Za-z0-9_.-]+)+|@?[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+"
-)
-CANONICAL_MACHINE_INTERFACE_RE = re.compile(
-    r"^(?P<skill>[a-z0-9]+(?:-[a-z0-9]+)+)\.machine\.(?P<interface>[a-z0-9]+(?:-[a-z0-9]+)*)$"
+CANONICAL_INTERFACE_RE = re.compile(
+    r"^(?P<skill>[a-z0-9]+(?:-[a-z0-9]+)+)\."
+    r"(?P<namespace>machine|llm)\."
+    r"(?P<interface>[a-z0-9]+(?:-[a-z0-9]+)*)$"
 )
 
 
@@ -175,9 +172,9 @@ class DependencyExplorer:
             path, _label = resolve_declared_root(skill_root, self.repo_root, root)
             seeds.append((path, skill_root, f"interface root {root}"))
 
-        runtime = interface_spec.get("runtime")
-        if isinstance(runtime, dict) and runtime.get("kind") == "python_machine_interface":
-            entrypoint = runtime.get("entrypoint")
+        invocation = interface_spec.get("invocation")
+        if isinstance(invocation, dict) and invocation.get("kind") == "python_machine_interface":
+            entrypoint = invocation.get("entrypoint")
             if isinstance(entrypoint, str):
                 for path in explore_python_runtime_dependency_files(skill_root, self.repo_root, entrypoint):
                     seeds.append((path.resolve(strict=False), path.parent.resolve(strict=False), "python dependency"))
@@ -189,6 +186,15 @@ class DependencyExplorer:
 
         skill_root = skill_dir.resolve()
         files: list[DependencyFile] = []
+        blueprint_path = skill_root / "blueprint.yaml"
+        if blueprint_path.exists() or blueprint_path.is_symlink():
+            files.append(
+                DependencyFile(
+                    label=path_label(blueprint_path, self.repo_root),
+                    path=blueprint_path,
+                    reason="skill blueprint",
+                )
+            )
         interfaces = blueprint.get("interfaces")
         if isinstance(interfaces, dict):
             for namespace in ("llm", "machine"):
@@ -228,34 +234,8 @@ class DependencyExplorer:
                 continue
 
             result.append(DependencyFile(label=label, path=path, reason=reason))
-            if path.suffix.lower() in MARKDOWN_SUFFIXES and path.is_file():
-                for referenced in self._markdown_references(path, base_dir):
-                    queue.append((referenced, base_dir, f"markdown reference from {label}"))
 
         return sorted(result)
-
-    def _markdown_references(self, path: Path, base_dir: Path) -> list[Path]:
-        try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            return []
-
-        references: list[Path] = []
-        seen: set[Path] = set()
-        for match in MARKDOWN_REFERENCE_RE.finditer(text):
-            token = match.group(0).lstrip("@").replace("\\", "/")
-            token = token.strip(".,;:)]}\"'")
-            if not token or token.startswith(("http://", "https://")) or os.path.isabs(token):
-                continue
-            candidate = (base_dir / token).resolve(strict=False)
-            try:
-                candidate.relative_to(self.repo_root)
-            except ValueError:
-                continue
-            if (candidate.exists() or candidate.is_symlink()) and candidate not in seen:
-                references.append(candidate)
-                seen.add(candidate)
-        return references
 
 
 def hash_declared_roots(skill_dir: Path, repo_root: Path, declared_roots: Iterable[str]) -> str:
@@ -297,16 +277,28 @@ def local_binding_roots(interface_spec: dict[str, Any]) -> list[str]:
 
 
 def interface_roots(interface_spec: dict[str, Any], *, include_binding: bool = True) -> list[str]:
-    """Collect direct and binding roots from one blueprint interface."""
+    """Collect behavior-shaping roots from one blueprint interface."""
 
     roots: list[str] = []
     if include_binding:
         roots.extend(local_binding_roots(interface_spec))
-    for field in DIRECT_FIELDS:
-        value = interface_spec.get(field, [])
-        if isinstance(value, list):
-            roots.extend(root for root in value if isinstance(root, str))
+    roots.extend(behavior_source_roots(interface_spec))
     return dedupe_preserving_order(roots)
+
+
+def behavior_source_roots(interface_spec: dict[str, Any]) -> list[str]:
+    """Return files declared as behavior sources on an interface or its invocation."""
+
+    roots: list[str] = []
+    for container in (interface_spec, interface_spec.get("invocation")):
+        if not isinstance(container, dict):
+            continue
+        value = container.get("behavior_sources", [])
+        if isinstance(value, list):
+            for entry in value:
+                if isinstance(entry, dict) and isinstance(entry.get("path"), str):
+                    roots.append(entry["path"])
+    return roots
 
 
 def hash_interface(
@@ -337,7 +329,8 @@ def interface_entries(
 ) -> list[HashEntry]:
     """Collect hash entries for one machine or LLM interface."""
 
-    entries = entries_for_dependency_files(DependencyExplorer(repo_root).explore_interface(skill_dir, interface_spec), repo_root)
+    entries = collect_declared_root_entries(skill_dir, repo_root, interface_roots(interface_spec))
+    entries.extend(python_runtime_dependency_entries(skill_dir, repo_root, interface_spec))
     entries.extend(used_interface_hash_entries(skill_dir, repo_root, interface_spec, _seen_interfaces))
     return dedupe_entries(entries)
 
@@ -348,16 +341,16 @@ def used_interface_hash_entries(
     interface_spec: dict[str, Any],
     seen_interfaces: frozenset[str] = frozenset(),
 ) -> list[HashEntry]:
-    """Return hash entries for machine interfaces declared in uses_interfaces."""
+    """Return hash entries for interfaces declared in uses_interfaces."""
 
     entries: list[HashEntry] = []
     for canonical_name in used_interface_names(interface_spec):
         if canonical_name in seen_interfaces:
             raise HashRootError(f"uses_interfaces cycle includes {canonical_name}")
-        target_skill, target_interface_name = parse_canonical_machine_interface(canonical_name)
+        target_skill, namespace, target_interface_name = parse_canonical_interface(canonical_name)
         target_skill_dir = repo_root / "skills" / target_skill
         target_blueprint = load_blueprint(target_skill_dir)
-        target_spec = machine_interface_spec(target_blueprint, target_skill, target_interface_name)
+        target_spec = interface_spec_by_name(target_blueprint, target_skill, namespace, target_interface_name)
         target_hash = hash_interface(
             target_skill_dir,
             repo_root,
@@ -369,25 +362,29 @@ def used_interface_hash_entries(
 
 
 def used_interface_names(interface_spec: dict[str, Any]) -> list[str]:
-    """Return declared canonical machine interfaces used by an interface."""
+    """Return declared canonical interfaces used by an interface."""
 
     value = interface_spec.get("uses_interfaces", [])
     if not isinstance(value, list):
         raise HashRootError("uses_interfaces must be a list")
     result: list[str] = []
     for item in value:
-        if not isinstance(item, str):
-            raise HashRootError("uses_interfaces entries must be strings")
-        parse_canonical_machine_interface(item)
-        result.append(item)
+        if isinstance(item, str):
+            canonical_name = item
+        elif isinstance(item, dict) and isinstance(item.get("interface"), str):
+            canonical_name = item["interface"]
+        else:
+            raise HashRootError("uses_interfaces entries must be strings or mappings with `interface`")
+        parse_canonical_interface(canonical_name)
+        result.append(canonical_name)
     return dedupe_preserving_order(result)
 
 
-def parse_canonical_machine_interface(canonical_name: str) -> tuple[str, str]:
-    match = CANONICAL_MACHINE_INTERFACE_RE.match(canonical_name)
+def parse_canonical_interface(canonical_name: str) -> tuple[str, str, str]:
+    match = CANONICAL_INTERFACE_RE.match(canonical_name)
     if not match:
-        raise HashRootError(f"uses_interfaces entry must be canonical machine interface: {canonical_name}")
-    return match.group("skill"), match.group("interface")
+        raise HashRootError(f"uses_interfaces entry must be canonical interface: {canonical_name}")
+    return match.group("skill"), match.group("namespace"), match.group("interface")
 
 
 def load_blueprint(skill_dir: Path) -> dict[str, Any]:
@@ -400,16 +397,21 @@ def load_blueprint(skill_dir: Path) -> dict[str, Any]:
     return raw
 
 
-def machine_interface_spec(blueprint: dict[str, Any], skill_name: str, interface_name: str) -> dict[str, Any]:
+def interface_spec_by_name(
+    blueprint: dict[str, Any],
+    skill_name: str,
+    namespace: str,
+    interface_name: str,
+) -> dict[str, Any]:
     interfaces = blueprint.get("interfaces")
     if not isinstance(interfaces, dict):
         raise HashRootError(f"{skill_name}: missing interfaces")
-    machine = interfaces.get("machine")
-    if not isinstance(machine, dict):
-        raise HashRootError(f"{skill_name}: missing machine interfaces")
-    spec = machine.get(interface_name)
+    namespace_specs = interfaces.get(namespace)
+    if not isinstance(namespace_specs, dict):
+        raise HashRootError(f"{skill_name}: missing {namespace} interfaces")
+    spec = namespace_specs.get(interface_name)
     if not isinstance(spec, dict):
-        raise HashRootError(f"{skill_name}.machine.{interface_name} is not defined")
+        raise HashRootError(f"{skill_name}.{namespace}.{interface_name} is not defined")
     return spec
 
 
@@ -460,10 +462,10 @@ def python_runtime_dependency_entries(
 ) -> list[HashEntry]:
     """Collect modules loaded by a clean PythonMachineInterface route-smoke run."""
 
-    runtime = interface_spec.get("runtime")
-    if not isinstance(runtime, dict) or runtime.get("kind") != "python_machine_interface":
+    invocation = interface_spec.get("invocation")
+    if not isinstance(invocation, dict) or invocation.get("kind") != "python_machine_interface":
         return []
-    entrypoint = runtime.get("entrypoint")
+    entrypoint = invocation.get("entrypoint")
     if not isinstance(entrypoint, str):
         return []
 

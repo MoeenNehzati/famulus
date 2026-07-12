@@ -20,7 +20,7 @@ _BLUEPRINT = (
     "    run:\n"
     "      description: 'Run the demo script.'\n"
     "      usage: '[args]'\n"
-    "      runtime:\n"
+    "      invocation:\n"
     "        kind: python_machine_interface\n"
     "        entrypoint: _rtx/_run_tool.py:Interface\n"
     "      dependencies: []\n"

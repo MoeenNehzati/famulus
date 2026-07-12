@@ -40,19 +40,16 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_graph_builder.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_graph_builder.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_graph_builder.py:Interface
+        behavior_sources: []
     scripts-extract-mathjax-macros:
       version: 1
       description: Extract MathJax macro definitions from a TeX entrypoint, recursively
@@ -61,19 +58,16 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_tex_macro_reader.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_tex_macro_reader.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_tex_macro_reader.py:Interface
+        behavior_sources: []
     scripts-serve-graph:
       version: 1
       description: Serve graph HTML from a local directory with no-cache headers for
@@ -82,19 +76,16 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_graph_server.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_graph_server.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_graph_server.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -102,13 +93,10 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

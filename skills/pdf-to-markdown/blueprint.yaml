@@ -42,22 +42,19 @@ interfaces:
       usage: ''
       patterns:
       - name: owner
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_marker_probe.py:Interface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: marker-pdf
         reason: Provides the Surya settings module used to locate Marker model checkpoints.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_marker_probe.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_marker_probe.py:Interface
+        behavior_sources: []
     scripts-fetch-arxiv-source:
       version: 1
       description: Download and extract the LaTeX source tarball for a paper from
@@ -65,19 +62,16 @@ interfaces:
       usage: <arxiv-id> <output-dir>
       patterns:
       - name: owner
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_source_fetcher.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_source_fetcher.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_source_fetcher.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -85,13 +79,10 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

@@ -23,13 +23,24 @@ def assert_label_suffix(labels: set[str], suffix: str) -> None:
     assert any(label.endswith(suffix) for label in labels), suffix
 
 
-def test_explore_file_recurses_markdown_references_from_base_dir(tmp_path: Path) -> None:
+def test_explore_file_does_not_chase_markdown_references(tmp_path: Path) -> None:
     repo = tmp_path
-    write(repo / "root.md", "See @alpha.beta.md, dir/slash.md, win\\path.txt, and missing.md.\n")
+    write(
+        repo / "root.md",
+        "\n".join(
+            [
+                "See [alpha](alpha.beta.md), [slash](dir/slash.md), and @win/path.txt.",
+                "Bare prose docs/prose.md is an existing dependency.",
+                "Bare prose missing.md is not a dependency because it is missing.",
+                "@missing.md is an explicit missing dependency.",
+            ]
+        ),
+    )
     write(repo / "alpha.beta.md", "Then read second.md.\n")
     write(repo / "second.md", "done\n")
     write(repo / "dir" / "slash.md", "slash\n")
     write(repo / "win" / "path.txt", "windows path\n")
+    write(repo / "docs" / "prose.md", "prose path\n")
 
     labels = {
         item.label
@@ -38,17 +49,75 @@ def test_explore_file_recurses_markdown_references_from_base_dir(tmp_path: Path)
 
     assert labels == {
         "root.md",
-        "alpha.beta.md",
-        "second.md",
-        "dir/slash.md",
-        "win/path.txt",
     }
 
 
-def test_explore_interface_unions_direct_roots_and_python_dependencies(tmp_path: Path) -> None:
+def test_markdown_links_code_and_explicit_refs_are_not_drift_dependencies(tmp_path: Path) -> None:
+    repo = tmp_path
+    write(
+        repo / "docs" / "root.md",
+        "\n".join(
+            [
+                "[guide](../refs/guide.md#section).",
+                "![image](../assets/img.png)",
+                "<https://example.com/x.md>",
+                "`[not](../refs/code.md)`",
+                "`../refs/code-path.md`",
+                "```",
+                "[not](../refs/fence.md)",
+                "../refs/fence-path.md",
+                "@../refs/fence-explicit.md",
+                "```",
+                "@../refs/explicit.md.",
+                "@/abs/path.md",
+                "@../../outside.md",
+                "[missing](../refs/missing.md)",
+                "@../refs/missing-explicit.md",
+            ]
+        ),
+    )
+    write(repo / "refs" / "guide.md", "guide\n")
+    write(repo / "refs" / "explicit.md", "explicit\n")
+    write(repo / "refs" / "code-path.md", "code path\n")
+    write(repo / "refs" / "fence-path.md", "fence path\n")
+    write(repo / "assets" / "img.png", "img\n")
+
+    labels = {
+        item.label
+        for item in health_state.DependencyExplorer(repo).explore_file(
+            repo / "docs" / "root.md",
+            base_dir=repo / "docs",
+        )
+    }
+
+    assert labels == {
+        "docs/root.md",
+    }
+
+
+def test_transitive_markdown_references_are_not_drift_dependencies(tmp_path: Path) -> None:
+    repo = tmp_path
+    write(repo / "skills" / "demo-skill" / "SKILL.md", "@../../references/standard.md\n")
+    write(repo / "references" / "standard.md", "`blueprint/schema.json`\n")
+    write(repo / "references" / "blueprint" / "schema.json", "{}\n")
+
+    labels = {
+        item.label
+        for item in health_state.DependencyExplorer(repo).explore_file(
+            repo / "skills" / "demo-skill" / "SKILL.md",
+            base_dir=repo / "skills" / "demo-skill",
+        )
+    }
+
+    assert labels == {
+        "skills/demo-skill/SKILL.md",
+    }
+
+
+def test_explore_interface_unions_behavior_sources_and_python_dependencies(tmp_path: Path) -> None:
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"
-    write(skill / "NOTES.md", "See references/extra.md.\n")
+    write(skill / "NOTES.md", "See [extra](references/extra.md).\n")
     write(skill / "references" / "extra.md", "extra\n")
     write(skill / "_rtx" / "__init__.py", "")
     write(skill / "_rtx" / "_helper.py", "VALUE = 'ok'\n")
@@ -67,13 +136,18 @@ def test_explore_interface_unions_direct_roots_and_python_dependencies(tmp_path:
         ),
     )
     spec = {
-        "runtime": {
+        "invocation": {
             "kind": "python_machine_interface",
             "entrypoint": "_rtx/_main.py:Interface",
+            "behavior_sources": [
+                {
+                    "path": "NOTES.md",
+                    "content": "config",
+                    "format": "markdown",
+                    "reason": "Controls the test interface behavior.",
+                }
+            ],
         },
-        "directly_reads": ["NOTES.md"],
-        "directly_executes": ["_rtx/_main.py"],
-        "directly_writes": [],
     }
 
     labels = {
@@ -83,7 +157,6 @@ def test_explore_interface_unions_direct_roots_and_python_dependencies(tmp_path:
 
     assert {
         "skills/demo-skill/NOTES.md",
-        "skills/demo-skill/references/extra.md",
         "skills/demo-skill/_rtx/__init__.py",
         "skills/demo-skill/_rtx/_main.py",
         "skills/demo-skill/_rtx/_helper.py",
@@ -93,24 +166,38 @@ def test_explore_interface_unions_direct_roots_and_python_dependencies(tmp_path:
 def test_explore_skill_unions_interface_files(tmp_path: Path) -> None:
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"
-    write(skill / "SKILL.md", "See guide.md.\n")
+    write(skill / "SKILL.md", "See @guide.md.\n")
     write(skill / "guide.md", "guide\n")
-    write(skill / "_rtx" / "_worker.py", "print('worker')\n")
+    write(skill / "schemas" / "worker.json", "{}\n")
+    write(skill / "_rtx" / "__init__.py", "")
+    write(
+        skill / "_rtx" / "_worker.py",
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    pass\n",
+    )
     blueprint = {
         "interfaces": {
             "llm": {
                 "default": {
                     "binding": {"kind": "skill_file", "path": "SKILL.md"},
-                    "directly_reads": ["SKILL.md"],
-                    "directly_executes": [],
-                    "directly_writes": [],
+                    "behavior_sources": [],
                 }
             },
             "machine": {
                 "worker": {
-                    "directly_reads": [],
-                    "directly_executes": ["_rtx/_worker.py"],
-                    "directly_writes": [],
+                    "invocation": {
+                        "kind": "python_machine_interface",
+                        "entrypoint": "_rtx/_worker.py:Interface",
+                        "behavior_sources": [
+                            {
+                                "path": "schemas/worker.json",
+                                "content": "validator",
+                                "format": "json",
+                                "reason": "Defines worker behavior.",
+                            }
+                        ],
+                    },
                 }
             },
         }
@@ -123,7 +210,7 @@ def test_explore_skill_unions_interface_files(tmp_path: Path) -> None:
 
     assert {
         "skills/demo-skill/SKILL.md",
-        "skills/demo-skill/guide.md",
+        "skills/demo-skill/schemas/worker.json",
         "skills/demo-skill/_rtx/_worker.py",
     } <= labels
 
@@ -149,13 +236,10 @@ def test_python_route_smoke_imports_local_module_dependencies(tmp_path: Path) ->
         ),
     )
     spec = {
-        "runtime": {
+        "invocation": {
             "kind": "python_machine_interface",
             "entrypoint": "_rtx/_main.py:Interface",
         },
-        "directly_reads": [],
-        "directly_executes": ["_rtx/_main.py"],
-        "directly_writes": [],
     }
 
     labels = {
@@ -188,13 +272,10 @@ def test_python_route_smoke_includes_package_init_files(tmp_path: Path) -> None:
         ),
     )
     spec = {
-        "runtime": {
+        "invocation": {
             "kind": "python_machine_interface",
             "entrypoint": "_rtx/_main.py:Interface",
         },
-        "directly_reads": [],
-        "directly_executes": ["_rtx/_main.py"],
-        "directly_writes": [],
     }
 
     labels = {
@@ -226,13 +307,10 @@ def test_python_route_smoke_includes_officina_imports(tmp_path: Path) -> None:
     )
     sys.modules.pop("officina.common.dates", None)
     spec = {
-        "runtime": {
+        "invocation": {
             "kind": "python_machine_interface",
             "entrypoint": "_rtx/_main.py:Interface",
         },
-        "directly_reads": [],
-        "directly_executes": [],
-        "directly_writes": [],
     }
 
     modules = [
@@ -256,7 +334,14 @@ def test_python_declared_dispatch_dependencies_are_traced_recursively(tmp_path: 
         "depends_on:\n"
         "  target-skill:\n"
         "    major_version: 1\n"
-        "    exports: [target-skill.machine.target]\n",
+        "    exports: [target-skill.machine.target]\n"
+        "interfaces:\n"
+        "  machine:\n"
+        "    source:\n"
+        "      version: 1\n"
+        "      uses_interfaces:\n"
+        "        - interface: target-skill.machine.target\n"
+        "          version: 1\n",
     )
     write(source / "_rtx" / "__init__.py", "")
     write(
@@ -303,19 +388,17 @@ def test_python_declared_dispatch_dependencies_are_traced_recursively(tmp_path: 
         "interfaces:\n"
         "  machine:\n"
         "    target:\n"
+        "      version: 1\n"
         "      allowed_callers: [source-skill]\n"
-        "      runtime:\n"
+        "      invocation:\n"
         "        kind: python_machine_interface\n"
         "        entrypoint: _rtx/_target.py:Interface\n",
     )
     spec = {
-        "runtime": {
+        "invocation": {
             "kind": "python_machine_interface",
             "entrypoint": "_rtx/_main.py:Interface",
         },
-        "directly_reads": [],
-        "directly_executes": ["_rtx/_main.py"],
-        "directly_writes": [],
     }
 
     labels = {
@@ -339,7 +422,14 @@ def test_python_declared_dispatch_to_python_runtime_hashes_target_runtime_file(t
         "depends_on:\n"
         "  target-skill:\n"
         "    major_version: 1\n"
-        "    exports: [target-skill.machine.run]\n",
+        "    exports: [target-skill.machine.run]\n"
+        "interfaces:\n"
+        "  machine:\n"
+        "    source:\n"
+        "      version: 1\n"
+        "      uses_interfaces:\n"
+        "        - interface: target-skill.machine.run\n"
+        "          version: 1\n",
     )
     write(source / "_rtx" / "__init__.py", "")
     write(
@@ -369,25 +459,20 @@ def test_python_declared_dispatch_to_python_runtime_hashes_target_runtime_file(t
         "interfaces:\n"
         "  machine:\n"
         "    run:\n"
+        "      version: 1\n"
         "      allowed_callers: [source-skill]\n"
         "      patterns:\n"
         "        - min_positionals: 0\n"
         "          max_positionals: 0\n"
-        "      runtime:\n"
+        "      invocation:\n"
         "        kind: python_machine_interface\n"
         "        entrypoint: _rtx/_tool.py:Interface\n"
-        "      directly_reads: []\n"
-        "      directly_executes: [_rtx/_tool.py]\n"
-        "      directly_writes: []\n",
     )
     spec = {
-        "runtime": {
+        "invocation": {
             "kind": "python_machine_interface",
             "entrypoint": "_rtx/_main.py:Interface",
         },
-        "directly_reads": [],
-        "directly_executes": ["_rtx/_main.py"],
-        "directly_writes": [],
     }
 
     labels = {
@@ -409,7 +494,14 @@ def test_python_mixed_local_officina_and_dispatched_imports_are_all_traced(tmp_p
         "depends_on:\n"
         "  target-skill:\n"
         "    major_version: 1\n"
-        "    exports: [target-skill.machine.target]\n",
+        "    exports: [target-skill.machine.target]\n"
+        "interfaces:\n"
+        "  machine:\n"
+        "    source:\n"
+        "      version: 1\n"
+        "      uses_interfaces:\n"
+        "        - interface: target-skill.machine.target\n"
+        "          version: 1\n",
     )
     write(source / "_rtx" / "__init__.py", "")
     write(
@@ -472,19 +564,17 @@ def test_python_mixed_local_officina_and_dispatched_imports_are_all_traced(tmp_p
         "interfaces:\n"
         "  machine:\n"
         "    target:\n"
+        "      version: 1\n"
         "      allowed_callers: [source-skill]\n"
-        "      runtime:\n"
+        "      invocation:\n"
         "        kind: python_machine_interface\n"
         "        entrypoint: _rtx/_target.py:Interface\n",
     )
     spec = {
-        "runtime": {
+        "invocation": {
             "kind": "python_machine_interface",
             "entrypoint": "_rtx/_main.py:Interface",
         },
-        "directly_reads": [],
-        "directly_executes": ["_rtx/_main.py"],
-        "directly_writes": [],
     }
 
     labels = {
@@ -520,7 +610,14 @@ def test_python_deep_dispatch_chain_preserves_each_hops_import_graph(tmp_path: P
         "depends_on:\n"
         "  middle-skill:\n"
         "    major_version: 1\n"
-        "    exports: [middle-skill.machine.middle]\n",
+        "    exports: [middle-skill.machine.middle]\n"
+        "interfaces:\n"
+        "  machine:\n"
+        "    source:\n"
+        "      version: 1\n"
+        "      uses_interfaces:\n"
+        "        - interface: middle-skill.machine.middle\n"
+        "          version: 1\n",
     )
     write(source / "_rtx" / "__init__.py", "")
     write(source / "_rtx" / "_source_helper.py", "VALUE = 'source'\n")
@@ -557,8 +654,12 @@ def test_python_deep_dispatch_chain_preserves_each_hops_import_graph(tmp_path: P
         "interfaces:\n"
         "  machine:\n"
         "    middle:\n"
+        "      version: 1\n"
+        "      uses_interfaces:\n"
+        "        - interface: leaf-skill.machine.leaf\n"
+        "          version: 1\n"
         "      allowed_callers: [source-skill]\n"
-        "      runtime:\n"
+        "      invocation:\n"
         "        kind: python_machine_interface\n"
         "        entrypoint: _rtx/_middle.py:Interface\n",
     )
@@ -593,8 +694,9 @@ def test_python_deep_dispatch_chain_preserves_each_hops_import_graph(tmp_path: P
         "interfaces:\n"
         "  machine:\n"
         "    leaf:\n"
+        "      version: 1\n"
         "      allowed_callers: [middle-skill]\n"
-        "      runtime:\n"
+        "      invocation:\n"
         "        kind: python_machine_interface\n"
         "        entrypoint: _rtx/_leaf.py:Interface\n",
     )
@@ -616,13 +718,10 @@ def test_python_deep_dispatch_chain_preserves_each_hops_import_graph(tmp_path: P
         ),
     )
     spec = {
-        "runtime": {
+        "invocation": {
             "kind": "python_machine_interface",
             "entrypoint": "_rtx/_source.py:Interface",
         },
-        "directly_reads": [],
-        "directly_executes": ["_rtx/_source.py"],
-        "directly_writes": [],
     }
 
     labels = {
@@ -661,7 +760,16 @@ def test_python_branching_dispatches_and_multiple_imports_are_all_traced(tmp_pat
         "    exports: [alpha-skill.machine.alpha]\n"
         "  beta-skill:\n"
         "    major_version: 1\n"
-        "    exports: [beta-skill.machine.beta]\n",
+        "    exports: [beta-skill.machine.beta]\n"
+        "interfaces:\n"
+        "  machine:\n"
+        "    source:\n"
+        "      version: 1\n"
+        "      uses_interfaces:\n"
+        "        - interface: alpha-skill.machine.alpha\n"
+        "          version: 1\n"
+        "        - interface: beta-skill.machine.beta\n"
+        "          version: 1\n",
     )
     write(source / "_rtx" / "__init__.py", "")
     write(source / "_rtx" / "_first_helper.py", "VALUE = 'first'\n")
@@ -718,8 +826,9 @@ def test_python_branching_dispatches_and_multiple_imports_are_all_traced(tmp_pat
         "interfaces:\n"
         "  machine:\n"
         "    alpha:\n"
+        "      version: 1\n"
         "      allowed_callers: [source-skill]\n"
-        "      runtime:\n"
+        "      invocation:\n"
         "        kind: python_machine_interface\n"
         "        entrypoint: _rtx/_alpha.py:Interface\n",
     )
@@ -748,19 +857,17 @@ def test_python_branching_dispatches_and_multiple_imports_are_all_traced(tmp_pat
         "interfaces:\n"
         "  machine:\n"
         "    beta:\n"
+        "      version: 1\n"
         "      allowed_callers: [source-skill]\n"
-        "      runtime:\n"
+        "      invocation:\n"
         "        kind: python_machine_interface\n"
         "        entrypoint: _rtx/_beta.py:Interface\n",
     )
     spec = {
-        "runtime": {
+        "invocation": {
             "kind": "python_machine_interface",
             "entrypoint": "_rtx/_main.py:Interface",
         },
-        "directly_reads": [],
-        "directly_executes": ["_rtx/_main.py"],
-        "directly_writes": [],
     }
 
     labels = {

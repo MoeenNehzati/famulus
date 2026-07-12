@@ -70,19 +70,10 @@ interfaces:
           filters. Filtered output is a pruned tree (or pruned list, if the input
           itself was a bare list), not a flat list of matches -- do not assume flat-list
           shape.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - read
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads YAML list files.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_yaml_store.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-filesystem
@@ -100,6 +91,12 @@ interfaces:
           sensitivity: user-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
+        - read
+        behavior_sources: []
     describe-schema:
       version: 1
       description: Describe entry-level fields (types/required/enums) for a list schema.
@@ -113,17 +110,10 @@ interfaces:
         notes: First positional is the schema name (todo, triage, default); optional
           second positional is a field name, or '*'/omitted for all fields. Purely
           local and read-only -- no cloud variant needed.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:DescribeSchemaInterface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: jsonschema
         reason: Resolves and reports JSON Schema metadata for list entries.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_yaml_store.py
-      directly_writes: []
       direct_io:
         reads: []
         writes:
@@ -134,6 +124,10 @@ interfaces:
           sensitivity: public
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:DescribeSchemaInterface
+        behavior_sources: []
     update-list:
       version: 1
       description: Update entries in a local YAML list file from a patch file (keyed
@@ -159,22 +153,13 @@ interfaces:
         forbidden_flags:
         - --file
         notes: Internal convenience mode for the owning skill when feeding YAML directly.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - update
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list files.
-      - kind: python
+      - kind: python-package
         name: jsonschema
         reason: Validates list mutations before writing.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_yaml_store.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-filesystem
@@ -206,6 +191,12 @@ interfaces:
           sensitivity: user-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
+        - update
+        behavior_sources: []
     read-beautify:
       version: 1
       description: Read a local YAML list file and render it for display (nested bullet-list
@@ -223,20 +214,13 @@ interfaces:
         notes: 'Read a local YAML list file and immediately return pretty output.
           No allowed_flags restriction: --sort/-D/--markdown/--table/--diff/--no-ids/-o
           all pass through.'
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_render_bridge.py:Interface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads YAML list data before rendering.
-      - kind: python
+      - kind: python-package
         name: rich
         reason: Renders nested list output for terminal display.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_render_bridge.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-filesystem
@@ -261,6 +245,10 @@ interfaces:
           sensitivity: derived-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_render_bridge.py:Interface
+        behavior_sources: []
     beautify-list:
       version: 1
       description: Render YAML list entries from stdin (nested bullet-list markdown
@@ -277,20 +265,13 @@ interfaces:
         notes: 'Reads YAML from stdin and renders user-facing list output. No allowed_flags
           restriction: -D/--markdown/--table/--diff/--relative-deadlines/--ids all
           pass through.'
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_list_beautify.py:BeautifyListInterface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads YAML list data from stdin.
-      - kind: python
+      - kind: python-package
         name: rich
         reason: Renders nested list output for terminal display.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_list_beautify.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: stdin
@@ -306,6 +287,10 @@ interfaces:
           sensitivity: derived-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_list_beautify.py:BeautifyListInterface
+        behavior_sources: []
     init-list:
       version: 1
       description: Create a new empty local YAML list file.
@@ -316,22 +301,13 @@ interfaces:
       - min_positionals: 1
         allow_extra_positionals: true
         allow_stdin: false
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - init
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Writes YAML list files.
-      - kind: python
+      - kind: python-package
         name: jsonschema
         reason: Validates initialized list data before writing.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_yaml_store.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: prompt
@@ -349,6 +325,12 @@ interfaces:
           sensitivity: user-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
+        - init
+        behavior_sources: []
     create-entry:
       version: 1
       description: Add entries to a local YAML list under a category path.
@@ -370,22 +352,13 @@ interfaces:
         - --entries
         allowed_flags:
         - --entries
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - create-entry
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list files.
-      - kind: python
+      - kind: python-package
         name: jsonschema
         reason: Validates new entries before writing.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_yaml_store.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-filesystem
@@ -417,6 +390,12 @@ interfaces:
           sensitivity: user-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
+        - create-entry
+        behavior_sources: []
     generate-id:
       version: 1
       description: Generate one or more collision-free 6-char entry IDs against a
@@ -428,19 +407,10 @@ interfaces:
       - min_positionals: 1
         allow_extra_positionals: true
         allow_stdin: false
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - gen-id
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads YAML list files to avoid ID collisions.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_yaml_store.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-filesystem
@@ -458,6 +428,12 @@ interfaces:
           sensitivity: derived-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
+        - gen-id
+        behavior_sources: []
     migrate-markdown:
       version: 1
       description: Migrate a legacy Markdown list to YAML format.
@@ -468,23 +444,16 @@ interfaces:
       - min_positionals: 3
         allow_extra_positionals: true
         allow_stdin: false
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_legacy_importer.py:Interface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Writes migrated YAML list files.
-      - kind: python
+      - kind: python-package
         name: jsonschema
         reason: Validates migrated entries before writing.
-      - kind: python
+      - kind: python-package
         name: dateparser
         reason: Parses natural-language legacy Markdown deadlines.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_legacy_importer.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-filesystem
@@ -504,6 +473,10 @@ interfaces:
           sensitivity: user-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_legacy_importer.py:Interface
+        behavior_sources: []
     cloud-read:
       version: 1
       uses_interfaces:
@@ -532,19 +505,10 @@ interfaces:
         notes: Read cloud list by name (raw YAML), optionally filtered. Filtered output
           is a pruned tree, not a flat list of matches -- do not assume flat-list
           shape.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - read
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads YAML list data downloaded from cloud storage.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_yaml_store.py
-      directly_writes: []
       direct_io:
         reads: []
         writes:
@@ -555,6 +519,12 @@ interfaces:
           sensitivity: user-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
+        - read
+        behavior_sources: []
     cloud-create-entry:
       version: 1
       uses_interfaces:
@@ -591,22 +561,13 @@ interfaces:
         positional_patterns:
           0: ^[a-zA-Z0-9_-]+$
           1: ^[a-zA-Z0-9_/-]+$
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - create-entry
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list data downloaded from cloud storage.
-      - kind: python
+      - kind: python-package
         name: jsonschema
         reason: Validates new entries before upload.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_yaml_store.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-filesystem
@@ -629,6 +590,12 @@ interfaces:
           sensitivity: derived-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
+        - create-entry
+        behavior_sources: []
     cloud-update:
       version: 1
       uses_interfaces:
@@ -665,22 +632,13 @@ interfaces:
         positional_patterns:
           0: ^[a-zA-Z0-9_-]+$
         notes: Update cloud list entries from a stdin patch.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - update
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list data downloaded from cloud storage.
-      - kind: python
+      - kind: python-package
         name: jsonschema
         reason: Validates list mutations before upload.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_yaml_store.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: local-filesystem
@@ -703,6 +661,12 @@ interfaces:
           sensitivity: derived-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
+        - update
+        behavior_sources: []
     cloud-init:
       version: 1
       uses_interfaces:
@@ -726,22 +690,13 @@ interfaces:
         positional_patterns:
           0: ^[a-zA-Z0-9_-]+$
         notes: Create a new list in cloud storage.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - init
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Writes YAML list data for upload.
-      - kind: python
+      - kind: python-package
         name: jsonschema
         reason: Validates initialized list data before upload.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_yaml_store.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: prompt
@@ -757,6 +712,12 @@ interfaces:
           sensitivity: derived-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
+        - init
+        behavior_sources: []
     cloud-delete:
       version: 1
       uses_interfaces:
@@ -781,19 +742,10 @@ interfaces:
           0: ^[a-zA-Z0-9_-]+$
           1: ^[0-9a-f]{6}$
         notes: Delete one or more entries by ID from a cloud list.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - delete
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads and writes YAML list data downloaded from cloud storage.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_yaml_store.py
-      directly_writes: []
       direct_io:
         reads:
         - medium: prompt
@@ -809,6 +761,12 @@ interfaces:
           sensitivity: derived-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_yaml_store.py:Interface
+        args_prefix:
+        - delete
+        behavior_sources: []
     cloud-read-beautify:
       version: 1
       uses_interfaces:
@@ -840,20 +798,13 @@ interfaces:
           0: ^[a-zA-Z0-9_-]+$
         notes: Read a cloud list by name and render it as nested bullet-list markdown
           by default, optionally filtered.
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_render_bridge.py:Interface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads YAML list data downloaded from cloud storage.
-      - kind: python
+      - kind: python-package
         name: rich
         reason: Renders nested list output for terminal display.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_render_bridge.py
-      directly_writes: []
       direct_io:
         reads: []
         writes:
@@ -864,6 +815,10 @@ interfaces:
           sensitivity: derived-private
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_render_bridge.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -871,10 +826,6 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads:
         - medium: prompt
@@ -891,3 +842,4 @@ interfaces:
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      behavior_sources: []

@@ -286,8 +286,8 @@ def resolve_machine_interface(
     repo_root: Path | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     interface_spec, resolved_name = resolve_machine_interface_surface(target_blueprint, interface_name)
-    runtime = expect_mapping(interface_spec.get("runtime"), "runtime")
-    if runtime.get("kind") == "python_machine_interface" and script_args == ["--route-smoke"] and not stdin_requested:
+    invocation = expect_mapping(interface_spec.get("invocation"), "invocation")
+    if invocation.get("kind") == "python_machine_interface" and script_args == ["--route-smoke"] and not stdin_requested:
         pattern_spec, pattern_name = {}, "route-smoke"
     else:
         pattern_spec, pattern_name = find_matching_pattern(interface_spec, script_args, stdin_requested)
@@ -325,14 +325,14 @@ def build_machine_runtime(
     script_args: list[str],
     repo_root: Path | None = None,
 ) -> tuple[Path, list[str], dict[str, str] | None]:
-    runtime = expect_mapping(interface_spec.get("runtime"), "runtime")
-    kind = runtime.get("kind")
+    invocation = expect_mapping(interface_spec.get("invocation"), "invocation")
+    kind = invocation.get("kind")
     root = get_repo_root(repo_root)
     skill_root = root / "skills" / target_skill
     if kind == "python_module":
-        module = runtime.get("module")
+        module = invocation.get("module")
         if not isinstance(module, str) or not module.strip():
-            raise InvocationError(f"{target_skill}.machine.{interface_name}: runtime needs non-empty `module`")
+            raise InvocationError(f"{target_skill}.machine.{interface_name}: invocation needs non-empty `module`")
         env = os.environ.copy()
         src_root = root / "src"
         entries = [str(skill_root), str(src_root)]
@@ -341,16 +341,16 @@ def build_machine_runtime(
         env["PYTHONIOENCODING"] = "utf-8:strict"
         return root, [sys.executable, "-m", module, *script_args], env
     if kind == "python_machine_interface":
-        entrypoint = runtime.get("entrypoint")
+        entrypoint = invocation.get("entrypoint")
         if not isinstance(entrypoint, str) or not entrypoint.strip():
             raise InvocationError(
-                f"{target_skill}.machine.{interface_name}: python_machine_interface runtime "
+                f"{target_skill}.machine.{interface_name}: python_machine_interface invocation "
                 "needs non-empty `entrypoint`"
             )
-        args_prefix = runtime.get("args_prefix", [])
+        args_prefix = invocation.get("args_prefix", [])
         if not isinstance(args_prefix, list) or not all(isinstance(token, str) and token for token in args_prefix):
             raise InvocationError(
-                f"{target_skill}.machine.{interface_name}: python_machine_interface runtime "
+                f"{target_skill}.machine.{interface_name}: python_machine_interface invocation "
                 "needs string list `args_prefix`"
             )
         env = os.environ.copy()
@@ -372,11 +372,11 @@ def build_machine_runtime(
             env,
         )
     if kind == "command":
-        argv = runtime.get("argv")
+        argv = invocation.get("argv")
         if not isinstance(argv, list) or not all(isinstance(token, str) and token for token in argv):
-            raise InvocationError(f"{target_skill}.machine.{interface_name}: runtime needs non-empty `argv`")
+            raise InvocationError(f"{target_skill}.machine.{interface_name}: invocation needs non-empty `argv`")
         return skill_root, [*argv, *script_args], None
-    raise InvocationError(f"{target_skill}.machine.{interface_name}: unsupported runtime kind `{kind}`")
+    raise InvocationError(f"{target_skill}.machine.{interface_name}: unsupported invocation kind `{kind}`")
 
 
 def resolve_dispatch(

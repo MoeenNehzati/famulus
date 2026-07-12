@@ -160,12 +160,12 @@ def _validate_blueprint(path: Path, rel_path: Path) -> list[str]:
             for interface_name, spec in machine_interfaces.items():
                 if not isinstance(spec, dict):
                     continue
-                runtime = spec.get("runtime") or {}
-                if not isinstance(runtime, dict):
+                invocation = spec.get("invocation") or {}
+                if not isinstance(invocation, dict):
                     continue
-                command = runtime.get("argv")
+                command = invocation.get("argv")
                 if isinstance(command, list) and all(isinstance(token, str) for token in command):
-                    context = f"{rel_path}: interfaces.machine.{interface_name}.runtime.argv"
+                    context = f"{rel_path}: interfaces.machine.{interface_name}.invocation.argv"
                     for error in _command_violations(command, context):
                         errors.append(error)
 

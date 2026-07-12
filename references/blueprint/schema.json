@@ -206,7 +206,7 @@
     },
     "machineInterface": {
       "type": "object",
-      "required": ["version", "runtime", "dependencies", "directly_reads", "directly_executes", "directly_writes", "direct_io", "owns_filesystem"],
+      "required": ["version", "invocation", "dependencies", "direct_io", "owns_filesystem"],
       "additionalProperties": false,
       "properties": {
         "version": {
@@ -237,23 +237,14 @@
           },
           "default": []
         },
-        "runtime": {
-          "$ref": "#/definitions/runtime"
+        "invocation": {
+          "$ref": "#/definitions/invocation"
         },
         "dependencies": {
           "$ref": "#/definitions/runtimeDependencies"
         },
         "uses_interfaces": {
           "$ref": "#/definitions/usedMachineInterfaceList"
-        },
-        "directly_reads": {
-          "$ref": "#/definitions/directEffectList"
-        },
-        "directly_executes": {
-          "$ref": "#/definitions/directEffectList"
-        },
-        "directly_writes": {
-          "$ref": "#/definitions/directEffectList"
         },
         "direct_io": {
           "$ref": "#/definitions/directIo"
@@ -282,7 +273,7 @@
       "additionalProperties": false,
       "properties": {
         "kind": {
-          "enum": ["python", "binary"]
+          "enum": ["python-package", "binary"]
         },
         "name": {
           "type": "string",
@@ -297,7 +288,7 @@
     },
     "llmInterface": {
       "type": "object",
-      "required": ["version", "description", "directly_reads", "directly_executes", "directly_writes", "direct_io", "owns_filesystem"],
+      "required": ["version", "description", "behavior_sources", "direct_io", "owns_filesystem"],
       "additionalProperties": false,
       "properties": {
         "version": {
@@ -336,14 +327,8 @@
         "uses_interfaces": {
           "$ref": "#/definitions/usedInterfaceList"
         },
-        "directly_reads": {
-          "$ref": "#/definitions/directEffectList"
-        },
-        "directly_executes": {
-          "$ref": "#/definitions/directEffectList"
-        },
-        "directly_writes": {
-          "$ref": "#/definitions/directEffectList"
+        "behavior_sources": {
+          "$ref": "#/definitions/behaviorSourceList"
         },
         "direct_io": {
           "$ref": "#/definitions/directIo"
@@ -465,9 +450,39 @@
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.machine\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
     },
+    "behaviorSourceList": {
+      "type": "array",
+      "description": "Non-code files or roots read by this interface that can influence behavior, such as schemas, templates, policy files, prompt markdown, examples, or parser tables. Python imports and dispatch targets are discovered mechanically and must not be duplicated here.",
+      "items": {
+        "$ref": "#/definitions/behaviorSource"
+      },
+      "uniqueItems": true
+    },
+    "behaviorSource": {
+      "type": "object",
+      "required": ["path", "content", "format", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+        },
+        "content": {
+          "$ref": "#/definitions/metadataContent"
+        },
+        "format": {
+          "$ref": "#/definitions/metadataFormat"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "directEffectList": {
       "type": "array",
-      "description": "Direct file roots this interface reads, executes, or writes. Paths are relative to the directory containing blueprint.yaml, or may use $repo/ for repository-root relative paths. Use [] when there are no direct roots.",
+      "description": "Deprecated compatibility definition. Do not use in blueprint interfaces.",
       "items": {
         "type": "string",
         "minLength": 1,
@@ -772,9 +787,10 @@
         "derived-private"
       ]
     },
-    "runtime": {
+    "invocation": {
       "type": "object",
-      "required": ["kind", "entrypoint"],
+      "description": "How the dispatcher invokes this machine interface, plus non-code behavior sources read by that invocation.",
+      "required": ["kind", "entrypoint", "behavior_sources"],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -791,6 +807,9 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "behavior_sources": {
+          "$ref": "#/definitions/behaviorSourceList"
         }
       }
     },

@@ -33,7 +33,7 @@ def test_file_hash_changes_when_file_content_changes(tmp_path: Path) -> None:
     assert first != second
 
 
-def test_markdown_reference_changes_hash_transitively(tmp_path: Path) -> None:
+def test_markdown_reference_does_not_change_hash_unless_declared(tmp_path: Path) -> None:
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"
     write(skill / "SKILL.md", "See [extra](references/extra.md).\n")
@@ -43,7 +43,8 @@ def test_markdown_reference_changes_hash_transitively(tmp_path: Path) -> None:
     write(skill / "references" / "extra.md", "two\n")
     second = health_state.hash_declared_roots(skill, repo, ["SKILL.md"])
 
-    assert first != second
+    assert first == second
+
 
 def test_directory_hash_is_recursive_and_ignores_health_record(tmp_path: Path) -> None:
     repo = tmp_path
@@ -82,23 +83,81 @@ def test_repo_relative_root_hashes_repo_file(tmp_path: Path) -> None:
     assert first != second
 
 
-def test_interface_hash_includes_binding_and_direct_roots(tmp_path: Path) -> None:
+def test_interface_hash_includes_binding_and_behavior_sources(tmp_path: Path) -> None:
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"
     write(skill / "SKILL.md", "skill\n")
-    write(skill / "_rtx" / "_drift_hashes.py", "print('x')\n")
+    write(skill / "references" / "policy.md", "one\n")
     spec = {
         "binding": {"kind": "skill_file", "path": "SKILL.md"},
-        "directly_reads": ["SKILL.md"],
-        "directly_executes": ["_rtx/_drift_hashes.py"],
-        "directly_writes": [],
+        "behavior_sources": [
+            {
+                "path": "references/policy.md",
+                "content": "config",
+                "format": "markdown",
+                "reason": "Defines behavior for the interface.",
+            }
+        ],
     }
 
     first = health_state.hash_interface(skill, repo, spec)
-    write(skill / "_rtx" / "_drift_hashes.py", "print('y')\n")
+    write(skill / "references" / "policy.md", "two\n")
     second = health_state.hash_interface(skill, repo, spec)
 
     assert first != second
+
+
+def test_interface_hash_includes_missing_behavior_source_declarations(tmp_path: Path) -> None:
+    repo = tmp_path
+    skill = repo / "skills" / "demo-skill"
+    write(skill / "SKILL.md", "skill\n")
+    spec = {
+        "binding": {"kind": "skill_file", "path": "SKILL.md"},
+        "behavior_sources": [
+            {
+                "path": "references/missing.md",
+                "content": "config",
+                "format": "markdown",
+                "reason": "Defines behavior for the interface.",
+            }
+        ],
+    }
+
+    first = health_state.hash_interface(skill, repo, spec)
+    write(skill / "references" / "missing.md", "now present\n")
+    second = health_state.hash_interface(skill, repo, spec)
+
+    assert first != second
+
+
+def test_interface_hash_does_not_hash_direct_io_subject_data(tmp_path: Path) -> None:
+    repo = tmp_path
+    skill = repo / "skills" / "demo-skill"
+    write(skill / "SKILL.md", "skill\n")
+    write(repo / "inbox" / "message.txt", "one\n")
+    spec = {
+        "binding": {"kind": "skill_file", "path": "SKILL.md"},
+        "behavior_sources": [],
+        "direct_io": {
+            "reads": [
+                {
+                    "medium": "local-filesystem",
+                    "path": "$repo/inbox/message.txt",
+                    "content": "email",
+                    "format": "text",
+                    "access": "read",
+                }
+            ],
+            "writes": [],
+            "network": [],
+        },
+    }
+
+    first = health_state.hash_interface(skill, repo, spec)
+    write(repo / "inbox" / "message.txt", "two\n")
+    second = health_state.hash_interface(skill, repo, spec)
+
+    assert first == second
 
 
 def test_interface_hash_includes_used_machine_interface_hash(tmp_path: Path) -> None:
@@ -106,7 +165,14 @@ def test_interface_hash_includes_used_machine_interface_hash(tmp_path: Path) -> 
     consumer = repo / "skills" / "consumer-skill"
     provider = repo / "skills" / "provider-skill"
     write(consumer / "SKILL.md", "Use the provider interface.\n")
-    write(provider / "_rtx" / "_worker.py", "VALUE = 'one'\n")
+    write(provider / "references" / "policy.md", "one\n")
+    write(provider / "_rtx" / "__init__.py", "")
+    write(
+        provider / "_rtx" / "_noop.py",
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    pass\n",
+    )
     write(
         provider / "blueprint.yaml",
         "\n".join(
@@ -120,16 +186,17 @@ def test_interface_hash_includes_used_machine_interface_hash(tmp_path: Path) -> 
                 "      binding:",
                 "        kind: skill_file",
                 "        path: SKILL.md",
-                "      directly_reads:",
-                "        - SKILL.md",
-                "      directly_executes: []",
-                "      directly_writes: []",
+                "      behavior_sources: []",
                 "  machine:",
                 "    worker:",
-                "      directly_reads: []",
-                "      directly_executes:",
-                "        - _rtx/_worker.py",
-                "      directly_writes: []",
+                "      invocation:",
+                "        kind: python_machine_interface",
+                "        entrypoint: _rtx/_noop.py:Interface",
+                "        behavior_sources:",
+                "          - path: references/policy.md",
+                "            content: config",
+                "            format: markdown",
+                "            reason: Defines worker behavior.",
                 "",
             ]
         ),
@@ -138,13 +205,11 @@ def test_interface_hash_includes_used_machine_interface_hash(tmp_path: Path) -> 
     spec = {
         "binding": {"kind": "skill_file", "path": "SKILL.md"},
         "uses_interfaces": ["provider-skill.machine.worker"],
-        "directly_reads": ["SKILL.md"],
-        "directly_executes": [],
-        "directly_writes": [],
+        "behavior_sources": [],
     }
 
     first = health_state.hash_interface(consumer, repo, spec)
-    write(provider / "_rtx" / "_worker.py", "VALUE = 'two'\n")
+    write(provider / "references" / "policy.md", "two\n")
     second = health_state.hash_interface(consumer, repo, spec)
 
     assert first != second
@@ -156,11 +221,19 @@ def test_interface_hash_includes_used_machine_interface_hash_recursively(tmp_pat
     middle = repo / "skills" / "middle-skill"
     leaf = repo / "skills" / "leaf-skill"
     write(root / "SKILL.md", "Use the middle interface.\n")
-    write(middle / "_rtx" / "_worker.py", "middle\n")
-    write(leaf / "_rtx" / "_leaf.py", "VALUE = 'one'\n")
+    write(middle / "references" / "policy.md", "middle\n")
+    write(leaf / "references" / "policy.md", "one\n")
+    for skill in (middle, leaf):
+        write(skill / "_rtx" / "__init__.py", "")
+        write(
+            skill / "_rtx" / "_noop.py",
+            "from officina.runtime.python_machine_interface import PythonMachineInterface\n\n"
+            "class Interface(PythonMachineInterface):\n"
+            "    pass\n",
+        )
     for skill, interface_name, execute_path, uses in [
-        (middle, "worker", "_rtx/_worker.py", "      uses_interfaces:\n        - leaf-skill.machine.leaf\n"),
-        (leaf, "leaf", "_rtx/_leaf.py", ""),
+        (middle, "worker", "references/policy.md", "      uses_interfaces:\n        - leaf-skill.machine.leaf\n"),
+        (leaf, "leaf", "references/policy.md", ""),
     ]:
         write(skill / "SKILL.md", f"{skill.name}\n")
         write(
@@ -176,17 +249,18 @@ def test_interface_hash_includes_used_machine_interface_hash_recursively(tmp_pat
                     "      binding:",
                     "        kind: skill_file",
                     "        path: SKILL.md",
-                    "      directly_reads:",
-                    "        - SKILL.md",
-                    "      directly_executes: []",
-                    "      directly_writes: []",
+                    "      behavior_sources: []",
                     "  machine:",
                     f"    {interface_name}:",
                     uses.rstrip("\n"),
-                    "      directly_reads: []",
-                    "      directly_executes:",
-                    f"        - {execute_path}",
-                    "      directly_writes: []",
+                    "      invocation:",
+                    "        kind: python_machine_interface",
+                    "        entrypoint: _rtx/_noop.py:Interface",
+                    "        behavior_sources:",
+                    f"          - path: {execute_path}",
+                    "            content: config",
+                    "            format: markdown",
+                    "            reason: Defines behavior.",
                     "",
                 ]
             ),
@@ -194,13 +268,11 @@ def test_interface_hash_includes_used_machine_interface_hash_recursively(tmp_pat
     spec = {
         "binding": {"kind": "skill_file", "path": "SKILL.md"},
         "uses_interfaces": ["middle-skill.machine.worker"],
-        "directly_reads": ["SKILL.md"],
-        "directly_executes": [],
-        "directly_writes": [],
+        "behavior_sources": [],
     }
 
     first = health_state.hash_interface(root, repo, spec)
-    write(leaf / "_rtx" / "_leaf.py", "VALUE = 'two'\n")
+    write(leaf / "references" / "policy.md", "two\n")
     second = health_state.hash_interface(root, repo, spec)
 
     assert first != second
@@ -210,29 +282,66 @@ def test_skill_hash_collects_all_interface_roots(tmp_path: Path) -> None:
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"
     write(skill / "SKILL.md", "skill\n")
-    write(skill / "_rtx" / "_worker.py", "worker\n")
+    write(skill / "references" / "worker-policy.md", "worker\n")
+    write(skill / "_rtx" / "__init__.py", "")
+    write(
+        skill / "_rtx" / "_noop.py",
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    pass\n",
+    )
     blueprint = {
         "interfaces": {
             "llm": {
                 "default": {
                     "binding": {"kind": "skill_file", "path": "SKILL.md"},
-                    "directly_reads": ["SKILL.md"],
-                    "directly_executes": [],
-                    "directly_writes": [],
+                    "behavior_sources": [],
                 }
             },
             "machine": {
                 "worker": {
-                    "directly_reads": [],
-                    "directly_executes": ["_rtx/_worker.py"],
-                    "directly_writes": [],
+                    "invocation": {
+                        "kind": "python_machine_interface",
+                        "entrypoint": "_rtx/_noop.py:Interface",
+                        "behavior_sources": [
+                            {
+                                "path": "references/worker-policy.md",
+                                "content": "config",
+                                "format": "markdown",
+                                "reason": "Defines worker behavior.",
+                            }
+                        ],
+                    },
                 }
             },
         }
     }
 
     first = health_state.hash_skill(skill, repo, blueprint)
-    write(skill / "_rtx" / "_worker.py", "worker changed\n")
+    write(skill / "references" / "worker-policy.md", "worker changed\n")
+    second = health_state.hash_skill(skill, repo, blueprint)
+
+    assert first != second
+
+
+def test_skill_hash_changes_when_blueprint_file_changes(tmp_path: Path) -> None:
+    repo = tmp_path
+    skill = repo / "skills" / "demo-skill"
+    write(skill / "SKILL.md", "skill\n")
+    write(skill / "blueprint.yaml", "interface_version: 1\n")
+    blueprint = {
+        "interfaces": {
+            "llm": {
+                "default": {
+                    "binding": {"kind": "skill_file", "path": "SKILL.md"},
+                    "behavior_sources": [],
+                }
+            }
+        }
+    }
+
+    first = health_state.hash_skill(skill, repo, blueprint)
+    write(skill / "blueprint.yaml", "interface_version: 2\n")
     second = health_state.hash_skill(skill, repo, blueprint)
 
     assert first != second

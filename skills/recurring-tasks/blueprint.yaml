@@ -57,27 +57,24 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_job_control.py:Interface
-        args_prefix:
-        - enable
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads and writes jobs.yaml.
       - kind: binary
         name: systemctl
         reason: Enables and starts generated user timers.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_job_control.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_job_control.py:Interface
+        args_prefix:
+        - enable
+        behavior_sources: []
     scripts-disable:
       version: 1
       description: 'Disable a job by setting enabled: false in jobs.yaml and syncing
@@ -86,27 +83,24 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_job_control.py:Interface
-        args_prefix:
-        - disable
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads and writes jobs.yaml.
       - kind: binary
         name: systemctl
         reason: Disables generated user timers.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_job_control.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_job_control.py:Interface
+        args_prefix:
+        - disable
+        behavior_sources: []
     scripts-test:
       version: 1
       description: Trigger a job immediately via systemd, show output and status.
@@ -114,27 +108,24 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_job_control.py:Interface
-        args_prefix:
-        - test
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads jobs.yaml before running the job.
       - kind: binary
         name: systemctl
         reason: Starts the generated user service immediately.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_job_control.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_job_control.py:Interface
+        args_prefix:
+        - test
+        behavior_sources: []
     scripts-view-logs:
       version: 1
       description: Tail the run log for a job (default 50 lines).
@@ -142,24 +133,21 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_job_control.py:Interface
-        args_prefix:
-        - view-logs
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Loads jobs.yaml before locating the run log.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_job_control.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_job_control.py:Interface
+        args_prefix:
+        - view-logs
+        behavior_sources: []
     scripts-status:
       version: 1
       description: List all active ai-* timers, next fire times, and service status.
@@ -167,27 +155,24 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: false
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_job_control.py:Interface
-        args_prefix:
-        - status
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Loads jobs.yaml in the management CLI.
       - kind: binary
         name: systemctl
         reason: Lists active generated user timers.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_job_control.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_job_control.py:Interface
+        args_prefix:
+        - status
+        behavior_sources: []
     scripts-sync:
       version: 1
       description: Regenerate systemd unit files from jobs.yaml.
@@ -195,25 +180,22 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: false
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_unit_writer.py:Interface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads jobs.yaml while generating unit files.
       - kind: binary
         name: systemctl
         reason: Reloads and enables generated user timers.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_unit_writer.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_unit_writer.py:Interface
+        behavior_sources: []
     scripts-healthcheck:
       version: 1
       description: Run pre-flight and per-job health checks for all enabled recurring
@@ -222,11 +204,8 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: false
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_healthcheck_probe.py:Interface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Reads jobs.yaml for enabled jobs.
       - kind: binary
@@ -235,15 +214,15 @@ interfaces:
       - kind: binary
         name: journalctl
         reason: Reports recent service logs for failing jobs.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_healthcheck_probe.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_healthcheck_probe.py:Interface
+        behavior_sources: []
     scripts-setup:
       version: 1
       description: Verify prerequisites, sync systemd unit files from jobs.yaml, install
@@ -252,11 +231,8 @@ interfaces:
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_setup_runner.py:Interface
       dependencies:
-      - kind: python
+      - kind: python-package
         name: PyYAML
         reason: Validates that jobs.yaml tooling can load YAML.
       - kind: binary
@@ -265,15 +241,15 @@ interfaces:
       - kind: binary
         name: crontab
         reason: Installs the recurring healthcheck cron entry.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_setup_runner.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_setup_runner.py:Interface
+        behavior_sources: []
     scripts-ensure-agent-env:
       version: 1
       description: Idempotently ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE
@@ -281,41 +257,35 @@ interfaces:
       usage: --repo-root DIR --home DIR --bin-dir DIR [--dry-run]
       patterns:
       - name: owner
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_ensure_agent_env.py:Interface
       dependencies:
       - kind: binary
         name: systemctl
         reason: Publishes recurring-task environment variables to the user manager
           when available.
-      directly_reads: []
-      directly_executes:
-      - _rtx/_ensure_agent_env.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_ensure_agent_env.py:Interface
+        behavior_sources: []
     scripts-job-utils:
       version: 1
       patterns:
       - name: owner
         allow_extra_positionals: true
-      runtime:
-        kind: python_machine_interface
-        entrypoint: _rtx/_job_utils.py:Interface
       dependencies: []
-      directly_reads: []
-      directly_executes:
-      - _rtx/_job_utils.py
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
         network: []
       owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_job_utils.py:Interface
+        behavior_sources: []
   llm:
     default:
       version: 1
@@ -323,10 +293,6 @@ interfaces:
       binding:
         kind: skill_file
         path: SKILL.md
-      directly_reads:
-      - SKILL.md
-      directly_executes: []
-      directly_writes: []
       direct_io:
         reads: []
         writes: []
@@ -336,3 +302,4 @@ interfaces:
       uses_interfaces:
       - interface: install-assistant-tools.llm.default
         version: 2
+      behavior_sources: []

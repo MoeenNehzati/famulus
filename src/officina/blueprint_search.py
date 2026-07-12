@@ -15,7 +15,7 @@ Query shape::
                     "any": [
                         {"path": "category", "op": "regex", "pattern": "development"},
                         {
-                            "path": "interfaces.machine.*.runtime.kind",
+                            "path": "interfaces.machine.*.invocation.kind",
                             "op": "regex",
                             "pattern": "python",
                             "flags": "i",
@@ -28,7 +28,7 @@ Query shape::
             "skill",
             "path",
             "category",
-            {"as": "runtimes", "path": "interfaces.machine.*.runtime.kind"},
+            {"as": "runtimes", "path": "interfaces.machine.*.invocation.kind"},
         ],
         "comments": "drop",
         "explain": True,

@@ -287,39 +287,31 @@ def semantic_findings(target: TargetHash) -> list[Finding]:
 def check_declared_roots_exist(skill_root: Path, package_root: Path, blueprint: dict[str, Any]) -> list[Finding]:
     findings: list[Finding] = []
     for interface_name, spec in iter_interfaces(blueprint):
-        for field in ("directly_reads", "directly_executes", "directly_writes"):
-            value = spec.get(field, [])
-            if not isinstance(value, list):
-                findings.append(Finding("invalid-blueprint", f"{interface_name}.{field} must be a list"))
-                continue
-            for root in value:
-                if not isinstance(root, str):
-                    findings.append(Finding("invalid-blueprint", f"{interface_name}.{field} contains a non-string root"))
-                    continue
-                path = resolve_declared_root(skill_root, package_root, root)
-                if path is not None and not (path.exists() or path.is_symlink()):
-                    findings.append(
-                        Finding(
-                            "missing-declared-root",
-                            f"{interface_name}.{field} declares missing root `{root}`",
-                            path.as_posix(),
-                        )
+        for root, source in behavior_source_paths(spec):
+            path = resolve_declared_root(skill_root, package_root, root)
+            if path is not None and not (path.exists() or path.is_symlink()):
+                findings.append(
+                    Finding(
+                        "missing-declared-root",
+                        f"{interface_name}.{source} declares missing root `{root}`",
+                        path.as_posix(),
                     )
+                )
     return findings
 
 
 def check_runtime_entrypoints_exist(skill_root: Path, blueprint: dict[str, Any]) -> list[Finding]:
     findings: list[Finding] = []
     for interface_name, spec in iter_interfaces(blueprint, namespaces=("machine",)):
-        runtime = spec.get("runtime")
-        if not isinstance(runtime, dict):
-            findings.append(Finding("invalid-blueprint", f"{interface_name}.runtime must be a mapping"))
+        invocation = spec.get("invocation")
+        if not isinstance(invocation, dict):
+            findings.append(Finding("invalid-blueprint", f"{interface_name}.invocation must be a mapping"))
             continue
-        kind = runtime.get("kind")
+        kind = invocation.get("kind")
         if kind == "python_machine_interface":
-            entrypoint = runtime.get("entrypoint")
+            entrypoint = invocation.get("entrypoint")
             if not isinstance(entrypoint, str) or ":" not in entrypoint:
-                findings.append(Finding("invalid-blueprint", f"{interface_name}.runtime.entrypoint is invalid"))
+                findings.append(Finding("invalid-blueprint", f"{interface_name}.invocation.entrypoint is invalid"))
                 continue
             path_text = entrypoint.split(":", 1)[0]
             path = skill_root / path_text
@@ -328,9 +320,9 @@ def check_runtime_entrypoints_exist(skill_root: Path, blueprint: dict[str, Any])
                     Finding("missing-runtime-entrypoint", f"{interface_name} entrypoint does not exist", path.as_posix())
                 )
         elif kind == "command":
-            argv = runtime.get("argv")
+            argv = invocation.get("argv")
             if not isinstance(argv, list) or not argv or not isinstance(argv[0], str):
-                findings.append(Finding("invalid-blueprint", f"{interface_name}.runtime.argv is invalid"))
+                findings.append(Finding("invalid-blueprint", f"{interface_name}.invocation.argv is invalid"))
                 continue
             first = argv[0]
             if "/" in first or "\\" in first:
@@ -453,21 +445,31 @@ def resolve_declared_root(skill_root: Path, package_root: Path, root: str) -> Pa
 def collect_declared_paths(skill_root: Path, package_root: Path, blueprint: dict[str, Any]) -> list[Path]:
     paths: list[Path] = []
     for _interface_name, spec in iter_interfaces(blueprint):
-        binding = spec.get("binding")
-        if isinstance(binding, dict):
-            binding_path = binding.get("path")
-            if isinstance(binding_path, str):
-                path = resolve_declared_root(skill_root, package_root, binding_path)
-                if path is not None:
-                    paths.append(path)
-        for field in ("directly_reads", "directly_executes", "directly_writes"):
-            value = spec.get(field, [])
-            if isinstance(value, list):
-                for root in value:
-                    if isinstance(root, str):
-                        path = resolve_declared_root(skill_root, package_root, root)
-                        if path is not None:
-                            paths.append(path)
+        for root, _source in behavior_source_paths(spec):
+            path = resolve_declared_root(skill_root, package_root, root)
+            if path is not None:
+                paths.append(path)
+    return paths
+
+
+def behavior_source_paths(spec: dict[str, Any]) -> list[tuple[str, str]]:
+    """Return declared behavior-shaping paths for an interface."""
+
+    paths: list[tuple[str, str]] = []
+    binding = spec.get("binding")
+    if isinstance(binding, dict):
+        binding_path = binding.get("path")
+        if isinstance(binding_path, str):
+            paths.append((binding_path, "binding"))
+    for source_label, container in (("behavior_sources", spec), ("invocation.behavior_sources", spec.get("invocation"))):
+        if not isinstance(container, dict):
+            continue
+        value = container.get("behavior_sources", [])
+        if not isinstance(value, list):
+            continue
+        for entry in value:
+            if isinstance(entry, dict) and isinstance(entry.get("path"), str):
+                paths.append((entry["path"], source_label))
     return paths
 
 

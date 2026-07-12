@@ -25,9 +25,7 @@ def _default_llm() -> dict:
             "version": 1,
             "description": "Primary LLM-facing skill instructions.",
             "binding": {"kind": "skill_file", "path": "SKILL.md"},
-            "directly_reads": ["SKILL.md"],
-            "directly_executes": [],
-            "directly_writes": [],
+            "behavior_sources": [],
             "direct_io": {
                 "reads": [
                     {
@@ -110,7 +108,7 @@ def test_machine_interface_without_dependencies_flagged_by_schema() -> None:
             "machine": {
                 "scan": {
                     "version": 1,
-                    "runtime": {
+                    "invocation": {
                         "kind": "python_machine_interface",
                         "entrypoint": "_rtx/_handoff_scan.py:Interface",
                     },
@@ -201,9 +199,7 @@ def test_interface_version_is_required_by_schema() -> None:
                 "default": {
                     "description": "Primary LLM-facing skill instructions.",
                     "binding": {"kind": "skill_file", "path": "SKILL.md"},
-                    "directly_reads": ["SKILL.md"],
-                    "directly_executes": [],
-                    "directly_writes": [],
+                    "behavior_sources": [],
                     **_empty_direct_io(),
                     **_empty_ownership(),
                 }
@@ -226,14 +222,12 @@ def test_direct_io_is_required_by_schema() -> None:
             "machine": {
                 "scan": {
                     "version": 1,
-                    "runtime": {
+                    "invocation": {
                         "kind": "python_machine_interface",
                         "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                        "behavior_sources": [],
                     },
                     "dependencies": [],
-                    "directly_reads": [],
-                    "directly_executes": ["_rtx/_handoff_scan.py"],
-                    "directly_writes": [],
                 }
             },
             "llm": _default_llm(),
@@ -256,9 +250,7 @@ def test_direct_io_rejects_unknown_medium_by_schema() -> None:
                 "default": {
                     "description": "Primary LLM-facing skill instructions.",
                     "binding": {"kind": "skill_file", "path": "SKILL.md"},
-                    "directly_reads": ["SKILL.md"],
-                    "directly_executes": [],
-                    "directly_writes": [],
+                    "behavior_sources": [],
                     "direct_io": {
                         "reads": [
                             {
@@ -322,9 +314,7 @@ def test_owns_filesystem_is_required_by_schema() -> None:
                 "default": {
                     "description": "Primary LLM-facing skill instructions.",
                     "binding": {"kind": "skill_file", "path": "SKILL.md"},
-                    "directly_reads": ["SKILL.md"],
-                    "directly_executes": [],
-                    "directly_writes": [],
+                    "behavior_sources": [],
                     **_empty_direct_io(),
                 }
             }
@@ -601,13 +591,14 @@ def test_machine_interface_dependency_objects_pass_schema() -> None:
             "machine": {
                 "scan": {
                     "version": 1,
-                    "runtime": {
+                    "invocation": {
                         "kind": "python_machine_interface",
                         "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                        "behavior_sources": [],
                     },
                     "dependencies": [
                         {
-                            "kind": "python",
+                            "kind": "python-package",
                             "name": "PyYAML",
                             "reason": "Reads YAML files.",
                         },
@@ -617,9 +608,6 @@ def test_machine_interface_dependency_objects_pass_schema() -> None:
                             "reason": "Fetches remote JSON.",
                         },
                     ],
-                    "directly_reads": [],
-                    "directly_executes": ["_rtx/_handoff_scan.py"],
-                    "directly_writes": [],
                     **_empty_direct_io(),
                     **_empty_ownership(),
                 }
@@ -643,14 +631,12 @@ def test_llm_interface_uses_interfaces_pass_schema() -> None:
             "machine": {
                 "scan": {
                     "version": 1,
-                    "runtime": {
+                    "invocation": {
                         "kind": "python_machine_interface",
                         "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                        "behavior_sources": [],
                     },
                     "dependencies": [],
-                    "directly_reads": [],
-                    "directly_executes": ["_rtx/_handoff_scan.py"],
-                    "directly_writes": [],
                     **_empty_direct_io(),
                     **_empty_ownership(),
                 }
@@ -660,12 +646,10 @@ def test_llm_interface_uses_interfaces_pass_schema() -> None:
                     "version": 1,
                     "description": "Primary LLM-facing skill instructions.",
                     "binding": {"kind": "skill_file", "path": "SKILL.md"},
+                    "behavior_sources": [],
                     "uses_interfaces": [
                         {"interface": "my-skill.machine.scan", "version": 1}
                     ],
-                    "directly_reads": ["SKILL.md"],
-                    "directly_executes": [],
-                    "directly_writes": [],
                     **_empty_direct_io(),
                     **_empty_ownership(),
                 }
@@ -688,17 +672,15 @@ def test_machine_uses_interfaces_rejects_llm_targets_by_schema() -> None:
             "machine": {
                 "scan": {
                     "version": 1,
-                    "runtime": {
+                    "invocation": {
                         "kind": "python_machine_interface",
                         "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                        "behavior_sources": [],
                     },
                     "dependencies": [],
                     "uses_interfaces": [
                         {"interface": "my-skill.llm.default", "version": 1}
                     ],
-                    "directly_reads": ["SKILL.md"],
-                    "directly_executes": [],
-                    "directly_writes": [],
                     **_empty_direct_io(),
                     **_empty_ownership(),
                 }
@@ -826,7 +808,7 @@ def test_llm_default_is_required_by_schema() -> None:
     assert any("interfaces.llm" in error and "'default' is a required property" in error for error in errors)
 
 
-def test_direct_effect_roots_are_required_by_schema() -> None:
+def test_behavior_sources_are_required_by_schema() -> None:
     schema = _mod._load_schema()
     assert schema is not None
     blueprint = {
@@ -835,7 +817,7 @@ def test_direct_effect_roots_are_required_by_schema() -> None:
         "interfaces": {
             "machine": {
                 "scan": {
-                    "runtime": {
+                    "invocation": {
                         "kind": "python_machine_interface",
                         "entrypoint": "_rtx/_handoff_scan.py:Interface",
                     },
@@ -848,12 +830,10 @@ def test_direct_effect_roots_are_required_by_schema() -> None:
 
     errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
 
-    assert any("directly_reads" in error and "required" in error for error in errors)
-    assert any("directly_executes" in error and "required" in error for error in errors)
-    assert any("directly_writes" in error and "required" in error for error in errors)
+    assert any("behavior_sources" in error and "required" in error for error in errors)
 
 
-def test_direct_effect_roots_reject_parent_traversal_by_schema() -> None:
+def test_behavior_sources_reject_parent_traversal_by_schema() -> None:
     schema = _mod._load_schema()
     assert schema is not None
     blueprint = {
@@ -862,14 +842,19 @@ def test_direct_effect_roots_reject_parent_traversal_by_schema() -> None:
         "interfaces": {
             "machine": {
                 "scan": {
-                    "runtime": {
+                    "invocation": {
                         "kind": "python_machine_interface",
                         "entrypoint": "_rtx/_handoff_scan.py:Interface",
+                        "behavior_sources": [
+                            {
+                                "path": "../secret.txt",
+                                "content": "config",
+                                "format": "text",
+                                "reason": "Invalid escaping behavior source.",
+                            }
+                        ],
                     },
                     "dependencies": [],
-                    "directly_reads": ["../secret.txt"],
-                    "directly_executes": ["_rtx/_handoff_scan.py"],
-                    "directly_writes": [],
                     **_empty_direct_io(),
                     **_empty_ownership(),
                 }
@@ -880,7 +865,7 @@ def test_direct_effect_roots_reject_parent_traversal_by_schema() -> None:
 
     errors = _mod._validate_blueprint_schema(Path("blueprint.yaml"), blueprint, schema)
 
-    assert any("directly_reads.0" in error and "does not match" in error for error in errors)
+    assert any("behavior_sources.0.path" in error and "does not match" in error for error in errors)
 
 
 def test_python_module_runtime_is_rejected_by_schema() -> None:
@@ -892,7 +877,7 @@ def test_python_module_runtime_is_rejected_by_schema() -> None:
         "interfaces": {
             "machine": {
                 "scan": {
-                    "runtime": {"kind": "python_module", "module": "_rtx._handoff_scan"},
+                    "invocation": {"kind": "python_module", "module": "_rtx._handoff_scan"},
                     "dependencies": [],
                 }
             }
@@ -913,7 +898,7 @@ def test_command_runtime_is_rejected_by_schema() -> None:
         "interfaces": {
             "machine": {
                 "scan": {
-                    "runtime": {"kind": "command", "argv": ["python3", "_rtx/_tool.py"]},
+                    "invocation": {"kind": "command", "argv": ["python3", "_rtx/_tool.py"]},
                     "dependencies": [],
                 }
             }
@@ -934,9 +919,10 @@ def test_route_smoke_supported_flag_is_rejected_by_schema() -> None:
         "interfaces": {
             "machine": {
                 "scan": {
-                    "runtime": {
+                    "invocation": {
                         "kind": "python_machine_interface",
                         "entrypoint": "_rtx/scan.py:Scan",
+                        "behavior_sources": [],
                     },
                     "route_smoke": {"argv": [], "supported": True},
                     "dependencies": [],
