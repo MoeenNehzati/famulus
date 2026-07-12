@@ -4,20 +4,12 @@
   "references/blueprint/template.yaml",
   "references/blueprint/guide.md",
   "references/blueprint/runtime_dependencies.json",
-  "scripts/run-python-tests.py",
-  "docs/plans/health-plan.md",
   "docs/audit_and_drift.md",
-  "skills/skill-maker/validators/**/*.py",
-  "validators/**/*.py",
-  ".githooks/pre-commit",
-  ".githooks/skill/**",
   "skills/skill-audit/SKILL.md",
   "skills/skill-audit/blueprint.yaml",
   "skills/skill-audit/_rtx/*.py",
-  "skills/skill-audit/tests/**/*.py",
   "skills/skill-drift/SKILL.md",
   "skills/skill-drift/blueprint.yaml",
   "skills/skill-drift/_rtx/*.py",
-  "skills/skill-drift/references/**/*.md",
-  "skills/skill-drift/tests/**/*.py"
+  "skills/skill-drift/references/**/*.md"
 ]

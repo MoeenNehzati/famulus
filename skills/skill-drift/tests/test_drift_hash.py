@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
 import sys
 from pathlib import Path
@@ -158,6 +159,98 @@ def test_interface_hash_does_not_hash_direct_io_subject_data(tmp_path: Path) -> 
     second = health_state.hash_interface(skill, repo, spec)
 
     assert first == second
+
+
+def test_interface_hash_includes_structured_blueprint_metadata(tmp_path: Path) -> None:
+    repo = tmp_path
+    skill = repo / "skills" / "demo-skill"
+    write(skill / "SKILL.md", "skill\n")
+    write(skill / "references" / "policy.md", "policy\n")
+    write(skill / "_rtx" / "__init__.py", "")
+    write(
+        skill / "_rtx" / "_noop.py",
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    pass\n",
+    )
+    spec = {
+        "version": 1,
+        "description": "Run the worker.",
+        "patterns": [
+            {
+                "name": "run",
+                "min_positionals": 0,
+                "max_positionals": 0,
+                "allow_extra_positionals": False,
+                "allow_stdin": False,
+            }
+        ],
+        "allow_all_skills": False,
+        "allowed_callers": ["skill-audit"],
+        "platform_support": {"linux": True, "macos": True, "windows": False},
+        "invocation": {
+            "kind": "python_machine_interface",
+            "entrypoint": "_rtx/_noop.py:Interface",
+            "args_prefix": ["status"],
+            "behavior_sources": [
+                {
+                    "path": "references/policy.md",
+                    "content": "config",
+                    "format": "markdown",
+                    "reason": "Defines behavior.",
+                }
+            ],
+        },
+        "dependencies": [
+            {
+                "kind": "python-package",
+                "name": "pyyaml",
+                "version": ">=6",
+                "platforms": {"linux": True, "macos": True, "windows": True},
+                "reason": "Parse blueprint files.",
+            }
+        ],
+        "uses_interfaces": [],
+        "direct_io": {"reads": [], "writes": [], "network": []},
+        "owns_filesystem": [],
+    }
+
+    first = health_state.hash_interface(skill, repo, spec)
+    changed = copy.deepcopy(spec)
+    changed["invocation"]["args_prefix"] = ["compute"]
+    second = health_state.hash_interface(skill, repo, changed)
+
+    assert first != second
+
+
+def test_interface_hash_includes_direct_io_declaration_not_live_contents(tmp_path: Path) -> None:
+    repo = tmp_path
+    skill = repo / "skills" / "demo-skill"
+    write(skill / "SKILL.md", "skill\n")
+    spec = {
+        "binding": {"kind": "skill_file", "path": "SKILL.md"},
+        "behavior_sources": [],
+        "direct_io": {
+            "reads": [
+                {
+                    "medium": "local-filesystem",
+                    "path": "$repo/inbox/message.txt",
+                    "content": "email",
+                    "access": "read",
+                    "sensitivity": "user-private",
+                }
+            ],
+            "writes": [],
+            "network": [],
+        },
+    }
+
+    first = health_state.hash_interface(skill, repo, spec)
+    changed = copy.deepcopy(spec)
+    changed["direct_io"]["reads"][0]["path"] = "$repo/inbox/other.txt"
+    second = health_state.hash_interface(skill, repo, changed)
+
+    assert first != second
 
 
 def test_interface_hash_includes_used_machine_interface_hash(tmp_path: Path) -> None:

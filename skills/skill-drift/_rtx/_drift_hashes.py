@@ -70,6 +70,12 @@ def digest_entries(entries: Iterable[HashEntry]) -> str:
     return f"{HASH_PREFIX}{hasher.hexdigest()}"
 
 
+def canonical_json_bytes(value: Any) -> bytes:
+    """Return deterministic JSON bytes for structured blueprint metadata."""
+
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+
+
 def resolve_declared_root(skill_dir: Path, repo_root: Path, declared_root: str) -> tuple[Path, str]:
     """Resolve a blueprint-declared root without allowing path traversal."""
 
@@ -329,10 +335,17 @@ def interface_entries(
 ) -> list[HashEntry]:
     """Collect hash entries for one machine or LLM interface."""
 
-    entries = collect_declared_root_entries(skill_dir, repo_root, interface_roots(interface_spec))
+    entries = [interface_metadata_entry(interface_spec)]
+    entries.extend(collect_declared_root_entries(skill_dir, repo_root, interface_roots(interface_spec)))
     entries.extend(python_runtime_dependency_entries(skill_dir, repo_root, interface_spec))
     entries.extend(used_interface_hash_entries(skill_dir, repo_root, interface_spec, _seen_interfaces))
     return dedupe_entries(entries)
+
+
+def interface_metadata_entry(interface_spec: dict[str, Any]) -> HashEntry:
+    """Return the canonical structured blueprint declaration for an interface."""
+
+    return HashEntry("blueprint-interface", "json", canonical_json_bytes(interface_spec))
 
 
 def used_interface_hash_entries(

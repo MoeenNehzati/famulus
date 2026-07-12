@@ -22,8 +22,9 @@ At a high level, the recursive dependency set is:
 - a file root includes that file;
 - a directory root includes every file and symlink below it;
 - the whole-skill hash includes the skill's own `blueprint.yaml`;
-- an interface includes its binding file, declared behavior sources, and
-  discovered Python runtime files;
+- an interface includes a canonical structured metadata entry for its blueprint
+  declaration, its binding file, declared behavior sources, and discovered
+  Python runtime files;
 - an interface includes interfaces declared in `uses_interfaces` by
   recursively including those target interface hashes;
 - a PythonMachineInterface includes files loaded by `--route-smoke`, local
@@ -80,10 +81,11 @@ templates, examples, parser tables, policies, validation rules, and similar
 material. They are not ordinary user subject inputs. Python imports and
 dispatcher targets are discovered mechanically.
 
-`direct_io` entries are not behavior roots. They describe operational data the
-interface reads or writes during an invocation, such as inboxes, calendars,
-stdout, user documents, remote files, or API responses. The live contents of
-those resources are not hash inputs.
+`direct_io` entries are not behavior roots. Their declarations are included in
+the structured interface metadata hash, but the live resources are not
+content-hashed. They describe operational data the interface reads or writes
+during an invocation, such as inboxes, calendars, stdout, user documents, remote
+files, or API responses.
 
 Root resolution is deliberately narrow:
 
@@ -175,6 +177,12 @@ import the behavior-relevant module cheaply and without real side effects.
 - directory: recursively emits child file and symlink entries;
 - other special filesystem object: `kind="special"`, empty bytes.
 
+`interface_metadata_entry` adds the interface blueprint declaration as
+`kind="json"` with deterministic JSON bytes. This catches metadata-only changes
+to fields such as descriptions, patterns, access control, invocation arguments,
+runtime dependencies, behavior-source declarations, `direct_io`, ownership, and
+`uses_interfaces`.
+
 `digest_entries` sorts entries before hashing, so traversal order does not
 affect the final digest. The hash uses the entry kind and label as well as the
 content bytes, so changing a file path, symlink target, or file content changes
@@ -260,30 +268,21 @@ items from the dependency-explorer audit.
    This still depends on each blueprint declaring its non-code behavior sources
    accurately.
 
-2. Interface and skill hashes do not include structured blueprint metadata.
-
-   `hash_interface()` and `hash_skill()` currently hash discovered filesystem
-   entries only. They should also include a canonical serialized representation
-   of the relevant interface or skill metadata. Otherwise changes to policy or
-   routing fields, such as patterns, allowed callers, invocation metadata,
-   dependencies, or missing declared root names, can be invisible when the
-   discovered files do not change.
-
-3. Symlink handling under explored directories needs tightening.
+2. Symlink handling under explored directories needs tightening.
 
    The low-level hash path can represent symlinks as symlink entries, but the
    directory exploration path currently resolves directory children before
    hashing. That can turn a symlink into its target file, miss symlink retargets,
    or accidentally include target bytes outside the intended repository boundary.
 
-4. Raw-dispatch validation needs broader negative coverage.
+3. Raw-dispatch validation needs broader negative coverage.
 
    Drift tracing only follows declared `DispatchCall` values. The validators
    therefore need to reliably block raw dispatcher usage in runtime code. Current
    coverage should be expanded for alternate import shapes such as importing the
    `dispatcher` module through `officina`, star imports, or dynamic imports.
 
-5. Python tracing should derive `src/officina` from the requested `repo_root`.
+4. Python tracing should derive `src/officina` from the requested `repo_root`.
 
    The current tracer uses the module-global `SRC_ROOT` from the live checkout.
    For alternate checkouts or synthetic test repositories, it should use

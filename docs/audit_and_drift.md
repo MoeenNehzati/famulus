@@ -13,12 +13,35 @@ The goal is split across two skills:
 hashes with freshly computed hashes and reports `audit-current` or
 `audit-stale`.
 
+## Highest-Priority Design Rule
+
+`skill-drift` must remain a blueprint-driven mechanical drift checker. It
+trusts the blueprint that was accepted at certification time and hashes only the
+artifact surfaces declared by that blueprint plus explicit audit-policy
+modules. It must not infer semantic dependencies from prose, Markdown links,
+inline-code paths, or LLM-readable references.
+
+`skill-audit` is the certifier that does the thinking. Its job is to review the
+skill, use LLM judgment where deterministic checks are insufficient, decide
+whether the blueprint exactly represents the skill's instruction and runtime
+surface, and require blueprint updates before writing a fresh audit record.
+
+The invariant is:
+
+```text
+drift trusts the certified blueprint; audit certifies that the blueprint is trustworthy.
+```
+
+If skill text starts telling the LLM to look at a new file, the skill text hash
+changes and `skill-drift` marks the record stale. `skill-audit` must then either
+add that file to the blueprint-declared contract or reject certification.
+
 ## Drift Behavior
 
 `skill-drift` exports a status interface:
 
 ```bash
-dispatcher --caller-skill skill-drift skill-drift.machine.drift-status status [target ...] [--json]
+dispatcher --caller-skill skill-drift skill-drift.machine.drift-status status [target ...] [--json] [--with-test-validate]
 ```
 
 It also exports a hash-computation interface:
@@ -54,6 +77,29 @@ plugin skills that have `SKILL.md` but no local `blueprint.yaml` are reported as
 `audit-stale` with a `hash-unavailable` concern rather than aborting the whole
 status report.
 
+The checker reports one row per discovered skill with the source, skill name,
+derived audit status, audit record path, and concerns. Current concern classes
+include:
+
+- `missing-record`;
+- `corrupt-record`;
+- `unsupported-schema`;
+- `skill-mismatch`;
+- `missing-hash`;
+- `changed-hash`;
+- `extra-recorded-hash`;
+- `hash-unavailable`.
+
+The optional `--with-test-validate` flag adds a health signal by running repo
+validators and target skill tests when those check surfaces are available. This
+does not change the audit status. When requested, `overall_status` uses:
+
+```text
+needs-attention = audit-stale OR health-failed
+```
+
+Callers must keep audit drift and current health failures separate.
+
 ## Relationship To Skill Audit
 
 The intended split is:
@@ -85,13 +131,39 @@ The audit record written by `skill-audit` currently contains:
 - record digest computed over the canonical record contents, excluding the
   digest field itself.
 
+Example shape:
+
+```json
+{
+  "skill": "skill-name",
+  "timestamp": "2026-07-11T16:10:00-04:00",
+  "audit_policy_hash": "sha256:...",
+  "checks": {
+    "mechanical": [
+      {"name": "validators", "passed": true},
+      {"name": "tests", "passed": true}
+    ],
+    "semantic": {"passed": true, "findings": []}
+  },
+  "hashes": {
+    "skill": "sha256:...",
+    "interfaces": {
+      "llm.default": "sha256:...",
+      "machine.some-interface": "sha256:..."
+    }
+  },
+  "record_digest": "sha256:..."
+}
+```
+
 The semantic checks currently include:
 
-- declared direct roots exist;
-- machine runtime entrypoints exist;
+- declared behavior sources exist;
+- machine invocation entrypoints exist;
 - hand-authored `SKILL.md` does not contain direct execution logic outside
   declared interfaces;
-- some implicit directory references are represented by declared roots.
+- some implicit directory references are represented by declared behavior
+  sources.
 
 These checks are intentionally only a first pass. They do not yet prove full
 semantic exactness.
@@ -110,27 +182,40 @@ For each installed skill, the checker reads:
 - files discovered through the skill and interface dependency explorer;
 - shared policy files that define the skill audit rules.
 
-The current policy hash is a first pass. It should be broadened so changes to
-the audit standard stale old records. The intended policy surface includes at
-least:
+The policy hash covers the normative audit standard and the audit/drift
+implementation, not every executable check used by the current gate. Tests,
+validators, and hooks are health gates: `skill-audit` runs them before writing
+a record, and `skill-drift --with-test-validate` can report their current
+failures, but their source files are not policy-hash inputs by default.
 
-- `skill-audit` implementation, blueprint, skill instructions, and tests;
-- `skill-drift` implementation, blueprint, skill instructions, references, and
-  tests;
+The intended policy surface includes:
+
+- `skill-audit` implementation, blueprint, and skill instructions;
+- `skill-drift` implementation, blueprint, skill instructions, and references;
 - shared skill guidelines;
 - blueprint guide, template, schema, and generated runtime dependency metadata;
-- validators and hooks that enforce skill/blueprint/audit semantics;
-- test runner configuration used by the mechanical gate;
 - reference docs and plans that define audit semantics.
+
+Tests, validators, hooks, and test-runner configuration can still change health
+outcomes. They should be exercised directly, not treated as part of the
+certified policy hash.
 
 For blueprint-backed skills, interface hashes include:
 
-- binding files such as `SKILL.md`;
-- declared `directly_reads`, `directly_executes`, and `directly_writes` roots;
-- Markdown references that resolve to existing files;
-- Python runtime dependencies loaded by route-smoke tracing;
+- a canonical JSON entry for the structured interface blueprint declaration;
+- file-backed LLM binding files such as `SKILL.md`;
+- declared `behavior_sources` on LLM interfaces;
+- declared `invocation.behavior_sources` on machine interfaces;
+- Python machine-interface invocation entrypoints and dependencies loaded by
+  route-smoke tracing;
 - declared dispatch dependencies discovered by the Python interface resolver;
-- machine-interface hashes declared in `uses_interfaces`, recursively.
+- interface hashes declared in `uses_interfaces`, recursively.
+
+`direct_io` declarations are part of the structured interface metadata hash, but
+their live subject data is not content-hashed. `direct_io` describes operational
+data read or written during an invocation, such as inboxes, calendars, user
+documents, stdout, remote files, and API responses. `skill-drift` must not hash
+the live operational data named by `direct_io`.
 
 Legacy compatibility sidecars such as `depends_on_skills` and
 `permissions.json` are not drift inputs. Dependency and suggested-permission
@@ -164,6 +249,18 @@ They receive a `hash-unavailable` concern instead of aborting the whole run.
 
 Installed skill roots are discovered through host-specific source adapters. The
 generic checker consumes only a neutral installed-source aggregate.
+
+Those adapters live under:
+
+```text
+skills/skill-drift/_rtx/_skill_sources/
+```
+
+The generic checker imports only:
+
+```python
+observed_skill_sources()
+```
 
 This mirrors the repository's platform-boundary convention: host-specific path
 logic lives in host-named files, while shared files remain host-neutral.
@@ -211,15 +308,12 @@ The current reader/checker is useful, but still incomplete as a stale detector:
 - It rejects records whose digest does not match their canonical contents, but
   this is an integrity check rather than a cryptographic trust boundary.
   Strong tamper resistance would require a future signature scheme.
-- Interface hashes do not yet include all structured blueprint metadata. Changes
-  to patterns, access control, runtime dependency declarations, runtime argument
-  prefixes, or descriptions may not stale the record unless they also alter a
-  hashed file or dependency entry.
 - `uses_interfaces` currently resolves targets under the repository root used
   for hashing. Exact installed skill roots outside the normal repo layout need
   continued testing, especially if a target depends on another installed copy.
-- Markdown reference discovery is pattern-based, not a full parser. Missing
-  references are ignored by the explorer.
+- Markdown/prose reference discovery is deliberately not part of `skill-drift`;
+  `skill-audit` must detect instruction-visible file references and ensure the
+  blueprint declares the relevant roots before certification.
 - Python dependency tracing depends on `route_smoke` importing behavior-relevant
   lazy modules without side effects.
 - Declared dispatch menus may over-include dependencies when a class-level menu
@@ -227,6 +321,21 @@ The current reader/checker is useful, but still incomplete as a stale detector:
 - Status mode intentionally reports non-blueprint external/plugin skills as
   stale, while hash mode fails for explicit non-blueprint targets. That split is
   useful but should remain documented for callers.
+
+## Settled Design Choices
+
+The current baseline has these design choices implemented:
+
+- `skill-drift` is blueprint-first and does not parse prose, Markdown links,
+  inline-code paths, or broad LLM-readable references for dependencies.
+- The policy hash covers normative audit semantics and audit/drift
+  implementation, while tests, validators, hooks, and test-runner configuration
+  remain executed health gates.
+- Interface hashes include canonical structured blueprint metadata plus declared
+  file roots, traced Python dependencies, and recursive `uses_interfaces`
+  targets.
+- `direct_io` declarations are hash inputs through structured metadata; live
+  operational data named by `direct_io` is not content-hashed.
 
 ## Current Design Findings
 
@@ -238,37 +347,24 @@ treated as a strong certification artifact:
   current audit policy hash, current skill/interface hashes, and readable check
   evidence whose gates passed. Future hardening could add local signatures if
   digest self-consistency is not strong enough.
-- **Policy hash breadth:** the policy hash should cover the whole audit
-  standard. That includes `skill-audit`, `skill-drift`, shared skill
-  guidelines, blueprint guide/template/schema, generated dependency metadata,
-  relevant validators, tests, hooks, reference docs, and any other files that
-  define audit semantics.
-- **Blueprint metadata hashing:** interface hashes should include canonical
-  structured blueprint metadata such as patterns, access control, runtime
-  binding, runtime dependencies, direct roots, and `uses_interfaces`, not just
-  files reached from those declarations.
 - **Interface-use validation:** machine-interface `DispatchCall` declarations
   should either be mirrored in `uses_interfaces` and validated, or the hash
   layer should derive equivalent target-interface hashes from dispatch tracing.
 - **Semantic exactness:** `skill-audit` currently checks only a deterministic
   subset of blueprint exactness. It should eventually prove no missing or excess
-  file roots, interface calls, runtime dependencies, permissions, state paths,
-  and execution surfaces.
+  behavior sources, interface calls, runtime dependencies, permissions, state
+  paths, and execution surfaces.
 - **Test coverage surface:** the repository's Python test runner now discovers
   skill test directories for the precommit gate. The exclusion list should stay
   narrow and deliberate so new skill tests are included automatically.
 
 ## Recommended Fix Order
 
-1. Broaden the policy hash to include the full audit standard, especially
-   `skill-audit`, shared skill guidelines, blueprint guide/template/schema,
-   generated metadata, validators, hooks, tests, and audit reference docs.
-2. Add canonical structured blueprint metadata entries to interface hashes.
-3. Validate `uses_interfaces` against machine-interface `DispatchCall`
+1. Validate `uses_interfaces` against machine-interface `DispatchCall`
    declarations, or derive equivalent used-interface hash entries from dispatch
    tracing.
-4. Expand `skill-audit` semantic exactness checks from first-pass heuristics to
-   explicit missing/excess checks for roots, permissions, runtime dependencies,
-   state paths, and interface calls.
-5. Consider signed audit records if digest self-consistency is not enough
+2. Expand `skill-audit` semantic exactness checks from first-pass heuristics to
+   explicit missing/excess checks for behavior sources, permissions, runtime
+   dependencies, state paths, and interface calls.
+3. Consider signed audit records if digest self-consistency is not enough
    protection against intentional local edits.
