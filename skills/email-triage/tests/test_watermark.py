@@ -12,6 +12,7 @@ REPO_SRC = Path(__file__).resolve().parents[3] / "src"
 SCRIPT_NAMES = {
     "update_watermark.py": "_watermark_writer.py",
     "mark_failure.py": "_failure_sentinel.py",
+    "clear_failure.py": "_failure_clearer.py",
     "get_cutoff.py": "_watermark_floor.py",
 }
 
@@ -49,6 +50,32 @@ def test_mark_failure_default_reason_when_none_given(tmp_path):
     status = json.loads((tmp_path / "status.json").read_text())
     assert status["result"] == "error"
     assert status["message"]  # non-empty default reason
+
+
+def test_clear_failure_does_not_advance_watermark(tmp_path):
+    run("mark_failure.py", tmp_path, "credentials missing")
+
+    result = run("clear_failure.py", tmp_path, "OAuth restored")
+
+    assert result.returncode == 0
+    assert not (tmp_path / "last_run").exists()
+    status = json.loads((tmp_path / "status.json").read_text())
+    assert status == {
+        "result": "ok",
+        "message": "failure cleared: OAuth restored; watermark unchanged",
+    }
+
+
+def test_clear_failure_allows_fresh_successful_update(tmp_path):
+    run("mark_failure.py", tmp_path, "credentials missing")
+    run("clear_failure.py", tmp_path, "OAuth restored")
+
+    result = run("update_watermark.py", tmp_path)
+
+    assert result.returncode == 0
+    assert (tmp_path / "last_run").exists()
+    status = json.loads((tmp_path / "status.json").read_text())
+    assert status["result"] == "ok"
 
 
 def test_watermark_survives_across_two_clean_runs(tmp_path):

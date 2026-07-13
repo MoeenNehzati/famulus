@@ -76,6 +76,31 @@ def clear_stale_error():
             STATUS_FILE.write_text(json.dumps({"result": "ok", "message": "reset at start of new run"}, indent=2))
 
 
+def filter_envelopes(envelopes, cutoff_dt):
+    """Return envelopes strictly after cutoff, retaining undatable entries."""
+    kept = []
+    for env in envelopes:
+        date_str = env.get("date")
+        if not date_str:
+            kept.append(env)
+            continue
+        try:
+            email_dt = datetime.fromisoformat(date_str)
+        except ValueError:
+            kept.append(env)
+            continue
+        if email_dt > cutoff_dt:
+            kept.append(env)
+    return kept
+
+
+def render_filtered_envelopes(envelopes, account, cutoff_dt):
+    """Render filtered envelopes or the established no-new-email message."""
+    if envelopes:
+        return json.dumps(envelopes, indent=2)
+    return f"(no new emails for {account} since {cutoff_dt.strftime('%Y-%m-%d %H:%M %Z')})"
+
+
 class Interface(PythonArgvMachineInterface):
     prog = "filter_envelopes.py"
 
@@ -102,24 +127,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: could not parse envelope JSON on stdin: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    kept = []
-    for env in envelopes:
-        date_str = env.get("date")
-        if not date_str:
-            kept.append(env)  # can't judge age; err on the side of showing it
-            continue
-        try:
-            email_dt = datetime.fromisoformat(date_str)
-        except ValueError:
-            kept.append(env)
-            continue
-        if email_dt > cutoff_dt:
-            kept.append(env)
-
-    if kept:
-        print(json.dumps(kept, indent=2))
-    else:
-        print(f"(no new emails for {account} since {cutoff_dt.strftime('%Y-%m-%d %H:%M %Z')})")
+    kept = filter_envelopes(envelopes, cutoff_dt)
+    print(render_filtered_envelopes(kept, account, cutoff_dt))
     return 0
 
 

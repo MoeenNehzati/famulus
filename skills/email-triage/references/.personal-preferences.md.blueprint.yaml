@@ -1,0 +1,11 @@
+schema_version: 2
+blueprint_type: behavior-source
+id: email-triage.source.personal-preferences
+version: 1
+description: Stores user-level email-triage classification and presentation preferences.
+binding:
+  kind: file
+  path: references/personal-preferences.md
+content: config
+format: markdown
+uses_behavior_sources: []

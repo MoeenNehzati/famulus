@@ -1,0 +1,31 @@
+schema_version: 2
+blueprint_type: machine-interface
+id: email-triage.machine.scripts-mark-failure
+version: 1
+description: Record that this triage run failed, so update-watermark refuses to advance and the scheduled health check reports it.
+usage: <reason>
+patterns:
+  - name: owner
+    allow_extra_positionals: true
+binding:
+  kind: python-entrypoint
+  path: _rtx/_failure_sentinel.py
+  symbol: Interface
+dependencies: []
+behavior_sources: []
+direct_io:
+  reads: []
+  writes:
+    - medium: local-filesystem
+      access: write
+      system: filesystem
+      content: diagnostic-report
+      format: json
+      path: state/status.json
+      sensitivity: derived-private
+  network: []
+owns_filesystem: []
+platform_support:
+  linux: true
+  macos: true
+  windows: true

@@ -1,0 +1,31 @@
+schema_version: 2
+blueprint_type: machine-interface
+id: email-triage.machine.scripts-log-decision
+version: 1
+description: Append a triage classification decision for one email to triage.log.
+usage: <account> <id> <from> <subject> <DECISION> <reason>
+patterns:
+  - name: owner
+    allow_extra_positionals: true
+binding:
+  kind: python-entrypoint
+  path: _rtx/_decision_sink.py
+  symbol: Interface
+dependencies: []
+behavior_sources: []
+direct_io:
+  reads: []
+  writes:
+    - medium: local-filesystem
+      access: write
+      system: filesystem
+      content: decision
+      format: text
+      path: triage.log
+      sensitivity: user-private
+  network: []
+owns_filesystem: []
+platform_support:
+  linux: true
+  macos: true
+  windows: true

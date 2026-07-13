@@ -1,0 +1,43 @@
+schema_version: 2
+blueprint_type: machine-interface
+id: email-triage.machine.scripts-prune-log
+version: 1
+description: Drop triage.log entries older than 30 days and print a one-line summary.
+usage: ''
+patterns:
+  - name: owner
+    allow_extra_positionals: true
+binding:
+  kind: python-entrypoint
+  path: _rtx/_log_compactor.py
+  symbol: Interface
+dependencies: []
+behavior_sources: []
+direct_io:
+  reads:
+    - medium: local-filesystem
+      access: read
+      system: filesystem
+      content: log
+      format: text
+      path: triage.log
+      sensitivity: user-private
+  writes:
+    - medium: local-filesystem
+      access: write
+      system: filesystem
+      content: log
+      format: text
+      path: triage.log
+      sensitivity: user-private
+    - medium: stdout
+      access: write
+      content: response
+      format: text
+      sensitivity: derived-private
+  network: []
+owns_filesystem: []
+platform_support:
+  linux: true
+  macos: true
+  windows: true

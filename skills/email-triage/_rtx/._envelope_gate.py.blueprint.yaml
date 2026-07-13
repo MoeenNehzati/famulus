@@ -1,0 +1,56 @@
+schema_version: 2
+blueprint_type: machine-interface
+id: email-triage.machine.scripts-filter-envelopes
+version: 1
+description: Filter JSON envelopes (from email-client's mail-list, piped via stdin) to those strictly after the triage watermark.
+usage: -a <account>   < envelopes.json
+patterns:
+  - name: owner
+    allow_extra_positionals: true
+    allow_stdin: true
+binding:
+  kind: python-entrypoint
+  path: _rtx/_envelope_gate.py
+  symbol: Interface
+dependencies: []
+behavior_sources: []
+direct_io:
+  reads:
+    - medium: stdin
+      access: read
+      content: email
+      format: json
+      sensitivity: user-private
+    - medium: local-filesystem
+      access: read
+      system: filesystem
+      content: watermark
+      format: text
+      path: state/watermark
+      sensitivity: user-private
+    - medium: local-filesystem
+      access: read
+      system: filesystem
+      content: diagnostic-report
+      format: json
+      path: state/status.json
+      sensitivity: derived-private
+  writes:
+    - medium: stdout
+      access: write
+      content: email
+      format: json
+      sensitivity: user-private
+    - medium: local-filesystem
+      access: write
+      system: filesystem
+      content: diagnostic-report
+      format: json
+      path: state/status.json
+      sensitivity: derived-private
+  network: []
+owns_filesystem: []
+platform_support:
+  linux: true
+  macos: true
+  windows: true

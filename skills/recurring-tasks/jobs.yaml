@@ -1,7 +1,7 @@
 jobs:
 - name: email-triage
-  description: Triage new emails into todo and potential-actions lists
-  command: DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus invoke-skill email-triage
+  description: Triage new emails into todo and triage lists
+  command: ASSISTANT_DEFAULT=codex DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus invoke-skill email-triage
   schedule: 0 * * * *
   enabled: true
 - name: daily-plan

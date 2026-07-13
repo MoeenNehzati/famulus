@@ -1,0 +1,47 @@
+schema_version: 2
+blueprint_type: llm-interface
+id: email-triage.llm.update-personal-preferences
+version: 1
+description: Manages user-level email-triage preferences without triaging email.
+binding:
+  kind: instruction-file
+  path: llm_interfaces/update-personal-preferences.md
+behavior_sources:
+  - source: email-triage.source.personal-preferences
+    version: 1
+    blueprint: {base: skill-root, path: references/.personal-preferences.md.blueprint.yaml}
+    reason: Manage the user's local email-triage classification and presentation preferences.
+direct_io:
+  reads:
+    - medium: prompt
+      access: read
+      content: message
+      format: text
+      sensitivity: user-private
+    - medium: local-filesystem
+      access: read
+      system: filesystem
+      content: config
+      format: markdown
+      path: references/personal-preferences.md
+      sensitivity: user-private
+  writes:
+    - medium: local-filesystem
+      access: write
+      system: filesystem
+      content: config
+      format: markdown
+      path: references/personal-preferences.md
+      sensitivity: user-private
+    - medium: prompt
+      access: write
+      content: response
+      format: markdown
+      sensitivity: derived-private
+  network: []
+owns_filesystem:
+  - match: exact
+    path: references/personal-preferences.md
+    allowed_readers:
+      - email-triage.llm.triage
+    reason: The preference-update interface is the sole writer of user-level email-triage behavior.

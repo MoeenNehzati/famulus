@@ -311,6 +311,14 @@
     },
     "email-triage": {
       "interfaces": {
+        "fetch-filtered-envelopes": {
+          "id": "email-triage.machine.fetch-filtered-envelopes",
+          "dependencies": []
+        },
+        "scripts-clear-failure": {
+          "id": "email-triage.machine.scripts-clear-failure",
+          "dependencies": []
+        },
         "scripts-filter-envelopes": {
           "id": "email-triage.machine.scripts-filter-envelopes",
           "dependencies": []

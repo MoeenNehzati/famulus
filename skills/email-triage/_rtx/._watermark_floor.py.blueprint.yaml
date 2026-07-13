@@ -1,0 +1,43 @@
+schema_version: 2
+blueprint_type: machine-interface
+id: email-triage.machine.scripts-get-cutoff
+version: 1
+description: Return the cutoff date for the current triage run, with a fallback if no watermark exists.
+usage: ''
+patterns:
+  - name: owner
+    allow_extra_positionals: true
+binding:
+  kind: python-entrypoint
+  path: _rtx/_watermark_floor.py
+  symbol: Interface
+dependencies: []
+behavior_sources: []
+direct_io:
+  reads:
+    - medium: local-filesystem
+      access: read
+      system: filesystem
+      content: watermark
+      format: text
+      path: state/watermark
+      sensitivity: user-private
+  writes:
+    - medium: stdout
+      access: write
+      content: watermark
+      format: text
+      sensitivity: derived-private
+    - medium: local-filesystem
+      access: write
+      system: filesystem
+      content: diagnostic-report
+      format: json
+      path: state/status.json
+      sensitivity: derived-private
+  network: []
+owns_filesystem: []
+platform_support:
+  linux: true
+  macos: true
+  windows: true

@@ -1,0 +1,30 @@
+schema_version: 2
+blueprint_type: llm-interface
+id: email-triage.llm.default
+version: 1
+description: Primary LLM-facing skill instructions.
+binding:
+  kind: instruction-file
+  path: SKILL.md
+allow_all_skills: true
+uses_interfaces:
+  - interface: email-triage.llm.triage
+    version: 1
+  - interface: email-triage.llm.update-personal-preferences
+    version: 1
+behavior_sources: []
+direct_io:
+  reads:
+    - medium: prompt
+      access: read
+      content: message
+      format: text
+      sensitivity: user-private
+  writes:
+    - medium: prompt
+      access: write
+      content: response
+      format: markdown
+      sensitivity: derived-private
+  network: []
+owns_filesystem: []

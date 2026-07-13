@@ -92,6 +92,8 @@ interfaces:
         windows: true
     mail-list:
       version: 1
+      allowed_callers:
+      - email-triage
       description: "List email envelopes for an account as JSON (fields: id, flags,\
         \ subject, from, date, message_id). --folder accepts aliases inbox|sent|drafts|trash|all\
         \ or any literal IMAP folder name (default inbox). --after narrows server-side\
