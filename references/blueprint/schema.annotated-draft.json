@@ -1,0 +1,2520 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Skill Blueprint Schema",
+  "description": "Canonical schema for Famulus skill blueprints. This file is the field-level blueprint reference: JSON Schema keywords define locally checkable shape, descriptions and examples explain authoring requirements, and x-famulus metadata lists non-schema validation rules enforced by validators or human review.",
+  "type": "object",
+  "required": [
+    "category",
+    "role",
+    "kind",
+    "interfaces"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "type": "string",
+      "enum": [
+        "research-assistant",
+        "general-assistant",
+        "productivity-general-assistant",
+        "workflow-general-assistant",
+        "development-assistant",
+        "skill-making-development-assistant",
+        "coding-development-assistant",
+        "system-assistant"
+      ],
+      "description": "Compatibility taxonomy node for generated blocks and existing tooling. Must be one of the closed category enum values.",
+      "$comment": "Category remains required during migration; role and kind carry the newer user-facing taxonomy.",
+      "examples": [
+        "research-assistant",
+        "skill-making-development-assistant"
+      ],
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Choose the narrowest existing category that matches the skill's ownership area.",
+            "Do not add a new category unless docs, graph generation, and validators are updated together."
+          ],
+          "red_flags": [
+            "Using category as a free-form tag.",
+            "Choosing a category only because another skill has that value."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "required top-level property",
+            "closed enum"
+          ]
+        },
+        "related_validation_rules": [
+          "category-has-known-parent"
+        ],
+        "template": {
+          "include": true,
+          "example": "research-assistant"
+        },
+        "field_status": "schema-required"
+      }
+    },
+    "role": {
+      "$ref": "#/definitions/skillRole",
+      "description": "Primary user-facing domain the skill serves; used for generated docs and graph clustering.",
+      "examples": [
+        "productivity",
+        "research-writing",
+        "meta-skill"
+      ],
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use role for the domain of work, not the implementation shape.",
+            "Pick the dominant user-facing domain when a skill has multiple interfaces."
+          ],
+          "red_flags": [
+            "Inventing near-duplicates such as personal-productivity or writing-review."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "required top-level property",
+            "closed enum through skillRole"
+          ]
+        },
+        "template": {
+          "include": true,
+          "example": "research-writing"
+        },
+        "field_status": "schema-required"
+      }
+    },
+    "kind": {
+      "$ref": "#/definitions/skillKind",
+      "description": "Primary shape of help the skill provides; used for filters such as reviewer, planner, client, or scheduler.",
+      "examples": [
+        "reviewer",
+        "planner",
+        "client",
+        "generator"
+      ],
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use kind for the mode of help, not the subject area.",
+            "Choose the dominant user-facing kind; finer interface-level distinctions can be represented in interface metadata later."
+          ],
+          "red_flags": [
+            "Using kind as a second role or as a product name."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "required top-level property",
+            "closed enum through skillKind"
+          ]
+        },
+        "template": {
+          "include": true,
+          "example": "reviewer"
+        },
+        "field_status": "schema-required"
+      }
+    },
+    "skill_interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "side_effects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Plain-language skill-level contract: expected inputs, user-visible outputs, and possible side effects.",
+      "$comment": "This is not the executable interface model; executable and LLM surfaces live under interfaces.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Keep this high-level and user-facing.",
+            "Do not duplicate direct_io or behavior_sources here."
+          ],
+          "red_flags": [
+            "Listing implementation files or private runtime paths as inputs."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "object with inputs, outputs, side_effects arrays when present"
+          ]
+        },
+        "template": {
+          "include": true,
+          "example": {
+            "inputs": [
+              "User request that triggers this skill."
+            ],
+            "outputs": [
+              "Primary artifact or response."
+            ],
+            "side_effects": [
+              "Files or external state this skill may change."
+            ]
+          }
+        },
+        "field_status": "repo-recommended"
+      }
+    },
+    "suggested_permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bash": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "command",
+              "reason"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              },
+              "args_prefix": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "network": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "reason"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "web_search",
+                  "web_fetch"
+                ]
+              },
+              "domains": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      },
+      "description": "Advisory permission suggestions for smoother execution; these are not grants and do not define dependencies.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Declare actual cross-skill behavior through uses_interfaces, not by copying another skill's permissions.",
+            "Keep reasons concrete enough for a user to decide whether the preapproval is safe."
+          ],
+          "red_flags": [
+            "Treating suggested_permissions as runtime dependency declarations.",
+            "Suggesting broad command prefixes when a dispatcher interface would be narrower."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "only bash and network sections are allowed",
+            "permission entries require reason"
+          ]
+        },
+        "template": {
+          "include": true,
+          "example": {
+            "bash": [],
+            "network": []
+          }
+        },
+        "field_status": "repo-recommended"
+      }
+    },
+    "interfaces": {
+      "type": "object",
+      "required": [
+        "llm"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/machineInterfaceMap"
+        },
+        "llm": {
+          "$ref": "#/definitions/llmInterfaceMap"
+        }
+      },
+      "description": "Public callable and documented surfaces for the skill, split into machine and LLM namespaces.",
+      "$comment": "The skill version is interfaces.llm.default.version; there is no separate top-level skill version.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Every blueprint must define interfaces.llm.default.",
+            "Machine interfaces are dispatcher-executable; LLM interfaces are prompt/documentation surfaces and are never executed by the dispatcher."
+          ],
+          "red_flags": [
+            "Adding top-level depends_on or interface_version.",
+            "Using a grouped parent command with hidden subinterface ids."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "interfaces.llm is required",
+            "only machine and llm namespaces are allowed"
+          ]
+        },
+        "related_validation_rules": [
+          "used-interfaces-resolve",
+          "generated-skill-blocks-are-synced",
+          "generated-interface-block-uses-dispatcher",
+          "blueprint-interface-ids-are-canonical"
+        ],
+        "template": {
+          "include": true,
+          "generation_note": "A generator must resolve $ref nodes, include schema-required fields, and use x-famulus.template.example before examples/default/enum fallbacks."
+        },
+        "field_status": "schema-required"
+      }
+    }
+  },
+  "definitions": {
+    "skillRole": {
+      "type": "string",
+      "description": "Primary user-facing domain the skill serves.",
+      "enum": [
+        "productivity",
+        "research-writing",
+        "math-reasoning",
+        "document-processing",
+        "development-assistant",
+        "system-operations",
+        "integration",
+        "meta-skill",
+        "automation",
+        "mode"
+      ]
+    },
+    "skillKind": {
+      "type": "string",
+      "description": "Primary shape of help the skill provides.",
+      "enum": [
+        "workflow",
+        "tool",
+        "reviewer",
+        "auditor",
+        "generator",
+        "installer",
+        "planner",
+        "client",
+        "storage",
+        "scheduler",
+        "scaffold",
+        "guide",
+        "mode",
+        "diagnostic",
+        "orchestrator",
+        "triager",
+        "converter",
+        "renderer",
+        "builder",
+        "syncer",
+        "setup",
+        "state-manager",
+        "analyzer",
+        "maintenance"
+      ]
+    },
+    "skillName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+$"
+    },
+    "interfaceName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "canonicalInterfaceName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.(machine|llm)\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "machineInterfaceMap": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/definitions/interfaceName"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/machineInterface"
+      }
+    },
+    "llmInterfaceMap": {
+      "type": "object",
+      "required": [
+        "default"
+      ],
+      "propertyNames": {
+        "$ref": "#/definitions/interfaceName"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/llmInterface"
+      }
+    },
+    "machineInterface": {
+      "type": "object",
+      "required": [
+        "version",
+        "platform_support",
+        "invocation",
+        "dependencies",
+        "direct_io",
+        "owns_filesystem"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "$ref": "#/definitions/interfaceVersion",
+          "x-famulus": {
+            "field_status": "schema-required"
+          }
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "x-famulus": {
+            "related_validation_rules": [
+              "machine-description-requires-usage"
+            ],
+            "field_status": "optional"
+          }
+        },
+        "usage": {
+          "type": "string",
+          "x-famulus": {
+            "related_validation_rules": [
+              "machine-description-requires-usage"
+            ],
+            "field_status": "optional"
+          }
+        },
+        "patterns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/pattern"
+          },
+          "x-famulus": {
+            "field_status": "optional"
+          }
+        },
+        "allow_all_skills": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether every skill may call or route to this interface without being listed in allowed_callers.",
+          "x-famulus": {
+            "doc": {
+              "authoring": [
+                "Use false plus allowed_callers for restricted interfaces."
+              ]
+            },
+            "validation": {
+              "schema": [
+                "boolean",
+                "paired with allowed_callers through allowAllSkillsConstraint"
+              ]
+            },
+            "field_status": "optional"
+          }
+        },
+        "allowed_callers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/skillName"
+          },
+          "default": [],
+          "description": "Exact skill names allowed to call or route to this interface when allow_all_skills is false.",
+          "x-famulus": {
+            "doc": {
+              "authoring": [
+                "Use skill directory names, not canonical interface ids."
+              ],
+              "red_flags": [
+                "Listing callers while allow_all_skills is true."
+              ]
+            },
+            "validation": {
+              "schema": [
+                "array of skillName values"
+              ]
+            },
+            "field_status": "optional"
+          }
+        },
+        "platform_support": {
+          "$ref": "#/definitions/platformSupport",
+          "x-famulus": {
+            "related_validation_rules": [
+              "blueprint-platform-neutrality"
+            ],
+            "field_status": "schema-required"
+          }
+        },
+        "invocation": {
+          "$ref": "#/definitions/invocation",
+          "x-famulus": {
+            "related_validation_rules": [
+              "runtime-dispatch-calls-are-declared",
+              "no-cross-skill-runtime-reachthrough"
+            ],
+            "field_status": "schema-required"
+          }
+        },
+        "dependencies": {
+          "$ref": "#/definitions/runtimeDependencies",
+          "x-famulus": {
+            "template": {
+              "include": true,
+              "example": []
+            },
+            "field_status": "schema-required"
+          }
+        },
+        "uses_interfaces": {
+          "$ref": "#/definitions/usedMachineInterfaceList",
+          "x-famulus": {
+            "related_validation_rules": [
+              "used-interfaces-resolve"
+            ],
+            "field_status": "optional"
+          }
+        },
+        "direct_io": {
+          "$ref": "#/definitions/directIo",
+          "x-famulus": {
+            "related_validation_rules": [
+              "direct-io-content-is-coarse",
+              "direct-io-path-format-consistency",
+              "filesystem-ownership-is-exclusive"
+            ],
+            "field_status": "schema-required"
+          }
+        },
+        "owns_filesystem": {
+          "$ref": "#/definitions/filesystemOwnershipList",
+          "x-famulus": {
+            "related_validation_rules": [
+              "filesystem-ownership-is-exclusive"
+            ],
+            "field_status": "schema-required"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/allowAllSkillsConstraint"
+        }
+      ],
+      "description": "Dispatcher-executable interface contract for one callable machine behavior.",
+      "$comment": "Raw command invocation is intentionally not part of the schema; use python_machine_interface and declare external tools under dependencies.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Keep one canonical machine interface per public callable behavior.",
+            "Visible interfaces should have description and usage; internal worker interfaces may omit both.",
+            "Declare immediate IO only; transitive IO is computed through uses_interfaces.",
+            "Runtime code that calls another skill should use class-level DispatchCall entries and self.dispatch(...), not raw dispatcher APIs."
+          ],
+          "red_flags": [
+            "One interface that multiplexes unrelated subcommands.",
+            "Description explains implementation instead of user-visible outcome."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "requires version, platform_support, invocation, dependencies, direct_io, owns_filesystem"
+          ]
+        },
+        "related_validation_rules": [
+          "machine-description-requires-usage",
+          "used-interfaces-resolve",
+          "generated-interface-block-uses-dispatcher",
+          "runtime-dispatch-calls-are-declared",
+          "skill-body-executable-logic-behind-interfaces"
+        ],
+        "template": {
+          "generation_note": "A generator must resolve $ref nodes, include schema-required fields, and use x-famulus.template.example before examples/default/enum fallbacks."
+        }
+      }
+    },
+    "runtimeDependencies": {
+      "type": "array",
+      "description": "Required runtime packages or executables for this machine interface. Use [] when the interface has no non-stdlib runtime dependencies.",
+      "items": {
+        "$ref": "#/definitions/runtimeDependency"
+      },
+      "uniqueItems": true,
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use [] when there are no non-stdlib runtime requirements.",
+            "Use one entry per factual package, executable, system facility, application, runtime, or model data bundle.",
+            "Do not encode APIs, OAuth, credentials, or network access here; represent them through direct_io.network and auth metadata."
+          ],
+          "red_flags": [
+            "Using version: any when a meaningful lower bound is known.",
+            "Listing google-calendar-oauth or gmail-oauth as a runtime dependency.",
+            "Copying dependencies from a used interface instead of declaring only this interface's immediate runtime requirements."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "array of runtimeDependency objects",
+            "unique items"
+          ]
+        },
+        "template": {
+          "include": true,
+          "example": []
+        }
+      }
+    },
+    "runtimeDependency": {
+      "type": "object",
+      "required": [
+        "kind",
+        "name",
+        "version",
+        "platforms",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/runtimeDependencyKind"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.+\\-\\[\\]]*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platforms": {
+          "$ref": "#/definitions/platformSupport"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "system-service"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/runtimeSystemServiceName"
+              }
+            }
+          }
+        }
+      ],
+      "description": "One factual runtime environment requirement for a machine interface.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Name the package, binary, service, library, application, runtime, or model data actually required at runtime.",
+            "The reason should explain why this interface needs it.",
+            "Platforms must not claim a platform unsupported by the owning machine interface."
+          ],
+          "red_flags": [
+            "Reason merely repeats the dependency name.",
+            "Platforms broader than platform_support."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "requires kind, name, version, platforms, reason",
+            "system-service names are further constrained"
+          ]
+        }
+      }
+    },
+    "runtimeDependencyKind": {
+      "type": "string",
+      "enum": [
+        "python-package",
+        "binary",
+        "system-service",
+        "system-library",
+        "external-application",
+        "runtime",
+        "model-data"
+      ],
+      "description": "Controlled vocabulary for runtime dependency kind.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use the existing enum value exactly.",
+            "Add a new enum only when generated docs, validators, and examples should recognize it as a distinct concept."
+          ],
+          "red_flags": [
+            "Inventing synonyms in individual blueprints."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "closed enum"
+          ]
+        }
+      }
+    },
+    "platformSupport": {
+      "type": "object",
+      "description": "Explicit operating-system support flags. Each boolean must be present so unsupported platforms are represented deliberately.",
+      "required": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "linux": {
+          "type": "boolean"
+        },
+        "macos": {
+          "type": "boolean"
+        },
+        "windows": {
+          "type": "boolean"
+        }
+      },
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Set every platform boolean deliberately.",
+            "Use macos, not osx.",
+            "Do not add a skill-level platform flag; skill summaries derive from machine-interface platform_support."
+          ],
+          "red_flags": [
+            "Omitting unsupported platforms instead of setting them false."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "requires linux, macos, windows booleans",
+            "no additional platform keys"
+          ]
+        },
+        "related_validation_rules": [
+          "blueprint-platform-neutrality"
+        ],
+        "template": {
+          "include": true,
+          "example": {
+            "linux": true,
+            "macos": true,
+            "windows": true
+          }
+        }
+      }
+    },
+    "runtimeSystemServiceName": {
+      "type": "string",
+      "description": "Standardized service-manager or daemon facility names for runtime dependencies.",
+      "enum": [
+        "systemd-user",
+        "launchd",
+        "task-scheduler",
+        "cron"
+      ]
+    },
+    "llmInterface": {
+      "type": "object",
+      "required": [
+        "version",
+        "description",
+        "behavior_sources",
+        "direct_io",
+        "owns_filesystem"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "$ref": "#/definitions/interfaceVersion",
+          "x-famulus": {
+            "field_status": "schema-required"
+          }
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "x-famulus": {
+            "field_status": "schema-required"
+          }
+        },
+        "binding": {
+          "$ref": "#/definitions/llmBinding",
+          "x-famulus": {
+            "field_status": "optional"
+          }
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^llm_interfaces/.+\\.md$",
+          "x-famulus": {
+            "field_status": "legacy"
+          }
+        },
+        "allow_all_skills": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether every skill may call or route to this interface without being listed in allowed_callers.",
+          "x-famulus": {
+            "doc": {
+              "authoring": [
+                "Use false plus allowed_callers for restricted interfaces."
+              ]
+            },
+            "validation": {
+              "schema": [
+                "boolean",
+                "paired with allowed_callers through allowAllSkillsConstraint"
+              ]
+            },
+            "field_status": "optional"
+          }
+        },
+        "allowed_callers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/skillName"
+          },
+          "default": [],
+          "description": "Exact skill names allowed to call or route to this interface when allow_all_skills is false.",
+          "x-famulus": {
+            "doc": {
+              "authoring": [
+                "Use skill directory names, not canonical interface ids."
+              ],
+              "red_flags": [
+                "Listing callers while allow_all_skills is true."
+              ]
+            },
+            "validation": {
+              "schema": [
+                "array of skillName values"
+              ]
+            },
+            "field_status": "optional"
+          }
+        },
+        "routing_hints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "x-famulus": {
+            "field_status": "optional"
+          }
+        },
+        "uses_interfaces": {
+          "$ref": "#/definitions/usedInterfaceList",
+          "x-famulus": {
+            "related_validation_rules": [
+              "used-interfaces-resolve"
+            ],
+            "field_status": "optional"
+          }
+        },
+        "behavior_sources": {
+          "$ref": "#/definitions/behaviorSourceList",
+          "x-famulus": {
+            "template": {
+              "include": true,
+              "example": []
+            },
+            "field_status": "schema-required"
+          }
+        },
+        "direct_io": {
+          "$ref": "#/definitions/directIo",
+          "x-famulus": {
+            "related_validation_rules": [
+              "direct-io-content-is-coarse",
+              "direct-io-path-format-consistency",
+              "filesystem-ownership-is-exclusive"
+            ],
+            "template": {
+              "include": true,
+              "example": {
+                "reads": [],
+                "writes": [],
+                "network": []
+              }
+            },
+            "field_status": "schema-required"
+          }
+        },
+        "owns_filesystem": {
+          "$ref": "#/definitions/filesystemOwnershipList",
+          "x-famulus": {
+            "related_validation_rules": [
+              "filesystem-ownership-is-exclusive"
+            ],
+            "template": {
+              "include": true,
+              "example": []
+            },
+            "field_status": "schema-required"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": [
+                "binding"
+              ]
+            },
+            {
+              "required": [
+                "file"
+              ]
+            }
+          ]
+        },
+        {
+          "$ref": "#/definitions/allowAllSkillsConstraint"
+        }
+      ],
+      "description": "LLM-facing prompt or instruction surface documented through SKILL.md, llm_interfaces Markdown, or an external URI.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use binding, not invocation; dispatcher never executes LLM interfaces.",
+            "The default interface must bind to SKILL.md.",
+            "Use behavior_sources for supporting prompt policy, examples, schemas, or checklists beyond the binding file."
+          ],
+          "red_flags": [
+            "Putting invocation under interfaces.llm.",
+            "Pointing local Markdown outside llm_interfaces/."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "requires version, description, behavior_sources, direct_io, owns_filesystem",
+            "requires binding or legacy file"
+          ]
+        },
+        "related_validation_rules": [
+          "used-interfaces-resolve",
+          "skill-body-cross-skill-mentions-are-declared"
+        ],
+        "template": {
+          "generation_note": "A generator must resolve $ref nodes, include schema-required fields, and use x-famulus.template.example before examples/default/enum fallbacks."
+        }
+      }
+    },
+    "llmBinding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "path"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "skill_file"
+            },
+            "path": {
+              "const": "SKILL.md"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "path"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "markdown_file"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^llm_interfaces/.+\\.md$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "uri"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "uri"
+            },
+            "uri": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:.*$"
+            }
+          }
+        }
+      ],
+      "description": "Location of an LLM-facing interface definition.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use skill_file with path SKILL.md for interfaces.llm.default.",
+            "Use markdown_file under llm_interfaces/ for additional local prompt surfaces.",
+            "Use uri only when the prompt/interface definition is owned outside this repo."
+          ],
+          "red_flags": [
+            "Using invocation for an LLM interface.",
+            "Local Markdown path outside llm_interfaces/."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "one of skill_file, markdown_file, or uri binding shapes"
+          ]
+        }
+      }
+    },
+    "interfaceVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "usedInterfaceList": {
+      "type": "array",
+      "description": "Version-pinned canonical interfaces this interface may use or orchestrate. These interface hashes are included recursively in this interface's audit hash.",
+      "items": {
+        "$ref": "#/definitions/usedInterface"
+      },
+      "uniqueItems": true,
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Declare only interfaces this interface invokes or orchestrates.",
+            "Pin the current target interface version and bump callers deliberately when a target contract changes.",
+            "Do not use top-level depends_on."
+          ],
+          "red_flags": [
+            "Declaring a cross-skill edge just because a skill is mentioned in prose.",
+            "Copying transitive dependencies instead of declaring direct use."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "array entries must have interface and version"
+          ]
+        },
+        "related_validation_rules": [
+          "used-interfaces-resolve",
+          "skill-body-cross-skill-mentions-are-declared"
+        ],
+        "template": {
+          "include": true,
+          "example": []
+        }
+      }
+    },
+    "usedMachineInterfaceList": {
+      "type": "array",
+      "description": "Version-pinned canonical machine interfaces this machine interface may use or orchestrate.",
+      "items": {
+        "$ref": "#/definitions/usedMachineInterface"
+      },
+      "uniqueItems": true,
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Declare only interfaces this interface invokes or orchestrates.",
+            "Pin the current target interface version and bump callers deliberately when a target contract changes.",
+            "Do not use top-level depends_on."
+          ],
+          "red_flags": [
+            "Declaring a cross-skill edge just because a skill is mentioned in prose.",
+            "Copying transitive dependencies instead of declaring direct use."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "array entries must have interface and version"
+          ]
+        },
+        "related_validation_rules": [
+          "used-interfaces-resolve",
+          "skill-body-cross-skill-mentions-are-declared"
+        ],
+        "template": {
+          "include": true,
+          "example": []
+        }
+      }
+    },
+    "usedInterface": {
+      "type": "object",
+      "required": [
+        "interface",
+        "version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "interface": {
+          "$ref": "#/definitions/canonicalInterfaceName"
+        },
+        "version": {
+          "$ref": "#/definitions/interfaceVersion"
+        }
+      }
+    },
+    "usedMachineInterface": {
+      "type": "object",
+      "required": [
+        "interface",
+        "version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "interface": {
+          "$ref": "#/definitions/canonicalMachineInterfaceName"
+        },
+        "version": {
+          "$ref": "#/definitions/interfaceVersion"
+        }
+      }
+    },
+    "canonicalMachineInterfaceName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.machine\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "behaviorSourceList": {
+      "type": "array",
+      "description": "Non-code files or roots read by this interface that can influence behavior, such as schemas, templates, policy files, prompt markdown, examples, or parser tables. Python imports and dispatch targets are discovered mechanically and must not be duplicated here.",
+      "items": {
+        "$ref": "#/definitions/behaviorSource"
+      },
+      "uniqueItems": true,
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "List non-code files or roots that shape behavior: policies, schemas, templates, examples, prompt Markdown, parser tables, checklists, or config.",
+            "Do not list ordinary user subject input.",
+            "Do not duplicate Python imports, _rtx entrypoints, or dispatcher targets; tooling discovers those mechanically.",
+            "Use [] only after checking that no non-code behavior-shaping files exist."
+          ],
+          "red_flags": [
+            "Listing the PDF or document passed by the user as a behavior source.",
+            "Omitting a schema or prompt template that changes interface behavior."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "array of behaviorSource objects",
+            "unique items"
+          ]
+        },
+        "template": {
+          "include": true,
+          "example": []
+        }
+      }
+    },
+    "behaviorSource": {
+      "type": "object",
+      "required": [
+        "path",
+        "content",
+        "format",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+",
+          "x-famulus": {
+            "doc": {
+              "authoring": [
+                "Plain relative paths are relative to the skill directory.",
+                "Use $repo/ for repository-root-relative behavior sources."
+              ]
+            }
+          }
+        },
+        "content": {
+          "$ref": "#/definitions/metadataContent"
+        },
+        "format": {
+          "$ref": "#/definitions/metadataFormat"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "description": "A non-code behavior-shaping file or root read by an interface.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Paths are relative to the skill directory unless prefixed with $repo/.",
+            "Reason should state how the file shapes behavior."
+          ],
+          "red_flags": [
+            "Path points to private runtime code.",
+            "Reason says only 'used by script'."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "requires path, content, format, reason",
+            "relative path cannot start with / or contain .. components"
+          ]
+        }
+      }
+    },
+    "directEffectList": {
+      "type": "array",
+      "description": "Deprecated compatibility definition. Do not use in blueprint interfaces.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+      },
+      "uniqueItems": true,
+      "x-famulus": {
+        "field_status": "deprecated"
+      }
+    },
+    "directIo": {
+      "type": "object",
+      "description": "Immediate semantic IO for this interface only. Transitive IO is generated from uses_interfaces.",
+      "required": [
+        "reads",
+        "writes",
+        "network"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/directIoEntry"
+          }
+        },
+        "writes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/directIoEntry"
+          }
+        },
+        "network": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/directIoEntry"
+          }
+        }
+      },
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Declare immediate IO only for this interface.",
+            "Do not copy IO from interfaces named in uses_interfaces.",
+            "Use empty reads/writes/network lists only after checking no direct IO of that kind exists."
+          ],
+          "red_flags": [
+            "Duplicating transitive IO.",
+            "Omitting network requests because another helper performs them internally."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "requires reads, writes, network arrays",
+            "no additional properties"
+          ]
+        },
+        "related_validation_rules": [
+          "direct-io-content-is-coarse",
+          "direct-io-path-format-consistency",
+          "filesystem-ownership-is-exclusive"
+        ],
+        "template": {
+          "include": true,
+          "example": {
+            "reads": [],
+            "writes": [],
+            "network": []
+          }
+        }
+      }
+    },
+    "directIoEntry": {
+      "type": "object",
+      "required": [
+        "medium",
+        "access",
+        "content",
+        "sensitivity"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "medium": {
+          "$ref": "#/definitions/metadataMedium"
+        },
+        "access": {
+          "$ref": "#/definitions/metadataAccess"
+        },
+        "system": {
+          "$ref": "#/definitions/metadataSystem"
+        },
+        "content": {
+          "$ref": "#/definitions/metadataContent"
+        },
+        "format": {
+          "$ref": "#/definitions/metadataFormat"
+        },
+        "formats": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/metadataFormat"
+          },
+          "uniqueItems": true
+        },
+        "auth": {
+          "$ref": "#/definitions/metadataAuthRequirement"
+        },
+        "sensitivity": {
+          "$ref": "#/definitions/metadataSensitivity"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "x-famulus": {
+            "doc": {
+              "authoring": [
+                "Plain relative paths are relative to the skill directory.",
+                "Use $repo/, $home/, or $tmp/ when the path lives under the repository root, user home, or temporary directory rather than the skill directory."
+              ],
+              "red_flags": [
+                "Absolute paths without a strong reason.",
+                "A broad regex path where a glob or exact path would work."
+              ]
+            }
+          }
+        },
+        "path_match": {
+          "enum": [
+            "exact",
+            "glob",
+            "regex"
+          ],
+          "default": "exact"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "not": {
+        "required": [
+          "format",
+          "formats"
+        ]
+      },
+      "description": "One immediate read, write, request, send, download, upload, execute, configure, or delete operation.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use content for the semantic object and format/formats for representation.",
+            "Use format for one known format and formats for a finite family; never set both.",
+            "Use path_match: glob for small file families and regex only when glob cannot express the family.",
+            "Add auth when the IO depends on credentials or a local user/session authority."
+          ],
+          "red_flags": [
+            "content values like email-subject, email-body, event-title, document-id.",
+            "path_match: regex for a simple extension family.",
+            "network entry without auth when authentication is required."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "requires medium, access, content, sensitivity",
+            "format and formats cannot both be present"
+          ]
+        },
+        "related_validation_rules": [
+          "direct-io-content-is-coarse",
+          "direct-io-path-format-consistency",
+          "filesystem-ownership-is-exclusive"
+        ]
+      }
+    },
+    "filesystemOwnershipList": {
+      "type": "array",
+      "description": "Filesystem paths this interface owns. Only the owner may write matching paths; only the owner and allowed_readers may read them.",
+      "items": {
+        "$ref": "#/definitions/filesystemOwnership"
+      },
+      "uniqueItems": true,
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use [] when the interface owns no filesystem paths.",
+            "Ownership is an interface-scoped single-writer authority, not a label.",
+            "Declare allowed_readers only for canonical interfaces that may read owned paths directly."
+          ],
+          "red_flags": [
+            "Two interfaces claim overlapping ownership.",
+            "A reader is named without a canonical interface id."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "array of filesystemOwnership objects"
+          ]
+        },
+        "related_validation_rules": [
+          "filesystem-ownership-is-exclusive"
+        ],
+        "template": {
+          "include": true,
+          "example": []
+        }
+      }
+    },
+    "filesystemOwnership": {
+      "type": "object",
+      "required": [
+        "match",
+        "path",
+        "allowed_readers"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "match": {
+          "enum": [
+            "exact",
+            "regex"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "x-famulus": {
+            "doc": {
+              "authoring": [
+                "Plain relative paths are relative to the skill directory.",
+                "Use $repo/, $home/, or $tmp/ when the path lives under the repository root, user home, or temporary directory rather than the skill directory."
+              ],
+              "red_flags": [
+                "Absolute paths without a strong reason.",
+                "A broad regex path where a glob or exact path would work."
+              ]
+            }
+          }
+        },
+        "allowed_readers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/canonicalInterfaceName"
+          },
+          "uniqueItems": true
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "description": "A local filesystem path authority owned by one interface.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use match: exact for one path and match: regex only for a deliberate family.",
+            "The owner is the interface containing this declaration.",
+            "Reason should explain why this interface owns the path."
+          ],
+          "red_flags": [
+            "Regex ownership path that is broader than the interface's actual writes."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "requires match, path, allowed_readers"
+          ]
+        },
+        "related_validation_rules": [
+          "filesystem-ownership-is-exclusive"
+        ]
+      }
+    },
+    "metadataMedium": {
+      "type": "string",
+      "enum": [
+        "local-filesystem",
+        "remote-filesystem",
+        "network-request",
+        "prompt",
+        "stdin",
+        "stdout",
+        "stderr",
+        "local-system"
+      ],
+      "description": "Controlled vocabulary for where IO occurs.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use the existing enum value exactly.",
+            "Add a new enum only when generated docs, validators, and examples should recognize it as a distinct concept."
+          ],
+          "red_flags": [
+            "Inventing synonyms in individual blueprints."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "closed enum"
+          ]
+        }
+      }
+    },
+    "metadataAccess": {
+      "type": "string",
+      "enum": [
+        "read",
+        "write",
+        "read-write",
+        "execute",
+        "configure",
+        "request",
+        "download",
+        "upload",
+        "send",
+        "delete"
+      ],
+      "description": "Controlled vocabulary for the kind of operation performed.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use the existing enum value exactly.",
+            "Add a new enum only when generated docs, validators, and examples should recognize it as a distinct concept."
+          ],
+          "red_flags": [
+            "Inventing synonyms in individual blueprints."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "closed enum"
+          ]
+        }
+      }
+    },
+    "metadataSystem": {
+      "type": "string",
+      "enum": [
+        "filesystem",
+        "google-calendar",
+        "google-drive",
+        "email-imap",
+        "email-smtp",
+        "weather-service",
+        "arxiv",
+        "web-search",
+        "web-fetch",
+        "model-cache",
+        "systemd",
+        "launchd",
+        "task-scheduler",
+        "cron",
+        "system-log",
+        "git",
+        "shell",
+        "browser",
+        "local-http-server",
+        "desktop-notification",
+        "keyring",
+        "oauth",
+        "agent-runtime",
+        "agent-home",
+        "assistant-home",
+        "tmux",
+        "openai-api"
+      ],
+      "description": "Controlled vocabulary for external or local systems touched.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use the existing enum value exactly.",
+            "Add a new enum only when generated docs, validators, and examples should recognize it as a distinct concept."
+          ],
+          "red_flags": [
+            "Inventing synonyms in individual blueprints."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "closed enum"
+          ]
+        }
+      }
+    },
+    "metadataContent": {
+      "type": "string",
+      "enum": [
+        "document",
+        "source",
+        "bibliography",
+        "proof",
+        "notation",
+        "prose",
+        "flow",
+        "theorem",
+        "argument",
+        "docstring",
+        "latex-project",
+        "report",
+        "graph",
+        "plan",
+        "plan-request",
+        "list",
+        "email",
+        "email-attachment",
+        "email-account",
+        "message",
+        "response",
+        "attachment",
+        "mailbox",
+        "account",
+        "credential",
+        "environment-variable",
+        "event",
+        "forecast",
+        "metadata",
+        "log",
+        "transcript",
+        "watermark",
+        "decision",
+        "token",
+        "config",
+        "service",
+        "timer",
+        "job",
+        "schedule",
+        "checkpoint",
+        "patch",
+        "project",
+        "repository",
+        "profile",
+        "hook",
+        "launcher",
+        "shell-profile",
+        "path-entry",
+        "symlink",
+        "alias",
+        "skill",
+        "blueprint",
+        "validator",
+        "test-suite",
+        "runtime-dependency-manifest",
+        "generated-artifact",
+        "installed-skill",
+        "audit-record",
+        "dependency-record",
+        "drift-report",
+        "hash",
+        "macro-definitions",
+        "sync-state",
+        "filter",
+        "diagnostic-report"
+      ],
+      "description": "Controlled vocabulary for semantic objects being handled.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use the existing enum value exactly.",
+            "Add a new enum only when generated docs, validators, and examples should recognize it as a distinct concept."
+          ],
+          "red_flags": [
+            "Inventing synonyms in individual blueprints."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "closed enum"
+          ]
+        }
+      }
+    },
+    "metadataFormat": {
+      "type": "string",
+      "enum": [
+        "text",
+        "markdown",
+        "html",
+        "json",
+        "yaml",
+        "toml",
+        "ini",
+        "pdf",
+        "tex",
+        "bibtex",
+        "svg",
+        "png",
+        "rfc822",
+        "ics",
+        "env",
+        "stdout-text",
+        "stderr-text"
+      ],
+      "description": "Controlled vocabulary for representations and file/message formats.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use the existing enum value exactly.",
+            "Add a new enum only when generated docs, validators, and examples should recognize it as a distinct concept."
+          ],
+          "red_flags": [
+            "Inventing synonyms in individual blueprints."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "closed enum"
+          ]
+        }
+      }
+    },
+    "metadataAuthKind": {
+      "type": "string",
+      "enum": [
+        "none",
+        "google-calendar-oauth",
+        "google-drive-oauth",
+        "gmail-oauth",
+        "email-account",
+        "app-password",
+        "rclone-config",
+        "api-key",
+        "keyring-entry",
+        "local-user-session",
+        "system-user",
+        "agent-profile"
+      ],
+      "description": "Controlled vocabulary for authentication or authority kind.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use the existing enum value exactly.",
+            "Add a new enum only when generated docs, validators, and examples should recognize it as a distinct concept."
+          ],
+          "red_flags": [
+            "Inventing synonyms in individual blueprints."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "closed enum"
+          ]
+        }
+      }
+    },
+    "metadataAuthMode": {
+      "type": "string",
+      "enum": [
+        "none",
+        "uses-existing",
+        "creates",
+        "updates",
+        "deletes",
+        "checks"
+      ],
+      "description": "Controlled vocabulary for whether auth is used, created, updated, deleted, or checked.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use the existing enum value exactly.",
+            "Add a new enum only when generated docs, validators, and examples should recognize it as a distinct concept."
+          ],
+          "red_flags": [
+            "Inventing synonyms in individual blueprints."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "closed enum"
+          ]
+        }
+      }
+    },
+    "metadataAuthRequirement": {
+      "type": "object",
+      "required": [
+        "kind",
+        "mode"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/metadataAuthKind"
+        },
+        "mode": {
+          "$ref": "#/definitions/metadataAuthMode"
+        }
+      }
+    },
+    "metadataSensitivity": {
+      "type": "string",
+      "enum": [
+        "public",
+        "user-private",
+        "secret",
+        "derived-private"
+      ],
+      "description": "Controlled vocabulary for privacy and derivation level.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use the existing enum value exactly.",
+            "Add a new enum only when generated docs, validators, and examples should recognize it as a distinct concept."
+          ],
+          "red_flags": [
+            "Inventing synonyms in individual blueprints."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "closed enum"
+          ]
+        }
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "description": "How the dispatcher invokes this machine interface, plus non-code behavior sources read by that invocation.",
+      "required": [
+        "kind",
+        "entrypoint",
+        "behavior_sources"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "python_machine_interface"
+        },
+        "entrypoint": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^_rtx/[A-Za-z_][A-Za-z0-9_]*\\.py:[A-Za-z_][A-Za-z0-9_]*$",
+          "x-famulus": {
+            "doc": {
+              "authoring": [
+                "Runtime filenames under _rtx must also satisfy the repository private runtime naming rule checked outside JSON Schema."
+              ]
+            },
+            "related_validation_rules": [
+              "private-runtime-layout-and-naming",
+              "private-runtime-names-do-not-leak-to-skill-facing-markdown"
+            ]
+          }
+        },
+        "args_prefix": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "behavior_sources": {
+          "$ref": "#/definitions/behaviorSourceList"
+        }
+      },
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use python_machine_interface for every machine interface.",
+            "Keep raw command execution out of the blueprint; call external tools from Python and declare them under dependencies.",
+            "Entrypoint points to a private _rtx Python file and class relative to the skill directory.",
+            "behavior_sources under invocation lists non-code files shaping machine-interface behavior.",
+            "Route smoke is part of the python_machine_interface contract: the shared runner imports the interface class, builds its parser, and exits before normal execution.",
+            "If normal execution performs lazy behavior-relevant imports, route_smoke() should exercise those imports cheaply and without real side effects."
+          ],
+          "red_flags": [
+            "Entrypoint points outside _rtx.",
+            "Adding command, cwd, or shell-like invocation metadata.",
+            "Machine behavior depends on a schema/template/policy file not listed in behavior_sources.",
+            "route_smoke() cannot import code that normal execution depends on."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "requires kind, entrypoint, behavior_sources",
+            "kind is python_machine_interface",
+            "entrypoint pattern is _rtx/file.py:ClassName"
+          ]
+        },
+        "related_validation_rules": [
+          "runtime-dispatch-calls-are-declared",
+          "no-cross-skill-runtime-reachthrough",
+          "private-runtime-layout-and-naming",
+          "private-runtime-names-do-not-leak-to-skill-facing-markdown",
+          "route-smoke-covers-lazy-runtime-dependencies"
+        ]
+      }
+    },
+    "pattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "min_positionals": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_positionals": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "allow_extra_positionals": {
+          "type": "boolean",
+          "default": false
+        },
+        "allow_stdin": {
+          "type": "boolean",
+          "default": false
+        },
+        "positional_patterns": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "flag_patterns": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^--[A-Za-z0-9][A-Za-z0-9-]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required_flags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
+          }
+        },
+        "allowed_flags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
+          }
+        },
+        "forbidden_flags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"
+          }
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "description": "One accepted argv/stdin calling convention for a machine interface.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "Use multiple patterns for genuinely different modes such as file mode vs stdin mode.",
+            "Anchor positional_patterns and flag_patterns when matching the whole value matters.",
+            "Use notes to explain mode-specific constraints that generated docs should show."
+          ],
+          "red_flags": [
+            "Unanchored regex that accepts unintended values.",
+            "allow_extra_positionals true without a reason in notes.",
+            "required_flags not repeated in allowed_flags when the interface is otherwise flag-restricted."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "allowed pattern keys only",
+            "flag names and positional pattern indexes have constrained shapes"
+          ]
+        },
+        "template": {
+          "include": true,
+          "example": [
+            {
+              "min_positionals": 1,
+              "max_positionals": 1,
+              "allow_stdin": false
+            }
+          ]
+        }
+      }
+    },
+    "allowAllSkillsConstraint": {
+      "if": {
+        "properties": {
+          "allow_all_skills": {
+            "const": true
+          }
+        },
+        "required": [
+          "allow_all_skills"
+        ]
+      },
+      "then": {
+        "properties": {
+          "allowed_callers": {
+            "maxItems": 0
+          }
+        }
+      },
+      "description": "Access-control consistency rule shared by machine and LLM interfaces.",
+      "x-famulus": {
+        "doc": {
+          "authoring": [
+            "If allow_all_skills is true, allowed_callers must be empty.",
+            "If access should be restricted, set allow_all_skills false and list exact allowed skill names."
+          ],
+          "red_flags": [
+            "Setting allow_all_skills true while also listing allowed_callers."
+          ]
+        },
+        "validation": {
+          "schema": [
+            "conditional maxItems 0 for allowed_callers when allow_all_skills is true"
+          ]
+        }
+      }
+    }
+  },
+  "$comment": "Draft consolidation schema. The validation keywords match the live schema; the extra annotations are intended to replace duplicated guide/template field prose after a generator and meta-validator exist.",
+  "x-famulus": {
+    "schema_annotation_protocol": {
+      "description": "Standard metadata used by this repository on top of JSON Schema.",
+      "keys": {
+        "description": "Author-facing field meaning and requirement.",
+        "$comment": "Maintainer rationale, migration note, or implementation warning.",
+        "examples": "Valid examples used by docs and sample generation.",
+        "x-famulus.doc.authoring": "Normative authoring guidance that is not itself a JSON Schema keyword.",
+        "x-famulus.doc.red_flags": "Patterns that may parse but should trigger review.",
+        "x-famulus.validation.schema": "Local constraints enforced by JSON Schema at this node.",
+        "x-famulus.related_validation_rules": "IDs from root x-famulus.validation_rules that also constrain this node.",
+        "x-famulus.template": "Hints for generating a sample blueprint from the schema.",
+        "x-famulus.field_status": "One of schema-required, repo-required, recommended, optional, legacy, or deprecated.",
+        "x-famulus.validation_rules": "Root registry for non-schema, generated-artifact, and human-review validation rules.",
+        "x-famulus.migration_note": "Temporary note explaining how this annotated schema supersedes existing guide/template prose."
+      }
+    },
+    "validation_rules": [
+      {
+        "id": "unique-yaml-keys",
+        "scope": "file",
+        "summary": "Duplicate YAML mapping keys are rejected before schema validation so hidden or overwritten interfaces cannot pass silently.",
+        "applies_to": [
+          "**"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/blueprints.py",
+            "function": "_UniqueKeyLoader",
+            "tests": "tests/validate_blueprints.py"
+          }
+        ],
+        "not_schema_reason": "JSON Schema validates parsed mappings and cannot see duplicate keys after YAML parsing."
+      },
+      {
+        "id": "category-has-known-parent",
+        "scope": "cross-field",
+        "summary": "Every category enum value must fit the expected suffix hierarchy under the assistant taxonomy.",
+        "applies_to": [
+          "category"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/blueprints.py",
+            "function": "_validate_category_hierarchy",
+            "tests": "tests/validate_blueprints.py"
+          }
+        ],
+        "not_schema_reason": "The enum checks allowed values, but the hierarchy rule is a repository taxonomy convention."
+      },
+      {
+        "id": "machine-description-requires-usage",
+        "scope": "cross-field",
+        "summary": "A visible machine interface with description must also declare usage, using an empty string for no-arg interfaces.",
+        "applies_to": [
+          "interfaces.machine.*.description",
+          "interfaces.machine.*.usage"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/blueprints.py",
+            "function": "_validate_interface_cross_fields",
+            "tests": "tests/validate_blueprints.py"
+          }
+        ],
+        "not_schema_reason": "Both fields are individually optional because internal interfaces may omit both."
+      },
+      {
+        "id": "direct-io-content-is-coarse",
+        "scope": "cross-field",
+        "summary": "direct_io.content should name a coarse user-meaningful object; the current validator rejects field-level suffixes such as subject, body, title, date, header, id, and name.",
+        "applies_to": [
+          "interfaces.*.*.direct_io.*.*.content"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/blueprints.py",
+            "function": "_validate_direct_io_content_granularity",
+            "tests": "tests/validate_blueprints.py"
+          }
+        ],
+        "not_schema_reason": "The closed enum permits current values; the validator catches suspicious newly added field-level suffixes."
+      },
+      {
+        "id": "direct-io-path-format-consistency",
+        "scope": "cross-field",
+        "summary": "direct_io path_match, glob syntax, regex syntax, and declared format/formats must be mutually consistent.",
+        "applies_to": [
+          "interfaces.*.*.direct_io.*.*.path",
+          "interfaces.*.*.direct_io.*.*.path_match",
+          "interfaces.*.*.direct_io.*.*.format",
+          "interfaces.*.*.direct_io.*.*.formats"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/blueprints.py",
+            "function": "_validate_direct_io_path_patterns",
+            "tests": "tests/validate_blueprints.py"
+          }
+        ],
+        "not_schema_reason": "Requires comparing multiple fields and compiling regex/glob forms."
+      },
+      {
+        "id": "used-interfaces-resolve",
+        "scope": "cross-file",
+        "summary": "Every uses_interfaces edge must target an existing canonical interface, pin the exact current version, obey namespace rules, and satisfy target access control.",
+        "applies_to": [
+          "interfaces.*.*.uses_interfaces"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/blueprint_relationships.py",
+            "function": "validate_relationships",
+            "tests": "tests/validate_blueprint_relationships.py"
+          },
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/blueprints.py",
+            "function": "_validate_interface_uses",
+            "tests": "tests/validate_blueprints.py"
+          }
+        ],
+        "not_schema_reason": "Requires loading all skill blueprints and comparing source and target interfaces."
+      },
+      {
+        "id": "filesystem-ownership-is-exclusive",
+        "scope": "cross-interface",
+        "summary": "Owned local-filesystem paths must not overlap across interfaces; only owners may write, and only owners or allowed_readers may read.",
+        "applies_to": [
+          "interfaces.*.*.direct_io",
+          "interfaces.*.*.owns_filesystem"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/blueprints.py",
+            "function": "_validate_filesystem_ownership",
+            "tests": "tests/validate_blueprints.py"
+          }
+        ],
+        "not_schema_reason": "Requires comparing filesystem ownership and IO declarations across all interfaces."
+      },
+      {
+        "id": "generated-skill-blocks-are-synced",
+        "scope": "generated-artifact",
+        "summary": "Generated SKILL.md contract/interface blocks and runtime dependency manifests must match blueprint.yaml.",
+        "applies_to": [
+          "skills/*/blueprint.yaml",
+          "skills/*/SKILL.md",
+          "references/blueprint/runtime_dependencies.json"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/blueprints.py",
+            "function": "validate",
+            "tests": "tests/validate_blueprints.py"
+          },
+          {
+            "kind": "generated-check",
+            "path": "skills/skill-maker/_rtx/_blueprint_syncer.py",
+            "tests": "skills/skill-maker/tests/test_blueprint_tools.py"
+          }
+        ],
+        "not_schema_reason": "Generated artifact freshness depends on current repository files, not one parsed blueprint object."
+      },
+      {
+        "id": "generated-interface-block-uses-dispatcher",
+        "scope": "generated-artifact",
+        "summary": "Generated owner-facing SKILL.md interface blocks must expose dispatcher invocations and must not expose raw runtime file paths.",
+        "applies_to": [
+          "interfaces.machine",
+          "skills/*/SKILL.md"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/skill_md_dispatch.py",
+            "function": "validate",
+            "tests": "tests/validate_skill_md_dispatch.py"
+          }
+        ],
+        "not_schema_reason": "Requires reading generated Markdown blocks and comparing them with blueprint interfaces."
+      },
+      {
+        "id": "runtime-dispatch-calls-are-declared",
+        "scope": "runtime-boundary",
+        "summary": "Skill runtime code must not use raw dispatcher imports or dispatcher CLI calls, and DispatchCall caller_skill must match the owning skill.",
+        "applies_to": [
+          "interfaces.machine.*.uses_interfaces",
+          "skills/*/_rtx/**/*.py"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/dispatcher_usage.py",
+            "function": "validate",
+            "tests": "tests/validate_dispatcher_usage.py"
+          },
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/dispatch_caller_skill.py",
+            "function": "validate",
+            "tests": "tests/validate_dispatch_caller_skill.py"
+          }
+        ],
+        "not_schema_reason": "Requires static analysis of Python runtime code. The current validators do not prove that every DispatchCall target is listed in uses_interfaces; that remains a gap.",
+        "current_gap": "No current validator verifies that every DispatchCall target is declared in interfaces.*.*.uses_interfaces."
+      },
+      {
+        "id": "skill-body-cross-skill-mentions-are-declared",
+        "scope": "cross-file",
+        "summary": "Hand-authored SKILL.md references to other skills must be backed by blueprint uses_interfaces edges where appropriate.",
+        "applies_to": [
+          "interfaces.*.*.uses_interfaces",
+          "skills/*/SKILL.md"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/dependencies.py",
+            "function": "validate",
+            "tests": "tests/validate_dependencies.py"
+          }
+        ],
+        "not_schema_reason": "Requires scanning hand-authored skill prose and comparing mentions with blueprint edges."
+      },
+      {
+        "id": "no-cross-skill-runtime-reachthrough",
+        "scope": "runtime-boundary",
+        "summary": "Blueprint runtime files must not reach directly into another skill's private runtime paths; cross-skill behavior goes through declared interfaces.",
+        "applies_to": [
+          "interfaces.*.*.uses_interfaces",
+          "skills/*/_rtx/**/*.py",
+          "skills/*/_rtx/**/*.sh"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/boundaries.py",
+            "function": "validate",
+            "tests": "tests/validate_boundaries.py"
+          }
+        ],
+        "not_schema_reason": "Requires scanning file contents and paths outside one blueprint object."
+      },
+      {
+        "id": "blueprint-interface-ids-are-canonical",
+        "scope": "file",
+        "summary": "Interface namespace mappings must have mapping-shaped specs and local interface names must not contain dots.",
+        "applies_to": [
+          "interfaces.machine",
+          "interfaces.llm"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/interface_ids.py",
+            "function": "validate",
+            "tests": "tests/validate_interface_ids.py"
+          }
+        ],
+        "not_schema_reason": "JSON Schema checks most key patterns; this validator provides repository-specific diagnostics for interface mapping layout."
+      },
+      {
+        "id": "blueprint-platform-neutrality",
+        "scope": "cross-file",
+        "summary": "Blueprints and other shared skill surfaces must keep platform mentions in structured metadata or platform-named implementation files.",
+        "applies_to": [
+          "skills/*/blueprint.yaml",
+          "skills/*/SKILL.md",
+          "shared docs and shared runtime files"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "validators/platform_neutral.py",
+            "function": "validate",
+            "tests": "tests/validate_platform_neutral.py"
+          },
+          {
+            "kind": "validator",
+            "path": "validators/cross_platform.py",
+            "function": "_validate_blueprint",
+            "tests": "tests/validate_cross_platform.py"
+          }
+        ],
+        "not_schema_reason": "Requires scanning raw source text and cross-file platform policy exceptions."
+      },
+      {
+        "id": "skill-body-executable-logic-behind-interfaces",
+        "scope": "cross-file",
+        "summary": "Hand-authored SKILL.md bodies must not instruct normal operation through executable files, script paths, shell snippets, or CLI flags; execution belongs behind blueprint machine interfaces.",
+        "applies_to": [
+          "skills/*/SKILL.md",
+          "interfaces.machine"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "skills/skill-maker/validators/skill_body_execution.py",
+            "function": "validate",
+            "tests": "tests/validate_skill_body_execution.py"
+          }
+        ],
+        "not_schema_reason": "Requires scanning hand-authored Markdown after generated blueprint blocks are stripped."
+      },
+      {
+        "id": "private-runtime-layout-and-naming",
+        "scope": "runtime-boundary",
+        "summary": "Runtime implementation files live under skills/<skill>/_rtx/ and every non-exempt runtime path component must use the private multi-part naming convention.",
+        "applies_to": [
+          "skills/*/_rtx/**",
+          "interfaces.machine.*.invocation.entrypoint"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "validators/skill_runtime_files.py",
+            "function": "validate",
+            "tests": "tests/validate_skill_runtime_files.py"
+          }
+        ],
+        "not_schema_reason": "Requires inspecting tracked runtime files and path case collisions, not just blueprint entrypoint strings."
+      },
+      {
+        "id": "private-runtime-names-do-not-leak-to-skill-facing-markdown",
+        "scope": "runtime-boundary",
+        "summary": "Skill-facing Markdown must describe interfaces, not private _rtx directories, runtime filenames, or normalized private runtime stems.",
+        "applies_to": [
+          "skills/*/SKILL.md",
+          "skills/*/**/*.md",
+          "interfaces.machine.*.invocation.entrypoint"
+        ],
+        "enforced_by": [
+          {
+            "kind": "validator",
+            "path": "validators/skill_runtime_doc_references.py",
+            "function": "validate",
+            "tests": "tests/validate_skill_runtime_doc_references.py"
+          }
+        ],
+        "not_schema_reason": "Requires scanning Markdown while stripping generated SKILL.md blueprint blocks."
+      },
+      {
+        "id": "route-smoke-covers-lazy-runtime-dependencies",
+        "scope": "runtime-boundary",
+        "summary": "Python machine interfaces must make route_smoke cheaply exercise behavior-relevant lazy imports that normal execution would otherwise discover only at runtime.",
+        "applies_to": [
+          "interfaces.machine.*.invocation",
+          "skills/*/_rtx/**/*.py"
+        ],
+        "enforced_by": [
+          {
+            "kind": "generated-check",
+            "path": "src/officina/runtime/python_machine_interface_runner.py",
+            "tests": "tests/test_officina_python_machine_interface.py"
+          }
+        ],
+        "not_schema_reason": "The schema can require python_machine_interface metadata, but lazy import coverage depends on runtime class behavior."
+      }
+    ],
+    "migration_note": "This draft intentionally preserves the current schema validation shape while moving field semantics, authoring guidance, red flags, and validator mapping into schema annotations. Existing template-copy guidance is expected to be replaced by a generated sample once the generator is implemented.",
+    "migration_sources_consulted": [
+      "references/blueprint/schema.json",
+      "references/blueprint/guide.md",
+      "references/blueprint/template.yaml",
+      "references/skill-guidelines.md",
+      "references/skill-smells.md",
+      "docs/scaffolding/README.md",
+      "docs/contributors/README.md",
+      "skills/skill-maker/validators/",
+      "validators/"
+    ]
+  },
+  "examples": [
+    {
+      "category": "research-assistant",
+      "role": "research-writing",
+      "kind": "reviewer",
+      "skill_interface": {
+        "inputs": [
+          "User request that triggers this skill."
+        ],
+        "outputs": [
+          "Primary user-visible artifact or response."
+        ],
+        "side_effects": [
+          "Files or external state this skill may change."
+        ]
+      },
+      "interfaces": {
+        "machine": {
+          "read-data": {
+            "version": 1,
+            "description": "Read an input file.",
+            "usage": "<file>",
+            "allow_all_skills": true,
+            "allowed_callers": [],
+            "patterns": [
+              {
+                "min_positionals": 1,
+                "allow_stdin": false
+              }
+            ],
+            "platform_support": {
+              "linux": true,
+              "macos": true,
+              "windows": true
+            },
+            "invocation": {
+              "kind": "python_machine_interface",
+              "entrypoint": "_rtx/_read_data.py:ReadData",
+              "behavior_sources": []
+            },
+            "dependencies": [],
+            "direct_io": {
+              "reads": [],
+              "writes": [],
+              "network": []
+            },
+            "owns_filesystem": []
+          }
+        },
+        "llm": {
+          "default": {
+            "version": 1,
+            "description": "Primary LLM-facing skill instructions.",
+            "binding": {
+              "kind": "skill_file",
+              "path": "SKILL.md"
+            },
+            "behavior_sources": [],
+            "direct_io": {
+              "reads": [],
+              "writes": [],
+              "network": []
+            },
+            "owns_filesystem": [],
+            "allow_all_skills": true
+          }
+        }
+      }
+    }
+  ]
+}

@@ -569,6 +569,7 @@ GRAPH_SPECS: dict[str, dict] = {
                         [
                             node("hook-maker", "hook-maker", **PINK),
                             node("install-assistant-tools", "install-assistant-tools", width=214, **PINK),
+                            node("regenerate-blueprints", "regenerate-blueprints", width=214, **PINK),
                             node("refactor-skills", "refactor-skills", **PINK),
                             node("skill-audit", "skill-audit", **PINK),
                             node("skill-drift", "skill-drift", **PINK),
@@ -626,7 +627,8 @@ GRAPH_SPECS: dict[str, dict] = {
             {"source": "list-manager", "target": "daily-plan", "hidden": True},
             {"source": "wrap-up", "target": "git-workflow", "hidden": True},
             {"source": "hook-maker", "target": "install-assistant-tools", "hidden": True},
-            {"source": "install-assistant-tools", "target": "refactor-skills", "hidden": True},
+            {"source": "install-assistant-tools", "target": "regenerate-blueprints", "hidden": True},
+            {"source": "regenerate-blueprints", "target": "refactor-skills", "hidden": True},
             {"source": "refactor-skills", "target": "skill-audit", "hidden": True},
             {"source": "skill-audit", "target": "skill-drift", "hidden": True},
             {"source": "skill-drift", "target": "skill-maker", "hidden": True},

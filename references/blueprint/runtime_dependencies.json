@@ -1477,6 +1477,37 @@
         }
       }
     },
+    "regenerate-blueprints": {
+      "interfaces": {
+        "regenerate-blueprint": {
+          "id": "regenerate-blueprints.machine.regenerate-blueprint",
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses and emits blueprint YAML."
+            },
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Validates regenerated blueprints before writing output."
+            }
+          ]
+        }
+      }
+    },
     "skill-audit": {
       "interfaces": {
         "certify": {

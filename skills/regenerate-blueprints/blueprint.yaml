@@ -1,0 +1,106 @@
+category: skill-making-development-assistant
+role: meta-skill
+kind: generator
+suggested_permissions:
+  bash: []
+  network: []
+skill_interface:
+  inputs:
+  - Exact skill directory name for an existing local skill.
+  outputs:
+  - Refreshed blueprint YAML written under /tmp.
+  side_effects:
+  - Writes /tmp/<skill-name>_blueprint.yaml.
+interfaces:
+  machine:
+    regenerate-blueprint:
+      version: 1
+      description: Generate a refreshed blueprint YAML for one existing skill under /tmp.
+      usage: <skill-name>
+      allow_all_skills: true
+      allowed_callers: []
+      patterns:
+      - name: skill-name
+        min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        positional_patterns:
+          "0": ^[a-z0-9]+(?:-[a-z0-9]+)+$
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_blueprint_regenerator.py:Interface
+        behavior_sources:
+        - path: $repo/references/blueprint/schema.annotated-draft.json
+          content: blueprint
+          format: json
+          reason: Supplies schema documentation and validation rules for regenerated output.
+      dependencies:
+      - kind: python-package
+        name: PyYAML
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
+        reason: Parses and emits blueprint YAML.
+      - kind: python-package
+        name: jsonschema
+        version: any
+        platforms:
+          linux: true
+          macos: true
+          windows: true
+        reason: Validates regenerated blueprints before writing output.
+      direct_io:
+        reads:
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: blueprint
+          format: yaml
+          sensitivity: public
+          path: $repo/skills/*/blueprint.yaml
+          path_match: glob
+          reason: Reads the source skill blueprint values to preserve them.
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: blueprint
+          format: json
+          sensitivity: public
+          path: $repo/references/blueprint/schema.annotated-draft.json
+          reason: Reads schema documentation and validation rules.
+        writes:
+        - medium: local-filesystem
+          access: write
+          system: filesystem
+          content: blueprint
+          format: yaml
+          sensitivity: public
+          path: $tmp/*_blueprint.yaml
+          path_match: glob
+          reason: Writes the regenerated candidate blueprint.
+        network: []
+      owns_filesystem:
+      - match: regex
+        path: ^\$tmp/[A-Za-z0-9-]+_blueprint\.yaml$
+        allowed_readers: []
+        reason: Candidate regenerated blueprints are outputs of this interface.
+  llm:
+    default:
+      version: 1
+      description: Primary LLM-facing skill instructions.
+      binding:
+        kind: skill_file
+        path: SKILL.md
+      behavior_sources: []
+      direct_io:
+        reads: []
+        writes: []
+        network: []
+      owns_filesystem: []
+      allow_all_skills: true
