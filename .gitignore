@@ -47,6 +47,7 @@ plugins/
 **/*.pyd
 **/*.egg-info/
 _build/
+.worktrees/
 
 # Stray local copies of cloud-backed lists (source of truth is Drive, not the
 # skill dir). Leaving them here tempts edits to the wrong file. Keep blueprint.
