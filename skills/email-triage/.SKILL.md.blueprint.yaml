@@ -1,7 +1,7 @@
 schema_version: 2
 blueprint_type: llm-interface
 id: email-triage.llm.default
-version: 1
+version: 2
 description: Primary LLM-facing skill instructions.
 binding:
   kind: instruction-file
@@ -9,9 +9,7 @@ binding:
 allow_all_skills: true
 uses_interfaces:
   - interface: email-triage.llm.triage
-    version: 1
-  - interface: email-triage.llm.update-personal-preferences
-    version: 1
+    version: 2
 behavior_sources: []
 direct_io:
   reads:

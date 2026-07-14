@@ -1,7 +1,7 @@
 schema_version: 2
 blueprint_type: llm-interface
 id: email-triage.llm.triage
-version: 1
+version: 2
 description: Scans emails received since the last triage run and routes extracted action items to the right list.
 binding:
   kind: instruction-file
@@ -25,20 +25,9 @@ uses_interfaces:
     version: 1
   - interface: email-triage.machine.scripts-clear-failure
     version: 1
-behavior_sources:
-  - source: email-triage.source.personal-preferences
-    version: 1
-    blueprint: {base: skill-root, path: references/.personal-preferences.md.blueprint.yaml}
-    reason: Apply the user's local email-triage classification and presentation preferences.
+behavior_sources: []
 direct_io:
-  reads:
-    - medium: local-filesystem
-      access: read
-      system: filesystem
-      content: config
-      format: markdown
-      path: references/personal-preferences.md
-      sensitivity: user-private
+  reads: []
   writes:
     - medium: prompt
       access: write

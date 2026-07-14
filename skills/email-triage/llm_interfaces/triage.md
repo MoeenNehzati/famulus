@@ -2,16 +2,6 @@
 
 Scans emails received since the last triage run. Extracts action items and routes them to the right list. Never adds events to the calendar automatically — the user decides.
 
-## Personal preferences
-
-Before triage, read `references/personal-preferences.md`. An empty file means
-canonical triage behavior only. Apply its instructions only to classification
-judgment, item wording, and report presentation. If a personal instruction
-conflicts with a canonical rule in this interface, follow the canonical rule
-and report the conflict. If the preference file is missing or unreadable, stop
-before classification and report the path problem; do not continue with email
-triage.
-
 Use `email-client.llm.default` to read and send email. Use `list-manager.llm.default` to read and update destination lists.
 
 **IMPORTANT: Never ask the user for a lookback period or watermark date. The date always comes from the `email-triage.machine.scripts-get-cutoff` interface. If that interface emits a warning or fails, report it to the user — but do not ask them to supply a date instead.**

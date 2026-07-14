@@ -70,14 +70,11 @@ suggested_permissions:
 
 interfaces:
   - interface: email-triage.llm.default
-    version: 1
+    version: 2
     blueprint: {base: skill-root, path: .SKILL.md.blueprint.yaml}
   - interface: email-triage.llm.triage
-    version: 1
+    version: 2
     blueprint: {base: skill-root, path: llm_interfaces/.triage.md.blueprint.yaml}
-  - interface: email-triage.llm.update-personal-preferences
-    version: 1
-    blueprint: {base: skill-root, path: llm_interfaces/.update-personal-preferences.md.blueprint.yaml}
   - interface: email-triage.machine.scripts-filter-envelopes
     version: 1
     blueprint: {base: skill-root, path: _rtx/._envelope_gate.py.blueprint.yaml}

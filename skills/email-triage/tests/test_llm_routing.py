@@ -6,130 +6,98 @@ import yaml
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _normalized(text: str) -> str:
-    return " ".join(text.lower().split())
+def _load_yaml(path: Path) -> dict:
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_default_interface_routes_by_preference_intent() -> None:
+def test_default_interface_routes_only_to_triage_v2() -> None:
+    root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
+    default = _load_yaml(SKILL_ROOT / ".SKILL.md.blueprint.yaml")
+
+    llm_interfaces = [
+        (entry["interface"], entry["version"])
+        for entry in root["interfaces"]
+        if ".llm." in entry["interface"]
+    ]
+    assert llm_interfaces == [
+        ("email-triage.llm.default", 2),
+        ("email-triage.llm.triage", 2),
+    ]
+    assert default["version"] == 2
+    assert default["uses_interfaces"] == [
+        {"interface": "email-triage.llm.triage", "version": 2}
+    ]
+
     body = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-
-    assert "email-triage.llm.update-personal-preferences" in body
-    assert "email-triage.llm.triage" in body
-    assert "add, change, remove, review, or reset" in body
-    assert "Every other" in body
-
-
-def test_named_interfaces_are_separate_instruction_files() -> None:
-    triage = SKILL_ROOT / "llm_interfaces" / "triage.md"
-    update = SKILL_ROOT / "llm_interfaces" / "update-personal-preferences.md"
-
-    assert triage.is_file()
-    assert update.is_file()
-    assert "## Step 1" in triage.read_text(encoding="utf-8")
-    assert "sole writer" in update.read_text(encoding="utf-8")
+    authored = body.split("<!-- END BLUEPRINT INTERFACES -->", 1)[1]
+    assert "email-triage.llm.triage" in authored
+    assert "update-personal-preferences" not in authored
+    assert "choose" not in authored.lower()
 
 
-def test_personal_preferences_source_is_present_and_empty() -> None:
-    preferences = SKILL_ROOT / "references" / "personal-preferences.md"
+def test_preference_management_files_are_removed() -> None:
+    removed = [
+        SKILL_ROOT / "llm_interfaces" / "update-personal-preferences.md",
+        SKILL_ROOT / "llm_interfaces" / ".update-personal-preferences.md.blueprint.yaml",
+        SKILL_ROOT / "references" / "personal-preferences.md",
+        SKILL_ROOT / "references" / ".personal-preferences.md.blueprint.yaml",
+    ]
 
-    assert preferences.is_file()
-    assert preferences.read_bytes() == b""
+    assert [path for path in removed if path.exists()] == []
 
 
-def test_frontmatter_discovers_preference_management_requests() -> None:
+def test_frontmatter_discovers_only_email_triage_requests() -> None:
     body = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
     frontmatter = body.split("---", 2)[1].lower()
 
     assert "description: use when" in frontmatter
-    assert "email-triage preferences" in frontmatter
+    assert "triage email" in frontmatter
+    assert "process the inbox" in frontmatter
+    assert "preferences" not in frontmatter
     for action in ("add", "change", "remove", "review", "reset"):
-        assert action in frontmatter
+        assert action not in frontmatter
 
 
-def test_triage_preferences_are_scoped_and_canonical_rules_win() -> None:
-    body = _normalized((SKILL_ROOT / "llm_interfaces" / "triage.md").read_text(encoding="utf-8"))
+def test_triage_contract_has_no_preference_source_or_read() -> None:
+    triage = _load_yaml(
+        SKILL_ROOT / "llm_interfaces" / ".triage.md.blueprint.yaml"
+    )
 
-    assert "classification judgment, item wording, and report presentation" in body
-    assert "canonical rule" in body
-    assert "follow the canonical rule" in body
-
-
-def test_unreadable_preferences_stop_before_classification() -> None:
-    body = (SKILL_ROOT / "llm_interfaces" / "triage.md").read_text(encoding="utf-8").lower()
-
-    assert "unreadable" in body
-    assert "stop" in body
-    assert "before classification" in body
-    assert "path" in body
+    assert triage["version"] == 2
+    assert triage["behavior_sources"] == []
+    assert all(
+        entry.get("path") != "references/personal-preferences.md"
+        for entry in triage["direct_io"]["reads"]
+    )
 
 
-def test_destructive_preference_changes_require_confirmation() -> None:
-    body = (SKILL_ROOT / "llm_interfaces" / "update-personal-preferences.md").read_text(
+def test_canonical_triage_workflow_is_retained() -> None:
+    body = (SKILL_ROOT / "llm_interfaces" / "triage.md").read_text(
         encoding="utf-8"
-    ).lower()
-
-    assert "reset, removal, or other destructive rewrite" in body
-    assert "obtain confirmation before writing" in body
-
-
-def test_preference_write_failure_preserves_content_and_never_claims_success() -> None:
-    body = _normalized(
-        (SKILL_ROOT / "llm_interfaces" / "update-personal-preferences.md").read_text(
-            encoding="utf-8"
-        )
     )
 
-    assert "atomic" in body
-    assert "prior content" in body
-    assert "report the failure" in body
-    assert "never claim" in body
-    assert "saved" in body
-
-
-def test_successful_preference_write_reports_hash_change_and_stale_audit() -> None:
-    body = _normalized(
-        (SKILL_ROOT / "llm_interfaces" / "update-personal-preferences.md").read_text(
-            encoding="utf-8"
-        )
-    )
-
-    assert "successful write" in body
-    assert "bound-file hash changed" in body
-    assert "audit" in body
-    assert "stale" in body
-
-
-def test_preference_review_is_read_only() -> None:
-    body = (SKILL_ROOT / "llm_interfaces" / "update-personal-preferences.md").read_text(
-        encoding="utf-8"
-    ).lower()
-
-    assert "review" in body
-    assert "read-only" in body
-    assert "without writing" in body
-
-
-def test_updater_owns_preferences_and_triage_is_declared_reader() -> None:
-    update_sidecar = yaml.safe_load(
-        (SKILL_ROOT / "llm_interfaces" / ".update-personal-preferences.md.blueprint.yaml").read_text(
-            encoding="utf-8"
-        )
-    )
-    ownership = update_sidecar["owns_filesystem"]
-
-    assert ownership == [
-        {
-            "match": "exact",
-            "path": "references/personal-preferences.md",
-            "allowed_readers": ["email-triage.llm.triage"],
-            "reason": "The preference-update interface is the sole writer of user-level email-triage behavior.",
-        }
-    ]
-    assert "manag" in update_sidecar["behavior_sources"][0]["reason"].lower()
+    assert "Personal preferences" not in body
+    assert "personal-preferences.md" not in body
+    for marker in (
+        "## Step 1",
+        "## Step 3",
+        "## Step 4",
+        "## Step 5",
+        "## Step 6",
+        "## Step 7",
+        "email-triage.machine.fetch-filtered-envelopes",
+        "email-client.llm.default`'s `mail-read` interface",
+        "email-triage.machine.scripts-log-decision",
+        "email-triage.machine.scripts-mark-failure",
+        "email-triage.machine.scripts-update-watermark",
+    ):
+        assert marker in body
 
 
 def test_triage_uses_mail_read_interface_without_raw_invocation_template() -> None:
-    body = (SKILL_ROOT / "llm_interfaces" / "triage.md").read_text(encoding="utf-8")
+    body = (SKILL_ROOT / "llm_interfaces" / "triage.md").read_text(
+        encoding="utf-8"
+    )
 
     assert "Use `email-client.llm.default`'s `mail-read` interface" in body
     assert "mail-read -a" not in body
