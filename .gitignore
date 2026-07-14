@@ -47,5 +47,6 @@ _build/
 # skill dir). Leaving them here tempts edits to the wrong file. Keep blueprint.
 skills/list-manager/*.yaml
 !skills/list-manager/blueprint.yaml
+skills/list-manager/tmp/
 
 *.code-workspace

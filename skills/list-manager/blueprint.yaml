@@ -650,6 +650,68 @@ interfaces:
         linux: true
         macos: true
         windows: true
+    cloud-list-categories:
+      version: 1
+      uses_interfaces:
+      - interface: cloud-files.machine.lists-read
+        version: 1
+      description: Return cached cloud-list category paths, refreshing them after the local use countdown expires or on request.
+      usage: <name> --cloud [--refresh]
+      allow_all_skills: false
+      allowed_callers: []
+      patterns:
+      - min_positionals: 1
+        max_positionals: 1
+        allow_stdin: false
+        required_flags:
+        - --cloud
+        allowed_flags:
+        - --cloud
+        - --refresh
+        positional_patterns:
+          0: ^[a-zA-Z0-9_-]+$
+        notes: Returns category paths from the local cache; refreshes from cloud storage on first use, after twenty lookups, or with --refresh.
+      dependencies:
+      - kind: python-package
+        name: PyYAML
+        reason: Reads cloud list YAML and stores local category-cache YAML.
+        version: ">=6"
+        platforms:
+          linux: true
+          macos: true
+          windows: true
+      direct_io:
+        reads:
+        - medium: local-filesystem
+          access: read
+          system: filesystem
+          content: metadata
+          format: yaml
+          path: skills/list-manager/tmp/categories.<name>.yaml
+          sensitivity: user-private
+        writes:
+        - medium: local-filesystem
+          access: write
+          system: filesystem
+          content: metadata
+          format: yaml
+          path: skills/list-manager/tmp/categories.<name>.yaml
+          sensitivity: user-private
+        - medium: stdout
+          access: write
+          content: metadata
+          format: yaml
+          sensitivity: derived-private
+        network: []
+      owns_filesystem: []
+      invocation:
+        kind: python_machine_interface
+        entrypoint: _rtx/_category_cache.py:Interface
+        behavior_sources: []
+      platform_support:
+        linux: true
+        macos: true
+        windows: true
     cloud-create-entry:
       version: 1
       uses_interfaces:

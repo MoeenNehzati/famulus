@@ -22,6 +22,7 @@ Uses Interfaces:
 - `list-manager.machine.cloud-delete -> cloud-files.machine.lists-read@1`
 - `list-manager.machine.cloud-delete -> cloud-files.machine.lists-write@1`
 - `list-manager.machine.cloud-init -> cloud-files.machine.lists-write@1`
+- `list-manager.machine.cloud-list-categories -> cloud-files.machine.lists-read@1`
 - `list-manager.machine.cloud-read -> cloud-files.machine.lists-read@1`
 - `list-manager.machine.cloud-read-beautify -> cloud-files.machine.lists-read@1`
 - `list-manager.machine.cloud-update -> cloud-files.machine.lists-read@1`
@@ -47,6 +48,9 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `cloud-init` — Create a new list in cloud storage.
   - `dispatcher --caller-skill list-manager list-manager.machine.cloud-init <name> --cloud --schema <schema>`
   - Create a new list in cloud storage.
+- `cloud-list-categories` — Return cached cloud-list category paths, refreshing them after the local use countdown expires or on request.
+  - `dispatcher --caller-skill list-manager list-manager.machine.cloud-list-categories <name> --cloud [--refresh]`
+  - Returns category paths from the local cache; refreshes from cloud storage on first use, after twenty lookups, or with --refresh.
 - `cloud-read` — Read a cloud list by name (raw YAML), optionally filtered. A filtered read preserves structure: same shape as the full doc, pruned to only branches containing a match -- ancestor categories/parent entries are kept, and a match is never duplicated as both a nested child and a top-level result.
   - `dispatcher --caller-skill list-manager list-manager.machine.cloud-read <name> [filters] --cloud`
   - Read cloud list by name (raw YAML), optionally filtered. Filtered output is a pruned tree, not a flat list of matches -- do not assume flat-list shape.
@@ -94,8 +98,8 @@ Skill: list-manager
 - **Show to user:** use `cloud-read-beautify`; relay stdout **verbatim** — it is pre-formatted nested bullet-list markdown, id-annotated. Do not reformat.
 - **Ids:** every rendered row ends with `#id`. Use ids for all mutations — never row numbers. If ids aren't in context, run `cloud-read-beautify` first.
 - **Required fields:** if the schema requires a field the user didn't provide, ask — do not invent it. For example, `todo` entries require `deadline`. The script validates this on create-entry and rejects entries with missing required fields; this prevents silently inventing values.
-- **Creating entries:** if the target category path is not already in context, run `cloud-read-beautify` first to see the list structure. Do not guess category paths.
-- **Missing categories:** do not invent; fail and report available categories.
+- **Creating entries:** if the target category path is not already in context, use `cloud-list-categories` first. If several paths fit, offer short concrete choices; do not guess category paths.
+- **Missing or stale categories:** if a create reports that its category no longer exists, refresh `cloud-list-categories` once and ask the user to choose a matching current path. Do not infer a replacement category or silently retry the write.
 - **Transport:** cloud operations go through cloud-files's `lists-*` interfaces; never bypass them.
 - **Validation:** never upload after a local validation or mutation failure.
 - **`triage`:** accepting an item also creates a matching `todo` (state `incomplete`, today's date); rejecting only changes state in `triage`.
