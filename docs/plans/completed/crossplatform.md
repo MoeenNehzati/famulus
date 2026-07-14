@@ -1,5 +1,9 @@
 # Cross-Platform Reliability Plan
 
+Status: complete as of 2026-07-14. Remaining partially implemented or proposed
+items below are retained as historical follow-up recommendations, not active
+work tracked by this plan.
+
 ## Goal
 
 Make Famulus work cleanly across Linux, macOS, and Windows as the project evolves, not just after ad hoc fixes when CI fails.
@@ -37,14 +41,22 @@ We should be able to:
 - use CI as confirmation and native-host smoke coverage, not as the first serious portability check
 - add new shared skills without reintroducing shell-first or host-assumption-heavy designs
 
-## Current Sequence
+## Completion Disposition
 
-- current completed step: `Category 2 / Longer Fix 3` now has Python-first launcher installation, a recurring-tasks scheduler backend boundary, Python recurring-task setup/job execution, native scheduler generation for Linux/systemd, macOS/launchd, and Windows Task Scheduler, a live Linux/systemd schedule/unschedule smoke pass, and passing CI native scheduler smoke steps for macOS/launchd and Windows Task Scheduler
-- current repo status: recurring-tasks tests pass after the scheduler/job-executor slice; focused installer launcher/scaffold tests pass after the Windows `invoke-skill.bat` slice; CI native scheduler smoke passes on macOS and Windows; the overall CI workflow still fails because the broader full suite has unrelated baseline failures
-- recommended next item: move to the next cross-platform plan item or, if desired, separately triage the unrelated CI full-suite failures outside `Category 2 / Longer Fix 3`
-- emphasis for the next slice: keep separating product/runtime fixes from native-host scheduler support and test-harness-only host access problems
+- The final completed implementation slice added Python-first launcher
+  installation, a recurring-tasks scheduler backend boundary, Python recurring
+  task setup and execution, and native scheduler generation for Linux,
+  macOS, and Windows.
+- Linux received a live systemd schedule/unschedule smoke pass; CI received
+  passing opt-in native scheduler smoke coverage for macOS and Windows.
+- Focused recurring-tasks and installer launcher/scaffold tests passed for that
+  slice.
+- Broader baseline CI failures were outside this plan's completed scope.
+- Items below still marked partially implemented, in progress, or proposed are
+  preserved as historical recommendations. Pursuing one requires a new active
+  plan rather than reopening this document implicitly.
 
-Why this is next:
+Completion basis:
 
 - launcher installation no longer depends on POSIX shell as the primary product surface
 - recurring-task Linux/systemd scheduling works through the new Python executor path
