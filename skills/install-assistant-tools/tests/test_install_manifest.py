@@ -47,6 +47,18 @@ def test_manifest_dedupes_on_kind_and_path(tmp_path: Path):
     assert m.entries[0]["target"] == "/new"
 
 
+def test_manifest_forget_removes_matching_kind_and_path(tmp_path: Path):
+    path = tmp_path / "manifest.json"
+    m = Manifest(path)
+    m.record("symlink", path="/x", target="/target")
+    m.record("file", path="/x")
+
+    m.forget("symlink", path="/x")
+
+    assert m.entries == [{"kind": "file", "path": "/x"}]
+    assert Manifest(path).entries == m.entries
+
+
 def test_manifest_path_is_under_home_state(tmp_path: Path):
     p = manifest_path(tmp_path)
     assert p == tmp_path / ".local" / "state" / "assistant-tools" / "install-manifest.json"

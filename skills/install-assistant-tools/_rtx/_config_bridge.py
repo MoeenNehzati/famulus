@@ -21,7 +21,7 @@ Links created (documented in README.md § Systemwide Local Setup):
     CLAUDE.md  -> <repo>/CLAUDE.md   (shared repo instructions)
 
   Codex (~/.codex/ or $CODEX_HOME):
-    skills          -> <repo>/skills
+    skills/<name>   -> <repo>/skills/<name>  (preserves skills/.system)
     references      -> <repo>/references
     agents          -> <repo>/agents
     AGENTS.md       -> <repo>/AGENTS.md  (same content as CLAUDE.md via symlink)
@@ -31,11 +31,11 @@ NOTE: ~/.codex itself must be a real directory, not a symlink. Codex's Linux
 sandbox may reject read-only mounts that cross a writable symlink at the
 home-directory boundary. The script detects and warns about this case.
 
-If an existing ~/.claude/skills or ~/.codex/skills directory already contains
-local skill entries, the script preserves unique entries by migrating them into
-the canonical repo skills tree before replacing the user directory with a
-top-level symlink. When possible, preserved local entries are recorded in the
-repo-local Git exclude file.
+If an existing ~/.claude/skills directory already contains local skill entries,
+the script preserves unique entries by migrating them into the canonical repo
+skills tree before replacing the user directory with a top-level symlink. The
+Codex skills directory remains real so its runtime-owned .system entry stays in
+place; repo skills are linked into it individually.
 
 On Windows, creating symlinks requires either Developer Mode or administrator
 privileges. The script will report a clear error if symlink creation fails.
@@ -184,6 +184,60 @@ def ensure_skills_link(repo_root: Path, src: Path, dst: Path, dry_run: bool, man
 
     dst.rmdir()
     make_link(src, dst, dry_run=False, manifest=manifest)
+
+
+def ensure_codex_skill_links(
+    src: Path,
+    dst: Path,
+    dry_run: bool,
+    manifest: Manifest | None = None,
+) -> None:
+    """Expose repo skills without replacing Codex's runtime-owned directory."""
+    if not src.is_dir():
+        log(f"  SKIP (missing source): {src}")
+        return
+
+    repo_skills = [
+        entry
+        for entry in sorted(src.iterdir(), key=lambda path: path.name)
+        if entry.is_dir() and (entry / "SKILL.md").is_file()
+    ]
+
+    if dst.is_symlink():
+        try:
+            points_to_repo = dst.resolve() == src.resolve()
+        except OSError:
+            points_to_repo = False
+        if not points_to_repo:
+            log(f"  SKIP (Codex skills path is a foreign symlink): {dst}")
+            return
+        if dry_run:
+            log(f"  Would replace legacy Codex skills symlink with a real directory: {dst}")
+            for skill in repo_skills:
+                log(f"  Would link: {dst / skill.name} -> {skill}")
+            return
+        dst.unlink()
+        dst.mkdir(parents=True)
+        log(f"  Replaced legacy Codex skills symlink with a real directory: {dst}")
+    elif dst.exists() and not dst.is_dir():
+        log(f"  SKIP (Codex skills path is not a directory or symlink): {dst}")
+        return
+    elif not dst.exists():
+        if dry_run:
+            log(f"  Would create Codex skills directory: {dst}")
+        else:
+            dst.mkdir(parents=True)
+            log(f"  Created Codex skills directory: {dst}")
+
+    if manifest is not None and not dry_run:
+        manifest.forget("symlink", path=str(dst))
+
+    for skill in repo_skills:
+        link = dst / skill.name
+        if link.exists() and not link.is_symlink():
+            log(f"  SKIP (local Codex skill conflicts with repo skill): {skill.name}")
+            continue
+        make_link(skill, link, dry_run, manifest)
 
 
 def install_git_hooks(repo_root: Path, hooks_dir: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
@@ -499,7 +553,7 @@ def run(
             log(f"Setting up Codex symlinks in {codex_home} ...")
             if not dry_run:
                 codex_home.mkdir(parents=True, exist_ok=True)
-            ensure_skills_link(repo_root, repo_root / "skills", codex_home / "skills", dry_run, manifest)
+            ensure_codex_skill_links(repo_root / "skills", codex_home / "skills", dry_run, manifest)
             make_link(repo_root / "references", codex_home / "references", dry_run, manifest)
             make_link(repo_root / "agents",     codex_home / "agents",     dry_run, manifest)
             # AGENTS.md is a tracked symlink to CLAUDE.md in the source repo.

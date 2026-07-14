@@ -62,6 +62,18 @@ class Manifest:
     def remove(self, entry: dict) -> None:
         self.entries = [e for e in self.entries if e is not entry]
 
+    def forget(self, kind: str, *, path: str) -> None:
+        """Drop a stale ownership record identified by kind and path."""
+        remaining = [
+            entry
+            for entry in self.entries
+            if not (entry.get("kind") == kind and entry.get("path") == path)
+        ]
+        if len(remaining) == len(self.entries):
+            return
+        self.entries = remaining
+        self.save()
+
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"version": MANIFEST_VERSION, "entries": self.entries}

@@ -62,13 +62,20 @@ def test_linux_sync_writes_units_and_enables_timer(tmp_path):
         enabled=True,
     )
 
-    with mock.patch("_schedule_backend._linux_backend.subprocess.run") as run:
+    with (
+        mock.patch("_schedule_backend._linux_backend.subprocess.run") as run,
+        mock.patch(
+            "_schedule_backend._linux_backend.shutil.which",
+            return_value="/opt/famulus/bin/invoke-skill",
+        ),
+    ):
         LinuxScheduleBackend().sync([job], context)
 
     service = (tmp_path / "ai-my-job.service").read_text()
     timer = (tmp_path / "ai-my-job.timer").read_text()
-    assert "ExecStart=/usr/bin/env python3" in service
-    assert "_job_executor.py --jobs-file" in service
+    assert f'ExecStart="{sys.executable}"' in service
+    assert f'Environment="PATH=/opt/famulus/bin:{Path(sys.executable).parent}:' in service
+    assert '_job_executor.py" --jobs-file' in service
     assert "/bin/bash" not in service
     assert ">>" not in service
     assert "OnCalendar=*-*-* *:00:00" in timer

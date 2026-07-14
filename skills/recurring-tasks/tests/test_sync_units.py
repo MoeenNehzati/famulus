@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Tests for sync_units.py: unit file generation and cron->systemd conversion."""
 import importlib.util, tempfile, os
+import runpy
+import shutil
+import sys
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).parent.parent
@@ -15,6 +18,18 @@ def _load():
     mod  = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def test_skill_dir_is_absolute_when_entrypoint_uses_a_logical_path(monkeypatch):
+    monkeypatch.syspath_prepend(str(REPO_SRC))
+    monkeypatch.chdir(SKILL_DIR)
+
+    namespace = runpy.run_path(
+        "_rtx/_unit_writer.py",
+        run_name="_unit_writer_logical_path_test",
+    )
+
+    assert namespace["SKILL_DIR"] == SKILL_DIR.resolve()
 
 
 # ── cron_to_systemd_calendar ──────────────────────────────────────────────────
@@ -166,15 +181,17 @@ def test_no_per_job_runner_scripts_written():
         print("PASS: no per-job runner scripts written")
 
 
-def test_service_runs_python_executor_without_shell():
+def test_service_runs_python_executor_without_shell(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda _name: "/opt/famulus/bin/invoke-skill")
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
         content = (Path(d) / "ai-test-job.service").read_text()
-        assert "ExecStart=/usr/bin/env python3" in content
-        assert "_job_executor.py --jobs-file" in content
+        assert f'ExecStart="{sys.executable}"' in content
+        assert f'Environment="PATH=/opt/famulus/bin:{Path(sys.executable).parent}:' in content
+        assert '_job_executor.py" --jobs-file' in content
         assert "/bin/bash" not in content
         assert ">>" not in content
-        print("PASS: service ExecStart uses the Python job executor without shell redirection")
+        print("PASS: service ExecStart uses the active Python job executor without shell redirection")
 
 
 def test_orphaned_units_removed_when_job_disabled():

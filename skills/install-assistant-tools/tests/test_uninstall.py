@@ -106,6 +106,9 @@ def make_installed_state(root: Path) -> dict[str, Path]:
     bin_dir = home / "Documents" / "_rtx" / "bin"
     for d in (claude_home, codex_home, bin_dir):
         d.mkdir(parents=True)
+    codex_system = codex_home / "skills" / ".system"
+    codex_system.mkdir(parents=True)
+    (codex_system / "keep.txt").write_text("system\n", encoding="utf-8")
 
     # user-owned content that must survive uninstall untouched
     shell_rc = home / ".bashrc"
@@ -187,10 +190,16 @@ def installed(tmp_path: Path) -> dict[str, Path]:
 
 
 def test_removes_repo_symlinks_from_homes(installed):
+    codex_skills = installed["codex_home"] / "skills"
+    assert codex_skills.is_dir() and not codex_skills.is_symlink()
+    assert (codex_skills / "repo-skill").is_symlink()
+
     run_uninstall(installed)
     for name in ("skills", "references", "agents", "CLAUDE.md"):
         assert not (installed["claude_home"] / name).is_symlink(), name
-    assert not (installed["codex_home"] / "skills").is_symlink()
+    assert codex_skills.is_dir() and not codex_skills.is_symlink()
+    assert not (codex_skills / "repo-skill").exists()
+    assert (codex_skills / ".system" / "keep.txt").read_text(encoding="utf-8") == "system\n"
     assert not (installed["codex_home"] / "AGENTS.md").is_symlink()
 
 

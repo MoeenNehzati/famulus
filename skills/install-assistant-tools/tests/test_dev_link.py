@@ -27,6 +27,7 @@ SCRIPT_DIR = Path(__file__).resolve().parents[1] / "_rtx"
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(ROOT_DIR / "tests"))
 import _config_bridge as dev_link  # noqa: E402
+from _state_record import Manifest  # noqa: E402
 from install_test_utils import can_create_symlink  # noqa: E402
 
 
@@ -67,6 +68,10 @@ class SetupSymlinksTests(unittest.TestCase):
     def test_creates_expected_links_in_empty_directories(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = self.make_repo_root(Path(tmp))
+            (repo_root / "skills" / "proof-audit").mkdir()
+            (repo_root / "skills" / "proof-audit" / "SKILL.md").write_text(
+                "# proof audit\n", encoding="utf-8"
+            )
             home = Path(tmp) / "home"
             claude_home = home / "claude"
             codex_home = home / "codex"
@@ -86,7 +91,6 @@ class SetupSymlinksTests(unittest.TestCase):
                 claude_home / "CLAUDE.md": repo_root / "CLAUDE.md",
             }
             codex_expected = {
-                codex_home / "skills": repo_root / "skills",
                 codex_home / "references": repo_root / "references",
                 codex_home / "agents": repo_root / "agents",
                 codex_home / "AGENTS.md": (repo_root / "CLAUDE.md").resolve(),
@@ -102,6 +106,14 @@ class SetupSymlinksTests(unittest.TestCase):
             for path, target in codex_expected.items():
                 self.assertTrue(path.is_symlink(), path)
                 self.assertEqual(path.resolve(), target.resolve())
+
+            self.assertTrue((codex_home / "skills").is_dir())
+            self.assertFalse((codex_home / "skills").is_symlink())
+            self.assertTrue((codex_home / "skills" / "proof-audit").is_symlink())
+            self.assertEqual(
+                (codex_home / "skills" / "proof-audit").resolve(),
+                (repo_root / "skills" / "proof-audit").resolve(),
+            )
 
     def test_dry_run_does_not_create_any_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -195,11 +207,14 @@ class SetupSymlinksTests(unittest.TestCase):
             self.assertTrue(skills_link.is_symlink())
             self.assertEqual(skills_link.resolve(), (repo_root / "skills").resolve())
 
-    def test_existing_skills_directory_is_migrated_and_linked(self) -> None:
+    def test_codex_skills_directory_preserves_system_and_links_repo_skills(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             repo_root = self.make_repo_root(base)
             (repo_root / "skills" / "proof-audit").mkdir()
+            (repo_root / "skills" / "proof-audit" / "SKILL.md").write_text(
+                "# proof audit\n", encoding="utf-8"
+            )
             home = base / "home"
             codex_home = home / "codex"
             skills_dir = codex_home / "skills"
@@ -207,6 +222,82 @@ class SetupSymlinksTests(unittest.TestCase):
             (skills_dir / "proof-audit").symlink_to(repo_root / "skills" / "proof-audit")
             (skills_dir / ".system").mkdir()
             (skills_dir / ".system" / "keep.txt").write_text("system\n", encoding="utf-8")
+            manifest = Manifest(base / "manifest.json")
+            manifest.record(
+                "symlink", path=str(skills_dir), target=str(repo_root / "skills")
+            )
+
+            output = self.capture_run(
+                home=home,
+                repo_root=repo_root,
+                codex_home=codex_home,
+                do_claude=False,
+                do_codex=True,
+                dry_run=False,
+                manifest=manifest,
+            )
+
+            self.assertIn("OK (already linked)", output)
+            self.assertTrue(skills_dir.is_dir())
+            self.assertFalse(skills_dir.is_symlink())
+            self.assertTrue((skills_dir / ".system").is_dir())
+            self.assertEqual(
+                (skills_dir / ".system" / "keep.txt").read_text(encoding="utf-8"),
+                "system\n",
+            )
+            self.assertTrue((skills_dir / "proof-audit").is_symlink())
+            self.assertEqual(
+                (skills_dir / "proof-audit").resolve(),
+                (repo_root / "skills" / "proof-audit").resolve(),
+            )
+            self.assertFalse((repo_root / "skills" / ".system").exists())
+            skill_links = {
+                entry["path"]
+                for entry in manifest.entries
+                if entry.get("kind") == "symlink"
+            }
+            self.assertNotIn(str(skills_dir), skill_links)
+            self.assertIn(str(skills_dir / "proof-audit"), skill_links)
+
+    def test_codex_legacy_top_level_skills_link_is_converted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            repo_root = self.make_repo_root(base)
+            skill = repo_root / "skills" / "proof-audit"
+            skill.mkdir()
+            (skill / "SKILL.md").write_text("# proof audit\n", encoding="utf-8")
+            home = base / "home"
+            codex_home = home / "codex"
+            codex_home.mkdir(parents=True)
+            skills_dir = codex_home / "skills"
+            skills_dir.symlink_to(repo_root / "skills")
+
+            self.capture_run(
+                home=home,
+                repo_root=repo_root,
+                codex_home=codex_home,
+                do_claude=False,
+                do_codex=True,
+                dry_run=False,
+            )
+
+            self.assertTrue(skills_dir.is_dir())
+            self.assertFalse(skills_dir.is_symlink())
+            self.assertTrue((skills_dir / "proof-audit").is_symlink())
+            self.assertEqual((skills_dir / "proof-audit").resolve(), skill.resolve())
+
+    def test_codex_local_skill_conflict_is_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            repo_root = self.make_repo_root(base)
+            repo_skill = repo_root / "skills" / "proof-audit"
+            repo_skill.mkdir()
+            (repo_skill / "SKILL.md").write_text("repo\n", encoding="utf-8")
+            home = base / "home"
+            codex_home = home / "codex"
+            local_skill = codex_home / "skills" / "proof-audit"
+            local_skill.mkdir(parents=True)
+            (local_skill / "SKILL.md").write_text("local\n", encoding="utf-8")
 
             output = self.capture_run(
                 home=home,
@@ -217,17 +308,9 @@ class SetupSymlinksTests(unittest.TestCase):
                 dry_run=False,
             )
 
-            self.assertIn("Removed redundant skill entry: proof-audit", output)
-            self.assertIn("Preserved local skill entry: .system", output)
-            self.assertTrue(skills_dir.is_symlink())
-            self.assertEqual(skills_dir.resolve(), (repo_root / "skills").resolve())
-            self.assertTrue((repo_root / "skills" / ".system").is_dir())
-            self.assertEqual(
-                (repo_root / "skills" / ".system" / "keep.txt").read_text(encoding="utf-8"),
-                "system\n",
-            )
-            exclude_path = repo_root / ".git" / "info" / "exclude"
-            self.assertIn("skills/.system", exclude_path.read_text(encoding="utf-8"))
+            self.assertIn("SKIP (local Codex skill conflicts with repo skill): proof-audit", output)
+            self.assertFalse(local_skill.is_symlink())
+            self.assertEqual((local_skill / "SKILL.md").read_text(encoding="utf-8"), "local\n")
 
     def test_skills_directory_conflict_is_left_in_place(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

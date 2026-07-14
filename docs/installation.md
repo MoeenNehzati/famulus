@@ -77,7 +77,10 @@ Runs in every install, regardless of mode or which agents you want. Installs:
   interface dependency declarations. First-party code (`script_dispatcher`
   itself) is deliberately **not** pip-installed — it runs straight from the
   repo via a path baked into the `dispatcher` launcher at generation time, so
-  there's never a second copy to drift out of sync.
+  there's never a second copy to drift out of sync. Unix launchers re-exec the
+  Python runtime used by the installer, keeping those packages and dispatcher
+  execution on the same interpreter. Linux recurring units use that runtime
+  and capture the installed launcher directory ahead of other PATH entries.
 - `PATH` — adds `<bin-dir>` to your shell rc (or the Windows registry) so
   `dispatcher` and the agent launchers resolve as bare commands.
 
@@ -93,9 +96,10 @@ without writing files.
 
 Only runs if you said yes to dev mode and gave a repo path. Installs:
 
-- Symlinks: `~/.claude/skills → <repo>/skills`, `references`, `agents`,
-  `CLAUDE.md` (and the Codex equivalents, including `AGENTS.md` and each
-  `profiles/*.config.toml`).
+- Symlinks: `~/.claude/skills → <repo>/skills`, plus the shared `references`,
+  `agents`, and instruction files. Codex keeps `~/.codex/skills` as a real
+  directory and links each repo skill into it individually, preserving its
+  runtime-owned `.system` directory. Codex profile configs are also linked.
 - Dev-mode session hooks in `~/.claude/settings.local.json` and
   `~/.codex/config.toml`, driven by the registry in [llmhooks/registry.py](../llmhooks/registry.py).
 - `git config core.hooksPath .githooks` in the repo (skipped with a note if
@@ -365,15 +369,16 @@ will see `SKIP (already exists as real path, not a symlink): <path>` and
 nothing else happens there. There is no merge/backup/rollback UI. Move the
 conflicting path aside yourself, then re-run.
 
-**A pre-existing `~/.claude/skills` or `~/.codex/skills` directory has your
-own content in it**
-`dev_link.py` handles this automatically: it migrates any unique local
-entries into the repo's own `skills/` tree (and records them in the
-repo-local git exclude file so they don't show up in `git status`), removes
-any redundant symlinks that already point into the repo, and then replaces
-the directory with a single top-level symlink. If an entry name conflicts
-with a *different* repo skill of the same name, it's left in place and
-reported for manual resolution — this is the one case that isn't automatic.
+**A pre-existing skills directory has your own content in it**
+For Claude, `dev_link.py` migrates unique local entries into the repo's
+`skills/` tree, records them in the repo-local git exclude file, and replaces
+the directory with a top-level symlink. A conflicting same-name skill is left
+for manual resolution.
+
+For Codex, the directory is never replaced. Runtime-owned and local entries
+stay in place, while each non-conflicting repo skill is linked beside them. A
+legacy top-level link to the same repo is converted automatically. A local
+same-name skill wins and is reported as a conflict.
 
 **Uninstall refuses with "no manifest found"**
 This is intentional, not a bug — uninstall only ever trusts its own manifest;

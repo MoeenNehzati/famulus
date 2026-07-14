@@ -1,6 +1,7 @@
 """Linux launcher bundle installer."""
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from _state_record import Manifest
@@ -15,6 +16,16 @@ from ._base_launcher import (
 )
 
 
+def _python_reexec_block() -> str:
+    expected_python = repr(str(Path(sys.executable)))
+    return (
+        f"EXPECTED_PYTHON = {expected_python}\n"
+        "if os.path.abspath(sys.executable) != os.path.abspath(EXPECTED_PYTHON):\n"
+        "    os.execv(EXPECTED_PYTHON, [EXPECTED_PYTHON, *sys.argv])\n"
+        "\n"
+    )
+
+
 def _unix_dispatcher_content(repo_root: Path) -> str:
     repo = repr(str(repo_root))
     return (
@@ -25,6 +36,7 @@ def _unix_dispatcher_content(repo_root: Path) -> str:
         "import runpy\n"
         "import sys\n"
         "\n"
+        f"{_python_reexec_block()}"
         f"ai_root = os.environ.get('AI', {repo})\n"
         "sys.path.insert(0, os.path.join(ai_root, 'src'))\n"
         "sys.argv = ['officina.dispatcher.cli', *sys.argv[1:]]\n"
@@ -40,6 +52,7 @@ def _unix_invoke_skill_content() -> str:
         "import os\n"
         "import sys\n"
         "\n"
+        f"{_python_reexec_block()}"
         "if len(sys.argv) != 2:\n"
         "    print('Usage: invoke-skill <skill-name>', file=sys.stderr)\n"
         "    raise SystemExit(2)\n"

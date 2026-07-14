@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from ._base_backend import ScheduleContext, ScheduleJob
@@ -48,16 +50,41 @@ def cron_to_systemd_calendar(cron: str) -> str:
     return f'{dow_prefix}*-*-* {field(hour, pad=True)}:{field(minute, pad=True, step_base="00")}:00'
 
 
-def service_content(job_name: str, description: str, jobs_file: Path, executor: Path) -> str:
+def _systemd_quote(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _launcher_bin_dir() -> Path:
+    launcher = shutil.which("invoke-skill")
+    if launcher:
+        return Path(launcher).parent
+    return Path.home() / "Documents" / "_rtx" / "bin"
+
+
+def service_content(
+    job_name: str,
+    description: str,
+    jobs_file: Path,
+    executor: Path,
+    python_executable: Path | None = None,
+    launcher_bin: Path | None = None,
+) -> str:
     """Generate systemd service unit for a job."""
+    python = python_executable or Path(sys.executable)
+    launcher_dir = launcher_bin or _launcher_bin_dir()
+    path_value = (
+        f"{launcher_dir}:{python.parent}:%h/.npm-global/bin:"
+        "%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
+    )
     return (
         "[Unit]\n"
         f"Description=AI job: {description}\n"
         "\n"
         "[Service]\n"
         "Type=oneshot\n"
-        "Environment=PATH=%h/Documents/scripts/bin:%h/.npm-global/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin\n"
-        f"ExecStart=/usr/bin/env python3 {executor} --jobs-file {jobs_file} --job {job_name}\n"
+        f"Environment={_systemd_quote(f'PATH={path_value}')}\n"
+        f"ExecStart={_systemd_quote(str(python))} {_systemd_quote(str(executor))} "
+        f"--jobs-file {_systemd_quote(str(jobs_file))} --job {job_name}\n"
     )
 
 

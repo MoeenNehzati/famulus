@@ -44,6 +44,10 @@ def test_run_writes_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch)
     if os.name != "nt":
         assert dispatcher.stat().st_mode & 0o111  # executable bits set
     assert repr(str(repo_root)) in dispatcher.read_text()
+    assert repr(str(Path(sys.executable))) in dispatcher.read_text()
+    assert "os.execv(EXPECTED_PYTHON" in dispatcher.read_text()
+    assert repr(str(Path(sys.executable))) in invoke_skill.read_text()
+    assert "os.execv(EXPECTED_PYTHON" in invoke_skill.read_text()
     assert "_agent_invoker.sh" not in invoke_skill.read_text(encoding="utf-8")
 
 
