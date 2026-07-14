@@ -44,7 +44,7 @@ Assert that the root and default sidecar expose only triage at version 2, the up
 Run:
 
 ```bash
-/home/moeen/anaconda3/bin/pytest -q skills/email-triage/tests/test_llm_routing.py
+python3 -m pytest -q skills/email-triage/tests/test_llm_routing.py
 ```
 
 Expected: failures showing version 1, the updater locator/files, and preference behavior source still exist.
@@ -78,7 +78,7 @@ Set the triage sidecar to version 2 with `behavior_sources: []` and no direct re
 Run:
 
 ```bash
-/home/moeen/Documents/scripts/bin/dispatcher --caller-skill skill-maker skill-maker.machine.sync-blueprints
+dispatcher --caller-skill skill-maker skill-maker.machine.sync-blueprints
 ```
 
 Expected: generated `SKILL.md` contract and interface sections reference only `email-triage.llm.triage@2`.
@@ -88,9 +88,9 @@ Expected: generated `SKILL.md` contract and interface sections reference only `e
 Run:
 
 ```bash
-/home/moeen/anaconda3/bin/pytest -q skills/email-triage/tests
-/home/moeen/Documents/scripts/bin/dispatcher --caller-skill skill-maker skill-maker.machine.sync-blueprints --check
-/home/moeen/anaconda3/bin/python validators/runner.py
+python3 -m pytest -q skills/email-triage/tests
+dispatcher --caller-skill skill-maker skill-maker.machine.sync-blueprints --check
+python3 validators/runner.py
 /usr/bin/git diff --check -- skills/email-triage
 ```
 
