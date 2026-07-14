@@ -9,7 +9,7 @@ RUNTIME_SUFFIXES = {".py", ".sh"}
 
 
 def _is_text_runtime_file(path: Path) -> bool:
-    return path.is_file() and path.suffix in RUNTIME_SUFFIXES
+    return path.is_file() and (path.suffix in RUNTIME_SUFFIXES or "_cx" in path.parts)
 
 
 def validate(repo_root: Path) -> list[str]:
@@ -40,9 +40,9 @@ def validate(repo_root: Path) -> list[str]:
 
                 for other_skill in other_skills:
                     direct_patterns = [
-                        rf"(?:^|[^A-Za-z0-9_-])(?:\.\./)+{re.escape(other_skill)}/_rtx/",
-                        rf"(?:^|[^A-Za-z0-9_-])skills/{re.escape(other_skill)}/_rtx/",
-                        rf"/skills/{re.escape(other_skill)}/_rtx/",
+                        rf"(?:^|[^A-Za-z0-9_-])(?:\.\./)+{re.escape(other_skill)}/_(?:rtx|cx)/",
+                        rf"(?:^|[^A-Za-z0-9_-])skills/{re.escape(other_skill)}/_(?:rtx|cx)/",
+                        rf"/skills/{re.escape(other_skill)}/_(?:rtx|cx)/",
                     ]
                     if any(re.search(pattern, line) for pattern in direct_patterns):
                         rel = path.relative_to(repo_root)

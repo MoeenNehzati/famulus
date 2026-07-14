@@ -6,7 +6,10 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, ClassVar, Mapping, Sequence
+
+if TYPE_CHECKING:
+    from officina.dispatcher import ResolvedInvocationMetadata
 
 
 @dataclass(frozen=True)
@@ -26,7 +29,7 @@ class ResolvedDispatchDependency:
 
     key: str
     call: DispatchCall
-    resolved: Any
+    resolved: "ResolvedInvocationMetadata"
     depth: int
 
 
@@ -85,12 +88,12 @@ class DispatchDependencyResolver:
                 visited_interfaces=visited_interfaces,
             )
 
-    def resolve_call(self, call: DispatchCall) -> Any:
+    def resolve_call(self, call: DispatchCall) -> "ResolvedInvocationMetadata":
         """Resolve one declared dispatch through the canonical dispatcher checks."""
 
-        from officina.dispatcher import resolve_dispatch
+        from officina.dispatcher import resolve_dispatch_metadata
 
-        return resolve_dispatch(
+        return resolve_dispatch_metadata(
             caller_skill=call.caller_skill,
             target_skill=call.target_skill,
             script_interface=call.interface,

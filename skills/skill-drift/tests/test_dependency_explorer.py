@@ -157,10 +157,9 @@ def test_explore_interface_unions_behavior_sources_and_python_dependencies(tmp_p
 
     assert {
         "skills/demo-skill/NOTES.md",
-        "skills/demo-skill/_rtx/__init__.py",
         "skills/demo-skill/_rtx/_main.py",
-        "skills/demo-skill/_rtx/_helper.py",
     } <= labels
+    assert "skills/demo-skill/_rtx/_helper.py" not in labels
 
 
 def test_explore_skill_unions_interface_files(tmp_path: Path) -> None:
@@ -215,7 +214,7 @@ def test_explore_skill_unions_interface_files(tmp_path: Path) -> None:
     } <= labels
 
 
-def test_python_route_smoke_imports_local_module_dependencies(tmp_path: Path) -> None:
+def test_copied_python_runtime_dependencies_are_not_executed(tmp_path: Path) -> None:
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"
     write(skill / "_rtx" / "__init__.py", "PACKAGE_VALUE = 'one'\n")
@@ -247,13 +246,50 @@ def test_python_route_smoke_imports_local_module_dependencies(tmp_path: Path) ->
         for entry in health_state.python_runtime_dependency_entries(skill, repo, spec)
     }
 
+    assert labels == set()
+
+
+def test_active_installation_python_runtime_dependencies_are_traced(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = tmp_path
+    skill = repo / "skills" / "demo-skill"
+    write(skill / "_rtx" / "__init__.py", "")
+    write(skill / "_rtx" / "_helper.py", "VALUE = 'ok'\n")
+    write(
+        skill / "_rtx" / "_main.py",
+        "\n".join(
+            [
+                "from officina.runtime.python_machine_interface import PythonMachineInterface",
+                "from . import _helper",
+                "",
+                "class Interface(PythonMachineInterface):",
+                "    def route_smoke(self):",
+                "        assert _helper.VALUE",
+                "",
+            ]
+        ),
+    )
+    monkeypatch.setattr(health_state, "REPO_ROOT", repo)
+    spec = {
+        "invocation": {
+            "kind": "python_machine_interface",
+            "entrypoint": "_rtx/_main.py:Interface",
+        },
+    }
+
+    labels = {
+        entry.label
+        for entry in health_state.python_runtime_dependency_entries(skill, repo, spec)
+    }
+
     assert "skills/demo-skill/_rtx/__init__.py" in labels
     assert "skills/demo-skill/_rtx/_main.py" in labels
     assert "skills/demo-skill/_rtx/_helper.py" in labels
-    assert "skills/demo-skill/_rtx/_nested.py" in labels
 
 
-def test_python_route_smoke_includes_package_init_files(tmp_path: Path) -> None:
+def test_copied_python_package_init_is_not_executed(tmp_path: Path) -> None:
     repo = tmp_path
     skill = repo / "skills" / "demo-skill"
     write(skill / "_rtx" / "__init__.py", "PACKAGE_VALUE = 'one'\n")
@@ -283,19 +319,23 @@ def test_python_route_smoke_includes_package_init_files(tmp_path: Path) -> None:
         for entry in health_state.python_runtime_dependency_entries(skill, repo, spec)
     }
 
-    assert "skills/demo-skill/_rtx/__init__.py" in labels
-    assert "skills/demo-skill/_rtx/_main.py" in labels
+    assert labels == set()
 
 
-def test_python_route_smoke_includes_officina_imports(tmp_path: Path) -> None:
+def test_copied_python_runtime_is_not_executed_with_live_repo_root(
+    tmp_path: Path,
+) -> None:
     repo = Path(__file__).resolve().parents[3]
     skill = tmp_path / "skills" / "demo-skill"
+    marker = tmp_path / "copied-runtime-executed"
     write(skill / "_rtx" / "__init__.py", "")
     write(
         skill / "_rtx" / "_main.py",
         "\n".join(
             [
+                "from pathlib import Path",
                 "from officina.runtime.python_machine_interface import PythonMachineInterface",
+                f"Path({str(marker)!r}).write_text('executed')",
                 "",
                 "class Interface(PythonMachineInterface):",
                 "    def route_smoke(self):",
@@ -318,9 +358,8 @@ def test_python_route_smoke_includes_officina_imports(tmp_path: Path) -> None:
         for entry in health_state.python_runtime_dependency_entries(skill, repo, spec)
     ]
 
-    assert "src/officina/__init__.py" in modules
-    assert "src/officina/common/__init__.py" in modules
-    assert "src/officina/common/dates.py" in modules
+    assert modules == []
+    assert not marker.exists()
 
 
 def test_python_declared_dispatch_dependencies_are_traced_recursively(tmp_path: Path) -> None:
@@ -406,9 +445,7 @@ def test_python_declared_dispatch_dependencies_are_traced_recursively(tmp_path: 
         for entry in health_state.python_runtime_dependency_entries(source, repo, spec)
     }
 
-    assert "skills/target-skill/_rtx/__init__.py" in labels
-    assert "skills/target-skill/_rtx/_target.py" in labels
-    assert "skills/target-skill/_rtx/_helper.py" in labels
+    assert labels == set()
 
 
 def test_python_declared_dispatch_to_python_runtime_hashes_target_runtime_file(tmp_path: Path) -> None:
@@ -480,7 +517,7 @@ def test_python_declared_dispatch_to_python_runtime_hashes_target_runtime_file(t
         for entry in health_state.python_runtime_dependency_entries(source, repo, spec)
     }
 
-    assert "skills/target-skill/_rtx/_tool.py" in labels
+    assert labels == set()
 
 
 def test_python_mixed_local_officina_and_dispatched_imports_are_all_traced(tmp_path: Path) -> None:
@@ -582,20 +619,7 @@ def test_python_mixed_local_officina_and_dispatched_imports_are_all_traced(tmp_p
         for entry in health_state.python_runtime_dependency_entries(source, repo, spec)
     }
 
-    expected = {
-        "skills/source-skill/_rtx/__init__.py",
-        "skills/source-skill/_rtx/_main.py",
-        "skills/source-skill/_rtx/_source_helper.py",
-        "skills/source-skill/_rtx/_source_nested.py",
-        "skills/target-skill/_rtx/__init__.py",
-        "skills/target-skill/_rtx/_target.py",
-        "skills/target-skill/_rtx/_target_helper.py",
-        "skills/target-skill/_rtx/_target_nested.py",
-    }
-    assert expected <= labels
-    assert_label_suffix(labels, "src/officina/common/__init__.py")
-    assert_label_suffix(labels, "src/officina/common/dates.py")
-    assert_label_suffix(labels, "src/officina/common/toml_io.py")
+    assert labels == set()
 
 
 def test_python_deep_dispatch_chain_preserves_each_hops_import_graph(tmp_path: Path) -> None:
@@ -729,20 +753,7 @@ def test_python_deep_dispatch_chain_preserves_each_hops_import_graph(tmp_path: P
         for entry in health_state.python_runtime_dependency_entries(source, repo, spec)
     }
 
-    expected = {
-        "skills/source-skill/_rtx/__init__.py",
-        "skills/source-skill/_rtx/_source.py",
-        "skills/source-skill/_rtx/_source_helper.py",
-        "skills/middle-skill/_rtx/__init__.py",
-        "skills/middle-skill/_rtx/_middle.py",
-        "skills/middle-skill/_rtx/_middle_helper.py",
-        "skills/leaf-skill/_rtx/__init__.py",
-        "skills/leaf-skill/_rtx/_leaf.py",
-        "skills/leaf-skill/_rtx/_leaf_helper.py",
-        "skills/leaf-skill/_rtx/_leaf_nested.py",
-    }
-    assert expected <= labels
-    assert_label_suffix(labels, "src/officina/common/dates.py")
+    assert labels == set()
 
 
 def test_python_branching_dispatches_and_multiple_imports_are_all_traced(tmp_path: Path) -> None:
@@ -875,19 +886,4 @@ def test_python_branching_dispatches_and_multiple_imports_are_all_traced(tmp_pat
         for entry in health_state.python_runtime_dependency_entries(source, repo, spec)
     }
 
-    expected = {
-        "skills/source-skill/_rtx/__init__.py",
-        "skills/source-skill/_rtx/_main.py",
-        "skills/source-skill/_rtx/_first_helper.py",
-        "skills/source-skill/_rtx/_second_helper.py",
-        "skills/alpha-skill/_rtx/__init__.py",
-        "skills/alpha-skill/_rtx/_alpha.py",
-        "skills/alpha-skill/_rtx/_alpha_helper.py",
-        "skills/beta-skill/_rtx/__init__.py",
-        "skills/beta-skill/_rtx/_beta.py",
-        "skills/beta-skill/_rtx/_beta_helper.py",
-        "skills/beta-skill/_rtx/_beta_nested.py",
-    }
-    assert expected <= labels
-    assert_label_suffix(labels, "src/officina/common/dates.py")
-    assert_label_suffix(labels, "src/officina/common/toml_io.py")
+    assert labels == set()

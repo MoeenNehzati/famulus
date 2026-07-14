@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "llm-interface.schema.json",
+  "title": "Typed LLM Interface Blueprint",
+  "description": "Complete contract for one file-backed LLM interface.",
+  "type": "object",
+  "required": ["schema_version", "blueprint_type", "id", "version", "description", "binding", "behavior_sources", "direct_io", "owns_filesystem"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"$ref": "common.schema.json#/definitions/schemaVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 2}, "doc": {"authoring": ["Use typed blueprint schema version 2."]}, "related_validation_rules": ["schema-shape"]}},
+    "blueprint_type": {"const": "llm-interface", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "llm-interface"}, "doc": {"authoring": ["Identify this file as one LLM interface contract."]}, "related_validation_rules": ["schema-shape"]}},
+    "id": {"$ref": "common.schema.json#/definitions/llmInterfaceId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "demo-skill.llm.default"}, "doc": {"authoring": ["Use skill.llm.local-name; the default interface ends in llm.default."]}, "related_validation_rules": ["canonical-id"]}},
+    "version": {"$ref": "common.schema.json#/definitions/interfaceVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Increment when the caller-visible interface contract changes."]}, "related_validation_rules": ["version-pin"]}},
+    "description": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Primary skill instructions."}, "doc": {"authoring": ["Summarize this LLM interface in one concrete sentence."]}, "related_validation_rules": ["schema-shape"]}},
+    "binding": {"$ref": "common.schema.json#/definitions/instructionFileBinding", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": {"kind": "instruction-file", "path": "SKILL.md"}}, "doc": {"authoring": ["Bind exactly one existing instruction file; the default interface binds SKILL.md."]}, "related_validation_rules": ["file-binding"]}},
+    "local_hash_inputs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"}, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List exact additional files owned by this node whose bytes affect its local behavior. Child-node bindings do not belong here."]}, "related_validation_rules": ["file-binding", "commit-backed-stamp"]}},
+    "allow_all_skills": {"type": "boolean", "default": false, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Set true only when every skill may depend on this interface."]}, "related_validation_rules": ["access-control"]}},
+    "allowed_callers": {"$ref": "common.schema.json#/definitions/allowedCallers", "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List exact skill IDs allowed to depend on this interface."]}, "related_validation_rules": ["access-control"]}},
+    "routing_hints": {"type": "array", "items": {"type": "string", "minLength": 1}, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Record concise routing cues specific to this LLM surface."]}, "related_validation_rules": ["schema-shape"]}},
+    "uses_interfaces": {"$ref": "common.schema.json#/definitions/usedInterfaceList", "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Declare every canonical interface named or orchestrated by this LLM interface."]}, "related_validation_rules": ["relationship-edge", "version-pin", "access-control", "interface-body-use"]}},
+    "behavior_sources": {"$ref": "common.schema.json#/definitions/behaviorSourceEdgeList", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": []}, "doc": {"authoring": ["Point to each behavior source used by this interface and state the consumer-local reason."]}, "related_validation_rules": ["behavior-source-edge", "version-pin", "file-binding"]}},
+    "direct_io": {"$ref": "common.schema.json#/definitions/directIo", "x-famulus": {"field_status": "required", "audit_hash": "exclude", "template": {"include": true, "example": {"reads": [], "writes": [], "network": []}}, "doc": {"authoring": ["Describe immediate semantic IO; this does not prove subsystem access confinement."]}, "related_validation_rules": ["direct-io-description"]}},
+    "owns_filesystem": {"$ref": "common.schema.json#/definitions/filesystemOwnershipList", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": []}, "doc": {"authoring": ["Declare files for which this interface is the writer authority."]}, "related_validation_rules": ["filesystem-ownership"]}}
+  },
+  "allOf": [
+    {"$ref": "legacy-skill.schema.json#/definitions/allowAllSkillsConstraint"},
+    {
+      "if": {"properties": {"id": {"pattern": "\\.llm\\.default$"}}, "required": ["id"]},
+      "then": {"properties": {"binding": {"properties": {"path": {"const": "SKILL.md"}}}}}
+    }
+  ],
+  "x-famulus": {"audit_hash": "include-except-direct-io", "binding_policy": "regular-file"}
+}

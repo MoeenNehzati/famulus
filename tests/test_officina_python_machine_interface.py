@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import sys
 from pathlib import Path
 
@@ -116,6 +117,33 @@ def test_load_interface_ignores_conflicting_cached_package(
     assert interface.value == "ok"
     sys.modules.pop("_rtx", None)
     sys.modules.pop("_rtx._demo", None)
+
+
+def test_load_interface_uses_bound_source_snapshot_after_final_swap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = tmp_path / "_rtx"
+    runtime.mkdir()
+    entrypoint = runtime / "_demo.py"
+    write_interface(entrypoint)
+    source_fd = os.open(entrypoint, os.O_RDONLY)
+    entrypoint.replace(runtime / "trusted.py")
+    entrypoint.write_text(
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    marker = 'untrusted'\n"
+        "    def run(self, args): return 0\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    try:
+        interface = load_interface("_rtx/_demo.py:Interface", source_fd=source_fd)
+    finally:
+        os.close(source_fd)
+
+    assert interface.__class__.__name__ == "Interface"
+    assert not hasattr(interface, "marker")
 
 
 def test_route_smoke_builds_parser_but_does_not_require_normal_args(
@@ -294,6 +322,67 @@ def test_dispatch_dependency_resolver_follows_transitive_dispatches(tmp_path: Pa
         ("leaf", "leaf-skill.machine.leaf"),
     ]
     assert [item.depth for item in dependencies] == [0, 1]
+
+
+def test_repeated_dependency_collection_does_not_retain_file_descriptors(
+    tmp_path: Path,
+) -> None:
+    proc_fds = Path("/proc/self/fd")
+    if not proc_fds.is_dir():
+        # famulus-skip: category=platform-contract; reason=FD enumeration requires procfs; alternate=metadata-only resolver tests cover deterministic closure
+        pytest.skip("descriptor-count assertion requires /proc/self/fd")
+
+    def write(path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    write(
+        tmp_path / "skills" / "source-skill" / "blueprint.yaml",
+        "category: workflow-general-assistant\n"
+        "interfaces:\n"
+        "  machine:\n"
+        "    source:\n"
+        "      version: 1\n"
+        "      uses_interfaces:\n"
+        "        - interface: target-skill.machine.run\n"
+        "          version: 1\n",
+    )
+    write(tmp_path / "skills" / "target-skill" / "_rtx" / "__init__.py", "")
+    write(
+        tmp_path / "skills" / "target-skill" / "_rtx" / "_run.py",
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    def run(self, args): return 0\n",
+    )
+    write(
+        tmp_path / "skills" / "target-skill" / "blueprint.yaml",
+        "category: workflow-general-assistant\n"
+        "interfaces:\n"
+        "  machine:\n"
+        "    run:\n"
+        "      version: 1\n"
+        "      allowed_callers: [source-skill]\n"
+        "      invocation:\n"
+        "        kind: python_machine_interface\n"
+        "        entrypoint: _rtx/_run.py:Interface\n",
+    )
+
+    class SourceInterface(PythonMachineInterface):
+        dispatches = {
+            "target": DispatchCall(
+                caller_skill="source-skill",
+                target_skill="target-skill",
+                interface="run",
+            )
+        }
+
+    resolver = DispatchDependencyResolver(repo_root=tmp_path)
+    before = len(list(proc_fds.iterdir()))
+    retained_results = [resolver.collect(SourceInterface()) for _ in range(20)]
+    after = len(list(proc_fds.iterdir()))
+
+    assert retained_results
+    assert after == before
 
 
 def test_main_reports_bad_interface_spec(capsys: pytest.CaptureFixture[str]) -> None:

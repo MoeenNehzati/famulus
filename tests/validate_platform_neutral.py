@@ -145,6 +145,21 @@ def test_generically_named_file_may_not_mention_operating_system(tmp_path: Path)
     assert "Windows" in errors[0]
 
 
+def test_blueprint_graph_shared_module_is_platform_neutral(tmp_path: Path) -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "officina"
+        / "common"
+        / "blueprint_graph.py"
+    )
+    target = tmp_path / "src" / "officina" / "common" / "blueprint_graph.py"
+    target.parent.mkdir(parents=True)
+    target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+    assert validate(tmp_path) == []
+
+
 def test_blueprint_platform_support_metadata_is_allowed(tmp_path: Path) -> None:
     d = tmp_path / "skills" / "a-skill"
     d.mkdir(parents=True)
@@ -163,6 +178,18 @@ def test_blueprint_platform_support_metadata_is_allowed(tmp_path: Path) -> None:
         "            macos: false\n"
         "            windows: false\n"
     )
+    assert validate(tmp_path) == []
+
+
+def test_typed_blueprint_sidecar_platform_support_metadata_is_allowed(
+    tmp_path: Path,
+) -> None:
+    d = tmp_path / "skills" / "a-skill" / "_rtx"
+    d.mkdir(parents=True)
+    (d / "._worker_file.py.blueprint.yaml").write_text(
+        "platform_support:\n  linux: true\n  macos: true\n  windows: true\n"
+    )
+
     assert validate(tmp_path) == []
 
 

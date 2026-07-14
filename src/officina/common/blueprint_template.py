@@ -7,6 +7,7 @@ emit fresh documentation tags from the schema.
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from pathlib import Path
 from textwrap import wrap
 from typing import Any, Mapping
@@ -25,12 +26,51 @@ _HEADER_LINES = [
     "Do not store durable notes in this file's comments.",
 ]
 
+_AUTHORING_SCHEMA_BY_TYPE = {
+    "skill": "skill.schema.json",
+    "llm-interface": "llm-interface.schema.json",
+    "machine-interface": "machine-interface.schema.json",
+    "behavior-source": "behavior-source.schema.json",
+}
 
-def load_schema(path: str | Path) -> dict[str, Any]:
-    """Load a JSON-compatible schema file."""
-    import json
 
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+class SchemaDocument(dict[str, Any]):
+    """Schema mapping with the local document bundle needed for relative refs."""
+
+    def __init__(self, value: Mapping[str, Any], path: Path) -> None:
+        super().__init__(value)
+        self.path = path
+        self.documents: dict[str, dict[str, Any]] = {}
+        for child in path.parent.glob("*.schema.json"):
+            document = json.loads(child.read_text(encoding="utf-8"))
+            self.documents[child.name] = document
+            self.documents[child.resolve().as_uri()] = document
+            schema_id = document.get("$id")
+            if isinstance(schema_id, str):
+                self.documents[schema_id] = document
+
+
+def load_schema(path: str | Path) -> SchemaDocument:
+    """Load a JSON Schema together with its sibling schema documents."""
+
+    schema_path = Path(path)
+    return SchemaDocument(
+        json.loads(schema_path.read_text(encoding="utf-8")),
+        schema_path,
+    )
+
+
+def schema_validator(schema: JsonMapping) -> jsonschema.Draft7Validator:
+    """Return a Draft 7 validator that resolves bundled local references."""
+
+    if isinstance(schema, SchemaDocument):
+        resolver = jsonschema.RefResolver(
+            base_uri=schema.path.parent.resolve().as_uri() + "/",
+            referrer=schema,
+            store=schema.documents,
+        )
+        return jsonschema.Draft7Validator(schema, resolver=resolver)
+    return jsonschema.Draft7Validator(schema)
 
 
 def write_regenerated_skill_blueprint(
@@ -54,15 +94,20 @@ def write_regenerated_skill_blueprint(
     if not blueprint_path.exists():
         raise FileNotFoundError(f"missing blueprint: {blueprint_path}")
 
-    resolved_schema_path = Path(schema_path) if schema_path is not None else _default_schema_path(root)
+    original = blueprint_path.read_text(encoding="utf-8")
+    original_data = yaml.safe_load(original) or {}
+    resolved_schema_path = (
+        Path(schema_path)
+        if schema_path is not None
+        else _default_schema_path(root, original_data)
+    )
     if not resolved_schema_path.is_absolute():
         resolved_schema_path = root / resolved_schema_path
     schema = load_schema(resolved_schema_path)
 
-    original = blueprint_path.read_text(encoding="utf-8")
     rendered = refresh_blueprint_documentation(schema, original, doc_mode=doc_mode)
     data = yaml.safe_load(rendered)
-    jsonschema.Draft7Validator(schema).validate(data)
+    schema_validator(schema).validate(data)
     if yaml.safe_load(original) != data:
         raise ValueError(f"refreshed blueprint changed parsed values for {skill_name!r}")
 
@@ -73,11 +118,20 @@ def write_regenerated_skill_blueprint(
 
 def render_blueprint_template(schema: JsonMapping, *, doc_mode: DocMode = "full") -> str:
     """Render a documented blueprint template from schema examples/defaults."""
-    values = _value_from_schema(schema, schema)
-    return render_blueprint_from_schema(schema, values, doc_mode=doc_mode, include_missing_template_fields=True)
+    return render_blueprint_from_schema(
+        schema,
+        doc_mode=doc_mode,
+        include_missing_template_fields=True,
+    )
 
 
-def _default_schema_path(repo_root: Path) -> Path:
+def _default_schema_path(repo_root: Path, blueprint: object | None = None) -> Path:
+    if (
+        isinstance(blueprint, dict)
+        and blueprint.get("schema_version") == 2
+        and blueprint.get("blueprint_type") == "skill"
+    ):
+        return repo_root / "references" / "blueprint" / "skill.schema.json"
     annotated = repo_root / "references" / "blueprint" / "schema.annotated-draft.json"
     if annotated.exists():
         return annotated
@@ -111,6 +165,7 @@ def render_blueprint_from_schema(
     ``enum``, and required object properties.
     """
     _validate_doc_mode(doc_mode)
+    schema = _select_authoring_schema(schema, values)
     if include_missing_template_fields is None:
         include_missing_template_fields = values is None
     concrete_values = deepcopy(dict(values)) if values is not None else _value_from_schema(schema, schema)
@@ -130,6 +185,25 @@ def render_blueprint_from_schema(
         )
     )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _select_authoring_schema(
+    schema: JsonMapping,
+    values: Mapping[str, Any] | None,
+) -> JsonMapping:
+    """Select one concrete authoring schema from the compatibility entry point."""
+
+    if not isinstance(schema, SchemaDocument) or schema.get("$id") != "schema.json":
+        return schema
+    blueprint_type = values.get("blueprint_type") if values is not None else None
+    document_name = _AUTHORING_SCHEMA_BY_TYPE.get(
+        blueprint_type,
+        "legacy-skill.schema.json",
+    )
+    document = schema.documents.get(document_name)
+    if document is None:
+        raise ValueError(f"missing bundled authoring schema: {document_name}")
+    return SchemaDocument(document, schema.path.parent / document_name)
 
 
 def _render_mapping(
@@ -424,8 +498,13 @@ def _required_keys(schema: JsonMapping) -> set[str]:
 
 def _resolve_schema(schema: JsonMapping, root: JsonMapping, value: Any | None = None) -> dict[str, Any]:
     resolved = dict(schema)
-    if "$ref" in resolved:
-        ref_target = _resolve_ref(str(resolved["$ref"]), root)
+    seen_refs: set[str] = set()
+    while "$ref" in resolved:
+        ref = str(resolved["$ref"])
+        if ref in seen_refs:
+            raise ValueError(f"cyclic schema reference: {ref}")
+        seen_refs.add(ref)
+        ref_target = _resolve_ref(ref, root)
         local = {key: val for key, val in resolved.items() if key != "$ref"}
         resolved = {**ref_target, **local}
 
@@ -439,15 +518,46 @@ def _resolve_schema(schema: JsonMapping, root: JsonMapping, value: Any | None = 
 
 
 def _resolve_ref(ref: str, root: JsonMapping) -> dict[str, Any]:
-    if not ref.startswith("#/"):
-        raise ValueError(f"unsupported schema ref: {ref}")
-    node: Any = root
-    for part in ref[2:].split("/"):
+    document_name, separator, fragment = ref.partition("#")
+    if document_name:
+        if not isinstance(root, SchemaDocument):
+            raise ValueError(f"external schema ref requires a loaded schema bundle: {ref}")
+        try:
+            node: Any = root.documents[document_name]
+        except KeyError as exc:
+            raise ValueError(f"unknown schema document ref: {ref}") from exc
+    else:
+        node = root
+    if not separator:
+        if not isinstance(node, dict):
+            raise ValueError(f"schema ref does not point to an object: {ref}")
+        return dict(node)
+    if not fragment.startswith("/"):
+        raise ValueError(f"unsupported schema fragment: {ref}")
+    for part in fragment[1:].split("/"):
         part = part.replace("~1", "/").replace("~0", "~")
         node = node[part]
     if not isinstance(node, dict):
         raise ValueError(f"schema ref does not point to an object: {ref}")
-    return dict(node)
+    result = dict(node)
+    if document_name:
+        result = _scope_internal_refs(result, document_name)
+    return result
+
+
+def _scope_internal_refs(value: Any, document_name: str) -> Any:
+    if isinstance(value, dict):
+        result = {
+            key: _scope_internal_refs(child, document_name)
+            for key, child in value.items()
+        }
+        ref = result.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#"):
+            result["$ref"] = document_name + ref
+        return result
+    if isinstance(value, list):
+        return [_scope_internal_refs(child, document_name) for child in value]
+    return value
 
 
 def _select_one_of_branch(branches: list[Any], value: Any, root: JsonMapping) -> JsonMapping:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -10,11 +11,57 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import jsonschema
 import yaml
+
+from officina.common.blueprint_graph import (
+    BlueprintGraphError,
+    RuntimeFileBinding,
+    descriptor_safe_open_supported,
+    expanded_legacy_blueprint,
+    load_validated_skill_blueprint_graph,
+    open_runtime_file,
+    open_runtime_python_package,
+)
+
+from .platforms import current_platform_name
 
 
 class InvocationError(Exception):
     """Raised when a dispatcher request is invalid."""
+
+
+@dataclass(frozen=True)
+class _LoadedBlueprint:
+    declaration: dict[str, Any]
+    typed: bool
+    portable_legacy: bool = False
+
+
+@dataclass(frozen=True)
+class ResolvedInvocationMetadata:
+    """Descriptor-free result for policy inspection, dry-run, and tracing."""
+
+    caller_skill: str
+    target_skill: str
+    script_interface: str
+    target: str
+    pattern: str
+    cwd: Path
+    command: list[str]
+    stdin: bool
+
+    def as_payload(self) -> dict[str, Any]:
+        return {
+            "caller_skill": self.caller_skill,
+            "target_skill": self.target_skill,
+            "script_interface": self.script_interface,
+            "target": self.target,
+            "pattern": self.pattern,
+            "cwd": str(self.cwd),
+            "command": list(self.command),
+            "stdin": self.stdin,
+        }
 
 
 @dataclass(frozen=True)
@@ -30,18 +77,53 @@ class ResolvedInvocation:
     command: list[str]
     stdin: bool
     env: dict[str, str] | None = None
+    runtime_bindings: tuple[RuntimeFileBinding, ...] = ()
+
+    @property
+    def pass_fds(self) -> tuple[int, ...]:
+        return tuple(binding.fd for binding in self.runtime_bindings if binding.fd >= 0)
+
+    def close(self) -> None:
+        for binding in self.runtime_bindings:
+            binding.close()
+
+    def __enter__(self) -> "ResolvedInvocation":
+        return self
+
+    def __exit__(self, _exc_type, _exc, _traceback) -> None:
+        self.close()
+
+    def _logical_command(self) -> list[str]:
+        command = list(self.command)
+        if self.runtime_bindings:
+            binding = self.runtime_bindings[0]
+            if len(command) >= 4 and command[3] in {"--source-fd", "--package-file"}:
+                index = 3
+                while index < len(command):
+                    if command[index] == "--source-fd" and index + 1 < len(command):
+                        del command[index : index + 2]
+                    elif command[index] == "--package-file" and index + 2 < len(command):
+                        del command[index : index + 3]
+                    else:
+                        break
+            elif command and command[0].startswith("/proc/self/fd/"):
+                command[0] = str(binding.path)
+        return command
+
+    def metadata(self) -> ResolvedInvocationMetadata:
+        return ResolvedInvocationMetadata(
+            caller_skill=self.caller_skill,
+            target_skill=self.target_skill,
+            script_interface=self.script_interface,
+            target=self.target,
+            pattern=self.pattern,
+            cwd=self.cwd,
+            command=self._logical_command(),
+            stdin=self.stdin,
+        )
 
     def as_payload(self) -> dict[str, Any]:
-        return {
-            "caller_skill": self.caller_skill,
-            "target_skill": self.target_skill,
-            "script_interface": self.script_interface,
-            "target": self.target,
-            "pattern": self.pattern,
-            "cwd": str(self.cwd),
-            "command": list(self.command),
-            "stdin": self.stdin,
-        }
+        return self.metadata().as_payload()
 
 
 def get_repo_root(repo_root: Path | None = None) -> Path:
@@ -62,14 +144,87 @@ def skills_root(repo_root: Path | None = None) -> Path:
     return get_repo_root(repo_root) / "skills"
 
 
-def load_blueprint(skill_name: str, repo_root: Path | None = None) -> dict[str, Any]:
-    path = skills_root(repo_root) / skill_name / "blueprint.yaml"
-    if not path.exists():
-        raise InvocationError(f"skill `{skill_name}` does not define blueprint.yaml")
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if not isinstance(raw, dict):
+def _portable_legacy_blueprint_snapshot(
+    skill_name: str,
+    path: Path,
+    schema_path: Path,
+) -> _LoadedBlueprint:
+    try:
+        payload = path.read_bytes()
+    except FileNotFoundError as exc:
+        raise InvocationError(
+            f"skill `{skill_name}` does not define blueprint.yaml"
+        ) from exc
+    except OSError as exc:
+        raise InvocationError(f"{path}: cannot read blueprint: {exc}") from exc
+    try:
+        declaration = yaml.safe_load(payload.decode("utf-8")) or {}
+    except (UnicodeError, yaml.YAMLError) as exc:
+        raise InvocationError(f"{path}: cannot load blueprint YAML: {exc}") from exc
+    if not isinstance(declaration, dict):
         raise InvocationError(f"{path}: top level must be a mapping")
-    return raw
+    if declaration.get("schema_version") == 2 or "blueprint_type" in declaration:
+        raise InvocationError(
+            f"{path}: descriptor-safe no-follow file access is unavailable on this host"
+        )
+    try:
+        schema = json.loads(schema_path.read_bytes().decode("utf-8"))
+        if not isinstance(schema, dict):
+            raise TypeError("schema top level must be a mapping")
+        jsonschema.Draft7Validator.check_schema(schema)
+        validator = jsonschema.Draft7Validator(schema)
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, jsonschema.SchemaError) as exc:
+        raise InvocationError(
+            f"{schema_path}: cannot load legacy blueprint schema: {exc}"
+        ) from exc
+    errors = sorted(
+        validator.iter_errors(declaration),
+        key=lambda error: tuple(str(part) for part in error.absolute_path),
+    )
+    if errors:
+        error = errors[0]
+        error_path = "$"
+        for part in error.absolute_path:
+            error_path += f"[{part}]" if isinstance(part, int) else f".{part}"
+        raise InvocationError(
+            f"{path}: legacy blueprint schema validation failed at "
+            f"{error_path}: {error.message}"
+        )
+    return _LoadedBlueprint(declaration, False, True)
+
+
+def _load_dispatch_blueprint(
+    skill_name: str,
+    repo_root: Path | None = None,
+) -> _LoadedBlueprint:
+    root = get_repo_root(repo_root)
+    path = root / "skills" / skill_name / "blueprint.yaml"
+    if not descriptor_safe_open_supported():
+        if _current_platform_name() != "windows":
+            raise InvocationError(
+                f"{path}: descriptor-safe no-follow file access is unavailable on this host"
+            )
+        return _portable_legacy_blueprint_snapshot(
+            skill_name,
+            path,
+            root / "references" / "blueprint" / "legacy-skill.schema.json",
+        )
+    try:
+        graph = load_validated_skill_blueprint_graph(
+            path.parent,
+            root / "references" / "blueprint",
+        )
+        typed = (
+            graph.root.declaration.get("schema_version") == 2
+            or "blueprint_type" in graph.root.declaration
+        )
+        return _LoadedBlueprint(expanded_legacy_blueprint(graph), typed)
+    except (BlueprintGraphError, OSError) as exc:
+        raise InvocationError(str(exc)) from exc
+
+
+def load_blueprint(skill_name: str, repo_root: Path | None = None) -> dict[str, Any]:
+    return _load_dispatch_blueprint(skill_name, repo_root).declaration
 
 
 def expect_mapping(value: Any, context: str) -> dict[str, Any]:
@@ -250,29 +405,33 @@ def _interface_version(interface_spec: dict[str, Any], context: str) -> int:
     return version
 
 
-def _declared_machine_uses(
+def _declared_interface_uses(
     caller_blueprint: dict[str, Any],
     caller_skill: str,
     canonical_target: str,
     target_version: int,
 ) -> bool:
     interfaces = expect_mapping(caller_blueprint.get("interfaces"), f"{caller_skill}.interfaces")
-    machine = expect_mapping(interfaces.get("machine"), f"{caller_skill}.interfaces.machine")
-    for interface_name, interface_spec in machine.items():
-        if not isinstance(interface_spec, dict):
-            continue
-        uses = expect_list(
-            interface_spec.get("uses_interfaces"),
-            f"{caller_skill}.machine.{interface_name}.uses_interfaces",
+    for namespace in ("machine", "llm"):
+        specifications = expect_mapping(
+            interfaces.get(namespace),
+            f"{caller_skill}.interfaces.{namespace}",
         )
-        for entry in uses:
-            if not isinstance(entry, dict):
-                raise InvocationError(
-                    f"{caller_skill}.machine.{interface_name}.uses_interfaces: "
-                    "entries must declare `interface` and `version`"
-                )
-            if entry.get("interface") == canonical_target and entry.get("version") == target_version:
-                return True
+        for interface_name, interface_spec in specifications.items():
+            if not isinstance(interface_spec, dict):
+                continue
+            context = f"{caller_skill}.{namespace}.{interface_name}.uses_interfaces"
+            uses = expect_list(interface_spec.get("uses_interfaces"), context)
+            for entry in uses:
+                if not isinstance(entry, dict):
+                    raise InvocationError(
+                        f"{context}: entries must declare `interface` and `version`"
+                    )
+                if (
+                    entry.get("interface") == canonical_target
+                    and entry.get("version") == target_version
+                ):
+                    return True
     return False
 
 
@@ -284,8 +443,27 @@ def resolve_machine_interface(
     script_args: list[str],
     stdin_requested: bool,
     repo_root: Path | None = None,
+    *,
+    require_platform_support: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     interface_spec, resolved_name = resolve_machine_interface_surface(target_blueprint, interface_name)
+    canonical_target = f"{target_skill}.machine.{resolved_name}"
+    platform_name = _current_platform_name()
+    platform_support = interface_spec.get("platform_support")
+    if require_platform_support:
+        platform_admitted = (
+            isinstance(platform_support, dict)
+            and platform_support.get(platform_name) is True
+        )
+    else:
+        platform_admitted = not (
+            isinstance(platform_support, dict)
+            and platform_support.get(platform_name) is False
+        )
+    if not platform_admitted:
+        raise InvocationError(
+            f"interface `{canonical_target}` does not support platform `{platform_name}`"
+        )
     invocation = expect_mapping(interface_spec.get("invocation"), "invocation")
     if invocation.get("kind") == "python_machine_interface" and script_args == ["--route-smoke"] and not stdin_requested:
         pattern_spec, pattern_name = {}, "route-smoke"
@@ -294,7 +472,6 @@ def resolve_machine_interface(
 
     allow_all_skills = interface_spec.get("allow_all_skills", False)
     allowed_callers = expect_string_list(interface_spec.get("allowed_callers"), "allowed_callers")
-    canonical_target = f"{target_skill}.machine.{resolved_name}"
     target_version = _interface_version(interface_spec, canonical_target)
 
     if caller_skill == target_skill:
@@ -309,7 +486,12 @@ def resolve_machine_interface(
         )
 
     caller_blueprint = load_blueprint(caller_skill, repo_root=repo_root)
-    if not _declared_machine_uses(caller_blueprint, caller_skill, canonical_target, target_version):
+    if not _declared_interface_uses(
+        caller_blueprint,
+        caller_skill,
+        canonical_target,
+        target_version,
+    ):
         raise InvocationError(
             f"caller skill `{caller_skill}` does not declare uses_interfaces entry "
             f"for `{canonical_target}` version {target_version}"
@@ -324,7 +506,14 @@ def build_machine_runtime(
     interface_spec: dict[str, Any],
     script_args: list[str],
     repo_root: Path | None = None,
-) -> tuple[Path, list[str], dict[str, str] | None]:
+    *,
+    legacy_compatibility: bool = False,
+) -> tuple[
+    Path,
+    list[str],
+    dict[str, str] | None,
+    tuple[RuntimeFileBinding, ...],
+]:
     invocation = expect_mapping(interface_spec.get("invocation"), "invocation")
     kind = invocation.get("kind")
     root = get_repo_root(repo_root)
@@ -339,7 +528,7 @@ def build_machine_runtime(
         current = env.get("PYTHONPATH")
         env["PYTHONPATH"] = os.pathsep.join(entries + ([current] if current else []))
         env["PYTHONIOENCODING"] = "utf-8:strict"
-        return root, [sys.executable, "-m", module, *script_args], env
+        return root, [sys.executable, "-m", module, *script_args], env, ()
     if kind == "python_machine_interface":
         entrypoint = invocation.get("entrypoint")
         if not isinstance(entrypoint, str) or not entrypoint.strip():
@@ -359,24 +548,142 @@ def build_machine_runtime(
         current = env.get("PYTHONPATH")
         env["PYTHONPATH"] = os.pathsep.join(entries + ([current] if current else []))
         env["PYTHONIOENCODING"] = "utf-8:strict"
+        if legacy_compatibility and not descriptor_safe_open_supported():
+            return (
+                skill_root,
+                [
+                    sys.executable,
+                    "-m",
+                    "officina.runtime.python_machine_interface_runner",
+                    entrypoint,
+                    *args_prefix,
+                    *script_args,
+                ],
+                env,
+                (),
+            )
+        module_text, separator, class_name = entrypoint.partition(":")
+        module_path = Path(module_text)
+        if (
+            separator != ":"
+            or not module_text
+            or not class_name
+            or module_path.is_absolute()
+            or ".." in module_path.parts
+            or not module_path.parts
+            or module_path.parts[0] != "_rtx"
+        ):
+            raise InvocationError(
+                f"{target_skill}.machine.{interface_name}: entrypoint must be "
+                "`_rtx/path.py:ClassName` without parent traversal"
+            )
+        try:
+            package_bindings = open_runtime_python_package(
+                skill_root / "_rtx",
+                skill_root,
+                root,
+            )
+        except BlueprintGraphError as exc:
+            raise InvocationError(
+                f"{target_skill}.machine.{interface_name}: {exc}"
+            ) from exc
+        source_path = Path(os.path.abspath(skill_root / module_path))
+        source_binding = next(
+            (binding for binding in package_bindings if binding.path == source_path),
+            None,
+        )
+        if source_binding is None:
+            for binding in package_bindings:
+                binding.close()
+            raise InvocationError(
+                f"{target_skill}.machine.{interface_name}: entrypoint is not a "
+                f"regular Python package source: {module_text}"
+            )
+        package_arguments = [
+            token
+            for binding in package_bindings
+            for token in (
+                "--package-file",
+                str(binding.fd),
+                binding.path.relative_to(skill_root).as_posix(),
+            )
+        ]
         return (
             skill_root,
             [
                 sys.executable,
                 "-m",
                 "officina.runtime.python_machine_interface_runner",
+                "--source-fd",
+                str(source_binding.fd),
+                *package_arguments,
                 entrypoint,
                 *args_prefix,
                 *script_args,
             ],
             env,
+            package_bindings,
         )
     if kind == "command":
         argv = invocation.get("argv")
         if not isinstance(argv, list) or not all(isinstance(token, str) and token for token in argv):
             raise InvocationError(f"{target_skill}.machine.{interface_name}: invocation needs non-empty `argv`")
-        return skill_root, [*argv, *script_args], None
+        return skill_root, [*argv, *script_args], None, ()
+    if kind == "command_file":
+        path = invocation.get("path")
+        args_prefix = invocation.get("args_prefix", [])
+        if not isinstance(path, str) or not path.startswith("_cx/"):
+            raise InvocationError(
+                f"{target_skill}.machine.{interface_name}: command_file path must be under `_cx/`"
+            )
+        relative_path = Path(path)
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            raise InvocationError(
+                f"{target_skill}.machine.{interface_name}: command_file path cannot use parent traversal"
+            )
+        if not isinstance(args_prefix, list) or not all(
+            isinstance(token, str) and token for token in args_prefix
+        ):
+            raise InvocationError(
+                f"{target_skill}.machine.{interface_name}: command_file invocation "
+                "needs string list `args_prefix`"
+            )
+        try:
+            command_binding = open_runtime_file(
+                skill_root / path,
+                skill_root,
+                root,
+                executable=True,
+            )
+        except BlueprintGraphError as exc:
+            raise InvocationError(
+                f"{target_skill}.machine.{interface_name}: {exc}"
+            ) from exc
+        try:
+            command_binding.path.relative_to(Path(os.path.abspath(skill_root / "_cx")))
+        except ValueError as exc:
+            command_binding.close()
+            raise InvocationError(
+                f"{target_skill}.machine.{interface_name}: command file must resolve under `_cx/`"
+            ) from exc
+        try:
+            executable_path = command_binding.proc_path()
+        except BlueprintGraphError as exc:
+            command_binding.close()
+            raise InvocationError(
+                f"{target_skill}.machine.{interface_name}: {exc}"
+            ) from exc
+        return (
+            skill_root,
+            [executable_path, *args_prefix, *script_args],
+            None,
+            (command_binding,),
+        )
     raise InvocationError(f"{target_skill}.machine.{interface_name}: unsupported invocation kind `{kind}`")
+
+
+def _current_platform_name() -> str:
+    return current_platform_name()
 
 
 def resolve_dispatch(
@@ -399,7 +706,11 @@ def resolve_dispatch(
         target_skill_name, kind, interface_name = parsed_target
         if kind != "machine":
             raise InvocationError("dispatcher only executes `.machine.` targets")
-        target_blueprint = load_blueprint(target_skill_name, repo_root=repo_root)
+        target_snapshot = _load_dispatch_blueprint(
+            target_skill_name,
+            repo_root=repo_root,
+        )
+        target_blueprint = target_snapshot.declaration
         interface_spec, _pattern_spec, pattern_name = resolve_machine_interface(
             target_skill_name,
             target_blueprint,
@@ -408,13 +719,15 @@ def resolve_dispatch(
             args,
             stdin_requested,
             repo_root=repo_root,
+            require_platform_support=target_snapshot.portable_legacy,
         )
-        cwd, command, env = build_machine_runtime(
+        cwd, command, env, runtime_bindings = build_machine_runtime(
             target_skill_name,
             interface_name,
             interface_spec,
             args,
             repo_root=repo_root,
+            legacy_compatibility=not target_snapshot.typed,
         )
         return ResolvedInvocation(
             caller_skill=caller_skill,
@@ -426,12 +739,14 @@ def resolve_dispatch(
             command=command,
             stdin=stdin_requested,
             env=env,
+            runtime_bindings=runtime_bindings,
         )
 
     if target_skill is None or script_interface is None:
         raise InvocationError("dispatch requires a canonical target or target_skill and machine interface")
 
-    target_blueprint = load_blueprint(target_skill, repo_root=repo_root)
+    target_snapshot = _load_dispatch_blueprint(target_skill, repo_root=repo_root)
+    target_blueprint = target_snapshot.declaration
     interface_spec, _pattern_spec, pattern_name = resolve_machine_interface(
         target_skill,
         target_blueprint,
@@ -440,13 +755,15 @@ def resolve_dispatch(
         args,
         stdin_requested,
         repo_root=repo_root,
+        require_platform_support=target_snapshot.portable_legacy,
     )
-    cwd, command, env = build_machine_runtime(
+    cwd, command, env, runtime_bindings = build_machine_runtime(
         target_skill,
         script_interface,
         interface_spec,
         args,
         repo_root=repo_root,
+        legacy_compatibility=not target_snapshot.typed,
     )
     return ResolvedInvocation(
         caller_skill=caller_skill,
@@ -458,7 +775,15 @@ def resolve_dispatch(
         command=command,
         stdin=stdin_requested,
         env=env,
+        runtime_bindings=runtime_bindings,
     )
+
+
+def resolve_dispatch_metadata(**kwargs: Any) -> ResolvedInvocationMetadata:
+    """Resolve policy and return metadata after deterministically closing bindings."""
+
+    with resolve_dispatch(**kwargs) as resolved:
+        return resolved.metadata()
 
 
 def dispatch(
@@ -493,6 +818,8 @@ def dispatch(
     }
     if resolved.env is not None:
         run_kwargs["env"] = resolved.env
+    if resolved.pass_fds:
+        run_kwargs["pass_fds"] = resolved.pass_fds
     if timeout is not None:
         run_kwargs["timeout"] = timeout
     if stdin is not None:
@@ -505,4 +832,12 @@ def dispatch(
         run_kwargs["encoding"] = "utf-8"
         run_kwargs["errors"] = "strict"
 
-    return subprocess.run(resolved.command, **run_kwargs)
+    try:
+        try:
+            return subprocess.run(resolved.command, **run_kwargs)
+        except OSError as exc:
+            raise InvocationError(
+                f"{resolved.target}: launch failed: {exc}"
+            ) from exc
+    finally:
+        resolved.close()

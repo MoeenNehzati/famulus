@@ -4,14 +4,17 @@ This document describes the first-pass audit/drift system for local skills.
 
 The goal is split across two skills:
 
-- `skill-audit` certifies a skill after checks pass and writes
-  `.last_audit.json`.
+- `skill-audit` audits an exact selected closure and, when each node is
+  commit-ready, writes authenticated node-local health records.
 - `skill-drift` reports whether installed skills still match their last local
   audit record.
 
-`skill-drift` is a mechanical flagger, not a certifier: it compares recorded
-hashes with freshly computed hashes and reports `audit-current` or
-`audit-stale`.
+`skill-drift` is a mechanical flagger, not a certifier. For schema-version-2
+skills it authenticates every reachable node health record, recomputes the live
+artifact graph, and propagates unhealthy state to the canonical root. Legacy
+monolithic skills retain the earlier flat-hash comparison during migration.
+Targeted checks load only the selected root's reachable closure, so malformed
+unrelated skills do not block it; malformed reachable dependencies do.
 
 ## Highest-Priority Design Rule
 
@@ -90,6 +93,11 @@ include:
 - `extra-recorded-hash`;
 - `hash-unavailable`.
 
+Typed graph concerns additionally include missing or invalid authentication
+keys, missing node records, authentication failures, changed artifacts,
+unhealthy downstream nodes, and stale pooled review artifacts. Pooled concerns
+do not change canonical root status.
+
 The optional `--with-test-validate` flag adds a health signal by running repo
 validators and target skill tests when those check surfaces are available. This
 does not change the audit status. When requested, `overall_status` uses:
@@ -109,18 +117,20 @@ The intended split is:
 - `skill-drift`: later detect whether anything relevant changed after that
   record was written.
 
-`skill-audit` currently:
+`skill-audit`:
 
 - runs the blueprint sync check;
 - runs validators;
 - runs the configured precommit Python test suite;
 - performs deterministic semantic checks on the target skill;
 - computes current hashes through `skill-drift`;
-- writes `.last_audit.json`;
+- for typed skills, writes authenticated health for every reachable node and a
+  generated pooled review with its own health record;
+- for legacy skills, writes the compatibility `.last_audit.json` record;
 - verifies the written record by asking `skill-drift` for post-write status;
 - rolls back the record if post-write verification fails.
 
-The audit record written by `skill-audit` currently contains:
+The compatibility record written for a legacy skill contains:
 
 - skill name;
 - timestamp;
@@ -168,40 +178,48 @@ The semantic checks currently include:
 These checks are intentionally only a first pass. They do not yet prove full
 semantic exactness.
 
-`audit-current` means the target still matches a digest-protected record under
-the current audit policy. Editing a readable check status or other
-trust-relevant field by hand makes the record digest mismatch unless the digest
-is deliberately regenerated.
+For a legacy skill, `audit-current` means the target still matches a
+digest-protected record under the current audit policy. Editing a readable
+check status or other trust-relevant field by hand makes the record digest
+mismatch unless the digest is deliberately regenerated. Typed skills use the
+authenticated recursive model below.
 
 ## Target Artifact Health Model
 
-The audit system should eventually certify the whole reachable artifact graph,
-not only a skill-level summary. A skill audit starts from the skill's default
-LLM interface, follows declared interface and behavior-source dependencies, and
+The schema family, graph loader, validators, dispatcher compatibility layer,
+audit writer, and drift reader implement this model. Typed and legacy roots are
+accepted concurrently; new authoring uses schema version 2.
+
+The audit system certifies the reachable artifact graph one node at a time,
+not only a skill-level summary. A skill audit starts from the canonical skill
+`blueprint.yaml`, follows declared interface and behavior-source dependencies, and
 writes a separate health record for every reachable node:
 
 - the skill summary;
 - each LLM interface;
 - each machine interface;
-- each declared `behavior_sources` entry;
-- shared audit-policy nodes.
+- each declared behavior-source node.
 
-The blueprint remains the source of graph structure. The information in
-`blueprint.yaml` must be sufficient to reconstruct the skill's audit graph:
-which interfaces exist, which interfaces depend on which other interfaces, and
-which behavior sources each interface draws on. Per-node health records and
-local sidecar metadata must not become a second graph-definition language.
-They are auxiliary certification state for graph nodes already reachable from
-the blueprint.
+Canonical blueprints remain the source of graph structure. The skill root owns
+skill facts and points to interface sidecars; each interface or behavior-source
+sidecar owns its node-local facts and points to its direct neighbors. No node
+repeats a neighbor's intrinsic information. Starting from the one skill root,
+the canonical root plus reachable sidecars must be sufficient to reconstruct
+the graph. Health records are auxiliary certification state and cannot add
+nodes or edges.
 
-This does not require migrating shared files before the system is useful.
-`skill-audit` and `skill-drift` can traverse the current blueprint declarations
-and materialize health records for the artifact nodes they find. Shared files
-under `references/` can therefore remain ordinary behavior sources at first.
+This does not require migrating every skill before the system is useful.
+Legacy monolithic blueprints expand to virtual interface nodes in memory, while
+typed roots and sidecars provide full node-local contracts. Shared files under
+`references/` can remain ordinary files until a typed consumer introduces an
+explicit file-backed behavior-source node.
 If several skills depend on the same shared behavior source, the audit graph
-should identify that source by a canonical artifact id and reuse the same
+identifies that source by a canonical artifact ID and reuses the same
 behavior-source health record instead of duplicating source certification inside
 each consuming interface record.
+For a repository-root locator under `skills/<owner>/`, binding paths resolve
+against that owner. This gives the shared node one canonical ID, bound file,
+blueprint sidecar, and health sidecar regardless of which consumer reaches it.
 
 The intended ownership rule is:
 
@@ -213,23 +231,22 @@ skill records summarize the reachable certified graph.
 Here "own" is informal audit-design language, not the formal blueprint
 `owns_filesystem` field. It means that node-local information belongs with the
 node it describes. A behavior source may carry or sit beside metadata about its
-own content hash, source-level dependencies, source-level checks, and record
-digest. That local information can simplify certification because the blueprint
+own content hash, source-level dependencies, source-level checks, and certified
+health hash. That local information can simplify certification because the blueprint
 does not have to inline all interactions between behavior sources. The blueprint
 draws on the behavior-source record; it does not lose authority over which
 behavior sources participate in the skill graph.
 
-An interface health record should contain the interface hash, its structured
-blueprint declaration, the hashes and record digests of direct interface
-dependencies, and the hashes and record digests of direct behavior-source
-dependencies. A behavior-source health record should contain the canonical
-source id, content hash, dependency hashes if any are declared or mechanically
-known, audit-policy hash, check evidence, and record digest. A skill summary
-should then record the root interface and the reachable graph digest rather than
+An interface health record contains its structured blueprint contract hash and
+the artifact and certified-health hashes of direct interface and behavior-source
+dependencies. A behavior-source health record contains the canonical source ID,
+bound-file hash, contract hash, dependency hashes, audit-policy hash, schema
+hash, check evidence, record hash, and HMAC. A skill summary
+records the root interface and the reachable graph digest rather than
 embedding every descendant hash as flat skill-owned state.
 
 When a behavior source is healthy, an interface or skill summary may copy the
-behavior source's content hash, dependency summary, and record digest rather
+behavior source's content hash, dependency summary, and certified health hash rather
 than re-deriving the entire source-local certification inline. This is a
 memoization and readability convenience, not a weakening of the blueprint
 contract.
@@ -240,11 +257,10 @@ through declared graph edges. It does not decide whether a Markdown reference,
 inline path, or prose instruction should have been a behavior source. That
 decision remains part of `skill-audit` certification.
 
-Health records should be treated as derived certification artifacts. They must
-not require editing the referenced source file, because putting a source's own
-hash inside itself creates self-referential hashing problems. If colocated files
-are later desirable, they should live beside the source as sidecars or in a
-central audit-record directory keyed by canonical artifact id.
+Health records are derived certification artifacts. They do not require
+editing the referenced source file, because putting a source's own hash inside
+itself creates self-referential hashing problems. They live beside the source
+as hidden sidecars under the companion-file convention below.
 
 The companion-file convention should be uniform across skills, interfaces, and
 behavior sources. Abstractly, each auditable node has:
@@ -259,28 +275,29 @@ blueprint.yaml
 .last_audit.json
 ```
 
-For a node whose relevant content file is `z`, the colocated files should be:
+For a node whose relevant content file is `z`, the hidden colocated files are:
 
 ```text
-z.blueprint.yaml
-z.last_audit.json
+.z.blueprint.yaml
+.z.health.json
 ```
 
-This preserves the existing per-skill blueprint pattern while making the
-recursive convention obvious: the skill owns `blueprint.yaml` and
-`.last_audit.json`; a behavior source or interface content file owns
-`<content>.blueprint.yaml` and `<content>.last_audit.json`. The suffixed
-`z.blueprint.yaml` file must remain subordinate to the skill blueprint. It may
+This preserves the existing per-skill blueprint pattern while keeping node
+metadata out of ordinary directory listings: the skill owns `blueprint.yaml`
+and `.last_audit.json`; a behavior source or interface content file owns
+`.<content>.blueprint.yaml` and `.<content>.health.json`. If multiple nodes bind
+one file, each sidecar adds its local node name before the suffix. The hidden
+`.z.blueprint.yaml` file must remain subordinate to the skill blueprint. It may
 declare source-local dependencies, checks, or metadata that would be awkward to
 inline at the skill level, but the skill `blueprint.yaml` must still identify
-that `z` participates in the graph and that `z.blueprint.yaml` is the local
+that `z` participates in the graph and that `.z.blueprint.yaml` is the local
 metadata file to consult.
 
 Generated aggregate descriptions should stay out of canonical blueprints.
 After `skill-audit` writes or refreshes the node health records for a skill, it
-should also generate a pooled blueprint for human review. The pooled blueprint
+generates a pooled blueprint for human review. The pooled blueprint
 is an assembled view that starts from the skill `blueprint.yaml`, follows the
-declared graph, reads downstream `*.blueprint.yaml` and `*.last_audit.json`
+declared graph, reads downstream hidden blueprint and health sidecars
 files, and presents the expanded interface descriptions, behavior-source
 descriptions, dependency summaries, and health summaries in one place.
 
@@ -291,14 +308,59 @@ after an audit, the user should be able to inspect one generated artifact and
 see the effective graph and the certified downstream content that the skill is
 drawing on.
 
+The generated review files are `.pooled-blueprint-review.yaml` and
+`.pooled-blueprint-review.health.json`. Pool health depends on verified root
+health, but canonical root health never depends on either pooled file.
+The pool must validate against `pooled-review.schema.json` and exactly equal the
+canonical rendering of the graph and the same authenticated records admitted by
+root health. Pool and health files are ignored local state.
+
+Health records use SHA-256 hashes and HMAC-SHA-256 authentication with canonical
+compact sorted-key UTF-8 JSON and no floating-point values. The stable
+`certified_health_hash` excludes timestamps and authentication, while
+`record_hash` covers the generated record payload. HMAC authenticates the raw
+record-hash bytes under `famulus-health-record-v1\0`. The 32-byte local key is
+stored at `skills/skill-audit/.health-authentication-key`, ignored by Git, and
+created with POSIX mode `0600`.
+Each record also names `skill-audit.machine.certify@1`. The policy hash covers
+the skill-audit certifier and the shared authentication, atomic-file,
+Git-provenance, graph, schema-template, health, and pooled-review code. This
+makes `skill-audit` a certification-policy dependency of every record without
+adding a recursive artifact-graph edge.
+
+Drift authenticates a health record before schema validation or use of any
+recorded check evidence. An authenticated record is still stale if it violates
+`health.schema.json`, names the wrong subject/type/certifier, contains a failed
+check, or disagrees with recomputed dependencies. Unauthenticated or malformed
+record fields never contribute to expected parent hashes.
+
+Certification is node-local and commit-backed. A node is stamp-worthy only if
+its own authored inputs match the captured commit immediately before its atomic
+record replacement and HEAD remains unchanged. Child nodes are processed first;
+an already authenticated and current child stamp is reused without following
+that child's worktree status again. Dirty nodes still receive semantic audit
+results, but no stamp, with an explicit commit-required reason. Stable check
+evidence excludes volatile stdout, stderr, timing, and invocation noise.
+
+Generated records, pools, and key material are written with no-follow atomic
+operations. Their local HMAC protects against casual hand editing. A portable
+ledger, external key custody, and public-key signatures remain deferred.
+
 ## Drift Inputs
 
 For each installed skill, the checker reads:
 
 - the local audit record: `.last_audit.json`;
 - the skill blueprint, if present;
-- files discovered through the skill and interface dependency explorer;
+- for typed roots, every reachable authored node sidecar, bound file, and
+  generated node health record;
+- for legacy roots, files discovered through the compatibility skill and
+  interface dependency explorer;
 - shared policy files that define the skill audit rules.
+
+Typed drift also reads the existing local HMAC key. It never creates that key.
+It verifies the canonical root independently of the generated pooled review;
+pool freshness is a separate review-artifact concern.
 
 The policy hash covers the normative audit standard and the audit/drift
 implementation, not every executable check used by the current gate. Tests,
@@ -318,7 +380,7 @@ Tests, validators, hooks, and test-runner configuration can still change health
 outcomes. They should be exercised directly, not treated as part of the
 certified policy hash.
 
-For blueprint-backed skills, interface hashes include:
+For legacy blueprint-backed skills, compatibility interface hashes include:
 
 - a canonical JSON entry for the structured interface blueprint declaration;
 - file-backed LLM binding files such as `SKILL.md`;
@@ -329,8 +391,9 @@ For blueprint-backed skills, interface hashes include:
 - declared dispatch dependencies discovered by the Python interface resolver;
 - interface hashes declared in `uses_interfaces`, recursively.
 
-`direct_io` is not hash input, either as live subject data or as declaration
-metadata. It describes operational data read or written during an invocation,
+For typed nodes, the same exclusion is declared field-by-field in the concrete
+schema's `x-famulus.audit_hash` metadata. `direct_io` is not hash input, either
+as live subject data or as declaration metadata. It describes operational data read or written during an invocation,
 such as inboxes, calendars, user documents, stdout, remote files, and API
 responses. `skill-drift` must not hash the live operational data named by
 `direct_io`, and `direct_io` declaration edits should not by themselves stale an
@@ -341,10 +404,9 @@ Legacy compatibility sidecars such as `depends_on_skills` and
 metadata are represented by `blueprint.yaml` and generated repo-level manifests
 such as `references/blueprint/runtime_dependencies.json`.
 
-`uses_interfaces` is an interface-level dependency declaration. Skill-level
-`depends_on` authorizes which dependency interfaces a skill may use;
-`uses_interfaces` says which machine interfaces a particular interface actually
-uses or orchestrates. This is especially important for LLM interfaces, where the
+`uses_interfaces` is the interface-level dependency declaration. There is no
+skill-level `depends_on`; each interface says which version-pinned interfaces it
+actually uses or orchestrates. This is especially important for LLM interfaces, where the
 prompt surface can route work through machine interfaces without code-level
 dispatch declarations.
 
@@ -413,20 +475,20 @@ The current certifier is useful, but still incomplete:
 - It runs a global mechanical gate through `scripts/run-python-tests.py`. The
   precommit suite discovers all skill test directories by default and excludes
   only known heavy or special suites, currently `skills/install-assistant-tools/tests`.
-- It certifies the current filesystem state, not a clean git tree. The git
-  commit recorded in `.last_audit.json` is evidence, not the sole source of
-  truth.
-- Its write target is dynamic, so the blueprint uses a broad write declaration
-  over the skills tree. A future blueprint syntax for dynamic target writes
-  would express this more exactly.
+- It requires each stamped node's own inputs to match the captured Git commit.
+  This deliberately does not recheck already certified downstream worktrees
+  when a parent reuses their authenticated current records.
+- Its write target is dynamic across selected skill roots. The current
+  `owns_filesystem` vocabulary does not express target-parameterized ownership;
+  a future schema extension could represent that more exactly.
 
 ## Current Skill-Drift Gaps
 
 The current reader/checker is useful, but still incomplete as a stale detector:
 
-- It rejects records whose digest does not match their canonical contents, but
-  this is an integrity check rather than a cryptographic trust boundary.
-  Strong tamper resistance would require a future signature scheme.
+- Typed records use a local HMAC key, which protects against casual manual
+  edits but not an actor who can read the key and rewrite both record and MAC.
+  Stronger trust would require external key custody or public-key signatures.
 - `uses_interfaces` currently resolves targets under the repository root used
   for hashing. Exact installed skill roots outside the normal repo layout need
   continued testing, especially if a target depends on another installed copy.
@@ -440,6 +502,8 @@ The current reader/checker is useful, but still incomplete as a stale detector:
 - Status mode intentionally reports non-blueprint external/plugin skills as
   stale, while hash mode fails for explicit non-blueprint targets. That split is
   useful but should remain documented for callers.
+- Health state is local and ignored by Git; there is no portable certification
+  ledger yet.
 
 ## Settled Design Choices
 
@@ -462,10 +526,10 @@ The current implementation is a first-pass audit/drift system. The core
 architecture is sound, but these gaps remain before `.last_audit.json` should be
 treated as a strong certification artifact:
 
-- **Record trust:** `audit-current` now requires a matching record digest,
-  current audit policy hash, current skill/interface hashes, and readable check
-  evidence whose gates passed. Future hardening could add local signatures if
-  digest self-consistency is not strong enough.
+- **Record trust:** typed `audit-current` requires authenticated node records,
+  current policy and schema hashes, matching local and recursive graph hashes,
+  and passed normalized checks. Legacy records retain digest self-consistency
+  until migrated.
 - **Interface-use validation:** machine-interface `DispatchCall` declarations
   should be mirrored in `uses_interfaces` and validated. This belongs in the
   validator/audit layer, not the drift hash contract: `skill-drift` should trust
@@ -476,47 +540,20 @@ treated as a strong certification artifact:
   subset of blueprint exactness. It should eventually prove no missing or excess
   behavior sources, interface calls, runtime dependencies, permissions, state
   paths, and execution surfaces.
-- **Per-node health records:** skill-level audit records are too coarse for the
-  intended dependency graph. A skill audit should create or refresh health
-  records for every reachable interface and behavior source, so shared behavior
-  sources can be certified once and reused by multiple consuming interfaces.
 - **Test coverage surface:** the repository's Python test runner now discovers
   skill test directories for the precommit gate. The exclusion list should stay
   narrow and deliberate so new skill tests are included automatically.
 
-## Recommended Fix Order
+## Remaining Fix Order
 
-1. Do a schema-design pass before implementation. Review the current
-   `references/blueprint/schema.json`, `references/blueprint/guide.md`, and
-   this document together, then define how skill blueprints, node-local
-   `*.blueprint.yaml` files, node-local `*.last_audit.json` files, and generated
-   pooled blueprints relate. If Superpowers is available, use its planning and
-   skill-design workflows for this pass before touching code.
-2. Extend the blueprint schema family, not just the skill schema. Keep
-   `skills/<skill>/blueprint.yaml` as the canonical graph root, and add an
-   explicit node-local artifact type for `z.blueprint.yaml` files so behavior
-   sources and interface content files do not have to pretend to be skills.
-3. Extend skill-blueprint `behavior_sources` and LLM binding declarations so
-   they can point to subordinate node-local blueprint and health files while
-   remaining sufficient to reconstruct the graph without reading generated
-   pooled blueprints.
-4. Define the health-record layout for skill summaries, interfaces, and
-   behavior sources. The first version can use current blueprint declarations
-   directly; do not require moving shared reference files before this works.
-5. Teach `skill-audit` to traverse a skill's reachable interface and
-   behavior-source graph and write per-node health records. A skill audit should
-   certify every interface and behavior source reachable from the audited skill,
-   then generate a pooled blueprint for user review.
-6. Teach `skill-drift` to read those per-node health records, recompute node
-   hashes, and propagate stale status upward through declared dependencies.
-   Drift must ignore generated pooled blueprints as authoritative input.
-7. Add a validator that checks direct machine-interface dependency agreement:
+1. Add a validator that checks direct machine-interface dependency agreement:
    route-smoke each Python machine interface, collect its direct `DispatchCall`
    targets, and require the same direct machine interfaces in blueprint
    `uses_interfaces`. Keep recursive dependency hashing in `skill-drift`; keep
    dependency correctness in validators/`skill-audit`.
-8. Expand `skill-audit` semantic exactness checks from first-pass heuristics to
+2. Expand `skill-audit` semantic exactness checks from first-pass heuristics to
    explicit missing/excess checks for behavior sources, permissions, runtime
    dependencies, state paths, and interface calls.
-9. Consider signed audit records if digest self-consistency is not enough
-   protection against intentional local edits.
+3. Consider external key custody or public-key signatures if local HMAC is not
+   enough protection against intentional edits by an actor with repository
+   access.

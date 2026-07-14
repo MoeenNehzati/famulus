@@ -1,3 +1,6 @@
+schema_version: 2
+blueprint_type: skill
+id: skill-audit
 category: skill-making-development-assistant
 role: meta-skill
 kind: auditor
@@ -15,64 +18,20 @@ skill_interface:
   - User request to certify audit records for one or more installed skills.
   - Optional installed skill names or exact skill root paths.
   outputs:
-  - Certification report listing written audit records or the first failed gate.
+  - independent per-target results distinguishing reused, written, not-written, and failed outcomes.
   side_effects:
   - Runs blueprint sync checks, validators, and tests.
-  - Writes .last_audit.json under certified target skill roots.
+  - Writes authenticated node health and pooled review artifacts under certified skill roots.
+  - Creates or reuses the local skill-audit health authentication key.
+  - Reads each target blueprint graph, policy and schema inputs, and Git commit readiness before stamping.
 interfaces:
-  machine:
-    certify:
-      version: 1
-      uses_interfaces:
-      - interface: skill-drift.machine.compute-hashes
-        version: 1
-      - interface: skill-drift.machine.drift-status
-        version: 1
-      - interface: skill-maker.machine.sync-blueprints
-        version: 1
-      description: Run audit gates and write fresh audit records for selected installed
-        skills or all observed blueprint-backed installed skills.
-      usage: certify [target ...] [--json]
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - min_positionals: 1
-        allow_stdin: false
-        allowed_flags:
-        - --json
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Parses skill blueprint files during semantic exactness checks.
-        version: any
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads: []
-        writes: []
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_audit_certifier.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-  llm:
-    default:
-      version: 1
-      description: Primary LLM-facing skill instructions.
-      binding:
-        kind: skill_file
-        path: SKILL.md
-      direct_io:
-        reads: []
-        writes: []
-        network: []
-      owns_filesystem: []
-      allow_all_skills: true
-      behavior_sources: []
+- interface: skill-audit.llm.default
+  version: 1
+  blueprint:
+    base: skill-root
+    path: .SKILL.md.blueprint.yaml
+- interface: skill-audit.machine.certify
+  version: 1
+  blueprint:
+    base: skill-root
+    path: _rtx/._audit_certifier.py.blueprint.yaml

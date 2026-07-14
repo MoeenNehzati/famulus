@@ -24,10 +24,44 @@ categories:
 
 def category_cache_module():
     assert MODULE_PATH.is_file(), "category-cache interface module has not been created"
-    sys.path.insert(0, str(REPO_ROOT / "src"))
-    sys.path.insert(0, str(SKILL_ROOT))
-    sys.modules.pop("_rtx._category_cache", None)
-    return importlib.import_module("_rtx._category_cache")
+    original_path = list(sys.path)
+    original_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "_rtx" or name.startswith("_rtx.")
+    }
+    try:
+        sys.path.insert(0, str(REPO_ROOT / "src"))
+        sys.path.insert(0, str(SKILL_ROOT))
+        for name in list(sys.modules):
+            if name == "_rtx" or name.startswith("_rtx."):
+                sys.modules.pop(name, None)
+        return importlib.import_module("_rtx._category_cache")
+    finally:
+        sys.path[:] = original_path
+        for name in list(sys.modules):
+            if name == "_rtx" or name.startswith("_rtx."):
+                sys.modules.pop(name, None)
+        sys.modules.update(original_modules)
+
+
+def test_category_cache_loader_ignores_and_restores_foreign_private_package(
+    tmp_path, monkeypatch
+):
+    foreign_root = tmp_path / "foreign"
+    foreign_package_dir = foreign_root / "_rtx"
+    foreign_package_dir.mkdir(parents=True)
+    (foreign_package_dir / "__init__.py").write_text("marker = 'foreign'\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(foreign_root))
+    for name in list(sys.modules):
+        if name == "_rtx" or name.startswith("_rtx."):
+            sys.modules.pop(name, None)
+    foreign_package = importlib.import_module("_rtx")
+
+    module = category_cache_module()
+
+    assert module.load_paths
+    assert sys.modules["_rtx"] is foreign_package
 
 
 def fake_download(calls: list[str]):

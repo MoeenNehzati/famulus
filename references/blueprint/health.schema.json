@@ -1,0 +1,202 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "health.schema.json",
+  "title": "Artifact Health Record",
+  "description": "Generated authenticated certification snapshot. It records graph state but never defines graph edges.",
+  "type": "object",
+  "required": ["health_schema_version", "record_type", "subject", "certification", "certifier", "hashes", "dependencies", "checks", "coverage", "record_hash", "authentication"],
+  "additionalProperties": false,
+  "properties": {
+    "health_schema_version": {"const": 1},
+    "record_type": {"enum": ["node-health", "skill-health", "pooled-review-health"]},
+    "subject": {"type": "object"},
+    "certification": {"$ref": "#/definitions/certification"},
+    "certifier": {"$ref": "#/definitions/certifier"},
+    "source": {"$ref": "#/definitions/gitSource"},
+    "hashes": {"type": "object"},
+    "dependencies": {"type": "array"},
+    "checks": {
+      "type": "array",
+      "items": {"$ref": "#/definitions/check"}
+    },
+    "coverage": {"type": "object"},
+    "record_hash": {"$ref": "#/definitions/sha256"},
+    "authentication": {"$ref": "#/definitions/authentication"}
+  },
+  "oneOf": [
+    {
+      "required": ["source"],
+      "properties": {
+        "record_type": {"enum": ["node-health", "skill-health"]},
+        "subject": {"$ref": "#/definitions/nodeSubject"},
+        "hashes": {"$ref": "#/definitions/nodeHashes"},
+        "dependencies": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/nodeDependency"}
+        }
+      }
+    },
+    {
+      "not": {"required": ["source"]},
+      "properties": {
+        "record_type": {"const": "pooled-review-health"},
+        "subject": {"$ref": "#/definitions/pooledSubject"},
+        "hashes": {"$ref": "#/definitions/pooledHashes"},
+        "dependencies": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/pooledDependency"},
+          "minItems": 1,
+          "maxItems": 1
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "certification": {
+      "type": "object",
+      "required": ["result", "certified_at"],
+      "additionalProperties": false,
+      "properties": {
+        "result": {"const": "passed"},
+        "certified_at": {"type": "string", "minLength": 1}
+      }
+    },
+    "certifier": {
+      "type": "object",
+      "required": ["interface", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "interface": {"const": "skill-audit.machine.certify"},
+        "version": {"const": 1}
+      }
+    },
+    "check": {
+      "type": "object",
+      "required": ["id", "version", "passed", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "version": {"type": "integer", "minimum": 1},
+        "passed": {"const": true},
+        "findings": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "gitSource": {
+      "type": "object",
+      "required": ["vcs", "commit", "input_paths"],
+      "additionalProperties": false,
+      "properties": {
+        "vcs": {"const": "git"},
+        "commit": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "input_paths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+          }
+        }
+      }
+    },
+    "authentication": {
+      "type": "object",
+      "required": ["scheme", "key_id", "mac"],
+      "additionalProperties": false,
+      "properties": {
+        "scheme": {"const": "hmac-sha256"},
+        "key_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{16}$"},
+        "mac": {"type": "string", "pattern": "^base64:[A-Za-z0-9+/]{43}=$"}
+      }
+    },
+    "nodeSubject": {
+      "type": "object",
+      "required": ["id", "blueprint_type", "version", "blueprint_path", "binding_path"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "blueprint_type": {"enum": ["skill", "llm-interface", "machine-interface", "behavior-source"]},
+        "version": {"type": "integer", "minimum": 1},
+        "blueprint_path": {"type": "string", "minLength": 1},
+        "binding_path": {"type": ["string", "null"]}
+      }
+    },
+    "nodeHashes": {
+      "type": "object",
+      "required": ["blueprint_file_hash", "blueprint_contract_hash", "bound_file_hash", "local_hash", "downstream_artifact_hash", "artifact_graph_hash", "downstream_health_hash", "certified_health_hash", "schema_hash", "policy_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "blueprint_file_hash": {"$ref": "#/definitions/sha256"},
+        "blueprint_contract_hash": {"$ref": "#/definitions/sha256"},
+        "bound_file_hash": {"oneOf": [{"$ref": "#/definitions/sha256"}, {"type": "null"}]},
+        "local_hash": {"$ref": "#/definitions/sha256"},
+        "downstream_artifact_hash": {"$ref": "#/definitions/sha256"},
+        "artifact_graph_hash": {"$ref": "#/definitions/sha256"},
+        "downstream_health_hash": {"$ref": "#/definitions/sha256"},
+        "certified_health_hash": {"$ref": "#/definitions/sha256"},
+        "schema_hash": {"$ref": "#/definitions/sha256"},
+        "policy_hash": {"$ref": "#/definitions/sha256"}
+      }
+    },
+    "nodeDependency": {
+      "type": "object",
+      "required": ["relation", "target", "version", "artifact_graph_hash", "certified_health_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "relation": {"enum": ["declares-interface", "uses-interface", "uses-behavior-source"]},
+        "target": {"type": "string", "minLength": 1},
+        "version": {"type": "integer", "minimum": 1},
+        "artifact_graph_hash": {"$ref": "#/definitions/sha256"},
+        "certified_health_hash": {"$ref": "#/definitions/sha256"}
+      }
+    },
+    "pooledSubject": {
+      "type": "object",
+      "required": ["root_id", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "root_id": {"type": "string", "minLength": 1},
+        "path": {"const": ".pooled-blueprint-review.yaml"}
+      }
+    },
+    "pooledHashes": {
+      "type": "object",
+      "required": ["pooled_file_hash", "root_certified_health_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "pooled_file_hash": {"$ref": "#/definitions/sha256"},
+        "root_certified_health_hash": {"$ref": "#/definitions/sha256"}
+      }
+    },
+    "pooledDependency": {
+      "type": "object",
+      "required": ["relation", "target", "certified_health_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "relation": {"const": "reviews-root"},
+        "target": {"type": "string", "minLength": 1},
+        "certified_health_hash": {"$ref": "#/definitions/sha256"}
+      }
+    }
+  },
+  "x-famulus": {
+    "authority": "generated-health-only",
+    "authentication": "hmac-sha256",
+    "mac_domain_hex": "66616d756c75732d6865616c74682d7265636f72642d763100",
+    "canonical_json": {"sort_keys": true, "separators": [",", ":"], "utf8": true, "floats": false},
+    "graph_authority": false,
+    "commit_backing": {
+      "node_records_require_source": true,
+      "pooled_records_define_no_source": true,
+      "source_input_paths": "repository-relative tracked regular non-symlink files whose bytes contribute to the node local hash"
+    }
+  }
+}

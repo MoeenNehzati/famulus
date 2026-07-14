@@ -1,0 +1,61 @@
+schema_version: 2
+blueprint_type: machine-interface
+id: skill-drift.machine.drift-status
+version: 1
+description: Read derived audit status for selected installed names, one exact skill root and its reachable graph, or all observed installed skills.
+usage: status [target ...] [--json] [--with-test-validate]
+binding:
+  kind: python-entrypoint
+  path: _rtx/_check_drift_state.py
+  symbol: Interface
+  args_prefix: []
+patterns:
+- min_positionals: 1
+  allow_stdin: false
+  allowed_flags:
+  - --json
+  - --with-test-validate
+  - --all
+  - --skill-root
+allow_all_skills: true
+allowed_callers: []
+platform_support:
+  linux: true
+  macos: true
+  windows: false
+dependencies:
+- kind: python-package
+  name: PyYAML
+  reason: Parses typed and legacy blueprint declarations.
+  version: any
+  platforms:
+    linux: true
+    macos: true
+    windows: false
+- kind: python-package
+  name: jsonschema
+  reason: Validates typed health records against target schema snapshots.
+  version: any
+  platforms:
+    linux: true
+    macos: true
+    windows: false
+behavior_sources: []
+direct_io:
+  reads: []
+  writes:
+  - medium: local-filesystem
+    access: write
+    system: filesystem
+    content: drift-report
+    format: markdown
+    path: _build/*.md
+    path_match: glob
+    sensitivity: derived-private
+    reason: Write the timestamped human-readable drift report.
+  network: []
+owns_filesystem:
+- match: regex
+  path: ^_build/[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}\.md$
+  allowed_readers: []
+  reason: Drift status is the sole writer of its generated Markdown reports.

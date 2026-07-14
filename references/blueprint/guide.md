@@ -1,805 +1,385 @@
 # Skill Blueprint Guide
 
-## Overview
+## Authority model
 
-A **blueprint** defines the contract of a skill: what interfaces it exposes,
-which version-pinned interfaces those interfaces use, and how the interfaces
-are validated and executed.
+Each skill has exactly one canonical graph root:
 
-Blueprints serve two purposes:
-1. **Document** the skill's API and constraints
-2. **Enable validation** to catch errors at development time, not runtime
-
----
-
-## Architecture: Two-Layer Validation
-
-Validation is split into two independent layers.
-
-### Layer 1: YAML structure (JSON Schema)
-**File:** `blueprint/schema.json`
-
-Validates individual blueprint files in isolation:
-
-- Does every interface declare a positive integer `version`?
-- Is `category` a known taxonomy node?
-- Are `role` and `kind` known documentation taxonomy values?
-- Does `interfaces.machine` / `interfaces.llm` have the right shape?
-- Are interface names valid?
-- Are patterns well-formed?
-- If `allow_all_skills: true`, is `allowed_callers` empty?
-- Is `invocation` used only under `interfaces.machine.*`?
-
-### Layer 2: relationships (Python validators)
-**Files:** `skills/skill-maker/validators/`
-
-Validates constraints that span multiple blueprints:
-
-1. Version-pinned `uses_interfaces` targets exist
-2. Pinned versions match target interface versions
-3. LLM interfaces only use same-skill machine interfaces or LLM interfaces
-4. Machine interfaces only use machine interfaces
-5. Duplicate YAML keys are rejected before they can mask interfaces
-
----
-
-## Core model
-
-### Interface namespaces
-
-Every blueprint may define two public interface namespaces:
-
-- `interfaces.machine.<name>`
-- `interfaces.llm.<name>`
-
-Canonical external names are:
-
-- machine: `skill.machine.name`
-- llm: `skill.llm.name`
-
-Examples:
-
-- `list-manager.machine.read-list`
-- `find-handoff-candidates.machine.scan`
-- `prepare-handoff.llm.compose-note`
-
-Local interface names are the mapping keys under `machine` or `llm`. They are
-dash-separated and must not contain dots.
-
-### Why mappings, not lists
-
-Interfaces are mappings rather than `[{name: ...}, ...]` lists because:
-
-- lookup is direct
-- uniqueness is natural after parse
-- validation is simpler
-- the canonical name is already encoded by the key path
-
-One caveat: JSON Schema validates the parsed mapping, not the raw YAML text, so
-duplicate-key rejection must also exist in the Python validation/load path.
-
----
-
-## Creating a new skill blueprint
-
-### Step 1: Create the file
-
-```bash
-touch skills/<skill-name>/blueprint.yaml
+```text
+skills/<skill>/blueprint.yaml
 ```
 
-### Step 2: Copy the template
+The root owns skill-level facts and points to interface blueprints. It does not
+inline facts owned by those interfaces. Every subordinate node binds exactly
+one regular file and stores its own contract in a hidden sidecar beside that
+file.
 
-Start from `references/blueprint/template.yaml`.
+Canonical blueprint types are:
 
-Representative structure:
+- `skill`
+- `llm-interface`
+- `machine-interface`
+- `behavior-source`
 
-```yaml
-category: research-assistant
-role: research-writing
-kind: reviewer
+Generated pooled reviews and health records are not blueprint types and never
+define graph edges.
 
-skill_interface:
-  inputs:
-    - User request
-  outputs:
-    - Primary artifact
-  side_effects:
-    - Files written to disk
+Legacy monolithic roots remain accepted during migration through
+`legacy-skill.schema.json`. New authoring uses schema version 2.
 
+The dispatcher keeps that migration boundary explicit. On Windows, where the
+POSIX descriptor primitives required for no-follow runtime snapshots are
+unavailable, it may read one legacy monolithic root snapshot, select the
+requested interface, and use the preexisting portable legacy invocation path
+only after that captured snapshot passes `legacy-skill.schema.json` and the
+selected interface declares `platform_support.windows: true`. Schema-version-2
+roots, sidecars, and runtime bindings do not use this compatibility path;
+dispatch fails closed when descriptor-safe primitives are unavailable. Other
+hosts also fail closed if those primitives are unexpectedly unavailable.
+
+## Schema family
+
+`references/blueprint/schema.json` is the compatibility entry point. Concrete
+authoring and validation rules live in:
+
+- `skill.schema.json`
+- `llm-interface.schema.json`
+- `machine-interface.schema.json`
+- `behavior-source.schema.json`
+- `common.schema.json`
+- `health.schema.json`
+- `pooled-review.schema.json`
+
+`schema-meta.json` defines the required per-field metadata protocol and maps
+every `related_validation_rules` ID to its enforcing validator and tests. Each
+public typed field states:
+
+- whether it is required or optional;
+- whether it participates in certified contract hashes;
+- whether and how it appears in generated authoring templates;
+- authoring guidance;
+- the mechanical validation rules that enforce it.
+
+The schema family is therefore the complete source for document shape,
+authoring-template generation, contract-hash inclusion, and validator
+traceability. Python validators add filesystem and graph checks that JSON
+Schema cannot perform by itself.
+
+`template.yaml` is the committed artifact-layout manifest, not a root blueprint
+or a second authoring specification. Concrete authoring templates are generated
+from each type schema. The schema hash covers every concrete schema, the
+annotation protocol, the compatibility/annotated schema inputs, and this
+manifest; a missing required input is an error rather than a smaller valid
+schema family.
+
+## File layout
+
+For a single node bound to `foo.py`:
+
+```text
+foo.py
+.foo.py.blueprint.yaml
+.foo.py.health.json
+```
+
+If two interfaces bind the same file, all sidecars are qualified by local node
+name:
+
+```text
+foo.py
+.foo.py.first.blueprint.yaml
+.foo.py.first.health.json
+.foo.py.second.blueprint.yaml
+.foo.py.second.health.json
+```
+
+The default LLM interface is ordinary, explicit, and file-backed:
+
+```text
+SKILL.md
+.SKILL.md.blueprint.yaml
+.SKILL.md.health.json
+```
+
+The skill root keeps its established unsuffixed names:
+
+```text
+blueprint.yaml
+.last_audit.json
+```
+
+Directories cannot be blueprint bindings. A collection that needs graph
+identity must expose a concrete dispatcher, manifest, index, or README file and
+bind that file.
+
+## Skill root
+
+The root contains only skill-level metadata and version-pinned locators for its
 interfaces:
-  machine:
-    read-data:
-      version: 1
-      description: "Read an input file."
-      usage: "<file>"
-      allow_all_skills: true
-      allowed_callers: []
-      patterns:
-        - min_positionals: 1
-          allow_stdin: false
-          notes: "First positional is the input file."
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/read_data.py:ReadData
-        behavior_sources: []
-      dependencies: []
-
-  llm:
-    default:
-      version: 1
-      description: "Primary LLM-facing skill instructions."
-      binding:
-        kind: skill_file
-        path: SKILL.md
-
-    summarize:
-      version: 1
-      description: "Summarize the collected records."
-      binding:
-        kind: markdown_file
-        path: llm_interfaces/summarize.md
-```
-
----
-
-## Key fields
-
-### `category`
-
-Required single string from the typed enum in `schema.json`.
-
-### `role`
-
-Required single string from the typed enum in `schema.json`. This is the
-primary user-facing domain the skill serves, such as `productivity`,
-`math-reasoning`, `document-processing`, `development-assistant`,
-`system-operations`, `integration`, `meta-skill`, `automation`, or `mode`.
-
-Use `role` for generated docs grouping and graph clustering. Keep `category`
-during migration for compatibility with existing generated blocks and tools.
-
-### `kind`
-
-Required single string from the typed enum in `schema.json`. This is the
-primary shape of help the skill provides, such as `reviewer`, `auditor`,
-`planner`, `client`, `storage`, `scheduler`, `converter`, `renderer`,
-`triager`, `analyzer`, or `maintenance`.
-
-Use `kind` for user-facing filters like "show reviewer skills" or "show
-scheduler skills". If a skill has many interface-level behaviors, choose the
-dominant user-facing kind at the skill level and reserve finer interface kinds
-for the later interface metadata migration.
-
-### Interface `version`
-
-Every machine and LLM interface declares a positive integer `version`.
-Increment it when that interface's exported contract changes in a breaking way.
-The skill version is the version of `interfaces.llm.default`; there is no
-separate top-level skill version.
-
-### `skill_interface`
-
-High-level contract in plain language. Lists inputs, outputs, side effects.
-
-### `interfaces.machine`
-
-Map of machine-interface name → invocation contract.
-
-Each machine interface owns:
-
-- `version`
-- `description`
-- `usage`
-- `patterns`
-- `allow_all_skills`
-- `allowed_callers`
-- `platform_support`
-- `invocation`
-- `dependencies`
-- `uses_interfaces`
-- `invocation.behavior_sources`
-- `direct_io`
-- `owns_filesystem`
-
-Machine interfaces are the executable interface model. The legacy
-`script_interfaces` key is no longer accepted by the schema or sync validator.
-
-Skill-level platform support is derived from `interfaces.machine.*.platform_support`.
-Do not add a top-level platform flag. A skill can have a mix of portable and
-platform-specific machine interfaces.
-
-### `dependencies`
-
-Required list on every executable machine interface. Use `[]` when the
-interface has no non-stdlib runtime dependencies.
-
-Each dependency is a factual runtime requirement with:
-
-- `kind`: one of the closed dependency-kind values
-- `name`: package or executable name
-- `version`: version constraint or `any` when unconstrained
-- `platforms`: required `linux`/`macos`/`windows` booleans
-- `reason`: short human explanation used by docs and review
-
-Examples:
 
 ```yaml
-platform_support:
-  linux: true
-  macos: true
-  windows: false
-
-dependencies:
-  - kind: python-package
-    name: PyYAML
-    version: ">=6"
-    platforms:
-      linux: true
-      macos: true
-      windows: false
-    reason: "Reads YAML list files."
-  - kind: binary
-    name: curl
-    version: any
-    platforms:
-      linux: true
-      macos: true
-      windows: false
-    reason: "Fetches remote JSON from the weather API."
-```
-
-Allowed dependency kinds are:
-
-- `python-package`
-- `binary`
-- `system-service`
-- `system-library`
-- `external-application`
-- `runtime`
-- `model-data`
-
-For `kind: system-service`, `name` is also closed. Allowed values are:
-
-- `systemd-user`
-- `launchd`
-- `task-scheduler`
-- `cron`
-
-Do not use dependency kinds for APIs, OAuth, credentials, or network access.
-Represent those through `direct_io.network`, auth metadata, and setup
-interfaces.
-
-These declarations are not permission suggestions. Keep developer-selected
-approval baselines in top-level `suggested_permissions`.
-
-### `uses_interfaces`
-
-Any machine or LLM interface may declare `uses_interfaces`, a list of
-version-pinned canonical interfaces that this interface invokes or orchestrates:
-
-```yaml
-uses_interfaces:
-  - interface: other-skill.machine.read-data
+schema_version: 2
+blueprint_type: skill
+id: example-skill
+category: development-assistant
+role: automation
+kind: tool
+interfaces:
+  - interface: example-skill.llm.default
     version: 1
+    blueprint:
+      base: skill-root
+      path: .SKILL.md.blueprint.yaml
+  - interface: example-skill.machine.run
+    version: 1
+    blueprint:
+      base: skill-root
+      path: _rtx/._runner.py.blueprint.yaml
 ```
 
-This is the only dependency declaration for blueprint interfaces. There is no
-top-level `depends_on`.
+Every root must declare an `llm.default` edge. The root ID must equal the skill
+directory name. A root edge does not repeat the target interface's description,
+binding, access policy, behavior sources, IO, ownership, or dependencies; those
+facts belong to the target sidecar.
 
-Machine interfaces may use same-skill or cross-skill machine interfaces. They
-must not use LLM interfaces.
+## LLM interfaces
 
-LLM interfaces may use their own skill's machine interfaces and any skill's LLM
-interfaces. They must not directly use another skill's machine interfaces.
-
-Audit hashing includes these used interface hashes recursively. If an LLM
-interface routes work through a machine interface and that machine interface
-changes, the LLM interface hash changes as well.
-
-### `behavior_sources`
-
-Every interface must declare behavior sources. LLM interfaces use
-`behavior_sources` directly. Machine interfaces use
-`invocation.behavior_sources`.
-
-Behavior sources are non-code files or directories the interface reads to
-decide how to behave: instruction Markdown, schemas, prompt templates, examples,
-parser tables, checklists, policies, validation rules, or config files. They are
-not ordinary user subject input. For example, a PDF-to-markdown interface should
-not list the PDF passed by the user, but it should list a schema, template, or
-policy file loaded to decide how conversion works.
-
-Python imports, `_rtx/` entrypoint files, and dispatcher targets are discovered
-mechanically. Do not duplicate those implementation or dispatch edges in
-`behavior_sources`.
-
-Paths are relative to the directory containing `blueprint.yaml` by default. Use
-`$repo/` for repository-root relative paths. Use `[]` only after checking that
-the interface has no non-code behavior-shaping files.
+An LLM interface owns its binding and behavior dependencies:
 
 ```yaml
+schema_version: 2
+blueprint_type: llm-interface
+id: example-skill.llm.default
+version: 1
+description: Primary LLM-facing skill instructions.
+binding:
+  kind: instruction-file
+  path: SKILL.md
+allow_all_skills: true
+allowed_callers: []
+uses_interfaces:
+  - interface: example-skill.machine.run
+    version: 1
 behavior_sources:
-  - path: references/triage-policy.md
-    content: config
-    format: markdown
-    reason: "Defines how the LLM classifies messages."
-
-invocation:
-  kind: python_machine_interface
-  entrypoint: _rtx/validate.py:Interface
-  behavior_sources:
-    - path: schemas/input.schema.json
-      content: validator
-      format: json
-      reason: "Defines accepted input structure."
-```
-
-### `direct_io`
-
-Every machine and LLM interface must declare `direct_io` with all three lists:
-
-```yaml
+  - source: example-skill.source.policy
+    version: 1
+    blueprint:
+      base: skill-root
+      path: references/.policy.md.blueprint.yaml
+    reason: Defines the policy used by this interface.
 direct_io:
   reads: []
   writes: []
   network: []
+owns_filesystem: []
 ```
 
-`direct_io` is immediate-only semantic metadata for generated docs, search,
-graphs, and safety summaries. It describes what the interface itself reads,
-writes, sends, downloads, deletes, or requests. Do not copy IO from dependency
-interfaces; transitive IO is generated by recursively following
-`uses_interfaces`.
+The edge owns `reason`, because the reason explains the consumer's use. The
+behavior-source node owns intrinsic facts about itself.
 
-Use empty lists only after checking that the interface has no direct IO of that
-kind. Keep direct IO separate from behavior sources: `direct_io` describes what
-the interface does during an invocation, while `behavior_sources` describes the
-files that shape the interface's behavior across invocations.
+## Machine interfaces
 
-Use coarse `content` values. `content` names the user-meaningful object for
-docs, search, and graphs, not an internal field of that object. Use
-`content: email`, not separate values for subject, body, title, date, headers,
-or IDs. Add a finer content value only when users will filter or visualize that
-object independently.
+Machine interfaces remain public under `skill.machine.name` regardless of
+implementation language. Python files live under `_rtx`; command files live
+under `_cx`.
 
-Use `format` for one known format and `formats` for a finite family of possible
-formats. Do not set both on the same `direct_io` entry:
-
-```yaml
-direct_io:
-  writes:
-    - medium: local-filesystem
-      access: write
-      system: filesystem
-      content: report
-      formats: [markdown, pdf]
-      path: "_build/reports/**/*.{md,pdf}"
-      path_match: glob
-      sensitivity: derived-private
-```
-
-`path_match` is optional and defaults to `exact`. Use `path_match: glob` for a
-small documented glob syntax: `*` within a path segment, `**` as a full path
-segment, and a final extension family such as `*.{md,pdf}`. Do not use
-`*.[md|pdf]`; bracket character classes are intentionally not part of the
-blueprint glob syntax. Use `path_match: regex` only when the family cannot be
-expressed as a glob. Regex paths must compile, and explicit `format` or
-`formats` values are preferred because suffix inference is only reliable for
-exact and glob paths.
-
-### `owns_filesystem`
-
-Every machine and LLM interface must declare `owns_filesystem`. Use `[]` when
-the interface owns no filesystem paths.
-
-Ownership is immediate and interface-scoped. If an interface owns a filesystem
-path, only that interface may write matching `direct_io.writes` entries. Only
-that interface and the canonical interfaces listed in `allowed_readers` may read
-matching `direct_io.reads` entries.
-
-Two different interfaces must not own overlapping filesystem paths. Ownership
-is a single-writer authority, not a shared label.
-
-Ownership entries support exact paths and regexes:
-
-```yaml
-owns_filesystem:
-  - match: exact
-    path: "$repo/data/private.yaml"
-    allowed_readers:
-      - other-skill.machine.read-private-data
-    reason: "This interface is the sole writer for private data."
-
-  - match: regex
-    path: "_build/reports/.*\\.json"
-    allowed_readers: []
-```
-
-Plain paths are skill-root-relative. Use `$repo/`, `$home/`, or `$tmp/` when the
-owned filesystem path lives outside the skill directory. For `match: regex`,
-the pattern is matched against the declared `direct_io` path string.
-
-### `interfaces.llm`
-
-Map of llm-interface name → documented prompt/interface contract.
-
-Every blueprint must define `interfaces.llm.default`. It represents the skill's
-ordinary `SKILL.md` prompt surface:
-
-```yaml
-interfaces:
-  llm:
-    default:
-      description: "Primary LLM-facing skill instructions."
-      binding:
-        kind: skill_file
-        path: SKILL.md
-      direct_io:
-        reads:
-          - medium: prompt
-            access: read
-            content: document
-            format: text
-            sensitivity: user-private
-        writes:
-          - medium: prompt
-            access: write
-            content: response
-            format: markdown
-            sensitivity: derived-private
-        network: []
-      owns_filesystem: []
-```
-
-Each llm interface typically owns:
-
-- `description`
-- `binding`
-- `allow_all_skills`
-- `allowed_callers`
-- `direct_io`
-- `owns_filesystem`
-- optional `routing_hints`
-
-LLM interfaces are documented and routed by skill logic. The dispatcher never
-executes them.
-
-The local Markdown form is a relative path under `llm_interfaces/`, the
-skill-local directory for LLM interface instructions:
+Python binding:
 
 ```yaml
 binding:
-  kind: markdown_file
-  path: llm_interfaces/summarize.md
+  kind: python-entrypoint
+  path: _rtx/_runner.py
+  symbol: Interface
+  args_prefix: []
 ```
 
-The default skill-file form explicitly names `SKILL.md`, also relative to the
-directory containing `blueprint.yaml`:
+Command-file binding:
 
 ```yaml
 binding:
-  kind: skill_file
-  path: SKILL.md
+  kind: command-file
+  path: _cx/_refresh
+  args_prefix: []
 ```
 
-For externally hosted interfaces, use:
+Command files are executed directly. Inline shell strings, direct Bash command
+declarations, and `bash -c` bindings are invalid. `_cx` is intentionally an
+opaque implementation namespace, not a public interface namespace.
+Python and command bindings cannot contain parent traversal and must resolve
+inside their owning skill's `_rtx` or `_cx` directory, including after symlink
+resolution. Both are tracked files; command files must also be executable.
+Hand-authored LLM text refers to the canonical machine interface, never the
+opaque `_cx` path.
+
+`platform_support` states where the machine interface itself is supported. A
+runtime dependency's `platforms` map states only where that dependency applies,
+so one portable interface may declare different service or binary dependencies
+for different hosts. In contrast, every `uses_interfaces` target is required by
+the caller: a machine interface cannot claim support on a platform where a
+required interface is unsupported.
+
+`patterns` constrain dispatcher argv forms. They do not enforce which bucket,
+account, database, host, or subsystem the implementation can access. Scope
+enforcement must come from the implementation or downstream service boundary.
+
+`direct_io` is descriptive immediate IO and likewise does not prove subsystem
+confinement. Its live subject data and declaration are excluded from certified
+contract hashes. `owns_filesystem` identifies writer authority and permitted
+readers; machine and LLM interfaces may both own files.
+
+## Behavior sources
+
+Behavior-source nodes bind files, never directories:
 
 ```yaml
+schema_version: 2
+blueprint_type: behavior-source
+id: example-skill.source.policy
+version: 1
+description: Defines the policy used by interfaces.
 binding:
-  kind: uri
-  uri: https://example.com/interfaces/summarize.md
+  kind: file
+  path: references/policy.md
+content: config
+format: markdown
+uses_behavior_sources:
+  - source: example-skill.source.rules
+    version: 1
+    blueprint:
+      base: skill-root
+      path: references/.rules.md.blueprint.yaml
+    reason: Supplies the detailed rules indexed by this policy.
+uses_interfaces:
+  - interface: other-skill.machine.lookup
+    version: 1
 ```
 
-Use `binding` rather than `invocation` because an LLM interface points at a
-descriptive prompt contract, not an executable program.
+Behavior-source nodes may point to other behavior-source nodes and may declare
+canonical interfaces they use. Both edge kinds are version-pinned and
+recursively participate in health. LLM-interface and behavior-source bodies
+must use canonical interface IDs instead of bare cross-skill names, and every
+interface ID named in a body must appear in that node's own `uses_interfaces`.
 
----
+Behavior-source visibility follows physical ownership. A skill may directly
+reference behavior sources declared under its own `skills/<skill>/` directory.
+Repository-owned sources under `references/` use `references.source.*` IDs and
+are visible to every skill. A node cannot directly reference a behavior source
+under another skill; that skill must expose the behavior through a declared
+interface instead. The source namespace must match its physical location.
 
-## Invocation Metadata
+## Relationship validation
 
-Invocation metadata lives inline under each machine interface:
+Repository validators check more than isolated YAML shape:
 
-```yaml
-interfaces:
-  machine:
-    scan:
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/handoff_scan.py:HandoffScan
-        behavior_sources: []
-      dependencies: []
+1. Root and node IDs are canonical and namespace-correct.
+2. Locators resolve to reachable subordinate sidecars.
+3. Every subordinate binding is an existing regular file.
+4. Sidecar names match the bound file and shared-file qualifier rule.
+5. Edge target type and pinned version match.
+6. Cross-skill access control permits the consumer.
+7. Machine interfaces use only machine interfaces.
+8. LLM interfaces use same-skill machine interfaces or LLM interfaces.
+9. Behavior-source edges target behavior sources; source interface edges
+   target declared interfaces.
+10. Duplicate edges and local or cross-skill cycles are rejected.
+11. Health files, blueprint files, pooled reviews, and directories cannot be
+    bound as content nodes.
+
+Graph discovery starts only from `skills/<skill>/blueprint.yaml` and follows
+declared locators and interface IDs. Validators do not scan pooled reviews or
+health records for authority.
+Targeted audit and drift load only that root's reachable closure. A malformed
+unrelated skill cannot block the target, while a malformed reachable provider
+does. A repository-root behavior-source locator resolves only under
+`references/`; direct locators into another skill's local behavior sources are
+rejected. Repository-owned sources retain one canonical binding, sidecar, and
+health record across consumers.
+
+## Health records
+
+`skill-audit` certifies nodes bottom-up. Every record contains:
+
+- subject ID, type, version, blueprint path, and binding path;
+- raw `blueprint_file_hash`;
+- schema-governed `blueprint_contract_hash`;
+- bound-file and node-local hashes;
+- direct dependency summaries;
+- downstream artifact and downstream certified-health hashes;
+- stable `certified_health_hash`;
+- current schema and audit-policy hashes;
+- normalized check evidence;
+- certifier interface identity and version;
+- `record_hash` and HMAC-SHA-256 authentication.
+
+Stamping is node-local and commit-backed. Immediately before replacing one
+node's record, the certifier verifies that the node's own authored blueprint,
+bound file, and other local inputs exactly match the captured Git commit and
+that HEAD has not changed. Already authenticated and current child records are
+reused without rechecking those children's worktree state. A dirty node still
+receives complete semantic audit results, but no stamp; the result states that
+stamping requires committed local inputs.
+
+Only stable check evidence (`id`, `version`, `passed`, and normalized findings)
+participates in health. Volatile command output and timing do not churn stamps.
+Generated records, key material, and pools are ignored local state and are
+written with no-follow, atomic create-or-replace operations.
+
+A parent dependency copies the expected child `certified_health_hash` computed
+from live state and admitted check evidence. Drift authenticates a record
+before validating its health schema or using any of its fields. Wrong subject,
+type, certifier, dependency summaries, or failed/malformed checks make the node
+unhealthy. Unauthenticated record content never influences a parent's expected
+hash.
+
+Canonical JSON uses UTF-8, sorted keys, compact separators, and no floating
+point values. Hashes are SHA-256. Authentication uses HMAC-SHA-256 over the raw
+record-hash bytes with domain `famulus-health-record-v1\0`. The 32-byte local key
+lives at `skills/skill-audit/.health-authentication-key`, is ignored by Git, and
+is created with POSIX mode `0600`. This protects against casual manual record
+editing; stronger external or public-key trust can be added later.
+Every health record depends on `skill-audit` as its certifier through the
+explicit certifier identity and the policy hash. That policy hash includes the
+certifier implementation and shared authentication, graph, schema-template,
+health, and pooled-review machinery; it is a certification dependency, not a
+graph edge that would create a cycle for `skill-audit` itself.
+Certification refuses pre-existing symlinks at generated health or pooled-review
+paths and opens outputs with no-follow semantics where the host supports them.
+
+Changing a node's bound file, certified contract, schema policy, checks, or any
+reachable child changes its expected certified health hash and propagates
+upward. Raw blueprint formatting and schema-excluded metadata remain visible
+through `blueprint_file_hash` without necessarily making the semantic
+certification stale.
+
+## Pooled review
+
+After certification, tooling generates:
+
+```text
+.pooled-blueprint-review.yaml
+.pooled-blueprint-review.health.json
 ```
 
-This is **internal metadata**. It belongs in the blueprint so the dispatcher
-can execute the interface, but it is not part of the user-facing generated
-documentation.
+The YAML expands root, node declarations, edges, and bounded health summaries
+for human review. Its health depends on the canonical root's verified health:
 
-Current standard invocation kind:
+- unhealthy root means unhealthy pool;
+- healthy root plus changed or missing pool means unhealthy pool only;
+- pool content or health never affects root health.
 
-### `python_machine_interface`
+The checker validates the pool schema and requires byte-for-byte equality with
+the canonical renderer over the exact authenticated records admitted by root
+health. A valid HMAC alone cannot make arbitrary or noncanonical YAML healthy.
 
-```yaml
-invocation:
-  kind: python_machine_interface
-  entrypoint: _rtx/handoff_scan.py:HandoffScan
-  behavior_sources: []
-dependencies: []
-```
+Deleting a pool must not change graph reconstruction or canonical drift status.
 
-Use for Python callable interfaces. The dispatcher runs the shared
-`officina.runtime.python_machine_interface_runner`, which preserves normal
-relative imports inside `_rtx/` and provides the standard route-smoke path.
+Health state is intentionally local in this phase. A portable append-only
+certification ledger or externally held signatures remain deferred; neither is
+required to reconstruct or validate the canonical blueprint graph.
 
-Raw command invocation is intentionally not allowed. If an interface needs an
-external binary, wrap that behavior in a `python_machine_interface`, declare
-the binary under `dependencies`, and keep argument parsing, validation, and
-cross-platform behavior in Python.
+## Migration
 
-For `python_machine_interface`, route smoke is built into the shared runner.
-The route-smoke test appends `--route-smoke`; the shared runner imports the
-interface class, builds its parser, and exits before normal interface
-execution.
-
-The blueprint sync tool generates `references/blueprint/runtime_dependencies.json`
-from all `interfaces.machine.<name>.dependencies` declarations. Installers
-should use that JSON manifest, not PyYAML or direct blueprint parsing, when
-installing declared runtime packages.
-
----
-
-## Import model
-
-Machine interfaces are executed without depending on the caller's working
-directory.
-
-The intended Python import model for a skill file is:
-
-```python
-from .storage import load_plan
-from officina.common.paths import repo_root
-from officina.dispatcher import dispatch
-```
-
-Not:
-
-```python
-from skills.other_skill._rtx._foo_bar import bar
-from validators.runner import main
-```
-
-Rules:
-
-- same-skill imports: relative imports inside `_rtx/`
-- first-party shared/runtime imports: `officina.*`
-- cross-skill behavior: `dispatch(...)`
-- other repo packages outside `src/officina/` are not part of the import surface
-
-Runtime files currently remain direct children of `_rtx/`. Same-skill helpers
-can still use relative imports between direct `_rtx` modules; nested package
-directories need an explicit validator/policy update before use.
-
-Class-backed Python machine interfaces are declared with
-`invocation.kind: python_machine_interface`. That support is a contract
-declaration only; it does not migrate existing skill runtime files.
-
----
-
-## Common machine-interface patterns
-
-### Read-only interface
-
-```yaml
-interfaces:
-  machine:
-    read-data:
-      allow_all_skills: true
-      allowed_callers: []
-      patterns:
-        - min_positionals: 1
-          positional_patterns:
-            0: "^[a-z0-9_-]+$"
-          allow_stdin: false
-          notes: "First positional is the resource id."
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/read_data.py:ReadData
-        behavior_sources: []
-      dependencies: []
-```
-
-### Internal-only interface
-
-```yaml
-interfaces:
-  machine:
-    internal-worker:
-      allow_all_skills: false
-      allowed_callers: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/internal_worker.py:InternalWorker
-        behavior_sources: []
-      dependencies: []
-```
-
-### Restricted interface
-
-```yaml
-interfaces:
-  machine:
-    read-lists:
-      allow_all_skills: false
-      allowed_callers:
-        - daily-plan
-        - email-triage
-      patterns:
-        - min_positionals: 1
-          positional_patterns:
-            0: "^lists/.*"
-          notes: "Only list paths under lists/ are allowed."
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/read_lists.py:ReadLists
-        behavior_sources: []
-      dependencies: []
-```
-
-### Multiple calling conventions
-
-```yaml
-interfaces:
-  machine:
-    update-data:
-      patterns:
-        - name: "file-mode"
-          min_positionals: 1
-          max_positionals: 1
-          required_flags: ["--file"]
-          allow_stdin: false
-          notes: "Caller supplies patch file via --file."
-        - name: "stdin-mode"
-          min_positionals: 1
-          max_positionals: 1
-          forbidden_flags: ["--file"]
-          allow_stdin: true
-          notes: "Caller pipes patch data to stdin."
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/update_data.py:UpdateData
-        behavior_sources: []
-      dependencies: []
-```
-
----
-
-## Dispatcher resolution model
-
-Canonical CLI form:
-
-```bash
-dispatcher --caller-skill daily-plan list-manager.machine.read-list /tmp/todo.yaml
-```
-
-Canonical Python form:
-
-```python
-dispatch(
-    caller_skill="daily-plan",
-    target="list-manager.machine.read-list",
-    args=["/tmp/todo.yaml"],
-)
-```
-
-At runtime the dispatcher:
-
-1. parses `skill.machine.name`
-2. resolves `<repo>/skills/<skill>/blueprint.yaml`
-3. loads `interfaces.machine.<name>`
-4. validates dependency/version/export/access rules
-5. matches patterns
-6. resolves inline `invocation`
-7. executes it
-
-No absolute path is stored in the blueprint. Absolute paths are derived at
-dispatch time from the repo root and skill name.
-
----
-
-## Validation
-
-### Running validation
-
-```bash
-python3 skills/skill-maker/validators/blueprints.py
-python3 skills/skill-maker/validators/skill_md_dispatch.py
-python3 skills/skill-maker/validators/blueprint_relationships.py
-```
-
-All validators also run automatically at commit through `validators/runner.py`
-via `.githooks/pre-commit`.
-
-### Common errors
-
-**Schema error: `allow_all_skills` must be boolean**
-
-```
-skills/my-skill/blueprint.yaml:
-  interfaces.machine.read-data: `allow_all_skills` must be a boolean
-```
-
-**Schema error: if `allow_all_skills: true`, `allowed_callers` must be empty**
-
-```
-skills/my-skill/blueprint.yaml:
-  interfaces.machine.read-data: if allow_all_skills is true, allowed_callers must be empty
-```
-
-**Relationship error: used interface does not exist**
-
-```
-skills/my-skill/blueprint.yaml: my-skill.machine.read-data
-  uses_interfaces.0.interface targets unknown interface
-  'other-skill.machine.read-data'
-```
-
-**Validation error: duplicate YAML key masked an interface**
-
-```
-skills/my-skill/blueprint.yaml: duplicate key `scan` under interfaces.machine
-```
-
----
-
-## IDE integration
-
-### VS Code / editor setup
-
-To enable schema validation in your editor:
-
-1. Install JSON Schema support if needed
-2. Add to `.vscode/settings.json`:
-
-```json
-{
-  "json.schemas": [
-    {
-      "fileMatch": ["skills/*/blueprint.yaml"],
-      "url": "./references/blueprint/schema.json"
-    }
-  ]
-}
-```
-
-3. Reload the editor
-
-For Python import resolution, keep the repo runtime model in sync with the IDE:
-
-- shared first-party packages live under `src/officina/`
-- each skill root is its own Python execution environment
-- repo root itself should not be added as a generic import root
-
----
-
-## Best practices
-
-1. Keep machine interfaces narrowly scoped: one canonical interface per public
-   callable behavior.
-2. Keep `invocation` internal and user-facing docs external.
-3. Use relative imports for same-skill code and `officina.*` for shared code.
-4. Use `allow_all_skills: true` sparingly.
-5. Match major versions carefully.
-6. Use `python_machine_interface` for machine interfaces. Its shared runner
-   preserves same-skill `_rtx` relative imports and provides the standard
-   route-smoke path. Raw `command` runtimes are not allowed.
-
----
-
-## Reference files
-
-- `blueprint/schema.json`
-- `blueprint/template.yaml`
-- `skills/skill-maker/validators/`
-
-Refer to the template (`blueprint/template.yaml`) for commented examples of the
-full structure.
+Legacy monolithic roots continue to validate and expand into virtual interface
+nodes in memory. Migration moves one interface at a time into file-backed
+sidecars without changing its canonical public ID or version unless the
+caller-visible contract changes. Generated pools are never used as migration
+input.

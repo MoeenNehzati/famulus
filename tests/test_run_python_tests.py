@@ -12,6 +12,14 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(runner)
 
 
+def test_runner_supplies_repo_src_pythonpath() -> None:
+    assert runner._pytest_args(verbose=False) == [
+        "-o",
+        "pythonpath=src",
+        "-q",
+    ]
+
+
 def mkdir(path: Path) -> None:
     path.mkdir(parents=True)
 

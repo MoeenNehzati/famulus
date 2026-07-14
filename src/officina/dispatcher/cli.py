@@ -6,7 +6,7 @@ import argparse
 import json
 import sys
 
-from .core import InvocationError, dispatch, resolve_dispatch
+from .core import InvocationError, dispatch, resolve_dispatch_metadata
 
 
 def parse_cli() -> argparse.Namespace:
@@ -59,7 +59,7 @@ def main() -> int:
 
     try:
         if args.dry_run:
-            payload = resolve_dispatch(
+            payload = resolve_dispatch_metadata(
                 caller_skill=args.caller_skill,
                 target=target,
                 target_skill=target_skill,

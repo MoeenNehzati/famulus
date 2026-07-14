@@ -1,0 +1,15 @@
+schema_version: 2
+blueprint_type: llm-interface
+id: skill-drift.llm.default
+version: 1
+description: Instructions for exact-target, target-relative skill drift and hash checks.
+binding:
+  kind: instruction-file
+  path: SKILL.md
+allow_all_skills: true
+behavior_sources: []
+direct_io:
+  reads: []
+  writes: []
+  network: []
+owns_filesystem: []

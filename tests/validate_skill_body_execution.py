@@ -78,6 +78,22 @@ def test_generated_blocks_are_ignored(tmp_path: Path) -> None:
     assert _mod.validate(tmp_path) == []
 
 
+def test_cx_path_is_rejected_even_without_execution_verb(tmp_path: Path) -> None:
+    _write_skill(tmp_path, "The command implementation is `_cx/run-task`.\n")
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("SBE002" in error and "_cx/run-task" in error for error in errors)
+
+
+def test_rtx_path_is_rejected_even_without_execution_verb(tmp_path: Path) -> None:
+    _write_skill(tmp_path, "The implementation is `_rtx/_worker.py`.\n")
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("SBE002" in error and "_rtx/_worker.py" in error for error in errors)
+
+
 def test_hand_authored_fenced_code_is_scanned(tmp_path: Path) -> None:
     _write_skill(
         tmp_path,

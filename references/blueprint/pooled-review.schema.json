@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "pooled-review.schema.json",
+  "title": "Generated Pooled Blueprint Review",
+  "description": "Expanded human-review artifact. It is not a canonical blueprint type or graph input.",
+  "type": "object",
+  "required": ["document_type", "generated_at", "root", "nodes"],
+  "additionalProperties": false,
+  "properties": {
+    "document_type": {"const": "pooled-blueprint-review"},
+    "generated_at": {"type": "string", "minLength": 1},
+    "root": {
+      "type": "object",
+      "required": ["id", "blueprint_path", "artifact_graph_hash", "certified_health_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "blueprint_path": {"const": "blueprint.yaml"},
+        "artifact_graph_hash": {"$ref": "health.schema.json#/definitions/sha256"},
+        "certified_health_hash": {"$ref": "health.schema.json#/definitions/sha256"}
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "blueprint_type", "version", "blueprint_path", "binding_path", "declaration", "health"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "blueprint_type": {"enum": ["skill", "llm-interface", "machine-interface", "behavior-source"]},
+          "version": {"type": "integer", "minimum": 1},
+          "blueprint_path": {"type": "string", "minLength": 1},
+          "binding_path": {"type": ["string", "null"]},
+          "declaration": {"type": "object"},
+          "health": {
+            "type": "object",
+            "required": ["result", "artifact_graph_hash", "certified_health_hash"],
+            "additionalProperties": false,
+            "properties": {
+              "result": {"const": "passed"},
+              "artifact_graph_hash": {"$ref": "health.schema.json#/definitions/sha256"},
+              "certified_health_hash": {"$ref": "health.schema.json#/definitions/sha256"}
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-famulus": {
+    "authority": "generated-review-only",
+    "graph_input": false,
+    "canonical_source": "blueprint.yaml plus reachable typed sidecars and authenticated health records",
+    "canonical_pooled_review": "Pooled review is derived from one canonical root and reachable typed sidecars; it cannot declare graph edges, replace node health, or become graph input."
+  }
+}

@@ -29,6 +29,7 @@ repo root so validation still runs (matching prior behavior).
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,24 @@ _VALIDATOR_PACKAGES = [
 ]
 
 _SKIP = {"__init__.py", "runner.py"}
+_GIT_REPOSITORY_ENV = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+)
+
+
+def _source_git_environment() -> dict[str, str]:
+    """Return an environment that resolves Git from the requested cwd only."""
+
+    env = os.environ.copy()
+    for name in _GIT_REPOSITORY_ENV:
+        env.pop(name, None)
+    return env
 
 
 def _build_tracked_mirror(repo_root: Path) -> Path | None:
@@ -59,6 +78,7 @@ def _build_tracked_mirror(repo_root: Path) -> Path | None:
     result = subprocess.run(
         ["git", "ls-files", "-z"],
         cwd=repo_root,
+        env=_source_git_environment(),
         capture_output=True,
         check=False,
     )
@@ -79,6 +99,48 @@ def _build_tracked_mirror(repo_root: Path) -> Path | None:
         except OSError:
             continue
     return mirror_root
+
+
+def _build_isolated_git_dir(repo_root: Path, mirror_root: Path) -> Path | None:
+    """Create mirror-local Git metadata containing only the source index state."""
+
+    result = subprocess.run(
+        ["git", "rev-parse", "--absolute-git-dir"],
+        cwd=repo_root,
+        env=_source_git_environment(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+
+    source_git_dir = Path(result.stdout.strip())
+    isolated_git_dir = mirror_root / ".git"
+    (isolated_git_dir / "objects").mkdir(parents=True)
+    (isolated_git_dir / "refs" / "heads").mkdir(parents=True)
+    (isolated_git_dir / "refs" / "tags").mkdir(parents=True)
+    (isolated_git_dir / "HEAD").write_text(
+        "ref: refs/heads/validator-mirror\n",
+        encoding="utf-8",
+    )
+    (isolated_git_dir / "config").write_text(
+        "[core]\n"
+        "\trepositoryformatversion = 0\n"
+        "\tfilemode = true\n"
+        "\tbare = false\n"
+        "\tlogallrefupdates = false\n",
+        encoding="utf-8",
+    )
+    source_index = source_git_dir / "index"
+    if source_index.is_file():
+        shutil.copy2(source_index, isolated_git_dir / "index")
+    for shared_index in source_git_dir.glob("sharedindex.*"):
+        if shared_index.is_file():
+            shutil.copy2(shared_index, isolated_git_dir / shared_index.name)
+    return isolated_git_dir
 
 
 def _load_validators():
@@ -110,7 +172,17 @@ def run_all(repo_root: Path = REPO_ROOT) -> dict[str, list[str]]:
     """
     mirror_root = _build_tracked_mirror(repo_root)
     validation_root = mirror_root if mirror_root is not None else repo_root
+    previous_git_environment = {
+        name: os.environ.get(name) for name in _GIT_REPOSITORY_ENV
+    }
     try:
+        for name in _GIT_REPOSITORY_ENV:
+            os.environ.pop(name, None)
+        if mirror_root is not None:
+            isolated_git_dir = _build_isolated_git_dir(repo_root, mirror_root)
+            if isolated_git_dir is not None:
+                os.environ["GIT_DIR"] = str(isolated_git_dir)
+                os.environ["GIT_WORK_TREE"] = str(mirror_root)
         results: dict[str, list[str]] = {}
         for name, validate_fn in _load_validators():
             errors = validate_fn(validation_root)
@@ -122,6 +194,11 @@ def run_all(repo_root: Path = REPO_ROOT) -> dict[str, list[str]]:
                 results[name] = errors
         return results
     finally:
+        for name, previous_value in previous_git_environment.items():
+            if previous_value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = previous_value
         if mirror_root is not None:
             shutil.rmtree(mirror_root, ignore_errors=True)
 

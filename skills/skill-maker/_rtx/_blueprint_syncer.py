@@ -34,6 +34,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from officina.runtime.python_machine_interface import PythonMachineInterface
 from officina.runtime.python_machine_interface_runner import run_python_machine_interface
+from officina.common.blueprint_graph import expanded_legacy_blueprint, load_skill_blueprint_graph
 
 SKILLS_ROOT = REPO_ROOT / "skills"
 CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
@@ -41,6 +42,7 @@ CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
 INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
 RUNTIME_DEPENDENCIES_PATH = REPO_ROOT / "references" / "blueprint" / "runtime_dependencies.json"
+BLUEPRINT_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
 DEPENDENCY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+\-\[\]]*$")
 PYTHON_MACHINE_INTERFACE_ENTRYPOINT_RE = re.compile(
     r"^_rtx/[A-Za-z_][A-Za-z0-9_]*\.py:[A-Za-z_][A-Za-z0-9_]*$"
@@ -94,6 +96,16 @@ def load_blueprints() -> dict[str, SkillBlueprint]:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         if not isinstance(raw, dict):
             raise BlueprintError(f"{path}: top level must be a mapping")
+        if raw.get("schema_version") == 2 or "blueprint_type" in raw:
+            try:
+                raw = expanded_legacy_blueprint(
+                    load_skill_blueprint_graph(
+                        path.parent,
+                        schema_root=BLUEPRINT_SCHEMA_ROOT,
+                    )
+                )
+            except ValueError as exc:
+                raise BlueprintError(str(exc)) from exc
         blueprints[skill_name] = SkillBlueprint(skill_name, path, raw)
     return blueprints
 
@@ -135,7 +147,20 @@ def expect_invocation(value: Any, context: str, errors: list[str]) -> None:
             errors.append(f"{context}: python_machine_interface invocation needs string list `args_prefix`")
         expect_behavior_sources(value.get("behavior_sources"), f"{context}.behavior_sources", errors)
         return
-    errors.append(f"{context}: invocation kind must be `python_machine_interface`")
+    if kind == "command_file":
+        path = value.get("path")
+        if not isinstance(path, str) or not path.startswith("_cx/"):
+            errors.append(f"{context}: command_file path must be under `_cx/`")
+        args_prefix = value.get("args_prefix", [])
+        if not isinstance(args_prefix, list) or not all(
+            isinstance(token, str) and token for token in args_prefix
+        ):
+            errors.append(f"{context}: command_file invocation needs string list `args_prefix`")
+        expect_behavior_sources(value.get("behavior_sources"), f"{context}.behavior_sources", errors)
+        return
+    errors.append(
+        f"{context}: invocation kind must be `python_machine_interface` or `command_file`"
+    )
 
 
 def invocation_entrypoint_file(value: Any) -> str | None:
@@ -147,6 +172,9 @@ def invocation_entrypoint_file(value: Any) -> str | None:
         if isinstance(entrypoint, str) and ":" in entrypoint:
             return entrypoint.split(":", 1)[0]
         return None
+    if kind == "command_file":
+        path = value.get("path")
+        return path if isinstance(path, str) else None
     return None
 
 

@@ -1,0 +1,46 @@
+schema_version: 2
+blueprint_type: machine-interface
+id: skill-drift.machine.compute-hashes
+version: 1
+description: Compute target-relative legacy hashes or graph-native typed hashes for selected names, one exact skill root, or all observed blueprint-backed skills.
+usage: compute-hashes [target ...] [--json]
+binding:
+  kind: python-entrypoint
+  path: _rtx/_check_drift_state.py
+  symbol: Interface
+  args_prefix: []
+patterns:
+- min_positionals: 1
+  allow_stdin: false
+  allowed_flags:
+  - --json
+  - --skill-root
+allow_all_skills: true
+allowed_callers: []
+platform_support:
+  linux: true
+  macos: true
+  windows: false
+dependencies:
+- kind: python-package
+  name: PyYAML
+  reason: Parses typed and legacy blueprint declarations.
+  version: any
+  platforms:
+    linux: true
+    macos: true
+    windows: false
+- kind: python-package
+  name: jsonschema
+  reason: Validates typed health records against target schema snapshots.
+  version: any
+  platforms:
+    linux: true
+    macos: true
+    windows: false
+behavior_sources: []
+direct_io:
+  reads: []
+  writes: []
+  network: []
+owns_filesystem: []

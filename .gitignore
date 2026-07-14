@@ -18,7 +18,12 @@ settings.local.json
 settings.json
 
 # Skill runtime state
-skills/*/.last_audit.json
+skills/**/.last_audit.json
+skills/**/.*.health.json
+references/**/.*.health.json
+skills/**/.pooled-blueprint-review.yaml
+skills/**/.pooled-blueprint-review.health.json
+skills/skill-audit/.health-authentication-key
 skills/email-triage/state/
 skills/email-triage/triage.log
 

@@ -19,13 +19,19 @@ health failure does not rewrite or reinterpret the audit record as stale.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
+import os
+import stat
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Iterator, Sequence
+
+import jsonschema
 
 RTX_DIR = Path(__file__).resolve().parent
 if str(RTX_DIR) not in sys.path:
@@ -33,7 +39,28 @@ if str(RTX_DIR) not in sys.path:
 
 from _drift_hashes import HashEntry, digest_entries, entries_for_path, hash_interface, hash_skill
 from _skill_sources import SkillSource, observed_skill_sources
-from officina.common.audit_records import RECORD_DIGEST_FIELD, record_digest_matches
+from officina.common.artifact_health import (
+    GraphHealthReport,
+    NodeHashState,
+    blueprint_schema_hash,
+    check_graph_health,
+    compute_node_hash_states,
+    health_path_for_node,
+)
+from officina.common.audit_records import (
+    HMAC_KEY_BYTES,
+    RECORD_DIGEST_FIELD,
+    record_digest_matches,
+)
+from officina.common.blueprint_graph import (
+    SkillBlueprintGraph,
+    load_validated_skill_blueprint_graph,
+)
+from officina.common.pooled_blueprint import (
+    check_pooled_review,
+    pooled_review_health_path,
+    pooled_review_path,
+)
 from officina.blueprint_search import BlueprintSearchError, load_blueprint_record
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
@@ -42,11 +69,212 @@ SKILL_ROOT = RTX_DIR.parent
 BUILD_DIR = SKILL_ROOT / "_build"
 AUDIT_RECORD_NAME = ".last_audit.json"
 OUTPUT_SCHEMA_VERSION = 1
-POLICY_ROOTS_PATH = SKILL_ROOT / "references" / "policy-hash-roots.json"
 
 
 class DriftCheckError(RuntimeError):
     """Raised when a requested skill cannot be checked."""
+
+
+class PooledReviewSnapshotError(DriftCheckError):
+    """Raised when a non-authoritative pooled input cannot be snapshotted."""
+
+    def __init__(self, concern_kind: str, message: str) -> None:
+        super().__init__(message)
+        self.concern_kind = concern_kind
+
+
+_REQUIRED_TARGET_SCHEMA_INPUTS = {
+    "behavior-source.schema.json",
+    "common.schema.json",
+    "health.schema.json",
+    "legacy-skill.schema.json",
+    "llm-interface.schema.json",
+    "machine-interface.schema.json",
+    "pooled-review.schema.json",
+    "schema.annotated-draft.json",
+    "schema.json",
+    "schema-meta.json",
+    "skill.schema.json",
+    "template.yaml",
+}
+
+
+def _require_descriptor_safe_reads() -> None:
+    if (
+        os.name != "posix"
+        or not getattr(os, "O_DIRECTORY", 0)
+        or not getattr(os, "O_NOFOLLOW", 0)
+        or os.open not in getattr(os, "supports_dir_fd", set())
+    ):
+        raise DriftCheckError("descriptor-safe target reads are unavailable")
+
+
+def _target_relative_path(package_root: Path, path: Path) -> tuple[Path, Path]:
+    root = Path(os.path.abspath(package_root))
+    target = Path(os.path.abspath(path))
+    try:
+        relative = target.relative_to(root)
+    except ValueError as exc:
+        raise DriftCheckError(f"target path is outside selected package: {path}") from exc
+    if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+        raise DriftCheckError(f"invalid target-relative path: {path}")
+    return root, relative
+
+
+def _secure_open_target(package_root: Path, path: Path, *, directory: bool) -> int:
+    _require_descriptor_safe_reads()
+    root, relative = _target_relative_path(package_root, path)
+    file_flags = (
+        os.O_RDONLY
+        | os.O_NOFOLLOW
+        | os.O_NONBLOCK
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    directory_flags = file_flags | os.O_DIRECTORY
+    directory_fd = -1
+    try:
+        directory_fd = os.open(root, directory_flags)
+        for component in relative.parts[:-1]:
+            next_fd = os.open(component, directory_flags, dir_fd=directory_fd)
+            if not stat.S_ISDIR(os.fstat(next_fd).st_mode):
+                os.close(next_fd)
+                raise DriftCheckError(
+                    f"unsafe target path (symbolic link or non-directory component): {path}"
+                )
+            os.close(directory_fd)
+            directory_fd = next_fd
+        flags = directory_flags if directory else file_flags
+        descriptor = os.open(relative.parts[-1], flags, dir_fd=directory_fd)
+        metadata = os.fstat(descriptor)
+        expected = stat.S_ISDIR(metadata.st_mode) if directory else stat.S_ISREG(metadata.st_mode)
+        if not expected:
+            os.close(descriptor)
+            noun = "directory" if directory else "regular file"
+            raise DriftCheckError(f"target path must be a non-symlink {noun}: {path}")
+        return descriptor
+    except FileNotFoundError:
+        raise
+    except DriftCheckError:
+        raise
+    except OSError as exc:
+        raise DriftCheckError(
+            f"unsafe target path (symbolic link or non-regular component): {path}"
+        ) from exc
+    finally:
+        if directory_fd >= 0:
+            os.close(directory_fd)
+
+
+def secure_read_target_file(package_root: Path, path: Path) -> bytes:
+    descriptor = _secure_open_target(package_root, path, directory=False)
+    try:
+        chunks: list[bytes] = []
+        while chunk := os.read(descriptor, 1024 * 1024):
+            chunks.append(chunk)
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def secure_list_target_directory(package_root: Path, path: Path) -> tuple[str, ...]:
+    descriptor = _secure_open_target(package_root, path, directory=True)
+    try:
+        return tuple(sorted(os.listdir(descriptor)))
+    finally:
+        os.close(descriptor)
+
+
+@contextmanager
+def secure_schema_snapshot(package_root: Path) -> Iterator[Path]:
+    target_root = package_root / "references" / "blueprint"
+    names = secure_list_target_directory(package_root, target_root)
+    schema_names = _REQUIRED_TARGET_SCHEMA_INPUTS | {
+        name for name in names if name.endswith(".schema.json")
+    }
+    missing = sorted(schema_names - set(names))
+    if missing:
+        raise DriftCheckError(
+            f"{target_root}: missing blueprint schema inputs: {', '.join(missing)}"
+        )
+    with tempfile.TemporaryDirectory(prefix="skill-drift-schema-") as temporary:
+        snapshot = Path(temporary)
+        for name in sorted(schema_names):
+            data = secure_read_target_file(package_root, target_root / name)
+            if name.endswith(".json"):
+                try:
+                    json.loads(data.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise DriftCheckError(
+                        f"invalid target schema file {target_root / name}: {exc}"
+                    ) from exc
+            (snapshot / name).write_bytes(data)
+        yield snapshot
+
+
+@contextmanager
+def secure_pooled_review_snapshot(
+    package_root: Path,
+    skill_dir: Path,
+) -> Iterator[tuple[Path, Path]]:
+    originals = (
+        pooled_review_path(skill_dir),
+        pooled_review_health_path(skill_dir),
+    )
+    with tempfile.TemporaryDirectory(prefix="skill-drift-pooled-review-") as temporary:
+        snapshot = Path(temporary)
+        copied: list[Path] = []
+        for index, original in enumerate(originals):
+            destination = snapshot / original.name
+            try:
+                data = secure_read_target_file(package_root, original)
+            except FileNotFoundError:
+                pass
+            except (DriftCheckError, OSError) as exc:
+                concern_kind = (
+                    "invalid-pooled-review"
+                    if index == 0
+                    else "invalid-pooled-review-health"
+                )
+                raise PooledReviewSnapshotError(concern_kind, str(exc)) from exc
+            else:
+                try:
+                    destination.write_bytes(data)
+                except OSError as exc:
+                    concern_kind = (
+                        "invalid-pooled-review"
+                        if index == 0
+                        else "invalid-pooled-review-health"
+                    )
+                    raise PooledReviewSnapshotError(
+                        concern_kind,
+                        f"cannot snapshot {original}: {exc}",
+                    ) from exc
+            copied.append(destination)
+        yield copied[0], copied[1]
+
+
+def secure_load_target_key(package_root: Path, path: Path) -> bytes:
+    key = secure_read_target_file(package_root, path)
+    if len(key) != HMAC_KEY_BYTES:
+        raise ValueError(f"{path}: HMAC key must be exactly {HMAC_KEY_BYTES} bytes")
+    return key
+
+
+def read_target_record(
+    package_root: Path,
+    path: Path,
+) -> tuple[dict[str, Any] | None, Concern | None]:
+    try:
+        raw_bytes = secure_read_target_file(package_root, path)
+    except FileNotFoundError:
+        return None, Concern("missing-record", f"{path.as_posix()} does not exist")
+    try:
+        raw = json.loads(raw_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return None, Concern("corrupt-record", f"{path.as_posix()} is not valid JSON: {exc}")
+    if not isinstance(raw, dict):
+        return None, Concern("corrupt-record", f"{path.as_posix()} must contain a JSON object")
+    return raw, None
 
 
 @dataclass(frozen=True)
@@ -148,6 +376,40 @@ class SkillHashReport:
     skills_root: Path
     hashes: dict[str, Any]
 
+    @classmethod
+    def from_graph_report(
+        cls,
+        source: SkillSource,
+        graph: SkillBlueprintGraph,
+        report: GraphHealthReport,
+        *,
+        policy_hash: str,
+        schema_hash: str,
+        node_states: dict[str, NodeHashState],
+    ) -> "SkillHashReport":
+        nodes = {
+            node_id: {
+                "blueprint_type": graph.nodes[node_id].blueprint_type,
+                "local_hash": node_states[node_id].local_hash,
+                "artifact_graph_hash": node_states[node_id].artifact_graph_hash,
+                "expected_certified_health_hash": (
+                    report.nodes[node_id].expected_certified_health_hash
+                ),
+            }
+            for node_id in sorted(graph.nodes)
+        }
+        return cls(
+            skill=graph.root.node_id,
+            source=source.source,
+            package_root=source.package_root,
+            skills_root=source.skills_root,
+            hashes={
+                "policy": policy_hash,
+                "schema": schema_hash,
+                "nodes": nodes,
+            },
+        )
+
     def as_payload(self) -> dict[str, Any]:
         return {
             "skill": self.skill,
@@ -155,6 +417,27 @@ class SkillHashReport:
             "package_root": self.package_root.as_posix(),
             "skills_root": self.skills_root.as_posix(),
             "hashes": self.hashes,
+        }
+
+
+@dataclass(frozen=True)
+class SkillHashFailure:
+    skill: str
+    source: str
+    package_root: Path
+    skills_root: Path
+    message: str
+
+    def as_payload(self) -> dict[str, Any]:
+        return {
+            "skill": self.skill,
+            "source": self.source,
+            "package_root": self.package_root.as_posix(),
+            "skills_root": self.skills_root.as_posix(),
+            "error": {
+                "kind": "hash-unavailable",
+                "message": self.message,
+            },
         }
 
 
@@ -205,6 +488,12 @@ def source_for_skill_root(skill_root: Path, *, source: str = "path") -> SkillSou
     return SkillSource(source=source, package_root=package_root.resolve(), skills_root=skills_root.resolve())
 
 
+@dataclass(frozen=True)
+class RequestedScope:
+    source: SkillSource
+    skill_names: tuple[str, ...]
+
+
 def load_blueprint(skill_dir: Path) -> dict[str, Any]:
     path = skill_dir / "blueprint.yaml"
     if not path.is_file():
@@ -217,23 +506,54 @@ def load_blueprint(skill_dir: Path) -> dict[str, Any]:
 
 
 def compute_policy_hash(repo_root: Path) -> str:
-    entries: list[HashEntry] = list(entries_for_path(POLICY_ROOTS_PATH, REPO_ROOT))
-    for pattern in load_policy_patterns():
+    package_root = repo_root.resolve()
+    manifest = policy_roots_path(package_root)
+    manifest_bytes = secure_read_target_file(package_root, manifest)
+    entries = [
+        HashEntry(
+            display_path(manifest, package_root),
+            "file",
+            manifest_bytes,
+        )
+    ]
+    for pattern in load_policy_patterns(package_root, manifest_bytes=manifest_bytes):
+        relative = Path(pattern)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise DriftCheckError(f"policy hash root must stay under target package: {pattern}")
         if any(char in pattern for char in "*?[]"):
-            paths = sorted(repo_root.glob(pattern), key=lambda item: item.as_posix())
+            paths = sorted(package_root.glob(pattern), key=lambda item: item.as_posix())
         else:
-            paths = [repo_root / pattern]
+            paths = [package_root / pattern]
         for path in paths:
-            if not path.exists() and not path.is_symlink():
+            try:
+                data = secure_read_target_file(package_root, path)
+            except FileNotFoundError:
                 continue
-            entries.extend(entries_for_path(path, repo_root))
+            entries.append(HashEntry(display_path(path, package_root), "file", data))
     return digest_entries(entries)
 
 
-def load_policy_patterns() -> list[str]:
-    raw = json.loads(POLICY_ROOTS_PATH.read_text(encoding="utf-8"))
+def policy_roots_path(package_root: Path) -> Path:
+    return package_root / "skills" / "skill-drift" / "references" / "policy-hash-roots.json"
+
+
+def load_policy_patterns(
+    package_root: Path,
+    *,
+    manifest_bytes: bytes | None = None,
+) -> list[str]:
+    manifest = policy_roots_path(package_root)
+    try:
+        data = (
+            manifest_bytes
+            if manifest_bytes is not None
+            else secure_read_target_file(package_root, manifest)
+        )
+        raw = json.loads(data.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DriftCheckError(f"cannot read target policy manifest {manifest.as_posix()}: {exc}") from exc
     if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
-        raise DriftCheckError(f"{POLICY_ROOTS_PATH.as_posix()} must contain a JSON string list")
+        raise DriftCheckError(f"{manifest.as_posix()} must contain a JSON string list")
     return raw
 
 
@@ -422,6 +742,14 @@ def run_validator_health(source: SkillSource) -> HealthCheck:
 
     runner = source.package_root / "validators" / "runner.py"
     command = [sys.executable, runner.as_posix()]
+    if source.package_root.resolve() != REPO_ROOT.resolve():
+        return HealthCheck(
+            name="validators",
+            passed=True,
+            skipped=True,
+            command=command,
+            message="copied targets are data-only and cannot run validators",
+        )
     if not runner.is_file():
         return HealthCheck(
             name="validators",
@@ -438,6 +766,14 @@ def run_skill_test_health(source: SkillSource, skill_name: str) -> HealthCheck:
 
     tests_dir = source.skills_root / skill_name / "tests"
     command = [sys.executable, "-m", "pytest", "-q", tests_dir.as_posix()]
+    if source.package_root.resolve() != REPO_ROOT.resolve():
+        return HealthCheck(
+            name="skill-tests",
+            passed=True,
+            skipped=True,
+            command=command,
+            message="copied targets are data-only and cannot run skill tests",
+        )
     if not tests_dir.is_dir():
         return HealthCheck(
             name="skill-tests",
@@ -461,6 +797,174 @@ def health_checks_for_skill(
     ]
 
 
+def check_typed_skill(
+    source: SkillSource,
+    skill_name: str,
+    *,
+    with_test_validate: bool = False,
+    validator_health: HealthCheck | None = None,
+) -> SkillDriftReport:
+    """Check authenticated recursive health for one typed blueprint graph."""
+
+    skill_dir = skill_dir_for(source.skills_root, skill_name)
+    record_path = skill_dir / AUDIT_RECORD_NAME
+    concerns: list[Concern] = []
+    current_hashes: dict[str, Any] = {}
+    recorded_hashes: dict[str, Any] | None = None
+    timestamp: str | None = None
+    canonical_healthy = False
+
+    try:
+        with secure_schema_snapshot(source.package_root) as schema_root:
+            graph = load_validated_skill_blueprint_graph(skill_dir, schema_root)
+            policy_hash = compute_policy_hash(source.package_root)
+            schema_hash = blueprint_schema_hash(schema_root)
+            key_path = (
+                source.package_root
+                / "skills"
+                / "skill-audit"
+                / ".health-authentication-key"
+            )
+            try:
+                key = secure_load_target_key(source.package_root, key_path)
+            except FileNotFoundError:
+                concerns.append(
+                    Concern(
+                        "missing-authentication-key",
+                        f"{key_path.as_posix()} does not exist",
+                    )
+                )
+                key = None
+            except ValueError as exc:
+                concerns.append(Concern("invalid-authentication-key", str(exc)))
+                key = None
+
+            if key is not None:
+                records: dict[str, dict[str, Any]] = {}
+                for node_id, node in graph.nodes.items():
+                    path = health_path_for_node(node)
+                    record, read_concern = read_target_record(source.package_root, path)
+                    if read_concern is not None:
+                        concerns.append(
+                            Concern(
+                                read_concern.kind,
+                                f"{node_id}: {read_concern.message}",
+                                key=node_id,
+                            )
+                        )
+                    elif record is not None:
+                        records[node_id] = record
+
+                report = check_graph_health(
+                    graph,
+                    records,
+                    policy_hash=policy_hash,
+                    schema_hash=schema_hash,
+                    schema_root=schema_root,
+                    key=key,
+                )
+                canonical_healthy = report.healthy
+                for node_id in sorted(report.nodes):
+                    status = report.nodes[node_id]
+                    for kind in status.concerns:
+                        concerns.append(
+                            Concern(
+                                kind,
+                                f"{node_id}: {kind.replace('-', ' ')}",
+                                key=node_id,
+                            )
+                        )
+
+                root_status = report.nodes[report.root_id]
+                current_hashes = {
+                    "policy": policy_hash,
+                    "schema": schema_hash,
+                    "root_certified_health": (
+                        root_status.expected_certified_health_hash
+                    ),
+                }
+                root_record = records.get(report.root_id)
+                if (
+                    root_status.recorded_certified_health_hash is not None
+                    and isinstance(root_record, dict)
+                ):
+                    hashes = root_record.get("hashes")
+                    if isinstance(hashes, dict):
+                        recorded_hashes = dict(hashes)
+                    certification = root_record.get("certification")
+                    if isinstance(certification, dict) and isinstance(
+                        certification.get("certified_at"), str
+                    ):
+                        timestamp = certification["certified_at"]
+
+                try:
+                    with secure_pooled_review_snapshot(
+                        source.package_root,
+                        skill_dir,
+                    ) as (pool_path, pool_health_path):
+                        pool_report = check_pooled_review(
+                            pool_path,
+                            pool_health_path,
+                            report,
+                            key,
+                            graph=graph,
+                            records=records,
+                            schema_root=schema_root,
+                        )
+                except PooledReviewSnapshotError as exc:
+                    concerns.append(Concern(exc.concern_kind, str(exc)))
+                except (
+                    DriftCheckError,
+                    OSError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    jsonschema.exceptions.SchemaError,
+                ) as exc:
+                    concerns.append(
+                        Concern(
+                            "invalid-pooled-review-health",
+                            f"pooled review health cannot be verified: {exc}",
+                        )
+                    )
+                else:
+                    for kind in pool_report.concerns:
+                        concerns.append(Concern(kind, kind.replace("-", " ")))
+    except (
+        DriftCheckError,
+        OSError,
+        TypeError,
+        ValueError,
+        KeyError,
+        jsonschema.exceptions.SchemaError,
+    ) as exc:
+        canonical_healthy = False
+        current_hashes = {}
+        recorded_hashes = None
+        timestamp = None
+        concerns.append(
+            Concern("hash-unavailable", f"{skill_name}: typed status unavailable: {exc}")
+        )
+
+    return SkillDriftReport(
+        skill=skill_name,
+        derived_status="audit-current" if canonical_healthy else "audit-stale",
+        concerns=concerns,
+        record_path=record_path,
+        current_hashes=current_hashes,
+        recorded_hashes=recorded_hashes,
+        source=source.source,
+        package_root=source.package_root,
+        skills_root=source.skills_root,
+        timestamp=timestamp,
+        health_checks=(
+            health_checks_for_skill(source, skill_name, validator_health=validator_health)
+            if with_test_validate
+            else None
+        ),
+    )
+
+
 def check_skill(
     source: SkillSource,
     skill_name: str,
@@ -469,6 +973,17 @@ def check_skill(
     validator_health: HealthCheck | None = None,
 ) -> SkillDriftReport:
     skill_dir = skill_dir_for(source.skills_root, skill_name)
+    try:
+        typed = load_blueprint(skill_dir).get("schema_version") == 2
+    except DriftCheckError:
+        typed = False
+    if typed:
+        return check_typed_skill(
+            source,
+            skill_name,
+            with_test_validate=with_test_validate,
+            validator_health=validator_health,
+        )
     record_path = skill_dir / AUDIT_RECORD_NAME
     record, read_concern = read_record(record_path)
     concerns: list[Concern] = []
@@ -529,12 +1044,18 @@ def build_payload(reports: list[SkillDriftReport]) -> dict[str, Any]:
     }
 
 
-def build_hash_payload(reports: list[SkillHashReport]) -> dict[str, Any]:
-    return {
+def build_hash_payload(
+    reports: list[SkillHashReport],
+    failures: Sequence[SkillHashFailure] = (),
+) -> dict[str, Any]:
+    payload = {
         "schema_version": OUTPUT_SCHEMA_VERSION,
         "computed_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "skills": [report.as_payload() for report in reports],
     }
+    if failures:
+        payload["errors"] = [failure.as_payload() for failure in failures]
+    return payload
 
 
 def render_text(reports: list[SkillDriftReport]) -> str:
@@ -594,33 +1115,59 @@ def render_text(reports: list[SkillDriftReport]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_hash_text(reports: list[SkillHashReport]) -> str:
+def render_hash_text(
+    reports: list[SkillHashReport],
+    failures: Sequence[SkillHashFailure] = (),
+) -> str:
     lines = [
         "# Skill Hash Report",
         "",
         f"Computed skills: {len(reports)}",
         "",
-        "| Source | Skill | Skill hash | Policy hash | Interface hashes |",
+        "| Source | Skill | Root artifact hash | Policy hash | Node hashes |",
         "|---|---|---|---|---|",
     ]
     for report in reports:
-        interfaces = report.hashes.get("interfaces", {})
-        interface_text = "<br>".join(
-            f"{name}: {value}" for name, value in sorted(interfaces.items()) if isinstance(value, str)
-        )
+        nodes = report.hashes.get("nodes")
+        if isinstance(nodes, dict):
+            root = nodes.get(report.skill, {})
+            root_hash = root.get("artifact_graph_hash", "") if isinstance(root, dict) else ""
+            node_text = "<br>".join(
+                f"{node_id} [{values.get('blueprint_type', '')}]: "
+                f"local_hash={values.get('local_hash', '')}; "
+                f"artifact_graph_hash={values.get('artifact_graph_hash', '')}; "
+                "expected_certified_health_hash="
+                f"{values.get('expected_certified_health_hash', '')}"
+                for node_id, values in sorted(nodes.items())
+                if isinstance(values, dict)
+            )
+        else:
+            interfaces = report.hashes.get("interfaces", {})
+            root_hash = report.hashes.get("skill", "")
+            node_text = "<br>".join(
+                f"{name}: {value}"
+                for name, value in sorted(interfaces.items())
+                if isinstance(value, str)
+            )
         lines.append(
             "| "
             + " | ".join(
                 [
                     markdown_cell(report.source),
                     markdown_cell(report.skill),
-                    markdown_cell(str(report.hashes.get("skill", ""))),
+                    markdown_cell(str(root_hash)),
                     markdown_cell(str(report.hashes.get("policy", ""))),
-                    markdown_cell(interface_text or "none"),
+                    markdown_cell(node_text or "none"),
                 ]
             )
             + " |"
         )
+    if failures:
+        lines.extend(["", "Errors:"])
+        for failure in failures:
+            lines.append(
+                f"- {failure.source}:{failure.skill}: hash-unavailable: {failure.message}"
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -720,11 +1267,11 @@ def run_status(args: argparse.Namespace) -> int:
     if args.skills and args.all:
         raise DriftCheckError("status accepts either skill names or --all, not both")
 
-    sources = requested_skill_sources(args)
-    if not sources:
+    scopes = requested_scopes(args)
+    if not scopes:
         raise DriftCheckError("no installed skill roots were found")
 
-    reports = reports_for_sources(sources, list(args.skills), with_test_validate=args.with_test_validate)
+    reports = reports_for_scopes(scopes, with_test_validate=args.with_test_validate)
     if args.json:
         print(json.dumps(build_payload(reports), indent=2, sort_keys=True))
     else:
@@ -736,21 +1283,21 @@ def run_status(args: argparse.Namespace) -> int:
 
 
 def run_compute_hashes(args: argparse.Namespace) -> int:
-    sources = requested_skill_sources(args)
-    if not sources:
+    scopes = requested_scopes(args)
+    if not scopes:
         raise DriftCheckError("no installed skill roots were found")
 
-    reports = hash_reports_for_sources(sources, list(args.skills))
+    reports, failures = hash_reports_for_scopes(scopes)
     if args.json:
-        print(json.dumps(build_hash_payload(reports), indent=2, sort_keys=True))
+        print(json.dumps(build_hash_payload(reports, failures), indent=2, sort_keys=True))
     else:
-        print(render_hash_text(reports), end="")
-    return 0
+        print(render_hash_text(reports, failures), end="")
+    for failure in failures:
+        print(f"error: {failure.message}", file=sys.stderr)
+    return 2 if failures else 0
 
 
 def requested_skill_sources(args: argparse.Namespace) -> list[SkillSource]:
-    if args.skill_root is not None:
-        return [source_for_skill_root(args.skill_root, source="override")]
     if args.skills_root is not None:
         skills_root = args.skills_root.resolve()
         return [SkillSource(source="override", package_root=skills_root.parent, skills_root=skills_root)]
@@ -760,14 +1307,46 @@ def requested_skill_sources(args: argparse.Namespace) -> list[SkillSource]:
     return observed_skill_sources()
 
 
-def reports_for_sources(
-    sources: list[SkillSource],
-    requested_skills: list[str],
+def requested_scopes(args: argparse.Namespace) -> tuple[RequestedScope, ...]:
+    if args.skill_root is not None:
+        root = args.skill_root.expanduser().resolve()
+        source = source_for_skill_root(root, source="override")
+        return (RequestedScope(source, (root.name,)),)
+
+    scopes: list[RequestedScope] = []
+    named_requests: list[str] = []
+    for requested in args.skills:
+        if is_path_like_target(requested):
+            root = Path(requested).expanduser().resolve()
+            scopes.append(RequestedScope(source_for_skill_root(root), (root.name,)))
+        else:
+            named_requests.append(requested)
+
+    for source in requested_skill_sources(args):
+        if named_requests:
+            names = tuple(named_requests)
+        elif args.skills:
+            continue
+        elif args.command == "status":
+            names = tuple(observed_skill_names(source.skills_root))
+        else:
+            names = tuple(blueprint_skill_names(source.skills_root))
+        scopes.append(RequestedScope(source, names))
+    return tuple(scopes)
+
+
+def reports_for_scopes(
+    scopes: tuple[RequestedScope, ...],
     *,
     with_test_validate: bool = False,
 ) -> list[SkillDriftReport]:
     reports: list[SkillDriftReport] = []
-    missing: list[str] = []
+    requested_names = {
+        skill_name
+        for scope in scopes
+        for skill_name in scope.skill_names
+    }
+    found_names: set[str] = set()
     validator_cache: dict[Path, HealthCheck] = {}
 
     def validator_health_for(source: SkillSource) -> HealthCheck | None:
@@ -778,77 +1357,64 @@ def reports_for_sources(
             validator_cache[key] = run_validator_health(source)
         return validator_cache[key]
 
-    if requested_skills:
-        for requested in requested_skills:
-            if is_path_like_target(requested):
-                skill_root = Path(requested).expanduser().resolve()
-                source = source_for_skill_root(skill_root)
-                reports.append(
-                    check_skill(
-                        source,
-                        skill_root.name,
-                        with_test_validate=with_test_validate,
-                        validator_health=validator_health_for(source),
+    for scope in scopes:
+        for skill_name in scope.skill_names:
+            if not (scope.source.skills_root / skill_name / "SKILL.md").is_file():
+                continue
+            found_names.add(skill_name)
+            reports.append(
+                check_skill(
+                    scope.source,
+                    skill_name,
+                    with_test_validate=with_test_validate,
+                    validator_health=validator_health_for(scope.source),
+                )
+            )
+    missing = sorted(requested_names - found_names)
+    if missing:
+        raise DriftCheckError(f"skill(s) not found in installed skill roots: {', '.join(missing)}")
+    return reports
+
+
+def hash_reports_for_scopes(
+    scopes: tuple[RequestedScope, ...],
+) -> tuple[list[SkillHashReport], list[SkillHashFailure]]:
+    reports: list[SkillHashReport] = []
+    failures: list[SkillHashFailure] = []
+    requested_names = {
+        skill_name
+        for scope in scopes
+        for skill_name in scope.skill_names
+    }
+    found_names: set[str] = set()
+    for scope in scopes:
+        for skill_name in scope.skill_names:
+            if not (scope.source.skills_root / skill_name / "SKILL.md").is_file():
+                continue
+            found_names.add(skill_name)
+            try:
+                reports.append(hash_report_for_skill(scope.source, skill_name))
+            except DriftCheckError as exc:
+                failures.append(
+                    SkillHashFailure(
+                        skill=skill_name,
+                        source=scope.source.source,
+                        package_root=scope.source.package_root,
+                        skills_root=scope.source.skills_root,
+                        message=str(exc),
                     )
                 )
-                continue
-            skill_name = requested
-            matches = [source for source in sources if (source.skills_root / skill_name / "SKILL.md").is_file()]
-            if not matches:
-                missing.append(skill_name)
-                continue
-            reports.extend(
-                check_skill(
-                    source,
-                    skill_name,
-                    with_test_validate=with_test_validate,
-                    validator_health=validator_health_for(source),
-                )
-                for source in matches
-            )
-    else:
-        for source in sources:
-            reports.extend(
-                check_skill(
-                    source,
-                    skill_name,
-                    with_test_validate=with_test_validate,
-                    validator_health=validator_health_for(source),
-                )
-                for skill_name in observed_skill_names(source.skills_root)
-            )
+    missing = sorted(requested_names - found_names)
     if missing:
         raise DriftCheckError(f"skill(s) not found in installed skill roots: {', '.join(missing)}")
-    return reports
-
-
-def hash_reports_for_sources(sources: list[SkillSource], requested_skills: list[str]) -> list[SkillHashReport]:
-    reports: list[SkillHashReport] = []
-    missing: list[str] = []
-    if requested_skills:
-        for requested in requested_skills:
-            if is_path_like_target(requested):
-                skill_root = Path(requested).expanduser().resolve()
-                source = source_for_skill_root(skill_root)
-                reports.append(hash_report_for_skill(source, skill_root.name))
-                continue
-            skill_name = requested
-            matches = [source for source in sources if (source.skills_root / skill_name / "SKILL.md").is_file()]
-            if not matches:
-                missing.append(skill_name)
-                continue
-            for source in matches:
-                reports.append(hash_report_for_skill(source, skill_name))
-    else:
-        for source in sources:
-            for skill_name in blueprint_skill_names(source.skills_root):
-                reports.append(hash_report_for_skill(source, skill_name))
-    if missing:
-        raise DriftCheckError(f"skill(s) not found in installed skill roots: {', '.join(missing)}")
-    return reports
+    return reports, failures
 
 
 def hash_report_for_skill(source: SkillSource, skill_name: str) -> SkillHashReport:
+    skill_dir = skill_dir_for(source.skills_root, skill_name)
+    blueprint = load_blueprint(skill_dir)
+    if blueprint.get("schema_version") == 2:
+        return typed_hash_report_for_skill(source, skill_name)
     return SkillHashReport(
         skill=skill_name,
         source=source.source,
@@ -856,6 +1422,79 @@ def hash_report_for_skill(source: SkillSource, skill_name: str) -> SkillHashRepo
         skills_root=source.skills_root,
         hashes=compute_audit_hashes(source.package_root, source.skills_root, skill_name),
     )
+
+
+def typed_hash_report_for_skill(source: SkillSource, skill_name: str) -> SkillHashReport:
+    try:
+        with secure_schema_snapshot(source.package_root) as schema_root:
+            graph = load_validated_skill_blueprint_graph(
+                skill_dir_for(source.skills_root, skill_name),
+                schema_root,
+            )
+            policy_hash = compute_policy_hash(source.package_root)
+            schema_hash = blueprint_schema_hash(schema_root)
+            records: dict[str, dict[str, Any]] = {}
+            for node_id, node in graph.nodes.items():
+                record, concern = read_target_record(
+                    source.package_root,
+                    health_path_for_node(node),
+                )
+                if concern is None and record is not None:
+                    records[node_id] = record
+
+            key_path = (
+                source.package_root
+                / "skills"
+                / "skill-audit"
+                / ".health-authentication-key"
+            )
+            try:
+                key = secure_load_target_key(source.package_root, key_path)
+            except FileNotFoundError:
+                key = b"\0" * HMAC_KEY_BYTES
+                records = {}
+            except ValueError:
+                key = b"\0" * HMAC_KEY_BYTES
+                records = {}
+            report = check_graph_health(
+                graph,
+                records,
+                policy_hash=policy_hash,
+                schema_hash=schema_hash,
+                key=key,
+                schema_root=schema_root,
+            )
+            node_states = compute_node_hash_states(
+                graph,
+                policy_hash=policy_hash,
+                schema_hash=schema_hash,
+                checks_by_node={},
+                schema_root=schema_root,
+                certifier={
+                    "interface": "skill-audit.machine.certify",
+                    "version": 1,
+                },
+            )
+            return SkillHashReport.from_graph_report(
+                source,
+                graph,
+                report,
+                policy_hash=policy_hash,
+                schema_hash=schema_hash,
+                node_states=node_states,
+            )
+    except DriftCheckError:
+        raise
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        KeyError,
+        jsonschema.exceptions.SchemaError,
+    ) as exc:
+        raise DriftCheckError(
+            f"{skill_name}: typed hash unavailable: {exc}"
+        ) from exc
 
 
 def main(argv: Sequence[str] | None = None) -> int:

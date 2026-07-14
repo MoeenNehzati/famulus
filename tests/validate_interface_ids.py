@@ -65,3 +65,46 @@ def test_dotted_interface_name_fails(tmp_path: Path) -> None:
     )
     errors = _mod.validate(tmp_path)
     assert any("must not contain `.`" in error for error in errors)
+
+
+def test_typed_interface_id_namespace_must_match_node_type(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "my-skill"
+    runtime = skill / "_rtx"
+    runtime.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("Body.\n")
+    (runtime / "_runner.py").write_text("class Interface: pass\n")
+    _write_blueprint(
+        skill / "blueprint.yaml",
+        {
+            "schema_version": 2,
+            "blueprint_type": "skill",
+            "id": "my-skill",
+            "interfaces": [
+                {
+                    "interface": "my-skill.llm.run",
+                    "version": 1,
+                    "blueprint": {
+                        "base": "skill-root",
+                        "path": "_rtx/._runner.py.blueprint.yaml",
+                    },
+                }
+            ],
+        },
+    )
+    _write_blueprint(
+        runtime / "._runner.py.blueprint.yaml",
+        {
+            "schema_version": 2,
+            "blueprint_type": "machine-interface",
+            "id": "my-skill.llm.run",
+            "version": 1,
+            "binding": {
+                "kind": "python-entrypoint",
+                "path": "_rtx/_runner.py",
+                "symbol": "Interface",
+            },
+        },
+    )
+
+    errors = _mod.validate(tmp_path)
+    assert any("machine-interface id must use `.machine.`" in error for error in errors)

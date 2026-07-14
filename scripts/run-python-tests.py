@@ -23,6 +23,10 @@ PRECOMMIT_EXCLUDED_TEST_DIRS = {
 SUITES = {"precommit", "full"}
 
 
+def _pytest_args(*, verbose: bool) -> list[str]:
+    return ["-o", "pythonpath=src", "-v" if verbose else "-q"]
+
+
 def _discover_skill_test_dirs() -> list[str]:
     skills_root = REPO_ROOT / "skills"
     return sorted(
@@ -63,7 +67,7 @@ def main() -> int:
     args = parser.parse_args()
 
     test_dirs = _resolve_suite(args.suite)
-    pytest_args = ["-v"] if args.verbose else ["-q"]
+    pytest_args = _pytest_args(verbose=args.verbose)
     cmd = [sys.executable, "-m", "pytest", *pytest_args, *test_dirs]
     completed = subprocess.run(cmd, cwd=REPO_ROOT)
     return completed.returncode

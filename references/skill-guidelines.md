@@ -34,36 +34,42 @@ Dependencies:
 Use `Dependencies: none` when the skill must not invoke other skills. List only
 skill names, not paths, files, or implementation details.
 
-In this repository, local skills use a canonical `blueprint.yaml` next to
-`SKILL.md`. Initialize a new blueprint by copying
-`references/blueprint/template.yaml` into the skill directory as your base,
-then customize it in place. The blueprint is hand-authored and comment-rich. It
-is the source of truth for:
+In this repository, local skills use one canonical `blueprint.yaml` graph root
+next to `SKILL.md`. Generate its initial values from `skill.schema.json`, then
+create typed hidden sidecars from their concrete schemas. The committed
+`references/blueprint/template.yaml` is an artifact-layout manifest, not a
+copyable root blueprint. The canonical root plus the subordinate files
+reachable through its locators are the source of truth for:
 
 - `category`
 - `role`
 - `kind`
 - `suggested_permissions`
 - `skill_interface`
-- `interfaces`
+- interface locators and interface-local contracts
 
 For blueprint skills, the top-of-file contract block in `SKILL.md` is generated
-from `blueprint.yaml`. The blueprint is canonical; generated blocks and
-repo-level manifests must match it exactly.
+from the canonical graph. Authored root and subordinate blueprints are
+canonical; generated blocks, pooled reviews, health records, and repo-level
+manifests are not graph authority and must match the authored graph exactly.
 
 Cross-skill use is declared on the interface that performs it, through
 `uses_interfaces`. Do not add top-level skill dependency lists. If an LLM
 surface delegates to another skill, point to that skill's LLM interface. If a
 machine interface calls another machine interface, declare that exact
 version-pinned machine interface edge.
+In schema-version-2 LLM-interface and behavior-source bodies, use canonical
+`skill.llm.name` or `skill.machine.name` IDs, never bare cross-skill names.
+Every interface ID named in the body must be declared by that same node's
+`uses_interfaces`.
 
-**Blueprint authoring — REQUIRED: Initialize by copying the template**
+**Blueprint authoring — REQUIRED: Use the concrete schema**
 
-**Always initialize a new blueprint by copying
-`references/blueprint/template.yaml` to `skills/<skill-name>/blueprint.yaml`.**
-Do not create a blueprint from scratch; start with the template as your base.
-Keep the comments. The template's extensive comments are part of the
-specification.
+Generate each new root or subordinate blueprint from its concrete type schema.
+Do not copy `references/blueprint/template.yaml` into a skill. The complete
+type-specific authoring, creation, hash, and validator traceability rules live
+in `references/blueprint/*.schema.json` and `schema-meta.json`; the manifest
+only demonstrates deterministic filenames and generated outputs.
 
 **Blueprint authoring notes**
 
@@ -79,16 +85,26 @@ specification.
   Every entry must include a `reason`.
 - `skill_interface`: three plain-language lists (`inputs`, `outputs`,
   `side_effects`) that describe the skill's high-level contract.
-- `interfaces`: mapping with two namespaces:
-  - `interfaces.machine.<name>` defines a dispatcher-callable machine
-    interface.
-  - `interfaces.llm.<name>` defines an LLM-facing interface documented through
-    `SKILL.md` or a local `llm_interfaces/` Markdown file, never executed
-    through the dispatcher.
-    Every blueprint must include `interfaces.llm.default`, backed by
-    `SKILL.md`.
-  - every interface declares `version`; the skill version is
-    `interfaces.llm.default.version`.
+- `interfaces`: version-pinned locators for subordinate LLM and machine
+  interface sidecars. Every root points to an `llm.default` sidecar, and that
+  sidecar explicitly binds `SKILL.md`.
+- `blueprint_type`: one of `skill`, `llm-interface`, `machine-interface`, or
+  `behavior-source`. A typed file states its own type instead of wrapping its
+  facts in another interface-name mapping.
+
+Every subordinate blueprint binds exactly one existing regular file and is
+hidden beside it. A single node bound to `foo.py` uses
+`.foo.py.blueprint.yaml`; multiple nodes on the same file use qualified names
+such as `.foo.py.read.blueprint.yaml`. Generated health uses the corresponding
+`.health.json` suffix. The skill root alone keeps `blueprint.yaml` and
+`.last_audit.json`. Directories never receive blueprints.
+
+`skill-audit` generates node health bottom-up and may generate
+`.pooled-blueprint-review.yaml` plus its health file for review. Pooled files
+are never graph inputs. The schema family defines canonical health fields,
+SHA-256 projections, HMAC-SHA-256 authentication, and which authored fields
+participate in contract hashes. Health, pool, and key files are ignored local
+state. Do not hand-author them.
 
 **Canonical interface names**
 
@@ -97,8 +113,8 @@ Every blueprint interface has a canonical fully qualified name:
 - machine interface: `skill.machine.name`
 - llm interface: `skill.llm.name`
 
-The local `<name>` is the mapping key under `interfaces.machine` or
-`interfaces.llm`. It must be dash-separated and must **not** contain `.`.
+The local `<name>` is the final component of the subordinate blueprint's `id`.
+It must be dash-separated and must **not** contain `.`.
 
 The canonical invocation form for machine interfaces is:
 
@@ -142,7 +158,7 @@ dispatcher imports and CLI dispatch from skill runtime code, and
 
 **Machine interfaces**
 
-`interfaces.machine.<name>` is the dispatcher-executable contract. It owns:
+A `machine-interface` sidecar is the dispatcher-executable contract. It owns:
 
 - `version` — the major version of this interface contract
 - `description` — what the interface does
@@ -151,25 +167,27 @@ dispatcher imports and CLI dispatch from skill runtime code, and
 - `allow_all_skills` / `allowed_callers` — access control
 - `platform_support` — explicit Linux/macOS/Windows support booleans for this
   machine interface
-- `invocation` — internal execution metadata
+- `binding` — one private Python entrypoint under `_rtx` or directly executed
+  command file under `_cx`
 - `dependencies` — factual runtime package and executable requirements
-- `invocation.behavior_sources` — non-code files that can change how a machine
-  interface behaves
+- `behavior_sources` — edges to typed file-backed behavior-source nodes
 - `direct_io` — immediate semantic IO for generated docs, search, graphs, and
   safety summaries
 - `owns_filesystem` — interface-owned filesystem paths and explicitly allowed
   reader interfaces
 
-`invocation` is **internal metadata**. It belongs in the blueprint because the
-dispatcher must know how to execute the interface, but it must not leak into
-user-facing generated docs. The only accepted invocation form is
-`kind: python_machine_interface` with an `entrypoint` such as
-`_rtx/handoff_scan.py:HandoffScan`. Raw command invocation is not allowed. If an
-interface needs an external binary, wrap the behavior in Python, declare the
-binary under `dependencies`, and keep argument parsing, validation, and host
-handling in the Python interface.
+`binding` is **internal metadata**. Python interfaces use `kind:
+python-entrypoint`, a `_rtx/*.py` path, and a symbol. Command interfaces use
+`kind: command-file` and a tracked executable under `_cx`. The dispatcher
+executes command files directly as argv; inline shell strings, direct Bash
+declarations, and `bash -c` are forbidden. Public interface IDs remain
+`skill.machine.name` for both binding kinds.
+Binding paths must be relative, contain no parent traversal, and remain inside
+the corresponding `_rtx` or `_cx` directory after symlink resolution.
+Hand-authored LLM-facing text must never expose `_cx/...`; name the canonical
+machine interface instead.
 
-Every executable `interfaces.machine.<name>` entry must declare `dependencies`.
+Every executable `machine-interface` sidecar must declare `dependencies`.
 Use `dependencies: []` when the interface has no non-stdlib Python package or
 external executable requirements. Otherwise list one object per requirement:
 
@@ -210,7 +228,7 @@ not `osx`.
 
 Do not declare skill-level platform support. Skill-level summaries for docs,
 graphs, installers, and validators must be derived from
-`interfaces.machine.*.platform_support`. A skill may have both portable and
+reachable machine sidecar `platform_support`. A skill may have both portable and
 platform-specific machine interfaces.
 
 Every dependency must declare `kind`, `name`, `version`, `platforms`, and
@@ -252,11 +270,9 @@ The blueprint sync tool generates `references/blueprint/runtime_dependencies.jso
 from these declarations. Installers and other non-YAML consumers should read
 that JSON manifest instead of parsing blueprint YAML at runtime.
 
-Every interface must declare behavior sources. LLM interfaces declare
-`behavior_sources` directly. Machine interfaces declare
-`invocation.behavior_sources`.
+Every interface must declare `behavior_sources` directly.
 
-Behavior sources are files or directories that the interface reads as
+Behavior sources are regular files that the interface reads as
 instructions, rules, schemas, templates, examples, parser tables, checklists, or
 other behavior-shaping material. They are not the user's subject input. A
 Markdown interface should list the Markdown files it points to and loads. A
@@ -266,13 +282,16 @@ Python imports, `_rtx/` entrypoint files, and dispatcher targets are discovered
 mechanically; do not duplicate them in behavior sources.
 
 Use `behavior_sources: []` only after checking that the interface has no
-non-code behavior-shaping files. Paths are relative to the directory containing
-`blueprint.yaml` unless they start with `$repo/`, which is relative to the
-repository root.
+non-code behavior-shaping files. Each edge points to a typed behavior-source
+sidecar, carries the consumer-local `reason`, and pins a version. The target
+node owns its binding, content, format, description, and any edges to other
+behavior sources. All binding paths are relative to the skill root. Directory
+bindings are forbidden; bind a concrete dispatcher, manifest, index, or README
+file when a collection needs graph identity.
 
 Every machine and LLM interface must declare `version`. Bump it only when that
 interface's exported contract changes in a breaking way. A skill's version is
-the version of `interfaces.llm.default`; there is no separate top-level skill
+the version of its `llm.default` interface; there is no separate top-level skill
 version field.
 
 Every machine and LLM interface must also declare `direct_io` with `reads`,
@@ -303,10 +322,10 @@ the canonical interfaces named in `allowed_readers` may read matching
 `direct_io.reads` entries. Ownership paths can be exact strings or regexes.
 Two different interfaces must not own overlapping filesystem paths.
 
-For `kind: python_machine_interface`, health dependency exploration combines
+For `kind: python-entrypoint`, health dependency exploration combines
 three surfaces:
 
-- `invocation.behavior_sources` for non-code behavior-shaping files, including
+- typed `behavior_sources` for non-code behavior-shaping files, including
   schemas, templates, examples, policy files, and parser tables;
 - class-level `dispatches = {...}` entries made of `DispatchCall(...)` for
   cross-skill machine-interface dependencies, followed recursively through
@@ -317,16 +336,16 @@ three surfaces:
 If a Python file can affect behavior and is not otherwise covered by declared
 imports or `DispatchCall`, the interface's `route_smoke()` must import the code
 path cheaply and without real side effects. Non-code behavior files must be
-declared in `invocation.behavior_sources`. Health exploration does not execute
+declared through typed behavior-source nodes. Health exploration does not execute
 normal `run(...)` just to discover dependencies.
 
 Pattern semantics are per interface, not per grouped command. Every
-`interfaces.machine.<name>` entry is one canonical callable interface. Do not
+`machine-interface` sidecar is one canonical callable interface. Do not
 reintroduce grouped parent interfaces with hidden subinterface ids.
 
 **LLM interfaces**
 
-`interfaces.llm.<name>` is not callable through the dispatcher. It documents a
+A `llm-interface` sidecar is not callable through the dispatcher. It documents a
 skill-owned prompt surface routed by higher-level skill logic. It owns:
 
 - `version`
@@ -338,15 +357,10 @@ skill-owned prompt surface routed by higher-level skill logic. It owns:
 - `allow_all_skills` / `allowed_callers` — access control for other skills
 - optional routing or documentation metadata
 
-Typical LLM bindings:
-
-- `kind: skill_file` for the mandatory `interfaces.llm.default` surface,
-  with `path: SKILL.md`
-- `kind: markdown_file` with `path: llm_interfaces/summarize.md`
-- `kind: uri` with `uri: https://example.com/skills/summarize.md`
-
-All local binding paths are relative to the directory containing
-`blueprint.yaml`.
+LLM bindings use `kind: instruction-file` and one regular local file. The
+mandatory `skill.llm.default` sidecar binds `SKILL.md`; another LLM interface
+may bind a file such as `llm_interfaces/summarize.md`. URI and directory
+bindings are forbidden. All binding paths are relative to the skill root.
 
 Local LLM interface Markdown beyond `SKILL.md` lives under
 `skills/<skill-name>/llm_interfaces/`. It is the Markdown counterpart to
@@ -357,26 +371,19 @@ For decomposition guidance, see `references/llm-interface-design.md`.
 
 Use `binding`, not `invocation`, because LLM interfaces are descriptive routing
 surfaces rather than dispatcher-executed programs. `invocation` is forbidden under
-`interfaces.llm.*`.
+`llm-interface` sidecars.
 
-Every blueprint must define:
-
-```yaml
-interfaces:
-  llm:
-    default:
-      description: "Primary LLM-facing skill instructions."
-      binding:
-        kind: skill_file
-        path: SKILL.md
-```
-
-For migration, `file: llm_interfaces/name.md` may be accepted as a shorthand for:
+Every skill root must point to a default sidecar equivalent to:
 
 ```yaml
+schema_version: 2
+blueprint_type: llm-interface
+id: example-skill.llm.default
+version: 1
+description: Primary LLM-facing skill instructions.
 binding:
-  kind: markdown_file
-  path: llm_interfaces/name.md
+  kind: instruction-file
+  path: SKILL.md
 ```
 
 **Dispatcher role**
@@ -389,10 +396,10 @@ dispatcher runtime's job is to:
 
 1. Parse the target canonical name `skill.machine.name`
 2. Resolve the callee `blueprint.yaml`
-3. Load `interfaces.machine.<name>`
+3. Follow the root edge to the target `machine-interface` sidecar
 4. Verify `allow_all_skills` / `allowed_callers`
-5. Match the invocation against declared patterns
-6. Resolve the internal `invocation`
+5. Match caller argv against declared `patterns`
+6. Resolve the private file `binding`
 7. Execute the interface without depending on the caller's working directory
 
 The pattern-based approach enables compile-time validation: git hooks verify
@@ -607,18 +614,20 @@ in the description.
 interpret output. Implementation internals belong in tool/script docs, not
 `SKILL.md`. Every line earns its place.
 
-**7. `blueprint.yaml` owns all interface definitions** — the generated
-interface blocks in `SKILL.md` are the single source of truth for interface
-names, invocation forms, and descriptions. The skill body must not restate,
-re-explain, or re-invoke any interface. Specifically:
+**7. The canonical blueprint graph owns all interface definitions** — the root
+owns skill-level facts and points to neighbors; every subordinate blueprint
+owns its own facts and points to its direct neighbors. A node never repeats a
+neighbor's intrinsic information. The generated interface blocks in `SKILL.md`
+are derived views of that graph. The skill body must not restate, re-explain,
+or re-invoke any interface. Specifically:
 
-- `interfaces.machine.<name>.description` describes what the machine interface
+- a machine sidecar's `description` describes what the machine interface
   does.
-- `interfaces.machine.<name>.usage` provides the complete invocation argument
+- its `usage` provides the complete invocation argument
   template.
 - `patterns[*].notes` gives mode-specific detail where multiple calling modes
   exist.
-- `interfaces.llm.<name>` documents the LLM-facing interface file and
+- an LLM sidecar documents its bound instruction file and
   description, but never a dispatcher invocation.
 - The skill body references interface names only — it never shows
   `dispatcher --caller-skill` invocations or runtime file paths.
@@ -655,8 +664,8 @@ commit, and push to `origin`.
 - **Make your own interface explicit.** State what inputs your skill expects
   and what outputs it produces. For blueprint skills:
   - `skill_interface` describes the skill-level contract
-  - `interfaces.machine` describes dispatcher-callable interfaces
-  - `interfaces.llm` describes LLM-facing interfaces
+  - `machine-interface` sidecars describe dispatcher-callable interfaces
+  - `llm-interface` sidecars describe LLM-facing interfaces
   - `direct_io` describes immediate semantic IO for each interface
   - `owns_filesystem` declares interface-owned filesystem paths and permitted
     readers
@@ -672,6 +681,8 @@ install.sh`, or `launch tool.exe`. If normal operation requires execution, put
 the mechanics behind a blueprint machine interface and refer to the interface
 name and outcome in prose. Generated blueprint interface blocks may contain
 invocation details because they are owned by `blueprint.yaml`.
+Opaque `_cx/...` paths are forbidden anywhere in the hand-authored body, even
+outside an explicit execution sentence.
 
 **11. State data lives under the skill's directory** — any persistent state a
 skill writes must be stored under the skill's own directory, not under system
@@ -710,7 +721,7 @@ platform-support metadata or platform-named implementation files.** Enforced by
 
 - `SKILL.md` and any generically named runtime file must not name a specific
   host or operating system.
-- `blueprint.yaml` may name operating systems only in structured
+- authored blueprint files may name operating systems only in structured
   `platform_support` and dependency `platforms` metadata. Do not put
   platform-specific prose or implementation guidance in generic blueprint
   fields.

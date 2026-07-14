@@ -1,6 +1,7 @@
 """Validate private skill runtime file layout and names."""
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -8,6 +9,7 @@ from collections import defaultdict
 from pathlib import Path
 
 RTX_DIR_NAME = "_rtx"
+CX_DIR_NAME = "_cx"
 ALLOWED_RTX_SUFFIXES = {".py", ".sh"}
 EXEMPT_RTX_FILENAMES = {"__init__.py"}
 EXEMPT_RTX_DIRNAMES = {"__pycache__"}
@@ -67,7 +69,16 @@ def _validate_rtx_path(path: Path, rel_path: Path) -> list[str]:
             continue
         errors.extend(_validate_private_component(dirname, rel_path, "directory name"))
 
-    if path.name in EXEMPT_RTX_FILENAMES:
+    hidden_health_sidecar = (
+        path.name.startswith(".")
+        and path.name != ".health.json"
+        and path.name.endswith(".health.json")
+    )
+    if (
+        path.name in EXEMPT_RTX_FILENAMES
+        or path.name.endswith(".blueprint.yaml")
+        or hidden_health_sidecar
+    ):
         return errors
 
     if path.suffix not in ALLOWED_RTX_SUFFIXES:
@@ -109,6 +120,11 @@ def validate(repo_root: Path) -> list[str]:
                     )
                 else:
                     seen_by_parent[parent][folded] = component_parts
+        elif len(parts) >= 4 and parts[2] == CX_DIR_NAME:
+            if path.name.endswith(".blueprint.yaml") or path.name.endswith(".health.json"):
+                continue
+            if not os.access(path, os.X_OK):
+                errors.append(f"{rel_path}: _cx command file must be executable")
 
     return errors
 

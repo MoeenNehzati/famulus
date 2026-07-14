@@ -111,6 +111,54 @@ def test_unsupported_runtime_suffix_is_rejected(tmp_path: Path) -> None:
     assert any("unsupported runtime suffix `.txt`" in error for error in errors)
 
 
+def test_hidden_runtime_blueprint_sidecar_is_allowed(tmp_path: Path) -> None:
+    _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "_worker_file.py")
+    _write(
+        tmp_path
+        / "skills"
+        / "demo-skill"
+        / "_rtx"
+        / "._worker_file.py.run.blueprint.yaml"
+    )
+
+    assert _mod.validate(tmp_path) == []
+
+
+def test_hidden_runtime_health_sidecar_is_ignored(tmp_path: Path) -> None:
+    _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "_worker_file.py")
+    _write(
+        tmp_path
+        / "skills"
+        / "demo-skill"
+        / "_rtx"
+        / "._worker_file.py.run.health.json"
+    )
+
+    assert _mod.validate(tmp_path) == []
+
+
+def test_nonhidden_runtime_health_lookalike_is_rejected(tmp_path: Path) -> None:
+    _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "_worker_file.health.json")
+
+    errors = _mod.validate(tmp_path)
+
+    assert any(
+        "unsupported runtime suffix `.json`" in error
+        and "_worker_file.health.json" in error
+        for error in errors
+    )
+
+
+def test_cx_command_file_must_be_executable(tmp_path: Path) -> None:
+    command = tmp_path / "skills" / "demo-skill" / "_cx" / "run-task"
+    _write(command)
+    command.chmod(0o644)
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("_cx command file must be executable" in error for error in errors)
+
+
 def test_case_insensitive_runtime_name_collision_is_rejected(tmp_path: Path, monkeypatch) -> None:
     rel_paths = [
         Path("skills/demo-skill/_rtx/_Calendar_Gateway.py"),

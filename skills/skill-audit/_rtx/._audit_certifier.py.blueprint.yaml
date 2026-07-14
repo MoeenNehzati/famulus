@@ -1,0 +1,129 @@
+schema_version: 2
+blueprint_type: machine-interface
+id: skill-audit.machine.certify
+version: 1
+description: Audit exact target closures and incrementally write commit-backed node health records.
+usage: certify [target ...] [--json]
+binding:
+  kind: python-entrypoint
+  path: _rtx/_audit_certifier.py
+  symbol: Interface
+  args_prefix: []
+patterns:
+- min_positionals: 1
+  allow_stdin: false
+  allowed_flags:
+  - --json
+allow_all_skills: false
+allowed_callers: []
+platform_support:
+  linux: true
+  macos: true
+  windows: false
+dependencies:
+- kind: python-package
+  name: PyYAML
+  reason: Parses skill blueprint files during semantic exactness checks.
+  version: any
+  platforms:
+    linux: true
+    macos: true
+    windows: false
+uses_interfaces:
+- interface: skill-drift.machine.compute-hashes
+  version: 1
+- interface: skill-drift.machine.drift-status
+  version: 1
+- interface: skill-maker.machine.sync-blueprints
+  version: 1
+behavior_sources: []
+direct_io:
+  reads:
+  - medium: local-filesystem
+    access: read
+    system: filesystem
+    content: blueprint
+    formats:
+    - yaml
+    - markdown
+    path: $target/blueprint-closure
+    path_match: glob
+    sensitivity: public
+    reason: Load the exact target graph and declared behavior sources for semantic and health checks.
+  - medium: local-filesystem
+    access: read
+    system: filesystem
+    content: config
+    formats:
+    - json
+    - yaml
+    path: references/blueprint
+    path_match: exact
+    sensitivity: public
+    reason: Hash and validate the audit policy and health schema inputs.
+  - medium: local-system
+    access: read
+    system: git
+    content: repository
+    path: $target/repository
+    path_match: exact
+    sensitivity: derived-private
+    reason: Check repository identity, HEAD stability, tracked state, and committed input hashes.
+  writes:
+  - medium: local-filesystem
+    access: write
+    system: filesystem
+    content: credential
+    format: text
+    path: skills/skill-audit/.health-authentication-key
+    path_match: exact
+    sensitivity: secret
+    reason: Create or reuse the bounded local HMAC key used to authenticate health records.
+  - medium: local-filesystem
+    access: write
+    system: filesystem
+    content: audit-record
+    format: json
+    path: $target/**/.last_audit.json
+    path_match: glob
+    sensitivity: derived-private
+    reason: Atomically write commit-backed legacy and typed node health records.
+  - medium: local-filesystem
+    access: write
+    system: filesystem
+    content: audit-record
+    format: json
+    path: $target/**/.*.health.json
+    path_match: glob
+    sensitivity: derived-private
+    reason: Atomically write authenticated node and pooled-review health records.
+  - medium: local-filesystem
+    access: write
+    system: filesystem
+    content: generated-artifact
+    format: yaml
+    path: $target/.pooled-blueprint-review.yaml
+    path_match: exact
+    sensitivity: derived-private
+    reason: Atomically write the generated pooled blueprint review after graph health succeeds.
+  network: []
+owns_filesystem:
+- match: exact
+  path: .health-authentication-key
+  allowed_readers: []
+  reason: The certifier is the sole writer and reader of its local authentication key.
+- match: regex
+  path: (^|/)\.last_audit\.json$
+  allowed_readers:
+  - skill-drift.machine.drift-status
+  reason: The certifier is the sole writer of legacy audit records consumed by drift status.
+- match: regex
+  path: (^|/)\.[^/]+\.health\.json$
+  allowed_readers:
+  - skill-drift.machine.drift-status
+  reason: The certifier is the sole writer of authenticated node and pool health records.
+- match: regex
+  path: (^|/)\.pooled-blueprint-review\.yaml$
+  allowed_readers:
+  - skill-drift.machine.drift-status
+  reason: The certifier is the sole writer of generated pooled reviews consumed by drift status.

@@ -7,6 +7,16 @@ from pathlib import Path
 
 import yaml
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_SRC_ROOT = _REPO_ROOT / "src"
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+
+from officina.common.blueprint_graph import (  # noqa: E402
+    BlueprintGraphError,
+    load_skill_blueprint_graph,
+)
+
 # Skill names that are allowed to reference ../../.githooks/ in addition to ../references and ../../tools
 _EXTENDED_PARENT_EXCEPTIONS = {"update-skill-guidelines"}
 
@@ -25,6 +35,12 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n.*?\n---\s*\n", re.DOTALL)
 _BLUEPRINT_BLOCK_RE = re.compile(
     r"<!-- BEGIN BLUEPRINT (?:CONTRACT|INTERFACES) -->.*?<!-- END BLUEPRINT (?:CONTRACT|INTERFACES) -->",
     re.DOTALL,
+)
+_CANONICAL_INTERFACE_RE = re.compile(
+    r"\b[a-z0-9]+(?:-[a-z0-9]+)+\.(?:llm|machine)\.[a-z0-9]+(?:-[a-z0-9]+)*\b"
+)
+_OPAQUE_RUNTIME_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9_./~-])(?:[A-Za-z0-9_.~+-]+/)*_(?:rtx|cx)/[A-Za-z0-9_.~+/-]+"
 )
 
 
@@ -54,6 +70,17 @@ def _load_blueprint_used_skills(path: Path) -> list[str]:
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
         return []
+    if raw.get("schema_version") == 2 or "blueprint_type" in raw:
+        try:
+            graph = load_skill_blueprint_graph(path.parent)
+        except BlueprintGraphError:
+            return []
+        used = {
+            edge.target_id.split(".", 1)[0]
+            for edge in graph.edges
+            if edge.relation == "uses-interface"
+        }
+        return sorted(used)
     interfaces = raw.get("interfaces") or {}
     if not isinstance(interfaces, dict):
         return []
@@ -75,6 +102,55 @@ def _load_blueprint_used_skills(path: Path) -> list[str]:
                 if len(parts) == 3 and parts[0]:
                     used.add(parts[0])
     return sorted(used)
+
+
+def _validate_typed_body_interfaces(
+    graph: object,
+    known_skill_names: set[str],
+) -> list[str]:
+    errors: list[str] = []
+    for node in graph.nodes.values():
+        if node.blueprint_type not in {"llm-interface", "behavior-source"}:
+            continue
+        if node.binding_path is None:
+            continue
+        try:
+            body = _strip_frontmatter_and_deps(
+                node.binding_path.read_text(encoding="utf-8")
+            )
+        except UnicodeDecodeError:
+            continue
+        for match in _OPAQUE_RUNTIME_PATH_RE.finditer(body):
+            errors.append(
+                f"{node.binding_path}: typed {node.blueprint_type} body names opaque "
+                f"runtime path `{match.group(0)}`; use a declared canonical machine interface"
+            )
+        declared = {
+            entry.get("interface")
+            for entry in node.declaration.get("uses_interfaces", [])
+            if isinstance(entry, dict) and isinstance(entry.get("interface"), str)
+        }
+        mentioned_interfaces = set(_CANONICAL_INTERFACE_RE.findall(body))
+        for interface_id in sorted(mentioned_interfaces - declared):
+            errors.append(
+                f"{node.binding_path}: canonical interface `{interface_id}` is not declared "
+                f"in {node.node_id}.uses_interfaces"
+            )
+
+        prose_without_interfaces = _CANONICAL_INTERFACE_RE.sub("", body)
+        owner_skill = node.node_id.split(".", 1)[0]
+        bare_names = sorted(
+            skill_name
+            for skill_name in known_skill_names
+            if skill_name != owner_skill
+            and _word_boundary_mentions(prose_without_interfaces, skill_name)
+        )
+        if bare_names:
+            errors.append(
+                f"{node.binding_path}: typed {node.blueprint_type} bodies must use canonical "
+                f"interface IDs instead of bare skill names: {bare_names}"
+            )
+    return errors
 
 
 def _validate_parent_paths(skill_file: Path, skill_name: str) -> list[str]:
@@ -115,6 +191,20 @@ def validate(repo_root: Path) -> list[str]:
         blueprint_file = skill_dir / "blueprint.yaml"
 
         text = skill_file.read_text(encoding="utf-8")
+
+        try:
+            raw_blueprint = yaml.safe_load(blueprint_file.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            raw_blueprint = {}
+        if isinstance(raw_blueprint, dict) and (
+            raw_blueprint.get("schema_version") == 2 or "blueprint_type" in raw_blueprint
+        ):
+            try:
+                graph = load_skill_blueprint_graph(skill_dir)
+            except BlueprintGraphError:
+                graph = None
+            if graph is not None:
+                errors.extend(_validate_typed_body_interfaces(graph, skill_name_set))
 
         # Check for deprecated markers
         for m in _DEPRECATED_MARKERS_RE.finditer(text):

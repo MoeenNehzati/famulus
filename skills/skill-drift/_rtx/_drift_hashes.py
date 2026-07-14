@@ -280,6 +280,11 @@ def interface_roots(interface_spec: dict[str, Any], *, include_binding: bool = T
     roots: list[str] = []
     if include_binding:
         roots.extend(local_binding_roots(interface_spec))
+    invocation = interface_spec.get("invocation")
+    if isinstance(invocation, dict) and invocation.get("kind") == "python_machine_interface":
+        entrypoint = invocation.get("entrypoint")
+        if isinstance(entrypoint, str) and entrypoint:
+            roots.append(entrypoint.partition(":")[0])
     roots.extend(behavior_source_roots(interface_spec))
     return dedupe_preserving_order(roots)
 
@@ -499,7 +504,13 @@ def entries_for_dependency_files(files: Iterable[DependencyFile], repo_root: Pat
 
 
 def explore_python_runtime_dependency_files(skill_dir: Path, repo_root: Path, entrypoint: str) -> list[Path]:
-    """Recursively discover local/officina files that can affect an interface."""
+    """Trace legacy runtime dependencies only inside this running installation."""
+
+    live_repo = REPO_ROOT.resolve()
+    if repo_root.resolve() != live_repo:
+        return []
+    if skill_dir.resolve().parent != live_repo / "skills":
+        return []
 
     trace_code = r"""
 import contextlib
@@ -550,21 +561,22 @@ resolver = DispatchDependencyResolver(repo_root=repo_root)
 with contextlib.redirect_stdout(io.StringIO()):
     dependencies = resolver.collect(interface)
     for dependency in dependencies:
-        for token in dependency.resolved.command:
+        invocation = dependency.resolved
+        for token in invocation.command:
             candidate = Path(token)
             if not candidate.is_absolute():
-                candidate = dependency.resolved.cwd / candidate
+                candidate = invocation.cwd / candidate
             candidate = candidate.resolve()
             if candidate.exists() and is_under(candidate, skills_root):
                 paths.append(candidate.as_posix())
         target_interface = resolver.load_python_interface(
-            dependency.resolved.target_skill,
-            dependency.resolved.script_interface,
+            invocation.target_skill,
+            invocation.script_interface,
         )
         if target_interface is not None:
             previous_cwd = Path.cwd()
             try:
-                os.chdir(dependency.resolved.cwd)
+                os.chdir(invocation.cwd)
                 run_python_machine_interface(target_interface, ["--route-smoke"])
             finally:
                 os.chdir(previous_cwd)

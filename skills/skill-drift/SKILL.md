@@ -23,15 +23,15 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `compute-hashes` — Compute current audit hashes for selected installed skill names, exact skill root paths, or all observed blueprint-backed skills.
+- `compute-hashes` — Compute target-relative legacy hashes or graph-native typed hashes for selected names, one exact skill root, or all observed blueprint-backed skills.
   - `dispatcher --caller-skill skill-drift skill-drift.machine.compute-hashes compute-hashes [target ...] [--json]`
-- `drift-status` — Read derived audit status for selected installed skill names, exact skill root paths, or all observed installed skills.
+- `drift-status` — Read derived audit status for selected installed names, one exact skill root and its reachable graph, or all observed installed skills.
   - `dispatcher --caller-skill skill-drift skill-drift.machine.drift-status status [target ...] [--json] [--with-test-validate]`
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
+- `default` — Instructions for exact-target, target-relative skill drift and hash checks.
   - binding: skill file `SKILL.md`
 <!-- END BLUEPRINT INTERFACES -->
 Use the exported status machine interface to read installed skill drift state.
@@ -56,6 +56,11 @@ needs-attention = audit-stale OR health-failed
 Keep these signals separate when reporting results. Do not say a skill is
 audit-stale merely because tests or validators failed.
 
+An exact `--skill-root` request checks only that skill and its reachable typed
+graph. It does not enumerate sibling skills, so an unrelated malformed skill
+cannot block an exact request. Named requests still resolve matching installed
+copies across the supported assistant hosts.
+
 With no target skill names, the checker scans every supported assistant host's
 installed skill roots and reports every discovered skill. The default status
 output is a Markdown table and is saved under `_build/<date-time>.md`; `--json`
@@ -71,13 +76,25 @@ state.
 Hash computation is stricter than status reporting: it requires the target skill
 to have a blueprint and fails if `blueprint.yaml` is missing.
 
-Interface hashes include a canonical structured metadata entry for the
-blueprint interface, then follow file-backed LLM bindings, declared
-`behavior_sources`, machine `invocation.behavior_sources`, Python invocation
-entrypoints, traced Python dependencies, and recursively declared
-`uses_interfaces`. Runtime `direct_io` declarations and live contents such as
-inboxes, calendars, user files, remote files, and API responses are not hash
-inputs.
+Typed hash output is graph-native. It includes every reachable canonical skill,
+interface, and behavior-source node with its local hash, artifact-graph hash,
+and expected certified-health hash. Hash inputs, policy manifests, schema
+bundles, and node-local record paths are relative to the selected target
+package. The `package_root` and `skills_root` payload identities intentionally
+remain absolute. Typed hashing reads declarations, bound files, and health
+records without importing or executing target code.
+
+The status and hash interfaces fail closed when descriptor-safe contained
+reads are unavailable. Their machine-interface sidecars are authoritative for
+platform support.
+
+Legacy interface hashes include a canonical structured metadata entry, then
+follow file-backed LLM bindings, declared `behavior_sources`, machine
+`invocation.behavior_sources`, Python invocation entrypoints, and recursively
+declared `uses_interfaces`. Dynamic Python dependency tracing is compatibility
+behavior only for legacy blueprints in the running installation; copied legacy
+targets are hashed statically and are never executed. Runtime `direct_io`
+declarations and live operational contents are not hash inputs.
 
 Writing or refreshing audit records belongs to a separate certifier skill, not
 this skill. The `_build/` report artifact is only a local rendered status

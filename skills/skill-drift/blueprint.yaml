@@ -1,3 +1,6 @@
+schema_version: 2
+blueprint_type: skill
+id: skill-drift
 category: skill-making-development-assistant
 role: meta-skill
 kind: diagnostic
@@ -16,81 +19,24 @@ skill_interface:
   - User or skill request to compute current audit hashes.
   - Optional target skill names.
   outputs:
-  - Drift reports comparing recorded audit hashes with current hashes for installed
-    skills.
+  - Drift reports comparing recorded health with current recursive graph health for typed skills.
   - Current audit hash payloads for installed blueprint-backed skills.
   side_effects:
   - Writes timestamped Markdown reports under _build/.
-  - Does not write audit records.
+  - Does not write audit or health records.
 interfaces:
-  machine:
-    drift-status:
-      description: Read derived audit status for selected installed skill names, exact
-        skill root paths, or all observed installed skills.
-      version: 1
-      usage: status [target ...] [--json] [--with-test-validate]
-      allow_all_skills: true
-      allowed_callers: []
-      patterns:
-      - min_positionals: 1
-        allow_stdin: false
-        allowed_flags:
-        - --json
-        - --with-test-validate
-        - --all
-        - --skill-root
-      dependencies: []
-      direct_io:
-        reads: []
-        writes: []
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_check_drift_state.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    compute-hashes:
-      description: Compute current audit hashes for selected installed skill names,
-        exact skill root paths, or all observed blueprint-backed skills.
-      version: 1
-      usage: compute-hashes [target ...] [--json]
-      allow_all_skills: true
-      allowed_callers: []
-      patterns:
-      - min_positionals: 1
-        allow_stdin: false
-        allowed_flags:
-        - --json
-        - --skill-root
-      dependencies: []
-      direct_io:
-        reads: []
-        writes: []
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_check_drift_state.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-  llm:
-    default:
-      version: 1
-      description: Primary LLM-facing skill instructions.
-      binding:
-        kind: skill_file
-        path: SKILL.md
-      direct_io:
-        reads: []
-        writes: []
-        network: []
-      owns_filesystem: []
-      allow_all_skills: true
-      behavior_sources: []
+- interface: skill-drift.llm.default
+  version: 1
+  blueprint:
+    base: skill-root
+    path: .SKILL.md.blueprint.yaml
+- interface: skill-drift.machine.compute-hashes
+  version: 1
+  blueprint:
+    base: skill-root
+    path: _rtx/._check_drift_state.py.compute-hashes.blueprint.yaml
+- interface: skill-drift.machine.drift-status
+  version: 1
+  blueprint:
+    base: skill-root
+    path: _rtx/._check_drift_state.py.drift-status.blueprint.yaml

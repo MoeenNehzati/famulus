@@ -1,24 +1,22 @@
-# Blueprint Reference
+# Blueprint References
 
-This directory is the narrow reference index for the blueprint contract. If you want the broader maintainer overview, start with [docs/contributors/README.md](../../docs/contributors/README.md).
+The canonical architecture and authoring rules are in [guide.md](guide.md).
 
-## Files
+Schema entry points:
 
-- [guide.md](guide.md) — narrative guide to the blueprint system, patterns, and validation model
-- [schema.json](schema.json) — formal schema for `blueprint.yaml`
-- [template.yaml](template.yaml) — annotated starting point for a new blueprint
+- `schema.json`: compatibility dispatcher for legacy and typed blueprints
+- `skill.schema.json`: canonical skill graph root
+- `llm-interface.schema.json`: one file-backed LLM interface
+- `machine-interface.schema.json`: one file-backed machine interface
+- `behavior-source.schema.json`: one file-backed behavior source
+- `health.schema.json`: authenticated generated node and pool health records
+- `pooled-review.schema.json`: generated non-authoritative review document
+- `schema-meta.json`: field metadata protocol and validator-rule catalog
 
-## Typical Flow
+`template.yaml` is the committed schema-family artifact manifest. It names the
+canonical root, default interface, shared-file sidecar, command-interface, and
+generated-output examples. Authoring templates are generated from each concrete
+type schema, whose `x-famulus` metadata contains all examples and guidance.
 
-1. Read [guide.md](guide.md).
-2. Use [template.yaml](template.yaml) when authoring or revising a blueprint.
-3. Validate and sync generated artifacts with [skills/skill-maker/_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py):
-
-```bash
-python3 skills/skill-maker/_rtx/_blueprint_syncer.py
-```
-
-## Related Docs
-
-- [docs/contributors/README.md](../../docs/contributors/README.md) — contributor entrypoint
-- [docs/scaffolding/README.md](../../docs/scaffolding/README.md) — long-form scaffolding explainer
+`legacy-skill.schema.json` is an exact migration snapshot of the former
+monolithic schema. Do not add new features to it.

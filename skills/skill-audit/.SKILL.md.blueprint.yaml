@@ -1,0 +1,18 @@
+schema_version: 2
+blueprint_type: llm-interface
+id: skill-audit.llm.default
+version: 1
+description: Audit exact target closures and report semantic and commit-backed stamp outcomes.
+binding:
+  kind: instruction-file
+  path: SKILL.md
+allow_all_skills: true
+uses_interfaces:
+  - interface: skill-audit.machine.certify
+    version: 1
+behavior_sources: []
+direct_io:
+  reads: []
+  writes: []
+  network: []
+owns_filesystem: []

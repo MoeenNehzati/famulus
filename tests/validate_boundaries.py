@@ -44,3 +44,20 @@ def test_same_skill_path_allowed(tmp_path: Path) -> None:
     script = skill / "_rtx" / "run.py"
     script.write_text("import subprocess\nsubprocess.run(['python3', './helper.py'])\n")
     assert _mod.validate(tmp_path) == []
+
+
+def test_direct_cross_skill_cx_path_flagged(tmp_path: Path) -> None:
+    skills = tmp_path / "skills"
+    caller = skills / "caller-skill"
+    target = skills / "target-skill"
+    (caller / "_cx").mkdir(parents=True)
+    target.mkdir(parents=True)
+    (caller / "blueprint.yaml").write_text("name: caller-skill\n")
+    (target / "blueprint.yaml").write_text("name: target-skill\n")
+    (caller / "_cx" / "run-task").write_text(
+        "exec ../target-skill/_cx/private-command\n"
+    )
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("target-skill" in error for error in errors)

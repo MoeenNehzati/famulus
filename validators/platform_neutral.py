@@ -56,7 +56,7 @@ def _is_allowed_platform_metadata_line(rel_path: Path, line: str) -> bool:
     """Allow explicit OS support metadata without weakening host-name checks."""
     if _HOST_PATTERN.search(line):
         return False
-    if rel_path.name == "blueprint.yaml" and _PLATFORM_METADATA_LINE_RE.search(line):
+    if rel_path.name.endswith("blueprint.yaml") and _PLATFORM_METADATA_LINE_RE.search(line):
         return True
     if rel_path == Path("references/blueprint/runtime_dependencies.json"):
         return _PLATFORM_METADATA_LINE_RE.search(line) is not None

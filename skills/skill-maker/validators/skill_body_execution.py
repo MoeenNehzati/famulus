@@ -54,6 +54,9 @@ _EXECUTION_CONTEXT_RE = re.compile(
     re.IGNORECASE,
 )
 _SHELL_FENCE_LANGS = {"bash", "sh", "shell", "console", "terminal", "zsh", "fish", "powershell", "ps1"}
+_OPAQUE_RUNTIME_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9_./~-])(?:[A-Za-z0-9_.~+-]+/)*_(?:rtx|cx)/[A-Za-z0-9_.~+/-]+"
+)
 
 
 def _iter_skill_files(repo_root: Path):
@@ -84,6 +87,11 @@ def validate(repo_root: Path) -> list[str]:
                 lang = (fence_match.group(1) or "").lower()
                 in_shell_fence = not in_shell_fence and lang in _SHELL_FENCE_LANGS
                 continue
+            for match in _OPAQUE_RUNTIME_PATH_RE.finditer(line):
+                errors.append(
+                    f"{skill_file}:{lineno}: SBE002 opaque command path `{match.group(0)}` "
+                    "appears in hand-authored SKILL.md; refer to its canonical machine interface"
+                )
             if not _line_has_execution_context(line, in_shell_fence):
                 continue
             for match in _TOKEN_RE.finditer(line):

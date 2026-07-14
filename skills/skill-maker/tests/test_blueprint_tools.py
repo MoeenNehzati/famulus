@@ -11,11 +11,35 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
+
+import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint" / "template.yaml"
 DISPATCHER_SRC = REPO_ROOT / "script_dispatcher" / "src"
+
+
+def typed_sidecars_untracked_until_commit() -> tuple[str, ...]:
+    skills = Path("skills")
+    audit = skills / "-".join(("skill", "audit"))
+    drift = skills / "-".join(("skill", "drift"))
+    return (
+        (audit / ".SKILL.md.blueprint.yaml").as_posix(),
+        (audit / "_rtx" / "._audit_certifier.py.blueprint.yaml").as_posix(),
+        (drift / ".SKILL.md.blueprint.yaml").as_posix(),
+        (
+            drift
+            / "_rtx"
+            / "._check_drift_state.py.compute-hashes.blueprint.yaml"
+        ).as_posix(),
+        (
+            drift
+            / "_rtx"
+            / "._check_drift_state.py.drift-status.blueprint.yaml"
+        ).as_posix(),
+    )
 
 
 def default_llm_interface() -> dict:
@@ -41,6 +65,111 @@ def load_module(module_name: str, path: Path):
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def write_yaml(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+
+
+def make_typed_sync_fixture(root: Path) -> Path:
+    skill = root / "skills" / "demo-skill"
+    (skill / "_rtx").mkdir(parents=True)
+    (root / "references").mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: demo-skill\n---\n", encoding="utf-8")
+    (skill / "_rtx" / "_shared_runner.py").write_text("class Interface: pass\n", encoding="utf-8")
+    (root / "references" / "policy.md").write_text("Policy.\n", encoding="utf-8")
+    interfaces = [
+        {
+            "interface": "demo-skill.llm.default",
+            "version": 1,
+            "blueprint": {"base": "skill-root", "path": ".SKILL.md.blueprint.yaml"},
+        },
+        *[
+            {
+                "interface": f"demo-skill.machine.{name}",
+                "version": 1,
+                "blueprint": {
+                    "base": "skill-root",
+                    "path": f"_rtx/._shared_runner.py.{name}.blueprint.yaml",
+                },
+            }
+            for name in ("first", "second")
+        ],
+    ]
+    write_yaml(
+        skill / "blueprint.yaml",
+        {
+            "schema_version": 2,
+            "blueprint_type": "skill",
+            "id": "demo-skill",
+            "category": "development-assistant",
+            "role": "automation",
+            "kind": "tool",
+            "interfaces": interfaces,
+        },
+    )
+    write_yaml(
+        skill / ".SKILL.md.blueprint.yaml",
+        {
+            "schema_version": 2,
+            "blueprint_type": "llm-interface",
+            "id": "demo-skill.llm.default",
+            "version": 1,
+            "description": "Primary instructions.",
+            "binding": {"kind": "instruction-file", "path": "SKILL.md"},
+            "behavior_sources": [
+                {
+                    "source": "references.source.policy",
+                    "version": 1,
+                    "blueprint": {
+                        "base": "repository-root",
+                        "path": "references/.policy.md.blueprint.yaml",
+                    },
+                    "reason": "Shared policy.",
+                }
+            ],
+            "direct_io": {"reads": [], "writes": [], "network": []},
+            "owns_filesystem": [],
+        },
+    )
+    for name in ("first", "second"):
+        write_yaml(
+            skill / "_rtx" / f"._shared_runner.py.{name}.blueprint.yaml",
+            {
+                "schema_version": 2,
+                "blueprint_type": "machine-interface",
+                "id": f"demo-skill.machine.{name}",
+                "version": 1,
+                "description": f"Run {name} operation.",
+                "binding": {
+                    "kind": "python-entrypoint",
+                    "path": "_rtx/_shared_runner.py",
+                    "symbol": "Interface",
+                },
+                "platform_support": platform_support(),
+                "dependencies": [],
+                "uses_interfaces": [],
+                "behavior_sources": [],
+                "direct_io": {"reads": [], "writes": [], "network": []},
+                "owns_filesystem": [],
+            },
+        )
+    write_yaml(
+        root / "references" / ".policy.md.blueprint.yaml",
+        {
+            "schema_version": 2,
+            "blueprint_type": "behavior-source",
+            "id": "references.source.policy",
+            "version": 1,
+            "description": "Shared policy.",
+            "binding": {"kind": "file", "path": "references/policy.md"},
+            "content": "config",
+            "format": "markdown",
+            "uses_behavior_sources": [],
+        },
+    )
+    return skill
 
 
 class SkillBlueprintToolTests(unittest.TestCase):
@@ -70,20 +199,169 @@ class SkillBlueprintToolTests(unittest.TestCase):
         result = self.run_cmd("skills/skill-maker/_rtx/_blueprint_syncer.py", "--check")
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
 
-    def test_blueprint_template_exists_and_is_comment_rich(self) -> None:
+    def test_blueprint_template_is_schema_family_artifact_manifest(self) -> None:
         self.assertTrue(BLUEPRINT_TEMPLATE.exists(), "reference blueprint template is missing")
-        text = BLUEPRINT_TEMPLATE.read_text(encoding="utf-8")
-        self.assertIn("version: 1", text)
-        self.assertIn("interfaces:", text)
-        self.assertIn("machine:", text)
-        self.assertIn("llm:", text)
-        self.assertIn("patterns:", text)
-        self.assertIn("allow_all_skills:", text)
-        self.assertGreaterEqual(text.count("#"), 25, "template should remain heavily commented")
+        manifest = yaml.safe_load(BLUEPRINT_TEMPLATE.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["examples"]["skill_root"], "blueprint.yaml")
+        self.assertEqual(
+            manifest["examples"]["default_llm"],
+            ".SKILL.md.blueprint.yaml",
+        )
+        self.assertEqual(
+            manifest["examples"]["shared_python_interfaces"],
+            [
+                "_rtx/._runner.py.first.blueprint.yaml",
+                "_rtx/._runner.py.second.blueprint.yaml",
+            ],
+        )
+        self.assertIn("SKILL.md blueprint contract block", manifest["generated_outputs"])
 
     def test_blueprint_hook_check_passes(self) -> None:
-        result = self.run_cmd("skills/skill-maker/validators/blueprints.py")
+        real_index_before = subprocess.run(
+            ["git", "ls-files", "--stage", "-z"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=True,
+        ).stdout
+        with tempfile.TemporaryDirectory() as temp:
+            index = Path(temp) / "intended-source.index"
+            object_directory = Path(temp) / "objects"
+            object_directory.mkdir()
+            env = os.environ.copy()
+            env["GIT_INDEX_FILE"] = str(index)
+            env["GIT_OBJECT_DIRECTORY"] = str(object_directory)
+            env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(REPO_ROOT / ".git" / "objects")
+            subprocess.run(
+                ["git", "read-tree", "HEAD"],
+                cwd=REPO_ROOT,
+                env=env,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "add", "--", *typed_sidecars_untracked_until_commit()],
+                cwd=REPO_ROOT,
+                env=env,
+                check=True,
+            )
+            result = subprocess.run(
+                [sys.executable, "skills/skill-maker/validators/blueprints.py"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+        real_index_after = subprocess.run(
+            ["git", "ls-files", "--stage", "-z"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=True,
+        ).stdout
+        self.assertEqual(real_index_after, real_index_before)
+
+    def test_typed_sync_loads_repository_source_and_shared_file_interfaces(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_typed_graph_test",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            skill = make_typed_sync_fixture(root)
+            with mock.patch.object(sync_module, "SKILLS_ROOT", root / "skills"):
+                blueprint = sync_module.load_blueprints()["demo-skill"]
+
+            machine = blueprint.data["interfaces"]["machine"]
+            self.assertEqual(
+                machine["first"]["invocation"]["entrypoint"],
+                "_rtx/_shared_runner.py:Interface",
+            )
+            self.assertEqual(
+                machine["second"]["invocation"]["entrypoint"],
+                "_rtx/_shared_runner.py:Interface",
+            )
+            self.assertEqual(
+                blueprint.data["interfaces"]["llm"]["default"]["behavior_sources"][0]["path"],
+                "references/policy.md",
+            )
+            repository_sidecar = root / "references" / ".policy.md.blueprint.yaml"
+            repository_source = yaml.safe_load(repository_sidecar.read_text(encoding="utf-8"))
+            self.assertEqual(repository_source["id"], "references.source.policy")
+            self.assertEqual(
+                repository_source["binding"]["path"],
+                "references/policy.md",
+            )
+            self.assertEqual(blueprint.path, skill / "blueprint.yaml")
+
+    def test_typed_sync_ignores_health_and_pool_artifacts(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_generated_artifacts_test",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            skill = make_typed_sync_fixture(root)
+            (skill / ".SKILL.md.health.json").write_text("not json", encoding="utf-8")
+            (skill / ".last_audit.json").write_text("not json", encoding="utf-8")
+            (skill / ".pooled-blueprint-review.yaml").write_text("not: [yaml", encoding="utf-8")
+            (skill / ".pooled-blueprint-review.health.json").write_text("not json", encoding="utf-8")
+            with mock.patch.object(sync_module, "SKILLS_ROOT", root / "skills"):
+                loaded = sync_module.load_blueprints()
+
+            self.assertIn("demo-skill", loaded)
+
+    def test_typed_sync_preserves_authored_blueprint_comments(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_comment_preservation_test",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            skill = make_typed_sync_fixture(root)
+            root_blueprint = skill / "blueprint.yaml"
+            sidecar = skill / ".SKILL.md.blueprint.yaml"
+            root_blueprint.write_text(
+                "# keep root comment\n" + root_blueprint.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            sidecar.write_text(
+                "# keep sidecar comment\n" + sidecar.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            root_before = root_blueprint.read_bytes()
+            sidecar_before = sidecar.read_bytes()
+            (root / "references" / "blueprint").mkdir(parents=True)
+            with (
+                mock.patch.object(sync_module, "SKILLS_ROOT", root / "skills"),
+                mock.patch.object(
+                    sync_module,
+                    "RUNTIME_DEPENDENCIES_PATH",
+                    root / "references" / "blueprint" / "runtime_dependencies.json",
+                ),
+            ):
+                self.assertEqual(sync_module.run_sync(check_only=False), 0)
+
+            self.assertEqual(root_blueprint.read_bytes(), root_before)
+            self.assertEqual(sidecar.read_bytes(), sidecar_before)
+
+    def test_typed_sync_rejects_schema_invalid_sidecar(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_schema_invalid_test",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            skill = make_typed_sync_fixture(root)
+            sidecar = skill / ".SKILL.md.blueprint.yaml"
+            declaration = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+            declaration.pop("description")
+            write_yaml(sidecar, declaration)
+            with mock.patch.object(sync_module, "SKILLS_ROOT", root / "skills"):
+                with self.assertRaises(sync_module.BlueprintError) as raised:
+                    sync_module.load_blueprints()
+
+            self.assertIn("$.description", str(raised.exception))
 
     def test_sync_validator_requires_machine_interface_dependencies(self) -> None:
         sync_module = load_module(
