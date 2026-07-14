@@ -67,6 +67,7 @@ interfaces:
       - min_positionals: 0
         max_positionals: 0
         allow_stdin: false
+        allowed_flags: []
       - min_positionals: 0
         max_positionals: 0
         allow_stdin: false
