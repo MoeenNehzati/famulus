@@ -49,6 +49,23 @@ The install and packaging paths have CI coverage on Linux, macOS, and Windows th
 
 ## Featured Flows
 
+### Connect Google
+
+After installation, ask:
+
+```text
+Connect Famulus to Google.
+```
+
+Famulus recommends Drive, Calendar, and Gmail, while letting you connect only
+the subset you want. `connect-google` prepares the shared Desktop OAuth client;
+cloud-files, g-calendar, and email-client then perform and own their respective
+authorizations. Private-pilot users can obtain the project owner's client JSON
+through a private channel. Public users can let `connect-google` guide creation
+of a personal Google Cloud project and Desktop client. Never commit that JSON
+to GitHub. Each service keeps its resulting user tokens in its own local
+credential storage.
+
 ### Plan my day
 
 Use `daily-plan` when you want the assistant to pull together your calendar, weather, todos, and triage list into one concrete plan.

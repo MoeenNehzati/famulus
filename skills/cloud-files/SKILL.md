@@ -14,7 +14,8 @@ Category: system-assistant
 
 Skill Version: 1
 
-Uses Interfaces: none
+Uses Interfaces:
+- `cloud-files.llm.default -> connect-google.llm.default@1`
 
 Public Interfaces:
 - `cloud-files.llm.default`
@@ -71,9 +72,10 @@ scripts rather than speaking to the Drive API directly.
 Install-time config lives at `~/.config/cloud-files/config.json`.
 OAuth credentials live at `~/.config/cloud-files/credentials.json`.
 
-If credentials are missing, place your Google OAuth client JSON at `~/.config/cloud-files/client.json` and run the one-time `setup-oauth` interface. This setup step is intentionally outside the dispatcher's normal skill access control.
-
-If the OAuth app stays in Google Cloud **Testing**, Google may expire refresh tokens after about 7 days. If you do not want repeated re-authorization, use **OAuth -> Audience** and click **Publish app** / move the app to **In production** before running the setup.
+For initial Google setup or reauthorization, use
+`connect-google.llm.default` to install or reuse the shared Desktop OAuth
+client, then return here for Drive authorization. This skill invokes its own
+setup interface and owns Drive credentials, verification, and failures.
 
 ## 1. Preapproved LLM-root operations
 

@@ -27,14 +27,54 @@ import secrets
 import urllib.parse
 import urllib.request
 import webbrowser
+from pathlib import Path
 
+from officina.common.oauth_json import write_oauth_json
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 SCOPE = "https://www.googleapis.com/auth/calendar"
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
+CALENDAR_VERIFY_URL = "https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1"
 CLIENT_PATH = os.path.expanduser("~/.config/g-calendar/client.json")
 CREDS_PATH = os.path.expanduser("~/.config/g-calendar/credentials.json")
+
+
+def verify_access_token(access_token: str) -> None:
+    request = urllib.request.Request(
+        CALENDAR_VERIFY_URL,
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    with urllib.request.urlopen(request) as response:
+        json.load(response)
+
+
+def persist_verified_credentials(
+    token_data: dict[str, object],
+    client_id: str,
+    client_secret: str,
+    credentials_path: Path | str = CREDS_PATH,
+) -> None:
+    refresh_token = token_data.get("refresh_token")
+    if not refresh_token:
+        raise SystemExit(
+            "No refresh_token in the response. Google omits it if you've already "
+            "granted this app access before without revoking it - revoke access at "
+            "https://myaccount.google.com/permissions and re-run this script."
+        )
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise SystemExit("No access_token in the response; credentials were not changed.")
+
+    verify_access_token(str(access_token))
+    write_oauth_json(
+        Path(credentials_path),
+        {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "refresh_token": str(refresh_token),
+        },
+    )
 
 
 class Interface(PythonArgvMachineInterface):
@@ -147,22 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     with urllib.request.urlopen(req) as resp:
         token_data = json.load(resp)
 
-    if "refresh_token" not in token_data:
-        raise SystemExit(
-            "No refresh_token in the response. Google omits it if you've already "
-            "granted this app access before without revoking it - revoke access at "
-            "https://myaccount.google.com/permissions and re-run this script."
-        )
-
-    os.makedirs(os.path.dirname(CREDS_PATH), exist_ok=True)
-    creds = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "refresh_token": token_data["refresh_token"],
-    }
-    with open(CREDS_PATH, "w") as f:
-        json.dump(creds, f, indent=2)
-    os.chmod(CREDS_PATH, 0o600)
+    persist_verified_credentials(token_data, client_id, client_secret)
 
     print(f"Saved credentials to {CREDS_PATH}")
     return 0

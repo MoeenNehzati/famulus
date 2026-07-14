@@ -44,6 +44,7 @@ Typical flow:
 <!-- BEGIN AUTO-GENERATED DOCS: workflow-general-assistant -->
 > Generated from live blueprints. Do not edit this block by hand.
 
+- `connect-google` — A Google service needs a shared OAuth client prepared, or when the user asks to prepare Google authentication for Famulus
 - `daily-plan` — Generate today's plan from calendar, todos, and weather
 - `find-handoff-candidates` — You need a mechanical, non-interpretive scan of today's (or another day's) work sessions to find ones that had substantial activity but no completed handoff
 - `loose-mode` — Broad, fast exploration mode with breadth over certainty

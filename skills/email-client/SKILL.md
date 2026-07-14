@@ -10,7 +10,8 @@ Category: productivity-general-assistant
 
 Skill Version: 3
 
-Uses Interfaces: none
+Uses Interfaces:
+- `email-client.llm.default -> connect-google.llm.default@1`
 
 Public Interfaces:
 - `email-client.llm.default`
@@ -153,15 +154,16 @@ directory — it's per-machine and not source-controlled). Passwords, OAuth clie
 secrets, and OAuth refresh tokens are never stored there; they stay in the host
 credential store.
 
+For initial Google setup or Gmail OAuth reauthorization, use
+`connect-google.llm.default` to prepare the shared Desktop client, then return
+here. email-client alone lists, registers, updates, authorizes, and verifies
+Gmail accounts. Keep non-Google account and app-password setup here as well.
+
 ```bash
 accounts-list
 
 # Add a Gmail account (IMAP/SMTP settings default to Gmail's)
 accounts-add --nickname work --email me@company.com --display-name "Me at Work"
-
-# Add a Gmail account that authenticates with OAuth instead of app passwords
-accounts-add --nickname work-oauth --email me@company.com --auth gmail-oauth
-accounts-setup-oauth --nickname work-oauth --client-config /path/to/google-desktop-client.json
 
 # Add a non-Gmail account — pass explicit host/port
 accounts-add --nickname other --email me@example.com \

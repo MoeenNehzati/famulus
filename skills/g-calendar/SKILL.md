@@ -15,7 +15,8 @@ Category: productivity-general-assistant
 
 Skill Version: 1
 
-Uses Interfaces: none
+Uses Interfaces:
+- `g-calendar.llm.default -> connect-google.llm.default@1`
 
 Public Interfaces:
 - `g-calendar.llm.default`
@@ -184,67 +185,19 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 - If the OAuth consent screen is "Testing", the refresh token expires after 7
   days - `scripts-gcal` fails with `invalid_grant`; see section 6 to fix.
 
-## 6. Private config files
+## 6. Private credentials and setup
 
-Two files live at `~/.config/g-calendar/` (both `chmod 600`, outside git):
+Working Calendar credentials live at
+`~/.config/g-calendar/credentials.json`, outside git. The service-owned
+`setup-oauth` interface writes them only after Google accepts the new token and
+a non-mutating Calendar request succeeds.
 
-| File | Contents | Written by |
-|------|----------|------------|
-| `client.json` | Google Cloud Console OAuth client JSON (`client_id` + `client_secret`) | You (one-time copy from download) |
-| `credentials.json` | Working credentials (`client_id` + `client_secret` + `refresh_token`) | the `setup-oauth` interface — **overwrites on every run** |
+For initial Google setup or reauthorization after `invalid_grant` or
+`invalid_client`, use `connect-google.llm.default` to prepare the shared Desktop
+client, then return here for Calendar authorization. This skill invokes its own
+setup interface and owns Calendar credentials and verification. Do not
+duplicate the Cloud Console procedure here.
 
-`client.json` is the permanent source of truth. `credentials.json` is
-regenerated whenever the refresh token expires. Never pass `credentials.json`
-as `--from-json` input to `setup-oauth` — it uses a flat format that the
-setup flow cannot read as input.
-
-`~/.config/<skill>/` is the convention for private per-skill data: it is
-outside any git repo and never committed.
-
-## 7. First-time / repeat setup
-
-If `scripts-gcal` reports `invalid_grant` or `invalid_client`, (re)do this:
-
-### First time only: create the Google OAuth client
-
-In an existing Google Cloud project (console.cloud.google.com), signed in
-as the Google account whose calendar will be used:
-- **Enable the API**: APIs & Services -> Library -> "Google Calendar API"
-  -> Enable (skip if already enabled).
-- **OAuth consent screen**: User type External. Add scope
-  `https://www.googleapis.com/auth/calendar`. Check **Publishing status** (in the current Google Cloud UI this is usually under **OAuth -> Audience**):
-  - "Testing" -> refresh tokens expire after 7 days. Try "Publish App" to
-    move to "In production": for an unverified app with this sensitive
-    scope, Google may still allow publishing for a small number of users
-    without full verification. During consent you'll see "Google hasn't
-    verified this app" - click Advanced -> "Go to <app name> (unsafe)".
-    Expected for a personal single-user app.
-  - If publishing is blocked or undesired, staying in "Testing" works
-    too - add the account as a test user, and just re-run setup
-    whenever the refresh token expires.
-- **Credentials**: Create Credentials -> OAuth client ID.
-  - Application type **Desktop app** (Google auto-allows any
-    `http://localhost:<port>` redirect for these), or
-  - Application type **Web application** with an explicit Authorized
-    redirect URI of `http://localhost:8765` (must match `setup-oauth`'s
-    `--port`, default 8765, exactly — no trailing slash).
-- Download the client JSON and save it as `~/.config/g-calendar/client.json`
-  (mode 600). Keep this file — it is needed for every future re-auth.
-
-### Every time: run setup to (re)generate credentials.json
-
-Use the `setup-oauth` interface (no arguments needed) — it reads
-`~/.config/g-calendar/client.json` automatically and writes
-`~/.config/g-calendar/credentials.json`.
-
-To use a different client JSON explicitly, pass `--from-json /path/to/other.json`
-to the `setup-oauth` interface.
-
-### Verify
-
-Use `scripts-gcal` with `calendars`, then with `agenda`, to confirm the
-credentials are working.
-
-If Google omits `refresh_token` from the response (because access was already
-granted without revoking), revoke prior access at
-https://myaccount.google.com/permissions and retry.
+After setup, use `scripts-gcal` with `calendars`, then `agenda`, for an
+additional read-only check. Calendar remains a single active account in this
+version; replacing it requires explicit confirmation in that workflow.

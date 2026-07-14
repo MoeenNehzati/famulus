@@ -140,8 +140,9 @@ is skipped on Windows because tmux is not available there.
 By design, `install.py` stops once scaffold/dev-link/launchers finish. It
 does not:
 
-- Connect any external account (Google Drive, Google Calendar, email). Each
-  of those has its own OAuth/credential setup, owned by that skill itself.
+- Connect any external account. `connect-google` prepares shared Google OAuth
+  client configuration afterward; each service initiates and owns its OAuth
+  exchange and credentials.
 - Set up recurring automation (scheduled triage, daily planning). That's the
   automation skill's own lazy, on-demand responsibility — it checks/writes
   its own prerequisites the first time you actually ask for a scheduled job,
@@ -151,6 +152,29 @@ This is deliberate: `install-assistant-tools` shouldn't need to know about
 every skill that might eventually want post-install setup. If you're
 debugging "why didn't the installer connect my calendar" — it isn't supposed
 to. That happens afterward, conversationally, on request.
+
+### Connect Google after Phase 1
+
+Ask the assistant:
+
+```text
+Connect Famulus to Google.
+```
+
+The workflow recommends Drive, Calendar, and Gmail and allows any subset.
+`connect-google` prepares the client configuration, then hands each selected
+service back to cloud-files, g-calendar, or email-client for service-owned
+authorization. It supports two client-provisioning paths:
+
+- Private pilot: receive the project owner's Google Desktop OAuth client JSON
+  through a private channel, then give the assistant its local path.
+- Public installation: let `connect-google` guide you through creating a
+  personal Google Cloud project and downloading a Desktop client JSON.
+
+Never commit the client JSON to GitHub, paste its contents into an issue, or
+store it in the Famulus checkout. The shared client configuration is copied to
+private local configuration; Drive, Calendar, and Gmail tokens remain local to
+their corresponding service and are not shared between services.
 
 ---
 

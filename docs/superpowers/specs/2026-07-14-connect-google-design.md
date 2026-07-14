@@ -1,7 +1,7 @@
 # Connect Google Design
 
 **Date:** 2026-07-14
-**Status:** Design approved; implementation not started
+**Status:** Revised design awaiting review
 
 ## Purpose
 
@@ -10,11 +10,11 @@ cloud-files, g-calendar, and email-client. The service skills repeat parts of
 the same Google Cloud setup, and a user who wants all three services must
 manually place and reuse the same OAuth client configuration.
 
-Create a dedicated `connect-google` skill as the single user-facing entrypoint
-for Google onboarding. A user should be able to say "Connect Google" and be
-guided through either using an existing Desktop OAuth client JSON or creating
-one. The skill then recommends connecting Drive, Calendar, and Gmail while
-allowing any subset.
+Create a dedicated `connect-google` skill as the shared Google-authentication
+boundary. A user should be able to say "Connect Google" and be guided through
+either using an existing Desktop OAuth client JSON or creating one. The skill
+then recommends Drive, Calendar, and Gmail while allowing any subset, but the
+corresponding service skills own and initiate their service connections.
 
 This design improves both supported distribution paths:
 
@@ -44,8 +44,9 @@ user already has a Google OAuth Desktop client JSON.
   `connect-services` without restarting the conversation.
 
 The connection route recommends all three services and explicitly says that
-the user may select only a subset. Authorization occurs separately for every
-selected service so that each token receives only that service's scope.
+the user may select only a subset. After the shared client is ready, each
+selected service skill initiates its own authorization so that each token
+receives only that service's scope.
 
 ## Skill And Interface Structure
 
@@ -78,16 +79,15 @@ skills/connect-google/
 7. Create and download a Desktop OAuth client JSON.
 8. Hand the downloaded path to `connect-services`.
 
-`connect-services` owns local onboarding:
+`connect-services` owns shared-client preparation and service handoff:
 
 1. Locate an existing canonical client or ask for a client JSON path.
 2. Validate the file before changing local state.
 3. Install a private canonical copy.
 4. Recommend Drive, Calendar, and Gmail and collect the selected subset.
-5. Collect account-specific information required by the selected services.
-6. Invoke the service-owned machine interfaces through the dispatcher.
-7. Run non-mutating verification checks.
-8. Report connected, skipped, and failed services separately.
+5. Hand each selected service to its owning skill.
+6. Let that service invoke `connect-google` when it needs the canonical client.
+7. Report the handoffs without inspecting service accounts or service data.
 
 The LLM interfaces own decisions and coordination. Generated blueprint blocks
 own dispatcher syntax and argument descriptions; hand-authored Markdown must
@@ -96,8 +96,8 @@ not duplicate those invocation templates.
 ## Machine And Ownership Boundaries
 
 `connect-google` owns validation and canonical storage of the shared OAuth
-client configuration. It declares dispatcher dependencies on the existing
-service-owned setup and verification interfaces.
+client configuration. It does not declare dispatcher dependencies on service
+setup, account-management, verification, or operational interfaces.
 
 It exposes two owner-facing machine interfaces:
 
@@ -106,9 +106,9 @@ It exposes two owner-facing machine interfaces:
 - `install-client` validates an explicitly supplied file and atomically
   installs it as the canonical client.
 
-The LLM routes compose these interfaces with the service-owned setup
-interfaces. They do not reimplement OAuth token exchange inside
-`connect-google`.
+Service skills may invoke these interfaces when authentication requires a
+valid canonical client. OAuth token exchange and token storage remain inside
+the calling service; no token crosses the `connect-google` interface.
 
 The service skills retain their low-level machine interfaces:
 
@@ -118,18 +118,21 @@ The service skills retain their low-level machine interfaces:
 - email-client owns Gmail account registration, Gmail OAuth credentials, and
   IMAP/SMTP checks.
 
-The service setup interfaces must not be deleted: `connect-google` composes
-them. What moves out of those skills is the duplicated user-facing Google
-Cloud Console tutorial. Their LLM instructions should instead route initial
-Google setup and reauthorization to `connect-google` while retaining
-service-specific operational and error guidance.
+The service setup interfaces must not be deleted or exposed to
+`connect-google`. The service skills invoke `connect-google` for shared client
+preparation, then run their own setup and verification interfaces. What moves
+out of those skills is only the duplicated Google Cloud Console tutorial;
+service-specific account collection, OAuth exchange, credential storage,
+verification, and recovery remain with each service.
 
 `install-assistant-tools` remains responsible only for installation. Its
 conversational Phase 2 offer may invoke `connect-google`, but the installer
 must not duplicate Google setup logic or declare service dependencies merely
 to describe the follow-up.
 
-Cross-skill calls remain dispatcher-first and cwd-independent.
+Cross-skill calls remain dispatcher-first and cwd-independent. Machine-call
+direction is service skill to `connect-google`, never `connect-google` to a
+service skill.
 
 ## Client Configuration Storage
 
@@ -170,10 +173,10 @@ Before replacing an existing Drive or Calendar connection, the workflow must
 identify that an active credential exists and obtain confirmation. It must not
 silently overwrite either single-account slot.
 
-For Gmail, the workflow asks for the email address and a local nickname before
+For Gmail, email-client asks for the email address and a local nickname before
 authorization. A repeated run may add another nickname. If a nickname already
-exists, the workflow asks whether to update that account or choose a different
-nickname.
+exists, email-client asks whether to update that account or choose a different
+nickname. `connect-google` neither lists nor modifies those records.
 
 The browser account picker determines which Google account authorizes each
 service. The skill must not assume that all selected services use the same
@@ -213,23 +216,28 @@ exact account email under Test users.
 4. If necessary, guide Cloud project creation and client download.
 5. Validate the supplied client file without writing local state.
 6. Atomically install the canonical private copy.
-7. Present the recommended three-service selection with subset opt-out.
+7. Present the recommended three-service selection with subset opt-out and
+   hand each selection to its owning service skill.
 8. For Drive:
    - detect an existing active credential;
    - confirm replacement when necessary;
+   - cloud-files invokes `connect-google` to obtain the canonical client;
    - authorize through cloud-files;
    - run a non-mutating Drive connection check.
 9. For Calendar:
    - detect an existing active credential;
    - confirm replacement when necessary;
+   - g-calendar invokes `connect-google` to obtain the canonical client;
    - authorize through g-calendar;
    - list accessible calendars as the non-mutating check.
 10. For each requested Gmail account:
-    - collect email address and nickname;
-    - add or intentionally update the registry entry;
+    - email-client collects the email address and nickname;
+    - email-client adds or intentionally updates the registry entry;
+    - email-client invokes `connect-google` to obtain the canonical client;
     - authorize through email-client;
     - authenticate to IMAP and SMTP without sending mail.
-11. Return one summary grouped into connected, skipped, and failed items.
+11. Each service reports its own result; the conversational caller may combine
+    those reports without giving `connect-google` access to service state.
 
 Authorization is sequential because browser interaction is user-driven and
 because later choices may depend on an earlier denial or account-selection
@@ -297,8 +305,9 @@ Implementation should update:
 - README or installation documentation with the prompt "Connect Google";
 - install-assistant-tools Phase 2 wording to route the Google case to
   `connect-google` without copying its procedure;
-- cloud-files, g-calendar, and email-client LLM guidance so initial setup and
-  reauthorization route to `connect-google`;
+- cloud-files, g-calendar, and email-client LLM guidance so they invoke
+  `connect-google` for shared client preparation during setup or
+  reauthorization;
 - maintainer documentation only where a new validation or test surface needs
   to be named.
 
@@ -322,7 +331,11 @@ commit OAuth client credentials.
 ### Contract tests
 
 - blueprint LLM interfaces match the router and interface files;
-- declared cross-skill dependencies resolve through dispatcher dry-runs;
+- declared service-to-connector dependencies resolve through dispatcher
+  dry-runs;
+- `connect-google` declares no service machine-interface dependencies;
+- email account-management and smoke-test interfaces do not allow
+  `connect-google` as a caller;
 - service setup interfaces remain service-owned;
 - no hand-authored Markdown duplicates generated dispatcher syntax;
 - documentation and skill indexes regenerate cleanly.
@@ -330,10 +343,11 @@ commit OAuth client credentials.
 ### Integration tests
 
 - no-client route hands a resulting file to the existing-client route;
-- selected subsets invoke only the selected service interfaces;
+- selected subsets are handed only to the selected service skills;
 - existing Drive and Calendar connections require confirmation;
 - multiple Gmail nicknames remain supported;
-- one service failure preserves successful prior connections;
+- one service failure preserves successful prior connections without making
+  service state visible to `connect-google`;
 - final summaries classify all outcomes correctly;
 - a clean temporary home has no dependency on the developer's existing
   `client.json` or credentials.
@@ -379,6 +393,9 @@ The design is successfully implemented when:
   specified;
 - client configuration is stored privately and user tokens remain separated
   by their owning services;
+- service skills invoke `connect-google` for shared authentication setup, and
+  `connect-google` never invokes service account, setup, verification, or data
+  interfaces;
 - existing service skills no longer duplicate Google Cloud project setup;
 - partial failures do not erase successful connections;
 - all repository validators, focused tests, and documentation checks pass.

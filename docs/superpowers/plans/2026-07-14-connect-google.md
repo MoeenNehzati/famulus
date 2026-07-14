@@ -1,5 +1,11 @@
 # Connect Google Implementation Plan
 
+> **Architecture correction:** The connector-to-service orchestration direction
+> in this original plan is superseded by
+> `2026-07-14-connect-google-auth-boundary-correction.md`. Service skills invoke
+> `connect-google` for shared OAuth-client preparation; `connect-google` does
+> not invoke service interfaces.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add one prompt-routed `connect-google` skill that accepts or helps create a Google Desktop OAuth client, privately installs it once, and coordinates optional Drive, Calendar, and multi-account Gmail authorization through service-owned interfaces.
@@ -25,17 +31,17 @@
 
 ---
 
-### Task 1: Shared private JSON writer
+### Task 1: Shared OAuth JSON writer
 
 **Files:**
-- Create: `src/officina/common/private_json.py`
-- Create: `tests/test_officina_private_json.py`
+- Create: `src/officina/common/oauth_json.py`
+- Create: `tests/test_officina_oauth_json.py`
 
 **Interfaces:**
 - Consumes: `officina.common.atomic_files.atomic_replace_bytes(path, data, allowed_root, mode)` on POSIX.
-- Produces: `write_private_json(path: Path, payload: Mapping[str, object]) -> None`.
+- Produces: `write_oauth_json(path: Path, payload: Mapping[str, object]) -> None`.
 
-- [ ] **Step 1: Write failing tests for private atomic JSON writes**
+- [ ] **Step 1: Write failing tests for atomic OAuth JSON writes**
 
 Create tests that verify UTF-8 JSON with a trailing newline, parent creation, mode `0600` where meaningful, atomic replacement of an existing regular file, and refusal to replace a symlink:
 
@@ -48,12 +54,12 @@ from pathlib import Path
 
 import pytest
 
-from officina.common.private_json import PrivateJsonError, write_private_json
+from officina.common.oauth_json import OAuthJsonError, write_oauth_json
 
 
-def test_write_private_json_creates_parent_and_private_file(tmp_path: Path) -> None:
+def test_write_oauth_json_creates_parent_and_private_file(tmp_path: Path) -> None:
     path = tmp_path / "config" / "client.json"
-    write_private_json(path, {"installed": {"client_id": "cid"}})
+    write_oauth_json(path, {"installed": {"client_id": "cid"}})
     assert json.loads(path.read_text(encoding="utf-8"))["installed"]["client_id"] == "cid"
     assert path.read_bytes().endswith(b"\n")
     if os.name == "posix":
@@ -61,37 +67,37 @@ def test_write_private_json_creates_parent_and_private_file(tmp_path: Path) -> N
         assert path.stat().st_mode & 0o777 == 0o600
 
 
-def test_write_private_json_atomically_replaces_regular_file(tmp_path: Path) -> None:
+def test_write_oauth_json_atomically_replaces_regular_file(tmp_path: Path) -> None:
     path = tmp_path / "client.json"
     path.write_text('{"old": true}\n', encoding="utf-8")
-    write_private_json(path, {"new": True})
+    write_oauth_json(path, {"new": True})
     assert json.loads(path.read_text(encoding="utf-8")) == {"new": True}
 
 
-def test_write_private_json_rejects_symlink_destination(tmp_path: Path) -> None:
+def test_write_oauth_json_rejects_symlink_destination(tmp_path: Path) -> None:
     if not hasattr(os, "symlink"):
         pytest.skip("symlinks unavailable")
     target = tmp_path / "target.json"
     target.write_text("{}\n", encoding="utf-8")
     link = tmp_path / "client.json"
     link.symlink_to(target)
-    with pytest.raises(PrivateJsonError, match="symbolic link"):
-        write_private_json(link, {"new": True})
+    with pytest.raises(OAuthJsonError, match="symbolic link"):
+        write_oauth_json(link, {"new": True})
     assert target.read_text(encoding="utf-8") == "{}\n"
 ```
 
 - [ ] **Step 2: Run the focused tests and verify RED**
 
-Run: `python3 -m pytest -q tests/test_officina_private_json.py`
+Run: `python3 -m pytest -q tests/test_officina_oauth_json.py`
 
-Expected: collection fails because `officina.common.private_json` does not exist.
+Expected: collection fails because `officina.common.oauth_json` does not exist.
 
 - [ ] **Step 3: Implement the shared writer**
 
 Implement a compact wrapper that serializes once, creates the parent, rejects a symlink destination, uses the existing fail-closed descriptor writer on POSIX, and uses a same-directory temporary file plus `os.replace` on Windows:
 
 ```python
-"""Cross-platform atomic writes for small private JSON configuration files."""
+"""Cross-platform atomic writes for private OAuth JSON files."""
 
 from __future__ import annotations
 
@@ -104,15 +110,15 @@ from typing import Mapping
 from . import atomic_files
 
 
-class PrivateJsonError(OSError):
+class OAuthJsonError(OSError):
     pass
 
 
-def write_private_json(path: Path, payload: Mapping[str, object]) -> None:
+def write_oauth_json(path: Path, payload: Mapping[str, object]) -> None:
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if destination.is_symlink():
-        raise PrivateJsonError(f"destination is a symbolic link: {destination}")
+        raise OAuthJsonError(f"destination is a symbolic link: {destination}")
     data = (json.dumps(payload, indent=2) + "\n").encode("utf-8")
     if os.name == "posix":
         try:
@@ -123,7 +129,7 @@ def write_private_json(path: Path, payload: Mapping[str, object]) -> None:
                 mode=0o600,
             )
         except atomic_files.AtomicWriteError as exc:
-            raise PrivateJsonError(str(exc)) from exc
+            raise OAuthJsonError(str(exc)) from exc
         return
     descriptor, temporary = tempfile.mkstemp(
         dir=destination.parent,
@@ -136,7 +142,7 @@ def write_private_json(path: Path, payload: Mapping[str, object]) -> None:
             os.fsync(handle.fileno())
         os.chmod(temporary, 0o600)
         if destination.is_symlink():
-            raise PrivateJsonError(f"destination is a symbolic link: {destination}")
+            raise OAuthJsonError(f"destination is a symbolic link: {destination}")
         os.replace(temporary, destination)
     finally:
         try:
@@ -147,15 +153,15 @@ def write_private_json(path: Path, payload: Mapping[str, object]) -> None:
 
 - [ ] **Step 4: Run focused and existing atomic-file tests**
 
-Run: `python3 -m pytest -q tests/test_officina_private_json.py tests/test_officina_atomic_files.py`
+Run: `python3 -m pytest -q tests/test_officina_oauth_json.py tests/test_officina_atomic_files.py`
 
 Expected: all selected tests pass.
 
 - [ ] **Step 5: Commit Task 1**
 
 ```bash
-git add src/officina/common/private_json.py tests/test_officina_private_json.py
-git commit -m "feat: add private atomic JSON writer"
+git add src/officina/common/oauth_json.py tests/test_officina_oauth_json.py
+git commit -m "feat: add OAuth JSON writer"
 ```
 
 ---
@@ -178,7 +184,7 @@ git commit -m "feat: add private atomic JSON writer"
 - Create: `skills/connect-google/tests/test_llm_routing.py`
 
 **Interfaces:**
-- Consumes: `write_private_json(path, payload)` from Task 1.
+- Consumes: `write_oauth_json(path, payload)` from Task 1.
 - Produces:
   - `validate_client_payload(payload: object) -> dict[str, object]`
   - `client_status(home: Path) -> dict[str, str]`
@@ -428,7 +434,7 @@ git commit -m "feat: add routed Google connection skill"
 - Modify: `skills/g-calendar/blueprint.yaml`
 
 **Interfaces:**
-- Consumes: `write_private_json` from Task 1 and the canonical client path passed through existing `--from-json` arguments.
+- Consumes: `write_oauth_json` from Task 1 and the canonical client path passed through existing `--from-json` arguments.
 - Produces: existing setup interfaces with verified-before-replace semantics and `connect-google` caller access.
 
 - [ ] **Step 1: Write failing Drive transaction tests in the new test file**
@@ -476,7 +482,7 @@ def verify_access_token(access_token: str) -> None:
 ```
 
 Require both `refresh_token` and `access_token`, verify first, then call
-`write_private_json(CREDS_PATH, creds)`. Never print token values.
+`write_oauth_json(CREDS_PATH, creds)`. Never print token values.
 
 - [ ] **Step 5: Implement Calendar verified replacement**
 
@@ -648,7 +654,7 @@ executes OAuth during dry-run.
 
 - [ ] **Step 4: Run focused and repository validation**
 
-Run: `python3 -m pytest -q skills/connect-google/tests skills/cloud-files/tests skills/g-calendar/tests skills/email-client/tests tests/test_officina_private_json.py`
+Run: `python3 -m pytest -q skills/connect-google/tests skills/cloud-files/tests skills/g-calendar/tests skills/email-client/tests tests/test_officina_oauth_json.py`
 
 Run: `dispatcher --caller-skill skill-maker skill-maker.machine.sync-blueprints --check`
 
