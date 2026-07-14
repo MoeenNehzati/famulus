@@ -10,12 +10,12 @@ The skill system is built around a small set of explicit authored surfaces:
 - [`blueprint.yaml`](../../skills/skill-maker/blueprint.yaml) for dependencies, interfaces, and invocation constraints
 - private runtime files, tests, schemas, and references for implementation
 
-The canonical references for that contract live here:
+Start with these architecture and contract references:
 
-- [references/blueprint/guide.md](../../references/blueprint/guide.md)
+- [docs/skill-blueprints.md](../skill-blueprints.md)
 - [references/blueprint/schema.json](../../references/blueprint/schema.json)
 - [references/blueprint/template.yaml](../../references/blueprint/template.yaml)
-- [references/skill-guidelines.md](../../references/skill-guidelines.md)
+- [references/skill-standards/skill-guidelines.md](../../references/skill-standards/skill-guidelines.md)
 
 ## How Skills Stay in Sync
 

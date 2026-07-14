@@ -804,7 +804,7 @@ interfaces:
         version: 1
       - interface: cloud-files.machine.lists-write
         version: 1
-      description: Update entries in a cloud list from a patch file (keyed by id).
+      description: Update cloud-list entries from a YAML list of patch objects, each with a quoted string `id`; input is not a mapping keyed by id.
       usage: <name> --cloud --file /tmp/patch.yaml
       allow_all_skills: false
       allowed_callers: []
@@ -821,7 +821,7 @@ interfaces:
         - --file
         positional_patterns:
           0: ^[a-zA-Z0-9_-]+$
-        notes: Update cloud list entries from a patch file.
+        notes: Patch file must contain a YAML list of objects; quote every id string.
       - name: stdin-mode
         min_positionals: 1
         max_positionals: 1
@@ -832,7 +832,7 @@ interfaces:
         - --file
         positional_patterns:
           0: ^[a-zA-Z0-9_-]+$
-        notes: Update cloud list entries from a stdin patch.
+        notes: Stdin patch must contain a YAML list of objects; quote every id string.
       dependencies:
       - kind: python-package
         name: PyYAML

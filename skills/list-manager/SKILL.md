@@ -57,10 +57,10 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `cloud-read-beautify` — Read a cloud list by name and render it (nested bullet-list markdown by default, id-annotated; --table for a flat GFM table, --diff for the legacy diff-fenced view). Relay stdout verbatim.
   - `dispatcher --caller-skill list-manager list-manager.machine.cloud-read-beautify <name> [filters] --cloud`
   - Read a cloud list by name and render it as nested bullet-list markdown by default, optionally filtered.
-- `cloud-update` — Update entries in a cloud list from a patch file (keyed by id).
+- `cloud-update` — Update cloud-list entries from a YAML list of patch objects, each with a quoted string `id`; input is not a mapping keyed by id.
   - `dispatcher --caller-skill list-manager list-manager.machine.cloud-update <name> --cloud --file /tmp/patch.yaml`
-  - file-mode: Update cloud list entries from a patch file.
-  - stdin-mode: Update cloud list entries from a stdin patch.
+  - file-mode: Patch file must contain a YAML list of objects; quote every id string.
+  - stdin-mode: Stdin patch must contain a YAML list of objects; quote every id string.
 - `create-entry` — Add entries to a local YAML list under a category path.
   - `dispatcher --caller-skill list-manager list-manager.machine.create-entry <file> <category/path> --entries /tmp/entry.yaml`
 - `describe-schema` — Describe entry-level fields (types/required/enums) for a list schema.
@@ -96,7 +96,14 @@ Skill: list-manager
 ## Rules
 
 - **Show to user:** use `cloud-read-beautify`; relay stdout **verbatim** — it is pre-formatted nested bullet-list markdown, id-annotated. Do not reformat.
-- **Ids:** every rendered row ends with `#id`. Use ids for all mutations — never row numbers. If ids aren't in context, run `cloud-read-beautify` first.
+- **Ids and mutation patches:** every rendered row ends with `#id`. Mutations always use these stable ids, never row numbers. Patch input for `update-list` and `cloud-update` is a YAML list of objects. Every object must contain a string `id`; quote every `id`, never use an id-keyed YAML mapping, and never leave numeric-looking ids unquoted. If ids are not in context, run `cloud-read-beautify` first. For example:
+  ```yaml
+  - id: "421753"
+    state: rejected
+  - id: "010b76"
+    state: rejected
+  ```
+- **Temporary numbering:** when the user explicitly asks for numbered items, retain a number-to-id mapping from that rendered result. Before mutating numbered selections, resolve them to their stable ids and report the resolved ids and intended change.
 - **Required fields:** if the schema requires a field the user didn't provide, ask — do not invent it. For example, `todo` entries require `deadline`. The script validates this on create-entry and rejects entries with missing required fields; this prevents silently inventing values.
 - **Creating entries:** if the target category path is not already in context, use `cloud-list-categories` first. If several paths fit, offer short concrete choices; do not guess category paths.
 - **Missing or stale categories:** if a create reports that its category no longer exists, refresh `cloud-list-categories` once and ask the user to choose a matching current path. Do not infer a replacement category or silently retry the write.
