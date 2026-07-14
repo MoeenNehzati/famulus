@@ -1,10 +1,9 @@
 [
-  "references/skill-guidelines.md",
+  "references/skill-standards/skill-guidelines.md",
   "references/blueprint/schema.json",
   "references/blueprint/*.schema.json",
   "references/blueprint/schema-meta.json",
   "references/blueprint/template.yaml",
-  "references/blueprint/guide.md",
   "references/blueprint/runtime_dependencies.json",
   "docs/audit_and_drift.md",
   "src/officina/common/artifact_health.py",

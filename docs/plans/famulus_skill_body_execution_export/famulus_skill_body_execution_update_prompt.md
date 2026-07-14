@@ -3,7 +3,7 @@
 Status: done. Implemented as `skills/skill-maker/validators/skill_body_execution.py`
 with focused tests in `tests/validate_skill_body_execution.py`, shared
 `SKILL.md` body parsing in `validators/skill_md_body.py`, and guideline updates
-in `references/skill-guidelines.md`.
+in `references/skill-standards/skill-guidelines.md`.
 
 We need to update Famulus’s skill validation system and skill guidelines to prevent command/execution leakage in hand-authored `SKILL.md` bodies.
 
@@ -125,7 +125,7 @@ Do not blindly copy it as a standalone CLI only. Integrate it into the repo’s 
    - remove line breaks near commands;
    - whitespace noise.
 
-9. Update `references/skill-guidelines.md`.
+9. Update `references/skill-standards/skill-guidelines.md`.
 
    Add a section or strengthen the existing `SKILL.md` body rule:
 

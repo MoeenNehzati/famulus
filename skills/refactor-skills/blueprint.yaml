@@ -27,11 +27,19 @@ interfaces:
       owns_filesystem: []
       allow_all_skills: true
       behavior_sources:
-      - path: $repo/references/skill-guidelines.md
+      - path: $repo/references/skill-standards/skill-guidelines.md
         content: skill
         format: markdown
         reason: "Defines repository skill-module standards used during refactoring."
-      - path: $repo/references/llm-interface-design.md
+      - path: $repo/references/skill-standards/llm-interface-design.md
         content: skill
         format: markdown
         reason: "Defines when and how to decompose LLM-facing skill interfaces."
+      - path: $repo/references/skill-standards/skill-smells.md
+        content: skill
+        format: markdown
+        reason: "Defines the diagnostic signals checked during skill refactoring."
+      - path: $repo/references/skill-standards/skill-refactoring-catalog.md
+        content: skill
+        format: markdown
+        reason: "Defines the behavior-preserving moves used to address diagnosed skill smells."

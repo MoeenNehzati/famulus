@@ -6,8 +6,8 @@ Status: prototype draft created; not approved for implementation.
 
 Make the repo-level blueprint schema the single source of truth for blueprint
 shape, field-level semantics, authoring guidance, red flags, and validator
-coverage. Remove hand-maintained duplicate explanations from the guide,
-template, and skill guidelines.
+coverage. Remove hand-maintained duplicate explanations from the architecture
+document, template, and skill guidelines.
 
 ## Target End State
 
@@ -19,13 +19,13 @@ template, and skill guidelines.
   constraints.
 - `references/blueprint/template.yaml` is removed as a hand-maintained file.
 - A shared Python generator emits a sample blueprint from the current schema.
-- `references/blueprint/guide.md` is removed, unless a tiny index is still
-  needed temporarily during migration.
-- `references/skill-guidelines.md` says nothing substantive about blueprint
-  fields or schema rules, but remains the repo-level skill-writing standard.
+- `docs/skill-blueprints.md` remains a concise explanatory overview.
+- `references/skill-standards/skill-guidelines.md` says nothing substantive
+  about blueprint fields or schema rules, but remains the repo-level
+  skill-writing standard.
 - `skills/skill-maker/SKILL.md` says to create the skill file according to
-  `references/skill-guidelines.md` and create the proper blueprint from
-  `references/blueprint/schema.json` plus the generated sample.
+  `references/skill-standards/skill-guidelines.md` and create the proper
+  blueprint from `references/blueprint/schema.json` plus the generated sample.
 
 ## Prototype Status
 
@@ -39,7 +39,7 @@ This file is intentionally separate from the live schema. It does not replace:
 
 - `references/blueprint/schema.json`
 - `references/blueprint/template.yaml`
-- `references/blueprint/guide.md`
+- `docs/skill-blueprints.md`
 
 Verified prototype properties:
 
@@ -54,8 +54,8 @@ Blind review result from four fresh subagents:
 
 - The draft is useful as a consolidation prototype and maintainer reference.
 - It is not yet safe as the sole authoring source.
-- It should not replace the template or guide until a generator, generated
-  author-facing views, and a meta-validator exist.
+- It should not replace the template or absorb the architecture overview until
+  a generator, generated author-facing views, and a meta-validator exist.
 
 Implemented prototype support:
 
@@ -112,7 +112,7 @@ Keep blueprint-spec ownership in repo-level references:
 
 ```text
 references/blueprint/schema.json
-references/skill-guidelines.md
+references/skill-standards/skill-guidelines.md
 ```
 
 Rationale:
@@ -253,17 +253,17 @@ template. Required details:
 
 After schema annotations exist:
 
-1. Delete or shrink `references/blueprint/guide.md`.
+1. Keep `docs/skill-blueprints.md` as a concise explanatory overview.
 2. Update `references/blueprint/README.md` to point to:
    - `references/blueprint/schema.json` as the canonical spec;
    - the shared generator or `skill-maker` generator interface for a sample
      blueprint;
    - validation and sync commands.
-3. Remove blueprint field explanations from `references/skill-guidelines.md`.
+3. Remove blueprint field explanations from `references/skill-standards/skill-guidelines.md`.
 4. Update contributor/scaffolding docs so they no longer say schema, template,
    guide, and guidelines must all be updated as peer sources.
 5. Update `skills/skill-maker/SKILL.md` to say:
-   - make the skill file according to `references/skill-guidelines.md`;
+   - make the skill file according to `references/skill-standards/skill-guidelines.md`;
    - create the proper blueprint according to `references/blueprint/schema.json`
      and the generated sample.
 
@@ -342,13 +342,15 @@ Known prototype blockers from blind review:
    - recommended full blueprint;
    - field reference or guide;
    - maintainer validation matrix.
-6. Compare generated views against current `template.yaml` and `guide.md`, then
+6. Compare generated views against current `template.yaml` and
+   `docs/skill-blueprints.md`, then
    decide whether the generated views preserve enough information to replace
    the hand-maintained files.
 7. Only after generated views and meta-validation pass, replace
    `template.yaml` usage in docs and tooling.
-8. Delete or shrink `guide.md`.
-9. Trim blueprint field rules out of `skill-guidelines.md` while keeping
+8. Keep `docs/skill-blueprints.md` as a concise explanatory overview.
+9. Trim blueprint field rules out of
+   `references/skill-standards/skill-guidelines.md` while keeping
    skill-level rules there.
 10. Update `skill-maker/SKILL.md`.
 11. Run blueprint sync, validators, and focused tests.
@@ -357,8 +359,8 @@ Known prototype blockers from blind review:
 
 - Should the generated sample be checked in, or should the generator be the only
   source?
-- Should `guide.md` be deleted entirely, or retained as a tiny README-style
-  migration stub for one release?
+- How small can `docs/skill-blueprints.md` remain while still providing a useful
+  architecture overview after schema consolidation?
 - Should `x-famulus.template.example` be required on every field included in
   the sample, or can the generator synthesize obvious values from type/enum
   metadata?

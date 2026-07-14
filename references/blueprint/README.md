@@ -1,6 +1,9 @@
 # Blueprint References
 
-The canonical architecture and authoring rules are in [guide.md](guide.md).
+The concrete schemas in this directory are the canonical source for blueprint
+shape and field-level authoring rules. See
+[`docs/skill-blueprints.md`](../../docs/skill-blueprints.md) for the contributor
+architecture overview.
 
 Schema entry points:
 

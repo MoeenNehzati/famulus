@@ -78,7 +78,7 @@ def test_sys_path_hack_flagged(tmp_path: Path) -> None:
 
 def test_installer_skill_exempt(tmp_path: Path) -> None:
     # install-assistant-tools manages the launcher and bootstraps imports;
-    # it is exempt as a whole (see skill-guidelines.md).
+    # it is exempt as a whole (see references/skill-standards/skill-guidelines.md).
     skill = tmp_path / "skills" / "install-assistant-tools"
     (skill / "_rtx").mkdir(parents=True)
     (skill / "blueprint.yaml").write_text("name: install-assistant-tools\n", encoding="utf-8")

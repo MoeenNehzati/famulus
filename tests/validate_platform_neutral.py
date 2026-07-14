@@ -205,14 +205,14 @@ def test_blueprint_generic_platform_prose_is_still_rejected(tmp_path: Path) -> N
 def test_blueprint_reference_docs_can_define_platform_metadata(tmp_path: Path) -> None:
     refs = tmp_path / "references" / "blueprint"
     refs.mkdir(parents=True)
-    (refs / "guide.md").write_text("Use `linux`/`macos`/`windows` booleans for support metadata.\n")
+    (refs / "README.md").write_text("Use `linux`/`macos`/`windows` booleans for support metadata.\n")
     assert validate(tmp_path) == []
 
 
 def test_blueprint_reference_docs_still_reject_host_names(tmp_path: Path) -> None:
     refs = tmp_path / "references" / "blueprint"
     refs.mkdir(parents=True)
-    (refs / "guide.md").write_text("Use Codex for this flow.\n")
+    (refs / "README.md").write_text("Use Codex for this flow.\n")
     errors = validate(tmp_path)
     assert len(errors) == 1
     assert "Codex" in errors[0]
@@ -235,8 +235,8 @@ def test_init_py_always_exempt(tmp_path: Path) -> None:
 
 
 def test_skill_guidelines_can_define_platform_rule(tmp_path: Path) -> None:
-    refs = tmp_path / "references"
-    refs.mkdir()
+    refs = tmp_path / "references" / "skill-standards"
+    refs.mkdir(parents=True)
     (refs / "skill-guidelines.md").write_text("Use Windows, macOS, Linux, Claude, and Codex here.\n")
     assert validate(tmp_path) == []
 

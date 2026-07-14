@@ -7,7 +7,7 @@ Windows, while Windows-style ``%#d`` is not portable in the other direction.
 This validator intentionally checks only literal ``strftime`` format strings
 for those non-portable padding modifiers. Shared project-owned date/time IO
 formats should live in ``officina.common.dates``; that convention is documented
-in ``references/skill-guidelines.md`` rather than enforced here.
+in ``references/skill-standards/skill-guidelines.md`` rather than enforced here.
 """
 from __future__ import annotations
 

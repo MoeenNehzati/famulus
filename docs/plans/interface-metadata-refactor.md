@@ -741,7 +741,7 @@ When a skill needs a new `system`, `content`, `format`, `auth`, `medium`,
 
 1. Add the value to the appropriate enum in
    `references/blueprint/schema.json`.
-2. Add a short explanation and example to `references/blueprint/guide.md`.
+2. Add a short explanation and example to `docs/skill-blueprints.md`.
 3. Add the value to `references/blueprint/template.yaml` if it is common enough
    to show in the commented template.
 4. Add or update validator tests that prove unknown values fail and the new
@@ -842,8 +842,8 @@ blueprints.
    fields and interface-level `direct_io` / `owns_filesystem` fields.
 2. Update `references/blueprint/template.yaml` with commented examples and
    controlled vocabulary guidance.
-3. Update `references/blueprint/guide.md` and
-   `references/skill-guidelines.md`.
+3. Update `docs/skill-blueprints.md` and
+   `references/skill-standards/skill-guidelines.md`.
 4. Add validators for controlled vocabulary, behavior-source path roots, and
    consistency between file-like `direct_io` entries and filesystem ownership.
 5. Add version-impact validation. When a relevant interface contract changes,

@@ -2,7 +2,7 @@
 """Scan today's session transcripts for handoff status, with zero LLM logic.
 
 Per-host transcript location and format knowledge lives in dedicated
-parser files under this same directory (see references/skill-guidelines.md,
+parser files under this same directory (see references/skill-standards/skill-guidelines.md,
 guideline 13, for why this script itself must stay host-neutral): each
 parser exposes a small shared interface (list_session_files,
 extract_project, extract_session_id, resume_hint, opaque_field,

@@ -17,7 +17,9 @@ Rewrite the YAML `description` field to state only trigger conditions ("Use when
 **Risk:** None if triggers are preserved.
 
 ### Declare/fix Category
-Set or correct `category` in `blueprint.yaml`. Must be one of the typed enum values in `references/blueprint/schema.json`. See the taxonomy tree in `references/blueprint/guide.md`.
+Set or correct `category` in `blueprint.yaml`. It must be one of the typed enum
+values in `references/blueprint/schema.json`. See `docs/skill-blueprints.md` for
+the blueprint architecture overview.
 **Risk:** None.
 
 ### Sync generated contract artifacts
@@ -34,10 +36,19 @@ Add a brief section to SKILL.md stating: what inputs the skill expects (if any),
 **Risk:** Low.
 
 ### Extract Reference
-Identify content that is repeated across multiple skills or that is reference material (tables, guidelines, schemas). Move it to top-level `references/<name>.md`. Replace inline content with a relative reference such as `@./../../references/<name>.md` from a skill directory.
+Identify content that is repeated across multiple skills or that is reference
+material (tables, guidelines, schemas). Move it to top-level
+`references/<name>.md`.
+
+Use an `@` include only when every route through the owning LLM interface needs
+the reference. When only a particular route needs it, name the file in that
+route's instructions, state the observable condition for reading it, and load
+it only after that route is selected.
 **Preserve:** Content must be identical before and after — only the location changes.
-**Verify:** Invoke the skill and confirm the reference content is loaded (visible in system-reminder Read call).
-**Risk:** Low, but test the `@` include.
+**Verify:** For an unconditional include, invoke the skill and confirm the
+reference content is loaded. For conditional routing, exercise both paths and
+confirm the file is loaded only on the route that needs it.
+**Risk:** Low, but test the loading behavior.
 
 ### Extract Script
 Move any executable logic from SKILL.md into a new private runtime file under `_rtx/`. Update SKILL.md to describe the public interface and how to interpret its output. Add the interface to `blueprint.yaml` / generated permissions as appropriate.

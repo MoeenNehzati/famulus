@@ -23,7 +23,7 @@ REQUIRED_SNIPPETS = (
 )
 FORBIDDEN_SNIPPETS = (
     "The dispatcher is the only approved route",
-    "references/blueprint/guide.md",
+    "docs/skill-blueprints.md",
     "validators/` and `skills/skill-maker/validators/",
 )
 

@@ -2437,10 +2437,10 @@
     "migration_note": "This draft intentionally preserves the current schema validation shape while moving field semantics, authoring guidance, red flags, and validator mapping into schema annotations. Existing template-copy guidance is expected to be replaced by a generated sample once the generator is implemented.",
     "migration_sources_consulted": [
       "references/blueprint/schema.json",
-      "references/blueprint/guide.md",
+      "docs/skill-blueprints.md",
       "references/blueprint/template.yaml",
-      "references/skill-guidelines.md",
-      "references/skill-smells.md",
+      "references/skill-standards/skill-guidelines.md",
+      "references/skill-standards/skill-smells.md",
       "docs/scaffolding/README.md",
       "docs/contributors/README.md",
       "skills/skill-maker/validators/",

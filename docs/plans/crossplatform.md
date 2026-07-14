@@ -94,7 +94,7 @@ What was done:
 - added `officina.common.toml_io` as the controlled TOML text boundary for runtime code
 - refactored `install-assistant-tools` profile rewriting and Codex hook config edits to use `toml_io.open(...)` and TOML scalar helpers
 - added `validators/toml_io_boundary.py`, which rejects production `.toml` filename mentions unless they are the direct filename argument to `toml_io.open(...)`, and rejects computed filename arguments such as variables or string concatenation
-- documented the TOML IO boundary in `references/skill-guidelines.md`
+- documented the TOML IO boundary in `references/skill-standards/skill-guidelines.md`
 
 Prevention:
 
@@ -128,7 +128,7 @@ What was done:
 - removed the stale daily-plan `date` permission from `blueprint.yaml` and regenerated-equivalent `permissions.json`
 - added `validators/portable_dates.py`, a repo validator that flags host-specific `strftime` padding modifiers in runtime Python
 - added validator tests covering GNU-style `%-d` and Windows-style `%#d`, and kept this class independent of broad platform opt-outs
-- updated `references/skill-guidelines.md` to document the date/time IO formatting rule, point authors to `officina.common.dates`, and link the mechanical validator
+- updated `references/skill-standards/skill-guidelines.md` to document the date/time IO formatting rule, point authors to `officina.common.dates`, and link the mechanical validator
 
 Prevention:
 
@@ -162,7 +162,7 @@ What was done:
 - added dispatcher regression tests that assert the UTF-8 strict subprocess kwargs, assert the Python child IO environment, and round-trip non-ASCII stdin/stdout through a real dispatcher invocation
 - added `validators/subprocess_text_encoding.py`, which rejects production/validator `subprocess` text mode unless both `encoding` and `errors` are explicit
 - updated existing runtime and validator subprocess text calls to declare local encoding/error policy; git file-list validators use UTF-8 with `surrogateescape`
-- documented the subprocess text-boundary rule in `references/skill-guidelines.md`
+- documented the subprocess text-boundary rule in `references/skill-standards/skill-guidelines.md`
 
 Prevention:
 

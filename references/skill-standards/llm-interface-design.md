@@ -53,6 +53,11 @@ should need:
 2. exactly the selected `llm_interfaces/<name>.md`
 3. only the shared reference files needed by that selected interface
 
+Use an `@` include only for a reference required by every route through the
+binding LLM interface. For route-specific material, name the file in the
+route's instructions and state the observable condition for reading it. Do not
+use `@` for conditional loading because it loads the file before routing.
+
 Do not design a split where every task still needs to read every interface
 file. That preserves file modularity but loses the main runtime benefit:
 reducing irrelevant prompt context.

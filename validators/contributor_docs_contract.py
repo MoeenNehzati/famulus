@@ -13,7 +13,7 @@ _README_REQUIRED = (
     "dispatcher --caller-skill <caller> <callee> <interface-id> [args...]",
     "validators/runner.py",
     ".githooks/pre-commit",
-    "references/blueprint/guide.md",
+    "docs/skill-blueprints.md",
     "references/blueprint/schema.json",
     "references/blueprint/template.yaml",
     "docs/scaffolding/README.md",

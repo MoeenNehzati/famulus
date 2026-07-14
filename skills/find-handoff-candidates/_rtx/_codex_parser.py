@@ -14,7 +14,7 @@ the one directory matching X (verified against 40+ real mismatched files
 on this machine; see scan.py's own scan-loop comment).
 
 Exempt from validators/platform_neutral.py because this filename itself
-names the host (see references/skill-guidelines.md, guideline 13).
+names the host (see references/skill-standards/skill-guidelines.md, guideline 13).
 """
 from __future__ import annotations
 

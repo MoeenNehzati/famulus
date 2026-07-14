@@ -105,7 +105,7 @@ def _seed_docs(repo_root: Path) -> None:
                 "dispatcher --caller-skill <caller> <callee> <interface-id> [args...]",
                 "python3 validators/runner.py",
                 ".githooks/pre-commit",
-                "references/blueprint/guide.md",
+                "docs/skill-blueprints.md",
                 "references/blueprint/schema.json",
                 "references/blueprint/template.yaml",
                 "docs/scaffolding/README.md",
@@ -140,7 +140,7 @@ def _seed_docs(repo_root: Path) -> None:
     )
     _write(repo_root / "docs/scaffolding/README.md", "# Scaffolding\n")
     _write(repo_root / "references/blueprint/README.md", "# Blueprint Reference\n")
-    _write(repo_root / "references/blueprint/guide.md", "# Guide\n")
+    _write(repo_root / "docs/skill-blueprints.md", "# Skill Blueprints\n")
     _write(repo_root / "references/blueprint/schema.json", "{}\n")
     _write(repo_root / "references/blueprint/template.yaml", "category: example\n")
 
@@ -173,3 +173,16 @@ def test_readme_validator_flags_missing_skill_index_link(tmp_path: Path) -> None
     readme.write_text(readme.read_text(encoding="utf-8").replace("docs/skills.md", "docs/missing.md"), encoding="utf-8")
     errors = validate_readme(repo_root)
     assert any("docs/skills.md" in error for error in errors)
+
+
+def test_readme_validator_rejects_contributor_blueprint_doc(tmp_path: Path) -> None:
+    repo_root = _make_repo(tmp_path)
+    readme = repo_root / "README.md"
+    readme.write_text(
+        readme.read_text(encoding="utf-8") + "\n[Blueprints](docs/skill-blueprints.md)\n",
+        encoding="utf-8",
+    )
+
+    errors = validate_readme(repo_root)
+
+    assert any("docs/skill-blueprints.md" in error for error in errors)

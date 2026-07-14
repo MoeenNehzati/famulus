@@ -72,4 +72,8 @@ interfaces:
         network: []
       owns_filesystem: []
       allow_all_skills: true
-      behavior_sources: []
+      behavior_sources:
+      - path: $repo/references/skill-standards/skill-guidelines.md
+        content: skill
+        format: markdown
+        reason: Defines repository skill-module standards used when creating or editing skills.

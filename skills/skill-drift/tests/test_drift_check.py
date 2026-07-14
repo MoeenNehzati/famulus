@@ -500,10 +500,9 @@ def test_extra_recorded_hash_is_stale(tmp_path: Path) -> None:
 
 def test_policy_hash_changes_when_skill_audit_changes(tmp_path: Path) -> None:
     install_policy_manifest(tmp_path)
-    write(tmp_path / "references" / "skill-guidelines.md", "guidelines\n")
+    write(tmp_path / "references" / "skill-standards" / "skill-guidelines.md", "guidelines\n")
     write(tmp_path / "references" / "blueprint" / "schema.json", "{}\n")
     write(tmp_path / "references" / "blueprint" / "template.yaml", "template\n")
-    write(tmp_path / "references" / "blueprint" / "guide.md", "guide\n")
     write(tmp_path / "skills" / "skill-audit" / "_rtx" / "_audit_certifier.py", "one\n")
 
     first = checker.compute_policy_hash(tmp_path)
@@ -511,6 +510,30 @@ def test_policy_hash_changes_when_skill_audit_changes(tmp_path: Path) -> None:
     second = checker.compute_policy_hash(tmp_path)
 
     assert first != second
+
+
+def test_policy_hash_changes_when_relocated_skill_guidelines_change(tmp_path: Path) -> None:
+    install_policy_manifest(tmp_path)
+    guidelines = tmp_path / "references" / "skill-standards" / "skill-guidelines.md"
+    write(guidelines, "one\n")
+
+    first = checker.compute_policy_hash(tmp_path)
+    write(guidelines, "two\n")
+    second = checker.compute_policy_hash(tmp_path)
+
+    assert first != second
+
+
+def test_policy_hash_ignores_explanatory_blueprint_document(tmp_path: Path) -> None:
+    install_policy_manifest(tmp_path)
+    document = tmp_path / "docs" / "skill-blueprints.md"
+    write(document, "one\n")
+
+    first = checker.compute_policy_hash(tmp_path)
+    write(document, "two\n")
+    second = checker.compute_policy_hash(tmp_path)
+
+    assert first == second
 
 
 @pytest.mark.parametrize("module_name", ["atomic_files.py", "git_provenance.py"])

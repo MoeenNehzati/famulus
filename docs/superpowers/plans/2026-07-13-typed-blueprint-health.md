@@ -347,9 +347,9 @@ Expected: all tests pass.
 
 **Files:**
 - Modify blueprint sync implementation through the `skill-maker` boundary after approval to inspect its private runtime.
-- Modify: `references/blueprint/guide.md`
+- Modify: `docs/skill-blueprints.md`
 - Modify: `references/blueprint/README.md`
-- Modify: `references/skill-guidelines.md`
+- Modify: `references/skill-standards/skill-guidelines.md`
 - Modify: `docs/audit_and_drift.md`
 - Modify or regenerate: `references/blueprint/template.yaml`
 - Add validator tests for `_cx` command-file bindings.

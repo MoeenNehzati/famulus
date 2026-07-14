@@ -84,14 +84,14 @@ The scaffolding exists to keep these three surfaces aligned.
 
 - [skills/skill-maker/SKILL.md](../../skills/skill-maker/SKILL.md)
   - The maintainer entry point for creating or editing skills.
-- [references/skill-guidelines.md](../../references/skill-guidelines.md)
+- [references/skill-standards/skill-guidelines.md](../../references/skill-standards/skill-guidelines.md)
   - Repo-wide skill authoring rules.
 - [references/blueprint/template.yaml](../../references/blueprint/template.yaml)
   - The comment-rich starting point for new `blueprint.yaml` files.
 - [references/blueprint/schema.json](../../references/blueprint/schema.json)
   - The formal schema for individual blueprints.
-- [references/blueprint/guide.md](../../references/blueprint/guide.md)
-  - The narrative guide to the schema, patterns, and validation model.
+- [docs/skill-blueprints.md](../skill-blueprints.md)
+  - The conceptual overview of the blueprint architecture and lifecycle.
 - [references/blueprint/README.md](../../references/blueprint/README.md)
   - Short index into the blueprint reference set.
 
@@ -212,7 +212,7 @@ This is one of the practical senses in which the repo is doing
 
 `skill-maker` is where the system is easiest to understand from the inside:
 
-- its [SKILL.md](../../skills/skill-maker/SKILL.md) points directly at [references/skill-guidelines.md](../../references/skill-guidelines.md)
+- its [SKILL.md](../../skills/skill-maker/SKILL.md) points directly at [references/skill-standards/skill-guidelines.md](../../references/skill-standards/skill-guidelines.md)
 - its [`validators/`](../../skills/skill-maker/validators/) directory is the main skill-system enforcement surface
 - its [_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py) shows what the blueprint generates
 - its tests exercise the blueprint tooling itself
@@ -234,8 +234,8 @@ If you are changing the schema or scaffolding:
 
 1. Update `references/blueprint/schema.json`.
 2. Update `references/blueprint/template.yaml`.
-3. Update `references/blueprint/guide.md`.
-4. Update `references/skill-guidelines.md` if the authoring rules changed.
+3. Update `docs/skill-blueprints.md` only if the architecture or lifecycle changed.
+4. Update `references/skill-standards/skill-guidelines.md` if the skill-module rules changed.
 5. Update any affected validators under `skills/skill-maker/validators/`.
 6. Rerun sync and validation so the generated artifacts and docs stay aligned.
 

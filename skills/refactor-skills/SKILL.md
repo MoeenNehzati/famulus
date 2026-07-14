@@ -44,12 +44,15 @@ behavioral spec:
 This spec is the invariant. Refactoring must preserve it exactly.
 
 ### 2. Smell scan
-Check the skill against every smell in `references/skill-smells.md`. List each violation with a direct quote from the file.
+Check the skill against every smell in
+`references/skill-standards/skill-smells.md`. List each violation with a direct
+quote from the file.
 
 ### 3. Interface decomposition audit
-Use `references/llm-interface-design.md` to decide whether the skill should
-remain a single default LLM interface or be broken into named
-`llm_interfaces/` surfaces. Identify:
+Use the characterization to check whether the skill has multiple substantial
+LLM use cases, distinct read-only and mutating paths, or other plausible
+interface-boundary problems. If it does, read
+`references/skill-standards/llm-interface-design.md` and identify:
 - Whether `SKILL.md` should stay as the full workflow or become a router plus
   shared parent policy.
 - Which use cases, if any, need separate read-only, mutating, provider-specific,
@@ -59,8 +62,14 @@ remain a single default LLM interface or be broken into named
 - Whether `blueprint.yaml` and generated blocks must be updated so declared LLM
   interfaces match the file layout.
 
+If none of those signals is present, record that the default interface remains
+cohesive and continue without loading the guide.
+
 ### 4. Plan moves
-For each smell, identify the refactoring move from `references/skill-refactoring-catalog.md`. Order moves: safe first, structural last. Present the full plan and wait for user confirmation before changing anything.
+For each smell, identify the refactoring move from
+`references/skill-standards/skill-refactoring-catalog.md`. Order moves: safe
+first, structural last. Present the full plan and wait for user confirmation
+before changing anything.
 
 ### 5. Apply one move at a time
 After each move, verify behavior is preserved against the characterization from step 1. Do not apply the next move until the current one is confirmed correct. If any move breaks behavior, revert it immediately.
@@ -70,5 +79,4 @@ Follow convention 6: show diff, confirm with user, commit and push.
 
 ---
 
-@./../../references/skill-guidelines.md
-@./../../references/llm-interface-design.md
+@./../../references/skill-standards/skill-guidelines.md

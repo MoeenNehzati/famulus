@@ -2,8 +2,8 @@
 
 Status: historical design note. This plan predates the current
 `interfaces.machine` blueprint model; live blueprint syntax and validator
-policy are documented in `references/blueprint/guide.md` and
-`references/skill-guidelines.md`.
+policy are documented in `docs/skill-blueprints.md` and
+`references/skill-standards/skill-guidelines.md`.
 
 ## Goal
 
@@ -807,10 +807,10 @@ After the automated migration:
 Update:
 
 ```text
-references/blueprint/guide.md
+docs/skill-blueprints.md
 references/blueprint/template.yaml
 references/blueprint/README.md
-references/skill-guidelines.md
+references/skill-standards/skill-guidelines.md
 README.md
 ```
 

@@ -1335,8 +1335,8 @@ Report pool-only failure behavior. Do not commit automatically.
 - Modify: `.gitignore`
 - Modify: `docs/audit_and_drift.md`
 - Modify: `references/blueprint/README.md`
-- Modify: `references/blueprint/guide.md`
-- Modify: `references/skill-guidelines.md`
+- Modify: `docs/skill-blueprints.md`
+- Modify: `references/skill-standards/skill-guidelines.md`
 - Modify: `skills/skill-maker/_rtx/_blueprint_syncer.py`
 - Modify: `skills/skill-maker/tests/test_blueprint_tools.py`
 - Modify: `skills/skill-audit/_rtx/_audit_certifier.py`

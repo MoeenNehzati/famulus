@@ -38,7 +38,7 @@ _ALWAYS_EXEMPT_FILENAMES = {"__init__.py"}
 _CHECK_ROOTS = ["skills", "references", "agents", "CLAUDE.md", "src/officina"]
 _EXCLUDED_PARTS = {"tests", "validators", ".git", ".claude-plugin", ".codex-plugin"}
 _EXCLUDED_PATHS = {
-    Path("references/skill-guidelines.md"),
+    Path("references/skill-standards/skill-guidelines.md"),
     Path("skills/install-assistant-tools"),
     Path("skills/latex-workshop"),
     Path("skills/recurring-tasks"),

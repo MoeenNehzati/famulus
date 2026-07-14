@@ -54,7 +54,7 @@ but catching this before editing avoids doing work that can't land.
 
 This skill owns the conformance infrastructure for the skill system:
 
-- **`validators/`** — Python validator modules (names, metadata, blueprints, boundaries, dependencies, blueprint relationships). Each exports `validate(repo_root: Path) -> list[str]` and is auto-discovered by `validators/runner.py` on every commit. See `../../references/skill-guidelines.md` for the full validator contract and conventions.
+- **`validators/`** — Python validator modules (names, metadata, blueprints, boundaries, dependencies, blueprint relationships). Each exports `validate(repo_root: Path) -> list[str]` and is auto-discovered by `validators/runner.py` on every commit. See `../../references/skill-standards/skill-guidelines.md` for the full validator contract and conventions.
 - **`tests/`** — behavior tests for the blueprint dispatcher and sync scripts (`test_blueprint_tools.py`).
 - **runtime syncer** — refreshes generated blueprint artifacts.
 
@@ -69,4 +69,4 @@ When this skill needs to mention another skill in documentation:
 - do not use `@.../SKILL.md` links to another skill file, because they force
   file loading instead of naming the dependency cleanly
 
-@./../../references/skill-guidelines.md
+@./../../references/skill-standards/skill-guidelines.md

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run every host-compatibility-alias helper against a scaffolded project.
 
-Generic and host-neutral by design (see references/skill-guidelines.md,
+Generic and host-neutral by design (see references/skill-standards/skill-guidelines.md,
 guideline 13): this script never names a specific host, not even in an
 illustrative example. It discovers compat-alias helpers purely by filename
 suffix convention (``*_compat_symlink.py``, sitting next to this file),

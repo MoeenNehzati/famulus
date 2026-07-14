@@ -15,7 +15,7 @@ def _python_files(skill_dir: Path) -> list[Path]:
     return paths
 
 
-# Skills exempt from these rules (see skill-guidelines.md, installer-bootstrap
+# Skills exempt from these rules (see references/skill-standards/skill-guidelines.md, installer-bootstrap
 # exception): install-assistant-tools generates and removes the dispatcher
 # launcher itself, and must bootstrap officina.dispatcher imports from the repo
 # before any launcher exists.
