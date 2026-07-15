@@ -46,6 +46,7 @@ from officina.common.artifact_health import (
     check_graph_health,
     compute_node_hash_states,
     health_path_for_node,
+    health_node_ids,
 )
 from officina.common.audit_records import (
     HMAC_KEY_BYTES,
@@ -396,7 +397,7 @@ class SkillHashReport:
                     report.nodes[node_id].expected_certified_health_hash
                 ),
             }
-            for node_id in sorted(graph.nodes)
+            for node_id in health_node_ids(graph)
         }
         return cls(
             skill=graph.root.node_id,
@@ -841,7 +842,8 @@ def check_typed_skill(
 
             if key is not None:
                 records: dict[str, dict[str, Any]] = {}
-                for node_id, node in graph.nodes.items():
+                for node_id in health_node_ids(graph):
+                    node = graph.nodes[node_id]
                     path = health_path_for_node(node)
                     record, read_concern = read_target_record(source.package_root, path)
                     if read_concern is not None:
@@ -1434,7 +1436,8 @@ def typed_hash_report_for_skill(source: SkillSource, skill_name: str) -> SkillHa
             policy_hash = compute_policy_hash(source.package_root)
             schema_hash = blueprint_schema_hash(schema_root)
             records: dict[str, dict[str, Any]] = {}
-            for node_id, node in graph.nodes.items():
+            for node_id in health_node_ids(graph):
+                node = graph.nodes[node_id]
                 record, concern = read_target_record(
                     source.package_root,
                     health_path_for_node(node),

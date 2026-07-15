@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "skill.schema.json",
   "title": "Typed Skill Root Blueprint",
-  "description": "Canonical graph root for one skill. It owns skill-local metadata and points to interface blueprints without inlining interface-local facts.",
+  "description": "Canonical graph root for one skill. It owns skill-local metadata, its default LLM interface, and pointers to additional interface blueprints.",
   "type": "object",
   "required": ["schema_version", "blueprint_type", "id", "category", "role", "kind", "interfaces"],
   "additionalProperties": false,
@@ -15,15 +15,31 @@
     "kind": {"$ref": "legacy-skill.schema.json#/definitions/skillKind", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "tool"}, "doc": {"authoring": ["Describe the skill's implementation kind."]}, "related_validation_rules": ["schema-shape"]}},
     "skill_interface": {"$ref": "legacy-skill.schema.json#/properties/skill_interface", "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": true, "example": {"inputs": ["User request that triggers this skill."], "outputs": ["Primary user-visible result."], "side_effects": []}}, "doc": {"authoring": ["Describe skill-level inputs, outputs, and side effects only."]}, "related_validation_rules": ["schema-shape"]}},
     "suggested_permissions": {"$ref": "legacy-skill.schema.json#/properties/suggested_permissions", "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": true, "example": {"bash": [{"command": ["dispatcher"], "args_prefix": ["--caller-skill", "example-skill"], "reason": "Invoke the skill's exported machine interfaces."}], "network": []}}, "doc": {"authoring": ["Declare suggested host permissions without duplicating interface-local behavior."]}, "related_validation_rules": ["schema-shape"]}},
+    "default_interface": {"$ref": "default-llm-interface.schema.json", "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["Define the canonical <skill>.llm.default contract inline; it is implicitly bound to SKILL.md."]}, "related_validation_rules": ["default-interface", "file-binding"]}},
     "interfaces": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "uniqueItems": true,
       "items": {"$ref": "common.schema.json#/definitions/interfaceEdge"},
-      "contains": {"type": "object", "required": ["interface"], "properties": {"interface": {"pattern": "\\.llm\\.default$"}}},
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": [{"interface": "example-skill.llm.default", "version": 1, "blueprint": {"base": "skill-root", "path": ".SKILL.md.blueprint.yaml"}}, {"interface": "example-skill.machine.run", "version": 1, "blueprint": {"base": "skill-root", "path": "_rtx/._runner.py.blueprint.yaml"}}]}, "doc": {"authoring": ["Point to each interface's own hidden sidecar; include the default LLM interface that binds SKILL.md."]}, "related_validation_rules": ["root-interface-edge", "version-pin", "file-binding", "relationship-edge"]}
+      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": [{"interface": "example-skill.machine.run", "version": 1, "blueprint": {"base": "skill-root", "path": "_rtx/._runner.py.blueprint.yaml"}}]}, "doc": {"authoring": ["Point to each additional interface's hidden sidecar. Existing roots may retain a default sidecar instead of default_interface for compatibility."]}, "related_validation_rules": ["root-interface-edge", "version-pin", "file-binding", "relationship-edge"]}
     }
   },
+  "oneOf": [
+    {
+      "required": ["default_interface"],
+      "properties": {
+        "interfaces": {
+          "not": {"contains": {"type": "object", "required": ["interface"], "properties": {"interface": {"pattern": "\\.llm\\.default$"}}}}
+        }
+      }
+    },
+    {
+      "not": {"required": ["default_interface"]},
+      "properties": {
+        "interfaces": {"contains": {"type": "object", "required": ["interface"], "properties": {"interface": {"pattern": "\\.llm\\.default$"}}}}
+      }
+    }
+  ],
   "x-famulus": {
     "audit_hash": "include",
     "binding_policy": "canonical-root-only",

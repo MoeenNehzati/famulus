@@ -1,6 +1,6 @@
 examples:
   skill_root: blueprint.yaml
-  default_llm: .SKILL.md.blueprint.yaml
+  default_llm: blueprint.yaml#default_interface
   shared_python_interfaces:
     - _rtx/._runner.py.first.blueprint.yaml
     - _rtx/._runner.py.second.blueprint.yaml

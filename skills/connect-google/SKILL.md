@@ -49,9 +49,10 @@ This is the shared router for Google OAuth-client preparation.
 1. Use `connect-google.machine.client-status` before asking the user for a file.
 2. If the stored client is valid, use `connect-google.llm.connect-services`.
 3. If no valid client is installed, ask whether the user already has a Google
-   Desktop OAuth client JSON. A supplied file routes to
-   `connect-google.llm.connect-services`; otherwise route to
-   `connect-google.llm.create-client`.
+   Desktop OAuth client JSON. If status reports legacy candidates, ask before
+   importing one; when candidates differ, ask which one to use. A confirmed or
+   supplied file routes to `connect-google.llm.connect-services`; otherwise
+   route to `connect-google.llm.create-client`.
 
 Apply the same route to initial setup and reconnect requests. Recommend Drive,
 Calendar, and Gmail while allowing the user to choose a subset, then hand each

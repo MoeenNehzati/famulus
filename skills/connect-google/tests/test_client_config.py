@@ -159,3 +159,47 @@ def test_client_status_reports_missing_valid_and_invalid_without_secrets(
     assert invalid == {"status": "invalid", "client_type": "unknown", "path": str(path)}
     assert "client_secret" not in rendered
     assert "secret" not in rendered
+
+
+def test_client_status_discovers_valid_legacy_service_clients_without_copying(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    drive = home / ".config" / "cloud-files" / "client.json"
+    calendar = home / ".config" / "g-calendar" / "client.json"
+    drive.parent.mkdir(parents=True)
+    calendar.parent.mkdir(parents=True)
+    write_json(drive, desktop_client("shared"))
+    write_json(calendar, desktop_client("shared"))
+
+    result = client_config.client_status(home)
+
+    assert result["legacy_candidates"] == [
+        {"service": "cloud-files", "path": str(drive)},
+        {"service": "g-calendar", "path": str(calendar)},
+    ]
+    assert result["legacy_candidates_match"] is True
+    assert not canonical(home).exists()
+    assert "client_secret" not in json.dumps(result)
+
+
+def test_client_status_reports_conflicting_legacy_clients_and_ignores_invalid(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    drive = home / ".config" / "cloud-files" / "client.json"
+    calendar = home / ".config" / "g-calendar" / "client.json"
+    drive.parent.mkdir(parents=True)
+    calendar.parent.mkdir(parents=True)
+    write_json(drive, desktop_client("drive"))
+    write_json(calendar, desktop_client("calendar"))
+
+    result = client_config.client_status(home)
+    assert result["legacy_candidates_match"] is False
+
+    calendar.write_text("{", encoding="utf-8")
+    result = client_config.client_status(home)
+    assert result["legacy_candidates"] == [
+        {"service": "cloud-files", "path": str(drive)}
+    ]
+    assert "legacy_candidates_match" not in result

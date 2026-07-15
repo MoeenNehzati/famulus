@@ -83,6 +83,7 @@ CANONICAL_GRAPH_SCHEMA_INPUTS = (
     "common.schema.json",
     "legacy-skill.schema.json",
     "skill.schema.json",
+    "default-llm-interface.schema.json",
     "llm-interface.schema.json",
     "machine-interface.schema.json",
     "behavior-source.schema.json",
@@ -221,9 +222,18 @@ def local_input_paths_for_node(node: BlueprintNode) -> tuple[Path, ...]:
     paths = {_validated_owned_input(node.skill_root, node.blueprint_path)}
     if node.binding_path is not None:
         paths.add(_validated_owned_input(node.skill_root, node.binding_path))
-    declared_inputs = node.declaration.get("local_hash_inputs", [])
-    if not isinstance(declared_inputs, list):
+    declared_inputs_value = node.declaration.get("local_hash_inputs", [])
+    if not isinstance(declared_inputs_value, list):
         raise ArtifactHealthError("local_hash_inputs must be a list")
+    declared_inputs = list(declared_inputs_value)
+    default_interface = node.declaration.get("default_interface")
+    if node.blueprint_type == "skill" and isinstance(default_interface, dict):
+        inline_inputs = default_interface.get("local_hash_inputs", [])
+        if not isinstance(inline_inputs, list):
+            raise ArtifactHealthError(
+                "default_interface.local_hash_inputs must be a list"
+            )
+        declared_inputs.extend(inline_inputs)
     for declared in declared_inputs:
         if not isinstance(declared, str) or not declared:
             raise ArtifactHealthError("local_hash_inputs entries must be non-empty strings")
@@ -265,13 +275,103 @@ def _validated_owned_input(owner_root: Path, path: Path) -> Path:
     return path
 
 
-def _edges_by_source(graph: SkillBlueprintGraph) -> dict[str, list[BlueprintEdge]]:
-    result = {node_id: [] for node_id in graph.nodes}
+def health_node_ids(graph: SkillBlueprintGraph) -> tuple[str, ...]:
+    """Return graph nodes that own independent health records."""
+
+    return tuple(
+        sorted(node_id for node_id, node in graph.nodes.items() if not node.embedded)
+    )
+
+
+def health_owner_node_id(graph: SkillBlueprintGraph, node_id: str) -> str:
+    """Return the health-owning node for a logical graph node."""
+
+    node = graph.nodes[node_id]
+    if not node.embedded:
+        return node_id
+    candidates = [
+        candidate.node_id
+        for candidate in graph.nodes.values()
+        if candidate.skill_root == node.skill_root
+        and candidate.blueprint_type == "skill"
+        and not candidate.embedded
+    ]
+    if len(candidates) != 1:
+        raise ArtifactHealthError(
+            f"{node_id}: embedded interface must have exactly one health-owning skill root"
+        )
+    return candidates[0]
+
+
+def health_edges(graph: SkillBlueprintGraph) -> tuple[BlueprintEdge, ...]:
+    """Project logical graph edges onto nodes with independent health records."""
+
+    certified_ids = set(health_node_ids(graph))
+    projected: dict[tuple[str, str, str, int, str | None], BlueprintEdge] = {}
     for edge in graph.edges:
-        if edge.target_id not in graph.nodes:
+        if edge.source_id not in graph.nodes or edge.target_id not in graph.nodes:
             raise ArtifactHealthError(
                 f"{edge.source_id}: unresolved downstream node {edge.target_id!r}"
             )
+        source_id = health_owner_node_id(graph, edge.source_id)
+        target_id = health_owner_node_id(graph, edge.target_id)
+        if source_id == target_id:
+            continue
+        projected_edge = BlueprintEdge(
+            edge.relation,
+            source_id,
+            target_id,
+            edge.required_version,
+            edge.target_blueprint_path,
+        )
+        key = (
+            projected_edge.relation,
+            projected_edge.source_id,
+            projected_edge.target_id,
+            projected_edge.required_version,
+            str(projected_edge.target_blueprint_path)
+            if projected_edge.target_blueprint_path is not None
+            else None,
+        )
+        projected.setdefault(key, projected_edge)
+    return tuple(sorted(projected.values(), key=lambda edge: (
+        edge.source_id,
+        edge.relation,
+        edge.target_id,
+        edge.required_version,
+    )))
+
+
+def health_postorder_node_ids(graph: SkillBlueprintGraph) -> tuple[str, ...]:
+    """Return health-owning nodes after their projected dependencies."""
+
+    edges_by_source: dict[str, list[str]] = {
+        node_id: [] for node_id in health_node_ids(graph)
+    }
+    for edge in health_edges(graph):
+        edges_by_source[edge.source_id].append(edge.target_id)
+    ordered: list[str] = []
+    visited: set[str] = set()
+
+    def visit(node_id: str) -> None:
+        if node_id in visited:
+            return
+        visited.add(node_id)
+        for target_id in sorted(edges_by_source[node_id]):
+            visit(target_id)
+        ordered.append(node_id)
+
+    for root_id in graph.root_node_ids or (graph.root.node_id,):
+        visit(health_owner_node_id(graph, root_id))
+    for node_id in health_node_ids(graph):
+        visit(node_id)
+    return tuple(ordered)
+
+
+def _edges_by_source(graph: SkillBlueprintGraph) -> dict[str, list[BlueprintEdge]]:
+    certified_ids = set(health_node_ids(graph))
+    result = {node_id: [] for node_id in certified_ids}
+    for edge in health_edges(graph):
         result[edge.source_id].append(edge)
     for edges in result.values():
         edges.sort(key=lambda edge: (edge.relation, edge.target_id, edge.required_version))
@@ -411,7 +511,7 @@ def compute_node_hash_states(
         visiting.remove(node_id)
         return state
 
-    for node_id in sorted(graph.nodes):
+    for node_id in health_node_ids(graph):
         compute(node_id)
     return states
 
@@ -566,6 +666,10 @@ def _validate_node_hash_state(
         _require_sha256_hash(node_id, "bound_file_hash", state.bound_file_hash)
 
     node = graph.nodes[node_id]
+    if node.embedded:
+        raise ArtifactHealthError(
+            f"{node_id}: embedded default interface is certified with its skill root"
+        )
     expected_local = _node_local_hash_components(node, schema_root)
     actual_local = (
         state.blueprint_file_hash,
@@ -774,7 +878,7 @@ def certify_graph(
         certifier=normalized_certifier,
     )
     records: dict[str, dict[str, Any]] = {}
-    for node_id in sorted(graph.nodes):
+    for node_id in health_node_ids(graph):
         node_checks = normalized if node_id == graph.root.node_id else ()
         source = {
             "vcs": "git",
@@ -808,8 +912,12 @@ def check_graph_health(
     normalized_certifier = deepcopy(dict(certifier))
     validator = schema_validator(load_schema(resolved_schema_root / "health.schema.json"))
     admitted_records: dict[str, dict[str, Any]] = {}
-    admission_concerns: dict[str, list[str]] = {node_id: [] for node_id in graph.nodes}
-    for node_id, node in graph.nodes.items():
+    certified_node_ids = health_node_ids(graph)
+    admission_concerns: dict[str, list[str]] = {
+        node_id: [] for node_id in certified_node_ids
+    }
+    for node_id in certified_node_ids:
+        node = graph.nodes[node_id]
         record = records.get(node_id)
         if not isinstance(record, dict):
             admission_concerns[node_id].append("missing-health-record")
@@ -956,7 +1064,7 @@ def check_graph_health(
         return status
 
     root_status = check(graph.root.node_id)
-    for node_id in sorted(graph.nodes):
+    for node_id in certified_node_ids:
         check(node_id)
     return GraphHealthReport(graph.root.node_id, root_status.healthy, statuses)
 
@@ -970,6 +1078,10 @@ def node_requires_refresh(status: NodeHealthStatus) -> bool:
 def health_path_for_node(node: BlueprintNode) -> Path:
     """Return the generated health sidecar path for a graph node."""
 
+    if node.embedded:
+        raise ArtifactHealthError(
+            f"{node.node_id}: embedded default interface has no separate health path"
+        )
     if node.blueprint_type == "skill":
         return node.skill_root / ".last_audit.json"
     if node.virtual:

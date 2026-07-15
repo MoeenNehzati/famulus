@@ -24,7 +24,10 @@ from officina.common.artifact_health import (
     build_node_health_record,
     check_graph_health,
     compute_node_hash_states,
+    health_edges,
+    health_node_ids,
     health_path_for_node,
+    health_postorder_node_ids,
     local_input_paths_for_node,
     node_requires_refresh,
 )
@@ -37,7 +40,6 @@ from officina.common.atomic_files import atomic_replace_bytes
 from officina.common.blueprint_graph import (
     SkillBlueprintGraph,
     load_validated_skill_blueprint_graph,
-    postorder_node_ids,
 )
 from officina.common.git_provenance import (
     GitSnapshot,
@@ -64,6 +66,7 @@ TEXT_FILE_SUFFIXES = {".md", ".markdown", ".py", ".txt", ".yaml", ".yml", ".json
 REQUIRED_SCHEMA_INPUTS = (
     "behavior-source.schema.json",
     "common.schema.json",
+    "default-llm-interface.schema.json",
     "health.schema.json",
     "legacy-skill.schema.json",
     "llm-interface.schema.json",
@@ -811,7 +814,8 @@ def _key_reasons(context: AuditContext) -> tuple[str, ...]:
 
 def _read_graph_records(graph: SkillBlueprintGraph) -> dict[str, dict[str, Any]]:
     records: dict[str, dict[str, Any]] = {}
-    for node_id, node in graph.nodes.items():
+    for node_id in health_node_ids(graph):
+        node = graph.nodes[node_id]
         path = health_path_for_node(node)
         if path.is_symlink():
             continue
@@ -901,7 +905,9 @@ def _node_is_current(status: NodeHealthStatus) -> bool:
 
 
 def _child_ids(graph: SkillBlueprintGraph, node_id: str) -> tuple[str, ...]:
-    return tuple(sorted(edge.target_id for edge in graph.edges if edge.source_id == node_id))
+    return tuple(
+        sorted(edge.target_id for edge in health_edges(graph) if edge.source_id == node_id)
+    )
 
 
 def audit_and_maybe_stamp_node(
@@ -1054,7 +1060,7 @@ def _finish_pool(context: AuditContext, report: GraphHealthReport) -> str:
     if not report.healthy:
         return "not-written"
     records = _read_graph_records(context.graph)
-    if set(records) != set(context.graph.nodes):
+    if set(records) != set(health_node_ids(context.graph)):
         return "not-written"
     pool_path = pooled_review_path(context.graph.skill_root)
     pool_health_path = pooled_review_health_path(context.graph.skill_root)
@@ -1117,7 +1123,7 @@ def finish_root_and_pool(
     report = check_graph_health_from_disk(context)
     reconciled = dict(outcomes)
     graph_current: dict[str, bool] = {}
-    for node_id in postorder_node_ids(context.graph):
+    for node_id in health_postorder_node_ids(context.graph):
         status = report.nodes[node_id]
         graph_current[node_id] = _node_is_current(status) and all(
             graph_current[child_id] for child_id in _child_ids(context.graph, node_id)
@@ -1145,7 +1151,9 @@ def finish_root_and_pool(
             reasons=tuple(dict.fromkeys((*root.reasons, "health-changed-before-finalization"))),
         )
         reconciled[root_id] = root
-    ordered = tuple(reconciled[node_id] for node_id in postorder_node_ids(context.graph))
+    ordered = tuple(
+        reconciled[node_id] for node_id in health_postorder_node_ids(context.graph)
+    )
     stamp_status = "failed" if any(node.stamp_status == "failed" for node in ordered) else root.stamp_status
     pool_status = _finish_pool(context, report)
     if pool_status not in POOL_STATUSES:
@@ -1166,7 +1174,7 @@ def finish_root_and_pool(
 
 def _semantic_only_typed_outcome(context: AuditContext) -> AuditOutcome:
     outcomes = []
-    for node_id in postorder_node_ids(context.graph):
+    for node_id in health_postorder_node_ids(context.graph):
         checks = context.node_checks.get(node_id, ())
         semantic_status = "passed" if _checks_pass(checks) else "failed"
         reason_list = (
@@ -1215,7 +1223,7 @@ def audit_typed_graph(context: AuditContext) -> AuditOutcome:
             return _semantic_only_typed_outcome(context)
         raise
     outcomes: dict[str, NodeAuditOutcome] = {}
-    for node_id in postorder_node_ids(context.graph):
+    for node_id in health_postorder_node_ids(context.graph):
         status = report.nodes[node_id]
         checks = context.node_checks.get(node_id, ())
         if _node_is_current(status) and _checks_pass(checks):
@@ -1293,7 +1301,7 @@ def _make_audit_context(
             )
     else:
         key = b"\0" * 32
-    node_checks = {node_id: () for node_id in graph.nodes}
+    node_checks = {node_id: () for node_id in health_node_ids(graph)}
     node_checks[graph.root.node_id] = (_semantic_check(findings),)
     evidence = [*mechanical, policy, key_readiness]
     evidence.append(

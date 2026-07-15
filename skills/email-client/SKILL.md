@@ -12,6 +12,7 @@ Skill Version: 3
 
 Uses Interfaces:
 - `email-client.llm.default -> connect-google.llm.default@1`
+- `email-client.llm.default -> email-client.machine.accounts-setup-oauth@1`
 
 Public Interfaces:
 - `email-client.llm.default`
@@ -156,8 +157,11 @@ credential store.
 
 For initial Google setup or Gmail OAuth reauthorization, use
 `connect-google.llm.default` to prepare the shared Desktop client, then return
-here. email-client alone lists, registers, updates, authorizes, and verifies
-Gmail accounts. Keep non-Google account and app-password setup here as well.
+here. Select or register the Gmail nickname, then invoke
+`email-client.machine.accounts-setup-oauth` with that nickname and
+`--client-config ~/.config/connect-google/client.json`. email-client alone
+lists, registers, updates, authorizes, and verifies Gmail accounts. Keep
+non-Google account and app-password setup here as well.
 
 ```bash
 accounts-list

@@ -107,12 +107,20 @@
         "enforcement": {"state": "current", "task": "Task 8", "acceptance": "isolated-validator", "note": "Typed graph loading and source validation require existing regular bindings and validate declared local_hash_inputs."}
       },
       "root-interface-edge": {
-        "description": "Require one canonical root and an explicit default LLM interface edge.",
-        "creation": "Declare the default LLM sidecar from the canonical root interfaces list.",
+        "description": "Require one canonical root and exactly one default LLM interface representation.",
+        "creation": "Define default_interface inline for new skills; retain a default sidecar edge only for compatibility.",
         "validator": "references/blueprint/skill.schema.json",
         "tests": ["tests/test_typed_blueprint_schemas.py"],
-        "template": "The root example points to .SKILL.md.blueprint.yaml.",
+        "template": "The root example defines blueprint.yaml#default_interface.",
         "enforcement": {"state": "schema", "task": "current", "acceptance": "schema", "note": "The typed skill schema is the current acceptance component."}
+      },
+      "default-interface": {
+        "description": "Treat the inline default contract as the canonical skill.llm.default interface bound to SKILL.md.",
+        "creation": "Author the default contract under blueprint.yaml default_interface without a separate ID, binding, sidecar, or health record.",
+        "validator": "src/officina/common/blueprint_graph.py",
+        "tests": ["tests/test_typed_blueprint_schemas.py", "tests/test_officina_blueprint_graph.py", "tests/test_officina_artifact_health.py"],
+        "template": "Use blueprint.yaml#default_interface for the default LLM contract.",
+        "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-graph", "note": "Schema and graph normalization enforce one representation and root health folds the inline default into the skill."}
       },
       "relationship-edge": {
         "description": "Resolve graph edges, target types, uniqueness, reachability, and cycles.",
@@ -199,7 +207,7 @@
         "creation": "For binding P, use dirname(P)/.basename(P).blueprint.yaml. For multiple bound nodes, use dirname(P)/.basename(P).<qualifier>.blueprint.yaml with a distinct qualifier for every node.",
         "validator": "src/officina/common/blueprint_graph.py",
         "tests": ["tests/test_officina_blueprint_graph.py"],
-        "template": "Use .SKILL.md.blueprint.yaml and the qualified _rtx/._runner.py.first.blueprint.yaml and _rtx/._runner.py.second.blueprint.yaml paths.",
+        "template": "Keep the default inline and use qualified _rtx/._runner.py.first.blueprint.yaml and _rtx/._runner.py.second.blueprint.yaml paths for shared subordinate bindings.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-graph", "note": "Direct-owner loading enforces deterministic and qualified sidecar paths. Selected-provider loading derives same-binding peers from root locators and naming, so it applies the same rule without opening unused sidecars."}
       },
       "binding-tracked": {

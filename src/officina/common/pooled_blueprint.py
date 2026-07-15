@@ -16,7 +16,11 @@ from urllib.parse import unquote, urljoin, urlsplit
 import jsonschema
 import yaml
 
-from .artifact_health import GraphHealthReport
+from .artifact_health import (
+    GraphHealthReport,
+    health_node_ids,
+    health_owner_node_id,
+)
 from .audit_records import attach_record_authentication, record_authentication_matches
 from .blueprint_graph import SkillBlueprintGraph
 
@@ -534,7 +538,7 @@ def render_pooled_review(
     nodes: list[dict[str, Any]] = []
     for node_id in sorted(graph.nodes):
         node = graph.nodes[node_id]
-        record = records.get(node_id, {})
+        record = records.get(health_owner_node_id(graph, node_id), {})
         hashes = record.get("hashes", {}) if isinstance(record, dict) else {}
         nodes.append(
             {
@@ -636,7 +640,7 @@ def _records_are_admitted(
     key: bytes,
     health_validator: jsonschema.Draft7Validator,
 ) -> bool:
-    node_ids = set(graph.nodes)
+    node_ids = set(health_node_ids(graph))
     if (
         not root_report.healthy
         or graph.root.node_id != root_report.root_id

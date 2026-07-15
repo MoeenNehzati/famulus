@@ -77,6 +77,18 @@
         }
       }
     },
+    "connect-google": {
+      "interfaces": {
+        "client-status": {
+          "id": "connect-google.machine.client-status",
+          "dependencies": []
+        },
+        "install-client": {
+          "id": "connect-google.machine.install-client",
+          "dependencies": []
+        }
+      }
+    },
     "daily-plan": {
       "interfaces": {
         "mutate-plan": {

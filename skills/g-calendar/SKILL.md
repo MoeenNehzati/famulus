@@ -17,6 +17,7 @@ Skill Version: 1
 
 Uses Interfaces:
 - `g-calendar.llm.default -> connect-google.llm.default@1`
+- `g-calendar.llm.default -> g-calendar.machine.setup-oauth@1`
 
 Public Interfaces:
 - `g-calendar.llm.default`
@@ -195,7 +196,9 @@ a non-mutating Calendar request succeeds.
 For initial Google setup or reauthorization after `invalid_grant` or
 `invalid_client`, use `connect-google.llm.default` to prepare the shared Desktop
 client, then return here for Calendar authorization. This skill invokes its own
-setup interface and owns Calendar credentials and verification. Do not
+`g-calendar.machine.setup-oauth` interface with
+`--from-json ~/.config/connect-google/client.json` and owns Calendar credentials
+and verification. Do not
 duplicate the Cloud Console procedure here.
 
 After setup, use `scripts-gcal` with `calendars`, then `agenda`, for an

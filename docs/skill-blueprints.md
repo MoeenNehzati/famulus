@@ -30,10 +30,11 @@ Each blueprint-backed skill has one canonical graph root:
 skills/<skill>/blueprint.yaml
 ```
 
-That root owns skill-level identity and locates the skill's interface nodes.
-Each interface or behavior-source node owns its own contract in a hidden
-sidecar beside the file it binds. Nodes point to dependencies; they do not copy
-facts owned by those dependencies.
+That root owns skill-level identity, the default LLM interface contract, and
+locators for additional interface nodes. Each additional interface or
+behavior-source node owns its own contract in a hidden sidecar beside the file
+it binds. Nodes point to dependencies; they do not copy facts owned by those
+dependencies.
 
 The authority order is:
 
@@ -53,8 +54,10 @@ The typed graph has four authored node kinds.
 
 ### Skill root
 
-The skill root owns facts about the skill as a whole and version-pinned
-locators for its interfaces. It does not inline interface-local contracts.
+The skill root owns facts about the skill as a whole, the inline
+`default_interface`, and version-pinned locators for additional interfaces.
+The inline interface has the canonical ID `<skill>.llm.default` and is
+implicitly bound to `SKILL.md`.
 
 ### LLM interface
 
@@ -89,11 +92,11 @@ private files.
 
 ## File Layout
 
-A node sidecar is hidden beside its bound file:
+A subordinate node sidecar is hidden beside its bound file:
 
 ```text
 SKILL.md
-.SKILL.md.blueprint.yaml
+blueprint.yaml  # includes default_interface
 
 _rtx/_worker.py
 _rtx/._worker.py.blueprint.yaml
@@ -106,14 +109,15 @@ If multiple nodes bind the same file, their sidecar names are qualified by
 local node name. The skill root alone keeps the unsuffixed `blueprint.yaml`
 name.
 
-The exact naming rules and examples are maintained in the concrete schemas and
+Existing typed skills may retain `.SKILL.md.blueprint.yaml` as a compatibility
+representation, but a root must not define both forms. The exact naming rules and examples are maintained in the concrete schemas and
 the committed artifact-layout manifest, not here.
 
 ## Authored And Generated Artifacts
 
 Authored contract inputs include:
 
-- the root `blueprint.yaml`;
+- the root `blueprint.yaml` and default-bound `SKILL.md`;
 - reachable interface and behavior-source sidecars;
 - the instruction, runtime, and source files bound by those nodes.
 
@@ -126,6 +130,9 @@ Generated or local-state outputs include:
 
 Generated artifacts must agree with the authored graph, but they never become
 inputs that silently redefine it.
+
+The inline default has no independent health record. Root skill health covers
+the root contract, `SKILL.md`, and the default interface's downstream edges.
 
 ## Authoring Workflow
 

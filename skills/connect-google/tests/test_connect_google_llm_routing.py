@@ -26,7 +26,7 @@ def body(relative: str) -> str:
 
 def test_root_and_llm_interface_graph() -> None:
     root = load("blueprint.yaml")
-    default = load(".SKILL.md.blueprint.yaml")
+    default = root["default_interface"]
     create_client = load("llm_interfaces/.create-client.md.blueprint.yaml")
     connect_services = load("llm_interfaces/.connect-services.md.blueprint.yaml")
 
@@ -34,6 +34,7 @@ def test_root_and_llm_interface_graph() -> None:
     assert root["category"] == "workflow-general-assistant"
     assert root["role"] == "integration"
     assert root["kind"] == "setup"
+    assert not (SKILL_ROOT / ".SKILL.md.blueprint.yaml").exists()
     assert default["uses_interfaces"] == [
         {"interface": "connect-google.machine.client-status", "version": 1},
         {"interface": "connect-google.llm.create-client", "version": 1},
@@ -52,7 +53,6 @@ def test_root_and_llm_interface_graph() -> None:
 
     interface_ids = {edge["interface"] for edge in root["interfaces"]}
     assert interface_ids == {
-        "connect-google.llm.default",
         "connect-google.llm.create-client",
         "connect-google.llm.connect-services",
         "connect-google.machine.client-status",
@@ -64,6 +64,20 @@ def test_root_and_llm_interface_graph() -> None:
             assert not edge["interface"].startswith(
                 ("cloud-files.machine.", "g-calendar.machine.", "email-client.machine.")
             )
+
+
+def test_client_status_declares_every_google_client_path_it_reads() -> None:
+    node = load("_rtx/._client_config.py.client-status.blueprint.yaml")
+
+    declared_paths = {
+        entry["path"] for entry in node["direct_io"]["reads"]
+    }
+
+    assert declared_paths == {
+        "$HOME/.config/connect-google/client.json",
+        "$HOME/.config/cloud-files/client.json",
+        "$HOME/.config/g-calendar/client.json",
+    }
 
 
 def test_default_router_contract() -> None:

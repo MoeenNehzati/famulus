@@ -89,24 +89,51 @@ def _load_client(path: Path) -> dict[str, object]:
     return validate_client_payload(payload)
 
 
-def _result(status: str, client_type: str, path: Path) -> dict[str, str]:
+def _result(status: str, client_type: str, path: Path) -> dict[str, object]:
     return {"status": status, "client_type": client_type, "path": str(path)}
 
 
-def client_status(home: Path) -> dict[str, str]:
+def _legacy_candidates(home: Path) -> tuple[list[dict[str, str]], list[dict[str, object]]]:
+    candidates: list[dict[str, str]] = []
+    payloads: list[dict[str, object]] = []
+    for service in ("cloud-files", "g-calendar"):
+        path = Path(home) / ".config" / service / "client.json"
+        if path.is_symlink():
+            continue
+        try:
+            payload = _load_client(path)
+        except ClientConfigError:
+            continue
+        candidates.append({"service": service, "path": str(path)})
+        payloads.append(payload)
+    return candidates, payloads
+
+
+def client_status(home: Path) -> dict[str, object]:
     path = canonical_client_path(home)
     if not path.exists() and not path.is_symlink():
-        return _result("missing", "none", path)
-    if path.is_symlink():
-        return _result("invalid", "unknown", path)
-    try:
-        _load_client(path)
-    except ClientConfigError:
-        return _result("invalid", "unknown", path)
-    return _result("valid", "desktop", path)
+        result = _result("missing", "none", path)
+    elif path.is_symlink():
+        result = _result("invalid", "unknown", path)
+    else:
+        try:
+            _load_client(path)
+        except ClientConfigError:
+            result = _result("invalid", "unknown", path)
+        else:
+            return _result("valid", "desktop", path)
+
+    candidates, payloads = _legacy_candidates(home)
+    if candidates:
+        result["legacy_candidates"] = candidates
+    if len(payloads) > 1:
+        result["legacy_candidates_match"] = all(
+            payload == payloads[0] for payload in payloads[1:]
+        )
+    return result
 
 
-def install_client(source: Path, home: Path, replace: bool) -> dict[str, str]:
+def install_client(source: Path, home: Path, replace: bool) -> dict[str, object]:
     payload = _load_client(Path(source))
     destination = canonical_client_path(home)
     existed = destination.exists() or destination.is_symlink()

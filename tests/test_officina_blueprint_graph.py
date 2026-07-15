@@ -258,6 +258,47 @@ def test_edge_key_and_postorder_are_canonical_and_deterministic(shared_repo: Pat
     )
 
 
+def test_inline_default_is_normalized_as_logical_llm_interface(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    _write_skill_file(skill)
+    _write_yaml(
+        skill / "blueprint.yaml",
+        {
+            "schema_version": 2,
+            "blueprint_type": "skill",
+            "id": "demo-skill",
+            "category": "development-assistant",
+            "role": "automation",
+            "kind": "tool",
+            "default_interface": {
+                "version": 1,
+                "description": "Primary instructions.",
+                "allow_all_skills": True,
+                "uses_interfaces": [],
+                "behavior_sources": [],
+                "direct_io": {"reads": [], "writes": [], "network": []},
+                "owns_filesystem": [],
+            },
+            "interfaces": [],
+        },
+    )
+
+    graph = load_skill_blueprint_graph(skill, SCHEMA_ROOT)
+    default = graph.nodes["demo-skill.llm.default"]
+
+    assert default.blueprint_type == "llm-interface"
+    assert default.binding_path == skill / "SKILL.md"
+    assert default.blueprint_path == skill / "blueprint.yaml"
+    assert default.embedded is True
+    assert edge_projection(graph, "demo-skill") == (
+        ("declares-interface", "demo-skill", "demo-skill.llm.default", 1, None),
+    )
+    assert expanded_legacy_blueprint(graph)["interfaces"]["llm"]["default"]["binding"] == {
+        "kind": "skill_file",
+        "path": "SKILL.md",
+    }
+
+
 def test_legacy_root_expands_interfaces_without_writing_sidecars(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     _write_skill_file(skill)

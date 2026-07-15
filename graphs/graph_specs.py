@@ -523,6 +523,7 @@ GRAPH_SPECS: dict[str, dict] = {
                                 "productivity",
                                 "productivity",
                                 [
+                                    node("connect-google", "connect-google", **CYAN),
                                     node("email-client", "email-client", **CYAN),
                                     node("email-triage", "email-triage", **CYAN),
                                     node("g-calendar", "g-calendar", **CYAN),
@@ -623,7 +624,8 @@ GRAPH_SPECS: dict[str, dict] = {
             {"source": "loose-mode", "target": "prepare-handoff", "hidden": True},
             {"source": "tight-mode", "target": "tool-applicability", "hidden": True},
             {"source": "tool-applicability", "target": "wrap-up", "hidden": True},
-            {"source": "technical-flow-review", "target": "email-client", "hidden": True},
+            {"source": "technical-flow-review", "target": "connect-google", "hidden": True},
+            {"source": "connect-google", "target": "email-client", "hidden": True},
             {"source": "list-manager", "target": "daily-plan", "hidden": True},
             {"source": "wrap-up", "target": "git-workflow", "hidden": True},
             {"source": "hook-maker", "target": "install-assistant-tools", "hidden": True},

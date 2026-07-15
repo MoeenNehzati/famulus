@@ -175,6 +175,20 @@ def make_typed_skill(repo: Path, name: str = "demo-skill") -> Path:
     return skill
 
 
+def inline_typed_default(skill: Path) -> None:
+    root = yaml.safe_load((skill / "blueprint.yaml").read_text(encoding="utf-8"))
+    sidecar_path = skill / ".SKILL.md.blueprint.yaml"
+    sidecar = yaml.safe_load(sidecar_path.read_text(encoding="utf-8"))
+    root["default_interface"] = {
+        key: value
+        for key, value in sidecar.items()
+        if key not in {"schema_version", "blueprint_type", "id", "binding"}
+    }
+    root["interfaces"] = []
+    write(skill / "blueprint.yaml", yaml.safe_dump(root, sort_keys=False))
+    sidecar_path.unlink()
+
+
 def write_typed_health(repo: Path, skill_name: str = "demo-skill") -> None:
     graph = resolve_repository_skill_graph(
         load_repository_blueprint_graphs(repo),
@@ -273,6 +287,18 @@ def test_matching_typed_health_graph_is_current(tmp_path: Path) -> None:
 
     assert report.derived_status == "audit-current"
     assert report.concerns == []
+
+
+def test_matching_inline_default_health_graph_is_current(tmp_path: Path) -> None:
+    skill = make_typed_skill(tmp_path)
+    inline_typed_default(skill)
+    write_typed_health(tmp_path)
+
+    report = checker.check_skill(source_for(tmp_path), "demo-skill")
+
+    assert report.derived_status == "audit-current"
+    assert report.concerns == []
+    assert not (skill / ".SKILL.md.health.json").exists()
 
 
 def test_typed_drift_uses_target_installation_schema_snapshot(

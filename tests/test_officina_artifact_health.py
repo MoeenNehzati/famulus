@@ -110,6 +110,22 @@ def _graph(tmp_path: Path):
     return load_skill_blueprint_graph(skill), source
 
 
+def _inline_graph(tmp_path: Path):
+    graph, source = _graph(tmp_path)
+    skill = graph.skill_root
+    default = yaml.safe_load((skill / ".SKILL.md.blueprint.yaml").read_text())
+    root = yaml.safe_load((skill / "blueprint.yaml").read_text())
+    root["default_interface"] = {
+        key: value
+        for key, value in default.items()
+        if key not in {"schema_version", "blueprint_type", "id", "binding"}
+    }
+    root["interfaces"] = []
+    _write_yaml(skill / "blueprint.yaml", root)
+    (skill / ".SKILL.md.blueprint.yaml").unlink()
+    return load_skill_blueprint_graph(skill), source
+
+
 def _certify(graph, timestamp: str = "2026-07-13T12:00:00-04:00"):
     return certify_graph(
         graph,
@@ -174,6 +190,22 @@ def test_certification_writes_authenticated_bottom_up_records(tmp_path: Path) ->
         "interface": "skill-audit.machine.certify",
         "version": 1,
     }
+
+
+def test_inline_default_is_certified_as_part_of_skill_root(tmp_path: Path) -> None:
+    graph, _source = _inline_graph(tmp_path)
+
+    records = _certify(graph)
+    states = _states(graph)
+
+    assert set(records) == {"demo-skill", "demo-skill.source.policy"}
+    assert set(states) == set(records)
+    assert records["demo-skill"]["subject"]["binding_path"] == "SKILL.md"
+    assert records["demo-skill"]["dependencies"][0]["target"] == (
+        "demo-skill.source.policy"
+    )
+    with pytest.raises(ArtifactHealthError, match="embedded default"):
+        health_path_for_node(graph.nodes["demo-skill.llm.default"])
 
 
 def test_raw_command_output_does_not_change_stable_checks() -> None:
@@ -275,6 +307,32 @@ def test_declared_local_hash_input_changes_local_hash(tmp_path: Path) -> None:
 
     extra.write_text("two\n", encoding="utf-8")
     second = _states(graph)[node_id]
+
+    assert first.local_hash != second.local_hash
+
+
+def test_inline_default_local_hash_input_is_owned_by_skill_health(
+    tmp_path: Path,
+) -> None:
+    graph, _source = _inline_graph(tmp_path)
+    extra = graph.skill_root / "references" / "inline-policy.json"
+    extra.write_text("one\n", encoding="utf-8")
+    root = replace(
+        graph.root,
+        declaration={
+            **graph.root.declaration,
+            "default_interface": {
+                **graph.root.declaration["default_interface"],
+                "local_hash_inputs": ["references/inline-policy.json"],
+            },
+        },
+    )
+    graph = replace(graph, root=root, nodes={**graph.nodes, root.node_id: root})
+
+    assert extra in local_input_paths_for_node(root)
+    first = _states(graph)[root.node_id]
+    extra.write_text("two\n", encoding="utf-8")
+    second = _states(graph)[root.node_id]
 
     assert first.local_hash != second.local_hash
 
@@ -958,32 +1016,47 @@ def test_cross_skill_downstream_change_propagates_to_consumer_root(tmp_path: Pat
     _write_yaml(
         tmp_path / "skills" / "provider-skill" / "blueprint.yaml",
         {
-            "interfaces": {
-                "llm": {
-                    "default": {
-                        "version": 1,
-                        "binding": {"kind": "skill_file", "path": "SKILL.md"},
-                        "behavior_sources": [],
-                    }
-                }
-            }
+            "schema_version": 2,
+            "blueprint_type": "skill",
+            "id": "provider-skill",
+            "category": "development-assistant",
+            "role": "automation",
+            "kind": "tool",
+            "skill_interface": {"inputs": [], "outputs": [], "side_effects": []},
+            "default_interface": {
+                "version": 1,
+                "description": "Provider interface.",
+                "allow_all_skills": True,
+                "uses_interfaces": [],
+                "behavior_sources": [],
+                "direct_io": {"reads": [], "writes": [], "network": []},
+                "owns_filesystem": [],
+            },
+            "interfaces": [],
         },
     )
     _write_yaml(
         tmp_path / "skills" / "consumer-skill" / "blueprint.yaml",
         {
-            "interfaces": {
-                "llm": {
-                    "default": {
-                        "version": 1,
-                        "binding": {"kind": "skill_file", "path": "SKILL.md"},
-                        "behavior_sources": [],
-                        "uses_interfaces": [
-                            {"interface": "provider-skill.llm.default", "version": 1}
-                        ],
-                    }
-                }
-            }
+            "schema_version": 2,
+            "blueprint_type": "skill",
+            "id": "consumer-skill",
+            "category": "development-assistant",
+            "role": "automation",
+            "kind": "tool",
+            "skill_interface": {"inputs": [], "outputs": [], "side_effects": []},
+            "default_interface": {
+                "version": 1,
+                "description": "Consumer interface.",
+                "allow_all_skills": True,
+                "uses_interfaces": [
+                    {"interface": "provider-skill.llm.default", "version": 1}
+                ],
+                "behavior_sources": [],
+                "direct_io": {"reads": [], "writes": [], "network": []},
+                "owns_filesystem": [],
+            },
+            "interfaces": [],
         },
     )
     graph = resolve_repository_skill_graph(
@@ -1008,6 +1081,7 @@ def test_cross_skill_downstream_change_propagates_to_consumer_root(tmp_path: Pat
         key=KEY,
     )
 
-    assert not report.nodes["provider-skill.llm.default"].healthy
-    assert not report.nodes["consumer-skill.llm.default"].healthy
+    assert "provider-skill.llm.default" not in records
+    assert "consumer-skill.llm.default" not in records
+    assert not report.nodes["provider-skill"].healthy
     assert not report.nodes["consumer-skill"].healthy

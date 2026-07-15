@@ -49,15 +49,17 @@ def test_email_interfaces_are_not_exposed_to_connect_google() -> None:
 
 
 def test_google_service_llm_interfaces_delegate_to_connect_google() -> None:
-    for skill in (
-        "cloud-files",
-        "g-calendar",
-        "email-client",
-    ):
+    setup_interfaces = {
+        "cloud-files": "cloud-files.machine.setup-oauth",
+        "g-calendar": "g-calendar.machine.setup-oauth",
+        "email-client": "email-client.machine.accounts-setup-oauth",
+    }
+    for skill, setup_interface in setup_interfaces.items():
         node = interface_node(skill, f"{skill}.llm.default")
         assert {"interface": "connect-google.llm.default", "version": 1} in node[
             "uses_interfaces"
         ]
+        assert {"interface": setup_interface, "version": 1} in node["uses_interfaces"]
 
 
 def test_service_guidance_has_one_google_onboarding_owner() -> None:
@@ -69,6 +71,27 @@ def test_service_guidance_has_one_google_onboarding_owner() -> None:
         assert "create an oauth client" not in text
         assert "create credentials" not in text
         assert "google cloud project" not in text
+
+
+def test_service_guidance_hands_canonical_client_to_owned_setup_interface() -> None:
+    expected = {
+        "cloud-files": (
+            "cloud-files.machine.setup-oauth",
+            "--from-json ~/.config/connect-google/client.json",
+        ),
+        "g-calendar": (
+            "g-calendar.machine.setup-oauth",
+            "--from-json ~/.config/connect-google/client.json",
+        ),
+        "email-client": (
+            "email-client.machine.accounts-setup-oauth",
+            "--client-config ~/.config/connect-google/client.json",
+        ),
+    }
+    for skill, fragments in expected.items():
+        text = authored_skill(skill)
+        for fragment in fragments:
+            assert fragment in text
 
 
 def test_installer_does_not_depend_on_connect_google() -> None:

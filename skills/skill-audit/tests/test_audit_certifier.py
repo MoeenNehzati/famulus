@@ -136,6 +136,20 @@ def make_typed_skill(repo: Path, name: str = "demo-skill") -> Path:
     return skill
 
 
+def inline_typed_default(skill: Path) -> None:
+    root = yaml.safe_load((skill / "blueprint.yaml").read_text(encoding="utf-8"))
+    sidecar_path = skill / ".SKILL.md.blueprint.yaml"
+    sidecar = yaml.safe_load(sidecar_path.read_text(encoding="utf-8"))
+    root["default_interface"] = {
+        key: value
+        for key, value in sidecar.items()
+        if key not in {"schema_version", "blueprint_type", "id", "binding"}
+    }
+    root["interfaces"] = []
+    write(skill / "blueprint.yaml", yaml.safe_dump(root, sort_keys=False))
+    sidecar_path.unlink()
+
+
 def make_shared_source_consumers(repo: Path) -> tuple[Path, Path, Path]:
     consumers = (
         make_typed_skill(repo, "first-skill"),
@@ -621,6 +635,33 @@ def test_typed_certification_writes_authenticated_graph_and_pooled_health(
     assert record_authentication_matches(interface, key)
     assert record_authentication_matches(pooled, key)
     assert (skill / ".pooled-blueprint-review.yaml").is_file()
+
+
+def test_inline_default_certification_uses_only_skill_health_identity(
+    tmp_path: Path,
+) -> None:
+    skill = make_typed_skill(tmp_path)
+    inline_typed_default(skill)
+    make_commit_backed(tmp_path)
+
+    _mechanical, outcomes = certifier.certify(
+        FakeDispatcher(tmp_path),
+        targets=["demo-skill"],
+        skip_mechanical=True,
+        timestamp="2026-07-13T12:00:00-04:00",
+    )
+
+    assert outcomes_by_node(outcomes[0]).keys() == {"demo-skill"}
+    assert (skill / ".last_audit.json").is_file()
+    assert not (skill / ".SKILL.md.health.json").exists()
+    pooled = yaml.safe_load(
+        (skill / ".pooled-blueprint-review.yaml").read_text(encoding="utf-8")
+    )
+    assert [node["id"] for node in pooled["nodes"]] == [
+        "demo-skill",
+        "demo-skill.llm.default",
+    ]
+    assert pooled["nodes"][0]["health"] == pooled["nodes"][1]["health"]
 
 
 def test_typed_certification_uses_target_installation_schema_root(

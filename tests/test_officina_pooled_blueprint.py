@@ -106,6 +106,48 @@ def _fixture(tmp_path: Path):
     return skill, graph, records, root_report, pool_path, health_path
 
 
+def _inline_fixture(tmp_path: Path):
+    skill, _graph, _records, _report, _pool_path, _health_path = _fixture(tmp_path)
+    sidecar_path = skill / ".SKILL.md.blueprint.yaml"
+    sidecar = yaml.safe_load(sidecar_path.read_text(encoding="utf-8"))
+    root = yaml.safe_load((skill / "blueprint.yaml").read_text(encoding="utf-8"))
+    root["default_interface"] = {
+        key: value
+        for key, value in sidecar.items()
+        if key not in {"schema_version", "blueprint_type", "id", "binding"}
+    }
+    root["interfaces"] = []
+    _write_yaml(skill / "blueprint.yaml", root)
+    sidecar_path.unlink()
+    graph = load_skill_blueprint_graph(skill)
+    records = certify_graph(
+        graph,
+        POLICY_HASH,
+        SCHEMA_HASH,
+        [{"id": "schema", "passed": True}],
+        key=KEY,
+        certified_at="2026-07-13T12:00:00-04:00",
+    )
+    report = check_graph_health(graph, records, POLICY_HASH, SCHEMA_HASH, KEY)
+    pool_path = pooled_review_path(skill)
+    pool_path.write_text(render_pooled_review(graph, records), encoding="utf-8")
+    health_path = pooled_review_health_path(skill)
+    health_path.write_text(
+        json.dumps(
+            certify_pooled_review(
+                pool_path,
+                records[graph.root.node_id],
+                key=KEY,
+                certified_at="2026-07-13T12:00:00-04:00",
+            ),
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return skill, graph, records, report, pool_path, health_path
+
+
 def _check(
     pool_path: Path,
     health_path: Path,
@@ -139,6 +181,19 @@ def test_pooled_review_is_deterministic_and_expands_nodes(tmp_path: Path) -> Non
         "demo-skill",
         "demo-skill.llm.default",
     ]
+
+
+def test_inline_default_pool_inherits_root_health_without_extra_record(
+    tmp_path: Path,
+) -> None:
+    _skill, graph, records, report, pool_path, health_path = _inline_fixture(tmp_path)
+
+    loaded = yaml.safe_load(pool_path.read_text(encoding="utf-8"))
+    checked = _check(pool_path, health_path, report, graph, records)
+
+    assert set(records) == {"demo-skill"}
+    assert loaded["nodes"][0]["health"] == loaded["nodes"][1]["health"]
+    assert checked.healthy
 
 
 def test_pool_content_change_only_makes_pool_unhealthy(tmp_path: Path) -> None:

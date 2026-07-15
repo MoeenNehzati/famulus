@@ -6,9 +6,11 @@ services—Drive, Calendar, and Gmail—and tell the user that any subset is val
 ## Client preparation
 
 Check `connect-google.machine.client-status`. If it is valid, reuse it. If it is
-missing or invalid, obtain a local Desktop client JSON path and use
-`connect-google.machine.install-client`. Replacing a different canonical client
-requires explicit confirmation. Never expose file contents or tokens.
+missing or invalid and reports legacy candidates, ask before importing one with
+`connect-google.machine.install-client`. If multiple candidates differ, ask the
+user which one to import. Otherwise obtain a local Desktop client JSON path and
+use `connect-google.machine.install-client`. Replacing a different canonical
+client requires explicit confirmation. Never expose file contents or tokens.
 
 ## Service-owned handoff
 

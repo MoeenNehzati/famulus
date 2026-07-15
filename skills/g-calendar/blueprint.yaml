@@ -236,4 +236,9 @@ interfaces:
         network: []
       owns_filesystem: []
       allow_all_skills: true
+      uses_interfaces:
+      - interface: connect-google.llm.default
+        version: 1
+      - interface: g-calendar.machine.setup-oauth
+        version: 1
       behavior_sources: []

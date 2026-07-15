@@ -40,6 +40,7 @@ class BlueprintNode:
     binding_path: Path | None
     declaration: dict[str, Any]
     virtual: bool = False
+    embedded: bool = False
 
 
 @dataclass(frozen=True)
@@ -591,13 +592,37 @@ def _typed_graph(
             f"{blueprint_path}: skill id {skill_id!r} must match directory name {skill_root.name!r}"
         )
 
+    inline_default = declaration.get("default_interface")
+    inline_default_id = f"{skill_id}.llm.default"
+    if inline_default is not None and not isinstance(inline_default, dict):
+        raise BlueprintGraphError(f"{blueprint_path}: default_interface must be a mapping")
+    raw_interfaces = declaration.get("interfaces")
+    if not isinstance(raw_interfaces, list):
+        raise BlueprintGraphError(f"{blueprint_path}: typed interfaces must be a list")
+    sidecar_default = any(
+        isinstance(entry, dict) and entry.get("interface") == inline_default_id
+        for entry in raw_interfaces
+    )
+    if inline_default is not None and sidecar_default:
+        raise BlueprintGraphError(
+            f"{blueprint_path}: define exactly one default interface representation"
+        )
+    if inline_default is None and not sidecar_default and schema_root is not None:
+        raise BlueprintGraphError(
+            f"{blueprint_path}: define exactly one default interface representation"
+        )
+    root_version = (
+        _positive_version(inline_default.get("version"), f"{blueprint_path}:default_interface")
+        if inline_default is not None
+        else 1
+    )
     root = BlueprintNode(
         node_id=skill_id,
         blueprint_type="skill",
-        version=1,
+        version=root_version,
         skill_root=skill_root,
         blueprint_path=blueprint_path,
-        binding_path=None,
+        binding_path=skill_root / "SKILL.md" if inline_default is not None else None,
         declaration=declaration,
     )
     nodes: dict[str, BlueprintNode] = {skill_id: root}
@@ -702,9 +727,70 @@ def _typed_graph(
                     load_node(target_path, target_id, target_version)
         return node
 
-    raw_interfaces = declaration.get("interfaces")
-    if not isinstance(raw_interfaces, list):
-        raise BlueprintGraphError(f"{blueprint_path}: typed interfaces must be a list")
+    if (
+        inline_default is not None
+        and (selected_interface_ids is None or inline_default_id in selected_interface_ids)
+    ):
+        version = _positive_version(
+            inline_default.get("version"), f"{blueprint_path}:default_interface"
+        )
+        embedded_declaration = {
+            "schema_version": 2,
+            "blueprint_type": "llm-interface",
+            "id": inline_default_id,
+            "binding": {"kind": "instruction-file", "path": "SKILL.md"},
+            **deepcopy(inline_default),
+        }
+        embedded = BlueprintNode(
+            node_id=inline_default_id,
+            blueprint_type="llm-interface",
+            version=version,
+            skill_root=skill_root,
+            blueprint_path=blueprint_path,
+            binding_path=skill_root / "SKILL.md",
+            declaration=embedded_declaration,
+            embedded=True,
+        )
+        nodes[inline_default_id] = embedded
+        paths_by_id[inline_default_id] = blueprint_path
+        edges.append(
+            BlueprintEdge("declares-interface", skill_id, inline_default_id, version)
+        )
+        for relation, field, id_field in (
+            ("uses-interface", "uses_interfaces", "interface"),
+            ("uses-behavior-source", "behavior_sources", "source"),
+        ):
+            raw_entries = embedded_declaration.get(field, [])
+            if not isinstance(raw_entries, list):
+                continue
+            for index, entry in enumerate(raw_entries):
+                if not isinstance(entry, dict):
+                    continue
+                target_id = entry.get(id_field)
+                if not isinstance(target_id, str) or not target_id:
+                    continue
+                target_version = _positive_version(
+                    entry.get("version"), f"{blueprint_path}:default_interface.{field}[{index}]"
+                )
+                target_path = None
+                if "blueprint" in entry:
+                    target_path = _resolve_locator(
+                        skill_root,
+                        entry["blueprint"],
+                        f"{blueprint_path}:default_interface.{field}[{index}]",
+                        repo_root,
+                    )
+                edges.append(
+                    BlueprintEdge(
+                        relation,
+                        inline_default_id,
+                        target_id,
+                        target_version,
+                        target_path,
+                    )
+                )
+                if target_path is not None:
+                    load_node(target_path, target_id, target_version)
     for index, entry in enumerate(raw_interfaces):
         if not isinstance(entry, dict):
             raise BlueprintGraphError(f"{blueprint_path}:interfaces[{index}] must be a mapping")
@@ -862,7 +948,8 @@ def _validate_typed_layout(graph: SkillBlueprintGraph) -> None:
                 f"{node.blueprint_path}: binding must be an existing regular file: {exc}"
             ) from exc
         binding_handle.close()
-        bound_nodes.setdefault(binding_path, []).append(node)
+        if not node.embedded:
+            bound_nodes.setdefault(binding_path, []).append(node)
 
     for binding_path, nodes in bound_nodes.items():
         locator_entries = _root_binding_locator_entries(graph, binding_path)
@@ -1117,11 +1204,20 @@ def authored_node_input_paths(node: BlueprintNode) -> tuple[Path, ...]:
     paths = {node.blueprint_path}
     if node.binding_path is not None:
         paths.add(node.binding_path)
-    declared_inputs = node.declaration.get("local_hash_inputs", [])
-    if not isinstance(declared_inputs, list):
+    declared_inputs_value = node.declaration.get("local_hash_inputs", [])
+    if not isinstance(declared_inputs_value, list):
         raise BlueprintGraphError(
             f"{node.blueprint_path}: local_hash_inputs must be a list"
         )
+    declared_inputs = list(declared_inputs_value)
+    default_interface = node.declaration.get("default_interface")
+    if node.blueprint_type == "skill" and isinstance(default_interface, dict):
+        inline_inputs = default_interface.get("local_hash_inputs", [])
+        if not isinstance(inline_inputs, list):
+            raise BlueprintGraphError(
+                f"{node.blueprint_path}: default_interface.local_hash_inputs must be a list"
+            )
+        declared_inputs.extend(inline_inputs)
     for declared in declared_inputs:
         if not isinstance(declared, str) or not declared:
             raise BlueprintGraphError(
@@ -1462,8 +1558,10 @@ def resolve_repository_skill_graph(
         raise BlueprintGraphError(f"unknown root skill id {root_skill_ids[0]!r}") from exc
 
     global_nodes: dict[str, BlueprintNode] = {}
+    owner_root_ids: dict[Path, str] = {}
     edges_by_source: dict[str, dict[tuple[str, str, str, int, str | None], BlueprintEdge]] = {}
     for graph in graphs.values():
+        owner_root_ids[graph.skill_root] = graph.root.node_id
         for node_id, node in graph.nodes.items():
             existing = global_nodes.get(node_id)
             if existing is not None and existing.blueprint_path != node.blueprint_path:
@@ -1486,6 +1584,13 @@ def resolve_repository_skill_graph(
         except KeyError as exc:
             raise BlueprintGraphError(f"unresolved downstream node {node_id!r}") from exc
         reachable_nodes[node_id] = node
+        if node.embedded:
+            owner_root_id = owner_root_ids.get(node.skill_root)
+            if owner_root_id is None:
+                raise BlueprintGraphError(
+                    f"{node.node_id}: embedded interface has no owning skill root"
+                )
+            visit(owner_root_id)
         for edge in sorted(
             edges_by_source.get(node_id, {}).values(),
             key=edge_key,
@@ -1524,7 +1629,13 @@ def expanded_legacy_blueprint(graph: SkillBlueprintGraph) -> dict[str, Any]:
     root_fields = {
         key: deepcopy(value)
         for key, value in graph.root.declaration.items()
-        if key not in {"schema_version", "blueprint_type", "id", "interfaces"}
+        if key not in {
+            "schema_version",
+            "blueprint_type",
+            "id",
+            "default_interface",
+            "interfaces",
+        }
     }
     interfaces: dict[str, dict[str, Any]] = {"machine": {}, "llm": {}}
     for edge in graph.edges:

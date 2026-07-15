@@ -274,7 +274,7 @@ def test_committed_typed_skill_template_matches_schema_generated_values() -> Non
 
     assert committed["examples"] == {
         "skill_root": "blueprint.yaml",
-        "default_llm": ".SKILL.md.blueprint.yaml",
+        "default_llm": "blueprint.yaml#default_interface",
         "shared_python_interfaces": [
             "_rtx/._runner.py.first.blueprint.yaml",
             "_rtx/._runner.py.second.blueprint.yaml",
@@ -303,26 +303,23 @@ def test_schema_family_examples_create_a_complete_valid_graph(tmp_path: Path) ->
         ]
     }
     root = yaml.safe_load(render_blueprint_template(schemas["skill.schema.json"]))
-    llm = yaml.safe_load(render_blueprint_template(schemas["llm-interface.schema.json"]))
     first = yaml.safe_load(render_blueprint_template(schemas["machine-interface.schema.json"]))
     second = deepcopy(first)
     command = deepcopy(first)
     source = yaml.safe_load(render_blueprint_template(schemas["behavior-source.schema.json"]))
 
     root["id"] = "example-skill"
-    root["interfaces"] = [
-        {"interface": "example-skill.llm.default", "version": 1, "blueprint": {"base": "skill-root", "path": examples["default_llm"]}},
-        {"interface": "example-skill.machine.first", "version": 1, "blueprint": {"base": "skill-root", "path": examples["shared_python_interfaces"][0]}},
-        {"interface": "example-skill.machine.second", "version": 1, "blueprint": {"base": "skill-root", "path": examples["shared_python_interfaces"][1]}},
-        {"interface": "example-skill.machine.command", "version": 1, "blueprint": {"base": "skill-root", "path": examples["command_interface"]}},
-    ]
-    llm["id"] = "example-skill.llm.default"
-    llm["behavior_sources"] = [{
+    root["default_interface"]["behavior_sources"] = [{
         "source": "references.source.policy",
         "version": 1,
         "blueprint": {"base": "repository-root", "path": examples["repository_behavior_source"]},
         "reason": "Supplies shared policy.",
     }]
+    root["interfaces"] = [
+        {"interface": "example-skill.machine.first", "version": 1, "blueprint": {"base": "skill-root", "path": examples["shared_python_interfaces"][0]}},
+        {"interface": "example-skill.machine.second", "version": 1, "blueprint": {"base": "skill-root", "path": examples["shared_python_interfaces"][1]}},
+        {"interface": "example-skill.machine.command", "version": 1, "blueprint": {"base": "skill-root", "path": examples["command_interface"]}},
+    ]
     for document, name in [(first, "first"), (second, "second")]:
         document["id"] = f"example-skill.machine.{name}"
         document["binding"] = {
@@ -340,7 +337,6 @@ def test_schema_family_examples_create_a_complete_valid_graph(tmp_path: Path) ->
 
     documents = [
         (schemas["skill.schema.json"], root, skill / examples["skill_root"]),
-        (schemas["llm-interface.schema.json"], llm, skill / examples["default_llm"]),
         (schemas["machine-interface.schema.json"], first, skill / examples["shared_python_interfaces"][0]),
         (schemas["machine-interface.schema.json"], second, skill / examples["shared_python_interfaces"][1]),
         (schemas["machine-interface.schema.json"], command, skill / examples["command_interface"]),

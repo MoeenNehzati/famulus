@@ -136,6 +136,42 @@ def test_dispatch_schema_accepts_typed_skill_root() -> None:
     assert _errors(document) == []
 
 
+def test_typed_skill_root_accepts_exactly_one_default_interface_representation() -> None:
+    inline = {
+        "schema_version": 2,
+        "blueprint_type": "skill",
+        "id": "demo-skill",
+        "category": "development-assistant",
+        "role": "automation",
+        "kind": "tool",
+        "default_interface": {
+            "version": 1,
+            "description": "Primary instructions.",
+            "allow_all_skills": True,
+            "uses_interfaces": [],
+            "behavior_sources": [],
+            "direct_io": _empty_io(),
+            "owns_filesystem": [],
+        },
+        "interfaces": [],
+    }
+
+    assert _errors(inline) == []
+
+    neither = {key: value for key, value in inline.items() if key != "default_interface"}
+    assert _errors(neither)
+
+    both = dict(inline)
+    both["interfaces"] = [
+        {
+            "interface": "demo-skill.llm.default",
+            "version": 1,
+            "blueprint": {"base": "skill-root", "path": ".SKILL.md.blueprint.yaml"},
+        }
+    ]
+    assert _errors(both)
+
+
 def test_llm_schema_requires_explicit_file_binding() -> None:
     document = {
         "schema_version": 2,

@@ -1,0 +1,64 @@
+schema_version: 2
+blueprint_type: machine-interface
+id: connect-google.machine.client-status
+version: 1
+description: Report whether the canonical Google Desktop OAuth client is missing, valid, or invalid without exposing its secrets.
+usage: '[--home <dir>]'
+binding:
+  kind: python-entrypoint
+  path: _rtx/_client_config.py
+  symbol: ClientStatusInterface
+  args_prefix: []
+patterns:
+- min_positionals: 0
+  max_positionals: 0
+  allowed_flags:
+  - --home
+allowed_callers:
+- connect-google
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+dependencies: []
+uses_interfaces: []
+behavior_sources: []
+direct_io:
+  reads:
+  - medium: local-filesystem
+    access: read
+    system: filesystem
+    content: config
+    format: json
+    path: $HOME/.config/connect-google/client.json
+    path_match: exact
+    sensitivity: secret
+    reason: Validate the installed OAuth client without returning its contents.
+  - medium: local-filesystem
+    access: read
+    system: filesystem
+    content: config
+    format: json
+    path: $HOME/.config/cloud-files/client.json
+    path_match: exact
+    sensitivity: secret
+    reason: Discover a valid legacy Drive OAuth client that the user may choose to import.
+  - medium: local-filesystem
+    access: read
+    system: filesystem
+    content: config
+    format: json
+    path: $HOME/.config/g-calendar/client.json
+    path_match: exact
+    sensitivity: secret
+    reason: Discover a valid legacy Calendar OAuth client that the user may choose to import.
+  writes:
+  - medium: stdout
+    access: write
+    system: agent-runtime
+    content: metadata
+    format: json
+    sensitivity: user-private
+    reason: Return status, client type, and canonical path only.
+  network: []
+owns_filesystem: []

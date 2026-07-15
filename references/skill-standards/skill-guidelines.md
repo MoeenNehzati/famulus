@@ -36,7 +36,8 @@ skill names, not paths, files, or implementation details.
 
 In this repository, local skills use one canonical `blueprint.yaml` graph root
 next to `SKILL.md`. Generate its initial values from `skill.schema.json`, then
-create typed hidden sidecars from their concrete schemas. The committed
+define its default LLM interface inline and create typed hidden sidecars for
+additional interfaces and behavior sources from their concrete schemas. The committed
 `references/blueprint/template.yaml` is an artifact-layout manifest, not a
 copyable root blueprint. The canonical root plus the subordinate files
 reachable through its locators are the source of truth for:
@@ -85,9 +86,11 @@ only demonstrates deterministic filenames and generated outputs.
   Every entry must include a `reason`.
 - `skill_interface`: three plain-language lists (`inputs`, `outputs`,
   `side_effects`) that describe the skill's high-level contract.
-- `interfaces`: version-pinned locators for subordinate LLM and machine
-  interface sidecars. Every root points to an `llm.default` sidecar, and that
-  sidecar explicitly binds `SKILL.md`.
+- `default_interface`: the inline contract for canonical
+  `skill.llm.default`; its identity and `SKILL.md` binding are implicit.
+- `interfaces`: version-pinned locators for additional LLM and machine
+  interface sidecars. Existing typed skills may retain a default-interface
+  sidecar during compatibility migration, but must not declare both forms.
 - `blueprint_type`: one of `skill`, `llm-interface`, `machine-interface`, or
   `behavior-source`. A typed file states its own type instead of wrapping its
   facts in another interface-name mapping.
@@ -97,14 +100,16 @@ hidden beside it. A single node bound to `foo.py` uses
 `.foo.py.blueprint.yaml`; multiple nodes on the same file use qualified names
 such as `.foo.py.read.blueprint.yaml`. Generated health uses the corresponding
 `.health.json` suffix. The skill root alone keeps `blueprint.yaml` and
-`.last_audit.json`. Directories never receive blueprints.
+`.last_audit.json`. The inline default is part of the root rather than a
+subordinate sidecar. Directories never receive blueprints.
 
 `skill-audit` generates node health bottom-up and may generate
 `.pooled-blueprint-review.yaml` plus its health file for review. Pooled files
 are never graph inputs. The schema family defines canonical health fields,
 SHA-256 projections, HMAC-SHA-256 authentication, and which authored fields
 participate in contract hashes. Health, pool, and key files are ignored local
-state. Do not hand-author them.
+state. The inline default and `SKILL.md` are certified by root skill health;
+they do not receive a second health identity. Do not hand-author health files.
 
 **Canonical interface names**
 
@@ -345,8 +350,10 @@ reintroduce grouped parent interfaces with hidden subinterface ids.
 
 **LLM interfaces**
 
-A `llm-interface` sidecar is not callable through the dispatcher. It documents a
-skill-owned prompt surface routed by higher-level skill logic. It owns:
+An `llm-interface` is not callable through the dispatcher. It documents a
+skill-owned prompt surface routed by higher-level skill logic. The default
+interface is embedded in the root; additional named interfaces use sidecars.
+An LLM interface owns:
 
 - `version`
 - `description`
@@ -357,10 +364,11 @@ skill-owned prompt surface routed by higher-level skill logic. It owns:
 - `allow_all_skills` / `allowed_callers` — access control for other skills
 - optional routing or documentation metadata
 
-LLM bindings use `kind: instruction-file` and one regular local file. The
-mandatory `skill.llm.default` sidecar binds `SKILL.md`; another LLM interface
-may bind a file such as `llm_interfaces/summarize.md`. URI and directory
-bindings are forbidden. All binding paths are relative to the skill root.
+Sidecar LLM bindings use `kind: instruction-file` and one regular local file.
+The mandatory `skill.llm.default` identity and its `SKILL.md` binding are
+implied by `default_interface`; another LLM interface may bind a file such as
+`llm_interfaces/summarize.md`. URI and directory bindings are forbidden. All
+explicit binding paths are relative to the skill root.
 
 Local LLM interface Markdown beyond `SKILL.md` lives under
 `skills/<skill-name>/llm_interfaces/`. It is the Markdown counterpart to
@@ -372,20 +380,25 @@ For decomposition guidance, see
 
 Use `binding`, not `invocation`, because LLM interfaces are descriptive routing
 surfaces rather than dispatcher-executed programs. `invocation` is forbidden under
-`llm-interface` sidecars.
+named `llm-interface` sidecars.
 
-Every skill root must point to a default sidecar equivalent to:
+Every new typed skill root defines its default interface inline:
 
 ```yaml
-schema_version: 2
-blueprint_type: llm-interface
-id: example-skill.llm.default
-version: 1
-description: Primary LLM-facing skill instructions.
-binding:
-  kind: instruction-file
-  path: SKILL.md
+default_interface:
+  version: 1
+  description: Primary LLM-facing skill instructions.
+  behavior_sources: []
+  direct_io:
+    reads: []
+    writes: []
+    network: []
+  owns_filesystem: []
 ```
+
+This defines `example-skill.llm.default` and binds `SKILL.md` without a
+`.SKILL.md.blueprint.yaml` file. For short skills it may contain the complete
+workflow; for larger skills it may route to named LLM interfaces.
 
 **Dispatcher role**
 
@@ -628,8 +641,9 @@ or re-invoke any interface. Specifically:
   template.
 - `patterns[*].notes` gives mode-specific detail where multiple calling modes
   exist.
-- an LLM sidecar documents its bound instruction file and
-  description, but never a dispatcher invocation.
+- an additional LLM sidecar documents its bound instruction file and
+  description, but never a dispatcher invocation; the default interface is
+  documented by the root's `default_interface`.
 - The skill body references interface names only — it never shows
   `dispatcher --caller-skill` invocations or runtime file paths.
 
@@ -666,7 +680,8 @@ commit, and push to `origin`.
   and what outputs it produces. For blueprint skills:
   - `skill_interface` describes the skill-level contract
   - `machine-interface` sidecars describe dispatcher-callable interfaces
-  - `llm-interface` sidecars describe LLM-facing interfaces
+  - root `default_interface` describes the default LLM-facing interface, while
+    `llm-interface` sidecars describe additional named LLM-facing interfaces
   - `direct_io` describes immediate semantic IO for each interface
   - `owns_filesystem` declares interface-owned filesystem paths and permitted
     readers

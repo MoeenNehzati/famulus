@@ -25,6 +25,7 @@ def typed_sidecars_untracked_until_commit() -> tuple[str, ...]:
     skills = Path("skills")
     audit = skills / "-".join(("skill", "audit"))
     drift = skills / "-".join(("skill", "drift"))
+    connect = skills / "connect-google"
     return (
         (audit / ".SKILL.md.blueprint.yaml").as_posix(),
         (audit / "_rtx" / "._audit_certifier.py.blueprint.yaml").as_posix(),
@@ -39,6 +40,17 @@ def typed_sidecars_untracked_until_commit() -> tuple[str, ...]:
             / "_rtx"
             / "._check_drift_state.py.drift-status.blueprint.yaml"
         ).as_posix(),
+        (connect / "blueprint.yaml").as_posix(),
+        (connect / "llm_interfaces" / ".create-client.md.blueprint.yaml").as_posix(),
+        (connect / "llm_interfaces" / ".connect-services.md.blueprint.yaml").as_posix(),
+        (connect / "_rtx" / "._client_config.py.client-status.blueprint.yaml").as_posix(),
+        (connect / "_rtx" / "._client_config.py.install-client.blueprint.yaml").as_posix(),
+        (connect / "personal-preferences" / ".default.md.blueprint.yaml").as_posix(),
+        (connect / "personal-preferences" / ".create-client.md.blueprint.yaml").as_posix(),
+        (connect / "personal-preferences" / ".connect-services.md.blueprint.yaml").as_posix(),
+        (skills / "cloud-files" / "blueprint.yaml").as_posix(),
+        (skills / "g-calendar" / "blueprint.yaml").as_posix(),
+        (skills / "email-client" / "blueprint.yaml").as_posix(),
     )
 
 
@@ -205,7 +217,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertEqual(manifest["examples"]["skill_root"], "blueprint.yaml")
         self.assertEqual(
             manifest["examples"]["default_llm"],
-            ".SKILL.md.blueprint.yaml",
+            "blueprint.yaml#default_interface",
         )
         self.assertEqual(
             manifest["examples"]["shared_python_interfaces"],
@@ -293,6 +305,37 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 "references/policy.md",
             )
             self.assertEqual(blueprint.path, skill / "blueprint.yaml")
+
+    def test_typed_sync_loads_inline_default_without_sidecar(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_inline_default_test",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            skill = make_typed_sync_fixture(root)
+            root_path = skill / "blueprint.yaml"
+            sidecar_path = skill / ".SKILL.md.blueprint.yaml"
+            root_declaration = yaml.safe_load(root_path.read_text(encoding="utf-8"))
+            sidecar = yaml.safe_load(sidecar_path.read_text(encoding="utf-8"))
+            root_declaration["default_interface"] = {
+                key: value
+                for key, value in sidecar.items()
+                if key not in {"schema_version", "blueprint_type", "id", "binding"}
+            }
+            root_declaration["interfaces"] = [
+                edge
+                for edge in root_declaration["interfaces"]
+                if edge["interface"] != "demo-skill.llm.default"
+            ]
+            write_yaml(root_path, root_declaration)
+            sidecar_path.unlink()
+
+            with mock.patch.object(sync_module, "SKILLS_ROOT", root / "skills"):
+                blueprint = sync_module.load_blueprints()["demo-skill"]
+
+            default = blueprint.data["interfaces"]["llm"]["default"]
+            self.assertEqual(default["binding"], {"kind": "skill_file", "path": "SKILL.md"})
 
     def test_typed_sync_ignores_health_and_pool_artifacts(self) -> None:
         sync_module = load_module(

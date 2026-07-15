@@ -15,6 +15,7 @@ Category: system-assistant
 Skill Version: 1
 
 Uses Interfaces:
+- `cloud-files.llm.default -> cloud-files.machine.setup-oauth@1`
 - `cloud-files.llm.default -> connect-google.llm.default@1`
 
 Public Interfaces:
@@ -75,7 +76,9 @@ OAuth credentials live at `~/.config/cloud-files/credentials.json`.
 For initial Google setup or reauthorization, use
 `connect-google.llm.default` to install or reuse the shared Desktop OAuth
 client, then return here for Drive authorization. This skill invokes its own
-setup interface and owns Drive credentials, verification, and failures.
+`cloud-files.machine.setup-oauth` interface with
+`--from-json ~/.config/connect-google/client.json` and owns Drive credentials,
+verification, and failures.
 
 ## 1. Preapproved LLM-root operations
 

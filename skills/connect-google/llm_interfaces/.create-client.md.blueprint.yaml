@@ -1,0 +1,32 @@
+schema_version: 2
+blueprint_type: llm-interface
+id: connect-google.llm.create-client
+version: 1
+description: Guide a user through creating and privately downloading a Google Desktop OAuth client for selected Famulus services.
+binding:
+  kind: instruction-file
+  path: llm_interfaces/create-client.md
+allowed_callers:
+- connect-google
+uses_interfaces:
+- interface: connect-google.llm.connect-services
+  version: 1
+behavior_sources:
+- source: connect-google.source.personal-preferences-create-client
+  version: 1
+  blueprint:
+    base: skill-root
+    path: personal-preferences/.create-client.md.blueprint.yaml
+  reason: Apply the user's optional Google Cloud setup preferences.
+direct_io:
+  reads:
+  - medium: prompt
+    access: read
+    system: agent-runtime
+    content: config
+    format: text
+    sensitivity: user-private
+    reason: Learn which Google services the user wants to configure.
+  writes: []
+  network: []
+owns_filesystem: []

@@ -1,0 +1,11 @@
+schema_version: 2
+blueprint_type: behavior-source
+id: connect-google.source.personal-preferences-default
+version: 1
+description: Optional user preferences for default Google connection routing.
+binding:
+  kind: file
+  path: personal-preferences/default.md
+content: config
+format: markdown
+uses_behavior_sources: []

@@ -817,7 +817,9 @@ def validate(repo_root: Path) -> list[str]:
     if errors:
         return errors
 
-    errors.extend(_validate_interface_uses(legacy_blueprints))
+    # Validate the compatibility-expanded view so legacy callers can target
+    # interfaces provided by typed skills, including an inline default.
+    errors.extend(_validate_interface_uses(loaded_blueprints))
     if errors:
         return errors
     if not loaded_blueprints:

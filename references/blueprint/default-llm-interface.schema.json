@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "default-llm-interface.schema.json",
+  "title": "Inline Default LLM Interface Contract",
+  "description": "The canonical default LLM interface contract embedded in a skill root. Its id is <skill>.llm.default and its binding is SKILL.md.",
+  "type": "object",
+  "required": ["version", "description", "behavior_sources", "direct_io", "owns_filesystem"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"$ref": "llm-interface.schema.json#/properties/version"},
+    "description": {"$ref": "llm-interface.schema.json#/properties/description"},
+    "local_hash_inputs": {"$ref": "llm-interface.schema.json#/properties/local_hash_inputs"},
+    "allow_all_skills": {"$ref": "llm-interface.schema.json#/properties/allow_all_skills"},
+    "allowed_callers": {"$ref": "llm-interface.schema.json#/properties/allowed_callers"},
+    "routing_hints": {"$ref": "llm-interface.schema.json#/properties/routing_hints"},
+    "uses_interfaces": {"$ref": "llm-interface.schema.json#/properties/uses_interfaces"},
+    "behavior_sources": {"$ref": "llm-interface.schema.json#/properties/behavior_sources"},
+    "direct_io": {"$ref": "llm-interface.schema.json#/properties/direct_io"},
+    "owns_filesystem": {"$ref": "llm-interface.schema.json#/properties/owns_filesystem"}
+  },
+  "allOf": [
+    {"$ref": "legacy-skill.schema.json#/definitions/allowAllSkillsConstraint"}
+  ],
+  "x-famulus": {"audit_hash": "include-in-skill-root", "binding_policy": "implicit-skill-md"}
+}

@@ -1,0 +1,67 @@
+schema_version: 2
+blueprint_type: machine-interface
+id: connect-google.machine.install-client
+version: 1
+description: Validate a Google Desktop OAuth client JSON and atomically install a private canonical copy.
+usage: --from-json <client-json> [--replace] [--home <dir>]
+binding:
+  kind: python-entrypoint
+  path: _rtx/_client_config.py
+  symbol: InstallClientInterface
+  args_prefix: []
+patterns:
+- min_positionals: 0
+  max_positionals: 0
+  required_flags:
+  - --from-json
+  allowed_flags:
+  - --from-json
+  - --replace
+  - --home
+allowed_callers:
+- connect-google
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+dependencies: []
+uses_interfaces: []
+behavior_sources: []
+direct_io:
+  reads:
+  - medium: local-filesystem
+    access: read
+    system: filesystem
+    content: config
+    format: json
+    path: <client-json>
+    path_match: exact
+    sensitivity: secret
+    reason: Validate the user-selected Desktop OAuth client.
+  writes:
+  - medium: local-filesystem
+    access: write
+    system: filesystem
+    content: config
+    format: json
+    path: $HOME/.config/connect-google/client.json
+    path_match: exact
+    sensitivity: secret
+    reason: Install the canonical private client atomically.
+  - medium: stdout
+    access: write
+    system: agent-runtime
+    content: metadata
+    format: json
+    sensitivity: user-private
+    reason: Return installation status, client type, and canonical path only.
+  network: []
+owns_filesystem:
+- match: exact
+  path: $HOME/.config/connect-google/client.json
+  allowed_readers:
+  - connect-google.machine.client-status
+  - cloud-files.machine.setup-oauth
+  - g-calendar.machine.setup-oauth
+  - email-client.machine.accounts-setup-oauth
+  reason: This interface is the only writer of the shared OAuth client; service setup interfaces may read it for authorization.
