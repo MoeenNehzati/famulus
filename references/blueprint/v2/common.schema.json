@@ -1,0 +1,164 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Typed Blueprint Common Definitions",
+  "definitions": {
+    "schemaVersion": {"const": 2, "description": "Typed blueprint schema generation."},
+    "interfaceVersion": {"type": "integer", "minimum": 1, "description": "Human-managed public contract version."},
+    "skillId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+$"},
+    "llmInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.llm\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "machineInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.machine\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "canonicalInterfaceId": {
+      "oneOf": [
+        {"$ref": "#/definitions/llmInterfaceId"},
+        {"$ref": "#/definitions/machineInterfaceId"}
+      ]
+    },
+    "behaviorSourceId": {"type": "string", "pattern": "^(?:references|[a-z0-9]+(?:-[a-z0-9]+)+)\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+",
+      "description": "Relative path without parent traversal. Filesystem validators additionally require the expected file type."
+    },
+    "blueprintLocator": {
+      "type": "object",
+      "required": ["base", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "base": {"enum": ["skill-root", "repository-root"], "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "skill-root"}, "doc": {"authoring": ["Choose the root against which the sidecar path is resolved."]}, "related_validation_rules": ["file-binding"]}},
+        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": ".SKILL.md.blueprint.yaml"}, "doc": {"authoring": ["Use the deterministic hidden sidecar path without parent traversal."]}, "related_validation_rules": ["file-binding"]}}
+      }
+    },
+    "interfaceEdge": {
+      "type": "object",
+      "required": ["interface", "version", "blueprint"],
+      "additionalProperties": false,
+      "properties": {
+        "interface": {"$ref": "#/definitions/canonicalInterfaceId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "example-skill.llm.default"}, "doc": {"authoring": ["Name the canonical interface owned by this skill root."]}, "related_validation_rules": ["canonical-id", "relationship-edge"]}},
+        "version": {"$ref": "#/definitions/interfaceVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Pin the exact declared interface version."]}, "related_validation_rules": ["version-pin"]}},
+        "blueprint": {"$ref": "#/definitions/blueprintLocator", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["Point to the interface's own hidden blueprint sidecar."]}, "related_validation_rules": ["file-binding", "relationship-edge"]}}
+      }
+    },
+    "usedInterface": {
+      "type": "object",
+      "required": ["interface", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "interface": {"$ref": "#/definitions/canonicalInterfaceId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "other-skill.machine.run"}, "doc": {"authoring": ["Use the canonical interface ID, never a bare skill name or implementation path."]}, "related_validation_rules": ["canonical-id", "relationship-edge"]}},
+        "version": {"$ref": "#/definitions/interfaceVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Pin the exact version required by this consumer."]}, "related_validation_rules": ["version-pin"]}}
+      }
+    },
+    "usedInterfaceList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/definitions/usedInterface"},
+      "description": "Version-pinned interface dependencies. Their health hashes propagate recursively."
+    },
+    "usedMachineInterfaceList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "allOf": [
+          {"$ref": "#/definitions/usedInterface"},
+          {
+            "required": ["interface"],
+            "properties": {
+              "interface": {
+                "$ref": "#/definitions/machineInterfaceId",
+                "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "other-skill.machine.run"}, "doc": {"authoring": ["Reference only a canonical machine-interface ID."]}, "related_validation_rules": ["canonical-id", "relationship-edge"]}
+              }
+            }
+          }
+        ]
+      }
+    },
+    "behaviorSourceEdge": {
+      "type": "object",
+      "required": ["source", "version", "blueprint", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {"$ref": "#/definitions/behaviorSourceId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "example-skill.source.policy"}, "doc": {"authoring": ["Use the target behavior source's canonical ID."]}, "related_validation_rules": ["canonical-id", "behavior-source-edge"]}},
+        "version": {"$ref": "#/definitions/interfaceVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Pin the target behavior source version."]}, "related_validation_rules": ["version-pin", "behavior-source-edge"]}},
+        "blueprint": {"$ref": "#/definitions/blueprintLocator", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["Point to the target source's canonical hidden sidecar."]}, "related_validation_rules": ["file-binding", "behavior-source-edge"]}},
+        "reason": {"type": "string", "minLength": 1, "description": "Why this consumer depends on the target source.", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Supplies behavior policy."}, "doc": {"authoring": ["State this consumer's local reason for using the source."]}, "related_validation_rules": ["behavior-source-edge"]}}
+      }
+    },
+    "behaviorSourceEdgeList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/definitions/behaviorSourceEdge"}
+    },
+    "instructionFileBinding": {
+      "type": "object",
+      "required": ["kind", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const": "instruction-file", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "instruction-file"}, "doc": {"authoring": ["Use instruction-file for an LLM-readable file binding."]}, "related_validation_rules": ["file-binding"]}},
+        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "SKILL.md"}, "doc": {"authoring": ["Bind one existing instruction file; llm.default must use SKILL.md."]}, "related_validation_rules": ["file-binding"]}}
+      }
+    },
+    "pythonEntrypointBinding": {
+      "type": "object",
+      "required": ["kind", "path", "symbol"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const": "python-entrypoint", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "python-entrypoint"}, "doc": {"authoring": ["Use python-entrypoint for a dispatcher-loaded Python interface."]}, "related_validation_rules": ["machine-binding-kind"]}},
+        "path": {"allOf": [{"$ref": "#/definitions/relativePath"}], "type": "string", "pattern": "^_rtx/.+\\.py$", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "_rtx/_runner.py"}, "doc": {"authoring": ["Bind a Python file under _rtx without parent traversal."]}, "related_validation_rules": ["machine-binding-kind", "file-binding"]}},
+        "symbol": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Interface"}, "doc": {"authoring": ["Name the exported Python interface class or callable."]}, "related_validation_rules": ["machine-binding-kind"]}},
+        "args_prefix": {"type": "array", "items": {"type": "string", "minLength": 1}, "default": [], "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List fixed argv elements prepended by the dispatcher."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}}
+      }
+    },
+    "commandFileBinding": {
+      "type": "object",
+      "required": ["kind", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const": "command-file", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "command-file"}, "doc": {"authoring": ["Use command-file for a tracked executable invoked without a shell string."]}, "related_validation_rules": ["machine-binding-kind"]}},
+        "path": {"allOf": [{"$ref": "#/definitions/relativePath"}], "type": "string", "pattern": "^_cx/.+", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "_cx/_run"}, "doc": {"authoring": ["Bind a tracked executable under _cx without parent traversal."]}, "related_validation_rules": ["machine-binding-kind", "file-binding"]}},
+        "args_prefix": {"type": "array", "items": {"type": "string", "minLength": 1}, "default": [], "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List fixed argv elements prepended to the direct execution."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}}
+      },
+      "description": "A tracked executable file invoked directly without shell-string evaluation."
+    },
+    "behaviorSourceBinding": {
+      "type": "object",
+      "required": ["kind", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const": "file", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "file"}, "doc": {"authoring": ["Use file for a behavior-shaping source binding."]}, "related_validation_rules": ["file-binding"]}},
+        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "references/policy.md"}, "doc": {"authoring": ["Bind one existing regular file without parent traversal."]}, "related_validation_rules": ["file-binding"]}}
+      }
+    },
+    "platformSupport": {"$ref": "../legacy-skill.schema.json#/definitions/platformSupport"},
+    "runtimeDependencies": {
+      "allOf": [{"$ref": "../legacy-skill.schema.json#/definitions/runtimeDependencies"}],
+      "description": "Runtime dependencies for one typed machine interface. Each entry's platforms map states where that dependency applies, not the complete support claim of the interface."
+    },
+    "pattern": {"$ref": "../legacy-skill.schema.json#/definitions/pattern"},
+    "directIo": {
+      "allOf": [{"$ref": "../legacy-skill.schema.json#/definitions/directIo"}],
+      "description": "Immediate semantic IO. This declaration is descriptive and is not proof of subsystem confinement.",
+      "x-famulus": {"audit_hash": "exclude"}
+    },
+    "filesystemOwnershipList": {"$ref": "../legacy-skill.schema.json#/definitions/filesystemOwnershipList"},
+    "metadataContent": {"$ref": "../legacy-skill.schema.json#/definitions/metadataContent"},
+    "metadataFormat": {"$ref": "../legacy-skill.schema.json#/definitions/metadataFormat"},
+    "allowedCallers": {
+      "type": "array",
+      "items": {"$ref": "#/definitions/skillId"},
+      "uniqueItems": true,
+      "default": []
+    }
+  },
+  "x-famulus": {
+    "sidecar_naming": {
+      "derivation": "For a bound relative path P, place the sidecar beside P as dirname(P)/.basename(P).blueprint.yaml; omit dirname(P)/ when P has no directory component.",
+      "qualified_naming": "When multiple nodes bind one file, insert one distinct node qualifier after basename(P): dirname(P)/.basename(P).<qualifier>.blueprint.yaml.",
+      "examples": [".SKILL.md.blueprint.yaml", "_rtx/._runner.py.first.blueprint.yaml", "_rtx/._runner.py.second.blueprint.yaml"]
+    },
+    "file_binding_policy": {
+      "binding_files": "Bindings and local_hash_inputs resolve against the owning node root and must be tracked regular non-symlink files.",
+      "command_files": "Command bindings must be executable tracked regular non-symlink files under the owning _cx directory.",
+      "local_hash_inputs": "Each listed path participates in local hashing and commit readiness; child-node bindings are excluded."
+    }
+  }
+}

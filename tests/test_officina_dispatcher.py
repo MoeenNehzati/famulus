@@ -120,6 +120,82 @@ def _write_typed_command_skill(repo_root: Path) -> tuple[Path, Path, Path]:
     return skill, sidecar, command
 
 
+def _write_v3_command_skill(repo_root: Path) -> tuple[Path, Path, Path]:
+    skill, sidecar, command = _write_typed_command_skill(repo_root)
+    (skill / ".SKILL.md.blueprint.yaml").unlink()
+    (skill / "blueprint.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 3,
+                "node_type": "skill",
+                "id": "demo-skill",
+                "category": "development-assistant",
+                "role": "automation",
+                "kind": "tool",
+                "gateway": {"kind": "instruction-file", "path": "SKILL.md"},
+                "content": [r"SKILL\.md"],
+                "default_interface": {
+                    "version": 1,
+                    "description": "Primary instructions.",
+                    "allow_all_skills": True,
+                    "uses_interfaces": [],
+                    "behavior_sources": [],
+                    "direct_io": {"reads": [], "writes": [], "network": []},
+                    "owns_filesystem": [],
+                },
+                "interfaces": [
+                    {
+                        "interface": "demo-skill.machine.run",
+                        "version": 1,
+                        "blueprint": {
+                            "base": "skill-root",
+                            "path": "_cx/.run-task.blueprint.yaml",
+                        },
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    declaration = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+    declaration["schema_version"] = 3
+    declaration["node_type"] = declaration.pop("blueprint_type")
+    declaration["gateway"] = declaration.pop("binding")
+    declaration["content"] = [r"_cx/run-task"]
+    sidecar.write_text(yaml.safe_dump(declaration, sort_keys=False), encoding="utf-8")
+    return skill, sidecar, command
+
+
+def _write_v3_python_skill(repo_root: Path) -> tuple[Path, Path, Path]:
+    skill, command_sidecar, _command = _write_v3_command_skill(repo_root)
+    runtime = skill / "_rtx"
+    runtime.mkdir()
+    gateway = runtime / "_run.py"
+    gateway.write_text(
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    declaration = yaml.safe_load(command_sidecar.read_text(encoding="utf-8"))
+    command_sidecar.unlink()
+    declaration["gateway"] = {
+        "kind": "python-entrypoint",
+        "path": "_rtx/_run.py",
+        "symbol": "Interface",
+        "args_prefix": [],
+    }
+    declaration["content"] = [r"_rtx/_run\.py"]
+    sidecar = runtime / "._run.py.blueprint.yaml"
+    sidecar.write_text(yaml.safe_dump(declaration, sort_keys=False), encoding="utf-8")
+    root_path = skill / "blueprint.yaml"
+    root = yaml.safe_load(root_path.read_text(encoding="utf-8"))
+    root["interfaces"][0]["blueprint"]["path"] = "_rtx/._run.py.blueprint.yaml"
+    root_path.write_text(yaml.safe_dump(root, sort_keys=False), encoding="utf-8")
+    return skill, sidecar, gateway
+
+
 def _write_skill(repo_root: Path) -> None:
     skill_root = repo_root / "skills" / "unicode-skill"
     runtime_root = skill_root / "_rtx"
@@ -588,6 +664,59 @@ def test_typed_command_file_executes_directly_from_opaque_cx_directory(
     resolved.close()
 
 
+def test_version_three_command_dispatch_does_not_expand_legacy_invocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skill, sidecar, command_file = _write_v3_command_skill(tmp_path)
+    other = skill / "_cx" / "other"
+    other.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
+    other.chmod(0o755)
+    declaration = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+    declaration["content"] = [r"_cx/(?:run-task|other)"]
+    sidecar.write_text(yaml.safe_dump(declaration, sort_keys=False), encoding="utf-8")
+    monkeypatch.setattr(
+        "officina.dispatcher.core.expanded_legacy_blueprint",
+        lambda _graph: pytest.fail("v3 dispatch must not expand legacy invocation"),
+    )
+
+    resolved = resolve_dispatch(
+        caller_skill="demo-skill",
+        target="demo-skill.machine.run",
+        args=["dynamic"],
+        repo_root=tmp_path,
+    )
+
+    assert resolved.runtime_bindings[0].path == command_file
+    assert resolved.runtime_bindings[0].path != other
+    resolved.close()
+
+
+def test_version_three_python_dispatch_does_not_expand_legacy_invocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _skill, _sidecar, gateway = _write_v3_python_skill(tmp_path)
+    monkeypatch.setattr(
+        "officina.dispatcher.core.expanded_legacy_blueprint",
+        lambda _graph: pytest.fail("v3 dispatch must not expand legacy invocation"),
+    )
+
+    resolved = resolve_dispatch(
+        caller_skill="demo-skill",
+        target="demo-skill.machine.run",
+        args=["--route-smoke"],
+        repo_root=tmp_path,
+    )
+
+    assert resolved.runtime_bindings[0].path == gateway
+    assert resolved.metadata().command[-2:] == [
+        "_rtx/_run.py:Interface",
+        "--route-smoke",
+    ]
+    resolved.close()
+
+
 def test_command_file_runtime_rejects_traversal_and_non_executable(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     (skill / "_cx").mkdir(parents=True)
@@ -772,7 +901,7 @@ def test_dispatcher_normalizes_concrete_schema_bundle_failures(
     schema_state: str,
 ) -> None:
     _skill, _sidecar, _command = _write_typed_command_skill(tmp_path)
-    schema_path = tmp_path / "references" / "blueprint" / "machine-interface.schema.json"
+    schema_path = tmp_path / "references" / "blueprint" / "v2" / "machine-interface.schema.json"
     if schema_state == "missing":
         schema_path.unlink()
     else:
@@ -794,7 +923,7 @@ def test_dispatcher_normalizes_unresolved_concrete_schema_reference(
     tmp_path: Path,
 ) -> None:
     _write_typed_command_skill(tmp_path)
-    schema_path = tmp_path / "references" / "blueprint" / "machine-interface.schema.json"
+    schema_path = tmp_path / "references" / "blueprint" / "v2" / "machine-interface.schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     schema["$ref"] = "missing-local.schema.json"
     schema_path.write_text(json.dumps(schema), encoding="utf-8")

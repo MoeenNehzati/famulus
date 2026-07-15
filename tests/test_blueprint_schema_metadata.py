@@ -17,9 +17,11 @@ TYPED_SCHEMAS = [
 ]
 REQUIRED_RULES = {
     "generated-contract-block",
-    "sidecar-naming",
-    "binding-tracked",
-    "binding-non-symlink",
+    "gateway-sidecar-naming",
+    "content-exclusive",
+    "content-tracked",
+    "content-non-symlink",
+    "semantic-type",
     "behavior-source-visibility",
     "relationship-matrix",
     "commit-backed-stamp",
@@ -100,13 +102,15 @@ def test_validation_rule_catalog_points_to_existing_enforcement_and_tests() -> N
 def test_completed_health_and_typed_graph_rules_are_current() -> None:
     catalog = _load("schema-meta.json")["x-famulus"]["validation_rule_catalog"]
     expected_acceptance = {
-        "file-binding": "isolated-validator",
+        "gateway-file": "isolated-validator",
+        "content-files": "isolated-validator",
+        "content-exclusive": "isolated-validator",
         "direct-io-description": "isolated-validator",
         "filesystem-ownership": "isolated-validator",
         "behavior-source-edge": "isolated-validator",
         "generated-contract-block": "isolated-validator",
-        "binding-tracked": "isolated-validator",
-        "binding-non-symlink": "isolated-validator",
+        "content-tracked": "isolated-validator",
+        "content-non-symlink": "isolated-validator",
         "behavior-source-visibility": "isolated-validator",
         "relationship-matrix": "isolated-validator",
         "commit-backed-stamp": "isolated-graph",
@@ -152,20 +156,57 @@ def test_schema_meta_declares_relationship_and_visibility_policy() -> None:
     }
 
 
-def test_file_backed_typed_nodes_declare_local_hash_inputs() -> None:
-    for name in [
-        "llm-interface.schema.json",
-        "machine-interface.schema.json",
-        "behavior-source.schema.json",
-    ]:
-        field = _load(name)["properties"]["local_hash_inputs"]
+def test_typed_nodes_declare_gateway_and_content() -> None:
+    for name in TYPED_SCHEMAS:
+        properties = _load(name)["properties"]
+        assert "local_hash_inputs" not in properties
+        assert properties["gateway"]["x-famulus"]["audit_hash"] == "include"
+        field = properties["content"]
         assert field["type"] == "array"
         assert field["uniqueItems"] is True
+        assert field["minItems"] == 1
         assert field["x-famulus"]["audit_hash"] == "include"
         assert field["x-famulus"]["related_validation_rules"] == [
-            "file-binding",
+            "content-files",
+            "content-exclusive",
             "commit-backed-stamp",
         ]
+
+
+def test_version_three_common_schema_uses_gateway_definition_names() -> None:
+    definitions = _load("common.schema.json")["definitions"]
+
+    assert {
+        "instructionFileGateway",
+        "skillGateway",
+        "pythonGateway",
+        "commandFileGateway",
+        "behaviorSourceGateway",
+    } <= set(definitions)
+    assert not any(name.endswith("EntryPoint") for name in definitions)
+    assert definitions["pythonGateway"]["properties"]["kind"]["const"] == (
+        "python-entrypoint"
+    )
+
+
+def test_behavior_source_semantic_type_is_closed_and_exact() -> None:
+    semantic_type = _load("behavior-source.schema.json")["properties"][
+        "semantic_type"
+    ]
+    common = _load("common.schema.json")
+    assert semantic_type["$ref"] == "common.schema.json#/definitions/semanticType"
+    assert common["definitions"]["semanticType"]["enum"] == [
+        "policy",
+        "instructions",
+        "reference",
+        "configuration",
+        "preference",
+        "schema",
+        "template",
+        "example",
+        "checklist",
+        "dataset",
+    ]
 
 
 def test_direct_io_is_explicitly_excluded_from_certified_contract_hashes() -> None:
@@ -190,7 +231,9 @@ def test_machine_interface_support_is_bounded_by_required_interfaces() -> None:
                 interfaces[f"{path.parent.name}.machine.{local_name}"] = specification
     for path in REPO_ROOT.glob("skills/*/_rtx/.*.blueprint.yaml"):
         declaration = yaml.safe_load(path.read_text(encoding="utf-8"))
-        if declaration.get("blueprint_type") == "machine-interface":
+        if declaration.get("blueprint_type") == "machine-interface" or declaration.get(
+            "node_type"
+        ) == "machine-interface":
             interfaces[declaration["id"]] = declaration
 
     for interface_id, declaration in interfaces.items():

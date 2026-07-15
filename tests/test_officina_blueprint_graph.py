@@ -18,11 +18,13 @@ from officina.common.blueprint_graph import (
     BlueprintGraphError,
     BlueprintNode,
     SkillBlueprintGraph,
+    authored_node_input_paths,
     expanded_legacy_blueprint,
     graph_contract_errors,
     load_reachable_repository_skill_graph,
     load_repository_blueprint_graphs,
     load_skill_blueprint_graph,
+    resolved_node_content_paths,
     resolve_repository_skill_graph,
 )
 
@@ -38,6 +40,74 @@ def _write_yaml(path: Path, value: object) -> None:
 def _write_skill_file(skill: Path) -> None:
     skill.mkdir(parents=True, exist_ok=True)
     (skill / "SKILL.md").write_text("---\nname: demo-skill\n---\nBody.\n", encoding="utf-8")
+
+
+def _write_v3_skill(
+    skill: Path,
+    *,
+    content: list[str] | None = None,
+    interfaces: list[dict[str, object]] | None = None,
+) -> None:
+    _write_skill_file(skill)
+    _write_yaml(
+        skill / "blueprint.yaml",
+        {
+            "schema_version": 3,
+            "node_type": "skill",
+            "id": skill.name,
+            "category": "development-assistant",
+            "role": "automation",
+            "kind": "tool",
+            "gateway": {"kind": "instruction-file", "path": "SKILL.md"},
+            "content": content if content is not None else [r"SKILL\.md"],
+            "default_interface": {
+                "version": 1,
+                "description": "Primary instructions.",
+                "allow_all_skills": True,
+                "uses_interfaces": [],
+                "behavior_sources": [],
+                "direct_io": {"reads": [], "writes": [], "network": []},
+                "owns_filesystem": [],
+            },
+            "interfaces": interfaces if interfaces is not None else [],
+        },
+    )
+
+
+def _write_v3_machine(
+    skill: Path,
+    *,
+    content: list[str] | None = None,
+    gateway: str = "_rtx/_runner.py",
+) -> None:
+    runner = skill / gateway
+    runner.parent.mkdir(parents=True, exist_ok=True)
+    runner.write_text("class Interface:\n    pass\n", encoding="utf-8")
+    sidecar = runner.with_name(f".{runner.name}.blueprint.yaml")
+    _write_yaml(
+        sidecar,
+        {
+            "schema_version": 3,
+            "node_type": "machine-interface",
+            "id": f"{skill.name}.machine.run",
+            "version": 1,
+            "description": "Run the operation.",
+            "usage": "run",
+            "gateway": {
+                "kind": "python-entrypoint",
+                "path": gateway,
+                "symbol": "Interface",
+                "args_prefix": [],
+            },
+            "content": content if content is not None else [r"_rtx/_runner\.py"],
+            "platform_support": {"linux": True, "macos": True, "windows": True},
+            "dependencies": [],
+            "uses_interfaces": [],
+            "behavior_sources": [],
+            "direct_io": {"reads": [], "writes": [], "network": []},
+            "owns_filesystem": [],
+        },
+    )
 
 
 def _write_shared_skill(shared_repo: Path, skill_id: str) -> None:
@@ -299,6 +369,187 @@ def test_inline_default_is_normalized_as_logical_llm_interface(tmp_path: Path) -
     }
 
 
+def test_version_three_nodes_use_normalized_gateway_and_content(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    interfaces = [
+        {
+            "interface": "demo-skill.machine.run",
+            "version": 1,
+            "blueprint": {
+                "base": "skill-root",
+                "path": "_rtx/._runner.py.blueprint.yaml",
+            },
+        }
+    ]
+    _write_v3_skill(skill, interfaces=interfaces)
+    _write_v3_machine(skill)
+
+    graph = load_skill_blueprint_graph(skill, SCHEMA_ROOT)
+    root = graph.root
+    machine = graph.nodes["demo-skill.machine.run"]
+
+    assert root.node_type == "skill"
+    assert root.gateway_path == skill / "SKILL.md"
+    assert resolved_node_content_paths(root, tmp_path) == (skill / "SKILL.md",)
+    assert authored_node_input_paths(root) == (
+        skill / "SKILL.md",
+        skill / "blueprint.yaml",
+    )
+    assert machine.node_type == "machine-interface"
+    assert machine.gateway_path == skill / "_rtx" / "_runner.py"
+    assert resolved_node_content_paths(machine, tmp_path) == (
+        skill / "_rtx" / "_runner.py",
+    )
+    legacy = expanded_legacy_blueprint(graph)
+    assert not ({"node_type", "gateway", "content"} & set(legacy))
+    assert legacy["interfaces"]["machine"]["run"]["invocation"] == {
+        "kind": "python_machine_interface",
+        "entrypoint": "_rtx/_runner.py:Interface",
+        "args_prefix": [],
+        "behavior_sources": [],
+    }
+
+
+def test_version_two_nodes_normalize_binding_and_local_inputs_as_content(
+    tmp_path: Path,
+) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    _write_skill_file(skill)
+    (skill / "notes.md").write_text("Notes.\n", encoding="utf-8")
+    _write_yaml(
+        skill / "blueprint.yaml",
+        {
+            "schema_version": 2,
+            "blueprint_type": "skill",
+            "id": "demo-skill",
+            "category": "development-assistant",
+            "role": "automation",
+            "kind": "tool",
+            "default_interface": {
+                "version": 1,
+                "description": "Primary instructions.",
+                "local_hash_inputs": ["notes.md"],
+                "allow_all_skills": True,
+                "uses_interfaces": [],
+                "behavior_sources": [],
+                "direct_io": {"reads": [], "writes": [], "network": []},
+                "owns_filesystem": [],
+            },
+            "interfaces": [],
+        },
+    )
+
+    graph = load_skill_blueprint_graph(skill, SCHEMA_ROOT)
+
+    assert graph.root.node_type == "skill"
+    assert graph.root.gateway_path == skill / "SKILL.md"
+    assert resolved_node_content_paths(graph.root, tmp_path) == (
+        skill / "SKILL.md",
+        skill / "notes.md",
+    )
+
+
+@pytest.mark.parametrize(
+    ("content", "extra_path", "message"),
+    [
+        (["["], None, "invalid content regex"),
+        ([r"missing\.md"], None, "matched no files"),
+        ([r"notes\.md"], "notes.md", "gateway must be included in content"),
+        ([r"docs"], "docs", "matched no files"),
+        ([r"linked\.md"], "linked.md", "matched no files"),
+        ([r".*"], None, "content cannot include a blueprint or health artifact"),
+    ],
+)
+def test_version_three_content_patterns_reject_invalid_ownership(
+    tmp_path: Path,
+    content: list[str],
+    extra_path: str | None,
+    message: str,
+) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    _write_v3_skill(skill, content=content)
+    if extra_path == "docs":
+        (skill / extra_path).mkdir()
+    elif extra_path == "linked.md":
+        target = tmp_path / "outside.md"
+        target.write_text("Outside.\n", encoding="utf-8")
+        (skill / extra_path).symlink_to(target)
+    elif extra_path is not None:
+        (skill / extra_path).write_text("Extra.\n", encoding="utf-8")
+
+    with pytest.raises(BlueprintGraphError, match=message):
+        load_skill_blueprint_graph(skill, SCHEMA_ROOT)
+
+
+def test_version_three_content_ownership_is_exclusive(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    interfaces = [
+        {
+            "interface": "demo-skill.machine.run",
+            "version": 1,
+            "blueprint": {
+                "base": "skill-root",
+                "path": "_rtx/._runner.py.blueprint.yaml",
+            },
+        }
+    ]
+    _write_v3_skill(
+        skill,
+        content=[r"SKILL\.md", r"_rtx/_runner\.py"],
+        interfaces=interfaces,
+    )
+    _write_v3_machine(skill)
+
+    with pytest.raises(
+        BlueprintGraphError,
+        match=r"content file .*_runner\.py.*owned by both demo-skill and demo-skill\.machine\.run",
+    ):
+        load_skill_blueprint_graph(skill, SCHEMA_ROOT)
+
+
+def test_repository_behavior_source_content_uses_repository_root(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    _write_v3_skill(skill)
+    source_path = tmp_path / "references" / "policy.md"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text("Policy.\n", encoding="utf-8")
+    _write_yaml(
+        tmp_path / "references" / ".policy.md.blueprint.yaml",
+        {
+            "schema_version": 3,
+            "node_type": "behavior-source",
+            "id": "references.source.policy",
+            "version": 1,
+            "description": "Shared policy.",
+            "gateway": {"kind": "file", "path": "references/policy.md"},
+            "content": [r"references/policy\.md"],
+            "semantic_type": "policy",
+            "format": "markdown",
+            "uses_behavior_sources": [],
+            "uses_interfaces": [],
+        },
+    )
+    root = yaml.safe_load((skill / "blueprint.yaml").read_text(encoding="utf-8"))
+    root["default_interface"]["behavior_sources"] = [
+        {
+            "source": "references.source.policy",
+            "version": 1,
+            "blueprint": {
+                "base": "repository-root",
+                "path": "references/.policy.md.blueprint.yaml",
+            },
+            "reason": "Supplies shared policy.",
+        }
+    ]
+    _write_yaml(skill / "blueprint.yaml", root)
+
+    graph = load_skill_blueprint_graph(skill, SCHEMA_ROOT)
+    source = graph.nodes["references.source.policy"]
+
+    assert source.gateway_path == source_path
+    assert resolved_node_content_paths(source, tmp_path) == (source_path,)
+
+
 def test_legacy_root_expands_interfaces_without_writing_sidecars(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     _write_skill_file(skill)
@@ -407,7 +658,10 @@ def test_typed_default_llm_binding_must_be_skill_md(tmp_path: Path) -> None:
         },
     )
 
-    with pytest.raises(BlueprintGraphError, match="default LLM interface must bind SKILL.md"):
+    with pytest.raises(
+        BlueprintGraphError,
+        match="default LLM interface gateway must be SKILL.md",
+    ):
         load_skill_blueprint_graph(skill)
 
 
@@ -1176,7 +1430,10 @@ def test_typed_node_binding_must_be_an_existing_regular_file(tmp_path: Path) -> 
         blueprint_path="_rtx/._rtx.blueprint.yaml",
     )
 
-    with pytest.raises(BlueprintGraphError, match="binding must be an existing regular file"):
+    with pytest.raises(
+        BlueprintGraphError,
+        match="gateway must be an existing regular file",
+    ):
         load_skill_blueprint_graph(skill)
 
 

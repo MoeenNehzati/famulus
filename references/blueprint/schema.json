@@ -2,16 +2,20 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "schema.json",
   "title": "Famulus Blueprint Compatibility Schema",
-  "description": "Canonical entry point for legacy skill blueprints and typed file-backed blueprint nodes.",
+  "description": "Canonical gateway for legacy, read-only version-2, and current version-3 blueprint nodes.",
   "oneOf": [
     {"$ref": "legacy-skill.schema.json"},
+    {"$ref": "v2/skill.schema.json"},
+    {"$ref": "v2/llm-interface.schema.json"},
+    {"$ref": "v2/machine-interface.schema.json"},
+    {"$ref": "v2/behavior-source.schema.json"},
     {"$ref": "skill.schema.json"},
     {"$ref": "llm-interface.schema.json"},
     {"$ref": "machine-interface.schema.json"},
     {"$ref": "behavior-source.schema.json"}
   ],
   "x-famulus": {
-    "authoring": "Select the branch identified by blueprint_type. Legacy roots remain accepted only during migration.",
+    "authoring": "Author schema version 3 and select the node schema with node_type. Legacy and version-2 documents are read-only migration inputs.",
     "validation_rules": [
       "typed-blueprints-bind-regular-files",
       "typed-edges-resolve-and-pin-versions",

@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Typed Behavior Source Blueprint",
+  "description": "Intrinsic metadata and source-to-source edges for one behavior-shaping file.",
+  "type": "object",
+  "required": ["schema_version", "blueprint_type", "id", "version", "description", "binding", "content", "format", "uses_behavior_sources"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"$ref": "common.schema.json#/definitions/schemaVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 2}, "doc": {"authoring": ["Use typed blueprint schema version 2."]}, "related_validation_rules": ["schema-shape"]}},
+    "blueprint_type": {"const": "behavior-source", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "behavior-source"}, "doc": {"authoring": ["Identify this file as one behavior-source contract."]}, "related_validation_rules": ["schema-shape"]}},
+    "id": {"$ref": "common.schema.json#/definitions/behaviorSourceId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "demo-skill.source.policy"}, "doc": {"authoring": ["Use skill.source.local-name for the canonical source ID."]}, "related_validation_rules": ["canonical-id"]}},
+    "version": {"$ref": "common.schema.json#/definitions/interfaceVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Increment when the behavior-source contract changes."]}, "related_validation_rules": ["version-pin"]}},
+    "description": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Defines policy for the interface."}, "doc": {"authoring": ["Describe the source's intrinsic function, not a consumer's reason for using it."]}, "related_validation_rules": ["schema-shape"]}},
+    "binding": {"$ref": "common.schema.json#/definitions/behaviorSourceBinding", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": {"kind": "file", "path": "references/policy.md"}}, "doc": {"authoring": ["Bind exactly one existing behavior-shaping file."]}, "related_validation_rules": ["file-binding"]}},
+    "local_hash_inputs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"}, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List exact additional files owned by this node whose bytes affect its local behavior. Child-node bindings do not belong here."]}, "related_validation_rules": ["file-binding", "commit-backed-stamp"]}},
+    "content": {"$ref": "common.schema.json#/definitions/metadataContent", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "config"}, "doc": {"authoring": ["Classify the semantic content of the bound file."]}, "related_validation_rules": ["schema-shape"]}},
+    "format": {"$ref": "common.schema.json#/definitions/metadataFormat", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "markdown"}, "doc": {"authoring": ["Declare the bound file's concrete format."]}, "related_validation_rules": ["schema-shape"]}},
+    "uses_behavior_sources": {"$ref": "common.schema.json#/definitions/behaviorSourceEdgeList", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": []}, "doc": {"authoring": ["Declare version-pinned downstream behavior sources and the local reason for each edge."]}, "related_validation_rules": ["behavior-source-edge", "version-pin", "file-binding"]}},
+    "uses_interfaces": {"$ref": "common.schema.json#/definitions/usedInterfaceList", "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Declare every canonical interface named or orchestrated by this behavior source."]}, "related_validation_rules": ["relationship-edge", "version-pin", "interface-body-use"]}}
+  },
+  "x-famulus": {"audit_hash": "include", "binding_policy": "regular-file", "allowed_edge_types": ["behavior-source", "interface"]}
+}

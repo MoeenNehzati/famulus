@@ -98,17 +98,33 @@
         "template": "Every example edge pins version 1.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "The relationship validator checks reachable fixture versions."}
       },
-      "file-binding": {
-        "description": "Require file-backed nodes to bind existing regular files and to keep child bindings out of local_hash_inputs.",
-        "creation": "Bind a file relative to the owning node root and list only additional node-local files in local_hash_inputs.",
+      "gateway-file": {
+        "description": "Require every authored node to name an existing regular file as its gateway.",
+        "creation": "Name one file relative to the node ownership root and include it in the node's content patterns.",
         "validator": "skills/skill-maker/validators/blueprints.py",
         "tests": ["tests/test_officina_blueprint_graph.py", "tests/validate_blueprints.py"],
         "template": "Create SKILL.md, _rtx/_runner.py, _cx/_command, and references/policy.md before validating the example graph.",
-        "enforcement": {"state": "current", "task": "Task 8", "acceptance": "isolated-validator", "note": "Typed graph loading and source validation require existing regular bindings and validate declared local_hash_inputs."}
+        "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Typed graph loading and source validation require an existing regular gateway file included in content."}
+      },
+      "content-files": {
+        "description": "Resolve every content regex to the complete set of files owned by its node and require the gateway to match.",
+        "creation": "Use node-relative regular expressions that match all and only the files belonging to the node.",
+        "validator": "skills/skill-maker/validators/blueprints.py",
+        "tests": ["tests/test_officina_blueprint_graph.py", "tests/validate_blueprints.py"],
+        "template": "Each example content list matches its gateway and any additional exclusively owned files.",
+        "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Graph and source validation compile content expressions, resolve matching files, and require gateway inclusion."}
+      },
+      "content-exclusive": {
+        "description": "Require every content file to have exactly one authored node owner.",
+        "creation": "Partition skill and repository files between authored nodes without overlapping content matches.",
+        "validator": "skills/skill-maker/validators/blueprints.py",
+        "tests": ["tests/test_officina_blueprint_graph.py", "tests/validate_blueprints.py"],
+        "template": "The skill root owns SKILL.md while each sidecar owns its separate implementation or instruction files.",
+        "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Graph and source validation reject content files claimed by more than one authored node."}
       },
       "root-interface-edge": {
         "description": "Require one canonical root and exactly one default LLM interface representation.",
-        "creation": "Define default_interface inline for new skills; retain a default sidecar edge only for compatibility.",
+        "creation": "Define default_interface inline in every version 3 skill root; version 2 readers retain legacy sidecar compatibility.",
         "validator": "references/blueprint/skill.schema.json",
         "tests": ["tests/test_typed_blueprint_schemas.py"],
         "template": "The root example defines blueprint.yaml#default_interface.",
@@ -116,7 +132,7 @@
       },
       "default-interface": {
         "description": "Treat the inline default contract as the canonical skill.llm.default interface bound to SKILL.md.",
-        "creation": "Author the default contract under blueprint.yaml default_interface without a separate ID, binding, sidecar, or health record.",
+        "creation": "Author the default contract under blueprint.yaml default_interface without a separate ID, gateway, content list, sidecar, or health record.",
         "validator": "src/officina/common/blueprint_graph.py",
         "tests": ["tests/test_typed_blueprint_schemas.py", "tests/test_officina_blueprint_graph.py", "tests/test_officina_artifact_health.py"],
         "template": "Use blueprint.yaml#default_interface for the default LLM contract.",
@@ -138,13 +154,13 @@
         "template": "The single-skill fixture has no cross-skill interface edge requiring an allowlist.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "The relationship validator enforces current access-control rules."}
       },
-      "machine-binding-kind": {
+      "gateway-kind": {
         "description": "Allow Python entrypoint files under _rtx and direct command files under _cx, never inline shell strings.",
         "creation": "Use python-entrypoint for _rtx files and command-file for executable _cx files.",
         "validator": "references/blueprint/machine-interface.schema.json",
         "tests": ["tests/test_typed_blueprint_schemas.py"],
-        "template": "The example has shared Python bindings and one command-file binding.",
-        "enforcement": {"state": "schema", "task": "current", "acceptance": "schema", "note": "The machine-interface schema selects the allowed binding forms."}
+        "template": "The example has Python gateways and one command-file gateway.",
+        "enforcement": {"state": "schema", "task": "current", "acceptance": "schema", "note": "The machine-interface schema selects the allowed gateway forms."}
       },
       "dispatcher-argv-pattern": {
         "description": "Validate dispatcher argument patterns without treating them as subsystem confinement.",
@@ -202,29 +218,37 @@
         "template": "template.yaml requires both generated SKILL.md blocks and the fixture writes both marker pairs.",
         "enforcement": {"state": "current", "task": "Task 8", "acceptance": "isolated-validator", "note": "Blueprint and skill-body validators compare generated contract and interface blocks with the typed root and declared interfaces."}
       },
-      "sidecar-naming": {
-        "description": "Derive hidden sidecar names deterministically from bound files, with a distinct qualifier when multiple nodes bind one file.",
-        "creation": "For binding P, use dirname(P)/.basename(P).blueprint.yaml. For multiple bound nodes, use dirname(P)/.basename(P).<qualifier>.blueprint.yaml with a distinct qualifier for every node.",
+      "gateway-sidecar-naming": {
+        "description": "Derive each version 3 hidden sidecar name deterministically from its unique gateway file.",
+        "creation": "For gateway P, use dirname(P)/.basename(P).blueprint.yaml; version 3 forbids shared gateways and qualified sidecars.",
         "validator": "src/officina/common/blueprint_graph.py",
         "tests": ["tests/test_officina_blueprint_graph.py"],
-        "template": "Keep the default inline and use qualified _rtx/._runner.py.first.blueprint.yaml and _rtx/._runner.py.second.blueprint.yaml paths for shared subordinate bindings.",
-        "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-graph", "note": "Direct-owner loading enforces deterministic and qualified sidecar paths. Selected-provider loading derives same-binding peers from root locators and naming, so it applies the same rule without opening unused sidecars."}
+        "template": "Keep the default inline and use _rtx/._runner.py.blueprint.yaml for the _rtx/_runner.py gateway.",
+        "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-graph", "note": "Graph loading enforces the unqualified sidecar path derived from each unique version 3 gateway."}
       },
-      "binding-tracked": {
-        "description": "Require every bound file and local hash input to be tracked by the relevant Git commit.",
-        "creation": "Create only repository-relative bindings and local_hash_inputs tracked by the captured commit; child-node bindings are not local inputs.",
+      "content-tracked": {
+        "description": "Require every resolved content file to be tracked by the relevant Git commit.",
+        "creation": "Use content patterns that resolve only to repository-relative files tracked by the captured commit.",
         "validator": "skills/skill-maker/validators/blueprints.py",
         "tests": ["tests/validate_blueprints.py", "tests/test_officina_artifact_health.py"],
-        "template": "The lifecycle fixture Git-adds SKILL.md, bindings, sidecars, and the repository policy source.",
-        "enforcement": {"state": "current", "task": "Task 8", "acceptance": "isolated-validator", "note": "Source validation requires authored sidecars, bindings, and local_hash_inputs to be present in the Git index."}
+        "template": "The lifecycle fixture Git-adds SKILL.md, gateways, content files, sidecars, and the repository policy source.",
+        "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Source validation requires authored sidecars and resolved content files to be present in the Git index."}
       },
-      "binding-non-symlink": {
-        "description": "Require bindings and local hash inputs to be regular files rather than symlinks.",
-        "creation": "Resolve each path from the owning node root and reject symlink components, a symlink final path, and non-regular files; command bindings must also be executable under _cx.",
+      "content-non-symlink": {
+        "description": "Require every resolved content file to be a regular file rather than a symlink.",
+        "creation": "Resolve content from the owning node root and reject symlink components, symlink endpoints, and non-regular files; command gateways must also be executable under _cx.",
         "validator": "skills/skill-maker/validators/blueprints.py",
         "tests": ["tests/validate_blueprints.py", "tests/test_officina_blueprint_graph.py"],
         "template": "The lifecycle fixture writes regular files and makes _cx/_command executable.",
-        "enforcement": {"state": "current", "task": "Task 8", "acceptance": "isolated-validator", "note": "Graph and source validation reject symlink components, symlink endpoints, non-regular bindings, and invalid command-file placement or mode."}
+        "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Graph and source validation reject symlink components, symlink endpoints, non-regular content files, and invalid command-file placement or mode."}
+      },
+      "semantic-type": {
+        "description": "Classify the semantic role of the complete behavior-source artifact with the closed version 3 vocabulary.",
+        "creation": "Choose policy, instructions, reference, configuration, preference, schema, template, example, checklist, or dataset.",
+        "validator": "references/blueprint/behavior-source.schema.json",
+        "tests": ["tests/test_typed_blueprint_schemas.py"],
+        "template": "The repository policy source uses semantic_type: policy.",
+        "enforcement": {"state": "schema", "task": "current", "acceptance": "schema", "note": "The behavior-source schema enforces the closed semantic-type vocabulary."}
       },
       "behavior-source-visibility": {
         "description": "Restrict skill-local behavior sources to their declaring skill while making repository references visible to all skills.",
@@ -243,8 +267,8 @@
         "enforcement": {"state": "current", "task": "Task 8", "acceptance": "isolated-validator", "note": "The relationship validator loads the schema metadata matrix as the authoritative edge and target-type policy."}
       },
       "commit-backed-stamp": {
-        "description": "Require node and skill health records to carry one restorable Git source stamp for their local hash inputs.",
-        "creation": "Set source.vcs to git, source.commit to the captured full Git object ID, and source.input_paths to sorted repository-relative local inputs that are tracked, regular, non-symlink, and byte-identical in HEAD, index, and worktree.",
+        "description": "Require node and skill health records to carry one restorable Git source stamp for their resolved content files.",
+        "creation": "Set source.vcs to git, source.commit to the captured full Git object ID, and source.input_paths to sorted repository-relative content files that are tracked, regular, non-symlink, and byte-identical in HEAD, index, and worktree.",
         "validator": "src/officina/common/artifact_health.py",
         "tests": ["tests/test_officina_artifact_health.py"],
         "template": "No author template emits health records; health.schema.json defines source only for node-health and skill-health records.",

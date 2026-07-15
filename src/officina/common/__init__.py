@@ -18,9 +18,11 @@ from .blueprint_graph import (
     BlueprintGraphError,
     BlueprintNode,
     SkillBlueprintGraph,
+    authored_node_input_paths,
     expanded_legacy_blueprint,
     load_repository_blueprint_graphs,
     load_skill_blueprint_graph,
+    resolved_node_content_paths,
     resolve_repository_skill_graph,
 )
 from .artifact_health import (
@@ -70,6 +72,7 @@ __all__ = [
     "BlueprintEdge",
     "BlueprintGraphError",
     "BlueprintNode",
+    "authored_node_input_paths",
     "blueprint_schema_hash",
     "atomic_create_bytes",
     "atomic_replace_bytes",
@@ -80,6 +83,7 @@ __all__ = [
     "load_blueprint_schema",
     "load_repository_blueprint_graphs",
     "load_skill_blueprint_graph",
+    "resolved_node_content_paths",
     "resolve_repository_skill_graph",
     "lookup_secret",
     "NodeHashState",

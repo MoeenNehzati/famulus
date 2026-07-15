@@ -33,14 +33,26 @@ class BlueprintSchemaError(BlueprintGraphError):
 @dataclass(frozen=True)
 class BlueprintNode:
     node_id: str
-    blueprint_type: str
+    node_type: str
     version: int
     skill_root: Path
     blueprint_path: Path
-    binding_path: Path | None
+    gateway_path: Path | None
     declaration: dict[str, Any]
     virtual: bool = False
     embedded: bool = False
+
+    @property
+    def blueprint_type(self) -> str:
+        """Return the normalized node type for compatibility with v2 consumers."""
+
+        return self.node_type
+
+    @property
+    def binding_path(self) -> Path | None:
+        """Return the normalized gateway for compatibility with v2 consumers."""
+
+        return self.gateway_path
 
 
 @dataclass(frozen=True)
@@ -105,15 +117,37 @@ class RuntimeFileBinding:
 
 
 _TYPED_SCHEMA_FILES = {
-    "skill": "skill.schema.json",
-    "llm-interface": "llm-interface.schema.json",
-    "machine-interface": "machine-interface.schema.json",
-    "behavior-source": "behavior-source.schema.json",
+    (2, "skill"): "v2/skill.schema.json",
+    (2, "llm-interface"): "v2/llm-interface.schema.json",
+    (2, "machine-interface"): "v2/machine-interface.schema.json",
+    (2, "behavior-source"): "v2/behavior-source.schema.json",
+    (3, "skill"): "skill.schema.json",
+    (3, "llm-interface"): "llm-interface.schema.json",
+    (3, "machine-interface"): "machine-interface.schema.json",
+    (3, "behavior-source"): "behavior-source.schema.json",
 }
 
 
 def _is_typed_declaration(declaration: dict[str, Any]) -> bool:
-    return declaration.get("schema_version") == 2 or "blueprint_type" in declaration
+    return declaration.get("schema_version") in {2, 3} or any(
+        key in declaration for key in ("blueprint_type", "node_type")
+    )
+
+
+def declaration_node_type(declaration: dict[str, Any]) -> str | None:
+    """Return one typed declaration's version-normalized node type."""
+
+    key = "node_type" if declaration.get("schema_version") == 3 else "blueprint_type"
+    value = declaration.get(key)
+    return value if isinstance(value, str) else None
+
+
+def declaration_gateway(declaration: dict[str, Any]) -> dict[str, Any] | None:
+    """Return one typed declaration's version-normalized gateway mapping."""
+
+    key = "gateway" if declaration.get("schema_version") == 3 else "binding"
+    value = declaration.get(key)
+    return value if isinstance(value, dict) else None
 
 
 def node_owner_namespace(node: BlueprintNode, repo_root: Path) -> str:
@@ -424,10 +458,10 @@ def _resolve_locator(
     return candidate
 
 
-def _binding_path(skill_root: Path, declaration: dict[str, Any]) -> Path | None:
-    binding = declaration.get("binding")
-    if isinstance(binding, dict):
-        path = binding.get("path")
+def _gateway_path(skill_root: Path, declaration: dict[str, Any]) -> Path | None:
+    gateway = declaration_gateway(declaration)
+    if gateway is not None:
+        path = gateway.get("path")
         if isinstance(path, str) and path:
             return skill_root / path
 
@@ -507,11 +541,11 @@ def _legacy_graph(skill_root: Path, blueprint_path: Path, declaration: dict[str,
 
     root = BlueprintNode(
         node_id=skill_id,
-        blueprint_type="skill",
+        node_type="skill",
         version=root_version,
         skill_root=skill_root,
         blueprint_path=blueprint_path,
-        binding_path=None,
+        gateway_path=None,
         declaration=declaration,
     )
     nodes = {skill_id: root}
@@ -529,11 +563,11 @@ def _legacy_graph(skill_root: Path, blueprint_path: Path, declaration: dict[str,
             version = _positive_version(specification.get("version"), node_id)
             node = BlueprintNode(
                 node_id=node_id,
-                blueprint_type=blueprint_type,
+                node_type=blueprint_type,
                 version=version,
                 skill_root=skill_root,
                 blueprint_path=blueprint_path,
-                binding_path=_binding_path(skill_root, specification),
+                gateway_path=_gateway_path(skill_root, specification),
                 declaration=specification,
                 virtual=True,
             )
@@ -585,8 +619,8 @@ def _typed_graph(
     skill_id = declaration.get("id")
     if not isinstance(skill_id, str) or not skill_id:
         raise BlueprintGraphError(f"{blueprint_path}: typed skill blueprint requires a non-empty id")
-    if declaration.get("blueprint_type") != "skill":
-        raise BlueprintGraphError(f"{blueprint_path}: canonical root blueprint_type must be skill")
+    if declaration_node_type(declaration) != "skill":
+        raise BlueprintGraphError(f"{blueprint_path}: canonical root node type must be skill")
     if skill_id != skill_root.name:
         raise BlueprintGraphError(
             f"{blueprint_path}: skill id {skill_id!r} must match directory name {skill_root.name!r}"
@@ -618,11 +652,15 @@ def _typed_graph(
     )
     root = BlueprintNode(
         node_id=skill_id,
-        blueprint_type="skill",
+        node_type="skill",
         version=root_version,
         skill_root=skill_root,
         blueprint_path=blueprint_path,
-        binding_path=skill_root / "SKILL.md" if inline_default is not None else None,
+        gateway_path=(
+            _gateway_path(skill_root, declaration)
+            if declaration.get("schema_version") == 3
+            else skill_root / "SKILL.md" if inline_default is not None else None
+        ),
         declaration=declaration,
     )
     nodes: dict[str, BlueprintNode] = {skill_id: root}
@@ -672,17 +710,17 @@ def _typed_graph(
             raise BlueprintGraphError(
                 f"{path}: node version {version} does not match pinned version {expected_version}"
             )
-        blueprint_type = node_declaration.get("blueprint_type")
+        blueprint_type = declaration_node_type(node_declaration)
         if blueprint_type not in {"llm-interface", "machine-interface", "behavior-source"}:
-            raise BlueprintGraphError(f"{path}: unsupported blueprint_type {blueprint_type!r}")
+            raise BlueprintGraphError(f"{path}: unsupported node type {blueprint_type!r}")
 
         node = BlueprintNode(
             node_id=node_id,
-            blueprint_type=blueprint_type,
+            node_type=blueprint_type,
             version=version,
             skill_root=node_skill_root,
             blueprint_path=path,
-            binding_path=_binding_path(node_skill_root, node_declaration),
+            gateway_path=_gateway_path(node_skill_root, node_declaration),
             declaration=node_declaration,
         )
         _validate_node_owner_namespace(node, repo_root)
@@ -734,20 +772,30 @@ def _typed_graph(
         version = _positive_version(
             inline_default.get("version"), f"{blueprint_path}:default_interface"
         )
-        embedded_declaration = {
-            "schema_version": 2,
-            "blueprint_type": "llm-interface",
-            "id": inline_default_id,
-            "binding": {"kind": "instruction-file", "path": "SKILL.md"},
-            **deepcopy(inline_default),
-        }
+        if declaration.get("schema_version") == 3:
+            embedded_declaration = {
+                "schema_version": 3,
+                "node_type": "llm-interface",
+                "id": inline_default_id,
+                "gateway": deepcopy(declaration["gateway"]),
+                "content": deepcopy(declaration["content"]),
+                **deepcopy(inline_default),
+            }
+        else:
+            embedded_declaration = {
+                "schema_version": 2,
+                "blueprint_type": "llm-interface",
+                "id": inline_default_id,
+                "binding": {"kind": "instruction-file", "path": "SKILL.md"},
+                **deepcopy(inline_default),
+            }
         embedded = BlueprintNode(
             node_id=inline_default_id,
-            blueprint_type="llm-interface",
+            node_type="llm-interface",
             version=version,
             skill_root=skill_root,
             blueprint_path=blueprint_path,
-            binding_path=skill_root / "SKILL.md",
+            gateway_path=skill_root / "SKILL.md",
             declaration=embedded_declaration,
             embedded=True,
         )
@@ -878,80 +926,117 @@ def _expected_sidecar_path(
 
 
 def _validate_typed_layout(graph: SkillBlueprintGraph) -> None:
-    bound_nodes: dict[Path, list[BlueprintNode]] = {}
+    version_two_bound_nodes: dict[Path, list[BlueprintNode]] = {}
+    version_three_gateways: dict[Path, BlueprintNode] = {}
+    version_three_content_owners: dict[Path, BlueprintNode] = {}
     repo_root = graph.skill_root.parent.parent
     for node in graph.nodes.values():
-        if node.blueprint_type == "skill":
+        schema_version = node.declaration.get("schema_version")
+        if node.node_type == "skill" and schema_version != 3:
             continue
-        binding_path = node.binding_path
-        binding = node.declaration.get("binding")
-        binding_kind = binding.get("kind") if isinstance(binding, dict) else None
-        raw_binding_path = binding.get("path") if isinstance(binding, dict) else None
-        if isinstance(raw_binding_path, str):
-            relative_binding = Path(raw_binding_path)
-            if relative_binding.is_absolute() or ".." in relative_binding.parts:
+        gateway_path = node.gateway_path
+        gateway = declaration_gateway(node.declaration)
+        gateway_kind = (
+            gateway.get("kind") if isinstance(gateway, dict) else None
+        )
+        raw_gateway_path = (
+            gateway.get("path") if isinstance(gateway, dict) else None
+        )
+        if isinstance(raw_gateway_path, str):
+            relative_gateway = Path(raw_gateway_path)
+            if relative_gateway.is_absolute() or ".." in relative_gateway.parts:
                 raise BlueprintGraphError(
-                    f"{node.blueprint_path}: binding path must be relative without parent traversal"
+                    f"{node.blueprint_path}: gateway path must be relative without parent traversal"
                 )
         if (
             node.node_id == f"{graph.root.node_id}.llm.default"
-            and binding_path != graph.skill_root / "SKILL.md"
+            and gateway_path != graph.skill_root / "SKILL.md"
         ):
             raise BlueprintGraphError(
-                f"{node.blueprint_path}: default LLM interface must bind SKILL.md"
+                f"{node.blueprint_path}: default LLM interface gateway must be SKILL.md"
             )
-        if binding_path is None:
+        if gateway_path is None:
             raise BlueprintGraphError(
-                f"{node.blueprint_path}: binding must be an existing regular file"
+                f"{node.blueprint_path}: gateway must be an existing regular file"
             )
         if (
-            binding_path.name.endswith(".blueprint.yaml")
-            or binding_path.name.endswith(".health.json")
-            or "pooled-blueprint-review" in binding_path.name
+            gateway_path.name.endswith(".blueprint.yaml")
+            or gateway_path.name.endswith(".health.json")
+            or "pooled-blueprint-review" in gateway_path.name
         ):
             raise BlueprintGraphError(
-                f"{node.blueprint_path}: binding cannot be a blueprint or health artifact"
+                f"{node.blueprint_path}: gateway cannot be a blueprint or health artifact"
             )
-        if binding_kind in {"python-entrypoint", "command-file"}:
-            directory = "_rtx" if binding_kind == "python-entrypoint" else "_cx"
+        if gateway_kind in {"python-entrypoint", "command-file"}:
+            directory = "_rtx" if gateway_kind == "python-entrypoint" else "_cx"
             try:
-                Path(os.path.abspath(binding_path)).relative_to(
+                Path(os.path.abspath(gateway_path)).relative_to(
                     Path(os.path.abspath(node.skill_root / directory))
                 )
             except ValueError as exc:
                 raise BlueprintGraphError(
-                    f"{node.blueprint_path}: {binding_kind} binding must be under {directory}"
+                    f"{node.blueprint_path}: {gateway_kind} gateway must be under {directory}"
                 ) from exc
             try:
-                binding_path.resolve().relative_to(
+                gateway_path.resolve().relative_to(
                     (node.skill_root / directory).resolve()
                 )
             except ValueError as exc:
                 raise BlueprintGraphError(
-                    f"{node.blueprint_path}: {binding_kind} binding must resolve under {directory}"
+                    f"{node.blueprint_path}: {gateway_kind} gateway must resolve under {directory}"
                 ) from exc
         try:
-            binding_handle = open_runtime_file(
-                binding_path,
+            gateway_handle = open_runtime_file(
+                gateway_path,
                 node.skill_root,
                 repo_root,
-                executable=binding_kind == "command-file",
+                executable=gateway_kind == "command-file",
             )
         except BlueprintGraphError as exc:
-            if binding_kind == "command-file" and "not executable" in str(exc):
+            if gateway_kind == "command-file" and "not executable" in str(exc):
                 raise BlueprintGraphError(
-                    f"{node.blueprint_path}: command file must be executable: {raw_binding_path}"
+                    f"{node.blueprint_path}: command file must be executable: {raw_gateway_path}"
                 ) from exc
             if "symlink" in str(exc):
                 raise
             raise BlueprintGraphError(
-                f"{node.blueprint_path}: binding must be an existing regular file: {exc}"
+                f"{node.blueprint_path}: gateway must be an existing regular file: {exc}"
             ) from exc
-        binding_handle.close()
-        if not node.embedded:
-            bound_nodes.setdefault(binding_path, []).append(node)
+        gateway_handle.close()
+        if node.embedded:
+            continue
 
-    for binding_path, nodes in bound_nodes.items():
+        if schema_version == 3:
+            canonical_gateway = Path(os.path.abspath(gateway_path))
+            previous_entry_owner = version_three_gateways.get(canonical_gateway)
+            if previous_entry_owner is not None:
+                raise BlueprintGraphError(
+                    f"{node.blueprint_path}: version 3 gateway {gateway_path} "
+                    f"is shared by {previous_entry_owner.node_id} and {node.node_id}"
+                )
+            version_three_gateways[canonical_gateway] = node
+            for content_path in resolved_node_content_paths(node, repo_root):
+                canonical_content = Path(os.path.abspath(content_path))
+                previous_owner = version_three_content_owners.get(canonical_content)
+                if previous_owner is not None:
+                    raise BlueprintGraphError(
+                        f"{node.blueprint_path}: content file {content_path} is owned by both "
+                        f"{previous_owner.node_id} and {node.node_id}"
+                    )
+                version_three_content_owners[canonical_content] = node
+            if node.node_type != "skill":
+                expected = gateway_path.with_name(
+                    f".{gateway_path.name}.blueprint.yaml"
+                )
+                if node.blueprint_path != expected:
+                    raise BlueprintGraphError(
+                        f"{node.blueprint_path}: sidecar name must match its gateway; "
+                        f"expected {expected}"
+                    )
+        else:
+            version_two_bound_nodes.setdefault(gateway_path, []).append(node)
+
+    for binding_path, nodes in version_two_bound_nodes.items():
         locator_entries = _root_binding_locator_entries(graph, binding_path)
         binding_node_ids = {node.node_id for node in nodes} | set(locator_entries)
         authored_paths = {
@@ -1049,7 +1134,7 @@ def _validate_concrete_node_schemas(
 ) -> None:
     validators: dict[str, jsonschema.Draft7Validator] = {}
     for node in sorted(graph.nodes.values(), key=lambda item: str(item.blueprint_path)):
-        if node.virtual:
+        if node.virtual or node.embedded:
             continue
         errors = _typed_declaration_schema_errors(
             node.blueprint_path,
@@ -1069,12 +1154,17 @@ def _typed_declaration_schema_errors(
     *,
     expected_blueprint_type: str | None = None,
 ) -> tuple[BlueprintSchemaError, ...]:
-    blueprint_type = expected_blueprint_type or declaration.get("blueprint_type")
+    node_type = expected_blueprint_type or declaration_node_type(declaration)
+    schema_version = declaration.get("schema_version")
+    selected_version = schema_version
+    if selected_version not in {2, 3}:
+        selected_version = 3 if "node_type" in declaration else 2
     try:
-        schema_name = _TYPED_SCHEMA_FILES[blueprint_type]
+        schema_name = _TYPED_SCHEMA_FILES[(selected_version, node_type)]
     except KeyError as exc:
         raise BlueprintGraphError(
-            f"{blueprint_path}: unsupported typed blueprint_type {blueprint_type!r}"
+            f"{blueprint_path}: unsupported typed node type {node_type!r} "
+            f"for schema version {schema_version!r}"
         ) from exc
     validator = validators.get(schema_name)
     if validator is None:
@@ -1106,25 +1196,14 @@ def _load_schema_validator(schema_path: Path) -> jsonschema.Draft7Validator:
     """Read a concrete schema bundle through one no-follow directory handle."""
 
     schema_path = Path(os.path.abspath(schema_path))
-    schema_root = schema_path.parent
+    schema_root = (
+        schema_path.parent.parent
+        if schema_path.parent.name == "v2"
+        else schema_path.parent
+    )
     repo_root = schema_root.parent.parent
-    directory: RuntimeFileBinding | None = None
+    directories: list[RuntimeFileBinding] = []
     try:
-        directory = _open_runtime_descriptor(
-            schema_root,
-            repo_root,
-            repo_root,
-            directory=True,
-        )
-        names = sorted(
-            name for name in os.listdir(directory.fd) if name.endswith(".schema.json")
-        )
-        if schema_path.name not in names:
-            raise BlueprintSchemaError(
-                schema_path,
-                "$",
-                "cannot load schema: file does not exist",
-            )
         documents: dict[str, dict[str, Any]] = {}
         file_flags = (
             os.O_RDONLY
@@ -1132,33 +1211,61 @@ def _load_schema_validator(schema_path: Path) -> jsonschema.Draft7Validator:
             | os.O_NONBLOCK
             | getattr(os, "O_CLOEXEC", 0)
         )
-        for name in names:
-            child_path = schema_root / name
-            child_fd = -1
-            try:
-                child_fd = os.open(name, file_flags, dir_fd=directory.fd)
-                metadata = os.fstat(child_fd)
-                if not stat.S_ISREG(metadata.st_mode):
-                    raise OSError(f"schema is not a regular file: {child_path}")
-                child = RuntimeFileBinding(child_path, child_fd, metadata.st_mode)
+        for relative_directory in (Path("."), Path("v2")):
+            directory_path = schema_root / relative_directory
+            if relative_directory != Path(".") and not directory_path.exists():
+                continue
+            directory = _open_runtime_descriptor(
+                directory_path,
+                repo_root,
+                repo_root,
+                directory=True,
+            )
+            directories.append(directory)
+            for name in sorted(
+                name
+                for name in os.listdir(directory.fd)
+                if name.endswith(".schema.json")
+            ):
+                relative_name = (
+                    name
+                    if relative_directory == Path(".")
+                    else (relative_directory / name).as_posix()
+                )
+                child_path = schema_root / relative_name
                 child_fd = -1
                 try:
-                    document = json.loads(child.read_bytes().decode("utf-8"))
+                    child_fd = os.open(name, file_flags, dir_fd=directory.fd)
+                    metadata = os.fstat(child_fd)
+                    if not stat.S_ISREG(metadata.st_mode):
+                        raise OSError(f"schema is not a regular file: {child_path}")
+                    child = RuntimeFileBinding(child_path, child_fd, metadata.st_mode)
+                    child_fd = -1
+                    try:
+                        document = json.loads(child.read_bytes().decode("utf-8"))
+                    finally:
+                        child.close()
+                    if not isinstance(document, dict):
+                        raise TypeError("schema top level must be a mapping")
+                    documents[relative_name] = document
+                except (OSError, UnicodeError, json.JSONDecodeError, TypeError) as exc:
+                    raise BlueprintSchemaError(
+                        child_path,
+                        "$",
+                        f"cannot load schema: {exc}",
+                    ) from exc
                 finally:
-                    child.close()
-                if not isinstance(document, dict):
-                    raise TypeError("schema top level must be a mapping")
-                documents[name] = document
-            except (OSError, UnicodeError, json.JSONDecodeError, TypeError) as exc:
-                raise BlueprintSchemaError(
-                    child_path,
-                    "$",
-                    f"cannot load schema: {exc}",
-                ) from exc
-            finally:
-                if child_fd >= 0:
-                    os.close(child_fd)
-        selected = documents[schema_path.name]
+                    if child_fd >= 0:
+                        os.close(child_fd)
+        selected_name = schema_path.relative_to(schema_root).as_posix()
+        try:
+            selected = documents[selected_name]
+        except KeyError as exc:
+            raise BlueprintSchemaError(
+                schema_path,
+                "$",
+                "cannot load schema: file does not exist",
+            ) from exc
         store: dict[str, dict[str, Any]] = {}
         for name, document in documents.items():
             store[name] = document
@@ -1167,7 +1274,7 @@ def _load_schema_validator(schema_path: Path) -> jsonschema.Draft7Validator:
             if isinstance(schema_id, str):
                 store[schema_id] = document
         resolver = jsonschema.RefResolver(
-            base_uri=schema_root.as_uri() + "/",
+            base_uri=schema_path.as_uri(),
             referrer=selected,
             store=store,
         )
@@ -1181,7 +1288,7 @@ def _load_schema_validator(schema_path: Path) -> jsonschema.Draft7Validator:
             f"cannot load schema bundle: {exc}",
         ) from exc
     finally:
-        if directory is not None:
+        for directory in directories:
             directory.close()
 def typed_declaration_schema_errors(
     blueprint_path: Path,
@@ -1198,39 +1305,148 @@ def typed_declaration_schema_errors(
     )
 
 
-def authored_node_input_paths(node: BlueprintNode) -> tuple[Path, ...]:
-    """Return lexical authored file paths owned by a typed graph node."""
+def _is_forbidden_content_artifact(path: Path) -> bool:
+    name = path.name
+    return (
+        name == "blueprint.yaml"
+        or name.endswith(".blueprint.yaml")
+        or name.endswith(".health.json")
+        or name.endswith(".audit.json")
+        or "pooled-blueprint-review" in name
+    )
 
-    paths = {node.blueprint_path}
-    if node.binding_path is not None:
-        paths.add(node.binding_path)
-    declared_inputs_value = node.declaration.get("local_hash_inputs", [])
-    if not isinstance(declared_inputs_value, list):
-        raise BlueprintGraphError(
-            f"{node.blueprint_path}: local_hash_inputs must be a list"
+
+def _regular_files_beneath(root: Path) -> tuple[Path, ...]:
+    files: list[Path] = []
+    for directory, directory_names, file_names in os.walk(root, followlinks=False):
+        directory_path = Path(directory)
+        directory_names[:] = sorted(
+            name
+            for name in directory_names
+            if not (directory_path / name).is_symlink()
         )
-    declared_inputs = list(declared_inputs_value)
-    default_interface = node.declaration.get("default_interface")
-    if node.blueprint_type == "skill" and isinstance(default_interface, dict):
-        inline_inputs = default_interface.get("local_hash_inputs", [])
-        if not isinstance(inline_inputs, list):
+        for name in sorted(file_names):
+            path = directory_path / name
+            try:
+                metadata = path.lstat()
+            except OSError:
+                continue
+            if stat.S_ISREG(metadata.st_mode):
+                files.append(path)
+    return tuple(sorted(files))
+
+
+def resolved_node_content_paths(
+    node: BlueprintNode,
+    repo_root: Path,
+) -> tuple[Path, ...]:
+    """Resolve the regular files exclusively owned by one authored node."""
+
+    repo_root = Path(os.path.abspath(repo_root))
+    owner_root = Path(os.path.abspath(node.skill_root))
+    try:
+        owner_root.relative_to(repo_root)
+    except ValueError as exc:
+        raise BlueprintGraphError(
+            f"{node.blueprint_path}: content ownership root must be inside the repository"
+        ) from exc
+
+    if node.declaration.get("schema_version") != 3:
+        paths: set[Path] = set()
+        if node.gateway_path is not None:
+            paths.add(node.gateway_path)
+        declared_inputs_value = node.declaration.get("local_hash_inputs", [])
+        if not isinstance(declared_inputs_value, list):
             raise BlueprintGraphError(
-                f"{node.blueprint_path}: default_interface.local_hash_inputs must be a list"
+                f"{node.blueprint_path}: local_hash_inputs must be a list"
             )
-        declared_inputs.extend(inline_inputs)
-    for declared in declared_inputs:
-        if not isinstance(declared, str) or not declared:
+        declared_inputs = list(declared_inputs_value)
+        default_interface = node.declaration.get("default_interface")
+        if node.node_type == "skill" and isinstance(default_interface, dict):
+            inline_inputs = default_interface.get("local_hash_inputs", [])
+            if not isinstance(inline_inputs, list):
+                raise BlueprintGraphError(
+                    f"{node.blueprint_path}: default_interface.local_hash_inputs must be a list"
+                )
+            declared_inputs.extend(inline_inputs)
+        for declared in declared_inputs:
+            if not isinstance(declared, str) or not declared:
+                raise BlueprintGraphError(
+                    f"{node.blueprint_path}: local_hash_inputs entries must be non-empty strings"
+                )
+            relative = Path(declared)
+            if relative.is_absolute() or ".." in relative.parts:
+                raise BlueprintGraphError(
+                    f"{node.blueprint_path}: local_hash_input {declared!r} must be "
+                    "owner-relative without parent traversal"
+                )
+            paths.add(owner_root / relative)
+        return tuple(sorted(paths))
+
+    raw_patterns = node.declaration.get("content")
+    if not isinstance(raw_patterns, list) or not raw_patterns:
+        raise BlueprintGraphError(
+            f"{node.blueprint_path}: content must be a non-empty list of regex patterns"
+        )
+    candidates = _regular_files_beneath(owner_root)
+    relative_candidates = {
+        path: path.relative_to(owner_root).as_posix() for path in candidates
+    }
+    matched_paths: set[Path] = set()
+    for raw_pattern in raw_patterns:
+        if not isinstance(raw_pattern, str) or not raw_pattern:
             raise BlueprintGraphError(
-                f"{node.blueprint_path}: local_hash_inputs entries must be non-empty strings"
+                f"{node.blueprint_path}: content patterns must be non-empty strings"
             )
-        relative = Path(declared)
-        if relative.is_absolute() or ".." in relative.parts:
+        try:
+            pattern = re.compile(raw_pattern)
+        except re.error as exc:
             raise BlueprintGraphError(
-                f"{node.blueprint_path}: local_hash_input {declared!r} must be "
-                "owner-relative without parent traversal"
+                f"{node.blueprint_path}: invalid content regex {raw_pattern!r}: {exc}"
+            ) from exc
+        matches = {
+            path
+            for path, relative in relative_candidates.items()
+            if pattern.fullmatch(relative) is not None
+        }
+        if not matches:
+            raise BlueprintGraphError(
+                f"{node.blueprint_path}: content pattern {raw_pattern!r} matched no files"
             )
-        paths.add(node.skill_root / relative)
-    return tuple(sorted(paths))
+        matched_paths.update(matches)
+
+    for path in sorted(matched_paths):
+        if _is_forbidden_content_artifact(path):
+            raise BlueprintGraphError(
+                f"{node.blueprint_path}: content cannot include a blueprint or health artifact: {path}"
+            )
+    if node.gateway_path is None or node.gateway_path not in matched_paths:
+        raise BlueprintGraphError(
+            f"{node.blueprint_path}: gateway must be included in content"
+        )
+    return tuple(sorted(matched_paths))
+
+
+def authored_node_input_paths(
+    node: BlueprintNode,
+    repo_root: Path | None = None,
+) -> tuple[Path, ...]:
+    """Return the authored blueprint and resolved content files for one node."""
+
+    if repo_root is None:
+        owner_root = Path(os.path.abspath(node.skill_root))
+        blueprint_path = Path(os.path.abspath(node.blueprint_path))
+        if blueprint_path.is_relative_to(owner_root / "references"):
+            repo_root = owner_root
+        elif owner_root.parent.name == "skills":
+            repo_root = owner_root.parent.parent
+        else:
+            raise BlueprintGraphError(
+                f"{node.blueprint_path}: cannot infer repository root from node ownership"
+            )
+    return tuple(
+        sorted({node.blueprint_path, *resolved_node_content_paths(node, repo_root)})
+    )
 
 
 def validate_runtime_file_path(
@@ -1250,9 +1466,9 @@ def validate_runtime_file_path(
 def _validate_runtime_files(graph: SkillBlueprintGraph) -> None:
     repo_root = graph.skill_root.parent.parent
     for node in graph.nodes.values():
-        for path in authored_node_input_paths(node):
+        for path in authored_node_input_paths(node, repo_root):
             validate_runtime_file_path(path, node.skill_root, repo_root)
-        binding = node.declaration.get("binding")
+        binding = declaration_gateway(node.declaration)
         if (
             isinstance(binding, dict)
             and binding.get("kind") == "command-file"
@@ -1611,13 +1827,38 @@ def resolve_repository_skill_graph(
     for skill_id in root_skill_ids:
         visit(skill_id)
     _reject_cycles(reachable_nodes, list(reachable_edges.values()))
-    return SkillBlueprintGraph(
+    resolved = SkillBlueprintGraph(
         root_graph.skill_root,
         root_graph.root,
         reachable_nodes,
         tuple(reachable_edges.values()),
         root_skill_ids,
     )
+    repo_root = root_graph.skill_root.parent.parent
+    content_owners: dict[Path, BlueprintNode] = {}
+    gateway_owners: dict[Path, BlueprintNode] = {}
+    for node in sorted(resolved.nodes.values(), key=lambda item: item.node_id):
+        if node.embedded or node.declaration.get("schema_version") != 3:
+            continue
+        if node.gateway_path is not None:
+            gateway = Path(os.path.abspath(node.gateway_path))
+            previous_entry_owner = gateway_owners.get(gateway)
+            if previous_entry_owner is not None:
+                raise BlueprintGraphError(
+                    f"{node.blueprint_path}: version 3 gateway {node.gateway_path} "
+                    f"is shared by {previous_entry_owner.node_id} and {node.node_id}"
+                )
+            gateway_owners[gateway] = node
+        for path in resolved_node_content_paths(node, repo_root):
+            canonical = Path(os.path.abspath(path))
+            previous_owner = content_owners.get(canonical)
+            if previous_owner is not None:
+                raise BlueprintGraphError(
+                    f"{node.blueprint_path}: content file {path} is owned by both "
+                    f"{previous_owner.node_id} and {node.node_id}"
+                )
+            content_owners[canonical] = node
+    return resolved
 
 
 def expanded_legacy_blueprint(graph: SkillBlueprintGraph) -> dict[str, Any]:
@@ -1632,7 +1873,10 @@ def expanded_legacy_blueprint(graph: SkillBlueprintGraph) -> dict[str, Any]:
         if key not in {
             "schema_version",
             "blueprint_type",
+            "node_type",
             "id",
+            "gateway",
+            "content",
             "default_interface",
             "interfaces",
         }
@@ -1647,7 +1891,16 @@ def expanded_legacy_blueprint(graph: SkillBlueprintGraph) -> dict[str, Any]:
         specification = {
             key: deepcopy(value)
             for key, value in node.declaration.items()
-            if key not in {"schema_version", "blueprint_type", "id", "binding", "behavior_sources"}
+            if key not in {
+                "schema_version",
+                "blueprint_type",
+                "node_type",
+                "id",
+                "binding",
+                "gateway",
+                "content",
+                "behavior_sources",
+            }
         }
         behavior_sources: list[dict[str, Any]] = []
         for source_entry in node.declaration.get("behavior_sources", []):
@@ -1657,17 +1910,21 @@ def expanded_legacy_blueprint(graph: SkillBlueprintGraph) -> dict[str, Any]:
             source_node = graph.nodes.get(source_id) if isinstance(source_id, str) else None
             if source_node is None:
                 continue
-            source_binding = source_node.declaration.get("binding", {})
+            source_gateway = declaration_gateway(source_node.declaration) or {}
             behavior_sources.append(
                 {
-                    "path": source_binding.get("path"),
-                    "content": source_node.declaration.get("content"),
+                    "path": source_gateway.get("path"),
+                    "content": (
+                        source_node.declaration.get("semantic_type")
+                        if source_node.declaration.get("schema_version") == 3
+                        else source_node.declaration.get("content")
+                    ),
                     "format": source_node.declaration.get("format"),
                     "reason": source_entry.get("reason"),
                 }
             )
 
-        binding = node.declaration.get("binding", {})
+        binding = declaration_gateway(node.declaration) or {}
         if namespace == "machine":
             if binding.get("kind") == "python-entrypoint":
                 specification["invocation"] = {
