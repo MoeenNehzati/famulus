@@ -190,6 +190,58 @@ The schema family, graph loader, validators, dispatcher compatibility layer,
 audit writer, and drift reader implement this model. Typed and legacy roots are
 accepted concurrently; new authoring uses schema version 2.
 
+### Recursive audit-state currentness
+
+Audit state is evaluated recursively in DFS postorder. A node is `current` only
+when its blueprint and binding match its recorded hashes, every source node is
+current, and no source has a `state_unchanged_since` later than the node's. It is
+`stale` when any of those conditions fails.
+
+```text
+CHECK(root):
+    visiting := empty set
+    current := empty map
+    return IS_CURRENT(root)
+
+
+IS_CURRENT(X):
+    if X is in visiting:
+        return error("dependency cycle")
+
+    if current contains X:
+        return current[X]
+
+    add X to visiting
+    all_sources_current := true
+
+    for each source Y of X:
+        if IS_CURRENT(Y) is false:
+            all_sources_current := false
+
+    current[X] :=
+        blueprint_is_current(X)
+        and binding_is_current(X)
+        and all_sources_current
+        and, for every source Y of X,
+            Y.state_unchanged_since <= X.state_unchanged_since
+
+    remove X from visiting
+    return current[X]
+```
+
+`blueprint_is_current` and `binding_is_current` compare the exact current file
+bytes with the hashes in X's audit record. Because source edges are part of the
+blueprint, adding, removing, or changing an edge makes the blueprint stale.
+`state_unchanged_since` changes only when a new audit record admits a different
+blueprint, binding, or source state; merely checking an unchanged node does not
+change it.
+
+The `visiting` set is the active recursion path and exists only to detect
+dependency cycles. It is not part of the currentness rule and may be omitted if
+acyclicity has already been established. The `current` map memoizes completed
+nodes so a shared source is evaluated once. This procedure reads existing audit
+records; it does not itself approve a stale node or write a replacement record.
+
 The audit system certifies the reachable artifact graph one node at a time,
 not only a skill-level summary. A skill audit starts from the canonical skill
 `blueprint.yaml`, follows declared interface and behavior-source dependencies, and
