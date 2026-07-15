@@ -242,6 +242,16 @@ acyclicity has already been established. The `current` map memoizes completed
 nodes so a shared source is evaluated once. This procedure reads existing audit
 records; it does not itself approve a stale node or write a replacement record.
 
+The recursive audit writes records in the same DFS postorder. After all of X's
+sources are current, X is leaving the traversal for good. If X is already
+current, its recorded hashes and `state_unchanged_since` remain unchanged. If X
+is stale and its audit is accepted, the audit records X's current blueprint and
+binding hashes and sets `state_unchanged_since` to a time taken after all source
+records were completed. If the audit is not accepted, no replacement record is
+written and X remains stale. Consequently, a newly admitted X cannot have a
+`state_unchanged_since` earlier than any source state admitted during the same
+recursive audit.
+
 The audit system certifies the reachable artifact graph one node at a time,
 not only a skill-level summary. A skill audit starts from the canonical skill
 `blueprint.yaml`, follows declared interface and behavior-source dependencies, and
