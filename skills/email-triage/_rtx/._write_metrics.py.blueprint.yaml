@@ -1,0 +1,36 @@
+schema_version: 2
+blueprint_type: machine-interface
+id: email-triage.machine.scripts-write-metrics
+version: 1
+description: Write metrics from a triage run (emails scanned, added to lists, skipped, deduped) to status.json for visibility and debugging.
+usage: Write the triage run metrics (counts) to state/status.json with timestamps for post-run reporting.
+patterns:
+  - name: owner
+    allow_extra_positionals: true
+binding:
+  kind: python-entrypoint
+  path: _rtx/_write_metrics.py
+  symbol: Interface
+dependencies: []
+behavior_sources: []
+direct_io:
+  reads: []
+  writes:
+    - medium: stdout
+      access: write
+      content: diagnostic-report
+      format: text
+      sensitivity: derived-private
+    - medium: local-filesystem
+      access: write
+      system: filesystem
+      content: diagnostic-report
+      format: json
+      path: state/status.json
+      sensitivity: derived-private
+  network: []
+owns_filesystem: []
+platform_support:
+  linux: true
+  macos: true
+  windows: true

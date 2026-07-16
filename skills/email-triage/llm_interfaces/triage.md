@@ -103,17 +103,26 @@ If deadline or date is unknown, omit rather than guess.
 
 ---
 
-## Step 6 — Report
+## Step 6 — Collect metrics and report
 
-Summarize concisely:
-- N emails scanned across both accounts
-- Items added to `todo` (list them)
-- Items added to `triage` (list them)
-- Items skipped (already listed / no action / promotional)
+**Metrics tracking:** Count as you process emails:
+- **total_scanned** = sum of all envelopes from all accounts (SKIP, NO_ACTION, TODO, POTENTIAL, DEDUP)
+- **added_todo** = number of emails classified as TODO
+- **added_triage** = number of emails classified as POTENTIAL
+- **skipped** = number of emails classified as SKIP
+- **deduped** = number of emails classified as DEDUP
+
+Include these counts in your summary, then pass them to the metrics interface.
+
+**Report summary:**
+- N emails scanned across [account list]
+- Items added to `todo` (list them) — count: X
+- Items added to `triage` (list them) — count: Y
+- Items skipped (already listed / no action / promotional) — count: Z
 
 ---
 
-## Step 7 — Update watermark and prune log
+## Step 7 — Write metrics, update watermark, and prune log
 
 If any `list-manager.llm.default` add/update in Step 5 failed (e.g. a validation error), invoke `email-triage.machine.scripts-mark-failure "<reason>"` and stop — do not call `email-triage.machine.scripts-update-watermark`. This keeps next run's lookback window covering the emails that didn't get filed, and surfaces the failure as a desktop notification via the scheduled health check.
 
@@ -123,9 +132,10 @@ a fresh triage run. This clears only the latched error; it never advances the
 watermark. Never clear a failure automatically in the same run that recorded
 it.
 
-Otherwise, after a successful run, invoke both interfaces:
+Otherwise, after a successful run, invoke these interfaces in order:
 
-- `email-triage.machine.scripts-update-watermark`
-- `email-triage.machine.scripts-prune-log`
+1. Write metrics — capture the counts from Step 6 (total scanned, added to todo, added to triage, skipped, deduped)
+2. Update watermark — advances the run timestamp so next scan only sees new emails
+3. Prune log — drops entries older than 30 days and prints a one-line summary
 
-`email-triage.machine.scripts-prune-log` drops entries older than 30 days and prints a one-line summary.
+These three steps in sequence ensure metrics are recorded, watermark is advanced, and old logs are cleaned up.

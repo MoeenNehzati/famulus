@@ -48,6 +48,8 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
   - `dispatcher --caller-skill email-triage email-triage.machine.scripts-prune-log`
 - `scripts-update-watermark` — Advance the triage watermark to the current timestamp. Refuses if scripts-mark-failure was called earlier in this run.
   - `dispatcher --caller-skill email-triage email-triage.machine.scripts-update-watermark`
+- `scripts-write-metrics` — Write metrics from a triage run (emails scanned, added to lists, skipped, deduped) to status.json for visibility and debugging.
+  - `dispatcher --caller-skill email-triage email-triage.machine.scripts-write-metrics Write the triage run metrics (counts) to state/status.json with timestamps for post-run reporting.`
 
 Owner-Facing LLM Interfaces:
 

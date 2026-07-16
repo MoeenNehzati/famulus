@@ -354,6 +354,10 @@
         "scripts-update-watermark": {
           "id": "email-triage.machine.scripts-update-watermark",
           "dependencies": []
+        },
+        "scripts-write-metrics": {
+          "id": "email-triage.machine.scripts-write-metrics",
+          "dependencies": []
         }
       }
     },

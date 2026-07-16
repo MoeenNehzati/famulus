@@ -66,6 +66,12 @@ suggested_permissions:
         - officina.runtime.python_machine_interface_runner
         - _rtx/_failure_clearer.py:Interface
       reason: Clears a latched triage failure after its cause is fixed without advancing the watermark.
+    - command:
+        - python3
+        - -m
+        - officina.runtime.python_machine_interface_runner
+        - _rtx/_write_metrics.py:Interface
+      reason: Writes metrics (scanned, added, skipped counts) from a triage run to status.json for visibility.
   network: []
 
 interfaces:
@@ -99,3 +105,6 @@ interfaces:
   - interface: email-triage.machine.scripts-clear-failure
     version: 1
     blueprint: {base: skill-root, path: _rtx/._failure_clearer.py.blueprint.yaml}
+  - interface: email-triage.machine.scripts-write-metrics
+    version: 1
+    blueprint: {base: skill-root, path: _rtx/._write_metrics.py.blueprint.yaml}

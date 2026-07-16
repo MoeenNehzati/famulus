@@ -15,7 +15,11 @@ from datetime import datetime
 from pathlib import Path
 import os
 
-from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+try:
+    from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+    HAS_OFFICINA = True
+except ImportError:
+    HAS_OFFICINA = False
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 # Overridable via env var so tests can point at a tmp_path instead of the
@@ -24,11 +28,12 @@ STATE_DIR = Path(os.environ["EMAIL_TRIAGE_STATE_DIR"]) if os.environ.get("EMAIL_
 WATERMARK = STATE_DIR / "last_run"
 STATUS_FILE = STATE_DIR / "status.json"
 
-class Interface(PythonArgvMachineInterface):
-    prog = "update_watermark.py"
+if HAS_OFFICINA:
+    class Interface(PythonArgvMachineInterface):
+        prog = "update_watermark.py"
 
-    def run(self, argv: list[str]) -> int:
-        return main(argv)
+        def run(self, argv: list[str]) -> int:
+            return main(argv)
 
 
 def main(_argv: list[str] | None = None) -> int:
@@ -50,7 +55,12 @@ def main(_argv: list[str] | None = None) -> int:
 
     now = datetime.now().astimezone()
     WATERMARK.write_text(now.isoformat())
-    STATUS_FILE.write_text(json.dumps({"result": "ok", "message": f"watermark advanced {now.isoformat()}"}, indent=2))
+
+    # Preserve existing metrics and other fields, just update result and timestamp
+    status["result"] = "ok"
+    status["watermark_advanced_at"] = now.isoformat()
+
+    STATUS_FILE.write_text(json.dumps(status, indent=2))
     print(f"Watermark updated: {now.isoformat()}")
     return 0
 
