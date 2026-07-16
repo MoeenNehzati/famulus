@@ -39,6 +39,7 @@ if HAS_OFFICINA:
 def main(_argv: list[str] | None = None) -> int:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
 
+    status = {}
     if STATUS_FILE.exists():
         try:
             status = json.loads(STATUS_FILE.read_text())
