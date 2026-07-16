@@ -6,7 +6,7 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
@@ -25,6 +25,7 @@ from officina.common.blueprint_graph import (  # noqa: E402
     load_validated_skill_blueprint_graph,
     load_skill_blueprint_graph,
     relationship_target_types,
+    resolved_node_content_paths,
     typed_declaration_schema_errors,
     validate_runtime_file_path,
 )
@@ -69,13 +70,19 @@ def _load_schema() -> dict[str, Any] | None:
     return json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
+def _is_typed_blueprint(blueprint: dict[str, Any]) -> bool:
+    return blueprint.get("schema_version") in {2, 3} or any(
+        key in blueprint for key in ("blueprint_type", "node_type")
+    )
+
+
 def _validate_blueprint_schema(
     blueprint_path: Path,
     blueprint: dict[str, Any],
     schema: dict[str, Any],
 ) -> list[str]:
     """Run jsonschema validation; return error strings."""
-    if blueprint.get("schema_version") == 2 or "blueprint_type" in blueprint:
+    if _is_typed_blueprint(blueprint):
         try:
             return [
                 str(error)
@@ -605,14 +612,83 @@ def _ownerships_overlap(left: dict[str, Any], right: dict[str, Any]) -> bool:
     return False
 
 
+def _content_path_candidates(
+    content_path: Path,
+    claimant_blueprint_path: Path,
+    repo_root: Path,
+) -> tuple[str, ...]:
+    absolute = Path(os.path.abspath(content_path))
+    root = Path(os.path.abspath(repo_root))
+    candidates = {absolute.as_posix()}
+    try:
+        repository_relative = absolute.relative_to(root).as_posix()
+    except ValueError:
+        pass
+    else:
+        candidates.add(repository_relative)
+        candidates.add(f"$repo/{repository_relative}")
+    skill_root = Path(os.path.abspath(claimant_blueprint_path.parent))
+    try:
+        candidates.add(absolute.relative_to(skill_root).as_posix())
+    except ValueError:
+        pass
+    return tuple(sorted(candidates))
+
+
+def _io_matches_content(
+    entry: dict[str, Any],
+    content_path: Path,
+    claimant_blueprint_path: Path,
+    repo_root: Path,
+) -> bool:
+    path = entry.get("path")
+    if not isinstance(path, str):
+        return False
+    candidates = _content_path_candidates(
+        content_path,
+        claimant_blueprint_path,
+        repo_root,
+    )
+    match_kind = entry.get("path_match", "exact")
+    if match_kind == "exact":
+        return path in candidates
+    if match_kind == "glob":
+        return any(PurePosixPath(candidate).match(path) for candidate in candidates)
+    if match_kind == "regex":
+        try:
+            pattern = re.compile(path)
+        except re.error:
+            return False
+        return any(pattern.fullmatch(candidate) is not None for candidate in candidates)
+    return False
+
+
 def _validate_filesystem_ownership(
     blueprints: dict[Path, dict[str, Any]],
+    *,
+    content_owners: list[tuple[Path, str, Path]] | None = None,
+    repo_root: Path | None = None,
 ) -> list[str]:
     """Enforce interface-owned local filesystem read/write boundaries."""
     errors: list[str] = []
+    content_owners = content_owners or []
+    repo_root = repo_root or _REPO_ROOT
     all_interfaces: set[str] = set()
     ownerships: list[tuple[Path, str, dict[str, Any]]] = []
     accesses: list[tuple[Path, str, str, int, dict[str, Any]]] = []
+
+    seen_content_paths: dict[Path, tuple[Path, str]] = {}
+    for content_blueprint, content_owner, content_path in content_owners:
+        canonical = Path(os.path.abspath(content_path))
+        previous = seen_content_paths.get(canonical)
+        if previous is not None and previous[1] != content_owner:
+            _previous_blueprint, previous_owner = previous
+            errors.append(
+                f"{content_blueprint}: content file {canonical} is owned by both "
+                f"{previous_owner} and {content_owner}"
+            )
+        else:
+            seen_content_paths[canonical] = (content_blueprint, content_owner)
 
     for blueprint_path, blueprint in blueprints.items():
         skill_name = blueprint_path.parent.name
@@ -675,6 +751,24 @@ def _validate_filesystem_ownership(
                     f"{left_interface}; filesystem ownership must have one writer authority"
                 )
 
+    for owner_path, owner_interface, owner in ownerships:
+        for _content_blueprint, content_owner, content_path in content_owners:
+            if owner_interface == content_owner:
+                continue
+            if any(
+                _ownership_matches(owner, candidate)
+                for candidate in _content_path_candidates(
+                    content_path,
+                    owner_path,
+                    repo_root,
+                )
+            ):
+                errors.append(
+                    f"{owner_path}: {owner_interface} owns_filesystem overlaps with "
+                    f"content owned by {content_owner}; filesystem ownership must have "
+                    "one writer authority"
+                )
+
     for access_path, interface, section, index, entry in accesses:
         path = entry["path"]
         matching_owners = [
@@ -695,7 +789,41 @@ def _validate_filesystem_ownership(
                     f"is owned by {owner_interface}; add this interface to allowed_readers "
                     "or read through an authorized interface"
                 )
+        if section == "writes":
+            for _content_blueprint, content_owner, content_path in content_owners:
+                if interface == content_owner:
+                    continue
+                if _io_matches_content(
+                    entry,
+                    content_path,
+                    access_path,
+                    repo_root,
+                ):
+                    errors.append(
+                        f"{access_path}: {interface} direct_io.writes.{index}.path "
+                        f"'{path}' is content owned by {content_owner}; only the content "
+                        "owner may write it"
+                    )
     return errors
+
+
+def _content_owners_from_graphs(
+    graphs: list[SkillBlueprintGraph],
+    repo_root: Path,
+) -> list[tuple[Path, str, Path]]:
+    owners: dict[tuple[str, Path], tuple[Path, str, Path]] = {}
+    for graph in graphs:
+        for node in graph.nodes.values():
+            if node.embedded or node.declaration.get("schema_version") != 3:
+                continue
+            for content_path in resolved_node_content_paths(node, repo_root):
+                canonical = Path(os.path.abspath(content_path))
+                owners[(node.node_id, canonical)] = (
+                    node.blueprint_path,
+                    node.node_id,
+                    canonical,
+                )
+    return list(owners.values())
 
 
 def validate(repo_root: Path) -> list[str]:
@@ -703,6 +831,7 @@ def validate(repo_root: Path) -> list[str]:
     skills_root = repo_root / "skills"
     blueprint_template = repo_root / "references" / "blueprint" / "template.yaml"
     loaded_blueprints: dict[Path, dict[str, Any]] = {}
+    loaded_graphs: list[SkillBlueprintGraph] = []
     legacy_blueprints: dict[Path, dict[str, Any]] = {}
     tracked_files = _git_tracked_files(repo_root)
 
@@ -742,9 +871,7 @@ def validate(repo_root: Path) -> list[str]:
             errors.append(f"{blueprint_path}: YAML parse error: {exc}")
             continue
 
-        is_typed = isinstance(blueprint, dict) and (
-            blueprint.get("schema_version") == 2 or "blueprint_type" in blueprint
-        )
+        is_typed = isinstance(blueprint, dict) and _is_typed_blueprint(blueprint)
         if schema is not None and isinstance(blueprint, dict) and not is_typed:
             errors.extend(_validate_blueprint_schema(blueprint_path, blueprint, schema))
 
@@ -763,6 +890,7 @@ def validate(repo_root: Path) -> list[str]:
             ) as exc:
                 errors.append(str(exc))
             else:
+                loaded_graphs.append(graph)
                 expanded = expanded_legacy_blueprint(graph)
                 loaded_blueprints[blueprint_path] = expanded
                 if tracked_files is None:
@@ -813,7 +941,13 @@ def validate(repo_root: Path) -> list[str]:
     if errors:
         return errors
 
-    errors.extend(_validate_filesystem_ownership(loaded_blueprints))
+    errors.extend(
+        _validate_filesystem_ownership(
+            loaded_blueprints,
+            content_owners=_content_owners_from_graphs(loaded_graphs, repo_root),
+            repo_root=repo_root,
+        )
+    )
     if errors:
         return errors
 

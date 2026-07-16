@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Guideline §1 and §LLM interfaces — blueprint.yaml owns interface definitions;
-# local LLM interface Markdown bindings must live under llm_interfaces/.
+# local LLM interface Markdown bindings must live under llm_interfaces/, and
+# content plus owns_filesystem form one exclusive write-ownership domain.
 set -uo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"

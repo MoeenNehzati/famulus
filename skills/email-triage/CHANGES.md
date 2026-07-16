@@ -66,7 +66,7 @@ $ ./check-triage-status.sh
 The next time email-triage runs (hourly via recurring-tasks), it will:
 1. Process emails from personal and nyu accounts
 2. Collect metrics as it classifies each email (scanned, added-todo, added-triage, skipped, deduped)
-3. Write metrics to `state/status.json` with timestamps
+3. Record metrics to `state/status.json` with timestamps
 4. Advance the watermark (preserving metrics)
 5. Prune old log entries
 

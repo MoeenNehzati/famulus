@@ -380,7 +380,7 @@ def test_source_validator_returns_finding_for_concrete_schema_bundle_failure(
 ) -> None:
     schema_root = _copy_schema_bundle(tmp_path)
     skill, _sidecar = _write_typed_command_source(tmp_path)
-    schema_path = schema_root / "machine-interface.schema.json"
+    schema_path = schema_root / "v2" / "machine-interface.schema.json"
     if schema_state == "missing":
         schema_path.unlink()
     else:
@@ -398,7 +398,7 @@ def test_source_validator_returns_finding_for_unresolved_schema_reference(
 ) -> None:
     schema_root = _copy_schema_bundle(tmp_path)
     _write_typed_command_source(tmp_path)
-    schema_path = schema_root / "machine-interface.schema.json"
+    schema_path = schema_root / "v2" / "machine-interface.schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     schema["$ref"] = "missing-local.schema.json"
     schema_path.write_text(json.dumps(schema), encoding="utf-8")
@@ -1282,6 +1282,182 @@ def test_filesystem_ownership_rejects_overlapping_owners() -> None:
         "/repo/skills/owner-skill/blueprint.yaml: owner-skill.machine.second-owner "
         "owns_filesystem overlaps with owner-skill.machine.owner; filesystem "
         "ownership must have one writer authority"
+    ]
+
+
+def test_version_three_root_is_typed_blueprint() -> None:
+    assert _mod._is_typed_blueprint(
+        {
+            "schema_version": 3,
+            "node_type": "skill",
+        }
+    )
+
+
+def test_filesystem_ownership_rejects_write_to_another_node_content() -> None:
+    owner_path = Path("/repo/skills/owner-skill/_rtx/._logic.py.blueprint.yaml")
+    writer_path = Path("/repo/skills/writer-skill/blueprint.yaml")
+    writer_blueprint = {
+        "interfaces": {
+            "machine": {
+                "writer": {
+                    "owns_filesystem": [],
+                    "direct_io": {
+                        "reads": [],
+                        "writes": [
+                            {
+                                "medium": "local-filesystem",
+                                "access": "write",
+                                "content": "source",
+                                "sensitivity": "internal",
+                                "path": "$repo/skills/owner-skill/_rtx/_logic.py",
+                            }
+                        ],
+                        "network": [],
+                    },
+                }
+            }
+        }
+    }
+
+    errors = _mod._validate_filesystem_ownership(
+        {writer_path: writer_blueprint},
+        content_owners=[
+            (
+                owner_path,
+                "owner-skill.machine.logic",
+                Path("/repo/skills/owner-skill/_rtx/_logic.py"),
+            )
+        ],
+        repo_root=Path("/repo"),
+    )
+
+    assert errors == [
+        "/repo/skills/writer-skill/blueprint.yaml: writer-skill.machine.writer "
+        "direct_io.writes.0.path '$repo/skills/owner-skill/_rtx/_logic.py' is "
+        "content owned by owner-skill.machine.logic; only the content owner may "
+        "write it"
+    ]
+
+
+def test_filesystem_ownership_rejects_owned_path_overlapping_content() -> None:
+    owner_path = Path("/repo/skills/owner-skill/_rtx/._logic.py.blueprint.yaml")
+    claimant_path = Path("/repo/skills/writer-skill/blueprint.yaml")
+    claimant_blueprint = {
+        "interfaces": {
+            "machine": {
+                "writer": {
+                    "owns_filesystem": [
+                        {
+                            "match": "exact",
+                            "path": "$repo/skills/owner-skill/_rtx/_logic.py",
+                            "allowed_readers": [],
+                        }
+                    ],
+                    "direct_io": {"reads": [], "writes": [], "network": []},
+                }
+            }
+        }
+    }
+
+    errors = _mod._validate_filesystem_ownership(
+        {claimant_path: claimant_blueprint},
+        content_owners=[
+            (
+                owner_path,
+                "owner-skill.machine.logic",
+                Path("/repo/skills/owner-skill/_rtx/_logic.py"),
+            )
+        ],
+        repo_root=Path("/repo"),
+    )
+
+    assert errors == [
+        "/repo/skills/writer-skill/blueprint.yaml: writer-skill.machine.writer "
+        "owns_filesystem overlaps with content owned by owner-skill.machine.logic; "
+        "filesystem ownership must have one writer authority"
+    ]
+
+
+def test_filesystem_ownership_rejects_duplicate_content_owners() -> None:
+    content_path = Path("/repo/references/policy.md")
+
+    errors = _mod._validate_filesystem_ownership(
+        {},
+        content_owners=[
+            (
+                Path("/repo/references/.policy.md.first.blueprint.yaml"),
+                "first-skill.source.policy",
+                content_path,
+            ),
+            (
+                Path("/repo/references/.policy.md.second.blueprint.yaml"),
+                "second-skill.source.policy",
+                content_path,
+            ),
+        ],
+        repo_root=Path("/repo"),
+    )
+
+    assert errors == [
+        "/repo/references/.policy.md.second.blueprint.yaml: content file "
+        "/repo/references/policy.md is owned by both first-skill.source.policy "
+        "and second-skill.source.policy"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("path_match", "path"),
+    [
+        ("glob", "$repo/skills/owner-skill/_rtx/*.py"),
+        ("regex", r"\$repo/skills/owner-skill/_rtx/.*\.py"),
+    ],
+)
+def test_filesystem_ownership_rejects_pattern_write_to_another_node_content(
+    path_match: str,
+    path: str,
+) -> None:
+    writer_path = Path("/repo/skills/writer-skill/blueprint.yaml")
+    writer_blueprint = {
+        "interfaces": {
+            "machine": {
+                "writer": {
+                    "owns_filesystem": [],
+                    "direct_io": {
+                        "reads": [],
+                        "writes": [
+                            {
+                                "medium": "local-filesystem",
+                                "access": "write",
+                                "content": "source",
+                                "sensitivity": "internal",
+                                "path": path,
+                                "path_match": path_match,
+                            }
+                        ],
+                        "network": [],
+                    },
+                }
+            }
+        }
+    }
+
+    errors = _mod._validate_filesystem_ownership(
+        {writer_path: writer_blueprint},
+        content_owners=[
+            (
+                Path("/repo/skills/owner-skill/_rtx/._logic.py.blueprint.yaml"),
+                "owner-skill.machine.logic",
+                Path("/repo/skills/owner-skill/_rtx/_logic.py"),
+            )
+        ],
+        repo_root=Path("/repo"),
+    )
+
+    assert errors == [
+        "/repo/skills/writer-skill/blueprint.yaml: writer-skill.machine.writer "
+        f"direct_io.writes.0.path '{path}' is content owned by "
+        "owner-skill.machine.logic; only the content owner may write it"
     ]
 
 

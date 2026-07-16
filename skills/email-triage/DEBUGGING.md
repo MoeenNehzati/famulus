@@ -110,7 +110,7 @@ grep 'SKIP' triage.log | tail -20
 2. **Fetch envelopes** — downloads new emails since the watermark from all configured accounts (personal, nyu)
 3. **Classify** — LLM reads emails and routes to todo/triage/skip
 4. **Log decisions** — every classification is logged with reason
-5. **Write metrics** — counts are written to `state/status.json` with timestamp
+5. **Record metrics** — counts are written to `state/status.json` with timestamp
 6. **Advance watermark** — `last_run` timestamp is updated so next run only sees new emails
 7. **Prune logs** — old triage entries (>30 days) are cleaned up
 
@@ -126,4 +126,4 @@ Each count comes from the `scripts-log-decision` calls in triage.log:
 - **skipped** = count of SKIP decisions
 - **deduped** = count of DEDUP decisions
 
-The LLM collects these counts while processing and passes them to `scripts-write-metrics` in Step 7.
+The LLM collects these counts while processing each email and stores them for Step 7.

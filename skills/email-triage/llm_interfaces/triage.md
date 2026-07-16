@@ -122,7 +122,7 @@ Include these counts in your summary, then pass them to the metrics interface.
 
 ---
 
-## Step 7 — Write metrics, update watermark, and prune log
+## Step 7 — Record metrics, update watermark, and prune log
 
 If any `list-manager.llm.default` add/update in Step 5 failed (e.g. a validation error), invoke `email-triage.machine.scripts-mark-failure "<reason>"` and stop — do not call `email-triage.machine.scripts-update-watermark`. This keeps next run's lookback window covering the emails that didn't get filed, and surfaces the failure as a desktop notification via the scheduled health check.
 
@@ -134,7 +134,7 @@ it.
 
 Otherwise, after a successful run, invoke these interfaces in order:
 
-1. Write metrics — capture the counts from Step 6 (total scanned, added to todo, added to triage, skipped, deduped)
+1. Record the counts from Step 6 (total scanned, added to todo, added to triage, skipped, deduped)
 2. Update watermark — advances the run timestamp so next scan only sees new emails
 3. Prune log — drops entries older than 30 days and prints a one-line summary
 

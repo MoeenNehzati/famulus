@@ -103,6 +103,12 @@ such as `.foo.py.read.blueprint.yaml`. Generated health uses the corresponding
 `.last_audit.json`. The inline default is part of the root rather than a
 subordinate sidecar. Directories never receive blueprints.
 
+In schema version 3, every node declares `content`: case-sensitive regular
+expressions that resolve to the behavior-defining files owned by that node.
+Exactly one resolved content file is the node's `gateway`. Content ownership is
+exclusive across the repository: two nodes must not claim the same file, and an
+`owns_filesystem` entry must not overlap content owned by another node.
+
 `skill-audit` generates node health bottom-up and may generate
 `.pooled-blueprint-review.yaml` plus its health file for review. Pooled files
 are never graph inputs. The schema family defines canonical health fields,
@@ -326,6 +332,15 @@ interface may write matching `direct_io.writes` entries; only that interface and
 the canonical interfaces named in `allowed_readers` may read matching
 `direct_io.reads` entries. Ownership paths can be exact strings or regexes.
 Two different interfaces must not own overlapping filesystem paths.
+
+Filesystem write validation treats resolved node `content` and declared
+`owns_filesystem` paths as one ownership domain. A node's content contributes
+implicit exact ownership claims; `owns_filesystem` contributes additional
+explicit exact or regex claims. No ownership claims may overlap across nodes,
+and no node may declare a local-filesystem `direct_io.writes` entry—whether
+exact, glob, or regex—that matches content or an `owns_filesystem` path owned by
+another node. Keep `content` separate because it defines the files included in
+node hashing and certification; `owns_filesystem` does not become content.
 
 For `kind: python-entrypoint`, health dependency exploration combines
 three surfaces:
