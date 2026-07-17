@@ -449,7 +449,7 @@ This enforcement proves that declarations are well-formed, mutually interpretabl
 - [ ] **Step 2:** Run the three focused schema and validator suites; expect the new resource cases to fail.
 - [ ] **Step 3:** Add the schema field and metadata, call shared semantic validation from skill-maker, and add the repository validator to the normal runner manifest.
 - [ ] **Step 4:** Run `pytest tests/test_typed_blueprint_schemas.py skills/skill-maker/tests/test_blueprint_tools.py tests/validate_blueprints.py -v`; expect all focused tests to pass.
-- [ ] **Step 5:** Run `/home/moeen/Documents/AI/.githooks/pre-commit`; expect repository validation to pass without requiring immediate migration of every existing declaration.
+- [ ] **Step 5:** Run `.githooks/pre-commit`; expect repository validation to pass without requiring immediate migration of every existing declaration.
 - [ ] **Step 6:** After the task review gate is approved, commit only the listed schema, metadata, template, validator, and test changes with message `feat: validate blueprint resource declarations`.
 
 ### Task 5: Implement Resource Influence and Mixed Dependency Reachability
@@ -517,7 +517,7 @@ This enforcement proves that declarations are well-formed, mutually interpretabl
 - [ ] **Step 2:** Create the version-6 YAML standard through `update-skill-guidelines`, generate its Markdown view, and document blueprint examples plus enforcement limits.
 - [ ] **Step 3:** Run the four focused standards and documentation suites; expect all to pass.
 - [ ] **Step 4:** Run the complete resource registry, pattern, influence, blueprint, and migration suites; expect all to pass.
-- [ ] **Step 5:** Run `/home/moeen/Documents/AI/.githooks/pre-commit` and `/home/moeen/Documents/AI/.githooks/skill/check-blueprints`; expect both checks to pass.
+- [ ] **Step 5:** Run `.githooks/pre-commit` and `.githooks/skill/check-blueprints`; expect both checks to pass.
 - [ ] **Step 6:** After the task review gate is approved, commit the canonical standard, generated Markdown, blueprint documentation, README, and exact updated fixtures/tests with message `docs: standardize logical resource influence`.
 
 ## Acceptance Criteria
