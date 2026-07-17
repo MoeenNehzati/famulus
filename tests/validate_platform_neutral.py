@@ -61,14 +61,15 @@ def test_multiple_violations_all_reported(tmp_path: Path) -> None:
     assert len(errors) == 2
 
 
-def test_runner_exits_zero_on_clean_repo(tmp_path: Path) -> None:
+def test_runner_fails_closed_when_repo_has_no_standards_tooling(tmp_path: Path) -> None:
     runner = Path(__file__).resolve().parents[1] / "validators" / "runner.py"
     result = subprocess.run(
         ["python3", str(runner), "--repo-root", str(tmp_path)],
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "references/standards: missing standards tooling directory" in result.stderr
 
 
 def test_runner_exits_nonzero_on_violation(tmp_path: Path) -> None:
@@ -237,6 +238,7 @@ def test_init_py_always_exempt(tmp_path: Path) -> None:
 def test_skill_guidelines_can_define_platform_rule(tmp_path: Path) -> None:
     refs = tmp_path / "references" / "skill-standards"
     refs.mkdir(parents=True)
+    (refs / "skill-guidelines.standard.yaml").write_text("Use Windows, macOS, Linux, Claude, and Codex here.\n")
     (refs / "skill-guidelines.md").write_text("Use Windows, macOS, Linux, Claude, and Codex here.\n")
     assert validate(tmp_path) == []
 

@@ -1,5 +1,5 @@
 [
-  "references/skill-standards/skill-guidelines.md",
+  "references/skill-standards/skill-guidelines.standard.yaml",
   "references/blueprint/schema.json",
   "references/blueprint/*.schema.json",
   "references/blueprint/schema-meta.json",

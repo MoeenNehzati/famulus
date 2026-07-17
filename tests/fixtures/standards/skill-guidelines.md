@@ -1,16 +1,8 @@
-<!-- Generated from references/skill-standards/skill-guidelines.standard.yaml; do not edit. -->
-
 # Skill Module Standards
-
-Source-faithful repository standards for skill identity, interfaces, runtime boundaries, state, portability, instruction design, workflow, and validation.
-
-## A skill is a software module.
 
 **A skill is a software module.** The standards below define the module
 boundary: identity, interfaces, allowed dependencies, runtime ownership, and
 import discipline. They are structural requirements, not style preferences.
-
-## 1. Skill identity and contract come first
 
 **1. Skill identity and contract come first** — every skill has a stable
 dash-separated name and declares its dependency and interface contract before
@@ -51,15 +43,10 @@ copyable root blueprint. The canonical root plus the subordinate files
 reachable through its locators are the source of truth for:
 
 - `category`
-
 - `role`
-
 - `kind`
-
 - `suggested_permissions`
-
 - `skill_interface`
-
 - interface locators and interface-local contracts
 
 For blueprint skills, the top-of-file contract block in `SKILL.md` is generated
@@ -77,8 +64,6 @@ In schema-version-2 LLM-interface and behavior-source bodies, use canonical
 Every interface ID named in the body must be declared by that same node's
 `uses_interfaces`.
 
-## Blueprint authoring — REQUIRED: Use the concrete schema
-
 **Blueprint authoring — REQUIRED: Use the concrete schema**
 
 Generate each new root or subordinate blueprint from its concrete type schema.
@@ -87,34 +72,25 @@ type-specific authoring, creation, hash, and validator traceability rules live
 in `references/blueprint/*.schema.json` and `schema-meta.json`; the manifest
 only demonstrates deterministic filenames and generated outputs.
 
-## Blueprint authoring notes
-
 **Blueprint authoring notes**
 
 - `category`: required single string from the typed enum in
   `references/blueprint/schema.json`.
-
 - `role`: required single string from the typed enum in
   `references/blueprint/schema.json`; it names the primary user-facing domain
   for generated docs and graph clustering.
-
 - `kind`: required single string from the typed enum in
   `references/blueprint/schema.json`; it names the primary shape of help the
   skill provides for generated docs and filters.
-
 - `suggested_permissions`: advisory mapping with `bash` and `network` lists.
   Every entry must include a `reason`.
-
 - `skill_interface`: three plain-language lists (`inputs`, `outputs`,
   `side_effects`) that describe the skill's high-level contract.
-
 - `default_interface`: the inline contract for canonical
   `skill.llm.default`; its identity and `SKILL.md` binding are implicit.
-
 - `interfaces`: version-pinned locators for additional LLM and machine
   interface sidecars. Existing typed skills may retain a default-interface
   sidecar during compatibility migration, but must not declare both forms.
-
 - `blueprint_type`: one of `skill`, `llm-interface`, `machine-interface`, or
   `behavior-source`. A typed file states its own type instead of wrapping its
   facts in another interface-name mapping.
@@ -141,14 +117,11 @@ participate in contract hashes. Health, pool, and key files are ignored local
 state. The inline default and `SKILL.md` are certified by root skill health;
 they do not receive a second health identity. Do not hand-author health files.
 
-## Canonical interface names
-
 **Canonical interface names**
 
 Every blueprint interface has a canonical fully qualified name:
 
 - machine interface: `skill.machine.name`
-
 - llm interface: `skill.llm.name`
 
 The local `<name>` is the final component of the subordinate blueprint's `id`.
@@ -194,35 +167,23 @@ dispatcher imports and CLI dispatch from skill runtime code, and
 `skills/skill-maker/validators/dispatch_caller_skill.py`, which verifies every
 `DispatchCall(caller_skill=...)` statically resolves to the owning skill name.
 
-## Machine interfaces
-
 **Machine interfaces**
 
 A `machine-interface` sidecar is the dispatcher-executable contract. It owns:
 
 - `version` — the major version of this interface contract
-
 - `description` — what the interface does
-
 - `usage` — complete invocation argument template
-
 - `patterns` — positional/flag/stdin constraints
-
 - `allow_all_skills` / `allowed_callers` — access control
-
 - `platform_support` — explicit Linux/macOS/Windows support booleans for this
   machine interface
-
 - `binding` — one private Python entrypoint under `_rtx` or directly executed
   command file under `_cx`
-
 - `dependencies` — factual runtime package and executable requirements
-
 - `behavior_sources` — edges to typed file-backed behavior-source nodes
-
 - `direct_io` — immediate semantic IO for generated docs, search, graphs, and
   safety summaries
-
 - `owns_filesystem` — interface-owned filesystem paths and explicitly allowed
   reader interfaces
 
@@ -270,9 +231,7 @@ dependencies:
 three-boolean object, not a free-form OS list:
 
 - `linux`
-
 - `macos`
-
 - `windows`
 
 Set each boolean deliberately. Do not omit unsupported platforms. Use `macos`,
@@ -293,20 +252,14 @@ Allowed dependency kinds are closed and non-overlapping:
 
 - `python-package` — installable Python package requirement. `name` is the
   package/runtime requirement name, not necessarily the import name.
-
 - `binary` — executable expected on `PATH`.
-
 - `system-service` — service manager or daemon facility such as `systemd` or
   `launchd`.
-
 - `system-library` — native/shared library requirement outside Python.
-
 - `external-application` — installed GUI or full application such as Chrome or
   Audiveris.
-
 - `runtime` — language/runtime requirement such as Python, Node, Java, or a
   shell runtime.
-
 - `model-data` — local model, checkpoint, cache, or other required data bundle.
 
 Where a dependency subfield has a bounded vocabulary, use the schema's finite
@@ -314,11 +267,8 @@ options rather than inventing adjacent names. For `kind: system-service`,
 `name` must be one of:
 
 - `systemd-user`
-
 - `launchd`
-
 - `task-scheduler`
-
 - `cron`
 
 Do not encode APIs, OAuth, credentials, or network access as dependency kinds.
@@ -397,11 +347,9 @@ three surfaces:
 
 - typed `behavior_sources` for non-code behavior-shaping files, including
   schemas, templates, examples, policy files, and parser tables;
-
 - class-level `dispatches = {...}` entries made of `DispatchCall(...)` for
   cross-skill machine-interface dependencies, followed recursively through
   dispatcher resolution;
-
 - `route_smoke()` for same-skill dynamic Python imports that normal execution
   performs lazily.
 
@@ -415,8 +363,6 @@ Pattern semantics are per interface, not per grouped command. Every
 `machine-interface` sidecar is one canonical callable interface. Do not
 reintroduce grouped parent interfaces with hidden subinterface ids.
 
-## LLM interfaces
-
 **LLM interfaces**
 
 An `llm-interface` is not callable through the dispatcher. It documents a
@@ -425,19 +371,12 @@ interface is embedded in the root; additional named interfaces use sidecars.
 An LLM interface owns:
 
 - `version`
-
 - `description`
-
 - `binding` — where the interface definition lives
-
 - `behavior_sources` — additional non-code files that shape prompt behavior
-
 - `direct_io`
-
 - `owns_filesystem`
-
 - `allow_all_skills` / `allowed_callers` — access control for other skills
-
 - optional routing or documentation metadata
 
 Sidecar LLM bindings use `kind: instruction-file` and one regular local file.
@@ -476,8 +415,6 @@ This defines `example-skill.llm.default` and binds `SKILL.md` without a
 `.SKILL.md.blueprint.yaml` file. For short skills it may contain the complete
 workflow; for larger skills it may route to named LLM interfaces.
 
-## Dispatcher role
-
 **Dispatcher role**
 
 The installed `dispatcher` command and the shared dispatcher runtime are the
@@ -487,17 +424,11 @@ skills. Python skill runtime code must reach that boundary through declared
 dispatcher runtime's job is to:
 
 1. Parse the target canonical name `skill.machine.name`
-
 2. Resolve the callee `blueprint.yaml`
-
 3. Follow the root edge to the target `machine-interface` sidecar
-
 4. Verify `allow_all_skills` / `allowed_callers`
-
 5. Match caller argv against declared `patterns`
-
 6. Resolve the private file `binding`
-
 7. Execute the interface without depending on the caller's working directory
 
 The pattern-based approach enables compile-time validation: git hooks verify
@@ -514,8 +445,6 @@ dispatcher --dry-run --caller-skill daily-plan \
 Every `DispatchCall(...)` declaration must include `caller_skill` set to the
 owning skill's exact name; that value must be a string literal or a module-level
 string constant that resolves statically.
-
-## Private runtime files
 
 **Private runtime files**
 
@@ -552,9 +481,7 @@ Skill-facing Markdown (`SKILL.md` and skill-local Markdown outside tests and
 assets) must not mention:
 
 - `_rtx`
-
 - runtime filenames ending in an allowed runtime suffix such as `.py`
-
 - normalized forms of private runtime stems, such as `_Calendar_Gateway`,
   `Calendar_Gateway`, `calendar gateway`, or `calendar-gateway`
 
@@ -571,33 +498,25 @@ behavior tests in
 `tests/validate_skill_runtime_doc_references.py`, and
 `tests/validate_skill_body_execution.py`.
 
-## Import discipline
-
 **Import discipline**
 
 Skill Python files may import only:
 
 - relative modules from their own skill-local `_rtx/` package
-
 - first-party shared packages under `src/officina/`
-
 - stdlib and approved third-party packages
 
 They must not import:
 
 - another skill's Python modules directly
-
 - repo-maintainer packages outside `src/officina/`
-
 - another skill's runtime directory through `sys.path`, path loading, or
   dynamic module tricks
 
 This is the intended model:
 
 - local reuse inside one skill: relative imports
-
 - generic shared infrastructure: `officina.*`
-
 - cross-skill behavior: declared `DispatchCall` entries plus
   `PythonMachineInterface.dispatch()`
 
@@ -609,8 +528,6 @@ Because machine interfaces run with the skill root on `PYTHONPATH`, modules
 under `_rtx/` may use relative imports to share same-skill helpers. Nested
 runtime packages are allowed only when their directory names and file stems
 follow the cascading private `_rtx/` naming rule above.
-
-## TOML IO boundary
 
 **TOML IO boundary**
 
@@ -646,8 +563,6 @@ validation after writes. This rule is enforced by
 `validators/toml_io_boundary.py`, with behavior tests in
 `tests/validate_toml_io_boundary.py`.
 
-## Subprocess text boundaries
-
 **Subprocess text boundaries**
 
 Production Python code that asks `subprocess` for text must set both
@@ -679,8 +594,6 @@ enforced by `validators/subprocess_text_encoding.py`, with behavior tests in
 `tests/test_officina_dispatcher.py` and
 `tests/validate_subprocess_text_encoding.py`.
 
-## Injection lifecycle
-
 **Injection lifecycle**
 
 `../../skills/skill-maker/_rtx/_blueprint_syncer.py` injects and refreshes the
@@ -688,18 +601,14 @@ generated artifacts for blueprint skills:
 
 - the generated contract block placed immediately after the YAML frontmatter in
   `SKILL.md`
-
 - the generated owner-facing interface sections placed immediately after the
   contract block
-
 - repo-level manifests such as
   `references/blueprint/runtime_dependencies.json`
 
 That generated content is not user-authored. Do not edit it by hand. These
 checks are enforced on every commit by `validators/runner.py` (called from
 `.githooks/pre-commit`) via the skill-maker validators.
-
-## 2. Skill taxonomy
 
 **2. Skill taxonomy** — declare `category`, `role`, and `kind` in
 `blueprint.yaml`. Each must be one of the typed enum values in
@@ -711,17 +620,12 @@ For `research-assistant` skills applied to `.tex` files: check whether a
 top-of-document profile comment exists before proceeding; if not, use
 `make-tex-docstring` first.
 
-## 3. `my-X` naming and structure
-
 **3. `my-X` naming and structure** — a personal override of upstream skill `X`
 is named `my-X`. Every `my-X` skill must follow this layout:
 
 - Personal overrides and additions at the top.
-
 - Then a **REQUIRED — NON-NEGOTIABLE** instruction to invoke the original `X`
   skill at the bottom.
-
-## 4. `suggested_permissions`
 
 **4. `suggested_permissions`** — permission suggestions live in
 `blueprint.yaml`, not in per-skill sidecar files. `suggested_permissions` is
@@ -730,20 +634,14 @@ for smoother execution. Do not cascade another skill's suggested permissions
 here; declare the actual interface edge in `uses_interfaces` and let permission
 tooling derive transitive grants from the interface graph.
 
-## 5. Frontmatter `description:` is a trigger declaration, not a summary
-
 **5. Frontmatter `description:` is a trigger declaration, not a summary** —
 write it as "Use when..." followed by the triggering conditions and symptoms
 that signal this skill applies. Never summarize the workflow, steps, or outputs
 in the description.
 
-## 6. Output-focused, terse writing
-
 **6. Output-focused, terse writing** — specify what to invoke and how to
 interpret output. Implementation internals belong in tool/script docs, not
 `SKILL.md`. Every line earns its place.
-
-## 7. The canonical blueprint graph owns all interface definitions
 
 **7. The canonical blueprint graph owns all interface definitions** — the root
 owns skill-level facts and points to neighbors; every subordinate blueprint
@@ -754,17 +652,13 @@ or re-invoke any interface. Specifically:
 
 - a machine sidecar's `description` describes what the machine interface
   does.
-
 - its `usage` provides the complete invocation argument
   template.
-
 - `patterns[*].notes` gives mode-specific detail where multiple calling modes
   exist.
-
 - an additional LLM sidecar documents its bound instruction file and
   description, but never a dispatcher invocation; the default interface is
   documented by the root's `default_interface`.
-
 - The skill body references interface names only — it never shows
   `dispatcher --caller-skill` invocations or runtime file paths.
 
@@ -774,58 +668,39 @@ The generated blocks must be sufficient for a first-attempt correct invocation.
 body.** When an operation depends on information only available at call time,
 the skill body must instruct the model to read that state first.
 
-## 8. Commit and push after every skill change
-
 **8. Commit and push after every skill change** — when a skill is created or
 modified and the result is complete, show the user the diff and ask for
 confirmation before committing. Once confirmed, stage the changed files,
 commit, and push to `origin`.
 
-## 9. Skills are components in an evolving system — design accordingly.
-
 **9. Skills are components in an evolving system — design accordingly.**
 
 - **Reuse, don't reimplement.** Before writing new behavior, check whether an
   existing skill already covers it. If yes, invoke or extend that skill.
-
 - **Depend on interfaces, not internals.** There are only two valid
   cross-skill boundaries:
-
   - invoke the dependency skill as a skill
-
   - call the dependency skill's exported machine interface through `dispatcher`
     or a declared `DispatchCall` used by `PythonMachineInterface.dispatch()`
-
 - **Do not introduce new cross-skill Python imports.** If behavior should be
   shared across skills, expose it through a skill invocation, exported machine
   interface, or a first-party shared package under `src/officina/`.
-
 - **Do not reach into another skill's runtime directory from local runtime code.**
-
 - **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative. A
   skill may refer to files under its own directory, to shared `../references/`
   material, and to shared repo tools under `../../tools/`. It must not mention
   parent-path addresses such as `../other-skill/...`, `../../skills/...`, or
   any absolute filesystem path to another skill.
-
 - **Make your own interface explicit.** State what inputs your skill expects
   and what outputs it produces. For blueprint skills:
-
   - `skill_interface` describes the skill-level contract
-
   - `machine-interface` sidecars describe dispatcher-callable interfaces
-
   - root `default_interface` describes the default LLM-facing interface, while
     `llm-interface` sidecars describe additional named LLM-facing interfaces
-
   - `direct_io` describes immediate semantic IO for each interface
-
   - `owns_filesystem` declares interface-owned filesystem paths and permitted
     readers
-
   - `version` on each interface is the major version of that public contract
-
-## 10. No code in SKILL.md — runtime files only, with one exception
 
 **10. No code in SKILL.md — runtime files only, with one exception** — skill files
 must not contain executable code logic. Any logic belongs in a dedicated file
@@ -840,19 +715,13 @@ invocation details because they are owned by `blueprint.yaml`.
 Opaque `_cx/...` paths are forbidden anywhere in the hand-authored body, even
 outside an explicit execution sentence.
 
-## 11. State data lives under the skill's directory
-
 **11. State data lives under the skill's directory** — any persistent state a
 skill writes must be stored under the skill's own directory, not under system
 directories or elsewhere outside the skills tree.
 
-## 12. Sensitive configs live under `~/.config/<skill-name>/`
-
 **12. Sensitive configs live under `~/.config/<skill-name>/`** — passwords,
 API keys, OAuth tokens, and credentials must go there, never under the skill
 directory.
-
-## 13. Prefer widely available, cross-platform tools at every layer
 
 **13. Prefer widely available, cross-platform tools at every layer** —
 language, runtime, and any external tools invoked. Skills must work out of the
@@ -876,8 +745,6 @@ storage and display formats in the first-party helpers under
 `officina.common.dates` instead of retyping ad hoc formatting logic in each
 skill. This is mechanically checked by `validators/portable_dates.py`.
 
-## 14. Shared skill content must stay neutral about which specific AI-assistant host it runs under, and must mention operating systems only in explicit platform-support metadata or platform-named implementation files.
-
 **14. Shared skill content must stay neutral about which specific AI-assistant
 host it runs under, and must mention operating systems only in explicit
 platform-support metadata or platform-named implementation files.** Enforced by
@@ -885,28 +752,23 @@ platform-support metadata or platform-named implementation files.** Enforced by
 
 - `SKILL.md` and any generically named runtime file must not name a specific
   host or operating system.
-
 - authored blueprint files may name operating systems only in structured
   `platform_support` and dependency `platforms` metadata. Do not put
   platform-specific prose or implementation guidance in generic blueprint
   fields.
-
 - Blueprint schema documentation and blueprint validation/sync tooling may name
   the allowed platform keys because they define and enforce that metadata.
-
 - If a skill or shared package genuinely needs platform-specific logic, put
   that logic in a file whose own filename names the platform, such as
   `claude`, `codex`, `windows`, `osx`, or `linux`.
-
 - A small cross-platform adapter may temporarily dispatch to platform-specific
   commands while a backend split is pending, but new platform-specific command
   bodies should live in platform-named files.
-
 - `__init__.py` remains the conventional aggregation seam for
   platform-specific modules. It may import platform-named files and re-export
   a host-neutral API for the rest of the codebase.
 
-## Validator and test conventions
+---
 
 ## Validator and test conventions
 
@@ -914,20 +776,14 @@ Conformance checks run on every commit via `validators/runner.py` (called from
 `.githooks/pre-commit`). The runner auto-discovers two packages:
 
 - **`validators/`** — repo-wide checks
-
 - **`skills/skill-maker/validators/`** — skill-system checks
-
-## Adding a new validator
 
 ### Adding a new validator
 
 1. Create `validators/<name>.py` or
    `skills/skill-maker/validators/<name>.py`.
-
 2. Export exactly one function: `validate(repo_root: Path) -> list[str]`.
-
 3. Optionally add a `main()` so it can be run standalone.
-
 4. Add a `tests/validate_<name>.py` with at least a pass case and a fail case.
    Use `pytest` conventions (plain functions, `tmp_path` fixture for
    isolation). Load the validator via `importlib.util.spec_from_file_location`
@@ -935,13 +791,9 @@ Conformance checks run on every commit via `validators/runner.py` (called from
 
 The runner picks up the new file automatically — no registration needed.
 
-## Test file conventions
-
 ### Test file conventions
 
 - Validator tests live in `tests/validate_<name>.py`.
-
 - Behavior tests live in `skills/<skill-name>/tests/`.
-
 - Use `importlib.util.spec_from_file_location` to load validators in tests —
   avoids package naming collisions and works regardless of working directory.

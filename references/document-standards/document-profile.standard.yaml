@@ -1,0 +1,111 @@
+schema_version: 6
+standard_version: 1.0.0
+revision: 1
+id: document-profile
+canonical_path: references/document-standards/document-profile.standard.yaml
+title: Document Profile Standard
+purpose: Define the canonical top-of-document TeX profile comment and reliable document-profile inference and normalization rules.
+standards:
+- kind: guidance
+  id: document-profile.scope
+  statement: Use this standard as the canonical schema for top-of-document TeX profile comments and for any skill that needs document-profile information.
+- kind: family
+  id: document-profile.fields
+  title: Canonical fields
+  children:
+  - kind: definition
+    id: document-profile.fields.document-type
+    term: Document type
+    meaning: the kind of document the reader is looking at, such as a journal paper, conference paper, research presentation, or research notes
+  - kind: definition
+    id: document-profile.fields.field-subfield
+    term: Field/subfield
+    meaning: the main disciplinary home and local subfield conventions the document is written in or for
+  - kind: definition
+    id: document-profile.fields.purpose
+    term: Purpose
+    meaning: 'why the document exists: for example, to present a research contribution, give a talk, record internal notes, explain an argument, or support a companion paper'
+  - kind: definition
+    id: document-profile.fields.audience
+    term: Audience
+    meaning: the intended readers or listeners, including any primary/secondary audience distinctions if they matter
+  - kind: definition
+    id: document-profile.fields.assumed-background
+    term: Assumed background
+    meaning: what prior knowledge, context, and familiarity can be assumed from the intended audience
+  - kind: definition
+    id: document-profile.fields.target-rigor-detail
+    term: Target level of rigor/detail
+    meaning: how much formal detail, proof depth, motivation, or technical completeness the document is supposed to provide
+  - kind: definition
+    id: document-profile.fields.expected-length
+    term: Expected document length
+    meaning: the relevant page, word, slide, or time constraint, if any
+  - kind: definition
+    id: document-profile.fields.relationship
+    term: Relationship to main paper or companion documents
+    meaning: how this document relates to a larger project, if relevant
+- kind: guidance
+  id: document-profile.tex-template
+  statement: 'Canonical TeX block
+
+
+    ```tex
+
+    % Document type:
+
+    % Field/subfield:
+
+    % Purpose:
+
+    % Audience:
+
+    % Assumed background:
+
+    % Target level of rigor/detail:
+
+    % Expected document length:
+
+    % Relationship to main paper or companion documents:
+
+    ```'
+- kind: rule
+  id: document-profile.usage
+  title: Usage and inference
+  assertions:
+  - id: stable
+    modality: required
+    statement: Keep this schema stable across documents and skills unless the user asks to change it.
+  - id: length-optional
+    modality: required
+    statement: '`Expected document length` may be left unspecified. That means there is no binding length constraint.'
+  - id: relationship-optional
+    modality: required
+    statement: '`Relationship to main paper or companion documents` may be left blank when irrelevant.'
+  - id: reliable-inference
+    modality: required
+    statement: Infer fields only when the inference is reliable from the document or conversation. Otherwise ask the user.
+  - id: reader-familiarity-derived
+    modality: recommended
+    statement: '`Reader familiarity` is usually derived from `Audience` plus `Assumed background`; it does not need to be a separate canonical field unless the user wants it.'
+- kind: family
+  id: document-profile.normalization
+  title: Normalization
+  summary: When mapping informal document labels to internal categories, use these defaults.
+  children:
+  - kind: guidance
+    id: document-profile.normalization.journal
+    statement: '`journal paper` -> `journal-article`'
+  - kind: guidance
+    id: document-profile.normalization.conference
+    statement: '`conference paper` -> `conference-article`'
+  - kind: guidance
+    id: document-profile.normalization.presentation
+    statement: '`talk`, `slides`, or `presentation` -> `research-presentation`'
+  - kind: guidance
+    id: document-profile.normalization.notes
+    statement: '`note for self`, `note for coauthors`, or `technical note` -> `research-notes`'
+  - kind: guidance
+    id: document-profile.normalization.baseline
+    statement: 'If there is no exact internal category, choose the closest functional baseline: `working paper` or `exposition of existing research` -> usually `journal-article`; `technical companion` or `appendix` -> usually `research-notes`.'
+artifacts: {}

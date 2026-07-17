@@ -35,11 +35,7 @@ interfaces:
         content: skill
         format: markdown
         reason: "Defines when and how to decompose LLM-facing skill interfaces."
-      - path: $repo/references/skill-standards/skill-smells.md
+      - path: $repo/references/skill-standards/skill-refactoring.md
         content: skill
         format: markdown
-        reason: "Defines the diagnostic signals checked during skill refactoring."
-      - path: $repo/references/skill-standards/skill-refactoring-catalog.md
-        content: skill
-        format: markdown
-        reason: "Defines the behavior-preserving moves used to address diagnosed skill smells."
+        reason: "Defines both diagnostic signals and behavior-preserving refactoring moves."

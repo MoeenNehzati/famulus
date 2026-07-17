@@ -526,7 +526,7 @@ def test_extra_recorded_hash_is_stale(tmp_path: Path) -> None:
 
 def test_policy_hash_changes_when_skill_audit_changes(tmp_path: Path) -> None:
     install_policy_manifest(tmp_path)
-    write(tmp_path / "references" / "skill-standards" / "skill-guidelines.md", "guidelines\n")
+    write(tmp_path / "references" / "skill-standards" / "skill-guidelines.standard.yaml", "guidelines\n")
     write(tmp_path / "references" / "blueprint" / "schema.json", "{}\n")
     write(tmp_path / "references" / "blueprint" / "template.yaml", "template\n")
     write(tmp_path / "skills" / "skill-audit" / "_rtx" / "_audit_certifier.py", "one\n")
@@ -538,9 +538,9 @@ def test_policy_hash_changes_when_skill_audit_changes(tmp_path: Path) -> None:
     assert first != second
 
 
-def test_policy_hash_changes_when_relocated_skill_guidelines_change(tmp_path: Path) -> None:
+def test_policy_hash_changes_when_canonical_skill_guidelines_change(tmp_path: Path) -> None:
     install_policy_manifest(tmp_path)
-    guidelines = tmp_path / "references" / "skill-standards" / "skill-guidelines.md"
+    guidelines = tmp_path / "references" / "skill-standards" / "skill-guidelines.standard.yaml"
     write(guidelines, "one\n")
 
     first = checker.compute_policy_hash(tmp_path)

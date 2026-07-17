@@ -54,8 +54,8 @@ Use this skill when a document-oriented task needs profile information and the s
 
 ## 2. Canonical schema
 
-Read `../../references/document-profile-schema.md`.
-Use that file as the canonical schema and TeX block format.
+Read `../../references/document-standards/document-profile.md`.
+Use that generated standard view as the canonical profile and TeX block format.
 Do not create alternate schema variants here.
 
 ## 3. How to fill it

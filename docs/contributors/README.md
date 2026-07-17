@@ -15,7 +15,7 @@ Start with these architecture and contract references:
 - [docs/skill-blueprints.md](../skill-blueprints.md)
 - [references/blueprint/schema.json](../../references/blueprint/schema.json)
 - [references/blueprint/template.yaml](../../references/blueprint/template.yaml)
-- [references/skill-standards/skill-guidelines.md](../../references/skill-standards/skill-guidelines.md)
+- Generated [references/skill-standards/skill-guidelines.md](../../references/skill-standards/skill-guidelines.md)
 
 ## How Skills Stay in Sync
 

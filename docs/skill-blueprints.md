@@ -141,7 +141,7 @@ When creating or changing a skill:
 1. Design the user-facing LLM and machine interfaces before choosing file
    layout.
 2. Write the skill instructions according to the
-   [skill module standards](../references/skill-standards/skill-guidelines.md).
+   generated [skill module standards](../references/skill-standards/skill-guidelines.md).
 3. Create the root and subordinate blueprints from their concrete schemas.
 4. Declare every behavior-relevant bound file and cross-interface dependency
    on the node that uses it.
@@ -187,7 +187,7 @@ Generated reviews and health records are never migration inputs.
 - [Blueprint reference index](../references/blueprint/README.md)
 - [Compatibility schema entry point](../references/blueprint/schema.json)
 - [Schema metadata protocol](../references/blueprint/schema-meta.json)
-- [Skill module standards](../references/skill-standards/skill-guidelines.md)
+- Generated [skill module standards](../references/skill-standards/skill-guidelines.md)
 - [LLM interface design](../references/skill-standards/llm-interface-design.md)
 - [Skill scaffolding](scaffolding/README.md)
 - [Audit and drift](audit_and_drift.md)

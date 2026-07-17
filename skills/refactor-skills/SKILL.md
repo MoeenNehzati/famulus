@@ -45,7 +45,7 @@ This spec is the invariant. Refactoring must preserve it exactly.
 
 ### 2. Smell scan
 Check the skill against every smell in
-`references/skill-standards/skill-smells.md`. List each violation with a direct
+`references/skill-standards/skill-refactoring.md`. List each violation with a direct
 quote from the file.
 
 ### 3. Interface decomposition audit
@@ -67,7 +67,7 @@ cohesive and continue without loading the guide.
 
 ### 4. Plan moves
 For each smell, identify the refactoring move from
-`references/skill-standards/skill-refactoring-catalog.md`. Order moves: safe
+`references/skill-standards/skill-refactoring.md`. Order moves: safe
 first, structural last. Present the full plan and wait for user confirmation
 before changing anything.
 

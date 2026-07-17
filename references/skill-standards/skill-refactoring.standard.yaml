@@ -1,0 +1,284 @@
+schema_version: 6
+standard_version: 1.0.0
+revision: 1
+id: skill-refactoring
+canonical_path: references/skill-standards/skill-refactoring.standard.yaml
+title: Skill Refactoring
+purpose: Diagnose visible skill smells and apply behavior-preserving refactoring moves in risk order.
+standards:
+  - kind: family
+    id: skill-refactoring.diagnostic-signals
+    title: Diagnostic signals
+    summary: Visible symptoms that signal a skill needs refactoring.
+    children:
+      - kind: family
+        id: skill-refactoring.smells.bloated-skill
+        title: Bloated SKILL.md
+        children:
+          - {kind: definition, id: skill-refactoring.smells.bloated-skill.signal, term: Signal, meaning: "SKILL.md is long, covers multiple distinct responsibilities, or mixes orchestration with implementation detail."}
+          - {kind: definition, id: skill-refactoring.smells.bloated-skill.analog, term: Analog, meaning: "God Class / Long Method."}
+      - kind: family
+        id: skill-refactoring.smells.executable-logic
+        title: Executable logic in SKILL.md
+        children:
+          - {kind: definition, id: skill-refactoring.smells.executable-logic.signal, term: Signal, meaning: "Shell commands, Python snippets, or other runnable code appears inline in SKILL.md rather than behind a blueprint interface and private `_rtx/` runtime file."}
+          - {kind: definition, id: skill-refactoring.smells.executable-logic.analog, term: Analog, meaning: "Wrong layer of abstraction."}
+      - kind: family
+        id: skill-refactoring.smells.missing-contract-artifacts
+        title: Missing or incomplete contract artifacts
+        children:
+          - {kind: definition, id: skill-refactoring.smells.missing-contract-artifacts.signal, term: Signal, meaning: "A migrated skill is missing `blueprint.yaml`, its generated `SKILL.md` contract/interface blocks are stale, or repo-level blueprint manifests are out of sync."}
+          - {kind: definition, id: skill-refactoring.smells.missing-contract-artifacts.analog, term: Analog, meaning: "Missing interface declaration."}
+      - kind: family
+        id: skill-refactoring.smells.duplicated-guidelines
+        title: Duplicated guidelines
+        children:
+          - {kind: definition, id: skill-refactoring.smells.duplicated-guidelines.signal, term: Signal, meaning: "Conventions, rules, or reference content that already exist in another skill or `references/` file are copy-pasted here."}
+          - {kind: definition, id: skill-refactoring.smells.duplicated-guidelines.analog, term: Analog, meaning: "Duplicated Code."}
+      - kind: family
+        id: skill-refactoring.smells.mixed-abstraction-levels
+        title: Mixed abstraction levels
+        children:
+          - {kind: definition, id: skill-refactoring.smells.mixed-abstraction-levels.signal, term: Signal, meaning: "SKILL.md both directs high-level orchestration (\"invoke the lists skill\") and describes low-level implementation (\"the script reads line 3 of the file\")."}
+          - {kind: definition, id: skill-refactoring.smells.mixed-abstraction-levels.analog, term: Analog, meaning: "Mixed Levels of Abstraction."}
+      - kind: family
+        id: skill-refactoring.smells.dead-content
+        title: Dead content
+        children:
+          - {kind: definition, id: skill-refactoring.smells.dead-content.signal, term: Signal, meaning: "Motivational paragraphs, restatements of why the skill exists, \"this is important because…\" passages that add length without adding instruction."}
+          - {kind: definition, id: skill-refactoring.smells.dead-content.analog, term: Analog, meaning: "Comments that restate the code."}
+      - kind: family
+        id: skill-refactoring.smells.undeclared-interface
+        title: Undeclared interface
+        children:
+          - {kind: definition, id: skill-refactoring.smells.undeclared-interface.signal, term: Signal, meaning: "SKILL.md never states what inputs it expects or what outputs it produces, making it hard for other skills to depend on it cleanly."}
+          - {kind: definition, id: skill-refactoring.smells.undeclared-interface.analog, term: Analog, meaning: "Undocumented public API."}
+      - kind: family
+        id: skill-refactoring.smells.wrong-or-missing-category
+        title: Wrong or missing Category
+        children:
+          - {kind: definition, id: skill-refactoring.smells.wrong-or-missing-category.signal, term: Signal, meaning: "`category` missing from `blueprint.yaml`, or the value is not in the typed enum in `references/blueprint/schema.json`."}
+      - kind: family
+        id: skill-refactoring.smells.state-in-wrong-location
+        title: State in wrong location
+        children:
+          - {kind: definition, id: skill-refactoring.smells.state-in-wrong-location.signal, term: Signal, meaning: "Skill writes persistent data (logs, cache, watermarks) to `/tmp`, `~/.config`, or anywhere outside the skill's own directory."}
+          - {kind: definition, id: skill-refactoring.smells.state-in-wrong-location.analog, term: Analog, meaning: "Feature Envy / wrong module."}
+      - kind: family
+        id: skill-refactoring.smells.credentials-in-skill-directory
+        title: Credentials in skill directory
+        children:
+          - {kind: definition, id: skill-refactoring.smells.credentials-in-skill-directory.signal, term: Signal, meaning: "Passwords, tokens, or API keys are stored under the skill's own directory and may be committed to git."}
+      - kind: family
+        id: skill-refactoring.smells.monolithic-script
+        title: Monolithic script
+        children:
+          - {kind: definition, id: skill-refactoring.smells.monolithic-script.signal, term: Signal, meaning: "A single private runtime file under `_rtx/` handles multiple unrelated responsibilities, making it hard to invoke or test one part independently."}
+          - {kind: definition, id: skill-refactoring.smells.monolithic-script.analog, term: Analog, meaning: "Long Method."}
+      - kind: family
+        id: skill-refactoring.smells.god-skill
+        title: God skill
+        children:
+          - {kind: definition, id: skill-refactoring.smells.god-skill.signal, term: Signal, meaning: "The skill's trigger conditions cover several unrelated use cases that could each stand alone as independent skills."}
+          - {kind: definition, id: skill-refactoring.smells.god-skill.analog, term: Analog, meaning: "God Class."}
+      - kind: family
+        id: skill-refactoring.smells.thin-skill
+        title: Thin skill
+        children:
+          - {kind: definition, id: skill-refactoring.smells.thin-skill.signal, term: Signal, meaning: "The skill adds almost no logic on top of a sub-skill it invokes — it exists only as a pass-through with no real added convention or behavior."}
+          - {kind: definition, id: skill-refactoring.smells.thin-skill.analog, term: Analog, meaning: "Middle Man."}
+      - kind: family
+        id: skill-refactoring.smells.leaky-internals
+        title: Leaky internals
+        children:
+          - {kind: definition, id: skill-refactoring.smells.leaky-internals.signal, term: Signal, meaning: "SKILL.md or a script references another skill's raw script path directly, or bypasses the dispatcher and calls a non-exported invocation form."}
+          - {kind: definition, id: skill-refactoring.smells.leaky-internals.analog, term: Analog, meaning: "Inappropriate Intimacy."}
+  - kind: family
+    id: skill-refactoring.refactoring-moves
+    title: Refactoring moves
+    summary: Ordered from safest to most structural. Apply safe moves first and verify behavior after each move.
+    children:
+      - kind: family
+        id: skill-refactoring.moves.safe
+        title: Safe moves — apply first
+        children:
+          -
+            kind: procedure
+            id: skill-refactoring.remedies.purge-dead-content
+            title: Purge Dead Content
+            summary: Remove motivational paragraphs, restatements of purpose, and “why this matters” prose from SKILL.md.
+            ordered: true
+            steps: [{kind: step, id: remove-description-only-content, instruction: "Remove content that describes rather than directs."}]
+            invariants: [{id: preserve-instructions, statement: "Every instruction that directs behavior must be preserved."}]
+            risk: {level: low, statement: "None — removes words and changes no behavior."}
+          - kind: procedure
+            id: skill-refactoring.remedies.tighten-description
+            title: Tighten Description
+            summary: Rewrite the YAML `description` field to state only trigger conditions (“Use when…”), not workflow steps.
+            ordered: true
+            steps: [{kind: step, id: remove-process-summary, instruction: "Remove process summary from the description without narrowing its triggers."}]
+            invariants: [{id: preserve-triggers, statement: "All existing trigger conditions must be preserved."}]
+            risk: {level: low, statement: "None if triggers are preserved."}
+          - kind: procedure
+            id: skill-refactoring.remedies.declare-fix-category
+            title: Declare/fix Category
+            summary: Set or correct `category` in `blueprint.yaml`.
+            ordered: true
+            steps: [{kind: step, id: set-category, instruction: "Use a typed enum value from `references/blueprint/schema.json`; see `docs/skill-blueprints.md` for the architecture overview."}]
+            invariants: []
+            risk: {level: low, statement: "None."}
+          - kind: procedure
+            id: skill-refactoring.remedies.sync-generated-contract-artifacts
+            title: Sync generated contract artifacts
+            summary: Update `blueprint.yaml` and regenerate the generated contract/interface blocks in `SKILL.md` plus repo-level blueprint manifests for a blueprint-migrated skill.
+            ordered: true
+            steps: [{kind: step, id: regenerate-artifacts, instruction: "Regenerate all contract artifacts from the updated blueprint."}]
+            invariants: []
+            risk: {level: low, statement: "None — purely additive."}
+          - kind: procedure
+            id: skill-refactoring.remedies.add-fix-blueprint
+            title: Add/fix blueprint
+            summary: Create or correct `blueprint.yaml` for a migrated skill, preserving the source smell’s explicit unmatched remedy.
+            ordered: true
+            steps: [{kind: step, id: create-or-correct-blueprint, instruction: "Create or correct `blueprint.yaml`, then synchronize its generated contract artifacts."}]
+            invariants: [{id: preserve-contract, statement: "Existing contract artifacts remain complete and synchronized."}]
+            risk: {level: low, statement: "None when the blueprint records the existing contract without behavioral change."}
+      - kind: family
+        id: skill-refactoring.moves.medium
+        title: Medium moves — apply after safe moves are done
+        children:
+          - kind: procedure
+            id: skill-refactoring.remedies.clarify-interface
+            title: Clarify Interface
+            summary: Add a brief SKILL.md section stating what inputs the skill expects (if any), what it produces, and what side effects it has (files written, commands run). Use this to make the skill dependable by other skills.
+            ordered: true
+            steps: [{kind: step, id: document-interface, instruction: "Document inputs, outputs, and side effects so other skills can depend on the interface."}]
+            invariants: [{id: preserve-behavior, statement: "Actual behavior must remain unchanged; this is documentation only."}]
+            risk: {level: low, statement: "Low."}
+          - kind: procedure
+            id: skill-refactoring.remedies.extract-reference
+            title: Extract Reference
+            summary: Identify repeated content or reference material and move it to top-level `references/<name>.md`.
+            ordered: true
+            steps:
+              - {kind: step, id: move-reference, instruction: "Move repeated content, tables, guidelines, or schemas to a top-level reference file."}
+              - {kind: step, id: choose-loading-route, instruction: "Use an `@` include only when every route through the owning LLM interface needs the reference; otherwise name the file and its observable read condition in the selected route.", requires: [move-reference]}
+              - {kind: step, id: verify-loading, instruction: "Exercise unconditional or conditional loading as applicable.", verification: "For an unconditional include, invoke the skill and confirm the reference content is loaded. For conditional routing, exercise both paths and confirm the file is loaded only on the route that needs it.", requires: [choose-loading-route]}
+            invariants: [{id: preserve-content, statement: "Content must be identical before and after; only the location changes."}]
+            risk: {level: low, statement: "Low, but test the loading behavior."}
+          - kind: procedure
+            id: skill-refactoring.remedies.inline-to-reference
+            title: Inline to Reference
+            summary: Replace duplicated local text with use of the existing canonical reference, preserving the source smell’s explicit unmatched remedy.
+            ordered: true
+            steps: [{kind: step, id: replace-duplicate, instruction: "Replace duplicated local text with an appropriate unconditional include or conditional reference route.", verification: "Exercise the affected route and confirm the canonical reference is loaded when needed."}]
+            invariants: [{id: preserve-availability, statement: "The reference content remains available on every route that previously carried the duplicated text."}]
+            risk: {level: low, statement: "Low, but incorrect routing can hide required guidance."}
+          - kind: procedure
+            id: skill-refactoring.remedies.extract-script
+            title: Extract Script
+            summary: Move any executable logic from SKILL.md into a new private runtime file under `_rtx/`.
+            ordered: true
+            steps:
+              - {kind: step, id: move-logic, instruction: "Move executable logic into a private runtime file."}
+              - {kind: step, id: update-interface, instruction: "Update SKILL.md to describe the public interface and output interpretation; add the interface to `blueprint.yaml` and generated permissions as appropriate.", requires: [move-logic], verification: "Invoke the interface and confirm it produces the same result."}
+            invariants: [{id: preserve-logic, statement: "The script must implement exactly the same logic that was inline; SKILL.md instructions for invoking it must produce the same result."}]
+            risk: {level: medium, statement: "Medium — logic moves and a subtle change is easy to introduce."}
+          - kind: procedure
+            id: skill-refactoring.remedies.relocate-state
+            title: Relocate State
+            summary: Move persistent data files from wrong locations such as `/tmp` or `~/.config` to the skill's own directory.
+            ordered: true
+            steps: [{kind: step, id: move-and-update-paths, instruction: "Move the files and update all scripts that read or write those paths atomically."}]
+            invariants: [{id: preserve-data, statement: "Data format and content must be preserved."}]
+            risk: {level: medium, statement: "Medium — path changes can break scripts silently."}
+          - kind: procedure
+            id: skill-refactoring.remedies.relocate-credentials
+            title: Relocate Credentials
+            summary: Move credentials from the skill directory to `~/.config/<name>/` with mode 600.
+            ordered: true
+            steps: [{kind: step, id: move-and-update-references, instruction: "Move credentials, update all references, and verify scripts still authenticate."}]
+            invariants: []
+            risk: {level: medium, statement: "Medium — every reference must be updated."}
+          - kind: procedure
+            id: skill-refactoring.remedies.depend-on-interface
+            title: Depend on Interface
+            summary: Replace direct access to another skill's private runtime files with its exported interface.
+            ordered: true
+            steps:
+              - {kind: step, id: identify-owner, instruction: "Identify the raw script access and the skill that owns it."}
+              - {kind: step, id: select-interface, instruction: "Understand the exported interface and select the matching skill invocation or dispatcher mode.", requires: [identify-owner]}
+              - {kind: step, id: replace-call, instruction: "Replace the raw file call in SKILL.md or `_rtx/` with the selected exported invocation.", requires: [select-interface]}
+              - {kind: step, id: verify-equivalence, instruction: "Verify output is equivalent.", requires: [replace-call]}
+            invariants: [{id: preserve-effects, statement: "Output and side effects must be preserved."}]
+            risk: {level: medium, statement: "Medium — skill invocation may produce more or different output than the raw script."}
+      - kind: family
+        id: skill-refactoring.moves.structural
+        title: Structural moves — apply last, one at a time
+        children:
+          - kind: procedure
+            id: skill-refactoring.remedies.extract-sub-skill
+            title: Extract Sub-skill
+            summary: Identify a coherent sub-responsibility with its own trigger that can be invoked independently and reused.
+            ordered: true
+            steps:
+              - {kind: step, id: characterize, instruction: "Write a characterization of the sub-responsibility's inputs, outputs, and behavior."}
+              - {kind: step, id: create-skill, instruction: "Create the new skill directory and SKILL.md.", requires: [characterize]}
+              - {kind: step, id: move-content, instruction: "Move the relevant SKILL.md sections and private runtime files.", requires: [create-skill]}
+              - {kind: step, id: delegate, instruction: "Replace moved content in the original skill with a skill invocation.", requires: [move-content]}
+              - {kind: step, id: verify-aggregate, instruction: "Verify aggregate behavior is unchanged.", requires: [delegate]}
+            invariants: [{id: preserve-aggregate, statement: "The original skill's aggregate behavior must be identical; delegation must not change the user's result."}]
+            risk: {level: high, statement: "High. Test carefully."}
+          - kind: procedure
+            id: skill-refactoring.remedies.decompose-script
+            title: Decompose Script
+            summary: Split a monolithic script that handles multiple unrelated responsibilities into focused scripts, one per responsibility.
+            ordered: true
+            steps:
+              - {kind: step, id: identify-responsibilities, instruction: "Identify the distinct responsibilities in the script."}
+              - {kind: step, id: create-files, instruction: "Create one private `_rtx/` runtime file per responsibility.", requires: [identify-responsibilities]}
+              - {kind: step, id: update-invocations, instruction: "Update SKILL.md to invoke the corresponding interfaces in the original order.", requires: [create-files]}
+              - {kind: step, id: add-interfaces, instruction: "Add new interfaces to `blueprint.yaml` and generated permissions as appropriate.", requires: [update-invocations]}
+              - {kind: step, id: remove-original, instruction: "Delete the original script once all responsibilities are covered.", verification: "Run the original first, record outputs, then verify the decomposed scripts match.", requires: [add-interfaces]}
+            invariants: [{id: preserve-output, statement: "Each responsibility must produce the same output as before."}]
+            risk: {level: high, statement: "High. Do one responsibility at a time."}
+          - kind: procedure
+            id: skill-refactoring.remedies.inline-thin-skill
+            title: Inline Thin Skill
+            summary: If a skill is a near-empty pass-through with no real added logic, merge it into the calling skill.
+            ordered: true
+            steps:
+              - {kind: step, id: find-callers, instruction: "Identify all skills that invoke the thin skill."}
+              - {kind: step, id: replace-invocations, instruction: "Replace each invocation with a direct invocation of the underlying skill plus any additions the thin skill provided.", requires: [find-callers]}
+              - {kind: step, id: delete-skill, instruction: "Delete the thin skill directory.", requires: [replace-invocations]}
+            invariants: [{id: preserve-caller-behavior, statement: "Callers must see the same behavior."}]
+            risk: {level: high, statement: "High — requires knowing all callers."}
+  - kind: rule
+    id: skill-refactoring.ordering-rules
+    title: Ordering rules
+    assertions:
+      - {id: characterize-first, modality: required, statement: "Always characterize before starting."}
+      - {id: risk-order, modality: required, statement: "Apply all safe moves first, verify, then medium, then structural."}
+      - {id: isolate-structural, modality: prohibited, statement: "Never apply two structural moves in the same pass without verifying between them."}
+      - {id: revert-breakage, modality: required, statement: "If any move breaks behavior, revert immediately — don't patch forward."}
+artifacts: {}
+links:
+  bloated-purge: {source: {kind: family, ref: skill-refactoring.smells.bloated-skill}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.purge-dead-content}, lifecycle: active, resolution: {state: resolved}}
+  bloated-script: {source: {kind: family, ref: skill-refactoring.smells.bloated-skill}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.extract-script}, lifecycle: active, resolution: {state: resolved}}
+  bloated-subskill: {source: {kind: family, ref: skill-refactoring.smells.bloated-skill}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.extract-sub-skill}, lifecycle: active, resolution: {state: resolved}}
+  executable-script: {source: {kind: family, ref: skill-refactoring.smells.executable-logic}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.extract-script}, lifecycle: active, resolution: {state: resolved}}
+  contract-blueprint: {source: {kind: family, ref: skill-refactoring.smells.missing-contract-artifacts}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.add-fix-blueprint}, lifecycle: active, resolution: {state: resolved}}
+  contract-sync: {source: {kind: family, ref: skill-refactoring.smells.missing-contract-artifacts}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.sync-generated-contract-artifacts}, lifecycle: active, resolution: {state: resolved}}
+  duplicated-extract: {source: {kind: family, ref: skill-refactoring.smells.duplicated-guidelines}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.extract-reference}, lifecycle: active, resolution: {state: resolved}}
+  duplicated-inline: {source: {kind: family, ref: skill-refactoring.smells.duplicated-guidelines}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.inline-to-reference}, lifecycle: active, resolution: {state: resolved}}
+  abstraction-interface: {source: {kind: family, ref: skill-refactoring.smells.mixed-abstraction-levels}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.clarify-interface}, lifecycle: active, resolution: {state: resolved}}
+  abstraction-script: {source: {kind: family, ref: skill-refactoring.smells.mixed-abstraction-levels}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.extract-script}, lifecycle: active, resolution: {state: resolved}}
+  dead-purge: {source: {kind: family, ref: skill-refactoring.smells.dead-content}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.purge-dead-content}, lifecycle: active, resolution: {state: resolved}}
+  undeclared-clarify: {source: {kind: family, ref: skill-refactoring.smells.undeclared-interface}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.clarify-interface}, lifecycle: active, resolution: {state: resolved}}
+  category-declare: {source: {kind: family, ref: skill-refactoring.smells.wrong-or-missing-category}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.declare-fix-category}, lifecycle: active, resolution: {state: resolved}}
+  state-relocate: {source: {kind: family, ref: skill-refactoring.smells.state-in-wrong-location}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.relocate-state}, lifecycle: active, resolution: {state: resolved}}
+  credentials-relocate: {source: {kind: family, ref: skill-refactoring.smells.credentials-in-skill-directory}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.relocate-credentials}, lifecycle: active, resolution: {state: resolved}}
+  monolith-decompose: {source: {kind: family, ref: skill-refactoring.smells.monolithic-script}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.decompose-script}, lifecycle: active, resolution: {state: resolved}}
+  god-extract: {source: {kind: family, ref: skill-refactoring.smells.god-skill}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.extract-sub-skill}, lifecycle: active, resolution: {state: resolved}}
+  thin-inline: {source: {kind: family, ref: skill-refactoring.smells.thin-skill}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.inline-thin-skill}, lifecycle: active, resolution: {state: resolved}}
+  leaky-interface: {source: {kind: family, ref: skill-refactoring.smells.leaky-internals}, relation: remedied-by, target: {kind: procedure, ref: skill-refactoring.remedies.depend-on-interface}, lifecycle: active, resolution: {state: resolved}}

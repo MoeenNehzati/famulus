@@ -1,0 +1,1129 @@
+units:
+- source: skill-smells.md
+  line: 1
+  text: '# Skill Smells'
+  contextual: Legacy document title is contextual after merger into the diagnostic-signals family.
+  targets:
+  - target_ref: skill-refactoring.diagnostic-signals
+    field: /id
+    expected: skill-refactoring.diagnostic-signals
+- source: skill-smells.md
+  line: 3
+  text: Visible symptoms that signal a skill needs refactoring. Each smell maps to one or more moves in `skill-refactoring-catalog.md`.
+  contextual: Legacy catalog filename and prose relationship are contextual; each smell move line maps to typed remedied-by links.
+  targets:
+  - target_ref: skill-refactoring.diagnostic-signals
+    field: /id
+    expected: skill-refactoring.diagnostic-signals
+- source: skill-smells.md
+  line: 5
+  text: '---'
+  contextual: Markdown separator is contextual structure represented by the diagnostic-signals family.
+  targets:
+  - target_ref: skill-refactoring.diagnostic-signals
+    field: /id
+    expected: skill-refactoring.diagnostic-signals
+- source: skill-smells.md
+  line: 7
+  text: '## Bloated SKILL.md'
+  targets:
+  - target_ref: skill-refactoring.smells.bloated-skill
+    field: /title
+    expected: Bloated SKILL.md
+- source: skill-smells.md
+  line: 8
+  text: '**Signal:** SKILL.md is long, covers multiple distinct responsibilities, or mixes orchestration with implementation detail.'
+  targets:
+  - target_ref: skill-refactoring.smells.bloated-skill
+    field: /children/0/meaning
+    expected: SKILL.md is long, covers multiple distinct responsibilities, or mixes orchestration with implementation detail.
+- source: skill-smells.md
+  line: 9
+  text: '**Analog:** God Class / Long Method.'
+  targets:
+  - target_ref: skill-refactoring.smells.bloated-skill
+    field: /children/1/meaning
+    expected: God Class / Long Method.
+- source: skill-smells.md
+  line: 10
+  text: '**Moves:** Extract Sub-skill, Extract Script, Purge Dead Content.'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.bloated-skill
+  expected:
+  - extract-script
+  - extract-sub-skill
+  - purge-dead-content
+- source: skill-smells.md
+  line: 12
+  text: '## Executable logic in SKILL.md'
+  targets:
+  - target_ref: skill-refactoring.smells.executable-logic
+    field: /title
+    expected: Executable logic in SKILL.md
+- source: skill-smells.md
+  line: 13
+  text: '**Signal:** Shell commands, Python snippets, or other runnable code appears inline in SKILL.md rather than behind a blueprint interface and private `_rtx/` runtime file.'
+  targets:
+  - target_ref: skill-refactoring.smells.executable-logic
+    field: /children/0/meaning
+    expected: Shell commands, Python snippets, or other runnable code appears inline in SKILL.md rather than behind a blueprint interface and private `_rtx/` runtime file.
+- source: skill-smells.md
+  line: 14
+  text: '**Analog:** Wrong layer of abstraction.'
+  targets:
+  - target_ref: skill-refactoring.smells.executable-logic
+    field: /children/1/meaning
+    expected: Wrong layer of abstraction.
+- source: skill-smells.md
+  line: 15
+  text: '**Moves:** Extract Script.'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.executable-logic
+  expected:
+  - extract-script
+- source: skill-smells.md
+  line: 17
+  text: '## Missing or incomplete contract artifacts'
+  targets:
+  - target_ref: skill-refactoring.smells.missing-contract-artifacts
+    field: /title
+    expected: Missing or incomplete contract artifacts
+- source: skill-smells.md
+  line: 18
+  text: '**Signal:** A migrated skill is missing `blueprint.yaml`, its generated `SKILL.md` contract/interface blocks are stale, or repo-level blueprint manifests are out of sync.'
+  targets:
+  - target_ref: skill-refactoring.smells.missing-contract-artifacts
+    field: /children/0/meaning
+    expected: A migrated skill is missing `blueprint.yaml`, its generated `SKILL.md` contract/interface blocks are stale, or repo-level blueprint manifests are out of sync.
+- source: skill-smells.md
+  line: 19
+  text: '**Analog:** Missing interface declaration.'
+  targets:
+  - target_ref: skill-refactoring.smells.missing-contract-artifacts
+    field: /children/1/meaning
+    expected: Missing interface declaration.
+- source: skill-smells.md
+  line: 20
+  text: '**Moves:** Add/fix blueprint, Sync generated artifacts.'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.missing-contract-artifacts
+  expected:
+  - add-fix-blueprint
+  - sync-generated-contract-artifacts
+- source: skill-smells.md
+  line: 22
+  text: '## Duplicated guidelines'
+  targets:
+  - target_ref: skill-refactoring.smells.duplicated-guidelines
+    field: /title
+    expected: Duplicated guidelines
+- source: skill-smells.md
+  line: 23
+  text: '**Signal:** Conventions, rules, or reference content that already exist in another skill or `references/` file are copy-pasted here.'
+  targets:
+  - target_ref: skill-refactoring.smells.duplicated-guidelines
+    field: /children/0/meaning
+    expected: Conventions, rules, or reference content that already exist in another skill or `references/` file are copy-pasted here.
+- source: skill-smells.md
+  line: 24
+  text: '**Analog:** Duplicated Code.'
+  targets:
+  - target_ref: skill-refactoring.smells.duplicated-guidelines
+    field: /children/1/meaning
+    expected: Duplicated Code.
+- source: skill-smells.md
+  line: 25
+  text: '**Moves:** Extract Reference, Inline to Reference.'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.duplicated-guidelines
+  expected:
+  - extract-reference
+  - inline-to-reference
+- source: skill-smells.md
+  line: 27
+  text: '## Mixed abstraction levels'
+  targets:
+  - target_ref: skill-refactoring.smells.mixed-abstraction-levels
+    field: /title
+    expected: Mixed abstraction levels
+- source: skill-smells.md
+  line: 28
+  text: '**Signal:** SKILL.md both directs high-level orchestration ("invoke the lists skill") and describes low-level implementation ("the script reads line 3 of the file").'
+  targets:
+  - target_ref: skill-refactoring.smells.mixed-abstraction-levels
+    field: /children/0/meaning
+    expected: SKILL.md both directs high-level orchestration ("invoke the lists skill") and describes low-level implementation ("the script reads line 3 of the file").
+- source: skill-smells.md
+  line: 29
+  text: '**Analog:** Mixed Levels of Abstraction.'
+  targets:
+  - target_ref: skill-refactoring.smells.mixed-abstraction-levels
+    field: /children/1/meaning
+    expected: Mixed Levels of Abstraction.
+- source: skill-smells.md
+  line: 30
+  text: '**Moves:** Clarify Interface, Extract Script.'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.mixed-abstraction-levels
+  expected:
+  - clarify-interface
+  - extract-script
+- source: skill-smells.md
+  line: 32
+  text: '## Dead content'
+  targets:
+  - target_ref: skill-refactoring.smells.dead-content
+    field: /title
+    expected: Dead content
+- source: skill-smells.md
+  line: 33
+  text: "**Signal:** Motivational paragraphs, restatements of why the skill exists, \"this is important because\u2026\" passages that add length without adding instruction."
+  targets:
+  - target_ref: skill-refactoring.smells.dead-content
+    field: /children/0/meaning
+    expected: "Motivational paragraphs, restatements of why the skill exists, \"this is important because\u2026\" passages that add length without adding instruction."
+- source: skill-smells.md
+  line: 34
+  text: '**Analog:** Comments that restate the code.'
+  targets:
+  - target_ref: skill-refactoring.smells.dead-content
+    field: /children/1/meaning
+    expected: Comments that restate the code.
+- source: skill-smells.md
+  line: 35
+  text: '**Moves:** Purge Dead Content.'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.dead-content
+  expected:
+  - purge-dead-content
+- source: skill-smells.md
+  line: 37
+  text: '## Undeclared interface'
+  targets:
+  - target_ref: skill-refactoring.smells.undeclared-interface
+    field: /title
+    expected: Undeclared interface
+- source: skill-smells.md
+  line: 38
+  text: '**Signal:** SKILL.md never states what inputs it expects or what outputs it produces, making it hard for other skills to depend on it cleanly.'
+  targets:
+  - target_ref: skill-refactoring.smells.undeclared-interface
+    field: /children/0/meaning
+    expected: SKILL.md never states what inputs it expects or what outputs it produces, making it hard for other skills to depend on it cleanly.
+- source: skill-smells.md
+  line: 39
+  text: '**Analog:** Undocumented public API.'
+  targets:
+  - target_ref: skill-refactoring.smells.undeclared-interface
+    field: /children/1/meaning
+    expected: Undocumented public API.
+- source: skill-smells.md
+  line: 40
+  text: '**Moves:** Clarify Interface.'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.undeclared-interface
+  expected:
+  - clarify-interface
+- source: skill-smells.md
+  line: 42
+  text: '## Wrong or missing Category'
+  targets:
+  - target_ref: skill-refactoring.smells.wrong-or-missing-category
+    field: /title
+    expected: Wrong or missing Category
+- source: skill-smells.md
+  line: 43
+  text: '**Signal:** `category` missing from `blueprint.yaml`, or the value is not in the typed enum in `references/blueprint/schema.json`.'
+  targets:
+  - target_ref: skill-refactoring.smells.wrong-or-missing-category
+    field: /children/0/meaning
+    expected: '`category` missing from `blueprint.yaml`, or the value is not in the typed enum in `references/blueprint/schema.json`.'
+- source: skill-smells.md
+  line: 44
+  text: '**Moves:** Declare/fix Category.'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.wrong-or-missing-category
+  expected:
+  - declare-fix-category
+- source: skill-smells.md
+  line: 46
+  text: '## State in wrong location'
+  targets:
+  - target_ref: skill-refactoring.smells.state-in-wrong-location
+    field: /title
+    expected: State in wrong location
+- source: skill-smells.md
+  line: 47
+  text: '**Signal:** Skill writes persistent data (logs, cache, watermarks) to `/tmp`, `~/.config`, or anywhere outside the skill''s own directory.'
+  targets:
+  - target_ref: skill-refactoring.smells.state-in-wrong-location
+    field: /children/0/meaning
+    expected: Skill writes persistent data (logs, cache, watermarks) to `/tmp`, `~/.config`, or anywhere outside the skill's own directory.
+- source: skill-smells.md
+  line: 48
+  text: '**Analog:** Feature Envy / wrong module.'
+  targets:
+  - target_ref: skill-refactoring.smells.state-in-wrong-location
+    field: /children/1/meaning
+    expected: Feature Envy / wrong module.
+- source: skill-smells.md
+  line: 49
+  text: '**Moves:** Relocate State.'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.state-in-wrong-location
+  expected:
+  - relocate-state
+- source: skill-smells.md
+  line: 51
+  text: '## Credentials in skill directory'
+  targets:
+  - target_ref: skill-refactoring.smells.credentials-in-skill-directory
+    field: /title
+    expected: Credentials in skill directory
+- source: skill-smells.md
+  line: 52
+  text: '**Signal:** Passwords, tokens, or API keys are stored under the skill''s own directory and may be committed to git.'
+  targets:
+  - target_ref: skill-refactoring.smells.credentials-in-skill-directory
+    field: /children/0/meaning
+    expected: Passwords, tokens, or API keys are stored under the skill's own directory and may be committed to git.
+- source: skill-smells.md
+  line: 53
+  text: '**Moves:** Relocate Credentials.'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.credentials-in-skill-directory
+  expected:
+  - relocate-credentials
+- source: skill-smells.md
+  line: 55
+  text: '## Monolithic script'
+  targets:
+  - target_ref: skill-refactoring.smells.monolithic-script
+    field: /title
+    expected: Monolithic script
+- source: skill-smells.md
+  line: 56
+  text: '**Signal:** A single private runtime file under `_rtx/` handles multiple unrelated responsibilities, making it hard to invoke or test one part independently.'
+  targets:
+  - target_ref: skill-refactoring.smells.monolithic-script
+    field: /children/0/meaning
+    expected: A single private runtime file under `_rtx/` handles multiple unrelated responsibilities, making it hard to invoke or test one part independently.
+- source: skill-smells.md
+  line: 57
+  text: '**Analog:** Long Method.'
+  targets:
+  - target_ref: skill-refactoring.smells.monolithic-script
+    field: /children/1/meaning
+    expected: Long Method.
+- source: skill-smells.md
+  line: 58
+  text: '**Moves:** Decompose Script.'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.monolithic-script
+  expected:
+  - decompose-script
+- source: skill-smells.md
+  line: 60
+  text: '## God skill'
+  targets:
+  - target_ref: skill-refactoring.smells.god-skill
+    field: /title
+    expected: God skill
+- source: skill-smells.md
+  line: 61
+  text: '**Signal:** The skill''s trigger conditions cover several unrelated use cases that could each stand alone as independent skills.'
+  targets:
+  - target_ref: skill-refactoring.smells.god-skill
+    field: /children/0/meaning
+    expected: The skill's trigger conditions cover several unrelated use cases that could each stand alone as independent skills.
+- source: skill-smells.md
+  line: 62
+  text: '**Analog:** God Class.'
+  targets:
+  - target_ref: skill-refactoring.smells.god-skill
+    field: /children/1/meaning
+    expected: God Class.
+- source: skill-smells.md
+  line: 63
+  text: '**Moves:** Extract Sub-skill.'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.god-skill
+  expected:
+  - extract-sub-skill
+- source: skill-smells.md
+  line: 65
+  text: '## Thin skill'
+  targets:
+  - target_ref: skill-refactoring.smells.thin-skill
+    field: /title
+    expected: Thin skill
+- source: skill-smells.md
+  line: 66
+  text: "**Signal:** The skill adds almost no logic on top of a sub-skill it invokes \u2014 it exists only as a pass-through with no real added convention or behavior."
+  targets:
+  - target_ref: skill-refactoring.smells.thin-skill
+    field: /children/0/meaning
+    expected: "The skill adds almost no logic on top of a sub-skill it invokes \u2014 it exists only as a pass-through with no real added convention or behavior."
+- source: skill-smells.md
+  line: 67
+  text: '**Analog:** Middle Man.'
+  targets:
+  - target_ref: skill-refactoring.smells.thin-skill
+    field: /children/1/meaning
+    expected: Middle Man.
+- source: skill-smells.md
+  line: 68
+  text: '**Moves:** Inline Thin Skill.'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.thin-skill
+  expected:
+  - inline-thin-skill
+- source: skill-smells.md
+  line: 70
+  text: '## Leaky internals'
+  targets:
+  - target_ref: skill-refactoring.smells.leaky-internals
+    field: /title
+    expected: Leaky internals
+- source: skill-smells.md
+  line: 71
+  text: '**Signal:** SKILL.md or a script references another skill''s raw script path directly, or bypasses the dispatcher and calls a non-exported invocation form.'
+  targets:
+  - target_ref: skill-refactoring.smells.leaky-internals
+    field: /children/0/meaning
+    expected: SKILL.md or a script references another skill's raw script path directly, or bypasses the dispatcher and calls a non-exported invocation form.
+- source: skill-smells.md
+  line: 72
+  text: '**Analog:** Inappropriate Intimacy.'
+  targets:
+  - target_ref: skill-refactoring.smells.leaky-internals
+    field: /children/1/meaning
+    expected: Inappropriate Intimacy.
+- source: skill-smells.md
+  line: 73
+  text: '**Moves:** Depend on Interface (replace raw script access with a skill invocation or dispatcher call to an exported interface).'
+  relation: remedied-by-target-refs
+  target_ref: skill-refactoring.smells.leaky-internals
+  expected:
+  - depend-on-interface
+- source: skill-refactoring-catalog.md
+  line: 1
+  text: '# Skill Refactoring Catalog'
+  contextual: Legacy document title is contextual after merger into the refactoring-moves family.
+  targets:
+  - target_ref: skill-refactoring.refactoring-moves
+    field: /id
+    expected: skill-refactoring.refactoring-moves
+- source: skill-refactoring-catalog.md
+  line: 3
+  text: Ordered from safest to most structural. Apply safe moves first; verify behavior preserved after each move before proceeding to the next.
+  targets:
+  - target_ref: skill-refactoring.refactoring-moves
+    field: /summary
+    expected: Ordered from safest to most structural. Apply safe moves first and verify behavior after each move.
+- source: skill-refactoring-catalog.md
+  line: 5
+  text: '---'
+  contextual: Markdown separator is contextual structure represented by the surrounding semantic family.
+  targets:
+  - target_ref: skill-refactoring.refactoring-moves
+    field: /id
+    expected: skill-refactoring.refactoring-moves
+- source: skill-refactoring-catalog.md
+  line: 7
+  text: "## Safe moves \u2014 apply first"
+  targets:
+  - target_ref: skill-refactoring.moves.safe
+    field: /title
+    expected: "Safe moves \u2014 apply first"
+- source: skill-refactoring-catalog.md
+  line: 9
+  text: '### Purge Dead Content'
+  targets:
+  - target_ref: skill-refactoring.remedies.purge-dead-content
+    field: /title
+    expected: Purge Dead Content
+- source: skill-refactoring-catalog.md
+  line: 10
+  text: Remove motivational paragraphs, restatements of purpose, and "why this matters" prose from SKILL.md.
+  targets:
+  - target_ref: skill-refactoring.remedies.purge-dead-content
+    field: /summary
+    expected: "Remove motivational paragraphs, restatements of purpose, and \u201Cwhy this matters\u201D prose from SKILL.md."
+- source: skill-refactoring-catalog.md
+  line: 11
+  text: '**Preserve:** Every instruction that directs behavior. Only remove content that describes rather than directs.'
+  targets:
+  - target_ref: skill-refactoring.remedies.purge-dead-content
+    field: /invariants/0/statement
+    expected: Every instruction that directs behavior must be preserved.
+  - target_ref: skill-refactoring.remedies.purge-dead-content
+    field: /steps/0/instruction
+    expected: Remove content that describes rather than directs.
+- source: skill-refactoring-catalog.md
+  line: 12
+  text: "**Risk:** None \u2014 removes words, changes no behavior."
+  targets:
+  - target_ref: skill-refactoring.remedies.purge-dead-content
+    field: /risk/statement
+    expected: "None \u2014 removes words and changes no behavior."
+- source: skill-refactoring-catalog.md
+  line: 14
+  text: '### Tighten Description'
+  targets:
+  - target_ref: skill-refactoring.remedies.tighten-description
+    field: /title
+    expected: Tighten Description
+- source: skill-refactoring-catalog.md
+  line: 15
+  text: "Rewrite the YAML `description` field to state only trigger conditions (\"Use when\u2026\"), not workflow steps."
+  targets:
+  - target_ref: skill-refactoring.remedies.tighten-description
+    field: /summary
+    expected: "Rewrite the YAML `description` field to state only trigger conditions (\u201CUse when\u2026\u201D), not workflow steps."
+- source: skill-refactoring-catalog.md
+  line: 16
+  text: "**Preserve:** All existing trigger conditions \u2014 don't narrow the triggers, just remove process summary."
+  targets:
+  - target_ref: skill-refactoring.remedies.tighten-description
+    field: /invariants/0/statement
+    expected: All existing trigger conditions must be preserved.
+  - target_ref: skill-refactoring.remedies.tighten-description
+    field: /steps/0/instruction
+    expected: Remove process summary from the description without narrowing its triggers.
+- source: skill-refactoring-catalog.md
+  line: 17
+  text: '**Risk:** None if triggers are preserved.'
+  targets:
+  - target_ref: skill-refactoring.remedies.tighten-description
+    field: /risk/statement
+    expected: None if triggers are preserved.
+- source: skill-refactoring-catalog.md
+  line: 19
+  text: '### Declare/fix Category'
+  targets:
+  - target_ref: skill-refactoring.remedies.declare-fix-category
+    field: /title
+    expected: Declare/fix Category
+- source: skill-refactoring-catalog.md
+  line: 20
+  text: Set or correct `category` in `blueprint.yaml`. It must be one of the typed enum
+  targets:
+  - target_ref: skill-refactoring.remedies.declare-fix-category
+    field: /steps/0/instruction
+    expected: Use a typed enum value from `references/blueprint/schema.json`; see `docs/skill-blueprints.md` for the architecture overview.
+- source: skill-refactoring-catalog.md
+  line: 21
+  text: values in `references/blueprint/schema.json`. See `docs/skill-blueprints.md` for
+  targets:
+  - target_ref: skill-refactoring.remedies.declare-fix-category
+    field: /steps/0/instruction
+    expected: Use a typed enum value from `references/blueprint/schema.json`; see `docs/skill-blueprints.md` for the architecture overview.
+- source: skill-refactoring-catalog.md
+  line: 22
+  text: the blueprint architecture overview.
+  targets:
+  - target_ref: skill-refactoring.remedies.declare-fix-category
+    field: /steps/0/instruction
+    expected: Use a typed enum value from `references/blueprint/schema.json`; see `docs/skill-blueprints.md` for the architecture overview.
+- source: skill-refactoring-catalog.md
+  line: 23
+  text: '**Risk:** None.'
+  targets:
+  - target_ref: skill-refactoring.remedies.declare-fix-category
+    field: /risk/statement
+    expected: None.
+- source: skill-refactoring-catalog.md
+  line: 25
+  text: '### Sync generated contract artifacts'
+  targets:
+  - target_ref: skill-refactoring.remedies.sync-generated-contract-artifacts
+    field: /title
+    expected: Sync generated contract artifacts
+- source: skill-refactoring-catalog.md
+  line: 26
+  text: If the skill is blueprint-migrated, update `blueprint.yaml` and regenerate the generated contract/interface blocks in `SKILL.md` plus repo-level blueprint manifests.
+  targets:
+  - target_ref: skill-refactoring.remedies.sync-generated-contract-artifacts
+    field: /summary
+    expected: Update `blueprint.yaml` and regenerate the generated contract/interface blocks in `SKILL.md` plus repo-level blueprint manifests for a blueprint-migrated skill.
+- source: skill-refactoring-catalog.md
+  line: 27
+  text: "**Risk:** None \u2014 purely additive."
+  targets:
+  - target_ref: skill-refactoring.remedies.sync-generated-contract-artifacts
+    field: /risk/statement
+    expected: "None \u2014 purely additive."
+- source: skill-refactoring-catalog.md
+  line: 29
+  text: '---'
+  contextual: Markdown separator is contextual structure represented by the surrounding semantic family.
+  targets:
+  - target_ref: skill-refactoring.remedies.sync-generated-contract-artifacts
+    field: /id
+    expected: skill-refactoring.remedies.sync-generated-contract-artifacts
+- source: skill-refactoring-catalog.md
+  line: 31
+  text: "## Medium moves \u2014 apply after safe moves are done"
+  targets:
+  - target_ref: skill-refactoring.moves.medium
+    field: /title
+    expected: "Medium moves \u2014 apply after safe moves are done"
+- source: skill-refactoring-catalog.md
+  line: 33
+  text: '### Clarify Interface'
+  targets:
+  - target_ref: skill-refactoring.remedies.clarify-interface
+    field: /title
+    expected: Clarify Interface
+- source: skill-refactoring-catalog.md
+  line: 34
+  text: 'Add a brief section to SKILL.md stating: what inputs the skill expects (if any), what it produces, what side effects it has (files written, commands run). Use this to make the skill dependable by other skills.'
+  targets:
+  - target_ref: skill-refactoring.remedies.clarify-interface
+    field: /summary
+    expected: Add a brief SKILL.md section stating what inputs the skill expects (if any), what it produces, and what side effects it has (files written, commands run). Use this to make the skill dependable by other skills.
+- source: skill-refactoring-catalog.md
+  line: 35
+  text: "**Preserve:** Actual behavior \u2014 this is documentation only."
+  targets:
+  - target_ref: skill-refactoring.remedies.clarify-interface
+    field: /invariants/0/statement
+    expected: Actual behavior must remain unchanged; this is documentation only.
+- source: skill-refactoring-catalog.md
+  line: 36
+  text: '**Risk:** Low.'
+  targets:
+  - target_ref: skill-refactoring.remedies.clarify-interface
+    field: /risk/statement
+    expected: Low.
+- source: skill-refactoring-catalog.md
+  line: 38
+  text: '### Extract Reference'
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-reference
+    field: /title
+    expected: Extract Reference
+- source: skill-refactoring-catalog.md
+  line: 39
+  text: Identify content that is repeated across multiple skills or that is reference
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-reference
+    field: /steps/0/instruction
+    expected: Move repeated content, tables, guidelines, or schemas to a top-level reference file.
+- source: skill-refactoring-catalog.md
+  line: 40
+  text: material (tables, guidelines, schemas). Move it to top-level
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-reference
+    field: /steps/0/instruction
+    expected: Move repeated content, tables, guidelines, or schemas to a top-level reference file.
+- source: skill-refactoring-catalog.md
+  line: 41
+  text: '`references/<name>.md`.'
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-reference
+    field: /summary
+    expected: Identify repeated content or reference material and move it to top-level `references/<name>.md`.
+- source: skill-refactoring-catalog.md
+  line: 43
+  text: Use an `@` include only when every route through the owning LLM interface needs
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-reference
+    field: /steps/1/instruction
+    expected: Use an `@` include only when every route through the owning LLM interface needs the reference; otherwise name the file and its observable read condition in the selected route.
+- source: skill-refactoring-catalog.md
+  line: 44
+  text: the reference. When only a particular route needs it, name the file in that
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-reference
+    field: /steps/1/instruction
+    expected: Use an `@` include only when every route through the owning LLM interface needs the reference; otherwise name the file and its observable read condition in the selected route.
+- source: skill-refactoring-catalog.md
+  line: 45
+  text: route's instructions, state the observable condition for reading it, and load
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-reference
+    field: /steps/1/instruction
+    expected: Use an `@` include only when every route through the owning LLM interface needs the reference; otherwise name the file and its observable read condition in the selected route.
+- source: skill-refactoring-catalog.md
+  line: 46
+  text: it only after that route is selected.
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-reference
+    field: /steps/1/instruction
+    expected: Use an `@` include only when every route through the owning LLM interface needs the reference; otherwise name the file and its observable read condition in the selected route.
+- source: skill-refactoring-catalog.md
+  line: 47
+  text: "**Preserve:** Content must be identical before and after \u2014 only the location changes."
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-reference
+    field: /invariants/0/statement
+    expected: Content must be identical before and after; only the location changes.
+- source: skill-refactoring-catalog.md
+  line: 48
+  text: '**Verify:** For an unconditional include, invoke the skill and confirm the'
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-reference
+    field: /steps/2/verification
+    expected: For an unconditional include, invoke the skill and confirm the reference content is loaded. For conditional routing, exercise both paths and confirm the file is loaded only on the route that needs it.
+- source: skill-refactoring-catalog.md
+  line: 49
+  text: reference content is loaded. For conditional routing, exercise both paths and
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-reference
+    field: /steps/2/verification
+    expected: For an unconditional include, invoke the skill and confirm the reference content is loaded. For conditional routing, exercise both paths and confirm the file is loaded only on the route that needs it.
+- source: skill-refactoring-catalog.md
+  line: 50
+  text: confirm the file is loaded only on the route that needs it.
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-reference
+    field: /steps/2/verification
+    expected: For an unconditional include, invoke the skill and confirm the reference content is loaded. For conditional routing, exercise both paths and confirm the file is loaded only on the route that needs it.
+- source: skill-refactoring-catalog.md
+  line: 51
+  text: '**Risk:** Low, but test the loading behavior.'
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-reference
+    field: /risk/statement
+    expected: Low, but test the loading behavior.
+- source: skill-refactoring-catalog.md
+  line: 53
+  text: '### Extract Script'
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-script
+    field: /title
+    expected: Extract Script
+- source: skill-refactoring-catalog.md
+  line: 54
+  text: Move any executable logic from SKILL.md into a new private runtime file under `_rtx/`. Update SKILL.md to describe the public interface and how to interpret its output. Add the interface to `blueprint.yaml` / generated permissions as appropriate.
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-script
+    field: /summary
+    expected: Move any executable logic from SKILL.md into a new private runtime file under `_rtx/`.
+  - target_ref: skill-refactoring.remedies.extract-script
+    field: /steps/1/instruction
+    expected: Update SKILL.md to describe the public interface and output interpretation; add the interface to `blueprint.yaml` and generated permissions as appropriate.
+- source: skill-refactoring-catalog.md
+  line: 55
+  text: '**Preserve:** The script must implement exactly the same logic that was inline. SKILL.md instructions for invoking it must produce the same result.'
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-script
+    field: /invariants/0/statement
+    expected: The script must implement exactly the same logic that was inline; SKILL.md instructions for invoking it must produce the same result.
+- source: skill-refactoring-catalog.md
+  line: 56
+  text: "**Risk:** Medium \u2014 logic moves, easy to introduce a subtle change."
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-script
+    field: /risk/statement
+    expected: "Medium \u2014 logic moves and a subtle change is easy to introduce."
+- source: skill-refactoring-catalog.md
+  line: 58
+  text: '### Relocate State'
+  targets:
+  - target_ref: skill-refactoring.remedies.relocate-state
+    field: /title
+    expected: Relocate State
+- source: skill-refactoring-catalog.md
+  line: 59
+  text: Move persistent data files from wrong locations (e.g. `/tmp`, `~/.config`) to the skill's own directory. Update any scripts that write or read those paths.
+  targets:
+  - target_ref: skill-refactoring.remedies.relocate-state
+    field: /summary
+    expected: Move persistent data files from wrong locations such as `/tmp` or `~/.config` to the skill's own directory.
+  - target_ref: skill-refactoring.remedies.relocate-state
+    field: /steps/0/instruction
+    expected: Move the files and update all scripts that read or write those paths atomically.
+- source: skill-refactoring-catalog.md
+  line: 60
+  text: '**Preserve:** Data format and content. Update all read/write paths atomically.'
+  targets:
+  - target_ref: skill-refactoring.remedies.relocate-state
+    field: /invariants/0/statement
+    expected: Data format and content must be preserved.
+  - target_ref: skill-refactoring.remedies.relocate-state
+    field: /steps/0/instruction
+    expected: Move the files and update all scripts that read or write those paths atomically.
+- source: skill-refactoring-catalog.md
+  line: 61
+  text: "**Risk:** Medium \u2014 path changes can break scripts silently."
+  targets:
+  - target_ref: skill-refactoring.remedies.relocate-state
+    field: /risk/statement
+    expected: "Medium \u2014 path changes can break scripts silently."
+- source: skill-refactoring-catalog.md
+  line: 63
+  text: '### Relocate Credentials'
+  targets:
+  - target_ref: skill-refactoring.remedies.relocate-credentials
+    field: /title
+    expected: Relocate Credentials
+- source: skill-refactoring-catalog.md
+  line: 64
+  text: Move credentials from the skill directory to `~/.config/<name>/` (mode 600). Update scripts that reference them.
+  targets:
+  - target_ref: skill-refactoring.remedies.relocate-credentials
+    field: /summary
+    expected: Move credentials from the skill directory to `~/.config/<name>/` with mode 600.
+  - target_ref: skill-refactoring.remedies.relocate-credentials
+    field: /steps/0/instruction
+    expected: Move credentials, update all references, and verify scripts still authenticate.
+- source: skill-refactoring-catalog.md
+  line: 65
+  text: "**Risk:** Medium \u2014 update all references, verify scripts still authenticate."
+  targets:
+  - target_ref: skill-refactoring.remedies.relocate-credentials
+    field: /risk/statement
+    expected: "Medium \u2014 every reference must be updated."
+- source: skill-refactoring-catalog.md
+  line: 67
+  text: '---'
+  contextual: Markdown separator is contextual structure represented by the surrounding semantic family.
+  targets:
+  - target_ref: skill-refactoring.remedies.relocate-credentials
+    field: /id
+    expected: skill-refactoring.remedies.relocate-credentials
+- source: skill-refactoring-catalog.md
+  line: 69
+  text: "## Structural moves \u2014 apply last, one at a time"
+  targets:
+  - target_ref: skill-refactoring.moves.structural
+    field: /title
+    expected: "Structural moves \u2014 apply last, one at a time"
+- source: skill-refactoring-catalog.md
+  line: 71
+  text: '### Extract Sub-skill'
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-sub-skill
+    field: /title
+    expected: Extract Sub-skill
+- source: skill-refactoring-catalog.md
+  line: 72
+  text: 'Identify a coherent sub-responsibility within the skill that:'
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-sub-skill
+    field: /summary
+    expected: Identify a coherent sub-responsibility with its own trigger that can be invoked independently and reused.
+- source: skill-refactoring-catalog.md
+  line: 73
+  text: '- Has its own clear trigger condition'
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-sub-skill
+    field: /summary
+    expected: Identify a coherent sub-responsibility with its own trigger that can be invoked independently and reused.
+- source: skill-refactoring-catalog.md
+  line: 74
+  text: '- Could be invoked independently'
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-sub-skill
+    field: /summary
+    expected: Identify a coherent sub-responsibility with its own trigger that can be invoked independently and reused.
+- source: skill-refactoring-catalog.md
+  line: 75
+  text: '- Would be reusable by other skills'
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-sub-skill
+    field: /summary
+    expected: Identify a coherent sub-responsibility with its own trigger that can be invoked independently and reused.
+- source: skill-refactoring-catalog.md
+  line: 77
+  text: 'Steps:'
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-sub-skill
+    field: /ordered
+    expected: true
+- source: skill-refactoring-catalog.md
+  line: 78
+  text: 1. Write a characterization of the sub-responsibility (inputs, outputs, behavior).
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-sub-skill
+    field: /steps/0/instruction
+    expected: Write a characterization of the sub-responsibility's inputs, outputs, and behavior.
+- source: skill-refactoring-catalog.md
+  line: 79
+  text: 2. Create the new skill directory and SKILL.md.
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-sub-skill
+    field: /steps/1/instruction
+    expected: Create the new skill directory and SKILL.md.
+- source: skill-refactoring-catalog.md
+  line: 80
+  text: 3. Move the relevant content (SKILL.md sections + private runtime files) to the new skill.
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-sub-skill
+    field: /steps/2/instruction
+    expected: Move the relevant SKILL.md sections and private runtime files.
+- source: skill-refactoring-catalog.md
+  line: 81
+  text: 4. In the original skill, replace the moved content with a skill invocation.
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-sub-skill
+    field: /steps/3/instruction
+    expected: Replace moved content in the original skill with a skill invocation.
+- source: skill-refactoring-catalog.md
+  line: 82
+  text: 5. Verify aggregate behavior is unchanged.
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-sub-skill
+    field: /steps/4/instruction
+    expected: Verify aggregate behavior is unchanged.
+- source: skill-refactoring-catalog.md
+  line: 84
+  text: "**Preserve:** The original skill's aggregate behavior must be identical \u2014 it now delegates to the sub-skill, but the user sees the same result."
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-sub-skill
+    field: /invariants/0/statement
+    expected: The original skill's aggregate behavior must be identical; delegation must not change the user's result.
+- source: skill-refactoring-catalog.md
+  line: 85
+  text: '**Risk:** High. Test carefully.'
+  targets:
+  - target_ref: skill-refactoring.remedies.extract-sub-skill
+    field: /risk/statement
+    expected: High. Test carefully.
+- source: skill-refactoring-catalog.md
+  line: 87
+  text: '### Decompose Script'
+  targets:
+  - target_ref: skill-refactoring.remedies.decompose-script
+    field: /title
+    expected: Decompose Script
+- source: skill-refactoring-catalog.md
+  line: 88
+  text: Split a monolithic script that handles multiple unrelated responsibilities into focused scripts, one per responsibility.
+  targets:
+  - target_ref: skill-refactoring.remedies.decompose-script
+    field: /summary
+    expected: Split a monolithic script that handles multiple unrelated responsibilities into focused scripts, one per responsibility.
+- source: skill-refactoring-catalog.md
+  line: 90
+  text: 'Steps:'
+  targets:
+  - target_ref: skill-refactoring.remedies.decompose-script
+    field: /ordered
+    expected: true
+- source: skill-refactoring-catalog.md
+  line: 91
+  text: 1. Identify the distinct responsibilities in the script.
+  targets:
+  - target_ref: skill-refactoring.remedies.decompose-script
+    field: /steps/0/instruction
+    expected: Identify the distinct responsibilities in the script.
+- source: skill-refactoring-catalog.md
+  line: 92
+  text: 2. Create one new private runtime file per responsibility under `_rtx/`.
+  targets:
+  - target_ref: skill-refactoring.remedies.decompose-script
+    field: /steps/1/instruction
+    expected: Create one private `_rtx/` runtime file per responsibility.
+- source: skill-refactoring-catalog.md
+  line: 93
+  text: 3. Update SKILL.md to invoke the corresponding interfaces in the same order as the original behavior.
+  targets:
+  - target_ref: skill-refactoring.remedies.decompose-script
+    field: /steps/2/instruction
+    expected: Update SKILL.md to invoke the corresponding interfaces in the original order.
+- source: skill-refactoring-catalog.md
+  line: 94
+  text: 4. Add new interfaces to `blueprint.yaml` / generated permissions as appropriate.
+  targets:
+  - target_ref: skill-refactoring.remedies.decompose-script
+    field: /steps/3/instruction
+    expected: Add new interfaces to `blueprint.yaml` and generated permissions as appropriate.
+- source: skill-refactoring-catalog.md
+  line: 95
+  text: 5. Delete the original script once all responsibilities are covered.
+  targets:
+  - target_ref: skill-refactoring.remedies.decompose-script
+    field: /steps/4/instruction
+    expected: Delete the original script once all responsibilities are covered.
+- source: skill-refactoring-catalog.md
+  line: 97
+  text: '**Preserve:** Each responsibility must produce the same output as before. Run the original first, record outputs, then verify the decomposed scripts match.'
+  targets:
+  - target_ref: skill-refactoring.remedies.decompose-script
+    field: /invariants/0/statement
+    expected: Each responsibility must produce the same output as before.
+  - target_ref: skill-refactoring.remedies.decompose-script
+    field: /steps/4/verification
+    expected: Run the original first, record outputs, then verify the decomposed scripts match.
+- source: skill-refactoring-catalog.md
+  line: 98
+  text: '**Risk:** High. Do one responsibility at a time.'
+  targets:
+  - target_ref: skill-refactoring.remedies.decompose-script
+    field: /risk/statement
+    expected: High. Do one responsibility at a time.
+- source: skill-refactoring-catalog.md
+  line: 100
+  text: '### Inline Thin Skill'
+  targets:
+  - target_ref: skill-refactoring.remedies.inline-thin-skill
+    field: /title
+    expected: Inline Thin Skill
+- source: skill-refactoring-catalog.md
+  line: 101
+  text: If a skill is a near-empty pass-through to a sub-skill with no real added logic, merge it into the calling skill.
+  targets:
+  - target_ref: skill-refactoring.remedies.inline-thin-skill
+    field: /summary
+    expected: If a skill is a near-empty pass-through with no real added logic, merge it into the calling skill.
+- source: skill-refactoring-catalog.md
+  line: 103
+  text: 'Steps:'
+  targets:
+  - target_ref: skill-refactoring.remedies.inline-thin-skill
+    field: /ordered
+    expected: true
+- source: skill-refactoring-catalog.md
+  line: 104
+  text: 1. Identify all skills that invoke the thin skill.
+  targets:
+  - target_ref: skill-refactoring.remedies.inline-thin-skill
+    field: /steps/0/instruction
+    expected: Identify all skills that invoke the thin skill.
+- source: skill-refactoring-catalog.md
+  line: 105
+  text: 2. Replace each invocation with a direct invocation of the underlying skill, plus any additions the thin skill provided.
+  targets:
+  - target_ref: skill-refactoring.remedies.inline-thin-skill
+    field: /steps/1/instruction
+    expected: Replace each invocation with a direct invocation of the underlying skill plus any additions the thin skill provided.
+- source: skill-refactoring-catalog.md
+  line: 106
+  text: 3. Delete the thin skill directory.
+  targets:
+  - target_ref: skill-refactoring.remedies.inline-thin-skill
+    field: /steps/2/instruction
+    expected: Delete the thin skill directory.
+- source: skill-refactoring-catalog.md
+  line: 108
+  text: '**Preserve:** Callers must see the same behavior.'
+  targets:
+  - target_ref: skill-refactoring.remedies.inline-thin-skill
+    field: /invariants/0/statement
+    expected: Callers must see the same behavior.
+- source: skill-refactoring-catalog.md
+  line: 109
+  text: "**Risk:** High \u2014 requires knowing all callers."
+  targets:
+  - target_ref: skill-refactoring.remedies.inline-thin-skill
+    field: /risk/statement
+    expected: "High \u2014 requires knowing all callers."
+- source: skill-refactoring-catalog.md
+  line: 111
+  text: '### Depend on Interface'
+  targets:
+  - target_ref: skill-refactoring.remedies.depend-on-interface
+    field: /title
+    expected: Depend on Interface
+- source: skill-refactoring-catalog.md
+  line: 112
+  text: If a skill calls another skill's private runtime files directly, replace the raw file call with either a proper skill invocation or a dispatcher call to the dependency's exported interface.
+  targets:
+  - target_ref: skill-refactoring.remedies.depend-on-interface
+    field: /summary
+    expected: Replace direct access to another skill's private runtime files with its exported interface.
+  - target_ref: skill-refactoring.remedies.depend-on-interface
+    field: /steps/0/instruction
+    expected: Identify the raw script access and the skill that owns it.
+  - target_ref: skill-refactoring.remedies.depend-on-interface
+    field: /steps/1/instruction
+    expected: Understand the exported interface and select the matching skill invocation or dispatcher mode.
+  - target_ref: skill-refactoring.remedies.depend-on-interface
+    field: /steps/2/instruction
+    expected: Replace the raw file call in SKILL.md or `_rtx/` with the selected exported invocation.
+- source: skill-refactoring-catalog.md
+  line: 114
+  text: 'Steps:'
+  targets:
+  - target_ref: skill-refactoring.remedies.depend-on-interface
+    field: /ordered
+    expected: true
+- source: skill-refactoring-catalog.md
+  line: 115
+  text: 1. Identify the raw script access and which skill owns it.
+  targets:
+  - target_ref: skill-refactoring.remedies.depend-on-interface
+    field: /steps/0/instruction
+    expected: Identify the raw script access and the skill that owns it.
+- source: skill-refactoring-catalog.md
+  line: 116
+  text: 2. Understand the owning skill's exported interface and which invocation mode matches the current use.
+  targets:
+  - target_ref: skill-refactoring.remedies.depend-on-interface
+    field: /steps/1/instruction
+    expected: Understand the exported interface and select the matching skill invocation or dispatcher mode.
+- source: skill-refactoring-catalog.md
+  line: 117
+  text: 3. Replace the raw runtime-file call in SKILL.md or `_rtx/` with either a skill invocation or a dispatcher call to the exported interface.
+  targets:
+  - target_ref: skill-refactoring.remedies.depend-on-interface
+    field: /steps/2/instruction
+    expected: Replace the raw file call in SKILL.md or `_rtx/` with the selected exported invocation.
+- source: skill-refactoring-catalog.md
+  line: 118
+  text: 4. Verify output is equivalent.
+  targets:
+  - target_ref: skill-refactoring.remedies.depend-on-interface
+    field: /steps/3/instruction
+    expected: Verify output is equivalent.
+- source: skill-refactoring-catalog.md
+  line: 120
+  text: '**Preserve:** Output and side effects.'
+  targets:
+  - target_ref: skill-refactoring.remedies.depend-on-interface
+    field: /invariants/0/statement
+    expected: Output and side effects must be preserved.
+- source: skill-refactoring-catalog.md
+  line: 121
+  text: "**Risk:** Medium \u2014 skill invocation may produce more/different output than the raw script."
+  targets:
+  - target_ref: skill-refactoring.remedies.depend-on-interface
+    field: /risk/statement
+    expected: "Medium \u2014 skill invocation may produce more or different output than the raw script."
+- source: skill-refactoring-catalog.md
+  line: 123
+  text: '---'
+  contextual: Markdown separator is contextual structure represented by the surrounding semantic family.
+  targets:
+  - target_ref: skill-refactoring.remedies.depend-on-interface
+    field: /id
+    expected: skill-refactoring.remedies.depend-on-interface
+- source: skill-refactoring-catalog.md
+  line: 125
+  text: '## Ordering rules'
+  targets:
+  - target_ref: skill-refactoring.ordering-rules
+    field: /title
+    expected: Ordering rules
+- source: skill-refactoring-catalog.md
+  line: 127
+  text: 1. Always characterize before starting.
+  targets:
+  - target_ref: skill-refactoring.ordering-rules
+    field: /assertions/0/statement
+    expected: Always characterize before starting.
+- source: skill-refactoring-catalog.md
+  line: 128
+  text: 2. Apply all safe moves first, verify, then medium, then structural.
+  targets:
+  - target_ref: skill-refactoring.ordering-rules
+    field: /assertions/1/statement
+    expected: Apply all safe moves first, verify, then medium, then structural.
+- source: skill-refactoring-catalog.md
+  line: 129
+  text: 3. Never apply two structural moves in the same pass without verifying between them.
+  targets:
+  - target_ref: skill-refactoring.ordering-rules
+    field: /assertions/2/statement
+    expected: Never apply two structural moves in the same pass without verifying between them.
+- source: skill-refactoring-catalog.md
+  line: 130
+  text: "4. If any move breaks behavior, revert immediately \u2014 don't patch forward."
+  targets:
+  - target_ref: skill-refactoring.ordering-rules
+    field: /assertions/3/statement
+    expected: "If any move breaks behavior, revert immediately \u2014 don't patch forward."
