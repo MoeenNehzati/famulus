@@ -30,17 +30,22 @@ _spec.loader.exec_module(_mod)
 
 
 _DISPATCHER_CONTEXT_MARKERS = [
-    "## Skill System — Module Boundaries",
-    "Do not invoke these scripts directly.",
-    "dispatcher --caller-skill <caller> <callee> <interface-id> [args...]",
-    "Use --dry-run to preview without executing.",
-    "`skill-maker` skill",
+    "## Skill dispatcher",
+    "treat `scripts/` as private",
+    "read them only when necessary with user approval",
+    "Use the interfaces declared in the injected SKILL.md contract",
+    "dispatcher --caller-skill <caller> <interface-id> [args...]",
+    "Use `--dry-run` to preview.",
+    "If rejected, report the rejection; do not bypass the dispatcher.",
+    "use `skill-maker`, loading it only when skill work begins",
 ]
 
 
 def _assert_dispatcher_context(text: str) -> None:
     missing = [marker for marker in _DISPATCHER_CONTEXT_MARKERS if marker not in text]
     assert missing == []
+    assert "<callee> <interface-id>" not in text
+    assert len(text) <= 750
 
 
 def _available(*, cli: bool = True, pkg: bool = True):

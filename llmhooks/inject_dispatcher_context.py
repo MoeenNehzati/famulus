@@ -15,36 +15,21 @@ from llmhooks.lib.cross_host import CrossHostHook, HookInput, HookResult, parse_
 
 
 CONTEXT_DISPATCHER_AVAILABLE = """\
-## Skill System — Module Boundaries
+## Skill dispatcher
 
-This applies to skills whose SKILL.md contains a \
-`<!-- BEGIN BLUEPRINT CONTRACT -->` block after the frontmatter. \
-Other skills may follow different conventions.
+For skills whose SKILL.md includes a `BEGIN BLUEPRINT CONTRACT`, treat \
+`scripts/` as private: do not invoke them, and read them only when necessary \
+with user approval. Use the interfaces declared in the injected SKILL.md \
+contract; do not read blueprint.yaml.
 
-Each skill has a `scripts/` directory containing its implementation. \
-Do not invoke these scripts directly. Do not read them unless absolutely \
-necessary and only after getting the user's approval. Use the dispatcher instead.
+Call:
+  dispatcher --caller-skill <caller> <interface-id> [args...]
 
-The blueprint contract block in SKILL.md specifies which interfaces a skill \
-exposes. Call them through the dispatcher with `--caller-skill` set to the \
-skill making the call. The relevant parts of `blueprint.yaml` are already \
-injected into SKILL.md — you do not need to read `blueprint.yaml` directly.
+Use `--dry-run` to preview. If rejected, report the rejection; do not bypass \
+the dispatcher.
 
-Dispatcher invocation:
-  dispatcher --caller-skill <caller> <callee> <interface-id> [args...]
-
-Use --dry-run to preview without executing.
-
-The dispatcher enforces that only pre-specified calls are allowed. If it \
-rejects a call, accept the rejection and report back to the user. \
-Do not attempt to work around it.
-
-Example:
-  dispatcher --caller-skill daily-plan list-manager read-list /tmp/todo.yaml
-
-For both creating a new skill and updating an existing one, prefer the \
-`skill-maker` skill — it applies this repository's skill-writing guideline \
-and conformance checks. Do not load it until skill work actually begins.\
+For skill creation or updates, use `skill-maker`, loading it only when skill \
+work begins.\
 """
 
 CONTEXT_DISPATCHER_MISSING = """\
