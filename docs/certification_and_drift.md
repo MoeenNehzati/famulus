@@ -40,7 +40,13 @@ An LLM can review each node and determine whether its blueprint file accurately 
 
 ## Certification
 
-Each node may have a certificate file written after successful certification. The certificate identifies the node and certifier, records `node_hash(x)` for the node `x`, `node_hash(d)` for each direct dependency `d`, and the source commit containing the node's content and blueprint. It may also include informational metadata such as `certified_at`. The certificate is signed so that later modifications can be detected.
+Each node may have a current certificate file and an append-only certificate history. The current certificate is written after successful certification and is the only certificate used to determine the node's certification status. Earlier history entries are retained as evidence; they are not alternative candidates for `is_certified(x)`.
+
+Each certificate consists of a canonical signed payload and a signature. The payload identifies the node and certifier and records `node_hash(x)` for the node `x`, `node_hash(d)` for each direct dependency `d`, the source commit containing the node's content and blueprint, `node_hash(skill-certifier)`, the source commit containing the certifier, the signing-key identity, and the hash of the preceding history entry. It may also include informational metadata such as `certified_at`. Every payload field is covered by the signature, so none of these values can be replaced without invalidating the certificate.
+
+After signing a certificate, the certifier appends the complete entry—payload and signature—to the node's history. In the first entry, `previous_entry_hash` is null. In every later entry, it equals a cryptographic hash of the canonical encoding of the complete preceding entry, including that entry's payload and signature. Because the new signature covers `previous_entry_hash`, each entry recursively commits to all preceding signed payloads and signatures.
+
+The current certificate and its history are certificate artifacts, not node content, and neither contributes to `node_hash(x)`. Appending a history entry therefore does not change the node hash or any dependent node hash. The history chain makes modification, removal from the middle, and reordering detectable within the retained history. Without an external anchor, the chain alone cannot prove that its latest entries were not removed; the separate current certificate remains authoritative for current status.
 
 A node `x` is certified if its certificate is validly signed, its recorded node hash equals the current `node_hash(x)`, every direct dependency `d` is certified, and the recorded hash for `d` equals the current `node_hash(d)`. Otherwise, `x` is suspect.
 
@@ -56,7 +62,7 @@ Keeping certification and status reporting in separate skills creates an authori
 
 This separation requires public-key signatures rather than a shared symmetric key. If both skills possessed the same authentication key, the read-only checker could also produce valid certificates. The certifier must reconstruct node and dependency hashes and perform its checks internally before signing; it must not accept an LLM-supplied certificate payload as already validated.
 
-Before signing, `skill-certifier` adds its current node hash to the certificate payload:
+Before signing, `skill-certifier` constructs the complete canonical payload. The signature field itself is not part of that payload:
 
 ```text
 write_signed_certificate(payload):
@@ -65,11 +71,32 @@ write_signed_certificate(payload):
         current_commit(payload.node.repository)
         == payload.source_commit
     )
+    assert is_committed(skill-certifier)
 
     payload.certifier_node_hash = node_hash(skill-certifier)
-    payload.signature = sign(private_key, payload)
-    write(payload)
+    payload.certifier_source_commit = current_commit(
+        skill-certifier.repository
+    )
+    payload.key_id = signing_key_id(private_key)
+
+    previous_entry = last_complete_history_entry(payload.node)
+    payload.previous_entry_hash = (
+        null
+        if previous_entry is missing
+        else hash(canonical_encode(previous_entry))
+    )
+
+    signature = sign(private_key, canonical_encode(payload))
+    entry = {
+        "payload": payload,
+        "signature": signature
+    }
+
+    append_and_sync(payload.node.history, entry)
+    atomic_write(payload.node.certificate, entry)
 ```
+
+If history append succeeds but writing the current certificate fails, the appended entry remains historical evidence but does not become authoritative. A retry may append a new entry linked to it. The certifier verifies both writes before reporting certification success.
 
 Signature validation checks both the cryptographic signature and agreement with the current certifier node hash:
 
@@ -77,7 +104,7 @@ Signature validation checks both the cryptographic signature and agreement with 
 valid_signature(certificate):
     signature_matches = verify(
         public_key,
-        certificate.payload,
+        canonical_encode(certificate.payload),
         certificate.signature
     )
 
@@ -256,12 +283,12 @@ This document proposes a simpler certification model and does not yet describe t
 | --- | --- | --- |
 | `skill-audit` | `skill-certifier` | Certification may repair a blueprint before issuing its certificate; blueprint audit names only the semantic comparison. |
 | `skill-drift.machine.drift-status` and audit-current/audit-stale | `is_certified(x)`, `certification_statuses(G)`, and certified/suspect | Status describes whether retained certification currently applies and may recover without rewriting the certificate. |
-| Health records | Certificate files | The terminology centers the signed certification artifact. |
+| Health records | Current certificate files plus append-only signed certificate histories | Current status remains node-local while every issued signature is retained as evidence. |
 | Recursive certified-health hashes and timestamp-based currentness rules | Local `node_hash(x)` plus exact hashes of direct dependencies | Transitive dependency state is not folded into a node's local identity; `certified_at` is informational only. |
 | Certification reads the existing authored blueprint | Two-pass certification may repair the blueprint | The first pass discovers dependencies; the second produces the authoritative blueprint after dependencies are certified. |
 | Certification may inspect dirty local inputs but cannot stamp them | `is_committed(x)` gates certificate writing and the certificate records `source_commit` | Every certified node can be recovered from the commit named by its certificate; unrelated dirty files do not block certification. |
 | Target-only certification | Optional `repair_dependents` and graph-wide `certify_all(G)` | Callers choose whether to repair only the target closure, effects on direct dependents, or the entire graph. |
-| Shared-key authentication | Public-key signatures bound to `node_hash(skill-certifier)` | `skill-certifier` holds the private key and write authority; `skill-drift` receives only the public key and marks old certificates suspect when the certifier changes. |
+| Shared-key authentication | Public-key signatures bound to `node_hash(skill-certifier)`, the certifier source commit, and the preceding history entry | `skill-certifier` holds the private key and write authority; each signature identifies the exact certifier version and recursively commits to the retained signature history. `skill-drift` receives only the public key and marks old current certificates suspect when the certifier changes. |
 | Tests and validators participate in certification health gates | Routine tests remain in ordinary validation workflows | The core certification-status algorithm focuses on blueprint accuracy and direct dependency agreement. |
 
 These changes require corresponding updates to skill names, interface IDs, blueprint dependencies, schemas, certificate formats, permission declarations, policy hashes, documentation, tests, and installed-skill migration behavior before they can replace the current implementation.

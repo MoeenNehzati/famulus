@@ -4,7 +4,7 @@
 
 **Goal:** Replace the implemented audit/health system with the certificate model in `docs/certification_and_drift.md`, migrate supported callers and installed artifacts without an unreadable intermediate state, and delete `docs/audit_and_drift.md` after every live dependency has moved.
 
-**Architecture:** Build a new certification core behind new certificate interfaces, but adapt the existing mechanical infrastructure for graph discovery, hashing, Git provenance, safe writes, validation, and reporting. Do not implement the design as either a ground-up rewrite or a gradual mutation of the old health semantics. Retain temporary read-only compatibility for legacy health records and old caller aliases; new code writes certificates only and never dual-writes or converts a health record into a certificate. Cutover proceeds through inventory, dual-read compatibility, caller migration, recertification, removal of legacy surfaces, and final documentation deletion.
+**Architecture:** Build a new certification core behind new certificate interfaces, but adapt the existing mechanical infrastructure for graph discovery, hashing, Git provenance, safe writes, validation, and reporting. Each successful certification writes one authoritative current certificate and appends the same signed entry to an evidence-only, hash-chained history. Do not implement the design as either a ground-up rewrite or a gradual mutation of the old health semantics. Retain temporary read-only compatibility for legacy health records and old caller aliases; new code writes certificates only and never dual-writes or converts a health record into a certificate. Cutover proceeds through inventory, dual-read compatibility, caller migration, recertification, removal of legacy surfaces, and final documentation deletion.
 
 **Primary surfaces:** Python, JSON Schema, YAML blueprints, dispatcher interfaces, Git provenance, public-key signatures, repository validators, pytest, and precommit validation.
 
@@ -17,6 +17,8 @@
 - `node_hash(skill-certifier)` is the complete certification basis in this version; certifier dependencies are deliberately excluded.
 - Routine tests and validators remain separate health signals and ordinary validation workflows; they are not certificate-status inputs.
 - Existing health records are never accepted as certificates. Migration requires new certification.
+- Current certificates and certificate histories are excluded from `node_hash`; appending history cannot change node or dependent hashes.
+- Historical entries are evidence only. Certificate status uses the authoritative current certificate and never searches history for an older matching entry.
 - No task may delete or disable a compatibility surface before its inventory and migration tests are complete.
 - Do not delete `docs/audit_and_drift.md` until the final documentation-removal task.
 
@@ -34,6 +36,7 @@ The implementation must first inventory and test the existing mechanical compone
 The implementation must create a separate certification core for behavior whose meaning changes. Do not preserve old internal abstractions merely to minimize the diff. The new core owns:
 
 - certificate schemas and canonical signed payloads;
+- append-only, hash-chained certificate histories that remain separate from current status;
 - `certified` and `suspect` status evaluation;
 - direct dependency `node_hash(d)` recording and comparison;
 - the two-pass, dependency-first certification algorithm;
@@ -63,7 +66,7 @@ Rollback is supported through phase 4 by reverting the migration commits and ret
 | `skill-drift.machine.drift-status@1` | Add version 2 certificate fields and certified/suspect concerns; retain version 1 during compatibility | Golden JSON, Markdown, target, and exit-code tests |
 | `skill-drift.machine.compute-hashes@1` | Add version 2 local node-hash output; retain version 1 until all certifier callers migrate | Golden hash payload tests |
 | Health records and `.last_audit.json` | Read-only legacy evidence during compatibility; never treated as certificates; retire after recertification | Mixed-installation and precedence tests |
-| `health.schema.json` | Replace for new writes with a certificate schema; retain legacy validation only during dual-read | Schema fixtures for both formats |
+| `health.schema.json` | Replace for new writes with schemas for the current certificate and append-only history entries; retain legacy validation only during dual-read | Schema fixtures for all formats |
 | Pooled review | Retain as a non-authoritative human review assembled from blueprints and certificates | Canonical rendering tests |
 | Pooled-review health | Remove after certificate-backed pooled review is verified | Absence and migration tests |
 | `--with-test-validate` | Preserve as a separate health signal that never changes certified/suspect status | Combined-status tests |
@@ -95,9 +98,9 @@ Rollback is supported through phase 4 by reverting the migration commits and ret
 - Test: `tests/test_typed_blueprint_schemas.py`
 - Test: new `tests/test_certificate_schema.py`
 
-**Deliverable:** Exact schemas for certificates, mixed legacy/new status output, status concerns, versioned interface arguments, exit behavior, JSON fields, Markdown rendering, no-target behavior, exact-target behavior, and report side effects. The certificate payload includes node identity, `node_hash`, the exact direct-dependency ID-to-hash mapping, `node_hash(skill-certifier)`, `source_commit`, `certified_at`, signer/key identity, and signature.
+**Deliverable:** Exact schemas for current certificates, append-only history entries, mixed legacy/new status output, status concerns, versioned interface arguments, exit behavior, JSON fields, Markdown rendering, no-target behavior, exact-target behavior, and report side effects. The canonical signed payload includes node identity, `node_hash`, the exact direct-dependency ID-to-hash mapping, `source_commit`, `node_hash(skill-certifier)`, `certifier_source_commit`, `previous_entry_hash`, `certified_at`, and signer/key identity. The signature is stored beside the payload and covers its canonical encoding. `previous_entry_hash` is null for the first entry and otherwise hashes the complete canonical preceding entry, including its payload and signature.
 
-**Verification:** Invalid signatures, extra or missing dependency keys, wrong node/certifier identity, unsupported schema versions, missing commits, and malformed mixed-status payloads fail closed in schema fixtures.
+**Verification:** Invalid signatures, extra or missing dependency keys, wrong node/certifier identity, replaced source commits, incorrect previous-entry hashes, unsupported schema versions, missing commits, and malformed mixed-status payloads fail closed in schema fixtures. Appending a valid history entry does not change any node hash.
 
 ## Task 3: Implement signing-key lifecycle and authority boundaries
 
@@ -106,9 +109,9 @@ Rollback is supported through phase 4 by reverting the migration commits and ret
 - Modify installer and permission declarations identified by Task 1.
 - Test: new focused key-lifecycle and authority-boundary tests under `tests/`.
 
-**Deliverable:** Key generation, installation, public-key discovery, private-key permissions, rotation, loss/recovery, key-ID replacement, and certifier-upgrade behavior. Only the `skill-certifier` signing path can read the private key or write certificates/blueprints; `skill-drift` receives the public key and read-only paths.
+**Deliverable:** Key generation, installation, public-key discovery, retained historical public keys, private-key permissions, rotation, loss/recovery, key-ID replacement, and certifier-upgrade behavior. Only the `skill-certifier` signing path can read the private key or write current certificates, histories, or blueprints; `skill-drift` receives the current public key and read-only paths. Historical public keys preserve the evidentiary verifiability of old history entries but do not make them candidates for current status.
 
-**Verification:** Tests prove that drift cannot read the private key, sign payloads, or write certificates; rotation makes old certificates suspect; a suspect `skill-certifier` blocks certification of other nodes while remaining directly certifiable; no unsigned certificate is accepted.
+**Verification:** Tests prove that drift cannot read the private key, sign payloads, or write certificates or histories; rotation makes old current certificates suspect while retained public keys can still verify their historical signatures; a suspect `skill-certifier` blocks certification of other nodes while remaining directly certifiable; no unsigned certificate is accepted.
 
 ## Task 4: Implement local hashes, Git provenance, and safe certificate writes
 
@@ -119,9 +122,9 @@ Rollback is supported through phase 4 by reverting the migration commits and ret
 - Test: `tests/test_officina_atomic_files.py`
 - Test: new certificate-record tests under `tests/`.
 
-**Deliverable:** Adapt the inventoried shared mechanical modules to provide `node_hash(x)`, `is_committed(x)`, unchanged-HEAD verification, source-commit capture, and atomic no-follow replacement. Add certificate-specific canonical signing and signature verification behind the new certification core rather than embedding certificate semantics in the shared Git or file primitives. All blueprint fields change the local node hash; certificates and dependency contents do not.
+**Deliverable:** Adapt the inventoried shared mechanical modules to provide `node_hash(x)`, `is_committed(x)`, unchanged-HEAD verification, source-commit capture, atomic no-follow replacement of the current certificate, and safe append-and-sync writes for certificate histories. Add certificate-specific canonical signing, entry hashing, and signature verification behind the new certification core rather than embedding certificate semantics in the shared Git or file primitives. All blueprint fields change the local node hash; current certificates, certificate histories, and dependency contents do not. Append history before atomically replacing the current certificate; if replacement fails, retain the appended entry as non-authoritative evidence and report failure.
 
-**Verification:** Cover dirty content, dirty blueprint, staged-but-uncommitted input, unrelated dirty files, content races, HEAD changes, symlinks, missing files, restored hashes, and retrieval of certified node files from `source_commit`.
+**Verification:** Cover dirty content, dirty blueprint, staged-but-uncommitted input, unrelated dirty files, content races, HEAD changes, symlinks, missing files, partial appends, concurrent append attempts, history-append/current-replacement failure boundaries, restored hashes, unchanged node hashes after appends, and retrieval of certified node and certifier files from their recorded commits.
 
 ## Task 5: Implement read-only certificate status with dual-read compatibility
 
@@ -133,9 +136,9 @@ Rollback is supported through phase 4 by reverting the migration commits and ret
 - Test: `skills/skill-drift/tests/test_drift_hash.py`
 - Test: `skills/skill-drift/tests/test_dependency_explorer.py`
 
-**Deliverable:** Recursive `is_certified(x)`, `certification_statuses(G)`, exact dependency-key agreement, certifier-hash binding, source-commit reporting, certified/suspect concerns, version-2 node-hash output, and temporary legacy health reporting. Certificate status and health/test status remain separate.
+**Deliverable:** Recursive `is_certified(x)`, `certification_statuses(G)`, exact dependency-key agreement, certifier-hash binding, node and certifier source-commit reporting, certified/suspect concerns, version-2 node-hash output, and temporary legacy health reporting. Certificate status reads only the authoritative current certificate; access to or reporting over the evidence-only history is outside this migration version. Certificate status and health/test status remain separate.
 
-**Verification:** Cover retained-certificate recovery, missing/corrupt/incorrectly signed certificates, suspect dependencies, dependency hash mismatch, extra dependency entries, certifier changes, exact-target isolation, no-target discovery, blueprintless external/plugin skills, mixed legacy/new installations, Markdown/JSON output, and version-1 compatibility.
+**Verification:** Cover retained-current-certificate recovery, missing/corrupt/incorrectly signed current certificates, historical entries that match current content but must not restore status, suspect dependencies, dependency hash mismatch, extra dependency entries, certifier changes, exact-target isolation, no-target discovery, blueprintless external/plugin skills, mixed legacy/new installations, Markdown/JSON output, and version-1 compatibility.
 
 ## Task 6: Create `skill-certifier` and disable legacy writes
 
@@ -145,9 +148,9 @@ Rollback is supported through phase 4 by reverting the migration commits and ret
 - Modify: `references/blueprint/runtime_dependencies.json` through its generating workflow.
 - Test: migrate and extend `skills/skill-audit/tests/test_audit_certifier.py` under `skills/skill-certifier/tests/`.
 
-**Deliverable:** A new certification core implementing two-pass blueprint production, dependency-first `certify(x)`, automatic or recursively human-approved blueprint repair, commit-required failure, certifier-status assertion, certificate writing, post-write status verification, `repair_dependents`, `certification_statuses(G)`, and `certify_all(G)` with per-node failure collection. It consumes the reused mechanical interfaces from Tasks 1 and 4 but does not import legacy health evaluation. The old alias forwards to the new interface and cannot write health records.
+**Deliverable:** A new certification core implementing two-pass blueprint production, dependency-first `certify(x)`, automatic or recursively human-approved blueprint repair, commit-required failure for both the target node and certifier, certifier-status assertion, canonical payload signing, history append, authoritative current-certificate replacement, post-write verification, `repair_dependents`, `certification_statuses(G)`, and `certify_all(G)` with per-node failure collection. Every new history entry signs `previous_entry_hash`, which hashes the complete preceding entry and therefore recursively commits to all retained prior payloads and signatures. It consumes the reused mechanical interfaces from Tasks 1 and 4 but does not import legacy health evaluation. The old alias forwards to the new interface and cannot write health records.
 
-**Verification:** Cover two-pass dependency disagreement, automatic repair, recursive approval, already-certified early return, explicit certifier self-certification, suspect-certifier denial, commit-required outcomes, dependent repair propagation/stopping, graph mutation refresh, graph-wide independent failures, and post-write rollback on verification failure.
+**Verification:** Cover two-pass dependency disagreement, automatic repair, recursive approval, already-certified early return, explicit certifier self-certification, suspect-certifier denial, commit-required outcomes, first and subsequent history entries, previous-entry linkage, dependent repair propagation/stopping, graph mutation refresh, graph-wide independent failures, and post-write failure recovery and verification.
 
 ## Task 7: Define and implement legacy node migration
 
@@ -177,7 +180,7 @@ Rollback is supported through phase 4 by reverting the migration commits and ret
 ## Task 9: Recertify supported skills and exercise rollback
 
 **Files:**
-- Update only generated local certificate state and migration fixtures; do not commit private keys.
+- Update only generated local current-certificate state, certificate histories, and migration fixtures; do not commit private keys.
 - Update the Task 1 inventory with recertification results.
 
 **Deliverable:** Every supported skill is newly certified or explicitly reported suspect with a concrete reason. Exercise rollback to the recorded pre-cutover commit before removing legacy readers.
@@ -221,6 +224,7 @@ The migration is complete only when all twelve tasks have passed their review ga
 - the checked-in inventory has no unresolved caller, artifact, installed-copy, or reference entry;
 - the new certificate model and authority boundary pass their named focused tests;
 - every supported skill is certified or explicitly suspect under the new model;
+- every issued certificate is present in its evidence-only history with valid canonical signature and previous-entry linkage;
 - exact-target, no-target, mixed-installation, rollback, key-rotation, commit-race, symlink, atomic-write, and graph-wide partial-failure tests pass;
 - repository blueprint sync, schema validation, validators, focused skill tests, full pytest/precommit, and generated-artifact checks pass with zero unexplained failures;
 - temporary aliases and legacy readers/writers are removed;

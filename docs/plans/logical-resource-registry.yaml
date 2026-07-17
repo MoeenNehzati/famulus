@@ -1,0 +1,152 @@
+# Draft registry for docs/plans/logical-resource-addressing.md.
+# Target canonical path after approval: references/resources/resource-registry.yaml
+schema_version: 1
+uri_scheme: resource
+
+naming:
+  identifier_pattern: "^[a-z][a-z0-9-]*$"
+  instance_key_role: URI authority and stable logical binding name
+  path_separator: "/"
+
+variables:
+  segment:
+    syntax: "{name}"
+    position: path
+    meaning: One nonempty substring within one path segment.
+    constraints:
+      - At most one segment variable may occur in a segment.
+      - Literal prefixes and suffixes are allowed, as in "{date}.md".
+      - The match cannot contain a slash.
+  tail:
+    syntax: "{name...}"
+    position: final-path-segment
+    meaning: One or more complete path segments.
+    constraints:
+      - The variable must occupy the complete final segment.
+  instance:
+    syntax: "{name:system-kind}"
+    position: authority
+    meaning: Any declared system instance having the named system kind.
+    constraints:
+      - An unconstrained authority variable is invalid.
+
+system_kinds:
+  local-filesystem:
+    description: Files and directories in the execution host's local filesystem namespace.
+    evaluator: local-filesystem
+    root_macros:
+      - "$repo"
+      - "$home"
+      - "$tmp"
+    evaluation:
+      - Expand a leading root macro when present.
+      - Resolve caller-supplied concrete paths without following a final symlink.
+      - Normalize dot segments and reject traversal that escapes a declared bounded root.
+      - Convert the resulting absolute path into canonical percent-encoded URI segments.
+    resource_types:
+      filesystem-entry:
+        patterns:
+          - "{path...}"
+        display: "local filesystem entry {path}"
+        variables:
+          path: A normalized local path or unresolved caller-supplied path family.
+    snippets:
+      any-entry: "{path...}"
+      repo-entry: "$repo/{path...}"
+      home-entry: "$home/{path...}"
+      temporary-entry: "$tmp/{path...}"
+      cloud-files-client: "$home/.config/cloud-files/client.json"
+      cloud-files-credentials: "$home/.config/cloud-files/credentials.json"
+      cloud-files-config: "$home/.config/cloud-files/config.json"
+      g-calendar-client: "$home/.config/g-calendar/client.json"
+      g-calendar-credentials: "$home/.config/g-calendar/credentials.json"
+      datalab-model-cache: "$home/.cache/datalab/models/{path...}"
+      repo-skill-blueprint: "$repo/skills/{skill}/blueprint.yaml"
+      repo-blueprint-schema-draft: "$repo/references/blueprint/schema.annotated-draft.json"
+      temporary-regenerated-blueprint: "$tmp/{name}_blueprint.yaml"
+      list-manager-category-cache: "$repo/skills/list-manager/tmp/categories.{name}.yaml"
+
+  google-drive-root:
+    description: Plain files addressed by logical relative path beneath one configured Google Drive root.
+    evaluator: logical-root-path
+    evaluation:
+      - Treat the configured Drive root as the instance boundary.
+      - Normalize relative path segments and reject absolute paths, empty interior segments, and parent traversal.
+      - Require the owning adapter to resolve each logical path deterministically to at most one Drive object.
+    resource_types:
+      file:
+        patterns:
+          - "{path...}"
+        display: "Google Drive file {path} under {instance}"
+        variables:
+          path: A logical path relative to the configured Drive root.
+    snippets:
+      any-file: "{path...}"
+      list-file: "lists/{path...}"
+      plan-file: "plans/{path...}"
+      dated-plan: "plans/{date}.md"
+      dated-plan-metadata: "plans/{date}.meta.json"
+
+  calendar-account:
+    description: Calendars and events visible through one authenticated calendar-account binding.
+    evaluator: calendar-account
+    evaluation:
+      - Treat the authenticated account binding as the instance boundary.
+      - Percent-encode calendar and event identifiers as individual URI segments.
+      - Preserve calendar scope because event identifiers are unique only within a calendar.
+    resource_types:
+      calendar-collection:
+        patterns:
+          - "calendars"
+        display: "calendars visible through {instance}"
+        variables: {}
+      calendar:
+        patterns:
+          - "calendars/{calendar}"
+        display: "calendar {calendar} through {instance}"
+        variables:
+          calendar: One provider calendar identifier.
+      calendar-event:
+        patterns:
+          - "calendars/{calendar}/events/{event}"
+        display: "event {event} in calendar {calendar} through {instance}"
+        variables:
+          calendar: One provider calendar identifier.
+          event: One provider event identifier or an unknown future event identifier.
+    snippets:
+      calendars: "calendars"
+      calendar: "calendars/{calendar}"
+      event: "calendars/{calendar}/events/{event}"
+      any-event: "calendars/{calendar}/events/{event}"
+
+system_instances:
+  local:
+    kind: local-filesystem
+    owner: officina
+    provider: execution-host
+    binding: The filesystem namespace of the host evaluating the graph.
+    display: local filesystem
+
+  cloud-files:
+    kind: google-drive-root
+    owner: cloud-files
+    provider: google-drive
+    binding: One cloud-files OAuth account plus its configured remote LLM root.
+    display: configured cloud-files Google Drive root
+
+  g-calendar:
+    kind: calendar-account
+    owner: g-calendar
+    provider: google-calendar
+    binding: The single active Google Calendar account supported by g-calendar.
+    display: active g-calendar account
+
+examples:
+  concrete:
+    - resource://local/$home/.config/g-calendar/credentials.json
+    - resource://cloud-files/plans/7-17-26.md
+    - resource://g-calendar/calendars/work%40example.com/events/a1b2c3
+  patterns:
+    - resource://{filesystem:local-filesystem}/{path...}
+    - resource://{drive:google-drive-root}/plans/{date}.md
+    - resource://{account:calendar-account}/calendars/{calendar}/events/{event}
