@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "interface-projection.schema.json",
+  "title": "Consumer-Local Interface Projection",
+  "type": "object",
+  "required": ["schema_version", "consumer", "interfaces", "helper_interfaces", "llm_interfaces", "definitions"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "consumer": {"type": "string", "minLength": 1},
+    "interfaces": {"type": "object", "additionalProperties": {"$ref": "#/definitions/machineProjection"}},
+    "helper_interfaces": {"type": "object", "additionalProperties": {"$ref": "#/definitions/machineProjection"}},
+    "llm_interfaces": {"type": "object", "additionalProperties": {"$ref": "#/definitions/llmProjection"}},
+    "definitions": {"type": "object", "additionalProperties": {"$ref": "#/definitions/embeddedDefinition"}}
+  },
+  "definitions": {
+    "machineProjection": {
+      "type": "object",
+      "required": ["id", "version", "description", "invocation_binding", "direct_io", "helpers", "contract"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "\\.machine\\."},
+        "version": {"type": "integer", "minimum": 1},
+        "description": {"type": "string", "minLength": 1},
+        "invocation_binding": {"type": "object"},
+        "direct_io": {"type": "object"},
+        "helpers": {"type": "array"},
+        "contract": {"type": "object"}
+      }
+    },
+    "llmProjection": {
+      "type": "object",
+      "required": ["id", "version", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "\\.llm\\."},
+        "version": {"type": "integer", "minimum": 1},
+        "description": {"type": "string", "minLength": 1},
+        "gateway": {"type": "string", "minLength": 1},
+        "route": {
+          "type": "object",
+          "required": ["kind", "skill"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "provider-skill"},
+            "skill": {"type": "string", "minLength": 1}
+          }
+        }
+      },
+      "oneOf": [{"required": ["gateway"]}, {"required": ["route"]}]
+    },
+    "embeddedDefinition": {
+      "type": "object",
+      "required": ["source_skill", "path", "fragment", "digest", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "source_skill": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "fragment": {"type": "string", "pattern": "^#"},
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "value": {}
+      }
+    }
+  }
+}

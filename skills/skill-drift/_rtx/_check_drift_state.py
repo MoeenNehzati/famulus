@@ -40,6 +40,8 @@ if str(RTX_DIR) not in sys.path:
 from _drift_hashes import HashEntry, digest_entries, entries_for_path, hash_interface, hash_skill
 from _skill_sources import SkillSource, observed_skill_sources
 from officina.common.artifact_health import (
+    CANONICAL_GRAPH_SCHEMA_INPUTS,
+    POOLED_REVIEW_SCHEMA_INPUTS,
     GraphHealthReport,
     NodeHashState,
     blueprint_schema_hash,
@@ -84,20 +86,9 @@ class PooledReviewSnapshotError(DriftCheckError):
         self.concern_kind = concern_kind
 
 
-_REQUIRED_TARGET_SCHEMA_INPUTS = {
-    "behavior-source.schema.json",
-    "common.schema.json",
-    "health.schema.json",
-    "legacy-skill.schema.json",
-    "llm-interface.schema.json",
-    "machine-interface.schema.json",
-    "pooled-review.schema.json",
-    "schema.annotated-draft.json",
-    "schema.json",
-    "schema-meta.json",
-    "skill.schema.json",
-    "template.yaml",
-}
+_REQUIRED_TARGET_SCHEMA_INPUTS = frozenset(
+    (*CANONICAL_GRAPH_SCHEMA_INPUTS, *POOLED_REVIEW_SCHEMA_INPUTS)
+)
 
 
 def _require_descriptor_safe_reads() -> None:
@@ -188,27 +179,26 @@ def secure_list_target_directory(package_root: Path, path: Path) -> tuple[str, .
 @contextmanager
 def secure_schema_snapshot(package_root: Path) -> Iterator[Path]:
     target_root = package_root / "references" / "blueprint"
-    names = secure_list_target_directory(package_root, target_root)
-    schema_names = _REQUIRED_TARGET_SCHEMA_INPUTS | {
-        name for name in names if name.endswith(".schema.json")
-    }
-    missing = sorted(schema_names - set(names))
-    if missing:
-        raise DriftCheckError(
-            f"{target_root}: missing blueprint schema inputs: {', '.join(missing)}"
-        )
     with tempfile.TemporaryDirectory(prefix="skill-drift-schema-") as temporary:
         snapshot = Path(temporary)
-        for name in sorted(schema_names):
-            data = secure_read_target_file(package_root, target_root / name)
-            if name.endswith(".json"):
+        for relative_text in sorted(_REQUIRED_TARGET_SCHEMA_INPUTS):
+            relative = Path(relative_text)
+            try:
+                data = secure_read_target_file(package_root, target_root / relative)
+            except FileNotFoundError as exc:
+                raise DriftCheckError(
+                    f"{target_root}: missing blueprint schema input: {relative_text}"
+                ) from exc
+            if relative_text.endswith(".json"):
                 try:
                     json.loads(data.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                     raise DriftCheckError(
-                        f"invalid target schema file {target_root / name}: {exc}"
+                        f"invalid target schema file {target_root / relative}: {exc}"
                     ) from exc
-            (snapshot / name).write_bytes(data)
+            destination = snapshot / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(data)
         yield snapshot
 
 

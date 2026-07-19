@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "machine-module.schema.json",
+  "title": "Typed Machine Module Blueprint",
+  "description": "Closed version 3 contract for one Python machine implementation module and its independently callable exports.",
+  "type": "object",
+  "required": ["schema_version", "node_type", "id", "version", "description", "gateway", "content", "conformance_manifest", "platform_support", "dependencies", "behavior_sources", "owns_filesystem", "uses_interfaces", "interfaces"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 3, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 3}, "doc": {"authoring": ["Use target schema version 3."]}, "related_validation_rules": ["interface.document.closed@1"]}},
+    "node_type": {"const": "machine-module", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "machine-module"}, "doc": {"authoring": ["Identify one machine implementation and certification module."]}, "related_validation_rules": ["interface.document.closed@1"]}},
+    "id": {"$ref": "#/definitions/moduleId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "example-skill.machine-module.records"}, "doc": {"authoring": ["Use the owning skill machine-module namespace."]}, "related_validation_rules": ["interface.identity.canonical@1"]}},
+    "version": {"type": "integer", "minimum": 1, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Version the internal module contract."]}, "related_validation_rules": ["interface.identity.canonical@1"]}},
+    "description": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Implements record operations."}, "doc": {"authoring": ["Describe the shared implementation boundary."]}, "related_validation_rules": ["interface.semantic.descriptions-exact@1"]}},
+    "gateway": {"$ref": "#/definitions/pythonGateway", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["Name one Python entrypoint and its conformance seam."]}, "related_validation_rules": ["interface.binding.total@1"]}},
+    "content": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["Match every runtime file owned by the module."]}, "related_validation_rules": ["content-files", "content-exclusive", "commit-backed-stamp"]}},
+    "conformance_manifest": {"$ref": "#/definitions/skillRootLocator", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["Point to the module's fixture-only conformance manifest."]}, "related_validation_rules": ["interface.references.resolved@1"]}},
+    "platform_support": {"$ref": "common.schema.json#/definitions/platformSupport", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["State supported platforms."]}, "related_validation_rules": ["runtime-dependency"]}},
+    "dependencies": {"$ref": "common.schema.json#/definitions/runtimeDependencies", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["Declare non-stdlib runtime dependencies."]}, "related_validation_rules": ["runtime-dependency"]}},
+    "behavior_sources": {"$ref": "common.schema.json#/definitions/behaviorSourceEdgeList", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["Declare direct behavior sources."]}, "related_validation_rules": ["behavior-source-edge"]}},
+    "owns_filesystem": {"type": "array", "items": {"$ref": "#/definitions/ownership"}, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["Declare filesystem ownership shared by every export."]}, "related_validation_rules": ["interface.ownership.authorized@1"]}},
+    "uses_interfaces": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/usedInterface"}, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["Declare machine tools required by every export."]}, "related_validation_rules": ["interface.dependencies.direct@1"]}},
+    "interfaces": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/definitions/export"}, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["Define at least one independently callable simple export."]}, "related_validation_rules": ["interface.identity.canonical@1"]}}
+  },
+  "x-famulus": {"audit_hash": "include", "gateway_policy": "python-entrypoint-with-conformance-seam"},
+  "definitions": {
+    "localId": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"},
+    "moduleId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.machine-module\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "machineId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.machine\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "relativePath": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+    "literalRelativePath": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$"},
+    "pythonGateway": {"type": "object", "required": ["kind", "path", "symbol", "args_prefix", "conformance"], "additionalProperties": false, "properties": {"kind": {"const": "python-entrypoint"}, "path": {"type": "string", "pattern": "^_rtx/(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9_./-]+\\.py$"}, "symbol": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}, "args_prefix": {"type": "array", "items": {"type": "string"}}, "conformance": {"type": "object", "required": ["adapter_protocol", "bind_method", "sandbox_profile"], "additionalProperties": false, "properties": {"adapter_protocol": {"const": "officina-python-adapters@1"}, "bind_method": {"const": "bind_conformance_adapters"}, "sandbox_profile": {"const": "officina-isolated-effects@1"}}}}},
+    "skillRootLocator": {"type": "object", "required": ["base", "path"], "additionalProperties": false, "properties": {"base": {"const": "skill-root"}, "path": {"$ref": "#/definitions/literalRelativePath"}}},
+    "ownership": {"type": "object", "required": ["path", "syntax", "allowed_readers"], "additionalProperties": false, "properties": {"path": {"$ref": "#/definitions/relativePath"}, "syntax": {"enum": ["literal", "glob", "regex"]}, "allowed_readers": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/machineId"}}}},
+    "usedInterface": {"type": "object", "required": ["interface", "version"], "additionalProperties": false, "properties": {"interface": {"$ref": "#/definitions/machineId"}, "version": {"type": "integer", "minimum": 1}}},
+    "fixedBinding": {"oneOf": [
+      {"type": "object", "required": ["kind", "position", "value", "type"], "additionalProperties": false, "properties": {"kind": {"const": "positional"}, "position": {"type": "integer", "minimum": 0}, "value": {}, "type": {"$ref": "caller-contract.schema.json#/definitions/typeSpec"}}},
+      {"type": "object", "required": ["kind", "name", "value", "type"], "additionalProperties": false, "properties": {"kind": {"const": "option"}, "name": {"type": "string", "pattern": "^--[a-z0-9][a-z0-9-]*$"}, "value": {}, "type": {"$ref": "caller-contract.schema.json#/definitions/typeSpec"}}},
+      {"type": "object", "required": ["kind", "name"], "additionalProperties": false, "properties": {"kind": {"const": "switch"}, "name": {"type": "string", "pattern": "^--[a-z0-9][a-z0-9-]*$"}}}
+    ]},
+    "helperInput": {"oneOf": [
+      {"type": "object", "required": ["kind", "value"], "additionalProperties": false, "properties": {"kind": {"const": "fixed"}, "value": {}}},
+      {"type": "object", "required": ["kind", "argument_ref"], "additionalProperties": false, "properties": {"kind": {"const": "argument"}, "argument_ref": {"$ref": "#/definitions/localId"}}},
+      {"type": "object", "required": ["kind", "helper_ref", "output_ref"], "additionalProperties": false, "properties": {"kind": {"const": "helper-output"}, "helper_ref": {"$ref": "#/definitions/localId"}, "output_ref": {"$ref": "#/definitions/localId"}}}
+    ]},
+    "helperSelector": {"oneOf": [
+      {"type": "object", "required": ["kind", "value"], "additionalProperties": false, "properties": {"kind": {"const": "json-pointer"}, "value": {"type": "string", "pattern": "^/"}}},
+      {"type": "object", "required": ["kind", "value"], "additionalProperties": false, "properties": {"kind": {"const": "field"}, "value": {"$ref": "#/definitions/localId"}}},
+      {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "whole-output"}}}
+    ]},
+    "helper": {
+      "type": "object",
+      "required": ["id", "role", "interface", "version", "inputs", "result", "route", "empty", "failure"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/definitions/localId"},
+        "role": {"type": "string", "minLength": 1},
+        "interface": {"$ref": "#/definitions/machineId"},
+        "version": {"type": "integer", "minimum": 1},
+        "inputs": {"type": "object", "additionalProperties": {"$ref": "#/definitions/helperInput"}},
+        "result": {"type": "object", "required": ["output_ref", "selector"], "additionalProperties": false, "properties": {"output_ref": {"$ref": "#/definitions/localId"}, "selector": {"$ref": "#/definitions/helperSelector"}}},
+        "route": {"type": "object", "required": ["kind", "target"], "additionalProperties": false, "properties": {"kind": {"enum": ["argument-enum", "precondition", "verification", "output", "helper-input"]}, "target": {"$ref": "#/definitions/localId"}}},
+        "empty": {"type": "object", "required": ["outcome", "caller_action"], "additionalProperties": false, "properties": {"outcome": {"$ref": "#/definitions/localId"}, "caller_action": {"type": "string", "minLength": 1}}},
+        "freshness": {"type": "object", "required": ["maximum_age_seconds"], "additionalProperties": false, "properties": {"maximum_age_seconds": {"type": "integer", "minimum": 0}}},
+        "failure": {"type": "object", "required": ["outcome"], "additionalProperties": false, "properties": {"outcome": {"$ref": "#/definitions/localId"}}}
+      }
+    },
+    "export": {"type": "object", "required": ["id", "version", "description", "allow_all_skills", "allowed_callers", "invocation_binding", "uses_interfaces", "helpers", "direct_io", "owns_filesystem", "contract"], "additionalProperties": false, "properties": {"id": {"$ref": "#/definitions/machineId"}, "version": {"type": "integer", "minimum": 1}, "description": {"type": "string", "minLength": 1}, "allow_all_skills": {"type": "boolean", "x-famulus": {"template": {"example": true}}}, "allowed_callers": {"type": "array", "uniqueItems": true, "items": {"$ref": "common.schema.json#/definitions/skillId"}}, "invocation_binding": {"type": "object", "required": ["fixed"], "additionalProperties": false, "properties": {"fixed": {"type": "array", "items": {"$ref": "#/definitions/fixedBinding"}}}}, "uses_interfaces": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/usedInterface"}}, "helpers": {"type": "array", "items": {"$ref": "#/definitions/helper"}}, "direct_io": {"$ref": "direct-io.schema.json"}, "owns_filesystem": {"type": "array", "items": {"$ref": "#/definitions/ownership"}}, "contract": {"$ref": "caller-contract.schema.json"}}, "allOf": [{"if": {"properties": {"allow_all_skills": {"const": true}}}, "then": {"properties": {"allowed_callers": {"maxItems": 0}}}, "else": {"properties": {"allowed_callers": {"minItems": 1}}}}]}
+  }
+}

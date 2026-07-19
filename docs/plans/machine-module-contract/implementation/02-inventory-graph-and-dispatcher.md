@@ -79,15 +79,18 @@ bare boolean.
 - Modify: `src/officina/common/__init__.py`
 - Test: `tests/test_blueprint_inventory.py`
 
-**Produces:** `BlueprintDocument`, `BlueprintInventoryError`, and
-`iter_blueprints(repo_root, *, skip_parse_errors=False)`.
+**Produces:** `BlueprintDocument`, `BlueprintInventoryIssue`,
+`BlueprintInventoryResult`, `BlueprintInventoryError`,
+`collect_blueprints(repo_root, *, skip_parse_errors=False)`, and the strict
+convenience iterator `iter_blueprints(repo_root)`.
 
 - [ ] Write fixtures/tests for root and hidden-sidecar discovery independent of
   reachability, repository-relative lexical ordering, and path/owner-root data.
 - [ ] Write negative tests for duplicate keys, custom tags, non-string keys,
   nonmapping roots, non-JSON YAML values, unreadable files, and multiple errors.
-- [ ] Assert strict mode yields nothing before raising the aggregate error;
-  diagnostic mode yields valid documents and reports only parse failures.
+- [ ] Assert strict collection raises one aggregate error before exposing any
+  document; diagnostic collection returns valid documents plus explicit issues.
+  `iter_blueprints()` is strict and never silently drops parse failures.
 - [ ] Implement a `yaml.SafeLoader` subclass that rejects duplicate keys and
   normalize recursively to the documented `JsonValue` union.
 - [ ] Run `pytest tests/test_blueprint_inventory.py -q` and verify all inventory
@@ -287,12 +290,15 @@ def compile_gateway_invocation(
 
 - [ ] Render module templates with a nonempty export example and caller-contract
   documentation; stop selecting the v3 machine-interface schema.
-- [ ] Hash the entire module document/content once. Associate nested export IDs
-  with the module subject and compute module dependency hashes from the node
-  dependency union without changing export runtime authority.
+- [ ] Compute one `node_hash` from the canonical module document and node-owned
+  runtime `content` only. Associate nested export IDs with the module subject
+  and compute module dependency hashes from the node dependency union without
+  changing export runtime authority.
 - [ ] Resolve and hash the conformance manifest plus the transitive closure of
   every contract/schema/format reference into a canonical locator/digest map.
-  Include that map and referenced bytes in module currentness; add changed,
+  Compute a separate `contract_reference_hash` over the canonical ordered
+  locator/digest map; each digest commits the referenced bytes. Require both
+  `node_hash` and `contract_reference_hash` for currentness, and add changed,
   moved, missing, symlinked, and restored-reference tests.
 - [ ] Add tests proving any export contract or shared content change invalidates
   module state and all exports, while interface versions change only when

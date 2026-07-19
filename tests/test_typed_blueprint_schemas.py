@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import jsonschema
@@ -11,6 +12,13 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
+MACHINE_MODULE_FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "machine_modules"
+CONFORMANCE_OPERATION_FIXTURE_ROOT = (
+    REPO_ROOT / "tests" / "fixtures" / "conformance_operations"
+)
+MACHINE_MODULE_EXAMPLE_ROOT = (
+    REPO_ROOT / "docs" / "plans" / "machine-module-contract" / "examples"
+)
 
 
 def _load(name: str) -> dict:
@@ -40,6 +48,24 @@ def _errors(document: dict, name: str = "schema.json") -> list[str]:
 
 def _empty_io() -> dict:
     return {"reads": [], "writes": [], "network": []}
+
+
+def _machine_module_fixture(name: str) -> dict:
+    return yaml.safe_load(
+        (MACHINE_MODULE_FIXTURE_ROOT / name).read_text(encoding="utf-8")
+    )
+
+
+def _machine_module_example(name: str) -> dict:
+    return yaml.safe_load(
+        (MACHINE_MODULE_EXAMPLE_ROOT / name).read_text(encoding="utf-8")
+    )
+
+
+def _conformance_operation_fixture(name: str) -> dict:
+    return yaml.safe_load(
+        (CONFORMANCE_OPERATION_FIXTURE_ROOT / name).read_text(encoding="utf-8")
+    )
 
 
 @pytest.fixture
@@ -448,3 +474,149 @@ def test_version_three_behavior_source_uses_closed_semantic_type(
 
     document["semantic_type"] = "skill"
     assert _errors(document, "behavior-source.schema.json")
+
+
+def test_target_v3_selects_machine_modules() -> None:
+    document = _machine_module_fixture("records.valid.yaml")
+
+    assert _errors(document) == []
+
+
+@pytest.mark.parametrize(
+    "removed_field",
+    [
+        "calls",
+        "selector",
+        "accepts",
+        "constraints",
+        "conditional_default",
+        "profile",
+        "draft",
+        "unresolved",
+        "dispatcher_consequences",
+    ],
+)
+def test_target_v3_rejects_removed_machine_contract_structures(
+    removed_field: str,
+) -> None:
+    document = _machine_module_fixture("records.valid.yaml")
+    document["interfaces"]["inspect-records"]["contract"][removed_field] = {}
+
+    assert _errors(document)
+
+
+@pytest.mark.parametrize(
+    "name", ["machine-module.yaml", "advanced-machine-module.yaml"]
+)
+def test_target_machine_module_examples_validate(name: str) -> None:
+    assert _errors(_machine_module_example(name), "machine-module.schema.json") == []
+
+
+@pytest.mark.parametrize(
+    "name", ["interface-conformance.yaml", "advanced-interface-conformance.yaml"]
+)
+def test_target_conformance_examples_validate(name: str) -> None:
+    schema_path = SCHEMA_ROOT / "interface-conformance.schema.json"
+    assert schema_path.is_file(), "interface-conformance.schema.json is absent"
+    assert _errors(_machine_module_example(name), schema_path.name) == []
+
+
+def test_conformance_boundary_registry_validates() -> None:
+    registry = yaml.safe_load(
+        (SCHEMA_ROOT / "conformance-boundary-operations.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    _validator("conformance-boundary-operations.schema.json").validate(registry)
+
+
+@pytest.mark.parametrize("fixture_name", ["valid.yaml", "invalid.yaml"])
+def test_conformance_operation_fixtures_cover_every_registered_operation(
+    fixture_name: str,
+) -> None:
+    registry = yaml.safe_load(
+        (SCHEMA_ROOT / "conformance-boundary-operations.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    fixtures = _conformance_operation_fixture(fixture_name)
+    registered = {
+        f"{boundary}/{operation}"
+        for boundary, operations in registry["boundaries"].items()
+        for operation in operations
+    }
+
+    assert set(fixtures) == registered
+    for operation_id, fixture in fixtures.items():
+        boundary, operation = operation_id.split("/", 1)
+        specification = registry["boundaries"][boundary][operation]
+        for envelope in ("request", "success"):
+            reference = specification[f"{envelope}_schema"]
+            validator = _validator(reference["path"])
+            subschema = validator.schema
+            for component in reference["fragment"].removeprefix("#/").split("/"):
+                subschema = subschema[component]
+            errors = list(validator.evolve(schema=subschema).iter_errors(fixture[envelope]))
+            if fixture_name == "valid.yaml":
+                assert errors == [], f"{operation_id}:{envelope}: {errors}"
+            else:
+                assert errors, f"{operation_id}:{envelope} unexpectedly valid"
+
+
+def test_target_v3_rejects_command_gateways() -> None:
+    document = _machine_module_fixture("records.valid.yaml")
+    document["gateway"] = {
+        "kind": "command-file",
+        "path": "_cx/records",
+        "args_prefix": [],
+    }
+
+    assert _errors(document, "machine-module.schema.json")
+
+
+def test_target_recursive_type_branches_reject_irrelevant_fields() -> None:
+    document = _machine_module_fixture("records.valid.yaml")
+    string_type = document["interfaces"]["inspect-records"]["contract"][
+        "arguments"
+    ]["targets"]["type"]["element_type"]
+    string_type["element_type"] = {"kind": "string"}
+
+    assert _errors(document, "machine-module.schema.json")
+
+
+def test_target_unattended_interaction_rejects_interactive_fields() -> None:
+    document = _machine_module_fixture("records.valid.yaml")
+    interaction = document["interfaces"]["inspect-records"]["contract"][
+        "interaction"
+    ]
+    interaction["channel"] = "tty"
+
+    assert _errors(document, "machine-module.schema.json")
+
+
+def test_target_direct_io_rejects_literal_and_dynamic_path_together() -> None:
+    document = _machine_module_example("advanced-machine-module.yaml")
+    entry = document["interfaces"]["update-record"]["direct_io"]["reads"][0]
+    entry["path"] = "record.json"
+
+    assert _errors(document, "machine-module.schema.json")
+
+
+def test_target_helper_nested_shapes_are_closed() -> None:
+    document = _machine_module_example("advanced-machine-module.yaml")
+    helper = document["interfaces"]["inspect-account"]["helpers"][0]
+    helper["result"]["unknown"] = True
+
+    assert _errors(document, "machine-module.schema.json")
+
+
+def test_target_long_running_conformance_case_requires_complete_cleanup_branch() -> None:
+    document = _machine_module_example("advanced-interface-conformance.yaml")
+    case = deepcopy(
+        document["exports"]["example-skill.machine.watch-records"]["cases"][0]
+    )
+    del case["cleanup"]
+    document["exports"]["example-skill.machine.watch-records"]["cases"] = [case]
+
+    assert _errors(document, "interface-conformance.schema.json")

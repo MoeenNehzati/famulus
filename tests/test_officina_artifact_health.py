@@ -619,7 +619,7 @@ def test_shared_node_subject_paths_are_relative_to_its_owner(tmp_path: Path) -> 
         original,
         skill_root=owner,
         blueprint_path=blueprint_path,
-        binding_path=binding_path,
+        gateway_path=binding_path,
     )
     graph = replace(graph, nodes={**graph.nodes, node_id: shared})
 
@@ -933,8 +933,11 @@ def test_schema_hash_covers_all_authoritative_schema_inputs(tmp_path: Path) -> N
     schema_root = tmp_path / "schema"
     schema_root.mkdir()
     live_root = Path("references/blueprint")
-    for source in [*live_root.glob("*.schema.json"), live_root / "schema.annotated-draft.json", live_root / "schema.json", live_root / "schema-meta.json", live_root / "template.yaml"]:
-        (schema_root / source.name).write_bytes(source.read_bytes())
+    for relative in artifact_health.CANONICAL_GRAPH_SCHEMA_INPUTS:
+        source = live_root / relative
+        target = schema_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source.read_bytes())
     (schema_root / "README.md").write_text("Not schema input.\n", encoding="utf-8")
     original = blueprint_schema_hash(schema_root)
 
@@ -942,11 +945,25 @@ def test_schema_hash_covers_all_authoritative_schema_inputs(tmp_path: Path) -> N
     assert blueprint_schema_hash(schema_root) != original
 
     after_skill_change = blueprint_schema_hash(schema_root)
-    (schema_root / "legacy-skill.schema.json").write_text(
+    (schema_root / "machine-module.schema.json").write_text(
         '{"type": "string"}\n',
         encoding="utf-8",
     )
     assert blueprint_schema_hash(schema_root) != after_skill_change
+
+    after_machine_module_change = blueprint_schema_hash(schema_root)
+    (schema_root / "conformance-operations" / "filesystem.schema.json").write_text(
+        '{"type": "string"}\n',
+        encoding="utf-8",
+    )
+    assert blueprint_schema_hash(schema_root) != after_machine_module_change
+
+    after_target_change = blueprint_schema_hash(schema_root)
+    (schema_root / "legacy-skill.schema.json").write_text(
+        '{"type": "string"}\n',
+        encoding="utf-8",
+    )
+    assert blueprint_schema_hash(schema_root) != after_target_change
 
     after_schema_change = blueprint_schema_hash(schema_root)
     (schema_root / "README.md").write_text("Changed documentation.\n", encoding="utf-8")
@@ -964,14 +981,11 @@ def test_pooled_schema_change_does_not_change_root_schema_hash(tmp_path: Path) -
     schema_root = tmp_path / "schema"
     schema_root.mkdir()
     live_root = Path("references/blueprint")
-    for source in [
-        *live_root.glob("*.schema.json"),
-        live_root / "schema.annotated-draft.json",
-        live_root / "schema.json",
-        live_root / "schema-meta.json",
-        live_root / "template.yaml",
-    ]:
-        (schema_root / source.name).write_bytes(source.read_bytes())
+    for relative in artifact_health.CANONICAL_GRAPH_SCHEMA_INPUTS:
+        source = live_root / relative
+        target = schema_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source.read_bytes())
     original = blueprint_schema_hash(schema_root)
 
     (schema_root / "pooled-review.schema.json").write_text(

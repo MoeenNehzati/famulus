@@ -119,10 +119,9 @@ Resolved:
 - Phase gates and cross-cutting file/test scopes are explicit, and status is a
   reviewed draft rather than implementation-complete.
 
-Pending design decisions:
-
-- the exact `node_hash` versus certificate-currentness boundary;
-- whether and how the schema-meta catalog evolves for the target rule model.
-
-The package is not implementation-ready until those two decisions are resolved
-and the affected normative text is reconciled.
+The schema-meta decision is resolved by one catalog with discriminated
+`repository-validation` and `interface-admissibility` entries. The currentness
+boundary is also resolved: `node_hash` covers the canonical blueprint and
+node-owned runtime content; `contract_reference_hash` covers the canonical
+conformance/definition locator-digest map; certificates require both. Phases 1
+and 2 may proceed.

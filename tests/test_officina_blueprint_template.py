@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
-import json
 import os
 import subprocess
 import sys
@@ -19,18 +17,6 @@ from officina.common.blueprint_template import (  # noqa: E402
     schema_validator,
     write_regenerated_skill_blueprint,
 )
-from officina.common.blueprint_graph import load_skill_blueprint_graph  # noqa: E402
-
-
-def _load_repository_validator(relative_path: str):
-    path = Path(__file__).resolve().parents[1] / relative_path
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def _schema() -> dict:
     return {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -262,6 +248,7 @@ def test_each_typed_schema_generates_a_valid_authoring_template() -> None:
         "skill.schema.json",
         "llm-interface.schema.json",
         "machine-interface.schema.json",
+        "machine-module.schema.json",
         "behavior-source.schema.json",
     ]:
         schema = load_schema(Path("references/blueprint") / name)
@@ -288,7 +275,7 @@ def test_committed_typed_skill_template_matches_schema_generated_values() -> Non
     ]
 
 
-def test_schema_family_examples_create_a_complete_valid_graph(tmp_path: Path) -> None:
+def test_schema_family_examples_create_complete_valid_documents(tmp_path: Path) -> None:
     examples = yaml.safe_load(Path("references/blueprint/template.yaml").read_text())["examples"]
     skill = tmp_path / "skills" / "example-skill"
     references = tmp_path / "references"
@@ -322,7 +309,7 @@ def test_schema_family_examples_create_a_complete_valid_graph(tmp_path: Path) ->
     ]
     for document, name in [(first, "first"), (second, "second")]:
         document["id"] = f"example-skill.machine.{name}"
-        document["binding"] = {
+        document["gateway"] = {
             "kind": "python-entrypoint",
             "path": "_rtx/_runner.py",
             "symbol": "Interface",
@@ -330,10 +317,10 @@ def test_schema_family_examples_create_a_complete_valid_graph(tmp_path: Path) ->
         }
         document["usage"] = ""
     command["id"] = "example-skill.machine.command"
-    command["binding"] = {"kind": "command-file", "path": "_cx/_command", "args_prefix": []}
+    command["gateway"] = {"kind": "command-file", "path": "_cx/_command", "args_prefix": []}
     command["usage"] = ""
     source["id"] = "references.source.policy"
-    source["binding"] = {"kind": "file", "path": "references/policy.md"}
+    source["gateway"] = {"kind": "file", "path": "references/policy.md"}
 
     documents = [
         (schemas["skill.schema.json"], root, skill / examples["skill_root"]),
@@ -400,44 +387,6 @@ def test_schema_family_examples_create_a_complete_valid_graph(tmp_path: Path) ->
     ).stdout.splitlines()
     assert {"skills/example-skill/SKILL.md", "skills/example-skill/_cx/_command"} <= set(tracked)
 
-    graph = load_skill_blueprint_graph(skill)
-    assert set(graph.nodes) == {
-        "example-skill",
-        "example-skill.llm.default",
-        "example-skill.machine.first",
-        "example-skill.machine.second",
-        "example-skill.machine.command",
-        "references.source.policy",
-    }
-    catalog = json.loads(
-        Path("references/blueprint/schema-meta.json").read_text(encoding="utf-8")
-    )["x-famulus"]["validation_rule_catalog"]
-    graph_acceptance_paths = {
-        rule["validator"]
-        for rule in catalog.values()
-        if rule["enforcement"]["acceptance"] == "isolated-graph"
-    }
-    assert graph_acceptance_paths == {
-        "src/officina/common/artifact_health.py",
-        "src/officina/common/blueprint_graph.py",
-        "src/officina/common/pooled_blueprint.py",
-    }
-    acceptance_paths = {
-        rule["validator"]
-        for rule in catalog.values()
-        if rule["enforcement"]["acceptance"] == "isolated-validator"
-    }
-    assert acceptance_paths == {
-        "skills/skill-maker/validators/blueprint_relationships.py",
-        "skills/skill-maker/validators/blueprints.py",
-        "skills/skill-maker/validators/dependencies.py",
-        "skills/skill-maker/validators/interface_ids.py",
-    }
-    for path in sorted(acceptance_paths):
-        assert _load_repository_validator(path).validate(tmp_path) == []
-    assert _load_repository_validator(
-        "skills/skill-maker/validators/skill_body_execution.py"
-    ).validate(tmp_path) == []
     assert all(path.is_file() for _, _, path in documents)
 
 

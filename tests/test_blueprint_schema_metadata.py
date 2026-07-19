@@ -13,6 +13,7 @@ TYPED_SCHEMAS = [
     "skill.schema.json",
     "llm-interface.schema.json",
     "machine-interface.schema.json",
+    "machine-module.schema.json",
     "behavior-source.schema.json",
 ]
 REQUIRED_RULES = {
@@ -95,8 +96,20 @@ def test_validation_rule_catalog_points_to_existing_enforcement_and_tests() -> N
 
     for rule_id, rule in catalog.items():
         entry_validator.validate(rule)
-        assert (REPO_ROOT / rule["validator"]).is_file(), rule_id
-        assert all((REPO_ROOT / path).is_file() for path in rule["tests"]), rule_id
+        if rule["rule_kind"] == "repository-validation":
+            assert (REPO_ROOT / rule["validator"]).is_file(), rule_id
+            assert all((REPO_ROOT / path).is_file() for path in rule["tests"]), rule_id
+        else:
+            assert rule["validator"] in {
+                "json-schema",
+                "interface-static",
+                "interface-graph",
+                "interface-projection",
+                "interface-conformance",
+                "semantic-review",
+            }
+            assert (REPO_ROOT / rule["positive_fixture"]).is_file(), rule_id
+            assert (REPO_ROOT / rule["negative_fixture"]).is_file(), rule_id
 
 
 def test_completed_health_and_typed_graph_rules_are_current() -> None:
@@ -136,13 +149,27 @@ def test_schema_meta_declares_relationship_and_visibility_policy() -> None:
     metadata = _load("schema-meta.json")["x-famulus"]
 
     assert metadata["relationship_matrix"] == {
-        "skill": {"declares-interface": ["llm-interface", "machine-interface"]},
+        "skill": {
+            "declares-interface": [
+                "llm-interface",
+                "machine-interface",
+                "machine-module",
+            ]
+        },
         "llm-interface": {
-            "uses-interface": ["llm-interface", "machine-interface"],
+            "uses-interface": [
+                "llm-interface",
+                "machine-interface",
+                "machine-module",
+            ],
             "uses-behavior-source": ["behavior-source"],
         },
         "machine-interface": {
             "uses-interface": ["machine-interface"],
+            "uses-behavior-source": ["behavior-source"],
+        },
+        "machine-module": {
+            "uses-interface": ["machine-module"],
             "uses-behavior-source": ["behavior-source"],
         },
         "behavior-source": {

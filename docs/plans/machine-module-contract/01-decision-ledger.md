@@ -29,9 +29,12 @@ documents define structures in detail but must not select competing terms.
 - `MOD-007` — The normalized graph retains ordinary authored node edges,
   export-runtime edges, helper edges, and derived module-certification edges as
   separate records. Each traversal uses only its named edge class.
-- `MOD-008` — Module currentness includes the conformance manifest and complete
-  transitive contract-definition digest closure; referenced-byte drift makes a
-  certificate suspect even when blueprint/runtime files are unchanged.
+- `MOD-008` — `node_hash` covers only the canonical blueprint and node-owned
+  runtime `content`. A separate `contract_reference_hash` covers the canonical
+  conformance-manifest locator/digest entry and complete transitive
+  contract-definition locator/digest closure. Module certificate currentness
+  requires both hashes; referenced-byte drift therefore makes a certificate
+  suspect without changing node identity.
 
 ## Simple interfaces
 

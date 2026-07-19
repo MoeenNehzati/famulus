@@ -1,0 +1,40 @@
+schema_version: 3
+node_type: machine-module
+id: example-skill.machine-module.invalid-calls
+version: 1
+description: Invalid call-family fixture.
+gateway:
+  kind: python-entrypoint
+  path: _rtx/_invalid.py
+  symbol: Interface
+  args_prefix: []
+  conformance: {adapter_protocol: officina-python-adapters@1, bind_method: bind_conformance_adapters, sandbox_profile: officina-isolated-effects@1}
+content: ['_rtx/_invalid\.py']
+conformance_manifest: {base: skill-root, path: interface-conformance.yaml}
+platform_support: {linux: true, macos: true, windows: true}
+dependencies: []
+behavior_sources: []
+owns_filesystem: []
+uses_interfaces: []
+interfaces:
+  invalid:
+    id: example-skill.machine.invalid-calls
+    version: 1
+    description: Invalid call-family export.
+    allow_all_skills: true
+    allowed_callers: []
+    invocation_binding: {fixed: []}
+    uses_interfaces: []
+    helpers: []
+    direct_io: {reads: [], writes: [], network: []}
+    owns_filesystem: []
+    contract:
+      calls: [{id: forbidden}]
+      arguments: {}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs: []
+      outcomes:
+        - {id: operational-failure, class: error, signal: {exit_codes: [1]}, outputs: [], effects: [], caller_action: Report the failure.}
+      execution: {state_effect: read-only, lifecycle: finite, consistency: {snapshot: One snapshot.}, verification: []}

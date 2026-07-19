@@ -168,7 +168,7 @@
     },
     "pattern": {"$ref": "legacy-skill.schema.json#/definitions/pattern"},
     "directIo": {
-      "allOf": [{"$ref": "legacy-skill.schema.json#/definitions/directIo"}],
+      "$ref": "direct-io.schema.json",
       "description": "Immediate semantic IO. This declaration is descriptive and is not proof of subsystem confinement.",
       "x-famulus": {"audit_hash": "exclude"}
     },

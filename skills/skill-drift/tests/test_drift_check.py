@@ -17,6 +17,8 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from officina.common.artifact_health import (
+    CANONICAL_GRAPH_SCHEMA_INPUTS,
+    POOLED_REVIEW_SCHEMA_INPUTS,
     blueprint_schema_hash,
     certify_graph,
     health_path_for_node,
@@ -43,6 +45,17 @@ SPEC.loader.exec_module(checker)
 def write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def copy_schema_bundle(repo: Path) -> None:
+    source_root = MODULE_PATH.parents[3] / "references" / "blueprint"
+    target_root = repo / "references" / "blueprint"
+    for relative_text in (
+        *CANONICAL_GRAPH_SCHEMA_INPUTS,
+        *POOLED_REVIEW_SCHEMA_INPUTS,
+    ):
+        source = source_root / relative_text
+        write(target_root / relative_text, source.read_text(encoding="utf-8"))
 
 
 def write_json(path: Path, payload: object) -> None:
@@ -162,16 +175,7 @@ def make_typed_skill(repo: Path, name: str = "demo-skill") -> Path:
         "format: markdown\n"
         "uses_behavior_sources: []\n",
     )
-    schema_root = repo / "references" / "blueprint"
-    source_schema_root = MODULE_PATH.parents[3] / "references" / "blueprint"
-    for source in [
-        *source_schema_root.glob("*.schema.json"),
-        source_schema_root / "schema.annotated-draft.json",
-        source_schema_root / "schema.json",
-        source_schema_root / "schema-meta.json",
-        source_schema_root / "template.yaml",
-    ]:
-        write(schema_root / source.name, source.read_text(encoding="utf-8"))
+    copy_schema_bundle(repo)
     return skill
 
 

@@ -194,6 +194,44 @@ dispatcher imports and CLI dispatch from skill runtime code, and
 `skills/skill-maker/validators/dispatch_caller_skill.py`, which verifies every
 `DispatchCall(caller_skill=...)` statically resolves to the owning skill name.
 
+## Machine modules and exports (version 3)
+
+This family is the target version 3 authority and supersedes the imported singular machine-interface guidance below for new declarations.
+
+A `machine-module` is one implementation and certification node and may contain multiple nested, independently callable exports. The module ID is not callable, and sibling exports are not implicitly visible.
+
+Each nested export is one unchanging operation with its own public version, authorization, typed invocation binding, tools, helpers, direct I/O, private ownership, and caller contract.
+
+Version 3 exports must not declare `calls`, selectors, conditional accepts, cross-argument constraints, profiles, draft or unresolved state, dispatcher consequences, or other hidden mode-family structures.
+
+Version 3 supports only a confined `_rtx/*.py` `python-entrypoint` gateway with one symbol and the exact `officina-python-adapters@1` conformance seam.
+
+Do not declare command gateways in version 3. A future design may add tracked direct executables under `_cx`, but current schema or dispatcher support must not be inferred from that reserved capability.
+
+Interface-level `invocation_binding.fixed` uses only typed `positional`, `option`, and `switch` entries.
+
+Argument-level bindings use exactly one `positional`, `option`, `switch`, or `stdin` variant.
+
+Public positionals are supplied in increasing implementation position before named options and switches; the compiler deterministically merges typed fixed and public values without shell strings.
+
+Raw argv fragments, dispatcher-global names, secrets, caller/fixed collisions, duplicate names or positions, and conditional bindings are forbidden.
+
+Every export declares `direct_io.reads`, `direct_io.writes`, and `direct_io.network`; entries describe only immediate export-local semantic I/O and are never inherited from tools or siblings.
+
+A filesystem entry uses exactly one literal `path` or typed argument `path_source`; a dynamic path and its argument link bidirectionally through the same `direct_io_ref`.
+
+Private relative paths beneath `tmp/` and `logs/` may be omitted only when purely ephemeral or diagnostic and unable to affect output, verification, persistence, or later invocations. Behaviorally relevant temporary or log state must be declared.
+
+Module ownership authorizes every export in that module; export ownership authorizes only that export. `allowed_readers` adds exact external export IDs without granting write authority.
+
+A literal path ending in `/` owns that directory subtree; another literal owns one lexical path. Glob and regex scopes match complete normalized relative paths, and escaped resolved targets are never authorized.
+
+Effective tools are exactly the union of module `uses_interfaces` required by every export and the selected export's own `uses_interfaces`; sibling and transitive tools are not inherited.
+
+Version 3 uses only direct module `behavior_sources`. Behavior-source inheritance from tools, helpers, sibling exports, or transitive dependencies is deferred.
+
+A machine export must be structurally admissible before repository indexing. Public dispatch and LLM injection additionally require a current certificate for the selected export and pinned admissibility profile; schema acceptance alone is not certification.
+
 ## Machine interfaces
 
 **Machine interfaces**

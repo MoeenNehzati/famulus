@@ -22,10 +22,13 @@ from officina.common.blueprint_graph import (
     expanded_legacy_blueprint,
     graph_contract_errors,
     load_reachable_repository_skill_graph,
+    load_repository_blueprint_graph,
     load_repository_blueprint_graphs,
     load_skill_blueprint_graph,
     resolved_node_content_paths,
     resolve_repository_skill_graph,
+    resolve_machine_export,
+    runtime_authority_for_export,
 )
 
 
@@ -108,6 +111,92 @@ def _write_v3_machine(
             "owns_filesystem": [],
         },
     )
+
+
+def _write_machine_module(
+    skill: Path,
+    module_name: str,
+    interfaces: dict[str, dict[str, object]],
+    *,
+    uses_interfaces: list[dict[str, object]] | None = None,
+    behavior_sources: list[dict[str, object]] | None = None,
+) -> Path:
+    gateway = skill / "_rtx" / f"_{module_name}.py"
+    gateway.parent.mkdir(parents=True, exist_ok=True)
+    gateway.write_text("class Interface:\n    pass\n", encoding="utf-8")
+    conformance = skill / f"{module_name}-conformance.yaml"
+    conformance.write_text("schema_version: 1\n", encoding="utf-8")
+    path = gateway.with_name(f".{gateway.name}.blueprint.yaml")
+    _write_yaml(
+        path,
+        {
+            "schema_version": 3,
+            "node_type": "machine-module",
+            "id": f"{skill.name}.machine-module.{module_name}",
+            "version": 1,
+            "description": f"{module_name} module.",
+            "gateway": {
+                "kind": "python-entrypoint",
+                "path": f"_rtx/_{module_name}.py",
+                "symbol": "Interface",
+                "args_prefix": [],
+                "conformance": {
+                    "adapter_protocol": "officina-python-adapters@1",
+                    "bind_method": "bind_conformance_adapters",
+                    "sandbox_profile": "officina-isolated-effects@1",
+                },
+            },
+            "content": [rf"_rtx/_{module_name}\.py"],
+            "conformance_manifest": {
+                "base": "skill-root",
+                "path": conformance.name,
+            },
+            "platform_support": {"linux": True, "macos": True, "windows": True},
+            "dependencies": [],
+            "behavior_sources": behavior_sources or [],
+            "owns_filesystem": [],
+            "uses_interfaces": uses_interfaces or [],
+            "interfaces": interfaces,
+        },
+    )
+    return path
+
+
+def _export(
+    interface_id: str,
+    *,
+    version: int = 1,
+    allowed_callers: list[str] | None = None,
+    uses_interfaces: list[dict[str, object]] | None = None,
+    helpers: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    allowed = allowed_callers or []
+    return {
+        "id": interface_id,
+        "version": version,
+        "description": f"Call {interface_id}.",
+        "allow_all_skills": not allowed,
+        "allowed_callers": allowed,
+        "invocation_binding": {"fixed": []},
+        "uses_interfaces": uses_interfaces or [],
+        "helpers": helpers or [],
+        "direct_io": {"reads": [], "writes": [], "network": []},
+        "owns_filesystem": [],
+        "contract": {
+            "arguments": {},
+            "preconditions": [],
+            "interaction": {"mode": "unattended"},
+            "caller_warnings": [],
+            "outputs": [],
+            "outcomes": [],
+            "execution": {
+                "state_effect": "read-only",
+                "lifecycle": "finite",
+                "consistency": {"snapshot": "One snapshot."},
+                "verification": [],
+            },
+        },
+    }
 
 
 def _write_shared_skill(shared_repo: Path, skill_id: str) -> None:
@@ -1723,3 +1812,215 @@ def test_typed_graph_expands_to_legacy_consumer_view(tmp_path: Path) -> None:
             "reason": "Defines policy.",
         }
     ]
+
+
+def test_repository_graph_normalizes_nested_exports_and_scoped_edges(
+    tmp_path: Path,
+) -> None:
+    caller = tmp_path / "skills" / "caller-skill"
+    provider = tmp_path / "skills" / "provider-skill"
+    _write_machine_module(
+        provider,
+        "worker",
+        {
+            "shared": _export("provider-skill.machine.shared"),
+            "private": _export("provider-skill.machine.private"),
+        },
+    )
+    helper = {
+        "id": "lookup",
+        "role": "Resolve one value.",
+        "interface": "provider-skill.machine.shared",
+        "version": 1,
+        "inputs": {},
+        "result": {"output_ref": "result", "selector": {"kind": "whole-output"}},
+        "route": {"kind": "precondition", "target": "ready"},
+        "empty": {"outcome": "empty", "caller_action": "Stop."},
+        "failure": {"outcome": "failed"},
+    }
+    _write_machine_module(
+        caller,
+        "client",
+        {
+            "run": _export(
+                "caller-skill.machine.run",
+                uses_interfaces=[
+                    {"interface": "provider-skill.machine.private", "version": 1}
+                ],
+                helpers=[helper],
+            ),
+            "sibling": _export("caller-skill.machine.sibling"),
+        },
+        uses_interfaces=[
+            {"interface": "provider-skill.machine.shared", "version": 1}
+        ],
+    )
+
+    graph = load_repository_blueprint_graph(tmp_path)
+    module, export = resolve_machine_export(graph, "caller-skill.machine.run", 1)
+
+    assert module.node_id == "caller-skill.machine-module.client"
+    assert export.local_name == "run"
+    assert runtime_authority_for_export(graph, export.interface_id) == (
+        "provider-skill.machine.private",
+        "provider-skill.machine.shared",
+    )
+    assert runtime_authority_for_export(graph, "caller-skill.machine.sibling") == (
+        "provider-skill.machine.shared",
+    )
+    assert [(edge.source_export_id, edge.local_helper_id) for edge in graph.helper_edges] == [
+        ("caller-skill.machine.run", "lookup")
+    ]
+    assert (
+        "caller-skill.machine-module.client",
+        "provider-skill.machine-module.worker",
+    ) in {
+        (edge.source_module_id, edge.target_node_id)
+        for edge in graph.certification_edges
+    }
+
+
+def test_repository_graph_rejects_duplicate_exports_and_version_mismatch(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "skills" / "first-skill"
+    second = tmp_path / "skills" / "second-skill"
+    _write_machine_module(
+        first,
+        "worker",
+        {"run": _export("first-skill.machine.run")},
+    )
+    _write_machine_module(
+        second,
+        "worker",
+        {
+            "call": _export(
+                "second-skill.machine.call",
+                uses_interfaces=[
+                    {"interface": "first-skill.machine.run", "version": 2}
+                ],
+            )
+        },
+    )
+
+    with pytest.raises(BlueprintGraphError, match="version 2.*version 1"):
+        load_repository_blueprint_graph(tmp_path)
+
+    second_path = next(second.rglob("*.blueprint.yaml"))
+    declaration = yaml.safe_load(second_path.read_text(encoding="utf-8"))
+    declaration["interfaces"]["call"]["uses_interfaces"][0]["version"] = 1
+    _write_yaml(second_path, declaration)
+    _write_machine_module(
+        first,
+        "other",
+        {"again": _export("first-skill.machine.run")},
+    )
+    with pytest.raises(BlueprintGraphError, match="duplicate public export id"):
+        load_repository_blueprint_graph(tmp_path)
+
+
+def test_repository_graph_validates_target_documents_before_normalizing(
+    tmp_path: Path,
+) -> None:
+    skill = tmp_path / "skills" / "invalid-skill"
+    path = _write_machine_module(
+        skill,
+        "worker",
+        {"run": _export("invalid-skill.machine.run")},
+    )
+    declaration = yaml.safe_load(path.read_text(encoding="utf-8"))
+    del declaration["description"]
+    _write_yaml(path, declaration)
+
+    with pytest.raises(BlueprintGraphError, match=r"schema error at \$\.description"):
+        load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+
+
+def test_repository_graph_rejects_target_content_overlap(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "overlap-skill"
+    first = _write_machine_module(
+        skill,
+        "first",
+        {"run": _export("overlap-skill.machine.run")},
+    )
+    second = _write_machine_module(
+        skill,
+        "second",
+        {"other": _export("overlap-skill.machine.other")},
+    )
+    (skill / "shared.py").write_text("VALUE = 1\n", encoding="utf-8")
+    for path in (first, second):
+        declaration = yaml.safe_load(path.read_text(encoding="utf-8"))
+        declaration["content"].append(r"shared\.py")
+        _write_yaml(path, declaration)
+
+    with pytest.raises(BlueprintGraphError, match=r"shared\.py.*owned by both"):
+        load_repository_blueprint_graph(tmp_path)
+
+
+def test_repository_graph_rejects_export_platform_mismatch(tmp_path: Path) -> None:
+    provider = tmp_path / "skills" / "provider-skill"
+    provider_path = _write_machine_module(
+        provider,
+        "worker",
+        {"run": _export("provider-skill.machine.run")},
+    )
+    provider_declaration = yaml.safe_load(
+        provider_path.read_text(encoding="utf-8")
+    )
+    provider_declaration["platform_support"]["windows"] = False
+    _write_yaml(provider_path, provider_declaration)
+    caller = tmp_path / "skills" / "caller-skill"
+    _write_machine_module(
+        caller,
+        "worker",
+        {
+            "run": _export(
+                "caller-skill.machine.run",
+                uses_interfaces=[
+                    {"interface": "provider-skill.machine.run", "version": 1}
+                ],
+            )
+        },
+    )
+
+    with pytest.raises(BlueprintGraphError, match=r"does not support.*windows"):
+        load_repository_blueprint_graph(tmp_path)
+
+
+def test_repository_graph_rejects_module_dispatch_and_runtime_cycles(
+    tmp_path: Path,
+) -> None:
+    skill = tmp_path / "skills" / "cycle-skill"
+    _write_machine_module(
+        skill,
+        "worker",
+        {
+            "one": _export(
+                "cycle-skill.machine.one",
+                uses_interfaces=[
+                    {"interface": "cycle-skill.machine.two", "version": 1}
+                ],
+            ),
+            "two": _export(
+                "cycle-skill.machine.two",
+                uses_interfaces=[
+                    {"interface": "cycle-skill.machine.one", "version": 1}
+                ],
+            ),
+        },
+    )
+
+    with pytest.raises(BlueprintGraphError, match="runtime export dependency cycle"):
+        load_repository_blueprint_graph(tmp_path)
+
+    clean_root = tmp_path / "clean"
+    clean_skill = clean_root / "skills" / "clean-skill"
+    _write_machine_module(
+        clean_skill,
+        "worker",
+        {"run": _export("clean-skill.machine.run")},
+    )
+    graph = load_repository_blueprint_graph(clean_root)
+    with pytest.raises(BlueprintGraphError, match="module id.*not callable"):
+        resolve_machine_export(graph, "clean-skill.machine-module.worker")

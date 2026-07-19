@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "direct-io.schema.json",
+  "title": "Machine Interface Direct I/O",
+  "description": "Immediate interface-local semantic I/O. Relative private tmp/ and logs/ access may be omitted only when it is purely ephemeral or diagnostic and cannot affect output, verification, persistence, or later invocations.",
+  "x-famulus": {
+    "doc": {
+      "authoring": [
+        "Declare only immediate export-local I/O; never copy transitive tool I/O.",
+        "Private relative tmp/ and logs/ paths may be omitted only when purely ephemeral or diagnostic and behaviorally irrelevant."
+      ]
+    }
+  },
+  "type": "object",
+  "required": ["reads", "writes", "network"],
+  "additionalProperties": false,
+  "properties": {
+    "reads": {"type": "array", "items": {"$ref": "#/definitions/readEntry"}},
+    "writes": {"type": "array", "items": {"$ref": "#/definitions/writeEntry"}},
+    "network": {"type": "array", "items": {"$ref": "#/definitions/networkEntry"}}
+  },
+  "definitions": {
+    "relativePath": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+    "pathSource": {
+      "type": "object",
+      "required": ["kind", "argument_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const": "argument"},
+        "argument_ref": {"type": "string", "minLength": 1}
+      }
+    },
+    "ioEntry": {
+      "type": "object",
+      "required": ["id", "medium", "access", "content", "format", "sensitivity"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"},
+        "medium": {"enum": ["local-filesystem", "repository-filesystem", "home-filesystem", "temporary-filesystem", "stdout", "stderr", "stdin", "network", "calendar", "email", "subprocess", "event-stream"]},
+        "access": {"enum": ["read", "write", "read-write", "delete", "send", "execute", "configure"]},
+        "system": {"type": "string", "minLength": 1},
+        "content": {"type": "string", "minLength": 1},
+        "format": {"type": "string", "minLength": 1},
+        "sensitivity": {"enum": ["public", "user-private", "derived-private", "credential", "secret"]},
+        "path": {"$ref": "#/definitions/relativePath"},
+        "path_source": {"$ref": "#/definitions/pathSource"},
+        "endpoint": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {"not": {"required": ["path", "path_source"]}},
+        {"if": {"properties": {"medium": {"enum": ["local-filesystem", "repository-filesystem", "home-filesystem", "temporary-filesystem"]}}}, "then": {"oneOf": [{"required": ["path"]}, {"required": ["path_source"]}]}, "else": {"not": {"anyOf": [{"required": ["path"]}, {"required": ["path_source"]}]}}}
+      ]
+    },
+    "readEntry": {"allOf": [{"$ref": "#/definitions/ioEntry"}, {"properties": {"access": {"enum": ["read", "read-write"]}}}]},
+    "writeEntry": {"allOf": [{"$ref": "#/definitions/ioEntry"}, {"properties": {"access": {"enum": ["write", "read-write", "delete", "send", "execute", "configure"]}}}]},
+    "networkEntry": {"allOf": [{"$ref": "#/definitions/ioEntry"}, {"required": ["system", "endpoint"], "properties": {"medium": {"const": "network"}, "access": {"enum": ["read", "write", "read-write", "send", "configure"]}}}]}
+  }
+}

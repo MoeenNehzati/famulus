@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "conformance-operations/common.schema.json",
+  "definitions": {
+    "relativePath": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+    "error": {
+      "type": "object",
+      "required": ["ok", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "ok": {"const": false},
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "additionalProperties": false,
+          "properties": {
+            "code": {"enum": ["invalid-request", "unavailable", "fixture-missing", "forbidden", "adapter-failure"]},
+            "message": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}

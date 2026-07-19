@@ -1,0 +1,9 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "conformance-operations/subprocess.schema.json",
+  "definitions": {
+    "runRequest": {"type": "object", "required": ["operation_version", "parameters"], "additionalProperties": false, "properties": {"operation_version": {"const": 1}, "parameters": {"type": "object", "required": ["fixture", "argv", "timeout_seconds"], "additionalProperties": false, "properties": {"fixture": {"type": "string", "minLength": 1}, "argv": {"type": "array", "items": {"type": "string"}}, "timeout_seconds": {"type": "integer", "minimum": 1}}}}},
+    "runSuccess": {"type": "object", "required": ["ok", "result"], "additionalProperties": false, "properties": {"ok": {"const": true}, "result": {"type": "object", "required": ["exit_code", "stdout", "stderr"], "additionalProperties": false, "properties": {"exit_code": {"type": "integer", "minimum": 0, "maximum": 255}, "stdout": {"type": "string"}, "stderr": {"type": "string"}}}}},
+    "error": {"$ref": "common.schema.json#/definitions/error"}
+  }
+}

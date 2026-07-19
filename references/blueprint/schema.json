@@ -11,7 +11,7 @@
     {"$ref": "v2/behavior-source.schema.json"},
     {"$ref": "skill.schema.json"},
     {"$ref": "llm-interface.schema.json"},
-    {"$ref": "machine-interface.schema.json"},
+    {"$ref": "machine-module.schema.json"},
     {"$ref": "behavior-source.schema.json"}
   ],
   "x-famulus": {

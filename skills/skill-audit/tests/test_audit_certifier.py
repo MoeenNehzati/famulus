@@ -18,6 +18,10 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from officina.common.audit_records import record_authentication_matches, record_digest_matches
+from officina.common.artifact_health import (
+    CANONICAL_GRAPH_SCHEMA_INPUTS,
+    POOLED_REVIEW_SCHEMA_INPUTS,
+)
 from officina.common.git_provenance import check_commit_readiness as real_check_commit_readiness
 
 SPEC = importlib.util.spec_from_file_location("skill_audit_certifier", MODULE_PATH)
@@ -30,6 +34,17 @@ SPEC.loader.exec_module(certifier)
 def write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def copy_schema_bundle(repo: Path) -> None:
+    source_root = MODULE_PATH.parents[3] / "references" / "blueprint"
+    target_root = repo / "references" / "blueprint"
+    for relative_text in (
+        *CANONICAL_GRAPH_SCHEMA_INPUTS,
+        *POOLED_REVIEW_SCHEMA_INPUTS,
+    ):
+        source = source_root / relative_text
+        write(target_root / relative_text, source.read_text(encoding="utf-8"))
 
 
 def make_skill(repo: Path, name: str = "demo-skill", *, implicit_uncovered: bool = False) -> Path:
@@ -122,16 +137,7 @@ def make_typed_skill(repo: Path, name: str = "demo-skill") -> Path:
             ]
         ),
     )
-    schema_root = repo / "references" / "blueprint"
-    source_schema_root = MODULE_PATH.parents[3] / "references" / "blueprint"
-    for source in [
-        *source_schema_root.glob("*.schema.json"),
-        source_schema_root / "schema.annotated-draft.json",
-        source_schema_root / "schema.json",
-        source_schema_root / "schema-meta.json",
-        source_schema_root / "template.yaml",
-    ]:
-        write(schema_root / source.name, source.read_text(encoding="utf-8"))
+    copy_schema_bundle(repo)
     (repo / "skills" / "skill-audit").mkdir(parents=True, exist_ok=True)
     return skill
 
@@ -193,17 +199,7 @@ def make_shared_source_consumers(repo: Path) -> tuple[Path, Path, Path]:
 
 def make_commit_backed(repo: Path) -> None:
     source_root = MODULE_PATH.parents[3]
-    source_schema_root = source_root / "references" / "blueprint"
-    for source in [
-        *source_schema_root.glob("*.schema.json"),
-        source_schema_root / "schema.annotated-draft.json",
-        source_schema_root / "schema.json",
-        source_schema_root / "schema-meta.json",
-        source_schema_root / "template.yaml",
-    ]:
-        destination = repo / "references" / "blueprint" / source.name
-        if not destination.exists():
-            write(destination, source.read_text(encoding="utf-8"))
+    copy_schema_bundle(repo)
     policy_files = [
         "skills/skill-drift/references/policy-hash-roots.json",
         "skills/skill-audit/_rtx/_audit_certifier.py",

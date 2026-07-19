@@ -9,6 +9,7 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 from pathlib import Path
+import re
 from textwrap import wrap
 from typing import Any, Mapping
 
@@ -29,7 +30,7 @@ _HEADER_LINES = [
 _AUTHORING_SCHEMA_BY_TYPE = {
     "skill": "skill.schema.json",
     "llm-interface": "llm-interface.schema.json",
-    "machine-interface": "machine-interface.schema.json",
+    "machine-module": "machine-module.schema.json",
     "behavior-source": "behavior-source.schema.json",
 }
 
@@ -195,7 +196,11 @@ def _select_authoring_schema(
 
     if not isinstance(schema, SchemaDocument) or schema.get("$id") != "schema.json":
         return schema
-    blueprint_type = values.get("blueprint_type") if values is not None else None
+    blueprint_type = (
+        values.get("node_type", values.get("blueprint_type"))
+        if values is not None
+        else None
+    )
     document_name = _AUTHORING_SCHEMA_BY_TYPE.get(
         blueprint_type,
         "legacy-skill.schema.json",
@@ -436,6 +441,10 @@ def _value_from_schema(schema: JsonMapping, root: JsonMapping) -> Any:
     if schema_type == "object":
         return _object_value_from_schema(resolved, root)
     if schema_type == "array":
+        minimum = resolved.get("minItems", 0)
+        items = resolved.get("items")
+        if isinstance(minimum, int) and minimum > 0 and isinstance(items, Mapping):
+            return [_value_from_schema(items, root) for _index in range(minimum)]
         return []
     if schema_type == "boolean":
         return False
@@ -443,6 +452,22 @@ def _value_from_schema(schema: JsonMapping, root: JsonMapping) -> Any:
         return 1
     if schema_type == "number":
         return 1
+    pattern = resolved.get("pattern")
+    if isinstance(pattern, str):
+        for candidate in (
+            "example",
+            "example-skill",
+            "example-skill.machine.example",
+            "example-skill.machine-module.example",
+            "_rtx/_worker.py",
+            "Interface",
+            "--example",
+            "example.json",
+            "#",
+            "/example",
+        ):
+            if re.fullmatch(pattern, candidate) is not None:
+                return candidate
     return "TODO"
 
 
@@ -454,10 +479,23 @@ def _object_value_from_schema(schema: JsonMapping, root: JsonMapping) -> dict[st
         for key, child_schema in properties.items():
             if key in required or _template_metadata(_resolve_schema(child_schema, root)).get("include") is True:
                 result[key] = _value_from_schema(child_schema, root)
+        minimum = schema.get("minProperties", 0)
+        if isinstance(minimum, int) and minimum > len(result):
+            for key, child_schema in properties.items():
+                if key not in result:
+                    result[key] = _value_from_schema(child_schema, root)
+                    if len(result) >= minimum:
+                        break
         return result
 
     required_keys = list(_required_keys(schema))
     additional = schema.get("additionalProperties")
+    minimum = schema.get("minProperties", 0)
+    if isinstance(minimum, int) and minimum > 0 and isinstance(additional, dict):
+        for index in range(minimum):
+            key = "example" if index == 0 else f"example-{index + 1}"
+            result[key] = _value_from_schema(additional, root)
+        return result
     if required_keys and isinstance(additional, dict):
         for key in required_keys:
             result[str(key)] = _value_from_schema(additional, root)
@@ -508,6 +546,15 @@ def _resolve_schema(schema: JsonMapping, root: JsonMapping, value: Any | None = 
         local = {key: val for key, val in resolved.items() if key != "$ref"}
         resolved = {**ref_target, **local}
 
+    all_of = resolved.get("allOf")
+    if isinstance(all_of, list) and all_of and not _schema_has_renderable_shape(resolved):
+        combined: dict[str, Any] = {}
+        for branch in all_of:
+            if isinstance(branch, Mapping):
+                combined.update(_resolve_schema(branch, root, value))
+        overlays = {key: val for key, val in resolved.items() if key != "allOf"}
+        resolved = {**combined, **overlays}
+
     one_of = resolved.get("oneOf")
     if isinstance(one_of, list) and one_of and not _schema_has_renderable_shape(resolved):
         branch = _select_one_of_branch(one_of, value, root)
@@ -531,7 +578,8 @@ def _resolve_ref(ref: str, root: JsonMapping) -> dict[str, Any]:
     if not separator:
         if not isinstance(node, dict):
             raise ValueError(f"schema ref does not point to an object: {ref}")
-        return dict(node)
+        result = dict(node)
+        return _scope_internal_refs(result, document_name) if document_name else result
     if not fragment.startswith("/"):
         raise ValueError(f"unsupported schema fragment: {ref}")
     for part in fragment[1:].split("/"):

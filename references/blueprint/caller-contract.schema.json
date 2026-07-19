@@ -1,0 +1,205 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "caller-contract.schema.json",
+  "title": "Simple Machine Interface Caller Contract",
+  "type": "object",
+  "required": ["arguments", "preconditions", "interaction", "caller_warnings", "outputs", "outcomes", "execution"],
+  "additionalProperties": false,
+  "properties": {
+    "arguments": {"type": "object", "additionalProperties": {"$ref": "#/definitions/argument"}},
+    "preconditions": {"type": "array", "items": {"$ref": "#/definitions/precondition"}},
+    "interaction": {"$ref": "#/definitions/interaction"},
+    "caller_warnings": {"type": "array", "items": {"$ref": "#/definitions/warning"}},
+    "outputs": {"type": "array", "items": {"$ref": "#/definitions/output"}},
+    "outcomes": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/outcome"}},
+    "execution": {"$ref": "#/definitions/execution"}
+  },
+  "definitions": {
+    "localId": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"},
+    "relativePath": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+    "arity": {
+      "type": "object",
+      "required": ["minimum", "maximum"],
+      "additionalProperties": false,
+      "properties": {
+        "minimum": {"type": "integer", "minimum": 0},
+        "maximum": {"type": ["integer", "null"], "minimum": 1}
+      }
+    },
+    "schemaRef": {
+      "type": "object",
+      "required": ["path", "fragment"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"$ref": "#/definitions/relativePath"},
+        "fragment": {"type": "string", "pattern": "^#"}
+      }
+    },
+    "format": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "named": {"enum": ["literal", "identifier", "json", "yaml", "email", "uri", "uuid"]},
+        "template": {"type": "string", "minLength": 1},
+        "regex": {"type": "object", "required": ["pattern", "dialect", "matching", "example"], "additionalProperties": false, "properties": {"pattern": {"type": "string"}, "dialect": {"enum": ["python", "ecmascript"]}, "matching": {"enum": ["full", "prefix"]}, "example": {"type": "string"}}}
+      }
+    },
+    "typeSpec": {
+      "oneOf": [
+        {"$ref": "#/definitions/stringType"},
+        {"$ref": "#/definitions/integerType"},
+        {"$ref": "#/definitions/numberType"},
+        {"$ref": "#/definitions/booleanType"},
+        {"$ref": "#/definitions/flagType"},
+        {"$ref": "#/definitions/dateType"},
+        {"$ref": "#/definitions/datetimeType"},
+        {"$ref": "#/definitions/durationType"},
+        {"$ref": "#/definitions/enumType"},
+        {"$ref": "#/definitions/pathType"},
+        {"$ref": "#/definitions/fileType"},
+        {"$ref": "#/definitions/dirType"},
+        {"$ref": "#/definitions/listType"}
+      ]
+    },
+    "sensitivity": {"enum": ["public", "user-private", "derived-private", "credential", "secret"]},
+    "typeDescription": {"type": "string", "minLength": 1},
+    "stringType": {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "string"}, "sensitivity": {"$ref": "#/definitions/sensitivity"}, "description": {"$ref": "#/definitions/typeDescription"}, "format": {"$ref": "#/definitions/format"}, "schema": {"$ref": "#/definitions/schemaRef"}}},
+    "integerType": {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "integer"}, "sensitivity": {"$ref": "#/definitions/sensitivity"}, "description": {"$ref": "#/definitions/typeDescription"}, "minimum": {"type": "integer"}, "maximum": {"type": "integer"}, "unit": {"$ref": "#/definitions/unit"}}},
+    "numberType": {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "number"}, "sensitivity": {"$ref": "#/definitions/sensitivity"}, "description": {"$ref": "#/definitions/typeDescription"}, "minimum": {"type": "number"}, "maximum": {"type": "number"}, "unit": {"$ref": "#/definitions/unit"}}},
+    "booleanType": {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "boolean"}, "sensitivity": {"$ref": "#/definitions/sensitivity"}, "description": {"$ref": "#/definitions/typeDescription"}}},
+    "flagType": {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "flag"}, "sensitivity": {"$ref": "#/definitions/sensitivity"}, "description": {"$ref": "#/definitions/typeDescription"}}},
+    "unit": {"enum": ["count", "bytes", "seconds", "milliseconds", "minutes", "hours", "days", "percent"]},
+    "dateFormats": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "dateType": {"type": "object", "required": ["kind", "date_formats"], "additionalProperties": false, "properties": {"kind": {"const": "date"}, "sensitivity": {"$ref": "#/definitions/sensitivity"}, "description": {"$ref": "#/definitions/typeDescription"}, "date_formats": {"$ref": "#/definitions/dateFormats"}}},
+    "datetimeType": {"type": "object", "required": ["kind", "date_formats", "timezone"], "additionalProperties": false, "properties": {"kind": {"const": "datetime"}, "sensitivity": {"$ref": "#/definitions/sensitivity"}, "description": {"$ref": "#/definitions/typeDescription"}, "date_formats": {"$ref": "#/definitions/dateFormats"}, "timezone": {"enum": ["required", "forbidden", "optional"]}}},
+    "durationType": {"type": "object", "required": ["kind", "syntax", "unit"], "additionalProperties": false, "properties": {"kind": {"const": "duration"}, "sensitivity": {"$ref": "#/definitions/sensitivity"}, "description": {"$ref": "#/definitions/typeDescription"}, "syntax": {"enum": ["iso-8601", "numeric"]}, "unit": {"$ref": "#/definitions/unit"}}},
+    "enumValue": {"type": "object", "required": ["value", "description"], "additionalProperties": false, "properties": {"value": {"type": ["string", "number", "integer", "boolean"]}, "description": {"type": "string", "minLength": 1}}},
+    "enumType": {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "enum"}, "sensitivity": {"$ref": "#/definitions/sensitivity"}, "description": {"$ref": "#/definitions/typeDescription"}, "values": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/enumValue"}}, "values_from_helper": {"$ref": "#/definitions/localId"}}, "oneOf": [{"required": ["values"]}, {"required": ["values_from_helper"]}]},
+    "relativeBase": {"type": "string", "pattern": "^(caller-cwd|skill-root|resource:[a-z][a-z0-9]*(?:-[a-z0-9]+)*)$"},
+    "pathType": {"type": "object", "required": ["kind", "syntax", "relative_to", "must_exist", "access"], "additionalProperties": false, "properties": {"kind": {"const": "path"}, "sensitivity": {"$ref": "#/definitions/sensitivity"}, "description": {"$ref": "#/definitions/typeDescription"}, "syntax": {"enum": ["literal", "glob", "regex"]}, "relative_to": {"$ref": "#/definitions/relativeBase"}, "must_exist": {"type": "boolean"}, "access": {"enum": ["read", "write", "read-write", "delete"]}, "match_count": {"$ref": "#/definitions/arity"}}, "allOf": [{"if": {"properties": {"syntax": {"enum": ["glob", "regex"]}}}, "then": {"required": ["match_count"]}, "else": {"not": {"required": ["match_count"]}}}]},
+    "fileType": {"type": "object", "required": ["kind", "syntax", "relative_to", "must_exist", "access"], "additionalProperties": false, "properties": {"kind": {"const": "file"}, "sensitivity": {"$ref": "#/definitions/sensitivity"}, "description": {"$ref": "#/definitions/typeDescription"}, "syntax": {"enum": ["literal", "glob", "regex"]}, "relative_to": {"$ref": "#/definitions/relativeBase"}, "must_exist": {"type": "boolean"}, "access": {"enum": ["read", "write", "read-write", "delete"]}, "match_count": {"$ref": "#/definitions/arity"}, "content_type": {"$ref": "#/definitions/typeSpec"}, "content_protection": {"const": "owner-only"}, "schema": {"$ref": "#/definitions/schemaRef"}, "opaque_content": {"const": true}}, "allOf": [{"if": {"properties": {"syntax": {"enum": ["glob", "regex"]}}}, "then": {"required": ["match_count"]}, "else": {"not": {"required": ["match_count"]}}}, {"oneOf": [{"required": ["content_type"]}, {"required": ["opaque_content"]}]}]},
+    "dirType": {"type": "object", "required": ["kind", "syntax", "relative_to", "must_exist", "access"], "additionalProperties": false, "properties": {"kind": {"const": "dir"}, "sensitivity": {"$ref": "#/definitions/sensitivity"}, "description": {"$ref": "#/definitions/typeDescription"}, "syntax": {"enum": ["literal", "glob", "regex"]}, "relative_to": {"$ref": "#/definitions/relativeBase"}, "must_exist": {"type": "boolean"}, "access": {"enum": ["read", "write", "read-write", "delete"]}, "match_count": {"$ref": "#/definitions/arity"}, "entry_type": {"$ref": "#/definitions/typeSpec"}}, "allOf": [{"if": {"properties": {"syntax": {"enum": ["glob", "regex"]}}}, "then": {"required": ["match_count"]}, "else": {"not": {"required": ["match_count"]}}}]},
+    "listType": {"type": "object", "required": ["kind", "element_type"], "additionalProperties": false, "properties": {"kind": {"const": "list"}, "sensitivity": {"$ref": "#/definitions/sensitivity"}, "description": {"$ref": "#/definitions/typeDescription"}, "element_type": {"$ref": "#/definitions/typeSpec"}}},
+    "argumentBinding": {
+      "oneOf": [
+        {"type": "object", "required": ["kind", "position", "arity"], "additionalProperties": false, "properties": {"kind": {"const": "positional"}, "position": {"type": "integer", "minimum": 0}, "arity": {"$ref": "#/definitions/arity"}}},
+        {"type": "object", "required": ["kind", "name", "arity"], "additionalProperties": false, "properties": {"kind": {"const": "option"}, "name": {"type": "string", "pattern": "^--[a-z0-9][a-z0-9-]*$"}, "arity": {"$ref": "#/definitions/arity"}}},
+        {"type": "object", "required": ["kind", "name"], "additionalProperties": false, "properties": {"kind": {"const": "switch"}, "name": {"type": "string", "pattern": "^--[a-z0-9][a-z0-9-]*$"}}},
+        {"type": "object", "required": ["kind", "encoding", "framing"], "additionalProperties": false, "properties": {"kind": {"const": "stdin"}, "encoding": {"const": "utf-8"}, "framing": {"enum": ["raw", "text", "exactly-one-json-document", "newline-delimited-json"]}}}
+      ]
+    },
+    "argument": {
+      "type": "object",
+      "required": ["description", "required", "sensitivity", "invocation_binding", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {"type": "string", "minLength": 1},
+        "required": {"type": "boolean"},
+        "default": {},
+        "sensitivity": {"enum": ["public", "user-private", "derived-private", "credential", "secret"]},
+        "invocation_binding": {"$ref": "#/definitions/argumentBinding"},
+        "direct_io_ref": {"$ref": "#/definitions/localId"},
+        "type": {"$ref": "#/definitions/typeSpec"}
+      },
+      "allOf": [
+        {"if": {"properties": {"required": {"const": true}}}, "then": {"not": {"required": ["default"]}}},
+        {"if": {"properties": {"invocation_binding": {"properties": {"kind": {"const": "switch"}}}}}, "then": {"properties": {"type": {"properties": {"kind": {"const": "flag"}}}}}},
+        {"if": {"properties": {"type": {"properties": {"kind": {"const": "flag"}}}}}, "then": {"properties": {"invocation_binding": {"properties": {"kind": {"const": "switch"}}}}}},
+        {"if": {"properties": {"type": {"properties": {"kind": {"enum": ["path", "file", "dir"]}}}}}, "then": {"required": ["direct_io_ref"]}, "else": {"not": {"required": ["direct_io_ref"]}}}
+      ]
+    },
+    "preconditionCheck": {"oneOf": [
+      {"type": "object", "required": ["kind", "argument_ref", "predicate"], "additionalProperties": false, "properties": {"kind": {"const": "argument"}, "argument_ref": {"$ref": "#/definitions/localId"}, "predicate": {"enum": ["present", "equals", "matches"]}, "expected": {}}},
+      {"type": "object", "required": ["kind", "direct_io_ref", "predicate"], "additionalProperties": false, "properties": {"kind": {"const": "direct-io"}, "direct_io_ref": {"$ref": "#/definitions/localId"}, "predicate": {"enum": ["exists", "readable", "writable", "matches"]}, "expected": {}}},
+      {"type": "object", "required": ["kind", "helper_ref", "predicate"], "additionalProperties": false, "properties": {"kind": {"const": "helper-result"}, "helper_ref": {"$ref": "#/definitions/localId"}, "predicate": {"enum": ["contains", "equals", "nonempty"]}, "expected": {}, "expected_from_argument": {"$ref": "#/definitions/localId"}}}
+    ]},
+    "precondition": {
+      "type": "object",
+      "required": ["id", "description", "check", "unmet_outcome", "caller_action"],
+      "additionalProperties": false,
+      "properties": {"id": {"$ref": "#/definitions/localId"}, "description": {"type": "string", "minLength": 1}, "check": {"$ref": "#/definitions/preconditionCheck"}, "unmet_outcome": {"$ref": "#/definitions/localId"}, "caller_action": {"type": "string", "minLength": 1}}
+    },
+    "interaction": {
+      "oneOf": [
+        {"type": "object", "required": ["mode"], "additionalProperties": false, "properties": {"mode": {"const": "unattended"}, "timeout_seconds": {"type": "integer", "minimum": 1}, "cancellation": {"$ref": "#/definitions/cancellation"}}},
+        {"type": "object", "required": ["mode", "channel", "unattended_outcome"], "additionalProperties": false, "properties": {"mode": {"const": "interactive"}, "channel": {"enum": ["stdin", "tty"]}, "unattended_outcome": {"$ref": "#/definitions/localId"}, "timeout_seconds": {"type": "integer", "minimum": 1}, "cancellation": {"$ref": "#/definitions/cancellation"}}}
+      ]
+    },
+    "cancellation": {"oneOf": [
+      {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "dispatcher-cancel"}}},
+      {"type": "object", "required": ["kind", "signal"], "additionalProperties": false, "properties": {"kind": {"const": "signal"}, "signal": {"type": "string", "minLength": 1}}},
+      {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "unsupported"}}}
+    ]},
+    "warning": {
+      "type": "object", "minProperties": 1, "maxProperties": 1, "additionalProperties": false,
+      "properties": {"may-wait": {"type": "string", "minLength": 1}, "may-incur-cost": {"type": "string", "minLength": 1}, "rate-limited": {"type": "string", "minLength": 1}, "external-side-effect": {"type": "string", "minLength": 1}}
+    },
+    "output": {
+      "type": "object",
+      "required": ["id", "channel", "audience", "encoding", "framing", "description", "direct_io_ref", "cardinality", "ordering", "pagination", "truncation", "empty"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/definitions/localId"}, "channel": {"enum": ["stdout", "stderr", "file", "event-stream"]}, "audience": {"enum": ["machine", "human", "both"]}, "encoding": {"const": "utf-8"}, "framing": {"enum": ["raw", "text", "exactly-one-json-document", "newline-delimited-json"]}, "description": {"type": "string", "minLength": 1}, "schema": {"$ref": "#/definitions/schemaRef"}, "type": {"$ref": "#/definitions/typeSpec"}, "direct_io_ref": {"$ref": "#/definitions/localId"}, "cardinality": {"$ref": "#/definitions/arity"}, "ordering": {"enum": ["stable", "unspecified", "sorted"]}, "pagination": {"$ref": "#/definitions/pagination"}, "truncation": {"$ref": "#/definitions/truncation"}, "empty": {"type": "string", "minLength": 1}
+      },
+      "oneOf": [{"required": ["schema"]}, {"required": ["type"]}]
+    },
+    "pagination": {"oneOf": [
+      {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "none"}}},
+      {"type": "object", "required": ["kind", "cursor_output_ref"], "additionalProperties": false, "properties": {"kind": {"const": "cursor"}, "cursor_output_ref": {"$ref": "#/definitions/localId"}}},
+      {"type": "object", "required": ["kind", "page_argument_ref"], "additionalProperties": false, "properties": {"kind": {"const": "page"}, "page_argument_ref": {"$ref": "#/definitions/localId"}}}
+    ]},
+    "truncation": {"oneOf": [
+      {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "none"}}},
+      {"type": "object", "required": ["kind", "limit"], "additionalProperties": false, "properties": {"kind": {"const": "bounded"}, "limit": {"type": "integer", "minimum": 1}}}
+    ]},
+    "matcher": {"oneOf": [
+      {"type": "object", "required": ["kind", "value"], "additionalProperties": false, "properties": {"kind": {"const": "literal"}, "value": {"type": "string"}}},
+      {"type": "object", "required": ["kind", "pattern", "dialect", "matching"], "additionalProperties": false, "properties": {"kind": {"const": "regex"}, "pattern": {"type": "string"}, "dialect": {"enum": ["python", "ecmascript"]}, "matching": {"enum": ["full", "prefix"]}}}
+    ]},
+    "signal": {"type": "object", "required": ["exit_codes"], "additionalProperties": false, "properties": {"exit_codes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "integer", "minimum": 0, "maximum": 255}}, "stdout_match": {"$ref": "#/definitions/matcher"}, "stderr_match": {"$ref": "#/definitions/matcher"}}},
+    "outcome": {"type": "object", "required": ["id", "class", "signal", "outputs", "effects", "caller_action"], "additionalProperties": false, "properties": {"id": {"$ref": "#/definitions/localId"}, "class": {"enum": ["success", "no-op", "refusal", "partial", "error"]}, "signal": {"$ref": "#/definitions/signal"}, "outputs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/localId"}}, "effects": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/localId"}}, "caller_action": {"type": "string", "minLength": 1}}},
+    "decisionText": {"type": "string", "minLength": 1},
+    "consistencyDecision": {"type": "object", "minProperties": 1, "maxProperties": 1, "additionalProperties": false, "properties": {"snapshot": {"$ref": "#/definitions/decisionText"}, "eventually_consistent": {"$ref": "#/definitions/decisionText"}, "per_source": {"$ref": "#/definitions/decisionText"}, "best_effort": {"$ref": "#/definitions/decisionText"}, "live": {"$ref": "#/definitions/decisionText"}}},
+    "reversibilityDecision": {"type": "object", "minProperties": 1, "maxProperties": 1, "additionalProperties": false, "properties": {"reversible": {"$ref": "#/definitions/decisionText"}, "compensatable": {"$ref": "#/definitions/decisionText"}, "irreversible": {"$ref": "#/definitions/decisionText"}}},
+    "atomicityDecision": {"type": "object", "minProperties": 1, "maxProperties": 1, "additionalProperties": false, "properties": {"atomic": {"$ref": "#/definitions/decisionText"}, "per_effect_only": {"$ref": "#/definitions/decisionText"}, "non_atomic": {"$ref": "#/definitions/decisionText"}}},
+    "concurrencyDecision": {"type": "object", "minProperties": 1, "maxProperties": 1, "additionalProperties": false, "properties": {"safe": {"$ref": "#/definitions/decisionText"}, "serialized": {"$ref": "#/definitions/decisionText"}, "unsafe": {"$ref": "#/definitions/decisionText"}}},
+    "idempotencyDecision": {"type": "object", "minProperties": 1, "maxProperties": 1, "additionalProperties": false, "properties": {"idempotent": {"$ref": "#/definitions/decisionText"}, "non_idempotent": {"$ref": "#/definitions/decisionText"}}},
+    "uncertainDecision": {"type": "object", "minProperties": 1, "maxProperties": 1, "additionalProperties": false, "properties": {"retry": {"$ref": "#/definitions/decisionText"}, "verify_then_decide": {"$ref": "#/definitions/decisionText"}, "stop": {"$ref": "#/definitions/decisionText"}}},
+    "partialEffectsDecision": {"type": "object", "minProperties": 1, "maxProperties": 1, "additionalProperties": false, "properties": {"impossible": {"$ref": "#/definitions/decisionText"}, "possible": {"$ref": "#/definitions/decisionText"}}},
+    "rollbackDecision": {"type": "object", "minProperties": 1, "maxProperties": 1, "additionalProperties": false, "properties": {"automatic": {"$ref": "#/definitions/decisionText"}, "available": {"$ref": "#/definitions/decisionText"}, "unavailable": {"$ref": "#/definitions/decisionText"}}},
+    "valueReference": {"oneOf": [
+      {"type": "object", "required": ["kind", "argument_ref"], "additionalProperties": false, "properties": {"kind": {"const": "argument"}, "argument_ref": {"$ref": "#/definitions/localId"}}},
+      {"type": "object", "required": ["kind", "output_ref"], "additionalProperties": false, "properties": {"kind": {"const": "output"}, "output_ref": {"$ref": "#/definitions/localId"}}},
+      {"type": "object", "required": ["kind", "direct_io_ref"], "additionalProperties": false, "properties": {"kind": {"const": "direct-io"}, "direct_io_ref": {"$ref": "#/definitions/localId"}}},
+      {"type": "object", "required": ["kind", "helper_ref"], "additionalProperties": false, "properties": {"kind": {"const": "helper"}, "helper_ref": {"$ref": "#/definitions/localId"}}}
+    ]},
+    "effect": {"type": "object", "required": ["id", "direct_io_ref", "action", "value_source", "may_occur_in_outcomes", "confirmation_evidence", "reversibility"], "additionalProperties": false, "properties": {"id": {"$ref": "#/definitions/localId"}, "direct_io_ref": {"$ref": "#/definitions/localId"}, "action": {"enum": ["create", "update", "append", "delete", "send", "execute", "configure"]}, "value_source": {"$ref": "#/definitions/valueReference"}, "may_occur_in_outcomes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/definitions/localId"}}, "confirmation_evidence": {"$ref": "#/definitions/valueReference"}, "reversibility": {"$ref": "#/definitions/reversibilityDecision"}}},
+    "verification": {"oneOf": [
+      {"type": "object", "required": ["method", "output_ref"], "additionalProperties": false, "properties": {"method": {"const": "output-schema"}, "output_ref": {"$ref": "#/definitions/localId"}}},
+      {"type": "object", "required": ["method", "direct_io_ref"], "additionalProperties": false, "properties": {"method": {"const": "direct-io-state"}, "direct_io_ref": {"$ref": "#/definitions/localId"}}},
+      {"type": "object", "required": ["method", "helper_ref"], "additionalProperties": false, "properties": {"method": {"const": "helper-check"}, "helper_ref": {"$ref": "#/definitions/localId"}}}
+    ]},
+    "readyWhen": {"oneOf": [
+      {"type": "object", "required": ["kind", "output_ref", "matcher"], "additionalProperties": false, "properties": {"kind": {"const": "output-match"}, "output_ref": {"$ref": "#/definitions/localId"}, "matcher": {"$ref": "#/definitions/matcher"}}},
+      {"type": "object", "required": ["kind", "outcome_ref"], "additionalProperties": false, "properties": {"kind": {"const": "outcome"}, "outcome_ref": {"$ref": "#/definitions/localId"}}},
+      {"type": "object", "required": ["kind", "helper_ref"], "additionalProperties": false, "properties": {"kind": {"const": "helper-result"}, "helper_ref": {"$ref": "#/definitions/localId"}}}
+    ]},
+    "stopMethod": {"oneOf": [
+      {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "dispatcher-cancel"}}},
+      {"type": "object", "required": ["kind", "signal"], "additionalProperties": false, "properties": {"kind": {"const": "signal"}, "signal": {"type": "string", "minLength": 1}}},
+      {"type": "object", "required": ["kind", "helper_ref"], "additionalProperties": false, "properties": {"kind": {"const": "helper"}, "helper_ref": {"$ref": "#/definitions/localId"}}}
+    ]},
+    "execution": {
+      "type": "object", "required": ["state_effect", "lifecycle", "consistency", "verification"], "additionalProperties": false,
+      "properties": {
+        "state_effect": {"enum": ["read-only", "mutating"]}, "lifecycle": {"enum": ["finite", "long-running"]}, "consistency": {"$ref": "#/definitions/consistencyDecision"}, "effects": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/effect"}}, "mutation_safety": {"type": "object", "required": ["atomicity", "concurrent_invocations", "idempotency", "on_uncertain_completion", "partial_effects_on_failure", "rollback_on_failure"], "additionalProperties": false, "properties": {"atomicity": {"$ref": "#/definitions/atomicityDecision"}, "concurrent_invocations": {"$ref": "#/definitions/concurrencyDecision"}, "idempotency": {"$ref": "#/definitions/idempotencyDecision"}, "on_uncertain_completion": {"$ref": "#/definitions/uncertainDecision"}, "partial_effects_on_failure": {"$ref": "#/definitions/partialEffectsDecision"}, "rollback_on_failure": {"$ref": "#/definitions/rollbackDecision"}}}, "long_running": {"type": "object", "required": ["ready_when", "stop_method", "startup_failure_outcome"], "additionalProperties": false, "properties": {"ready_when": {"$ref": "#/definitions/readyWhen"}, "stop_method": {"$ref": "#/definitions/stopMethod"}, "startup_failure_outcome": {"$ref": "#/definitions/localId"}}}, "verification": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/verification"}}
+      },
+      "allOf": [
+        {"if": {"properties": {"state_effect": {"const": "mutating"}}}, "then": {"required": ["effects", "mutation_safety"]}, "else": {"not": {"anyOf": [{"required": ["effects"]}, {"required": ["mutation_safety"]}]}}},
+        {"if": {"properties": {"lifecycle": {"const": "long-running"}}}, "then": {"required": ["long_running"]}, "else": {"not": {"required": ["long_running"]}}}
+      ]
+    }
+  }
+}

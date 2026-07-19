@@ -20,10 +20,19 @@ from officina.common.blueprint_graph import (
     SkillBlueprintGraph,
     descriptor_safe_open_supported,
     expanded_legacy_blueprint,
+    load_repository_blueprint_graph,
     load_validated_skill_blueprint_graph,
     open_runtime_file,
     open_runtime_python_package,
+    resolve_machine_export,
 )
+from officina.common.certification_view import CertificationView, RejectingCertificationView
+from officina.common.machine_interface_binding import (
+    MachineInterfaceBindingError,
+    compile_gateway_invocation,
+    parse_caller_invocation,
+)
+from officina.common.blueprint_inventory import BlueprintInventoryError, collect_blueprints
 
 from .platforms import current_platform_name
 
@@ -814,6 +823,99 @@ def _current_platform_name() -> str:
     return current_platform_name()
 
 
+def _resolve_machine_module_dispatch(
+    *,
+    root: Path,
+    caller_skill: str,
+    target: str,
+    args: list[str],
+    stdin_requested: bool,
+    target_version: int | None,
+    certification_view: CertificationView | None,
+) -> ResolvedInvocation | None:
+    """Resolve a target-v3 nested export, or return None for a legacy target."""
+
+    diagnostic_inventory = collect_blueprints(root, skip_parse_errors=True)
+    target_is_module = False
+    target_is_export = False
+    for document in diagnostic_inventory.documents:
+        if (
+            document.declaration.get("schema_version") != 3
+            or document.node_type != "machine-module"
+        ):
+            continue
+        if document.node_id == target:
+            target_is_module = True
+        raw_interfaces = document.declaration.get("interfaces", {})
+        if isinstance(raw_interfaces, dict) and any(
+            isinstance(entry, dict) and entry.get("id") == target
+            for entry in raw_interfaces.values()
+        ):
+            target_is_export = True
+    if not target_is_module and not target_is_export:
+        return None
+    try:
+        graph = load_repository_blueprint_graph(root)
+    except BlueprintInventoryError as exc:
+        first = exc.issues[0]
+        raise InvocationError(
+            f"{root / first.relative_path}: cannot load blueprint YAML: {first.message}"
+        ) from exc
+    except BlueprintGraphError as exc:
+        raise InvocationError(f"target v3 repository graph is invalid: {exc}") from exc
+    if target in graph.nodes and graph.nodes[target].node_type == "machine-module":
+        raise InvocationError(f"module id `{target}` is not callable")
+    if target not in graph.machine_exports:
+        return None
+    try:
+        module, export = resolve_machine_export(graph, target, target_version)
+        declaration = export.declaration
+        allowed = declaration.get("allowed_callers", [])
+        if declaration.get("allow_all_skills") is not True and caller_skill not in allowed:
+            raise InvocationError(
+                f"caller skill `{caller_skill}` is not allowed to call `{target}`"
+            )
+        decision = (certification_view or RejectingCertificationView()).check_export(
+            module.node_id,
+            export.interface_id,
+            export.version,
+        )
+        if not decision.certified:
+            raise InvocationError(
+                f"{export.interface_id}: certification rejected "
+                f"[{decision.code}]: {decision.message}"
+            )
+        parsed = parse_caller_invocation(
+            export,
+            args,
+            stdin_requested=stdin_requested,
+        )
+        compiled = compile_gateway_invocation(module, export, parsed)
+    except (BlueprintGraphError, MachineInterfaceBindingError) as exc:
+        raise InvocationError(str(exc)) from exc
+
+    target_skill = module.skill_root.name
+    cwd, command, env, runtime_bindings = build_machine_runtime(
+        target_skill,
+        export.local_name,
+        dict(module.declaration),
+        list(compiled.argv),
+        repo_root=root,
+    )
+    return ResolvedInvocation(
+        caller_skill=caller_skill,
+        target_skill=target_skill,
+        script_interface=export.local_name,
+        target=export.interface_id,
+        pattern=export.local_name,
+        cwd=cwd,
+        command=command,
+        stdin=compiled.stdin_argument_id is not None,
+        env=env,
+        runtime_bindings=runtime_bindings,
+    )
+
+
 def resolve_dispatch(
     *,
     caller_skill: str,
@@ -823,11 +925,30 @@ def resolve_dispatch(
     args: list[str] | None = None,
     stdin_requested: bool = False,
     repo_root: Path | None = None,
+    target_version: int | None = None,
+    certification_view: CertificationView | None = None,
 ) -> ResolvedInvocation:
     args = args or []
     if not caller_skill.strip():
         raise InvocationError("caller_skill must be a non-empty string")
     caller_skill = caller_skill.strip()
+
+    root = get_repo_root(repo_root)
+    module_target = target
+    if module_target is None and target_skill is not None and script_interface is not None:
+        module_target = f"{target_skill}.machine.{script_interface}"
+    if isinstance(module_target, str):
+        resolved_module = _resolve_machine_module_dispatch(
+            root=root,
+            caller_skill=caller_skill,
+            target=module_target,
+            args=args,
+            stdin_requested=stdin_requested,
+            target_version=target_version,
+            certification_view=certification_view,
+        )
+        if resolved_module is not None:
+            return resolved_module
 
     parsed_target = parse_canonical_target(target) if isinstance(target, str) else None
     if parsed_target is not None:
@@ -923,6 +1044,8 @@ def dispatch(
     check: bool = False,
     text: bool | None = None,
     repo_root: Path | None = None,
+    target_version: int | None = None,
+    certification_view: CertificationView | None = None,
 ) -> subprocess.CompletedProcess[Any]:
     """Resolve and execute a declared skill interface."""
     resolved = resolve_dispatch(
@@ -933,6 +1056,8 @@ def dispatch(
         args=args or [],
         stdin_requested=stdin is not None,
         repo_root=repo_root,
+        target_version=target_version,
+        certification_view=certification_view,
     )
 
     run_kwargs: dict[str, Any] = {

@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import yaml
@@ -196,6 +197,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
     def run_dispatcher_cmd(self, *args: str) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
+        env["AI"] = str(REPO_ROOT)
         current = env.get("PYTHONPATH")
         env["PYTHONPATH"] = str(DISPATCHER_SRC) if not current else f"{DISPATCHER_SRC}:{current}"
         return subprocess.run(
@@ -242,7 +244,19 @@ class SkillBlueprintToolTests(unittest.TestCase):
             env = os.environ.copy()
             env["GIT_INDEX_FILE"] = str(index)
             env["GIT_OBJECT_DIRECTORY"] = str(object_directory)
-            env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(REPO_ROOT / ".git" / "objects")
+            common_git_dir = subprocess.run(
+                ["git", "rev-parse", "--git-common-dir"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            common_git_path = Path(common_git_dir)
+            if not common_git_path.is_absolute():
+                common_git_path = REPO_ROOT / common_git_path
+            env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(
+                common_git_path.resolve() / "objects"
+            )
             subprocess.run(
                 ["git", "read-tree", "HEAD"],
                 cwd=REPO_ROOT,
@@ -966,6 +980,7 @@ class SkillBlueprintToolTests(unittest.TestCase):
             cwd=REPO_ROOT,
             env={
                 **os.environ,
+                "AI": str(REPO_ROOT),
                 "PYTHONPATH": str(DISPATCHER_SRC)
                 if not os.environ.get("PYTHONPATH")
                 else f"{DISPATCHER_SRC}:{os.environ['PYTHONPATH']}",
@@ -1066,6 +1081,127 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
         self.assertIn("`read-data` — Read an input file.", block)
         self.assertIn("dispatcher --caller-skill demo-skill demo-skill.machine.read-data <path>", block)
+
+    def test_consumer_local_blocks_use_root_and_named_gateway_placement(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_consumer_blocks",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            skill = Path(temp) / "demo-skill"
+            named_dir = skill / "llm_interfaces"
+            named_dir.mkdir(parents=True)
+            root_gateway = skill / "SKILL.md"
+            named_gateway = named_dir / "coach.md"
+            root_gateway.write_text(
+                "---\nname: demo-skill\n---\n"
+                "<!-- BEGIN BLUEPRINT CONTRACT -->\nContract\n<!-- END BLUEPRINT CONTRACT -->\n"
+                "<!-- BEGIN BLUEPRINT INTERFACES -->\nOwner\n<!-- END BLUEPRINT INTERFACES -->\n"
+                "Root body.\n",
+                encoding="utf-8",
+            )
+            named_gateway.write_text("Named body.\n", encoding="utf-8")
+            graph = SimpleNamespace(
+                nodes={
+                    "demo-skill.llm.default": SimpleNamespace(
+                        node_type="llm-interface",
+                        gateway_path=root_gateway,
+                        skill_root=skill,
+                    ),
+                    "demo-skill.llm.coach": SimpleNamespace(
+                        node_type="llm-interface",
+                        gateway_path=named_gateway,
+                        skill_root=skill,
+                    ),
+                }
+            )
+            selected = {
+                "schema_version": 1,
+                "consumer": "demo-skill.llm.default",
+                "interfaces": {"provider.machine.run": {"id": "provider.machine.run"}},
+                "helper_interfaces": {},
+                "llm_interfaces": {},
+                "definitions": {},
+            }
+            projections = {
+                "demo-skill.llm.default": SimpleNamespace(document=selected),
+                "demo-skill.llm.coach": SimpleNamespace(
+                    document={**selected, "consumer": "demo-skill.llm.coach"}
+                ),
+            }
+
+            first = sync_module.plan_consumer_interface_updates(graph, projections)
+            sync_module.apply_consumer_interface_updates(first)
+            root_text = root_gateway.read_text(encoding="utf-8")
+            named_text = named_gateway.read_text(encoding="utf-8")
+            second = sync_module.plan_consumer_interface_updates(graph, projections)
+
+            self.assertLess(
+                root_text.index(sync_module.CONTRACT_END),
+                root_text.index(sync_module.USED_INTERFACES_START),
+            )
+            self.assertLess(
+                root_text.index(sync_module.USED_INTERFACES_START),
+                root_text.index(sync_module.INTERFACES_START),
+            )
+            self.assertTrue(named_text.startswith(sync_module.USED_INTERFACES_START))
+            self.assertEqual(first[root_gateway], second[root_gateway])
+            self.assertEqual(first[named_gateway], second[named_gateway])
+
+    def test_consumer_local_block_removes_stale_and_rejects_conflicting_markers(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_consumer_marker_rules",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        stale = (
+            f"{sync_module.USED_INTERFACES_START}\nOld\n"
+            f"{sync_module.USED_INTERFACES_END}\nBody.\n"
+        )
+        self.assertEqual(
+            sync_module.sync_used_interfaces_block(stale, "", root_consumer=False),
+            "Body.\n",
+        )
+        with self.assertRaises(sync_module.BlueprintError):
+            sync_module.sync_used_interfaces_block(
+                f"{sync_module.USED_INTERFACES_START}\nUnclosed.\n",
+                "",
+                root_consumer=False,
+            )
+
+    def test_consumer_update_plan_rejects_shared_named_gateway(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_consumer_shared_gateway",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            skill = Path(temp) / "demo-skill"
+            skill.mkdir()
+            gateway = skill / "shared.md"
+            gateway.write_text("Body.\n", encoding="utf-8")
+            node = lambda: SimpleNamespace(  # noqa: E731
+                node_type="llm-interface", gateway_path=gateway, skill_root=skill
+            )
+            graph = SimpleNamespace(
+                nodes={"demo-skill.llm.one": node(), "demo-skill.llm.two": node()}
+            )
+            empty = {
+                "schema_version": 1,
+                "consumer": "demo-skill.llm.one",
+                "interfaces": {},
+                "helper_interfaces": {},
+                "llm_interfaces": {},
+                "definitions": {},
+            }
+            with self.assertRaises(sync_module.BlueprintError):
+                sync_module.plan_consumer_interface_updates(
+                    graph,
+                    {
+                        "demo-skill.llm.one": SimpleNamespace(document=empty),
+                        "demo-skill.llm.two": SimpleNamespace(
+                            document={**empty, "consumer": "demo-skill.llm.two"}
+                        ),
+                    },
+                )
 
 
 if __name__ == "__main__":

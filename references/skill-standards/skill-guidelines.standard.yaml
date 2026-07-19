@@ -370,6 +370,100 @@ standards:
 
       `DispatchCall(caller_skill=...)` statically resolves to the owning skill name.'
 - kind: family
+  id: skill-guidelines.machine-modules-v3
+  title: Machine modules and exports (version 3)
+  summary: This family is the target version 3 authority and supersedes the imported singular machine-interface guidance below for new declarations.
+  children:
+  - kind: rule
+    id: skill-guidelines.machine-modules-v3.module-boundary
+    assertions:
+    - id: one-module-many-exports
+      modality: required
+      statement: 'A `machine-module` is one implementation and certification node and may contain multiple nested, independently callable exports. The module ID is not callable, and sibling exports are not implicitly visible.'
+      atomicity: pending
+    - id: export-simple-operation
+      modality: required
+      statement: 'Each nested export is one unchanging operation with its own public version, authorization, typed invocation binding, tools, helpers, direct I/O, private ownership, and caller contract.'
+      atomicity: pending
+    - id: removed-multimode-fields
+      modality: prohibited
+      statement: 'Version 3 exports must not declare `calls`, selectors, conditional accepts, cross-argument constraints, profiles, draft or unresolved state, dispatcher consequences, or other hidden mode-family structures.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.machine-modules-v3.gateway
+    assertions:
+    - id: python-only
+      modality: required
+      statement: 'Version 3 supports only a confined `_rtx/*.py` `python-entrypoint` gateway with one symbol and the exact `officina-python-adapters@1` conformance seam.'
+      atomicity: pending
+    - id: command-future
+      modality: prohibited
+      statement: 'Do not declare command gateways in version 3. A future design may add tracked direct executables under `_cx`, but current schema or dispatcher support must not be inferred from that reserved capability.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.machine-modules-v3.binding
+    assertions:
+    - id: fixed-variants
+      modality: required
+      statement: 'Interface-level `invocation_binding.fixed` uses only typed `positional`, `option`, and `switch` entries.'
+      atomicity: pending
+    - id: argument-variants
+      modality: required
+      statement: 'Argument-level bindings use exactly one `positional`, `option`, `switch`, or `stdin` variant.'
+      atomicity: pending
+    - id: deterministic-grammar
+      modality: required
+      statement: 'Public positionals are supplied in increasing implementation position before named options and switches; the compiler deterministically merges typed fixed and public values without shell strings.'
+      atomicity: pending
+    - id: binding-forbidden
+      modality: prohibited
+      statement: 'Raw argv fragments, dispatcher-global names, secrets, caller/fixed collisions, duplicate names or positions, and conditional bindings are forbidden.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.machine-modules-v3.direct-io
+    assertions:
+    - id: interface-local
+      modality: required
+      statement: 'Every export declares `direct_io.reads`, `direct_io.writes`, and `direct_io.network`; entries describe only immediate export-local semantic I/O and are never inherited from tools or siblings.'
+      atomicity: pending
+    - id: typed-path-link
+      modality: required
+      statement: 'A filesystem entry uses exactly one literal `path` or typed argument `path_source`; a dynamic path and its argument link bidirectionally through the same `direct_io_ref`.'
+      atomicity: pending
+    - id: tmp-log-exception
+      modality: required
+      statement: 'Private relative paths beneath `tmp/` and `logs/` may be omitted only when purely ephemeral or diagnostic and unable to affect output, verification, persistence, or later invocations. Behaviorally relevant temporary or log state must be declared.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.machine-modules-v3.ownership
+    assertions:
+    - id: two-scopes
+      modality: required
+      statement: 'Module ownership authorizes every export in that module; export ownership authorizes only that export. `allowed_readers` adds exact external export IDs without granting write authority.'
+      atomicity: pending
+    - id: lexical-semantics
+      modality: required
+      statement: 'A literal path ending in `/` owns that directory subtree; another literal owns one lexical path. Glob and regex scopes match complete normalized relative paths, and escaped resolved targets are never authorized.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.machine-modules-v3.dependencies
+    assertions:
+    - id: direct-union
+      modality: required
+      statement: 'Effective tools are exactly the union of module `uses_interfaces` required by every export and the selected export''s own `uses_interfaces`; sibling and transitive tools are not inherited.'
+      atomicity: pending
+    - id: behavior-direct-only
+      modality: required
+      statement: 'Version 3 uses only direct module `behavior_sources`. Behavior-source inheritance from tools, helpers, sibling exports, or transitive dependencies is deferred.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.machine-modules-v3.certification
+    assertions:
+    - id: schema-not-certificate
+      modality: required
+      statement: 'A machine export must be structurally admissible before repository indexing. Public dispatch and LLM injection additionally require a current certificate for the selected export and pinned admissibility profile; schema acceptance alone is not certification.'
+      atomicity: pending
+- kind: family
   id: skill-guidelines.machine-interfaces
   title: Machine interfaces
   children:

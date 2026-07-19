@@ -13,9 +13,17 @@ import stat
 from typing import Any, Iterable, Mapping, Sequence
 
 import jsonschema
+import yaml
 
 from .audit_records import attach_record_authentication, record_authentication_matches
-from .blueprint_graph import BlueprintEdge, BlueprintNode, SkillBlueprintGraph
+from .blueprint_graph import (
+    BlueprintEdge,
+    BlueprintGraphError,
+    BlueprintNode,
+    RepositoryBlueprintGraph,
+    SkillBlueprintGraph,
+    resolved_node_content_paths,
+)
 from .blueprint_template import load_schema, schema_validator
 
 
@@ -55,11 +63,21 @@ class NodeHashState:
     policy_hash: str
 
 
+@dataclass(frozen=True)
+class MachineModuleHashState:
+    module_id: str
+    node_hash: str
+    contract_reference_hash: str
+    reference_digests: tuple[dict[str, str], ...]
+    dependencies: tuple[dict[str, str], ...]
+    export_ids: tuple[str, ...]
+
+
 _SCHEMA_BY_NODE_TYPE = {
-    "skill": "skill.schema.json",
-    "llm-interface": "llm-interface.schema.json",
-    "machine-interface": "machine-interface.schema.json",
-    "behavior-source": "behavior-source.schema.json",
+    "skill": "v2/skill.schema.json",
+    "llm-interface": "v2/llm-interface.schema.json",
+    "machine-interface": "v2/machine-interface.schema.json",
+    "behavior-source": "v2/behavior-source.schema.json",
 }
 _DEFAULT_CERTIFIER = {
     "interface": "skill-audit.machine.certify",
@@ -86,8 +104,30 @@ CANONICAL_GRAPH_SCHEMA_INPUTS = (
     "default-llm-interface.schema.json",
     "llm-interface.schema.json",
     "machine-interface.schema.json",
+    "machine-module.schema.json",
     "behavior-source.schema.json",
+    "caller-contract.schema.json",
+    "direct-io.schema.json",
+    "interface-conformance.schema.json",
+    "conformance-boundary-operations.schema.json",
+    "conformance-operations/common.schema.json",
+    "conformance-operations/filesystem.schema.json",
+    "conformance-operations/clock.schema.json",
+    "conformance-operations/network.schema.json",
+    "conformance-operations/helpers.schema.json",
+    "conformance-operations/subprocess.schema.json",
+    "conformance-operations/calendar.schema.json",
+    "conformance-operations/email.schema.json",
+    "interface-admissibility-profile.schema.json",
+    "interface-admissibility-result.schema.json",
+    "interface-projection.schema.json",
     "health.schema.json",
+    "v2/common.schema.json",
+    "v2/skill.schema.json",
+    "v2/default-llm-interface.schema.json",
+    "v2/llm-interface.schema.json",
+    "v2/machine-interface.schema.json",
+    "v2/behavior-source.schema.json",
     "schema.annotated-draft.json",
     "template.yaml",
 )
@@ -107,13 +147,16 @@ def blueprint_schema_hash(schema_root: Path | None = None) -> str:
         else _default_schema_root()
     )
     paths = [root / name for name in CANONICAL_GRAPH_SCHEMA_INPUTS]
-    missing = [path.name for path in paths if not path.is_file()]
+    missing = [path.relative_to(root).as_posix() for path in paths if not path.is_file()]
     if missing:
         raise ArtifactHealthError(
             f"{root}: missing blueprint schema inputs: {', '.join(missing)}"
         )
     manifest = [
-        {"path": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        {
+            "path": path.relative_to(root).as_posix(),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
         for path in paths
     ]
     return _hash_value(manifest)
@@ -135,6 +178,219 @@ def _hash_bytes(value: bytes) -> str:
 
 def _hash_value(value: Any) -> str:
     return _hash_bytes(_canonical_bytes(value))
+
+
+def _target_node_hash(node: BlueprintNode, repo_root: Path) -> str:
+    try:
+        content_paths = resolved_node_content_paths(node, repo_root)
+    except BlueprintGraphError as exc:
+        raise ArtifactHealthError(str(exc)) from exc
+    content = []
+    for path in content_paths:
+        validated = _validated_owned_input(node.skill_root, path)
+        content.append(
+            {
+                "path": validated.relative_to(node.skill_root).as_posix(),
+                "digest": _hash_bytes(validated.read_bytes()),
+            }
+        )
+    return _hash_value(
+        {
+            "blueprint": node.declaration,
+            "content": content,
+        }
+    )
+
+
+def _reference_candidates(value: object) -> tuple[tuple[str, str], ...]:
+    found: set[tuple[str, str]] = set()
+
+    def visit(current: object) -> None:
+        if isinstance(current, Mapping):
+            path = current.get("path")
+            fragment = current.get("fragment")
+            if isinstance(path, str) and isinstance(fragment, str) and fragment.startswith("#"):
+                found.add((path, fragment))
+            for key, child in current.items():
+                if (
+                    key in {"schema", "format"}
+                    and isinstance(child, str)
+                    and child.lower().endswith((".json", ".yaml", ".yml"))
+                ):
+                    found.add((child, "#"))
+                visit(child)
+        elif isinstance(current, list):
+            for child in current:
+                visit(child)
+
+    visit(value)
+    return tuple(sorted(found))
+
+
+def _resolve_reference_path(owner_root: Path, base: Path, locator: str) -> Path:
+    relative = Path(locator)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ArtifactHealthError(
+            f"reference path {locator!r} must remain under the module owner root"
+        )
+    candidate = Path(os.path.abspath(base / relative))
+    owner = Path(os.path.abspath(owner_root))
+    try:
+        candidate.relative_to(owner)
+    except ValueError as exc:
+        raise ArtifactHealthError(
+            f"reference path {locator!r} escapes the module owner root"
+        ) from exc
+    return _validated_owned_input(owner, candidate)
+
+
+def _parse_reference_document(path: Path, payload: bytes) -> object:
+    try:
+        text = payload.decode("utf-8")
+        if path.suffix == ".json" or path.name.endswith(".schema.json"):
+            return json.loads(text)
+        return yaml.safe_load(text)
+    except (UnicodeError, json.JSONDecodeError, yaml.YAMLError) as exc:
+        raise ArtifactHealthError(f"{path}: cannot parse referenced document: {exc}") from exc
+
+
+def _validate_fragment(document: object, fragment: str, path: Path) -> None:
+    if fragment in {"", "#"}:
+        return
+    if not fragment.startswith("#/"):
+        raise ArtifactHealthError(f"{path}: unsupported reference fragment {fragment!r}")
+    current = document
+    try:
+        for raw_part in fragment[2:].split("/"):
+            part = raw_part.replace("~1", "/").replace("~0", "~")
+            if isinstance(current, list):
+                current = current[int(part)]
+            elif isinstance(current, Mapping):
+                current = current[part]
+            else:
+                raise KeyError(part)
+    except (KeyError, IndexError, ValueError) as exc:
+        raise ArtifactHealthError(f"{path}: unresolved reference fragment {fragment!r}") from exc
+
+
+def _contract_reference_manifest(module: BlueprintNode) -> tuple[dict[str, str], ...]:
+    manifest = module.declaration.get("conformance_manifest")
+    if not isinstance(manifest, Mapping) or not isinstance(manifest.get("path"), str):
+        raise ArtifactHealthError(
+            f"{module.blueprint_path}: machine module requires conformance_manifest.path"
+        )
+    pending: list[tuple[Path, str, str]] = [
+        (module.skill_root, manifest["path"], "#")
+    ]
+    pending.extend(
+        (module.skill_root, path, fragment)
+        for path, fragment in _reference_candidates(module.declaration)
+        if path != manifest["path"]
+    )
+    entries: dict[str, str] = {}
+    parsed_paths: set[Path] = set()
+    while pending:
+        base, locator_path, fragment = pending.pop(0)
+        path = _resolve_reference_path(module.skill_root, base, locator_path)
+        relative = path.relative_to(module.skill_root).as_posix()
+        locator = f"{relative}{fragment}"
+        payload = path.read_bytes()
+        document = _parse_reference_document(path, payload)
+        _validate_fragment(document, fragment, path)
+        entries[locator] = _hash_bytes(payload)
+        if path in parsed_paths:
+            continue
+        parsed_paths.add(path)
+        for child_path, child_fragment in _reference_candidates(document):
+            pending.append((path.parent, child_path, child_fragment))
+        if isinstance(document, (Mapping, list)):
+            refs: list[str] = []
+
+            def collect_refs(current: object) -> None:
+                if isinstance(current, Mapping):
+                    ref = current.get("$ref")
+                    if isinstance(ref, str):
+                        refs.append(ref)
+                    for child in current.values():
+                        collect_refs(child)
+                elif isinstance(current, list):
+                    for child in current:
+                        collect_refs(child)
+
+            collect_refs(document)
+            for ref in sorted(set(refs)):
+                path_text, separator, ref_fragment = ref.partition("#")
+                if not path_text:
+                    continue
+                if "://" in path_text:
+                    raise ArtifactHealthError(
+                        f"{path}: external reference URI is unsupported: {ref}"
+                    )
+                pending.append(
+                    (path.parent, path_text, f"#{ref_fragment}" if separator else "#")
+                )
+    return tuple(
+        {"locator": locator, "digest": digest}
+        for locator, digest in sorted(entries.items())
+    )
+
+
+def compute_machine_module_hash_states(
+    graph: RepositoryBlueprintGraph,
+    repo_root: Path,
+) -> dict[str, MachineModuleHashState]:
+    """Compute separate module node and resolved-contract reference hashes."""
+
+    root = Path(repo_root).resolve()
+    local_hashes = {
+        node_id: _target_node_hash(node, root)
+        for node_id, node in graph.nodes.items()
+    }
+    module_ids = {
+        node_id for node_id, node in graph.nodes.items() if node.node_type == "machine-module"
+    }
+    references = {
+        module_id: _contract_reference_manifest(graph.nodes[module_id])
+        for module_id in sorted(module_ids)
+    }
+    states: dict[str, MachineModuleHashState] = {}
+    for module_id in sorted(module_ids):
+        dependencies = []
+        for edge in graph.certification_edges:
+            if edge.source_module_id != module_id:
+                continue
+            target_id = edge.target_node_id
+            item = {"target": target_id, "node_hash": local_hashes[target_id]}
+            if target_id in references:
+                item["contract_reference_hash"] = _hash_value(references[target_id])
+            dependencies.append(item)
+        export_ids = tuple(
+            sorted(
+                export.interface_id
+                for export in graph.machine_exports.values()
+                if export.module_node_id == module_id
+            )
+        )
+        states[module_id] = MachineModuleHashState(
+            module_id=module_id,
+            node_hash=local_hashes[module_id],
+            contract_reference_hash=_hash_value(references[module_id]),
+            reference_digests=references[module_id],
+            dependencies=tuple(dependencies),
+            export_ids=export_ids,
+        )
+    return states
+
+
+def machine_module_hashes_current(
+    state: MachineModuleHashState,
+    *,
+    node_hash: str,
+    contract_reference_hash: str,
+) -> bool:
+    """Return currentness only when both independently recorded hashes match."""
+
+    return state.node_hash == node_hash and state.contract_reference_hash == contract_reference_hash
 
 
 @lru_cache(maxsize=None)

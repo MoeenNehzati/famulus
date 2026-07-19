@@ -45,7 +45,8 @@ selector, or another structure rejected by `IFC-002`.
 - Modify: `tests/test_typed_blueprint_schemas.py`
 - Create: `tests/fixtures/machine_modules/records.valid.yaml`
 - Create: `tests/fixtures/machine_modules/calls.invalid.yaml`
-- Create from examples: complete simple and advanced conformance fixtures
+- Use as executable fixtures: `../examples/interface-conformance.yaml` and
+  `../examples/advanced-interface-conformance.yaml`
 - Inspect only: `skills/skill-drift/_rtx/_check_drift_state.py`,
   `skills/skill-drift/tests/test_drift_check.py`,
   `skills/skill-drift/tests/test_drift_hash.py`,
@@ -57,8 +58,9 @@ selector, or another structure rejected by `IFC-002`.
 
 - [ ] Add a fixture loader and a valid document matching
   `examples/machine-module.yaml`, including one complete export.
-- [ ] Copy the simple and advanced conformance examples into target fixtures;
-  keep them parseable in Task 1 and require full schema validity in Task 2.
+- [ ] Load the simple and advanced conformance examples directly as canonical
+  target fixtures; avoid a copied fixture set that can drift. Keep them
+  parseable in Task 1 and require full schema validity in Task 2.
 - [ ] Add one minimal negative fixture for each removed structure: `calls`,
   selector, accepts, constraints, conditional default, profile,
   draft/unresolved state, dispatcher consequences, and removed tag alternatives.
@@ -82,8 +84,8 @@ selector, or another structure rejected by `IFC-002`.
 - Create: `references/blueprint/conformance-operations/subprocess.schema.json`
 - Create: `references/blueprint/conformance-operations/calendar.schema.json`
 - Create: `references/blueprint/conformance-operations/email.schema.json`
-- Rewrite prototype: `references/blueprint/caller-contract.schema.json`
-- Consolidate: `references/blueprint/direct-io.schema.json`
+- Create: `references/blueprint/caller-contract.schema.json`
+- Create: `references/blueprint/direct-io.schema.json`
 - Modify: `references/blueprint/common.schema.json`
 - Modify: `references/blueprint/schema.json`
 - Modify: `references/blueprint/schema-meta.json`
@@ -154,18 +156,22 @@ semantic enforcement for these fields remains in later plans.
 - Test: `tests/test_blueprint_schema_metadata.py`
 - Test: `tests/test_interface_admissibility_catalog.py`
 
-**Produces:** One extended schema-meta rule catalog, a pinned admissibility
-profile, profile hash inputs, and complete diagnostic results.
+**Produces:** One schema-meta rule catalog with two discriminated entry kinds,
+a pinned admissibility profile, profile hash inputs, and complete diagnostic
+results.
 
-- [ ] Extend `schema-meta.json#/definitions/validationRule` and every catalog
-  entry with closed `version`, `phase`, `scope`, `blocks`, validator, evidence,
-  applicability, and positive/negative fixture fields. Use a closed validator
-  registry key and schema-validated `always|field-present|field-equals`
-  applicability rather than import paths. Encode every rule from
-  `04-interface-admissibility.md` in that existing catalog.
+- [ ] Make `schema-meta.json#/definitions/validationRule` a discriminated
+  `oneOf`. Add `rule_kind: repository-validation` to every existing entry while
+  retaining its current fields. Add new `rule_kind: interface-admissibility`
+  entries with closed `version`, `phase`, `scope`, `statement`, `blocks`,
+  validator, evidence, applicability, and positive/negative fixture fields.
+  Use a closed validator registry key and schema-validated
+  `always|field-present|field-equals` applicability rather than import paths.
+  Encode every rule from `04-interface-admissibility.md` in the existing
+  catalog ID namespace.
 - [ ] Add a single `machine-export-admissibility@1` profile pinning the
-  ordered rule/version set. Reject duplicate IDs and unresolved schema
-  `related_validation_rules` references.
+  ordered rule/version set. Reject non-admissibility profile members, duplicate
+  IDs, and unresolved schema `related_validation_rules` references.
 - [ ] Add diagnostic result variants `passed`, `failed`, `not-applicable`, and
   `checker-error`, stable findings, evidence, subject IDs, source hash, profile
   ID, and profile hash.
@@ -190,7 +196,9 @@ profile, profile hash inputs, and complete diagnostic results.
 **Produces:** Author-facing machine-module rules with one enforcement owner per
 machine-enforceable assertion.
 
-- [ ] Replace singular sidecar/`binding`/`usage`/`patterns` guidance with the
+- [ ] Add one authoritative v3 machine-module family that explicitly supersedes
+  the imported singular sidecar/`binding`/`usage`/`patterns` guidance for new
+  declarations. Preserve the source-fidelity history while defining the
   module/export model, invocation binding, direct-I/O scope, tool union, simple
   interface invariant, and certification/admissibility distinction.
 - [ ] Split compound assertions into atomic assertions and attach the applicable

@@ -50,10 +50,17 @@
       }
     },
     "validationRule": {
+      "oneOf": [
+        {"$ref": "#/definitions/repositoryValidationRule"},
+        {"$ref": "#/definitions/interfaceAdmissibilityRule"}
+      ]
+    },
+    "repositoryValidationRule": {
       "type": "object",
-      "required": ["description", "creation", "validator", "tests", "template", "enforcement"],
+      "required": ["rule_kind", "description", "creation", "validator", "tests", "template", "enforcement"],
       "additionalProperties": false,
       "properties": {
+        "rule_kind": {"const": "repository-validation"},
         "description": {"type": "string", "minLength": 1},
         "creation": {"type": "string", "minLength": 1},
         "validator": {"type": "string", "minLength": 1},
@@ -61,12 +68,38 @@
         "template": {"type": "string", "minLength": 1},
         "enforcement": {"$ref": "#/definitions/enforcementMetadata"}
       }
+    },
+    "ruleApplicability": {
+      "oneOf": [
+        {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "always"}}},
+        {"type": "object", "required": ["kind", "pointer"], "additionalProperties": false, "properties": {"kind": {"const": "field-present"}, "pointer": {"type": "string", "pattern": "^/"}}},
+        {"type": "object", "required": ["kind", "pointer", "value"], "additionalProperties": false, "properties": {"kind": {"const": "field-equals"}, "pointer": {"type": "string", "pattern": "^/"}, "value": {}}}
+      ]
+    },
+    "interfaceAdmissibilityRule": {
+      "type": "object",
+      "required": ["rule_kind", "version", "phase", "scope", "statement", "blocks", "validator", "evidence", "applicability", "positive_fixture", "negative_fixture"],
+      "additionalProperties": false,
+      "properties": {
+        "rule_kind": {"const": "interface-admissibility"},
+        "version": {"type": "integer", "minimum": 1},
+        "phase": {"enum": ["schema", "static", "graph", "projection", "conformance", "semantic"]},
+        "scope": {"enum": ["module", "export", "repository", "projection"]},
+        "statement": {"type": "string", "minLength": 1},
+        "blocks": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["indexing", "dispatch", "certification", "injection"]}},
+        "validator": {"enum": ["json-schema", "interface-static", "interface-graph", "interface-projection", "interface-conformance", "semantic-review"]},
+        "evidence": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "applicability": {"$ref": "#/definitions/ruleApplicability"},
+        "positive_fixture": {"type": "string", "minLength": 1},
+        "negative_fixture": {"type": "string", "minLength": 1}
+      }
     }
   },
   "x-famulus": {
     "field_metadata_ref": "schema-meta.json#/definitions/fieldMetadata",
     "validation_rule_catalog": {
       "schema-shape": {
+        "rule_kind": "repository-validation",
         "description": "Validate required fields, values, and unknown-field rejection through the selected JSON Schema.",
         "creation": "Render each typed document from its concrete schema and reject values outside that schema before graph construction.",
         "validator": "references/blueprint/schema.json",
@@ -75,6 +108,7 @@
         "enforcement": {"state": "schema", "task": "current", "acceptance": "schema", "note": "JSON Schema is the current acceptance component."}
       },
       "canonical-id": {
+        "rule_kind": "repository-validation",
         "description": "Validate skill, interface, and behavior-source IDs and namespaces.",
         "creation": "Use the canonical skill, interface, or behavior-source namespace required by the concrete schema.",
         "validator": "skills/skill-maker/validators/interface_ids.py",
@@ -83,6 +117,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "The validator accepts isolated repository fixtures through validate(repo_root)."}
       },
       "root-directory-id": {
+        "rule_kind": "repository-validation",
         "description": "Require a typed skill root ID to equal its skill directory name.",
         "creation": "Name blueprint.yaml with the exact directory skill ID.",
         "validator": "src/officina/common/blueprint_graph.py",
@@ -91,6 +126,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-graph", "note": "load_skill_blueprint_graph enforces root-directory identity."}
       },
       "version-pin": {
+        "rule_kind": "repository-validation",
         "description": "Require positive versions and exact edge-to-target version matches.",
         "creation": "Use positive versions and pin every declared edge to the target node version.",
         "validator": "skills/skill-maker/validators/blueprint_relationships.py",
@@ -99,6 +135,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "The relationship validator checks reachable fixture versions."}
       },
       "gateway-file": {
+        "rule_kind": "repository-validation",
         "description": "Require every authored node to name an existing regular file as its gateway.",
         "creation": "Name one file relative to the node ownership root and include it in the node's content patterns.",
         "validator": "skills/skill-maker/validators/blueprints.py",
@@ -107,6 +144,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Typed graph loading and source validation require an existing regular gateway file included in content."}
       },
       "content-files": {
+        "rule_kind": "repository-validation",
         "description": "Resolve every content regex to the complete set of files owned by its node and require the gateway to match.",
         "creation": "Use node-relative regular expressions that match all and only the files belonging to the node.",
         "validator": "skills/skill-maker/validators/blueprints.py",
@@ -115,6 +153,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Graph and source validation compile content expressions, resolve matching files, and require gateway inclusion."}
       },
       "content-exclusive": {
+        "rule_kind": "repository-validation",
         "description": "Require every content file to have exactly one authored node owner.",
         "creation": "Partition skill and repository files between authored nodes without overlapping content matches.",
         "validator": "skills/skill-maker/validators/blueprints.py",
@@ -123,6 +162,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Graph and source validation reject content files claimed by more than one authored node."}
       },
       "root-interface-edge": {
+        "rule_kind": "repository-validation",
         "description": "Require one canonical root and exactly one default LLM interface representation.",
         "creation": "Define default_interface inline in every version 3 skill root; version 2 readers retain legacy sidecar compatibility.",
         "validator": "references/blueprint/skill.schema.json",
@@ -131,6 +171,7 @@
         "enforcement": {"state": "schema", "task": "current", "acceptance": "schema", "note": "The typed skill schema is the current acceptance component."}
       },
       "default-interface": {
+        "rule_kind": "repository-validation",
         "description": "Treat the inline default contract as the canonical skill.llm.default interface bound to SKILL.md.",
         "creation": "Author the default contract under blueprint.yaml default_interface without a separate ID, gateway, content list, sidecar, or health record.",
         "validator": "src/officina/common/blueprint_graph.py",
@@ -139,6 +180,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-graph", "note": "Schema and graph normalization enforce one representation and root health folds the inline default into the skill."}
       },
       "relationship-edge": {
+        "rule_kind": "repository-validation",
         "description": "Resolve graph edges, target types, uniqueness, reachability, and cycles.",
         "creation": "Declare only canonical, version-pinned graph edges with a target sidecar locator where required.",
         "validator": "skills/skill-maker/validators/blueprint_relationships.py",
@@ -147,6 +189,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "The relationship validator accepts the reachable local fixture."}
       },
       "access-control": {
+        "rule_kind": "repository-validation",
         "description": "Validate allow-all and caller allowlist behavior for cross-skill interface edges.",
         "creation": "Set allow_all_skills or enumerate the permitted caller skill IDs for cross-skill use.",
         "validator": "skills/skill-maker/validators/blueprint_relationships.py",
@@ -155,6 +198,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "The relationship validator enforces current access-control rules."}
       },
       "gateway-kind": {
+        "rule_kind": "repository-validation",
         "description": "Allow Python entrypoint files under _rtx and direct command files under _cx, never inline shell strings.",
         "creation": "Use python-entrypoint for _rtx files and command-file for executable _cx files.",
         "validator": "references/blueprint/machine-interface.schema.json",
@@ -163,6 +207,7 @@
         "enforcement": {"state": "schema", "task": "current", "acceptance": "schema", "note": "The machine-interface schema selects the allowed gateway forms."}
       },
       "dispatcher-argv-pattern": {
+        "rule_kind": "repository-validation",
         "description": "Validate dispatcher argument patterns without treating them as subsystem confinement.",
         "creation": "Declare only caller-visible argv patterns and never use them as evidence of resource confinement.",
         "validator": "references/blueprint/machine-interface.schema.json",
@@ -171,6 +216,7 @@
         "enforcement": {"state": "schema", "task": "current", "acceptance": "schema", "note": "The machine-interface schema validates declared pattern shape."}
       },
       "runtime-dependency": {
+        "rule_kind": "repository-validation",
         "description": "Validate declared runtime dependency applicability and required-interface platform support through the reachable interface closure.",
         "creation": "State interface support explicitly, list non-stdlib dependencies, use each dependency platform map to declare where each dependency applies, and never claim a platform absent from a required interface.",
         "validator": "src/officina/common/blueprint_graph.py",
@@ -179,6 +225,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-graph", "note": "The machine-interface schema validates dependency applicability-map shape, and the graph contract rejects platform claims not supported by required interfaces."}
       },
       "direct-io-description": {
+        "rule_kind": "repository-validation",
         "description": "Validate descriptive immediate IO while excluding it from certified contract hashes.",
         "creation": "Describe immediate semantic IO without claiming subsystem confinement.",
         "validator": "skills/skill-maker/validators/blueprints.py",
@@ -187,6 +234,7 @@
         "enforcement": {"state": "current", "task": "Task 8", "acceptance": "isolated-validator", "note": "The source validator applies the typed direct_io schema and its descriptive, non-confinement contract."}
       },
       "filesystem-ownership": {
+        "rule_kind": "repository-validation",
         "description": "Validate machine and LLM file ownership and reader relationships.",
         "creation": "Give each writable path one owner and enumerate any authorized readers.",
         "validator": "skills/skill-maker/validators/blueprints.py",
@@ -195,6 +243,7 @@
         "enforcement": {"state": "current", "task": "Task 8", "acceptance": "isolated-validator", "note": "The source validator enforces typed filesystem ownership, reader authorization, and overlap rules."}
       },
       "behavior-source-edge": {
+        "rule_kind": "repository-validation",
         "description": "Require behavior-source edge targets, consumer-local reasons, and source-to-source edge typing.",
         "creation": "Use a version-pinned behavior-source sidecar locator and state the consumer-local reason.",
         "validator": "skills/skill-maker/validators/blueprint_relationships.py",
@@ -203,6 +252,7 @@
         "enforcement": {"state": "current", "task": "Task 8", "acceptance": "isolated-validator", "note": "The relationship validator resolves version-pinned behavior-source edges, validates target types, and rejects duplicate or cyclic edges."}
       },
       "interface-body-use": {
+        "rule_kind": "repository-validation",
         "description": "Require typed LLM and behavior-source bodies to use declared canonical interface IDs instead of bare cross-skill names.",
         "creation": "Name declared canonical interface IDs in bodies and never invoke a bare skill or direct _rtx/_cx path.",
         "validator": "skills/skill-maker/validators/dependencies.py",
@@ -211,6 +261,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "The dependency validator accepts isolated typed fixtures."}
       },
       "generated-contract-block": {
+        "rule_kind": "repository-validation",
         "description": "Require generated SKILL.md blueprint contract and interface blocks to match the canonical root and declared interfaces.",
         "creation": "Generate the contract block from the canonical root and generate the interface block from declared interfaces; do not hand-maintain either block.",
         "validator": "skills/skill-maker/validators/blueprints.py",
@@ -219,6 +270,7 @@
         "enforcement": {"state": "current", "task": "Task 8", "acceptance": "isolated-validator", "note": "Blueprint and skill-body validators compare generated contract and interface blocks with the typed root and declared interfaces."}
       },
       "gateway-sidecar-naming": {
+        "rule_kind": "repository-validation",
         "description": "Derive each version 3 hidden sidecar name deterministically from its unique gateway file.",
         "creation": "For gateway P, use dirname(P)/.basename(P).blueprint.yaml; version 3 forbids shared gateways and qualified sidecars.",
         "validator": "src/officina/common/blueprint_graph.py",
@@ -227,6 +279,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-graph", "note": "Graph loading enforces the unqualified sidecar path derived from each unique version 3 gateway."}
       },
       "content-tracked": {
+        "rule_kind": "repository-validation",
         "description": "Require every resolved content file to be tracked by the relevant Git commit.",
         "creation": "Use content patterns that resolve only to repository-relative files tracked by the captured commit.",
         "validator": "skills/skill-maker/validators/blueprints.py",
@@ -235,6 +288,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Source validation requires authored sidecars and resolved content files to be present in the Git index."}
       },
       "content-non-symlink": {
+        "rule_kind": "repository-validation",
         "description": "Require every resolved content file to be a regular file rather than a symlink.",
         "creation": "Resolve content from the owning node root and reject symlink components, symlink endpoints, and non-regular files; command gateways must also be executable under _cx.",
         "validator": "skills/skill-maker/validators/blueprints.py",
@@ -243,6 +297,7 @@
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Graph and source validation reject symlink components, symlink endpoints, non-regular content files, and invalid command-file placement or mode."}
       },
       "semantic-type": {
+        "rule_kind": "repository-validation",
         "description": "Classify the semantic role of the complete behavior-source artifact with the closed version 3 vocabulary.",
         "creation": "Choose policy, instructions, reference, configuration, preference, schema, template, example, checklist, or dataset.",
         "validator": "references/blueprint/behavior-source.schema.json",
@@ -251,6 +306,7 @@
         "enforcement": {"state": "schema", "task": "current", "acceptance": "schema", "note": "The behavior-source schema enforces the closed semantic-type vocabulary."}
       },
       "behavior-source-visibility": {
+        "rule_kind": "repository-validation",
         "description": "Restrict skill-local behavior sources to their declaring skill while making repository references visible to all skills.",
         "creation": "A node may reference its own skills/<skill>/ files or repository-root references/ files, never another skill's local behavior source; namespace ownership matches physical location.",
         "validator": "skills/skill-maker/validators/blueprint_relationships.py",
@@ -259,6 +315,7 @@
         "enforcement": {"state": "current", "task": "Task 8", "acceptance": "isolated-validator", "note": "Relationship validation permits declaring-skill local sources and repository references while rejecting direct edges to another skill's local source."}
       },
       "relationship-matrix": {
+        "rule_kind": "repository-validation",
         "description": "Allow only schema-declared edge types between typed blueprint node families.",
         "creation": "Use x-famulus.relationship_matrix as the complete source of allowed graph relations and target types.",
         "validator": "skills/skill-maker/validators/blueprint_relationships.py",
@@ -267,6 +324,7 @@
         "enforcement": {"state": "current", "task": "Task 8", "acceptance": "isolated-validator", "note": "The relationship validator loads the schema metadata matrix as the authoritative edge and target-type policy."}
       },
       "commit-backed-stamp": {
+        "rule_kind": "repository-validation",
         "description": "Require node and skill health records to carry one restorable Git source stamp for their resolved content files.",
         "creation": "Set source.vcs to git, source.commit to the captured full Git object ID, and source.input_paths to sorted repository-relative content files that are tracked, regular, non-symlink, and byte-identical in HEAD, index, and worktree.",
         "validator": "src/officina/common/artifact_health.py",
@@ -275,18 +333,67 @@
         "enforcement": {"state": "current", "task": "Task 5", "acceptance": "isolated-graph", "note": "Artifact-health production and admission require authenticated node-local source metadata tied to a restorable Git commit."}
       },
       "canonical-pooled-review": {
+        "rule_kind": "repository-validation",
         "description": "Keep pooled review derived, generated, and non-authoritative with respect to the canonical blueprint graph and node health.",
         "creation": "Render a pooled review only from one canonical root, reachable typed sidecars, and authenticated health records; never use it to declare graph edges or replace node health.",
         "validator": "src/officina/common/pooled_blueprint.py",
         "tests": ["tests/test_officina_pooled_blueprint.py"],
         "template": "The template has no pooled-review input because pooled review is generated after canonical graph and health validation.",
         "enforcement": {"state": "current", "task": "Task 9", "acceptance": "isolated-graph", "note": "Pooled review generation and health admission use the exact canonical graph and admitted node records without affecting canonical health."}
-      }
+      },
+      "interface.document.closed@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "schema", "scope": "module", "statement": "No unknown, deprecated, profile, draft, call-family, or dispatcher-consequence fields are authored.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "json-schema", "evidence": ["blueprint"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.identity.canonical@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "graph", "scope": "module", "statement": "Module, export, and local IDs and versions are canonical and unique.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-graph", "evidence": ["normalized-module"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.arguments.type-complete@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "schema", "scope": "export", "statement": "Every argument and recursive subtype has all kind-specific authored fields.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "json-schema", "evidence": ["contract.arguments"], "applicability": {"kind": "field-present", "pointer": "/contract/arguments"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.arguments.defaults-valid@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "static", "scope": "export", "statement": "Required, default, and fixed values are compatible and type-valid.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-static", "evidence": ["contract.arguments", "invocation-binding"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.arguments.io-linked@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "static", "scope": "export", "statement": "Filesystem arguments and dynamic direct-I/O paths have exact bidirectional typed references.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-static", "evidence": ["contract.arguments", "direct-io"], "applicability": {"kind": "field-present", "pointer": "/contract/arguments"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.binding.total@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "static", "scope": "export", "statement": "Every public value has one binding and every declared fixed parameter compiles.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-static", "evidence": ["compiled-binding"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.binding.unambiguous@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "static", "scope": "export", "statement": "Binding positions and names are unique and contain no fixed, caller, or dispatcher-option collision or raw argv fragment.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-static", "evidence": ["compiled-binding"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.binding.dispatch-order@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "static", "scope": "export", "statement": "The compiled binding has one positional-first, named-after terminal form.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-static", "evidence": ["compiled-binding"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.references.resolved@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "graph", "scope": "module", "statement": "Every schema, resource, I/O, output, outcome, helper, and verification reference resolves with the required type and version.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-graph", "evidence": ["normalized-module", "resolved-references"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.outputs.structured@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "schema", "scope": "export", "statement": "Output IDs, channels, framing, types, schemas, cardinality, and empty meaning are usable.", "blocks": ["certification", "injection"], "validator": "json-schema", "evidence": ["contract.outputs"], "applicability": {"kind": "field-present", "pointer": "/contract/outputs"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.outputs.io-linked@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "static", "scope": "export", "statement": "Every output resolves to a channel-compatible immediate direct-I/O write.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-static", "evidence": ["contract.outputs", "direct-io"], "applicability": {"kind": "field-present", "pointer": "/contract/outputs"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.outcomes.structured@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "static", "scope": "export", "statement": "Outcome IDs, classes, signals, references, actions, and structural coverage are valid.", "blocks": ["certification", "injection"], "validator": "interface-static", "evidence": ["contract.outcomes"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.execution.axes-consistent@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "schema", "scope": "export", "statement": "Effect and lifecycle axes admit exactly their applicable conditional blocks.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "json-schema", "evidence": ["contract.execution"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.execution.decisions-valid@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "static", "scope": "export", "statement": "Tagged execution decisions use one allowed tag and satisfy retry and verification constraints.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-static", "evidence": ["contract.execution"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.effects.io-consistent@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "static", "scope": "export", "statement": "Effects and verification point to compatible declared I/O, outputs, helpers, and outcomes.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-static", "evidence": ["contract.execution", "direct-io"], "applicability": {"kind": "field-equals", "pointer": "/contract/execution/state_effect", "value": "mutating"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.effects.outcome-inverse@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "static", "scope": "export", "statement": "Outcome effect lists and effect occurrence sets are exact inverses.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-static", "evidence": ["contract.execution.effects", "contract.outcomes"], "applicability": {"kind": "field-equals", "pointer": "/contract/execution/state_effect", "value": "mutating"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.ownership.authorized@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "graph", "scope": "module", "statement": "Writes are within shared or private authority and ownership scopes do not overlap.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-graph", "evidence": ["ownership", "direct-io"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.dependencies.direct@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "graph", "scope": "export", "statement": "Effective tools are exactly the direct module and interface union without sibling or transitive inheritance.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-graph", "evidence": ["dependency-graph"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.dependencies.authorized@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "graph", "scope": "export", "statement": "Target IDs, versions, platforms, and caller permissions resolve and permit every edge.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-graph", "evidence": ["dependency-graph", "authorization"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.helpers.well-bound@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "graph", "scope": "export", "statement": "Helpers are direct, bounded, acyclic, type-compatible, safely routed, and contain no fixed secrets.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-graph", "evidence": ["helpers", "dependency-graph"], "applicability": {"kind": "field-present", "pointer": "/helpers"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.sensitivity.transport-safe@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "static", "scope": "export", "statement": "Secrets and credentials are absent from argv, fixed values, examples, and generated usage.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-static", "evidence": ["contract.arguments", "compiled-binding"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.direct-io.internal-path-safe@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "static", "scope": "export", "statement": "Implicit temporary and log paths are relative, traversal-free, and confined.", "blocks": ["indexing", "dispatch", "certification", "injection"], "validator": "interface-static", "evidence": ["direct-io"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.preconditions.structured@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "schema", "scope": "export", "statement": "Preconditions have stable IDs, checks, unmet outcomes, and caller actions.", "blocks": ["certification", "injection"], "validator": "json-schema", "evidence": ["contract.preconditions"], "applicability": {"kind": "field-present", "pointer": "/contract/preconditions"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.interaction.structured@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "schema", "scope": "export", "statement": "Interaction mode, channels, unattended outcome, timeout, and cancellation satisfy the selected mode.", "blocks": ["certification", "injection"], "validator": "json-schema", "evidence": ["contract.interaction"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.version.breaking-change@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "graph", "scope": "export", "statement": "Mechanically known breaking differences from the previous certified contract have a higher public version.", "blocks": ["certification", "injection"], "validator": "interface-graph", "evidence": ["previous-certificate", "normalized-export"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.injection.closed@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "projection", "scope": "projection", "statement": "Projection contains only the consumer-selected exports, bounded helpers, and required definitions.", "blocks": ["injection"], "validator": "interface-projection", "evidence": ["consumer-projection"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/injected-interface.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.injection.export-size-bounded@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "projection", "scope": "projection", "statement": "One export validation-equivalent projection is at most 12288 UTF-8 bytes without truncation.", "blocks": ["certification", "injection"], "validator": "interface-projection", "evidence": ["export-projection-bytes"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/injected-interface.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.injection.consumer-size-bounded@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "projection", "scope": "projection", "statement": "One consumer combined projection is at most 16384 UTF-8 bytes without truncation.", "blocks": ["injection"], "validator": "interface-projection", "evidence": ["consumer-projection-bytes"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/injected-llm-interfaces.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.gateway.accepts-binding@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "conformance", "scope": "export", "statement": "Representative, empty, boundary, and invalid invocations reach the declared parser outcomes.", "blocks": ["certification"], "validator": "interface-conformance", "evidence": ["conformance-cases"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/interface-conformance.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.gateway.enforces-fixed-values@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "conformance", "scope": "export", "statement": "Callers cannot override or duplicate fixed parameters.", "blocks": ["certification"], "validator": "interface-conformance", "evidence": ["runner-generated-binding-cases"], "applicability": {"kind": "field-present", "pointer": "/invocation_binding/fixed"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-interface-conformance.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.outputs.conform@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "conformance", "scope": "export", "statement": "Captured streams satisfy declared channel, encoding, framing, type, and schema.", "blocks": ["certification"], "validator": "interface-conformance", "evidence": ["captured-streams"], "applicability": {"kind": "field-present", "pointer": "/contract/outputs"}, "positive_fixture": "docs/plans/machine-module-contract/examples/interface-conformance.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.outcomes.conform@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "conformance", "scope": "export", "statement": "Fixtures for applicable terminal cases produce declared signals and references.", "blocks": ["certification"], "validator": "interface-conformance", "evidence": ["conformance-cases"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/interface-conformance.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.lifecycle.conform@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "conformance", "scope": "export", "statement": "Finite and long-running fixtures satisfy declared termination, readiness, stop, and cleanup behavior.", "blocks": ["certification"], "validator": "interface-conformance", "evidence": ["lifecycle-observations"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-interface-conformance.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.effects.conform@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "conformance", "scope": "export", "statement": "Controlled probes observe declared effects and confirmation evidence.", "blocks": ["certification"], "validator": "interface-conformance", "evidence": ["effect-observations"], "applicability": {"kind": "field-equals", "pointer": "/contract/execution/state_effect", "value": "mutating"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-interface-conformance.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.protected-file.conform@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "conformance", "scope": "export", "statement": "Covered fixtures demonstrate no-follow and owner-private handling on every supported platform claimed by a protected-file export.", "blocks": ["certification"], "validator": "interface-conformance", "evidence": ["protected-file-platform-cases"], "applicability": {"kind": "field-present", "pointer": "/contract/arguments"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-interface-conformance.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.boundary.covered@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "conformance", "scope": "module", "statement": "The injected seam and sandbox demonstrate interception of every boundary used by effect or absence claims.", "blocks": ["certification"], "validator": "interface-conformance", "evidence": ["sandbox-boundary-coverage"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-interface-conformance.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.semantic.single-operation@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "semantic", "scope": "export", "statement": "The export is one coherent operation and not a hidden mode family.", "blocks": ["certification"], "validator": "semantic-review", "evidence": ["implementation", "contract", "tests"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.semantic.argument-independent@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "semantic", "scope": "export", "statement": "No public argument changes another argument's meaning, legality, authorization, effects, or interpretation.", "blocks": ["certification"], "validator": "semantic-review", "evidence": ["implementation", "contract", "tests"], "applicability": {"kind": "field-present", "pointer": "/contract/arguments"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.semantic.descriptions-exact@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "semantic", "scope": "module", "statement": "Module, interface, argument, output, and outcome prose accurately describes behavior.", "blocks": ["certification"], "validator": "semantic-review", "evidence": ["implementation", "contract", "tests"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.semantic.outcomes-complete@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "semantic", "scope": "export", "statement": "Caller-visible terminal and uncertain-completion cases are complete and nonmisleading.", "blocks": ["certification"], "validator": "semantic-review", "evidence": ["implementation", "contract", "tests"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.semantic.io-complete@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "semantic", "scope": "export", "statement": "Direct I/O, effects, ownership, helpers, and direct tools omit no relevant behavior.", "blocks": ["certification"], "validator": "semantic-review", "evidence": ["implementation", "contract", "tests"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.semantic.sensitivity-correct@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "semantic", "scope": "export", "statement": "Sensitivity classifications and transport choices match the substantive data.", "blocks": ["certification"], "validator": "semantic-review", "evidence": ["implementation", "contract", "tests"], "applicability": {"kind": "field-present", "pointer": "/contract/arguments"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.semantic.execution-accurate@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "semantic", "scope": "export", "statement": "Consistency, atomicity, concurrency, idempotency, partial effects, rollback, lifecycle, and verification claims are true.", "blocks": ["certification"], "validator": "semantic-review", "evidence": ["implementation", "contract", "tests"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.semantic.invocation-compatible@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "semantic", "scope": "export", "statement": "Fixed and public ordering and encoding preserve the gateway operation's meaning.", "blocks": ["certification"], "validator": "semantic-review", "evidence": ["implementation", "compiled-binding", "tests"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.semantic.preconditions-complete@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "semantic", "scope": "export", "statement": "All material preconditions and caller actions are represented.", "blocks": ["certification"], "validator": "semantic-review", "evidence": ["implementation", "contract", "tests"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.semantic.interaction-accurate@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "semantic", "scope": "export", "statement": "Prompting, unattended behavior, timeout, cancellation, and warning claims match behavior.", "blocks": ["certification"], "validator": "semantic-review", "evidence": ["implementation", "contract", "tests"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/advanced-machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"},
+      "interface.semantic.version-compatible@1": {"rule_kind": "interface-admissibility", "version": 1, "phase": "semantic", "scope": "export", "statement": "Ambiguous public-contract changes are classified correctly as breaking or nonbreaking.", "blocks": ["certification"], "validator": "semantic-review", "evidence": ["previous-certificate", "contract", "review"], "applicability": {"kind": "always"}, "positive_fixture": "docs/plans/machine-module-contract/examples/machine-module.yaml", "negative_fixture": "tests/fixtures/machine_modules/calls.invalid.yaml"}
     },
     "relationship_matrix": {
-      "skill": {"declares-interface": ["llm-interface", "machine-interface"]},
-      "llm-interface": {"uses-interface": ["llm-interface", "machine-interface"], "uses-behavior-source": ["behavior-source"]},
+      "skill": {"declares-interface": ["llm-interface", "machine-interface", "machine-module"]},
+      "llm-interface": {"uses-interface": ["llm-interface", "machine-interface", "machine-module"], "uses-behavior-source": ["behavior-source"]},
       "machine-interface": {"uses-interface": ["machine-interface"], "uses-behavior-source": ["behavior-source"]},
+      "machine-module": {"uses-interface": ["machine-module"], "uses-behavior-source": ["behavior-source"]},
       "behavior-source": {"uses-interface": ["llm-interface", "machine-interface"], "uses-behavior-source": ["behavior-source"]}
     },
     "behavior_source_visibility": {"skill_local": "declaring-skill-only", "repository_references": "all-skills"}

@@ -23,10 +23,15 @@ must resolve to exactly one catalog rule. Do not introduce a second catalog.
 Add `references/blueprint/interface-admissibility.profile.yaml` only to pin the
 ordered rule IDs and versions required for certification.
 
-Each `schema-meta.json` rule has this closed shape:
+The catalog accepts two closed entry kinds under one ID namespace. Existing
+entries gain `rule_kind: repository-validation` and otherwise retain their
+current description/creation/validator/tests/template/enforcement contract.
+They are not certification-profile members. New profile-executable entries use
+`rule_kind: interface-admissibility` and this closed shape:
 
 ```yaml
 interface.binding.unambiguous:
+  rule_kind: interface-admissibility
   version: 1
   phase: static
   scope: interface
@@ -39,6 +44,11 @@ interface.binding.unambiguous:
     positive: [tests/fixtures/interface_admissibility/binding-unambiguous.valid.yaml]
     negative: [tests/fixtures/interface_admissibility/binding-option-collision.invalid.yaml]
 ```
+
+`schema-meta.json#/definitions/validationRule` is a discriminated `oneOf` over
+`repository-validation` and `interface-admissibility`. A certification profile
+may reference only `interface-admissibility` entries. Rule IDs remain globally
+unique, so every schema `related_validation_rules` reference has one owner.
 
 Phases are `schema`, `static`, `conformance`, `semantic`, and `advisory`.
 Scopes are `module`, `interface`, or `repository`. `validator` is a closed
@@ -333,12 +343,15 @@ A profile or rule-version change makes earlier certificates suspect even when
 module content is unchanged. The profile/catalog must therefore be included in
 the certifier's behavior roots or bound explicitly as above; relying only on the
 certifier node hash is insufficient when the catalog changes independently.
-Module `node_hash` includes the blueprint, runtime content, conformance-manifest
-bytes, and the resolved definition closure. Certificate status and projection
-re-resolve every locator no-follow and compare the canonical digest map; any
+Module `node_hash` includes only the canonical blueprint and node-owned runtime
+`content`. A separate `contract_reference_hash` hashes the canonical ordered
+locator/digest map for the conformance manifest and complete resolved definition
+closure; each digest commits the referenced bytes. Certificate status and
+projection re-resolve every locator no-follow and compare both hashes. Any
 missing, moved, or changed referenced byte makes the certificate suspect before
-dispatch or injection. `behavior_sources` remains for explanatory evidence and
-is not required merely to make contract references current.
+dispatch or injection without conflating reference drift with node identity.
+`behavior_sources` remains for explanatory evidence and is not required merely
+to make contract references current.
 
 Current `health.schema.json` is read-only legacy input during migration. Do not
 dual-write admissibility results into it. Compatibility reporting may derive a

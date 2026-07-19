@@ -52,6 +52,9 @@ from typing import Any, Iterator, Mapping, Sequence
 
 import yaml
 
+from .common.blueprint_inventory import BlueprintInventoryError
+from .common.blueprint_inventory import iter_blueprints as iter_inventory_blueprints
+
 
 class BlueprintSearchError(ValueError):
     """Raised when blueprint discovery, parsing, or query evaluation fails."""
@@ -94,11 +97,23 @@ def iter_blueprints(
     if not skills_dir.exists():
         raise BlueprintSearchError(f"{skills_dir}: missing skills directory")
 
-    for blueprint_path in sorted(skills_dir.glob("*/blueprint.yaml"), key=_skill_sort_key):
-        skill = blueprint_path.parent.name
+    try:
+        documents = tuple(iter_inventory_blueprints(root))
+    except BlueprintInventoryError as exc:
+        raise BlueprintSearchError(str(exc)) from exc
+    for document in documents:
+        relative = document.relative_path
+        if len(relative.parts) != 3 or relative.parts[0] != "skills" or relative.name != "blueprint.yaml":
+            continue
+        skill = relative.parts[1]
         if skill.startswith(".") and not include_hidden:
             continue
-        yield load_blueprint_record(blueprint_path, repo_root=root, skill=skill)
+        yield BlueprintRecord(
+            skill=skill,
+            path=relative.as_posix(),
+            data=dict(document.declaration),
+            raw=document.path.read_text(encoding="utf-8"),
+        )
 
 
 def load_blueprint_record(

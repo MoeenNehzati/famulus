@@ -32,12 +32,12 @@ _spec.loader.exec_module(_mod)
 _DISPATCHER_CONTEXT_MARKERS = [
     "## Skill dispatcher",
     "treat `scripts/` as private",
-    "read them only when necessary with user approval",
-    "Use the interfaces declared in the injected SKILL.md contract",
-    "dispatcher --caller-skill <caller> <interface-id> [args...]",
-    "Use `--dry-run` to preview.",
-    "If rejected, report the rejection; do not bypass the dispatcher.",
-    "use `skill-maker`, loading it only when skill work begins",
+    "read only with approval",
+    "Use injected interfaces, not blueprint.yaml",
+    "dispatcher --caller-skill <skill> [--dry-run] <interface-id> <arguments>",
+    "Dry-run prints compiled argv without gateway execution or stdin reads.",
+    "Supply positionals first in position order",
+    "Dispatcher adds fixed arguments; do not supply them.",
 ]
 
 
@@ -46,6 +46,8 @@ def _assert_dispatcher_context(text: str) -> None:
     assert missing == []
     assert "<callee> <interface-id>" not in text
     assert len(text) <= 750
+    assert text.count("--caller-skill") == 1
+    assert text.count("--dry-run") == 1
 
 
 def _available(*, cli: bool = True, pkg: bool = True):
@@ -101,6 +103,33 @@ class TestHookMetadata:
 
 
 class TestOutputs:
+    def test_vocabulary_is_deduplicated_conditional_and_bounded(self):
+        text = _mod.render_dispatcher_context(
+            {
+                "arity:required": 5,
+                "arity:zero-or-more": 3,
+                "arity:one-or-more": 2,
+                "arity:optional": 1,
+                "binding:switch": 1,
+                "type:enum": 1,
+                "binding:stdin": 4,
+                "provider-skill-route": 3,
+            }
+        )
+        assert len(_mod.DISPATCHER_CORE) <= 500
+        assert len(text) <= 750
+        assert text.count("--stdin") == 1
+        assert text.count("provider-skill") == 1
+        assert text.count("[<x>...]") <= 1
+        assert text.count("<x>...") <= 2
+        assert "tmp" not in text
+        assert "retry" not in text
+
+    def test_no_selected_stdin_or_route_omits_optional_terms(self):
+        text = _mod.render_dispatcher_context({"arity:required": 1})
+        assert "--stdin" not in text
+        assert "provider-skill" not in text
+
     def test_codex_output_is_nested_hook_specific_output(self):
         hook = _mod.InjectDispatcherContextHook()
         with _available():

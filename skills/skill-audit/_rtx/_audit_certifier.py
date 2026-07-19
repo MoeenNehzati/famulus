@@ -18,6 +18,8 @@ from typing import Any, Mapping, Protocol, Sequence
 import yaml
 
 from officina.common.artifact_health import (
+    CANONICAL_GRAPH_SCHEMA_INPUTS,
+    POOLED_REVIEW_SCHEMA_INPUTS,
     GraphHealthReport,
     NodeHealthStatus,
     blueprint_schema_hash,
@@ -64,19 +66,8 @@ AUDIT_RECORD_NAME = ".last_audit.json"
 OUTPUT_SCHEMA_VERSION = 1
 TEXT_FILE_SUFFIXES = {".md", ".markdown", ".py", ".txt", ".yaml", ".yml", ".json"}
 REQUIRED_SCHEMA_INPUTS = (
-    "behavior-source.schema.json",
-    "common.schema.json",
-    "default-llm-interface.schema.json",
-    "health.schema.json",
-    "legacy-skill.schema.json",
-    "llm-interface.schema.json",
-    "machine-interface.schema.json",
-    "pooled-review.schema.json",
-    "schema.annotated-draft.json",
-    "schema.json",
-    "schema-meta.json",
-    "skill.schema.json",
-    "template.yaml",
+    *CANONICAL_GRAPH_SCHEMA_INPUTS,
+    *POOLED_REVIEW_SCHEMA_INPUTS,
 )
 POOL_STATUSES = frozenset({"reused", "written", "not-written", "failed"})
 IMPLICIT_DIRECTORY_PATTERNS = (

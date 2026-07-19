@@ -1,0 +1,11 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "conformance-operations/clock.schema.json",
+  "definitions": {
+    "nowRequest": {"type": "object", "required": ["operation_version", "parameters"], "additionalProperties": false, "properties": {"operation_version": {"const": 1}, "parameters": {"type": "object", "additionalProperties": false}}},
+    "nowSuccess": {"type": "object", "required": ["ok", "result"], "additionalProperties": false, "properties": {"ok": {"const": true}, "result": {"type": "object", "required": ["instant"], "additionalProperties": false, "properties": {"instant": {"type": "string", "format": "date-time"}}}}},
+    "advanceRequest": {"type": "object", "required": ["operation_version", "parameters"], "additionalProperties": false, "properties": {"operation_version": {"const": 1}, "parameters": {"type": "object", "required": ["seconds"], "additionalProperties": false, "properties": {"seconds": {"type": "number", "exclusiveMinimum": 0}}}}},
+    "advanceSuccess": {"$ref": "#/definitions/nowSuccess"},
+    "error": {"$ref": "common.schema.json#/definitions/error"}
+  }
+}

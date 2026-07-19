@@ -19,10 +19,11 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import stat
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import yaml
 
@@ -35,12 +36,15 @@ if str(SRC_ROOT) not in sys.path:
 from officina.runtime.python_machine_interface import PythonMachineInterface
 from officina.runtime.python_machine_interface_runner import run_python_machine_interface
 from officina.common.blueprint_graph import expanded_legacy_blueprint, load_skill_blueprint_graph
+from officina.common.atomic_files import atomic_replace_bytes
 
 SKILLS_ROOT = REPO_ROOT / "skills"
 CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
 CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
 INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
+USED_INTERFACES_START = "<!-- BEGIN BLUEPRINT USED INTERFACES -->"
+USED_INTERFACES_END = "<!-- END BLUEPRINT USED INTERFACES -->"
 RUNTIME_DEPENDENCIES_PATH = REPO_ROOT / "references" / "blueprint" / "runtime_dependencies.json"
 BLUEPRINT_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
 DEPENDENCY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+\-\[\]]*$")
@@ -799,6 +803,122 @@ def sync_interface_block(text: str, interface_block: str) -> str:
         raise BlueprintError("SKILL.md: missing YAML frontmatter for interface injection")
     updated = text[: frontmatter_match.end()] + interface_block + text[frontmatter_match.end() :]
     return re.sub(r"\n{3,}", "\n\n", updated)
+
+
+def generated_used_interfaces_block(document: Mapping[str, Any]) -> str:
+    """Render one canonical consumer-local YAML block, or empty text."""
+
+    selected = any(
+        bool(document.get(field))
+        for field in ("interfaces", "helper_interfaces", "llm_interfaces")
+    )
+    if not selected:
+        return ""
+    payload = yaml.safe_dump(
+        dict(document),
+        sort_keys=True,
+        allow_unicode=True,
+        default_flow_style=False,
+    ).rstrip()
+    return "\n".join(
+        [
+            USED_INTERFACES_START,
+            "> Generated consumer-local interface contracts. Do not edit this block by hand.",
+            "",
+            "```yaml",
+            payload,
+            "```",
+            USED_INTERFACES_END,
+            "",
+        ]
+    )
+
+
+def sync_used_interfaces_block(
+    text: str,
+    block: str,
+    *,
+    root_consumer: bool,
+) -> str:
+    """Replace/remove one used-interface block with deterministic placement."""
+
+    start_count = text.count(USED_INTERFACES_START)
+    end_count = text.count(USED_INTERFACES_END)
+    if start_count != end_count or start_count > 1:
+        raise BlueprintError("conflicting generated used-interface markers")
+    if start_count == 1:
+        pattern = re.compile(
+            rf"{re.escape(USED_INTERFACES_START)}.*?{re.escape(USED_INTERFACES_END)}\n?",
+            re.DOTALL,
+        )
+        text = pattern.sub(lambda _match: block, text, count=1)
+        return re.sub(r"\n{3,}", "\n\n", text)
+    if not block:
+        return text
+    if root_consumer:
+        matches = list(re.finditer(re.escape(CONTRACT_END), text))
+        if len(matches) != 1:
+            raise BlueprintError("SKILL.md must contain exactly one blueprint contract block")
+        end = matches[0].end()
+        suffix = text[end:]
+        suffix = suffix.lstrip("\n")
+        return text[:end] + "\n" + block + suffix
+    return block + text
+
+
+def plan_consumer_interface_updates(
+    repository_graph: Any,
+    projections: Mapping[str, Any],
+) -> dict[Path, str]:
+    """Plan all consumer gateway contents before any write occurs."""
+
+    planned: dict[Path, str] = {}
+    owners: dict[Path, str] = {}
+    for consumer_id, projection in sorted(projections.items()):
+        node = repository_graph.nodes.get(consumer_id)
+        if node is None or node.node_type != "llm-interface":
+            raise BlueprintError(f"unknown LLM consumer {consumer_id!r}")
+        gateway = node.gateway_path
+        if gateway is None:
+            raise BlueprintError(f"{consumer_id}: missing gateway")
+        owner = node.skill_root.resolve()
+        absolute = Path(gateway).resolve(strict=False)
+        try:
+            absolute.relative_to(owner)
+        except ValueError as exc:
+            raise BlueprintError(f"{consumer_id}: gateway escapes owner boundary") from exc
+        prior = owners.get(absolute)
+        if prior is not None and prior != consumer_id:
+            raise BlueprintError(
+                f"gateway {absolute} is shared by consumers {prior!r} and {consumer_id!r}"
+            )
+        if not absolute.is_file():
+            raise BlueprintError(f"{consumer_id}: gateway is missing: {absolute}")
+        owners[absolute] = consumer_id
+        document = projection.document if hasattr(projection, "document") else projection
+        if not isinstance(document, Mapping):
+            raise BlueprintError(f"{consumer_id}: projection document must be a mapping")
+        block = generated_used_interfaces_block(document)
+        current = absolute.read_text(encoding="utf-8")
+        planned[absolute] = sync_used_interfaces_block(
+            current,
+            block,
+            root_consumer=consumer_id.endswith(".llm.default"),
+        )
+    return planned
+
+
+def apply_consumer_interface_updates(planned: Mapping[Path, str]) -> None:
+    """Atomically apply a previously complete consumer update plan."""
+
+    for path, text in sorted(planned.items(), key=lambda item: item[0].as_posix()):
+        mode = stat.S_IMODE(path.stat().st_mode)
+        atomic_replace_bytes(
+            path,
+            text.encode("utf-8"),
+            allowed_root=path.parent,
+            mode=mode,
+        )
 
 
 def strip_legacy_contract_metadata(text: str) -> str:

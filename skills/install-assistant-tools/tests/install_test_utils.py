@@ -19,11 +19,11 @@ from urllib.parse import urlparse
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 DISPATCHER_CONTEXT_MARKERS = [
-    "## Skill System",
-    "Do not invoke these scripts directly.",
-    "dispatcher --caller-skill <caller> <callee> <interface-id> [args...]",
-    "Use --dry-run to preview without executing.",
-    "`skill-maker` skill",
+    "## Skill dispatcher",
+    "treat `scripts/` as private",
+    "dispatcher --caller-skill <skill> [--dry-run] <interface-id> <arguments>",
+    "Dry-run prints compiled argv without gateway execution or stdin reads.",
+    "Dispatcher adds fixed arguments; do not supply them.",
 ]
 
 

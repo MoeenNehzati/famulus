@@ -7,9 +7,10 @@ drafts; those drafts are superseded and are not retained separately.
 
 ## Status
 
-The target design is consolidated but remains a reviewed draft until the
-cross-cutting corrections recorded in this package are resolved. Implementation
-has not started. The repository still contains the singular v3
+The target design is consolidated. The currentness contract keeps
+blueprint/runtime identity in `node_hash` and binds resolved conformance and
+definition evidence through a separate `contract_reference_hash`; certificates
+require both. The repository still contains the singular v3
 `machine-interface` schema and stale earlier blueprint declarations; those
 declarations are not design authority. The target v3 machine-module architecture
 exists only in this plan package.

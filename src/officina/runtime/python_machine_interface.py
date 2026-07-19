@@ -19,6 +19,7 @@ class DispatchCall:
     caller_skill: str
     target_skill: str
     interface: str
+    version: int = 1
     smoke_args: tuple[str, ...] = ("--route-smoke",)
     smoke_stdin: bool = False
 
@@ -99,6 +100,7 @@ class DispatchDependencyResolver:
             script_interface=call.interface,
             args=list(call.smoke_args),
             stdin_requested=call.smoke_stdin,
+            target_version=call.version,
             repo_root=self.repo_root,
         )
 
@@ -225,6 +227,7 @@ class PythonMachineInterface:
             script_interface=call.interface,
             args=list(args or []),
             stdin=stdin,
+            target_version=call.version,
             timeout=timeout,
             capture_output=capture_output,
             check=check,
