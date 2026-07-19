@@ -1,0 +1,259 @@
+schema_version: 3
+node_type: machine-module
+id: example-skill.machine-module.advanced-worker
+version: 1
+description: Implements state updates, event watching, and account inspection.
+gateway:
+  kind: python-entrypoint
+  path: _rtx/_advanced_worker.py
+  symbol: Interface
+  args_prefix: []
+  conformance:
+    adapter_protocol: officina-python-adapters@1
+    bind_method: bind_conformance_adapters
+    sandbox_profile: officina-isolated-effects@1
+content: ['_rtx/_advanced_worker\.py']
+conformance_manifest:
+  base: skill-root
+  path: advanced-interface-conformance.yaml
+platform_support: {linux: true, macos: true, windows: true}
+dependencies: []
+behavior_sources: []
+owns_filesystem:
+  - path: state/
+    syntax: literal
+    allowed_readers: []
+uses_interfaces: []
+interfaces:
+  update-record:
+    id: example-skill.machine.update-record
+    version: 1
+    description: Replace one record from a JSON input file.
+    allow_all_skills: false
+    allowed_callers: [example-skill]
+    invocation_binding:
+      fixed:
+        - {kind: positional, position: 0, value: update, type: {kind: string, format: {named: literal}}}
+    uses_interfaces: []
+    helpers: []
+    direct_io:
+      reads:
+        - {id: input-read, medium: local-filesystem, access: read, system: filesystem, content: document, format: json, path_source: {kind: argument, argument_ref: input-file}, sensitivity: user-private}
+      writes:
+        - {id: state-write, medium: local-filesystem, access: write, system: filesystem, content: metadata, format: json, path: state/records.json, sensitivity: derived-private}
+        - {id: receipt-stdout, medium: stdout, access: write, content: metadata, format: json, sensitivity: derived-private}
+      network: []
+    owns_filesystem: []
+    contract:
+      arguments:
+        input-file:
+          description: JSON file containing exactly one replacement record.
+          required: true
+          sensitivity: public
+          invocation_binding: {kind: positional, position: 1, arity: {minimum: 1, maximum: 1}}
+          direct_io_ref: input-read
+          type:
+            kind: file
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: true
+            access: read
+            content_type:
+              kind: string
+              sensitivity: user-private
+              description: Exactly one JSON record object.
+              format: {named: json}
+              schema: {path: record.schema.json, fragment: '#'}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+        - external-side-effect: Replaces persistent record state.
+      outputs:
+        - id: receipt
+          channel: stdout
+          audience: machine
+          encoding: utf-8
+          framing: exactly-one-json-document
+          description: Receipt identifying the stored revision.
+          schema: {path: record-receipt.schema.json, fragment: '#'}
+          direct_io_ref: receipt-stdout
+          cardinality: {minimum: 1, maximum: 1}
+          ordering: stable
+          pagination: {kind: none}
+          truncation: {kind: none}
+          empty: Never empty on success.
+      outcomes:
+        - id: success
+          class: success
+          signal: {exit_codes: [0]}
+          outputs: [receipt]
+          effects: [state-write]
+          caller_action: Store the receipt if later compensation may be needed.
+        - id: operational-failure
+          class: error
+          signal: {exit_codes: [1]}
+          outputs: []
+          effects: [state-write]
+          caller_action: Report uncertain completion and do not retry automatically.
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency:
+          snapshot: The input file is read once before writing.
+        effects:
+          - id: state-write
+            direct_io_ref: state-write
+            action: update
+            value_source: {kind: argument, argument_ref: input-file}
+            may_occur_in_outcomes: [success, operational-failure]
+            confirmation_evidence: {kind: output, output_ref: receipt}
+            reversibility:
+              irreversible: No prior-value archive is retained.
+        mutation_safety:
+          atomicity: {atomic: The target file replacement is atomic.}
+          concurrent_invocations: {unsafe: Last completed writer wins.}
+          idempotency: {idempotent: Repeating the same input stores the same value.}
+          on_uncertain_completion: {stop: This interface provides no safe post-failure verifier; report uncertainty and stop.}
+          partial_effects_on_failure: {impossible: The single replacement is atomic.}
+          rollback_on_failure: {unavailable: No automatic or manual rollback is supplied.}
+        verification:
+          - {method: output-schema, output_ref: receipt}
+
+  watch-records:
+    id: example-skill.machine.watch-records
+    version: 1
+    description: Stream record-change events until cancelled.
+    allow_all_skills: false
+    allowed_callers: [example-skill]
+    invocation_binding:
+      fixed:
+        - {kind: positional, position: 0, value: watch, type: {kind: string, format: {named: literal}}}
+    uses_interfaces: []
+    helpers: []
+    direct_io:
+      reads:
+        - {id: state-read, medium: local-filesystem, access: read, system: filesystem, content: metadata, format: json, path: state/records.json, sensitivity: derived-private}
+      writes:
+        - {id: events-stdout, medium: stdout, access: write, content: event, format: json, sensitivity: derived-private}
+      network: []
+    owns_filesystem: []
+    contract:
+      arguments: {}
+      preconditions: []
+      interaction:
+        mode: unattended
+        cancellation: {kind: dispatcher-cancel}
+      caller_warnings:
+        - may-wait: Runs until explicitly cancelled.
+      outputs:
+        - id: events
+          channel: event-stream
+          audience: machine
+          encoding: utf-8
+          framing: newline-delimited-json
+          description: Initial ready event followed by record-change events.
+          schema: {path: record-event.schema.json, fragment: '#'}
+          direct_io_ref: events-stdout
+          cardinality: {minimum: 1, maximum: null}
+          ordering: stable
+          pagination: {kind: none}
+          truncation: {kind: none}
+          empty: Never empty after readiness.
+      outcomes:
+        - id: stopped
+          class: success
+          signal: {exit_codes: [0]}
+          outputs: [events]
+          effects: []
+          caller_action: Consume all complete events received before stop.
+        - id: startup-failure
+          class: error
+          signal: {exit_codes: [1]}
+          outputs: []
+          effects: []
+          caller_action: Report the diagnostic; no readiness was established.
+      execution:
+        state_effect: read-only
+        lifecycle: long-running
+        consistency:
+          eventually_consistent: Events follow filesystem observation latency.
+        long_running:
+          ready_when:
+            kind: output-match
+            output_ref: events
+            matcher: {kind: literal, value: ready}
+          stop_method: {kind: dispatcher-cancel}
+          startup_failure_outcome: startup-failure
+        verification:
+          - {method: output-schema, output_ref: events}
+
+  inspect-account:
+    id: example-skill.machine.inspect-account
+    version: 1
+    description: Return metadata for one registered email account.
+    allow_all_skills: false
+    allowed_callers: [example-skill]
+    invocation_binding:
+      fixed:
+        - {kind: positional, position: 0, value: inspect-account, type: {kind: string, format: {named: literal}}}
+    uses_interfaces:
+      - {interface: email-client.machine.accounts-list, version: 1}
+    helpers:
+      - id: list-accounts
+        role: Supplies valid account identifiers.
+        interface: email-client.machine.accounts-list
+        version: 1
+        inputs: {}
+        result:
+          output_ref: accounts
+          selector: {kind: json-pointer, value: '/accounts'}
+        route: {kind: argument-enum, target: account}
+        empty:
+          outcome: no-accounts
+          caller_action: Configure an account first.
+        freshness: {maximum_age_seconds: 60}
+        failure: {outcome: helper-failure}
+    direct_io:
+      reads: []
+      writes:
+        - {id: account-stdout, medium: stdout, access: write, content: account, format: json, sensitivity: user-private}
+      network: []
+    owns_filesystem: []
+    contract:
+      arguments:
+        account:
+          description: Registered account identifier to inspect.
+          required: true
+          sensitivity: user-private
+          invocation_binding: {kind: option, name: --account, arity: {minimum: 1, maximum: 1}}
+          type:
+            kind: enum
+            values_from_helper: list-accounts
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+        - id: account
+          channel: stdout
+          audience: machine
+          encoding: utf-8
+          framing: exactly-one-json-document
+          description: Nonsecret account metadata.
+          schema: {path: account-metadata.schema.json, fragment: '#'}
+          direct_io_ref: account-stdout
+          cardinality: {minimum: 1, maximum: 1}
+          ordering: stable
+          pagination: {kind: none}
+          truncation: {kind: none}
+          empty: Never empty on success.
+      outcomes:
+        - {id: success, class: success, signal: {exit_codes: [0]}, outputs: [account], effects: [], caller_action: Consume the metadata.}
+        - {id: no-accounts, class: refusal, signal: {exit_codes: [2]}, outputs: [], effects: [], caller_action: Configure an account.}
+        - {id: helper-failure, class: error, signal: {exit_codes: [3]}, outputs: [], effects: [], caller_action: Report account discovery failure.}
+        - {id: operational-failure, class: error, signal: {exit_codes: [1]}, outputs: [], effects: [], caller_action: Report the diagnostic.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {best_effort: Account metadata may change after discovery.}
+        verification:
+          - {method: output-schema, output_ref: account}

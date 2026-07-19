@@ -1,0 +1,9 @@
+Machine interface YAML uses canonical dispatcher contracts. <x> is required,
+[<x>] optional, <x>... one or more, [<x>...] zero or more, [--flag] a
+valueless switch. Invoke with dispatcher --caller-skill <skill> [--dry-run]
+<interface-id> <arguments>. --dry-run prints the compiled invocation without
+executing the gateway or reading stdin.
+Within interface arguments, put all positionals first by increasing position;
+then named options/switches in any order, each option immediately followed by
+its values. Dispatcher adds interface-fixed arguments; do not supply them.
+For LLM targets, route kind provider-skill delegates the named interface to that skill.

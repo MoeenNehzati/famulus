@@ -1,0 +1,109 @@
+schema_version: 3
+node_type: machine-module
+id: example-skill.machine-module.records
+version: 1
+description: Implements bounded record inspection.
+gateway:
+  kind: python-entrypoint
+  path: _rtx/_records.py
+  symbol: Interface
+  args_prefix: []
+  conformance:
+    adapter_protocol: officina-python-adapters@1
+    bind_method: bind_conformance_adapters
+    sandbox_profile: officina-isolated-effects@1
+content: ['_rtx/_records\.py']
+conformance_manifest:
+  base: skill-root
+  path: interface-conformance.yaml
+platform_support: {linux: true, macos: true, windows: true}
+dependencies: []
+behavior_sources: []
+owns_filesystem: []
+uses_interfaces: []
+interfaces:
+  inspect-records:
+    id: example-skill.machine.inspect-records
+    version: 1
+    description: Return selected records without modifying them.
+    allow_all_skills: true
+    allowed_callers: []
+    invocation_binding:
+      fixed:
+        - kind: option
+          name: --format
+          value: json
+          type: {kind: string, format: {named: literal}}
+    uses_interfaces: []
+    helpers: []
+    direct_io:
+      reads:
+        - id: records-read
+          medium: local-filesystem
+          access: read
+          system: filesystem
+          content: report
+          format: json
+          path: records.json
+          sensitivity: derived-private
+      writes:
+        - {id: records-stdout, medium: stdout, access: write, content: report, format: json, sensitivity: user-private}
+      network: []
+    owns_filesystem: []
+    contract:
+      arguments:
+        targets:
+          description: Record names selected for inspection.
+          required: true
+          sensitivity: user-private
+          invocation_binding:
+            kind: positional
+            position: 0
+            arity: {minimum: 1, maximum: null}
+          type:
+            kind: list
+            element_type:
+              kind: string
+              sensitivity: user-private
+              description: One exact record name.
+              format: {named: identifier}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+        - id: records
+          channel: stdout
+          audience: machine
+          encoding: utf-8
+          framing: exactly-one-json-document
+          description: JSON array containing the selected records.
+          schema:
+            path: record-list.schema.json
+            fragment: '#'
+          direct_io_ref: records-stdout
+          cardinality: {minimum: 0, maximum: null}
+          ordering: stable
+          pagination: {kind: none}
+          truncation: {kind: none}
+          empty: An empty array means no selected record exists.
+      outcomes:
+        - id: success
+          class: success
+          signal: {exit_codes: [0]}
+          outputs: [records]
+          effects: []
+          caller_action: Consume the returned array.
+        - id: operational-failure
+          class: error
+          signal: {exit_codes: [1]}
+          outputs: []
+          effects: []
+          caller_action: Report the diagnostic and do not infer any records.
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency:
+          snapshot: The records file is read as one snapshot.
+        verification:
+          - method: output-schema
+            output_ref: records

@@ -1,0 +1,50 @@
+schema_version: 1
+module: example-skill.machine-module.records
+execution_boundary:
+  kind: python-adapter-v1
+  sandbox_backends: {linux: linux-bwrap-v1, macos: macos-seatbelt-v1, windows: windows-appcontainer-v1}
+adapters:
+  filesystem: temporary-owner-root
+exports:
+  example-skill.machine.inspect-records:
+    outcome_coverage:
+      operational-failure: {kind: not-deterministically-inducible, reason: Reserved for unexpected gateway/runtime failure; semantic review checks its accuracy.}
+    cases:
+      - id: minimum-success
+        caller_argv: [alpha]
+        stdin_requested: false
+        fixture_state:
+          files:
+            records.json: '[{"id":"alpha","value":"one"}]'
+        expected_outcome: success
+        expected_streams:
+          stdout: {framing: exactly-one-json-document, schema: record-list.schema.json}
+          stderr: {empty: true}
+        expected_effects: []
+        observation_scope: {kind: sandbox, boundaries: [filesystem, stdout, stderr]}
+        timeout_seconds: 5
+      - id: representative-success
+        caller_argv: [alpha, beta]
+        stdin_requested: false
+        fixture_state:
+          files:
+            records.json: '[{"id":"alpha","value":"one"},{"id":"beta","value":"two"}]'
+        expected_outcome: success
+        expected_streams:
+          stdout: {framing: exactly-one-json-document, schema: record-list.schema.json}
+          stderr: {empty: true}
+        expected_effects: []
+        observation_scope: {kind: sandbox, boundaries: [filesystem, stdout, stderr]}
+        timeout_seconds: 5
+      - id: missing-required-target
+        caller_argv: []
+        stdin_requested: false
+        expected_parser_result: rejected
+        expected_diagnostic: missing-required-argument
+        timeout_seconds: 5
+      - id: invalid-target-format
+        caller_argv: ['not a valid identifier']
+        stdin_requested: false
+        expected_parser_result: rejected
+        expected_diagnostic: argument-format-invalid
+        timeout_seconds: 5

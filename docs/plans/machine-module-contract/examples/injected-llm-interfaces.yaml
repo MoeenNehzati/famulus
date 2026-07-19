@@ -1,0 +1,13 @@
+llm_interfaces:
+  local-review:
+    id: example-skill.llm.review
+    version: 1
+    description: Review one local artifact using specialized instructions.
+    gateway:
+      kind: instruction-file
+      path: llm_interfaces/review.md
+  cross-skill-triage:
+    id: email-triage.llm.triage
+    version: 1
+    description: Triage recent email into bounded actions.
+    route: {kind: provider-skill, skill: email-triage}
