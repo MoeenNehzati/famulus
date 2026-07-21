@@ -15,7 +15,8 @@ against their concrete schema:
   sources, and exported interfaces
 - `behavioral-source.schema.json`: a whole-file gateway, owned content,
   dependencies, used interfaces, and intrinsic interface contracts
-- `caller-contract.schema.json`: source-owned semantic interface behavior
+- `caller-contract.schema.json`: the unchanged live pre-v4 caller contract plus
+  v4-scoped semantic contract and process-binding definitions
 - `direct-io.schema.json`: direct resource interactions used by semantic
   contracts
 - `certificate.schema.json`: the signed current-certificate and history-entry
@@ -45,7 +46,8 @@ Every module or behavioral source uses `schema_version: 4` and its exact
 requirements use a name, an exact version, or a comma-separated intersection,
 such as `Python`, `Python==3.11`, or `Python>=3.11,<4`. Gateway fragments,
 symbols, and legacy gateway kinds are not authored. Process-specific entry and
-transport mechanics belong in an interface's optional `process_binding`.
+transport mechanics belong in an interface's optional `process_binding`; its
+non-empty `entry` is a provider-specific selector, not a Python identifier.
 
 A module owns:
 
@@ -62,6 +64,8 @@ them into exports. Omitting discovery makes a module dependency-only.
 A behavioral source owns:
 
 - one gateway and a non-empty `content` list;
+- optional paired `platform_support` and `runtime_dependencies` declarations
+  covering the gateway implementation and every intrinsic interface;
 - direct behavioral-source dependencies with exact versions and blueprint
   locators;
 - exact-version uses of sibling private interfaces or module exports; and
@@ -77,7 +81,8 @@ signals, cancellation transport, or stop mechanics; those belong to
 Blueprint locators use only `module-root` or `repository-root`. Content entries
 remain case-sensitive Python regular expressions matched with `re.fullmatch`
 against normalized POSIX paths under the ownership root. They declare
-ownership, not hash inclusion order.
+ownership only, not that every match is tracked or hashed. The project
+node-input policy resolves the actual certificate inputs from direct ownership.
 
 ## Hash and derived artifacts
 
@@ -87,6 +92,13 @@ It starts from Git-tracked directly owned regular files and applies sequential
 Git-ignore include/exclude rules with last-match-wins. Mandatory blueprint,
 gateway, and same-owner authored-contract closure and reserved-output rejection
 remain non-configurable certifier invariants.
+
+Version-4 certificates require a `machine_evidence` array, which may be empty.
+Each generated entry records the evaluated gateway language, gateway machine,
+runtime dependency, or platform requirement; the exact authored requirement
+string; the exact observed version; and the versioned certifier check that
+established it. This evidence is part of
+certificate currentness and does not introduce a dependency-certificate hash.
 
 `schema-meta.json` defines the annotation protocol and staged relationship
 matrix. `interface-projection.schema.json`, `pooled-review.schema.json`, and

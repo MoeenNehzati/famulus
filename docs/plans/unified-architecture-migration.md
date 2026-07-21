@@ -111,8 +111,8 @@ semantic requirement:
   protections;
 - caller authorization and caller-declared direct dependency checks;
 - the full caller contract, `direct_io`, and process argument behavior;
-- Python entry selectors, `route_smoke()`, the validated runner, and the
-  dependency reachability discovered by that evaluation;
+- provider-specific entry selectors, `route_smoke()`, the validated runner,
+  and the dependency reachability discovered by that evaluation;
 - helper identity, bindings, authorization, bounded/read-only constraints,
   resolved-definition safety, closure, and projection-size limits;
 - blueprint search over the v4 layout, with intentionally migrated generic
@@ -218,8 +218,9 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   Keep semantic arguments, preconditions, outcomes, effects, lifecycle,
   helpers, and `direct_io`; group argv/stdin, entry selection, output framing,
   exit signals, and cancellation under one process-binding definition.
-- [ ] Preserve Python symbol selection in that binding. Natural-language file
-  gateways need no extra binding.
+- [ ] Preserve provider-specific entry selection in that binding without
+  restricting selectors to Python identifiers. Natural-language file gateways
+  need no extra binding.
 - [ ] Generalize the existing machine-module schema into `module`, importing
   relevant skill-root metadata, discovery, authority, and default-interface
   facts. Evolve the existing behavior-source schema into
@@ -230,6 +231,10 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   the predecessors and switches the root atomically.
 - [ ] Make module export versions derived from their source interfaces. Keep
   caller access only on module exports and intrinsic contracts on sources.
+- [ ] Keep source-wide `platform_support` and `runtime_dependencies` optional
+  but paired, covering the behavioral-source gateway implementation and all
+  intrinsic interfaces. Require generated, version-bound `machine_evidence`
+  in certificates; the array may be empty.
 - [ ] Define the ordered project hash policy. Start from Git-tracked direct
   ownership; sequential include/exclude uses last-match-wins; only include has
   `require_match`; includes may add ignored/untracked directly owned regular
@@ -291,8 +296,9 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   certificate fields rather than creating parallel derived-artifact schemas.
 - [ ] Generalize the existing `NodeHashState` path and eliminate the separate
   machine-module hash path. One implementation resolves policy inputs, records
-  their path/kind/digest/Git provenance/final rule, computes the local node
-  hash, and records dependency hashes separately.
+  their path, digest, and Git provenance, computes the local node hash, and
+  records dependency hashes separately. Policy-internal kind or final-rule
+  details are not certificate manifest fields.
 - [ ] Adapt the current broad implementation-policy calculation into the one
   `certification_basis_hash` and include the canonical parsed node-input policy
   in its basis manifest. Drift and certification consume the same

@@ -64,6 +64,15 @@
       "required": ["base", "path"],
       "additionalProperties": false,
       "properties": {
+        "base": {"enum": ["skill-root", "repository-root"], "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "skill-root"}, "doc": {"authoring": ["Choose the root against which the sidecar path is resolved."]}, "related_validation_rules": ["gateway-file"]}},
+        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "llm_interfaces/.specialized.md.blueprint.yaml"}, "doc": {"authoring": ["Use the deterministic hidden sidecar path without parent traversal."]}, "related_validation_rules": ["gateway-file"]}}
+      }
+    },
+    "v4BlueprintLocator": {
+      "type": "object",
+      "required": ["base", "path"],
+      "additionalProperties": false,
+      "properties": {
         "base": {"enum": ["module-root", "repository-root"], "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "module-root"}, "doc": {"authoring": ["Choose the root against which the blueprint path is resolved."]}, "related_validation_rules": ["gateway-file"]}},
         "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "blueprints/gateway.yaml"}, "doc": {"authoring": ["Name the target blueprint without parent traversal."]}, "related_validation_rules": ["gateway-file"]}}
       }
@@ -73,7 +82,7 @@
       "required": ["blueprint"],
       "additionalProperties": false,
       "properties": {
-        "blueprint": {"$ref": "#/definitions/blueprintLocator", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": {"base": "module-root", "path": "blueprints/gateway.yaml"}}, "doc": {"authoring": ["Point to the contained behavioral source blueprint; its version remains source-owned."]}, "related_validation_rules": ["relationship-edge"]}}
+        "blueprint": {"$ref": "#/definitions/v4BlueprintLocator", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": {"base": "module-root", "path": "blueprints/gateway.yaml"}}, "doc": {"authoring": ["Point to the contained behavioral source blueprint; its version remains source-owned."]}, "related_validation_rules": ["relationship-edge"]}}
       }
     },
     "sourceDependency": {
@@ -83,7 +92,7 @@
       "properties": {
         "source": {"$ref": "#/definitions/behavioralSourceId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "other-skill.source.policy"}, "doc": {"authoring": ["Name the direct behavioral-source dependency."]}, "related_validation_rules": ["behavior-source-edge"]}},
         "version": {"$ref": "#/definitions/interfaceVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Pin the exact dependency version required by this source."]}, "related_validation_rules": ["version-pin"]}},
-        "blueprint": {"$ref": "#/definitions/blueprintLocator", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": {"base": "module-root", "path": "blueprints/policy.yaml"}}, "doc": {"authoring": ["Point to the dependency's behavioral-source blueprint."]}, "related_validation_rules": ["relationship-edge"]}},
+        "blueprint": {"$ref": "#/definitions/v4BlueprintLocator", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": {"base": "module-root", "path": "blueprints/policy.yaml"}}, "doc": {"authoring": ["Point to the dependency's behavioral-source blueprint."]}, "related_validation_rules": ["relationship-edge"]}},
         "reason": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Supplies policy."}, "doc": {"authoring": ["State why this source directly depends on the target."]}, "related_validation_rules": ["behavior-source-edge"]}}
       }
     },
@@ -229,9 +238,10 @@
     "directIo": {
       "$ref": "direct-io.schema.json",
       "description": "Immediate semantic IO. This declaration is descriptive and is not proof of subsystem confinement.",
-      "x-famulus": {"audit_hash": "include"}
+      "x-famulus": {"audit_hash": "exclude"}
     },
-    "filesystemOwnershipList": {
+    "filesystemOwnershipList": {"$ref": "legacy-skill.schema.json#/definitions/filesystemOwnershipList"},
+    "v4FilesystemOwnershipList": {
       "type": "array",
       "uniqueItems": true,
       "items": {
@@ -261,9 +271,13 @@
       "examples": ["llm_interfaces/.specialized.md.blueprint.yaml", "_rtx/._runner.py.blueprint.yaml"]
     },
     "content_ownership_policy": {
-      "gateway": "The gateway resolves against the node ownership root and must be a tracked regular non-symlink file included in content.",
-      "command_files": "Command gateways must be executable tracked regular non-symlink files under the owning _cx directory.",
-      "content": "Every matched content file participates in local hashing and commit readiness and has exactly one authored owner."
+      "gateway": "For pre-v4 nodes, the gateway resolves against the node ownership root and must be a tracked regular non-symlink file included in content.",
+      "command_files": "For pre-v4 nodes, command gateways must be executable tracked regular non-symlink files under the owning _cx directory.",
+      "content": "For pre-v4 nodes, every matched content file participates in local hashing and commit readiness and has exactly one authored owner."
+    },
+    "v4_content_ownership_policy": {
+      "gateway": "The whole-file gateway belongs to the authored ownership scope and mandatory certificate closure.",
+      "content": "Version-4 content patterns declare ownership only; the project node-input policy selects hash inputs from that ownership scope."
     }
   }
 }

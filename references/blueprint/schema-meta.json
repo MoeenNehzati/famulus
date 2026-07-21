@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "schema-meta.json",
   "title": "Famulus Blueprint Schema Annotation Protocol",
-  "description": "Metadata required on canonical typed blueprint schemas so schema files define authoring, hashing, and enforcement links.",
+  "description": "Metadata required on canonical typed blueprint schemas so schema files define authoring, version-scoped hashing, and enforcement links.",
   "type": "object",
   "required": ["$schema", "$id", "title", "description", "required", "properties", "x-famulus"],
   "properties": {
@@ -21,7 +21,7 @@
       "additionalProperties": false,
       "properties": {
         "field_status": {"enum": ["required", "optional"]},
-        "audit_hash": {"enum": ["include", "exclude"]},
+        "audit_hash": {"enum": ["include", "exclude"], "description": "Whether the authored blueprint field participates in the applicable version's contract hash; for v4 content this covers the selector declaration, not every matched file."},
         "template": {
           "type": "object",
           "required": ["include"],
@@ -280,7 +280,7 @@
       },
       "content-tracked": {
         "rule_kind": "repository-validation",
-        "description": "Require every resolved content file to be tracked by the relevant Git commit.",
+        "description": "For pre-v4 nodes, require every resolved content file to be tracked by the relevant Git commit.",
         "creation": "Use content patterns that resolve only to repository-relative files tracked by the captured commit.",
         "validator": "skills/skill-maker/validators/blueprints.py",
         "tests": ["tests/validate_blueprints.py", "tests/test_officina_artifact_health.py"],
@@ -325,7 +325,7 @@
       },
       "commit-backed-stamp": {
         "rule_kind": "repository-validation",
-        "description": "Require node and skill health records to carry one restorable Git source stamp for their resolved content files.",
+        "description": "For pre-v4 node and skill health records, require one restorable Git source stamp for their resolved content files.",
         "creation": "Set source.vcs to git, source.commit to the captured full Git object ID, and source.input_paths to sorted repository-relative content files that are tracked, regular, non-symlink, and byte-identical in HEAD, index, and worktree.",
         "validator": "src/officina/common/artifact_health.py",
         "tests": ["tests/test_officina_artifact_health.py"],

@@ -193,7 +193,7 @@ def test_schema_meta_declares_relationship_and_visibility_policy() -> None:
     }
 
 
-def test_typed_nodes_declare_gateway_and_content() -> None:
+def test_v4_nodes_declare_content_as_ownership_not_direct_hash_inputs() -> None:
     for name in TYPED_SCHEMAS:
         properties = _load(name)["properties"]
         assert "local_hash_inputs" not in properties
@@ -206,8 +206,24 @@ def test_typed_nodes_declare_gateway_and_content() -> None:
         assert field["x-famulus"]["related_validation_rules"] == [
             "content-files",
             "content-exclusive",
-            "commit-backed-stamp",
         ]
+
+
+def test_hash_metadata_scopes_tracked_content_rules_to_pre_v4() -> None:
+    common = _load("common.schema.json")
+    catalog = _load("schema-meta.json")["x-famulus"]["validation_rule_catalog"]
+
+    assert "pre-v4" in common["x-famulus"]["content_ownership_policy"][
+        "content"
+    ]
+    assert "ownership" in common["x-famulus"]["v4_content_ownership_policy"][
+        "content"
+    ]
+    assert "node-input policy" in common["x-famulus"][
+        "v4_content_ownership_policy"
+    ]["content"]
+    assert "pre-v4" in catalog["content-tracked"]["description"]
+    assert "pre-v4" in catalog["commit-backed-stamp"]["description"]
 
 
 def test_version_three_common_schema_uses_gateway_definition_names() -> None:
@@ -236,13 +252,11 @@ def test_v4_behavioral_source_uses_the_unified_node_kind_and_intrinsic_interface
     )
 
 
-def test_v4_direct_io_is_source_owned_and_included_in_node_identity() -> None:
+def test_v4_direct_io_is_source_owned_without_changing_pre_v4_hash_metadata() -> None:
     common = _load("common.schema.json")
     direct_io = _load("direct-io.schema.json")
 
-    assert common["definitions"]["directIo"]["x-famulus"]["audit_hash"] == (
-        "include"
-    )
+    assert common["definitions"]["directIo"]["x-famulus"]["audit_hash"] == "exclude"
     assert direct_io["title"] == "Interface Direct I/O"
     assert "source-owned" in direct_io["description"]
 

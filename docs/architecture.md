@@ -108,6 +108,12 @@ checks, binding compilers, and machine evaluators. Any change to the policy or
 another basis component, node, dependencies, input manifest, signature, or
 history link makes the certificate suspect.
 
+Generated `machine_evidence` binds each evaluated gateway-language,
+gateway-machine, runtime-dependency, or platform claim to its authored
+requirement, exact observed version, and versioned certifier check. Currentness
+requires that evidence to agree with the current claims, observations, and
+checks; it is not a dependency-certificate hash.
+
 ## Gateways
 
 In the initial architecture, a gateway is exactly one existing file, and the
@@ -208,6 +214,14 @@ actions. Sources have no independent privileges: their actions must fit both
 the applicable interface contract and their module's authority. As defined
 under Content, a source may directly own a gateway also referenced by its
 module.
+
+When a source has machine compatibility claims, its blueprint declares
+`platform_support` and `runtime_dependencies` together at the source level.
+The pair covers the gateway implementation and every intrinsic interface; an
+interface cannot carry a narrower competing copy. Omitting both fields means
+the source makes no source-wide platform/dependency declaration. A process
+binding may provide a non-empty provider-specific `entry` selector, but the
+selector is invocation mechanics and does not narrow the source gateway.
 
 ## Interfaces and boundaries
 

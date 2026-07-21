@@ -129,6 +129,14 @@ payload:
     node_hash: sha256:...
     source_commit: ...
   checks: []
+  machine_evidence:
+    - kind: gateway-language
+      name: Python
+      requirement: Python>=3.11,<4
+      evaluated_version: 3.13.5
+      check:
+        id: runtime-probe
+        version: 1
   key_id: sha256:...
   previous_entry_hash: null
   certified_at: 2026-07-20T12:00:00Z
@@ -155,6 +163,17 @@ schemas, hashing and safety implementation, checks, binding compilers, and
 machine evaluators. There is no separate policy, schema, or checker hash in the
 certificate. A change to any basis component changes this one digest.
 
+`machine_evidence` is required and may be empty. Each generated entry has a
+closed shape containing `kind`, `name`, `requirement`, `evaluated_version`, and
+`check`. Its kind is `gateway-language`, `gateway-machine`,
+`runtime-dependency`, or `platform`; `evaluated_version` is the exact observed
+version, never an authored range; and `check` contains the ID and version of
+the certifier check that established the observation. `requirement` uses the
+common grammar when compatible and otherwise preserves the exact non-empty
+authored string. The evidence covers
+source-wide gateway implementation and intrinsic-interface claims when they
+are evaluated. It does not add a dependency-certificate hash.
+
 The current certificate is authoritative for status. The complete signed
 entry is also appended to history. The first entry has
 `previous_entry_hash: null`; each later entry hashes the canonical complete
@@ -175,6 +194,8 @@ A certificate is current only when all of the following hold:
   current;
 - its `certifier` fields match the current certifier;
 - its `certification_basis_hash` equals the current basis hash;
+- its `machine_evidence` exactly agrees with current authored requirements,
+  observed versions, and the versioned certifier checks that evaluate them;
 - its history link agrees with the retained preceding entry.
 
 A missing or malformed field, signature, dependency, or input makes the node
@@ -197,6 +218,8 @@ is_current(x):
         and certificate.payload.certifier == current_certifier_identity()
         and certificate.payload.certification_basis_hash
             == current_certification_basis_hash()
+        and certificate.payload.machine_evidence
+            == current_machine_evidence()
         and valid_history_link(certificate)
     )
 ```

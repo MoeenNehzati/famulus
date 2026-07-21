@@ -49,7 +49,7 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": ["SKILL\\.md"]}, "doc": {"authoring": ["Match the module's containment scope; direct ownership is resolved against contained sources."]}, "related_validation_rules": ["content-files", "content-exclusive", "commit-backed-stamp"]}
+      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": ["SKILL\\.md"]}, "doc": {"authoring": ["Match the module's containment scope; direct ownership is resolved against contained sources. The project node-input policy selects hash inputs from that ownership scope."]}, "related_validation_rules": ["content-files", "content-exclusive"]}
     },
     "discovery": {
       "$ref": "#/definitions/discovery",
@@ -85,7 +85,7 @@
       "required": ["owns_filesystem"],
       "additionalProperties": false,
       "properties": {
-        "owns_filesystem": {"$ref": "common.schema.json#/definitions/filesystemOwnershipList"},
+        "owns_filesystem": {"$ref": "common.schema.json#/definitions/v4FilesystemOwnershipList"},
         "suggested_permissions": {"$ref": "legacy-skill.schema.json#/properties/suggested_permissions"}
       }
     },

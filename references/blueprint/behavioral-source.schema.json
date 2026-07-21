@@ -37,7 +37,15 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": ["SKILL\\.md"]}, "doc": {"authoring": ["Match every file directly owned by this source; the gateway must match."]}, "related_validation_rules": ["content-files", "content-exclusive", "commit-backed-stamp"]}
+      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": ["SKILL\\.md"]}, "doc": {"authoring": ["Match every file directly owned by this source; the gateway must match. The project node-input policy selects hash inputs from that ownership scope."]}, "related_validation_rules": ["content-files", "content-exclusive"]}
+    },
+    "platform_support": {
+      "$ref": "common.schema.json#/definitions/platformSupport",
+      "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Declare source-wide platform support for the gateway implementation and every intrinsic interface; author runtime_dependencies with it."]}, "related_validation_rules": ["runtime-dependency"]}
+    },
+    "runtime_dependencies": {
+      "$ref": "common.schema.json#/definitions/runtimeDependencies",
+      "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Declare source-wide runtime dependencies for the gateway implementation and every intrinsic interface; author platform_support with it."]}, "related_validation_rules": ["runtime-dependency"]}
     },
     "dependencies": {
       "type": "array",
@@ -56,6 +64,10 @@
       "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": {}}, "doc": {"authoring": ["Define intrinsic interfaces keyed by their full canonical source-interface IDs."]}, "related_validation_rules": ["canonical-id", "relationship-edge"]}
     }
   },
+  "dependencies": {
+    "platform_support": ["runtime_dependencies"],
+    "runtime_dependencies": ["platform_support"]
+  },
   "definitions": {
     "interface": {
       "type": "object",
@@ -64,8 +76,8 @@
       "properties": {
         "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
         "description": {"type": "string", "minLength": 1},
-        "contract": {"$ref": "caller-contract.schema.json"},
-        "process_binding": {"$ref": "caller-contract.schema.json#/definitions/processBinding"}
+        "contract": {"$ref": "caller-contract.schema.json#/definitions/v4Contract"},
+        "process_binding": {"$ref": "caller-contract.schema.json#/definitions/v4ProcessBinding"}
       }
     }
   },

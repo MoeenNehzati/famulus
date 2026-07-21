@@ -13,6 +13,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
 CERTIFICATION_ROOT = REPO_ROOT / "references" / "certification"
+MACHINE_MODULE_FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "machine_modules"
 CONFORMANCE_OPERATION_FIXTURE_ROOT = (
     REPO_ROOT / "tests" / "fixtures" / "conformance_operations"
 )
@@ -48,6 +49,37 @@ def _errors(document: dict, name: str = "schema.json") -> list[str]:
 
 def _empty_io() -> dict:
     return {"reads": [], "writes": [], "network": []}
+
+
+def _machine_module_fixture(name: str) -> dict:
+    return yaml.safe_load(
+        (MACHINE_MODULE_FIXTURE_ROOT / name).read_text(encoding="utf-8")
+    )
+
+
+def test_common_scopes_v4_blueprint_locators_without_changing_pre_v4() -> None:
+    common = _load("common.schema.json")
+    resolver = jsonschema.RefResolver.from_schema(common)
+    definitions = common["definitions"]
+    legacy = jsonschema.Draft7Validator(
+        definitions["blueprintLocator"], resolver=resolver
+    )
+    v4 = jsonschema.Draft7Validator(
+        definitions["v4BlueprintLocator"], resolver=resolver
+    )
+
+    legacy.validate({"base": "skill-root", "path": ".SKILL.md.blueprint.yaml"})
+    assert list(
+        legacy.iter_errors({"base": "module-root", "path": "blueprints/root.yaml"})
+    )
+
+    v4.validate({"base": "module-root", "path": "blueprints/root.yaml"})
+    v4.validate(
+        {"base": "repository-root", "path": "skills/demo/blueprints/root.yaml"}
+    )
+    assert list(
+        v4.iter_errors({"base": "skill-root", "path": "blueprints/root.yaml"})
+    )
 
 
 def test_v4_requirement_grammar_accepts_names_exact_versions_and_intersections() -> None:
@@ -90,11 +122,11 @@ def test_v4_process_binding_groups_transport_and_entry_mechanics() -> None:
     schema = _load("caller-contract.schema.json")
     resolver = jsonschema.RefResolver.from_schema(schema)
     validator = jsonschema.Draft7Validator(
-        schema["definitions"]["processBinding"], resolver=resolver
+        schema["definitions"]["v4ProcessBinding"], resolver=resolver
     )
     binding = {
         "kind": "process",
-        "entry": "Interface",
+        "entry": "provider://records/run",
         "args_prefix": ["records"],
         "arguments": {
             "targets": {
@@ -118,6 +150,10 @@ def test_v4_process_binding_groups_transport_and_entry_mechanics() -> None:
 
     validator.validate({"kind": "process"})
     validator.validate(binding)
+
+    empty_entry = deepcopy(binding)
+    empty_entry["entry"] = ""
+    assert list(validator.iter_errors(empty_entry))
 
     binding["symbol"] = "Interface"
     assert list(validator.iter_errors(binding))
@@ -171,7 +207,9 @@ def _valid_v4_contract() -> dict:
 
 
 def test_v4_interface_contract_is_semantic_and_excludes_process_mechanics() -> None:
-    validator = _validator("caller-contract.schema.json")
+    validator = _validator("caller-contract.schema.json").evolve(
+        schema=_load("caller-contract.schema.json")["definitions"]["v4Contract"]
+    )
     document = _valid_v4_contract()
 
     validator.validate(document)
@@ -245,6 +283,32 @@ def test_v4_behavioral_source_owns_intrinsic_interfaces_and_generic_edges() -> N
 
     document["semantic_type"] = "instructions"
     assert _errors(document, "behavioral-source.schema.json")
+
+
+def test_v4_behavioral_source_runtime_declarations_are_optional_and_paired() -> None:
+    document = _valid_v4_behavioral_source()
+    document["platform_support"] = {
+        "linux": True,
+        "macos": True,
+        "windows": False,
+    }
+    document["runtime_dependencies"] = []
+
+    assert _errors(document, "behavioral-source.schema.json") == []
+
+    missing_dependencies = deepcopy(document)
+    del missing_dependencies["runtime_dependencies"]
+    assert _errors(missing_dependencies, "behavioral-source.schema.json")
+
+    missing_platforms = deepcopy(document)
+    del missing_platforms["platform_support"]
+    assert _errors(missing_platforms, "behavioral-source.schema.json")
+
+    interface_scoped = deepcopy(document)
+    interface_scoped["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]["platform_support"] = {"linux": True, "macos": True, "windows": False}
+    assert _errors(interface_scoped, "behavioral-source.schema.json")
 
 
 def _valid_v4_module() -> dict:
@@ -447,6 +511,15 @@ def _valid_v4_certificate() -> dict:
                     "findings": [],
                 }
             ],
+            "machine_evidence": [
+                {
+                    "kind": "gateway-language",
+                    "name": "Python",
+                    "requirement": "Python>=3.11,<4",
+                    "evaluated_version": "3.13.5",
+                    "check": {"id": "runtime-probe", "version": 1},
+                }
+            ],
             "key_id": "sha256:" + "1" * 64,
             "previous_entry_hash": None,
             "certified_at": "2026-07-20T12:00:00Z",
@@ -475,6 +548,45 @@ def test_v4_certificate_signs_one_closed_payload_with_local_git_provenance() -> 
         else:
             invalid["payload"]["dependencies"][0][field] = value
         assert _errors(invalid, "certificate.schema.json"), location
+
+
+def test_v4_certificate_requires_version_bound_machine_evidence() -> None:
+    document = _valid_v4_certificate()
+    assert _errors(document, "certificate.schema.json") == []
+
+    empty = deepcopy(document)
+    empty["payload"]["machine_evidence"] = []
+    assert _errors(empty, "certificate.schema.json") == []
+
+    authored_runtime_requirement = deepcopy(document)
+    authored_runtime_requirement["payload"]["machine_evidence"][0].update(
+        kind="runtime-dependency",
+        name="demo-runtime",
+        requirement="3.11.*",
+    )
+    assert _errors(authored_runtime_requirement, "certificate.schema.json") == []
+
+    missing = deepcopy(document)
+    del missing["payload"]["machine_evidence"]
+    assert _errors(missing, "certificate.schema.json")
+
+    for field, value in (
+        ("kind", "dependency-certificate"),
+        ("name", ""),
+        ("requirement", ""),
+        ("evaluated_version", ">=3.11,<4"),
+    ):
+        invalid = deepcopy(document)
+        invalid["payload"]["machine_evidence"][0][field] = value
+        assert _errors(invalid, "certificate.schema.json"), field
+
+    invalid_check = deepcopy(document)
+    invalid_check["payload"]["machine_evidence"][0]["check"]["passed"] = True
+    assert _errors(invalid_check, "certificate.schema.json")
+
+    invalid_version = deepcopy(document)
+    invalid_version["payload"]["machine_evidence"][0]["check"]["version"] = 0
+    assert _errors(invalid_version, "certificate.schema.json")
 
 
 def _machine_module_example(name: str) -> dict:
@@ -536,6 +648,10 @@ def node_health() -> dict:
 def test_dispatch_schema_still_accepts_live_legacy_blueprints() -> None:
     document = yaml.safe_load((REPO_ROOT / "skills" / "skill-drift" / "blueprint.yaml").read_text())
     assert _errors(document) == []
+
+
+def test_live_dispatch_schema_accepts_canonical_machine_module_fixture() -> None:
+    assert _errors(_machine_module_fixture("records.valid.yaml")) == []
 
 
 def test_frozen_legacy_schema_retains_pre_typed_contract() -> None:
@@ -792,6 +908,51 @@ def test_version_three_skill_requires_uniform_node_fields() -> None:
         assert any(field in error for error in _errors(invalid, "skill.schema.json"))
 
 
+def test_version_three_skill_keeps_canonical_pre_v4_interface_edges() -> None:
+    schema = _load("skill.schema.json")
+
+    assert schema["properties"]["interfaces"]["items"] == {
+        "$ref": "common.schema.json#/definitions/interfaceEdge"
+    }
+    assert "definitions" not in schema
+
+
+def test_version_three_llm_source_edge_accepts_skill_root_locator() -> None:
+    document = _valid_skill_v3()
+    document["default_interface"]["behavior_sources"] = [
+        {
+            "source": "demo-skill.source.policy",
+            "version": 1,
+            "blueprint": {
+                "base": "skill-root",
+                "path": "references/.policy.md.blueprint.yaml",
+            },
+            "reason": "Supplies policy.",
+        }
+    ]
+
+    assert _errors(document, "skill.schema.json") == []
+
+
+def test_version_three_filesystem_ownership_accepts_legacy_machine_readers() -> None:
+    document = _valid_skill_v3()
+    document["default_interface"]["owns_filesystem"] = [
+        {
+            "match": "exact",
+            "path": "state.json",
+            "allowed_readers": ["other-skill.machine.read"],
+            "reason": "Shares the current state.",
+        }
+    ]
+
+    assert _errors(document, "skill.schema.json") == []
+
+    document["default_interface"]["owns_filesystem"][0]["allowed_readers"] = [
+        "other-skill.interface.read"
+    ]
+    assert _errors(document, "skill.schema.json")
+
+
 @pytest.mark.parametrize(
     "legacy_field",
     ["blueprint_type", "binding", "entry_point", "local_hash_inputs"],
@@ -859,6 +1020,78 @@ def test_version_three_machine_interface_uses_gateway_and_content() -> None:
         "owns_filesystem": [],
     }
     assert _errors(document, "machine-interface.schema.json") == []
+
+
+SEMANTIC_TYPES = (
+    "policy",
+    "instructions",
+    "reference",
+    "configuration",
+    "preference",
+    "schema",
+    "template",
+    "example",
+    "checklist",
+    "dataset",
+)
+
+
+@pytest.mark.parametrize("semantic_type", SEMANTIC_TYPES)
+def test_version_three_behavior_source_uses_closed_semantic_type(
+    semantic_type: str,
+) -> None:
+    document = {
+        "schema_version": 3,
+        "node_type": "behavior-source",
+        "id": "demo-skill.source.policy",
+        "version": 1,
+        "description": "Defines policy.",
+        "gateway": {"kind": "file", "path": "references/policy.md"},
+        "content": [r"references/policy\.md"],
+        "semantic_type": semantic_type,
+        "format": "markdown",
+        "uses_behavior_sources": [],
+    }
+    assert _errors(document, "behavior-source.schema.json") == []
+
+    document["semantic_type"] = "skill"
+    assert _errors(document, "behavior-source.schema.json")
+
+
+def test_target_v3_selects_machine_modules() -> None:
+    document = _machine_module_fixture("records.valid.yaml")
+
+    assert _errors(document) == []
+
+
+@pytest.mark.parametrize(
+    "removed_field",
+    [
+        "calls",
+        "selector",
+        "accepts",
+        "constraints",
+        "conditional_default",
+        "profile",
+        "draft",
+        "unresolved",
+        "dispatcher_consequences",
+    ],
+)
+def test_target_v3_rejects_removed_machine_contract_structures(
+    removed_field: str,
+) -> None:
+    document = _machine_module_fixture("records.valid.yaml")
+    document["interfaces"]["inspect-records"]["contract"][removed_field] = {}
+
+    assert _errors(document)
+
+
+@pytest.mark.parametrize(
+    "name", ["machine-module.yaml", "advanced-machine-module.yaml"]
+)
+def test_target_machine_module_examples_validate(name: str) -> None:
+    assert _errors(_machine_module_example(name), "machine-module.schema.json") == []
 
 
 @pytest.mark.parametrize(
@@ -937,6 +1170,53 @@ def test_conformance_operation_fixtures_cover_every_registered_operation(
                 assert errors == [], f"{operation_id}:{envelope}: {errors}"
             else:
                 assert errors, f"{operation_id}:{envelope} unexpectedly valid"
+
+
+def test_target_v3_rejects_command_gateways() -> None:
+    document = _machine_module_fixture("records.valid.yaml")
+    document["gateway"] = {
+        "kind": "command-file",
+        "path": "_cx/records",
+        "args_prefix": [],
+    }
+
+    assert _errors(document, "machine-module.schema.json")
+
+
+def test_target_recursive_type_branches_reject_irrelevant_fields() -> None:
+    document = _machine_module_fixture("records.valid.yaml")
+    string_type = document["interfaces"]["inspect-records"]["contract"][
+        "arguments"
+    ]["targets"]["type"]["element_type"]
+    string_type["element_type"] = {"kind": "string"}
+
+    assert _errors(document, "machine-module.schema.json")
+
+
+def test_target_unattended_interaction_rejects_interactive_fields() -> None:
+    document = _machine_module_fixture("records.valid.yaml")
+    interaction = document["interfaces"]["inspect-records"]["contract"][
+        "interaction"
+    ]
+    interaction["channel"] = "tty"
+
+    assert _errors(document, "machine-module.schema.json")
+
+
+def test_target_direct_io_rejects_literal_and_dynamic_path_together() -> None:
+    document = _machine_module_example("advanced-machine-module.yaml")
+    entry = document["interfaces"]["update-record"]["direct_io"]["reads"][0]
+    entry["path"] = "record.json"
+
+    assert _errors(document, "machine-module.schema.json")
+
+
+def test_target_helper_nested_shapes_are_closed() -> None:
+    document = _machine_module_example("advanced-machine-module.yaml")
+    helper = document["interfaces"]["inspect-account"]["helpers"][0]
+    helper["result"]["unknown"] = True
+
+    assert _errors(document, "machine-module.schema.json")
 
 
 def test_v4_recursive_type_branches_reject_irrelevant_fields() -> None:
