@@ -269,7 +269,7 @@ def test_missing_pool_does_not_change_canonical_root_health(tmp_path: Path) -> N
     assert repeated.healthy
 
 
-def test_generated_legacy_pool_is_distinct_from_v2_and_health_records_validate(
+def test_generated_legacy_pool_and_health_records_validate(
     tmp_path: Path,
 ) -> None:
     _skill, _graph, records, _root_report, pool_path, health_path = _fixture(tmp_path)
@@ -285,8 +285,7 @@ def test_generated_legacy_pool_is_distinct_from_v2_and_health_records_validate(
     health_validator.validate(json.loads(health_path.read_text(encoding="utf-8")))
     legacy_pool = yaml.safe_load(pool_path.read_text(encoding="utf-8"))
     assert "schema_version" not in legacy_pool
-    with pytest.raises(jsonschema.ValidationError):
-        pool_validator.validate(legacy_pool)
+    pool_validator.validate(legacy_pool)
 
 
 def test_authenticated_invalid_pooled_health_is_rejected(tmp_path: Path) -> None:
@@ -1132,7 +1131,7 @@ def _v4_fixture(tmp_path: Path):
             "id": source_id,
             "version": 1,
             "description": "Instruction gateway.",
-            "gateway": {"path": "SKILL.md", "language": "Natural Language"},
+            "gateway": {"path": "SKILL.md", "language": "NaturalLanguage"},
             "content": [r"SKILL\.md"],
             "dependencies": [],
             "uses_interfaces": [],
@@ -1147,7 +1146,7 @@ def _v4_fixture(tmp_path: Path):
             "id": "demo-skill",
             "version": 1,
             "description": "Demo module.",
-            "gateway": {"path": "SKILL.md", "language": "Natural Language"},
+            "gateway": {"path": "SKILL.md", "language": "NaturalLanguage"},
             "content": [r"SKILL\.md"],
             "authority": {"owns_filesystem": []},
             "sources": {

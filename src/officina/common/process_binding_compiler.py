@@ -41,6 +41,12 @@ _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
 _EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
+def gateway_language_name(requirement: str) -> str:
+    """Return the unversioned name from a gateway language requirement."""
+
+    return re.split(r"(?:==|>=|>|<=|<)", requirement, maxsplit=1)[0]
+
+
 def _process_binding(export: InterfaceExport) -> Mapping[str, Any]:
     if export.source_node_id is not None:
         binding = export.declaration.get("process_binding")
@@ -113,15 +119,15 @@ def _fixed_bindings(export: InterfaceExport) -> list[dict[str, Any]]:
 def _arity(binding: Mapping[str, Any], context: str) -> tuple[int, int | None]:
     raw = binding.get("arity")
     if not isinstance(raw, Mapping):
-        raise MachineInterfaceBindingError(f"{context}: arity must be a mapping")
+        raise ProcessBindingError(f"{context}: arity must be a mapping")
     minimum = raw.get("minimum")
     maximum = raw.get("maximum")
     if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 0:
-        raise MachineInterfaceBindingError(f"{context}: invalid minimum arity")
+        raise ProcessBindingError(f"{context}: invalid minimum arity")
     if maximum is not None and (
         not isinstance(maximum, int) or isinstance(maximum, bool) or maximum < minimum
     ):
-        raise MachineInterfaceBindingError(f"{context}: invalid maximum arity")
+        raise ProcessBindingError(f"{context}: invalid maximum arity")
     return minimum, maximum
 
 
@@ -148,10 +154,10 @@ def _validate_layout(export: InterfaceExport) -> tuple[dict[str, dict[str, Any]]
         if kind == "positional":
             position = binding.get("position")
             if not isinstance(position, int) or isinstance(position, bool) or position < 0:
-                raise MachineInterfaceBindingError(f"{owner}: invalid positional position")
+                raise ProcessBindingError(f"{owner}: invalid positional position")
             previous = positions.get(position)
             if previous is not None:
-                raise MachineInterfaceBindingError(
+                raise ProcessBindingError(
                     f"position {position} collision between {previous} and {owner}"
                 )
             positions[position] = owner
@@ -163,14 +169,14 @@ def _validate_layout(export: InterfaceExport) -> tuple[dict[str, dict[str, Any]]
         if kind in {"option", "switch"}:
             name = binding.get("name")
             if not isinstance(name, str) or not name.startswith("--"):
-                raise MachineInterfaceBindingError(f"{owner}: invalid named binding")
+                raise ProcessBindingError(f"{owner}: invalid named binding")
             if name in _DISPATCHER_OPTIONS:
-                raise MachineInterfaceBindingError(
+                raise ProcessBindingError(
                     f"{owner}: {name} is a dispatcher-owned option"
                 )
             previous = names.get(name)
             if previous is not None:
-                raise MachineInterfaceBindingError(
+                raise ProcessBindingError(
                     f"option {name} collision between {previous} and {owner}"
                 )
             names[name] = owner
@@ -179,7 +185,7 @@ def _validate_layout(export: InterfaceExport) -> tuple[dict[str, dict[str, Any]]
             return
         if kind == "stdin" and caller:
             return
-        raise MachineInterfaceBindingError(f"{owner}: unsupported binding kind {kind!r}")
+        raise ProcessBindingError(f"{owner}: unsupported binding kind {kind!r}")
 
     for index, binding in enumerate(fixed):
         owner = f"fixed[{index}]"
@@ -187,14 +193,14 @@ def _validate_layout(export: InterfaceExport) -> tuple[dict[str, dict[str, Any]]
         type_spec = binding.get("type")
         if binding.get("kind") != "switch":
             if _contains_secret(type_spec):
-                raise MachineInterfaceBindingError(f"{owner}: secret fixed values are forbidden")
+                raise ProcessBindingError(f"{owner}: secret fixed values are forbidden")
             _validate_typed_value(binding.get("value"), type_spec, owner)
 
     stdin_ids: list[str] = []
     for argument_id, declaration in arguments.items():
         binding = declaration.get("invocation_binding")
         if not isinstance(binding, Mapping):
-            raise MachineInterfaceBindingError(
+            raise ProcessBindingError(
                 f"{argument_id}: invocation_binding must be a mapping"
             )
         register(binding, argument_id, caller=True)
@@ -203,15 +209,15 @@ def _validate_layout(export: InterfaceExport) -> tuple[dict[str, dict[str, Any]]
         elif declaration.get("sensitivity") in {"secret", "credential"} or _contains_secret(
             declaration.get("type")
         ):
-            raise MachineInterfaceBindingError(
+            raise ProcessBindingError(
                 f"{argument_id}: secret or credential values must use stdin"
             )
     if len(stdin_ids) > 1:
-        raise MachineInterfaceBindingError(
+        raise ProcessBindingError(
             f"{export.interface_id}: exactly zero or one stdin argument is allowed"
         )
     if unbounded_positions and max(positions) > min(unbounded_positions):
-        raise MachineInterfaceBindingError(
+        raise ProcessBindingError(
             f"{export.interface_id}: unbounded positional must be the final positional binding"
         )
     return arguments, fixed
@@ -246,27 +252,27 @@ def _validate_format(value: str, format_spec: object, context: str) -> None:
             except ValueError:
                 valid = False
         if not valid:
-            raise MachineInterfaceBindingError(f"{context}: invalid {named} value")
+            raise ProcessBindingError(f"{context}: invalid {named} value")
     elif "regex" in format_spec:
         regex = format_spec["regex"]
         if not isinstance(regex, Mapping) or not isinstance(regex.get("pattern"), str):
-            raise MachineInterfaceBindingError(f"{context}: invalid regex format")
+            raise ProcessBindingError(f"{context}: invalid regex format")
         matcher = re.fullmatch if regex.get("matching") == "full" else re.match
         if matcher(regex["pattern"], value) is None:
-            raise MachineInterfaceBindingError(f"{context}: value does not match format")
+            raise ProcessBindingError(f"{context}: value does not match format")
     elif "template" in format_spec:
         template = format_spec["template"]
         if not isinstance(template, str) or "{value}" not in template:
-            raise MachineInterfaceBindingError(f"{context}: unsupported format template")
+            raise ProcessBindingError(f"{context}: unsupported format template")
 
 
 def _validate_typed_value(value: object, type_spec: object, context: str) -> object:
     if not isinstance(type_spec, Mapping):
-        raise MachineInterfaceBindingError(f"{context}: type must be a mapping")
+        raise ProcessBindingError(f"{context}: type must be a mapping")
     kind = type_spec.get("kind")
     if kind == "list":
         if not isinstance(value, (list, tuple)):
-            raise MachineInterfaceBindingError(f"{context}: expected list")
+            raise ProcessBindingError(f"{context}: expected list")
         return [
             _validate_typed_value(item, type_spec.get("element_type"), context)
             for item in value
@@ -277,24 +283,24 @@ def _validate_typed_value(value: object, type_spec: object, context: str) -> obj
         except (TypeError, ValueError):
             parsed = None
         if not isinstance(parsed, int):
-            raise MachineInterfaceBindingError(f"{context}: expected integer")
+            raise ProcessBindingError(f"{context}: expected integer")
     elif kind == "number":
         try:
             parsed = float(value) if not isinstance(value, bool) else None
         except (TypeError, ValueError):
             parsed = None
         if not isinstance(parsed, float):
-            raise MachineInterfaceBindingError(f"{context}: expected number")
+            raise ProcessBindingError(f"{context}: expected number")
     elif kind == "boolean":
         if isinstance(value, bool):
             parsed = value
         elif isinstance(value, str) and value.lower() in {"true", "false"}:
             parsed = value.lower() == "true"
         else:
-            raise MachineInterfaceBindingError(f"{context}: expected boolean")
+            raise ProcessBindingError(f"{context}: expected boolean")
     elif kind == "flag":
         if not isinstance(value, bool):
-            raise MachineInterfaceBindingError(f"{context}: expected flag")
+            raise ProcessBindingError(f"{context}: expected flag")
         parsed = value
     elif kind == "enum":
         values = type_spec.get("values")
@@ -304,27 +310,27 @@ def _validate_typed_value(value: object, type_spec: object, context: str) -> obj
             choices = [entry.get("value") for entry in values if isinstance(entry, Mapping)]
             parsed = next((choice for choice in choices if str(choice) == str(value)), None)
             if parsed is None:
-                raise MachineInterfaceBindingError(f"{context}: value is not in enum")
+                raise ProcessBindingError(f"{context}: value is not in enum")
     elif kind in {"string", "path", "file", "dir", "date", "datetime", "duration"}:
         if not isinstance(value, str):
-            raise MachineInterfaceBindingError(f"{context}: expected string")
+            raise ProcessBindingError(f"{context}: expected string")
         parsed = value
         _validate_format(value, type_spec.get("format"), context)
         if kind in {"date", "datetime"}:
             formats = type_spec.get("date_formats", [])
             if isinstance(formats, list) and formats:
                 if not any(_matches_date(value, candidate) for candidate in formats):
-                    raise MachineInterfaceBindingError(f"{context}: invalid {kind} value")
+                    raise ProcessBindingError(f"{context}: invalid {kind} value")
     else:
-        raise MachineInterfaceBindingError(f"{context}: unsupported terminal type {kind!r}")
+        raise ProcessBindingError(f"{context}: unsupported terminal type {kind!r}")
 
     if kind in {"integer", "number"}:
         minimum = type_spec.get("minimum")
         maximum = type_spec.get("maximum")
         if isinstance(minimum, (int, float)) and parsed < minimum:  # type: ignore[operator]
-            raise MachineInterfaceBindingError(f"{context}: below minimum {minimum}")
+            raise ProcessBindingError(f"{context}: below minimum {minimum}")
         if isinstance(maximum, (int, float)) and parsed > maximum:  # type: ignore[operator]
-            raise MachineInterfaceBindingError(f"{context}: above maximum {maximum}")
+            raise ProcessBindingError(f"{context}: above maximum {maximum}")
     return parsed
 
 
@@ -355,9 +361,9 @@ def _caller_tokens(argv: Sequence[str], known_names: set[str], fixed_names: set[
     named = active[split:]
     for token in named:
         if token in fixed_names:
-            raise MachineInterfaceBindingError(f"caller cannot override fixed option {token}")
+            raise ProcessBindingError(f"caller cannot override fixed option {token}")
         if token.startswith("--") and token not in known_names:
-            raise MachineInterfaceBindingError(f"unknown option {token}")
+            raise ProcessBindingError(f"unknown option {token}")
     return positionals, named
 
 
@@ -421,7 +427,7 @@ def parse_caller_invocation(
                 raw_values[0], type_spec, argument_id
             )
     if offset < len(positional_tokens):
-        raise MachineInterfaceBindingError(
+        raise ProcessBindingError(
             f"unexpected trailing value {positional_tokens[offset]!r}"
         )
 
@@ -431,10 +437,10 @@ def parse_caller_invocation(
         name = named_tokens[index]
         if name not in named_by_name:
             if name.startswith("--"):
-                raise MachineInterfaceBindingError(f"unknown option {name}")
-            raise MachineInterfaceBindingError(f"unexpected trailing value {name!r}")
+                raise ProcessBindingError(f"unknown option {name}")
+            raise ProcessBindingError(f"unexpected trailing value {name!r}")
         if name in seen_names:
-            raise MachineInterfaceBindingError(f"option {name} supplied more than once")
+            raise ProcessBindingError(f"option {name} supplied more than once")
         seen_names.add(name)
         argument_id, declaration = named_by_name[name]
         binding = declaration["invocation_binding"]
@@ -447,13 +453,13 @@ def parse_caller_invocation(
         raw_values: list[str] = []
         while cursor < len(named_tokens) and named_tokens[cursor] not in named_by_name:
             if named_tokens[cursor].startswith("--"):
-                raise MachineInterfaceBindingError(f"unknown option {named_tokens[cursor]}")
+                raise ProcessBindingError(f"unknown option {named_tokens[cursor]}")
             if maximum is not None and len(raw_values) >= maximum:
                 break
             raw_values.append(named_tokens[cursor])
             cursor += 1
         if len(raw_values) < minimum:
-            raise MachineInterfaceBindingError(f"{argument_id}: missing option value")
+            raise ProcessBindingError(f"{argument_id}: missing option value")
         type_spec = declaration.get("type")
         if isinstance(type_spec, Mapping) and type_spec.get("kind") == "list":
             values[argument_id] = _validate_typed_value(raw_values, type_spec, argument_id)
@@ -473,11 +479,11 @@ def parse_caller_invocation(
         if declaration["invocation_binding"].get("kind") == "stdin"
     ]
     if stdin_requested and not stdin_arguments:
-        raise MachineInterfaceBindingError(
+        raise ProcessBindingError(
             f"{export.interface_id} does not declare stdin"
         )
     if stdin_arguments and arguments[stdin_arguments[0]].get("required") is True and not stdin_requested:
-        raise MachineInterfaceBindingError(
+        raise ProcessBindingError(
             f"{stdin_arguments[0]} requires --stdin"
         )
 
@@ -493,7 +499,7 @@ def parse_caller_invocation(
         elif declaration.get("invocation_binding", {}).get("kind") == "switch":
             values[argument_id] = False
         elif declaration.get("required") is True:
-            raise MachineInterfaceBindingError(
+            raise ProcessBindingError(
                 f"missing required argument {argument_id}"
             )
     return ParsedCallerInvocation(dict(sorted(values.items())), stdin_requested)

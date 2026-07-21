@@ -36,6 +36,7 @@ _POOL_SCHEMA_BUNDLE = frozenset(
         "caller-contract.schema.json",
         "direct-io.schema.json",
         "legacy-skill.schema.json",
+        "health.schema.json",
     }
 )
 _HEALTH_SCHEMA_BUNDLE = frozenset({"health.schema.json"})
@@ -843,19 +844,14 @@ def _check_pooled_review_snapshots(
     try:
         pooled_bytes = pool_snapshot.content
         document = yaml.safe_load(pooled_bytes.decode("utf-8"))
-        # The normative schema is now v2. The live pre-v4 reader remains usable
-        # through Task 4 by recognizing its old envelope and then requiring the
-        # exact canonical rendering below; it does not treat that shape as v2.
         if not _is_pre_v4_pooled_review(document):
             raise PooledReviewValidationError("invalid pre-v4 pooled review")
-        # Keep the pre-v4 reader's confined schema loading and reference-safety
-        # checks live through Task 4.  The selected schema is v2 now, so its
-        # validator is intentionally not applied to the legacy document.
-        _confined_schema_validator(
+        pool_validator = _confined_schema_validator(
             Path(schema_root),
             "pooled-review.schema.json",
             _POOL_SCHEMA_BUNDLE,
         )
+        pool_validator.validate(document)
     except (
         OSError,
         UnicodeError,

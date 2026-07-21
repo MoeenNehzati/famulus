@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
 from collections import deque
 from dataclasses import dataclass
@@ -29,6 +28,10 @@ from officina.common.artifact_health import (
     map_route_smoke_dependencies,
 )
 from officina.common.blueprint_graph import RepositoryBlueprintGraph
+from officina.runtime.python_machine_interface import (
+    PythonRouteSmokeTraceError,
+    trace_python_route_smoke_dependencies,
+)
 
 HASH_PREFIX = "sha256:"
 DEFAULT_EXCLUDE_NAMES = {"__pycache__", ".pytest_cache", ".DS_Store", ".last_audit.json"}
@@ -61,6 +64,16 @@ class DependencyFile:
     label: str
     path: Path
     reason: str
+
+
+def _legacy_runtime_trace_allowed(skill_dir: Path, repo_root: Path) -> bool:
+    """Return whether the retained pre-v4 path may execute route smoke."""
+
+    live_repo = REPO_ROOT.resolve()
+    return (
+        repo_root.resolve() == live_repo
+        and skill_dir.resolve().parent == live_repo / "skills"
+    )
 
 
 def digest_entries(entries: Iterable[HashEntry]) -> str:
@@ -188,7 +201,10 @@ class DependencyExplorer:
         invocation = interface_spec.get("invocation")
         if isinstance(invocation, dict) and invocation.get("kind") == "python_machine_interface":
             entrypoint = invocation.get("entrypoint")
-            if isinstance(entrypoint, str):
+            if (
+                isinstance(entrypoint, str)
+                and _legacy_runtime_trace_allowed(skill_root, self.repo_root)
+            ):
                 for path in explore_python_runtime_dependency_files(skill_root, self.repo_root, entrypoint):
                     seeds.append((path.resolve(strict=False), path.parent.resolve(strict=False), "python dependency"))
 
@@ -489,6 +505,9 @@ def python_runtime_dependency_entries(
 ) -> list[HashEntry]:
     """Collect modules loaded by a clean PythonMachineInterface route-smoke run."""
 
+    if not _legacy_runtime_trace_allowed(skill_dir, repo_root):
+        return []
+
     invocation = interface_spec.get("invocation")
     if not isinstance(invocation, dict) or invocation.get("kind") != "python_machine_interface":
         return []
@@ -537,110 +556,12 @@ def entries_for_dependency_files(files: Iterable[DependencyFile], repo_root: Pat
 
 
 def explore_python_runtime_dependency_files(skill_dir: Path, repo_root: Path, entrypoint: str) -> list[Path]:
-    """Trace legacy runtime dependencies only inside this running installation."""
+    """Trace Python dependencies through the runtime-owned route-smoke path."""
 
-    live_repo = REPO_ROOT.resolve()
-    if repo_root.resolve() != live_repo:
-        return []
-    if skill_dir.resolve().parent != live_repo / "skills":
-        return []
-
-    trace_code = r"""
-import contextlib
-import io
-import json
-import os
-import sys
-from pathlib import Path
-
-skill_dir = Path(sys.argv[1]).resolve()
-src_root = Path(sys.argv[2]).resolve()
-entrypoint = sys.argv[3]
-repo_root = Path(sys.argv[4]).resolve()
-officina_root = src_root / "officina"
-skills_root = repo_root / "skills"
-sys.path.insert(0, str(src_root))
-
-from officina.runtime.python_machine_interface import DispatchDependencyResolver
-from officina.runtime.python_machine_interface_runner import load_interface, run_python_machine_interface
-
-def is_under(path, root):
     try:
-        path.relative_to(root)
-    except ValueError:
-        return False
-    return True
-
-paths = []
-
-def collect_loaded_paths():
-    for module in sys.modules.values():
-        module_file = getattr(module, "__file__", None)
-        if not module_file:
-            continue
-        path = Path(module_file).resolve()
-        if path.suffix not in {".py", ".pyi"}:
-            continue
-        if is_under(path, skill_dir) or is_under(path, skills_root) or is_under(path, officina_root):
-            paths.append(path.as_posix())
-
-os.chdir(skill_dir)
-with contextlib.redirect_stdout(io.StringIO()):
-    interface = load_interface(entrypoint)
-    run_python_machine_interface(interface, ["--route-smoke"])
-collect_loaded_paths()
-
-resolver = DispatchDependencyResolver(repo_root=repo_root)
-with contextlib.redirect_stdout(io.StringIO()):
-    dependencies = resolver.collect(interface)
-    for dependency in dependencies:
-        invocation = dependency.resolved
-        for token in invocation.command:
-            candidate = Path(token)
-            if not candidate.is_absolute():
-                candidate = invocation.cwd / candidate
-            candidate = candidate.resolve()
-            if candidate.exists() and is_under(candidate, skills_root):
-                paths.append(candidate.as_posix())
-        target_interface = resolver.load_resolved_python_interface(invocation)
-        if target_interface is not None:
-            previous_cwd = Path.cwd()
-            try:
-                os.chdir(invocation.cwd)
-                run_python_machine_interface(target_interface, ["--route-smoke"])
-            finally:
-                os.chdir(previous_cwd)
-            collect_loaded_paths()
-
-print(json.dumps(sorted(set(paths))))
-"""
-    env = os.environ.copy()
-    current_pythonpath = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = str(SRC_ROOT) if not current_pythonpath else f"{SRC_ROOT}{os.pathsep}{current_pythonpath}"
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            trace_code,
-            str(skill_dir),
-            str(SRC_ROOT),
-            entrypoint,
-            str(repo_root),
-        ],
-        cwd=skill_dir,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-        env=env,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise HashRootError(
-            f"route-smoke dependency trace failed for {entrypoint}: "
-            f"{(result.stderr or result.stdout).strip()}"
-        )
-    return [Path(path) for path in json.loads(result.stdout)]
+        return list(trace_python_route_smoke_dependencies(skill_dir, repo_root, entrypoint))
+    except PythonRouteSmokeTraceError as exc:
+        raise HashRootError(str(exc)) from exc
 
 
 def dedupe_preserving_order(values: Iterable[str]) -> list[str]:

@@ -73,6 +73,7 @@ from .process_binding_compiler import (
     ProcessBindingError,
     compile_gateway_invocation,
     compile_route_smoke_invocation,
+    gateway_language_name,
     parse_caller_invocation,
 )
 from .certification_view import (
@@ -128,6 +129,7 @@ __all__ = [
     "ProcessBindingError",
     "compile_gateway_invocation",
     "compile_route_smoke_invocation",
+    "gateway_language_name",
     "parse_caller_invocation",
     "CertificateRecordView",
     "CertificationDecision",

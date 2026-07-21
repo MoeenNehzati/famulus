@@ -5,11 +5,16 @@ from pathlib import Path
 import pytest
 import yaml
 
-from officina.common.blueprint_graph import load_repository_blueprint_graph
+from officina.common.blueprint_graph import (
+    HelperEdge,
+    InterfaceExport,
+    load_repository_blueprint_graph,
+)
 from officina.common.blueprint_template import load_schema, schema_validator
 from officina.common.certification_view import CertificationDecision, RejectingCertificationView
 from officina.common.interface_projection import (
     InterfaceProjectionError,
+    _validate_helper_target,
     project_consumer_interfaces,
     standalone_export_size,
 )
@@ -29,6 +34,33 @@ class _PassingView:
 def _write_yaml(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+
+
+def _write_legacy_projection_consumer(root: Path) -> str:
+    skill = root / "skills" / "legacy-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("Legacy instructions.\n", encoding="utf-8")
+    _write_yaml(
+        skill / "blueprint.yaml",
+        {
+            "schema_version": 3,
+            "node_type": "skill",
+            "id": "legacy-skill",
+            "gateway": {"kind": "instruction-file", "path": "SKILL.md"},
+            "content": [r"SKILL\.md"],
+            "default_interface": {
+                "version": 1,
+                "description": "Default consumer.",
+                "allow_all_skills": True,
+                "uses_interfaces": [],
+                "behavior_sources": [],
+                "direct_io": {"reads": [], "writes": [], "network": []},
+                "owns_filesystem": [],
+            },
+            "interfaces": [],
+        },
+    )
+    return "legacy-skill.llm.default"
 
 
 def _contract(
@@ -347,17 +379,76 @@ def test_projection_with_no_dependencies_is_empty_and_valid(tmp_path: Path) -> N
     ).validate(projection.document)
 
 
+def test_legacy_projection_producer_validates_against_shared_schema(
+    tmp_path: Path,
+) -> None:
+    consumer_id = _write_legacy_projection_consumer(tmp_path)
+
+    projection = project_consumer_interfaces(
+        load_repository_blueprint_graph(tmp_path),
+        consumer_id,
+        _PassingView(),
+    )
+
+    assert projection.document["schema_version"] == 1
+    schema_validator(
+        load_schema("references/blueprint/interface-projection.schema.json")
+    ).validate(projection.document)
+
+
 def test_enum_helper_target_must_be_read_only(tmp_path: Path) -> None:
     _repository(tmp_path)
-    path = tmp_path / "skills" / "provider-skill" / "blueprints" / "lookup.yaml"
-    declaration = yaml.safe_load(path.read_text(encoding="utf-8"))
+    graph = load_repository_blueprint_graph(tmp_path)
+    declaration = graph.nodes["provider-skill.source.lookup"].declaration
     target = declaration["interfaces"]["provider-skill.source.lookup.interface.names"]
     target["contract"]["execution"]["state_effect"] = "mutating"
-    _write_yaml(path, declaration)
 
     with pytest.raises(InterfaceProjectionError, match="must be read-only"):
         project_consumer_interfaces(
-            load_repository_blueprint_graph(tmp_path),
+            graph,
             "consumer-skill.source.gateway",
             _PassingView(),
         )
+
+
+@pytest.mark.parametrize("source_node_id", [None, "provider-skill.source.lookup"])
+@pytest.mark.parametrize("maximum", [pytest.param(..., id="missing"), None, "100", True])
+def test_enum_helper_target_requires_integer_finite_output_cardinality(
+    source_node_id: str | None,
+    maximum: object,
+) -> None:
+    output: dict[str, object] = {
+        "id": "result",
+        "cardinality": {"minimum": 0},
+    }
+    if maximum is not ...:
+        output["cardinality"]["maximum"] = maximum  # type: ignore[index]
+    target = InterfaceExport(
+        interface_id="provider-skill.interface.names",
+        version=1,
+        local_name="names",
+        module_node_id="provider-skill",
+        declaration={
+            "contract": {
+                "execution": {"state_effect": "read-only"},
+                "outputs": [output],
+            }
+        },
+        source_node_id=source_node_id,
+    )
+    edge = HelperEdge(
+        source_export_id="consumer-skill.interface.run",
+        local_helper_id="lookup",
+        target_interface_id=target.interface_id,
+        target_version=1,
+        binding={
+            "route": {"kind": "argument-enum", "target": "name"},
+            "result": {
+                "output_ref": "result",
+                "selector": {"kind": "whole-output"},
+            },
+        },
+    )
+
+    with pytest.raises(InterfaceProjectionError, match="finite output cardinality"):
+        _validate_helper_target(edge, target)

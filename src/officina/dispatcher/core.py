@@ -29,9 +29,10 @@ from officina.common.blueprint_graph import (
 )
 from officina.common.certification_view import CertificationView, RejectingCertificationView
 from officina.common.process_binding_compiler import (
-    MachineInterfaceBindingError,
+    ProcessBindingError,
     compile_gateway_invocation,
     compile_route_smoke_invocation,
+    gateway_language_name,
     parse_caller_invocation,
 )
 from officina.common.blueprint_inventory import BlueprintInventoryError, collect_blueprints
@@ -885,6 +886,34 @@ def _resolve_export_dispatch(
                 )
         else:
             module, source, export = resolve_export(graph, target, target_version)
+            caller_module = graph.nodes.get(caller_skill)
+            if caller_module is None or caller_module.node_type != "module":
+                raise InvocationError(
+                    f"caller module `{caller_skill}` does not exist"
+                )
+            declares_exact_use = False
+            for source_id in graph.module_sources.get(caller_skill, ()):
+                caller_source = graph.nodes.get(source_id)
+                uses = (
+                    caller_source.declaration.get("uses_interfaces", [])
+                    if caller_source is not None
+                    else []
+                )
+                if not isinstance(uses, list):
+                    continue
+                if any(
+                    isinstance(use, dict)
+                    and use.get("interface") == export.interface_id
+                    and use.get("version") == export.version
+                    for use in uses
+                ):
+                    declares_exact_use = True
+                    break
+            if not declares_exact_use:
+                raise InvocationError(
+                    f"caller module `{caller_skill}` does not declare use of "
+                    f"`{export.interface_id}` version {export.version} in a contained source"
+                )
             access = export.export_declaration.get("access") if export.export_declaration else None
             if not isinstance(access, dict):
                 raise InvocationError(f"{target}: export access is missing")
@@ -916,7 +945,7 @@ def _resolve_export_dispatch(
                 stdin_requested=stdin_requested,
             )
             compiled = compile_gateway_invocation(source, export, parsed)
-    except (BlueprintGraphError, MachineInterfaceBindingError) as exc:
+    except (BlueprintGraphError, ProcessBindingError) as exc:
         raise InvocationError(str(exc)) from exc
 
     target_skill = module.skill_root.name
@@ -924,7 +953,7 @@ def _resolve_export_dispatch(
     if source.node_type == "behavioral_source":
         gateway = source.declaration.get("gateway")
         language = gateway.get("language") if isinstance(gateway, dict) else None
-        language_name = re.split(r"(?:==|>=|>|<=|<)", language, maxsplit=1)[0] if isinstance(language, str) else None
+        language_name = gateway_language_name(language) if isinstance(language, str) else None
         if language_name != "Python":
             raise InvocationError(
                 f"{export.interface_id}: unsupported process binding language {language!r}"

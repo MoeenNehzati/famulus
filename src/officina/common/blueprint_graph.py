@@ -2375,7 +2375,6 @@ def load_repository_blueprint_graph(
         document
         for document in documents
         if document.declaration.get("schema_version") == 4
-        and document.node_type in {"module", "behavioral_source"}
     )
     target_documents = tuple(
         document
@@ -2391,6 +2390,12 @@ def load_repository_blueprint_graph(
         ).is_file():
             selected_schema_root = candidate
     if v4_documents:
+        if selected_schema_root is None:
+            selected_schema_root = (
+                Path(__file__).resolve().parents[3]
+                / "references"
+                / "blueprint"
+            )
         if target_documents:
             raise BlueprintGraphError(
                 "repository graph cannot mix version 4 and pre-v4 target nodes"

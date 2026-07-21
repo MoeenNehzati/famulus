@@ -592,6 +592,38 @@ def test_certification_basis_hash_canonicalizes_parsed_node_policy(tmp_path: Pat
     assert semantics_changed != first
 
 
+def test_live_certification_basis_covers_every_canonical_graph_schema_input() -> None:
+    repo_root = MODULE_PATH.parents[3]
+    covered = set(checker.certification_basis_paths(repo_root))
+
+    assert {
+        repo_root / "references" / "blueprint" / relative
+        for relative in CANONICAL_GRAPH_SCHEMA_INPUTS
+    } <= covered
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "v2/skill.schema.json",
+        "conformance-operations/filesystem.schema.json",
+        "schema.annotated-draft.json",
+    ],
+)
+def test_certification_basis_hash_tracks_nested_schema_families(
+    tmp_path: Path,
+    relative: str,
+) -> None:
+    install_policy_manifest(tmp_path)
+    copy_schema_bundle(tmp_path)
+    first = checker.compute_certification_basis_hash(tmp_path)
+
+    path = tmp_path / "references" / "blueprint" / relative
+    write(path, path.read_text(encoding="utf-8") + "\n")
+
+    assert checker.compute_certification_basis_hash(tmp_path) != first
+
+
 @pytest.mark.parametrize("module_name", ["atomic_files.py", "git_provenance.py"])
 def test_committed_shared_trust_boundary_change_invalidates_current_record(
     tmp_path: Path,

@@ -462,6 +462,27 @@ def test_v4_repository_graph_uses_one_generic_export_and_direct_ownership(
     assert all(isinstance(edge, CertificationEdge) for edge in graph.certification_edges)
 
 
+@pytest.mark.parametrize("node_type", [None, "invented-node"])
+def test_v4_repository_graph_validates_claimed_v4_documents_before_filtering(
+    tmp_path: Path,
+    node_type: str | None,
+) -> None:
+    _write_v4_module(tmp_path, "provider-skill", allow_callers=[])
+    rogue = {
+        "schema_version": 4,
+        "id": "provider-skill.rogue",
+    }
+    if node_type is not None:
+        rogue["node_type"] = node_type
+    _write_yaml(
+        tmp_path / "skills" / "provider-skill" / "blueprints" / "rogue.yaml",
+        rogue,
+    )
+
+    with pytest.raises(BlueprintGraphError, match="unsupported typed node type"):
+        load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+
+
 def test_v4_repository_graph_enforces_export_authorization_and_private_ownership(
     tmp_path: Path,
 ) -> None:

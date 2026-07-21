@@ -14,6 +14,7 @@ import yaml
 
 from officina.common.blueprint_graph import load_repository_blueprint_graph
 from officina.common.blueprint_inventory import BlueprintInventoryError
+from officina.common.process_binding_compiler import gateway_language_name
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +30,59 @@ class RouteSmokeCase:
     @property
     def target(self) -> str:
         return self.canonical_target or f"{self.skill}.machine.{self.interface}"
+
+
+def _v4_contract() -> dict[str, object]:
+    return {
+        "arguments": {},
+        "preconditions": [],
+        "interaction": {"mode": "unattended"},
+        "caller_warnings": [],
+        "outputs": [
+            {
+                "id": "result",
+                "audience": "machine",
+                "description": "Result.",
+                "type": {"kind": "string"},
+                "direct_io_ref": "stdout",
+                "cardinality": {"minimum": 1, "maximum": 1},
+                "ordering": "stable",
+                "pagination": {"kind": "none"},
+                "truncation": {"kind": "none"},
+                "empty": "Never empty.",
+            }
+        ],
+        "outcomes": [
+            {
+                "id": "success",
+                "class": "success",
+                "outputs": ["result"],
+                "effects": [],
+                "caller_action": "Continue.",
+            }
+        ],
+        "execution": {
+            "state_effect": "read-only",
+            "lifecycle": "finite",
+            "consistency": {"snapshot": "One snapshot."},
+            "verification": [{"method": "output-schema", "output_ref": "result"}],
+        },
+        "helpers": [],
+        "direct_io": {
+            "reads": [],
+            "writes": [
+                {
+                    "id": "stdout",
+                    "medium": "stdout",
+                    "access": "write",
+                    "content": "Result.",
+                    "format": "text",
+                    "sensitivity": "public",
+                }
+            ],
+            "network": [],
+        },
+    }
 
 
 def _dispatcher_env() -> dict[str, str]:
@@ -69,7 +123,7 @@ def _runner_interfaces(repo_root: Path = REPO_ROOT) -> list[RouteSmokeCase]:
             if (
                 isinstance(export.declaration.get("process_binding"), dict)
                 and isinstance(language, str)
-                and language.split(">", 1)[0].split("=", 1)[0] == "Python"
+                and gateway_language_name(language) == "Python"
             ):
                 cases.append(
                     RouteSmokeCase(
@@ -178,7 +232,23 @@ interfaces:
     ]
 
 
-def test_route_smoke_discovers_v4_python_process_exports(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("language", "included"),
+    [
+        ("Python", True),
+        ("Python==3.11", True),
+        ("Python>=3.11", True),
+        ("Python>3.11", True),
+        ("Python<=3.13", True),
+        ("Python<4", True),
+        ("Java>=17", False),
+    ],
+)
+def test_route_smoke_discovers_v4_python_process_exports(
+    tmp_path: Path,
+    language: str,
+    included: bool,
+) -> None:
     module = tmp_path / "skills" / "demo-skill"
     runtime = module / "_rtx"
     runtime.mkdir(parents=True)
@@ -193,14 +263,17 @@ def test_route_smoke_discovers_v4_python_process_exports(tmp_path: Path) -> None
                 "node_type": "behavioral_source",
                 "id": source_id,
                 "version": 1,
-                "gateway": {"path": "_rtx/worker.py", "language": "Python>=3.11"},
+                "description": "Worker.",
+                "gateway": {"path": "_rtx/worker.py", "language": language},
                 "content": [r"_rtx/worker\.py"],
                 "dependencies": [],
                 "uses_interfaces": [],
                 "interfaces": {
-                    source_interface: {
-                        "version": 1,
-                        "process_binding": {
+                        source_interface: {
+                            "version": 1,
+                            "description": "Run.",
+                            "contract": _v4_contract(),
+                            "process_binding": {
                             "kind": "process",
                             "entry": "Interface",
                             "arguments": {},
@@ -220,8 +293,10 @@ def test_route_smoke_discovers_v4_python_process_exports(tmp_path: Path) -> None
                 "node_type": "module",
                 "id": "demo-skill",
                 "version": 1,
-                "gateway": {"path": "_rtx/worker.py", "language": "Python>=3.11"},
+                "description": "Demo.",
+                "gateway": {"path": "_rtx/worker.py", "language": language},
                 "content": [r"_rtx/worker\.py"],
+                "authority": {"owns_filesystem": []},
                 "sources": {
                     source_id: {
                         "blueprint": {
@@ -242,13 +317,10 @@ def test_route_smoke_discovers_v4_python_process_exports(tmp_path: Path) -> None
         encoding="utf-8",
     )
 
-    assert _route_smoke_cases(tmp_path) == [
-        RouteSmokeCase(
-            "demo-skill",
-            "run",
-            "demo-skill.interface.run",
-        )
-    ]
+    expected = [
+        RouteSmokeCase("demo-skill", "run", "demo-skill.interface.run")
+    ] if included else []
+    assert _route_smoke_cases(tmp_path) == expected
 
 
 def test_route_smoke_does_not_fall_back_when_v4_inventory_is_malformed(

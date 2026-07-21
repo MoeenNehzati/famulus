@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +12,144 @@ from typing import TYPE_CHECKING, Any, ClassVar, Mapping, Sequence
 
 if TYPE_CHECKING:
     from officina.dispatcher import ResolvedInvocationMetadata
+
+
+class PythonRouteSmokeTraceError(RuntimeError):
+    """Raised when a Python route-smoke dependency trace cannot complete."""
+
+
+def trace_python_route_smoke_dependencies(
+    skill_dir: Path,
+    repo_root: Path,
+    entrypoint: str,
+) -> tuple[Path, ...]:
+    """Return Python files loaded by one route-smoke dependency traversal."""
+
+    skill_root = skill_dir.resolve()
+    repository_root = repo_root.resolve()
+    source_root = Path(__file__).resolve().parents[2]
+    trace_code = r"""
+import contextlib
+import io
+import json
+import os
+import sys
+from pathlib import Path
+
+skill_dir = Path(sys.argv[1]).resolve()
+src_root = Path(sys.argv[2]).resolve()
+entrypoint = sys.argv[3]
+repo_root = Path(sys.argv[4]).resolve()
+officina_root = src_root / "officina"
+skills_root = repo_root / "skills"
+sys.path.insert(0, str(src_root))
+
+from officina.runtime.python_machine_interface import DispatchDependencyResolver
+from officina.runtime.python_machine_interface_runner import load_interface, run_python_machine_interface
+
+def is_under(path, root):
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+paths = []
+
+def collect_loaded_paths():
+    for module in sys.modules.values():
+        module_file = getattr(module, "__file__", None)
+        if not module_file:
+            continue
+        path = Path(module_file).resolve()
+        if path.suffix not in {".py", ".pyi"}:
+            continue
+        if is_under(path, repo_root) or is_under(path, officina_root):
+            paths.append(path.as_posix())
+
+os.chdir(skill_dir)
+with contextlib.redirect_stdout(io.StringIO()):
+    interface = load_interface(entrypoint)
+    run_python_machine_interface(interface, ["--route-smoke"])
+collect_loaded_paths()
+
+from officina.common.certification_view import CertificationDecision
+
+class TraceCertificationView:
+    def check_export(self, module_id, interface_id, interface_version):
+        return CertificationDecision(True, "route-smoke-trace", "Trace-only certification view.")
+
+    def certificate_for(self, node_id):
+        return None
+
+resolver = DispatchDependencyResolver(
+    repo_root=repo_root,
+    certification_view=TraceCertificationView(),
+)
+with contextlib.redirect_stdout(io.StringIO()):
+    dependencies = resolver.collect(interface)
+    for dependency in dependencies:
+        invocation = dependency.resolved
+        for token in invocation.command:
+            candidate = Path(token)
+            if not candidate.is_absolute():
+                candidate = invocation.cwd / candidate
+            candidate = candidate.resolve()
+            if candidate.exists() and is_under(candidate, skills_root):
+                paths.append(candidate.as_posix())
+        target_interface = resolver.load_resolved_python_interface(invocation)
+        if target_interface is not None:
+            previous_cwd = Path.cwd()
+            try:
+                os.chdir(invocation.cwd)
+                run_python_machine_interface(target_interface, ["--route-smoke"])
+            finally:
+                os.chdir(previous_cwd)
+            collect_loaded_paths()
+
+print(json.dumps(sorted(set(paths))))
+"""
+    env = os.environ.copy()
+    current_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        str(source_root)
+        if not current_pythonpath
+        else f"{source_root}{os.pathsep}{current_pythonpath}"
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            trace_code,
+            str(skill_root),
+            str(source_root),
+            entrypoint,
+            str(repository_root),
+        ],
+        cwd=skill_root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        env=env,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise PythonRouteSmokeTraceError(
+            f"route-smoke dependency trace failed for {entrypoint}: {detail}"
+        )
+    try:
+        paths = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise PythonRouteSmokeTraceError(
+            f"route-smoke dependency trace returned invalid JSON for {entrypoint}"
+        ) from exc
+    if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+        raise PythonRouteSmokeTraceError(
+            f"route-smoke dependency trace returned invalid paths for {entrypoint}"
+        )
+    return tuple(Path(path) for path in paths)
 
 
 @dataclass(frozen=True)

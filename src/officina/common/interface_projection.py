@@ -17,7 +17,6 @@ from .blueprint_graph import (
     BlueprintGraphError,
     HelperEdge,
     InterfaceExport,
-    MachineInterfaceExport,
     RepositoryBlueprintGraph,
     resolve_export,
     resolve_machine_export,
@@ -55,7 +54,7 @@ def standalone_export_size(export_projection: Mapping[str, JsonValue]) -> int:
     return len(_canonical_yaml_bytes(dict(export_projection)))
 
 
-def _provider_skill(export: MachineInterfaceExport) -> str:
+def _provider_skill(export: InterfaceExport) -> str:
     return export.module_node_id.split(".machine-module.", 1)[0]
 
 
@@ -104,9 +103,16 @@ def _fragment_value(document: object, fragment: str, path: Path) -> object:
 
 
 class _DefinitionResolver:
-    def __init__(self, provider_root: Path, provider_skill: str) -> None:
+    def __init__(
+        self,
+        provider_root: Path,
+        provider_skill: str,
+        *,
+        source_field: str = "source_skill",
+    ) -> None:
         self.provider_root = provider_root
         self.provider_skill = provider_skill
+        self.source_field = source_field
         self.definitions: dict[str, dict[str, JsonValue]] = {}
         self.identities: dict[tuple[str, str], str] = {}
 
@@ -135,7 +141,7 @@ class _DefinitionResolver:
         except (UnicodeError, json.JSONDecodeError, yaml.YAMLError) as exc:
             raise InterfaceProjectionError(f"{path}: invalid referenced definition: {exc}") from exc
         self.definitions[key] = {
-            "source_module": self.provider_skill,
+            self.source_field: self.provider_skill,
             "path": owner_relative,
             "fragment": fragment,
             "digest": digest,
@@ -197,7 +203,7 @@ class _DefinitionResolver:
 def _certify(
     certification: CertificationView,
     module_id: str,
-    export: MachineInterfaceExport,
+    export: InterfaceExport,
 ) -> None:
     decision = certification.check_export(module_id, export.interface_id, export.version)
     if not decision.certified:
@@ -208,7 +214,7 @@ def _certify(
 
 def _project_export(
     graph: RepositoryBlueprintGraph,
-    export: MachineInterfaceExport,
+    export: InterfaceExport,
     certification: CertificationView,
     resolvers: dict[str, _DefinitionResolver],
     vocabulary: set[str],
@@ -279,7 +285,7 @@ def _project_export(
     return projection
 
 
-def _validate_helper_target(edge: HelperEdge, target: MachineInterfaceExport) -> None:
+def _validate_helper_target(edge: HelperEdge, target: InterfaceExport) -> None:
     binding = edge.binding
     route = binding.get("route") if isinstance(binding, Mapping) else None
     if not isinstance(route, Mapping) or route.get("kind") != "argument-enum":
@@ -290,6 +296,24 @@ def _validate_helper_target(edge: HelperEdge, target: MachineInterfaceExport) ->
         raise InterfaceProjectionError(
             f"{edge.source_export_id}: enum helper {edge.local_helper_id!r} "
             f"target {target.interface_id} must be read-only"
+        )
+    result = binding.get("result")
+    output_ref = result.get("output_ref") if isinstance(result, Mapping) else None
+    outputs = contract.get("outputs", []) if isinstance(contract, Mapping) else []
+    output = next(
+        (
+            item
+            for item in outputs
+            if isinstance(item, Mapping) and item.get("id") == output_ref
+        ),
+        None,
+    )
+    cardinality = output.get("cardinality") if isinstance(output, Mapping) else None
+    maximum = cardinality.get("maximum") if isinstance(cardinality, Mapping) else None
+    if not isinstance(maximum, int) or isinstance(maximum, bool):
+        raise InterfaceProjectionError(
+            f"{edge.source_export_id}: enum helper {edge.local_helper_id!r} "
+            "result must have finite output cardinality"
         )
 
 
@@ -412,7 +436,11 @@ def _project_v4_consumer_interfaces(
             )
         resolver = resolvers.setdefault(
             module.node_id,
-            _DefinitionResolver(module.skill_root, module.node_id),
+            _DefinitionResolver(
+                module.skill_root,
+                module.node_id,
+                source_field="source_module",
+            ),
         )
         gateway = source.declaration.get("gateway")
         contract = declaration.get("contract")
@@ -499,23 +527,6 @@ def _project_v4_consumer_interfaces(
             f"{consumer_id}: combined interface projection is {size} bytes; limit is {_COMBINED_LIMIT}"
         )
     return InterfaceProjection(consumer_id, document, frozenset(vocabulary))
-    result = binding.get("result")
-    output_ref = result.get("output_ref") if isinstance(result, Mapping) else None
-    outputs = contract.get("outputs", []) if isinstance(contract, Mapping) else []
-    output = next(
-        (
-            item
-            for item in outputs
-            if isinstance(item, Mapping) and item.get("id") == output_ref
-        ),
-        None,
-    )
-    cardinality = output.get("cardinality") if isinstance(output, Mapping) else None
-    if not isinstance(cardinality, Mapping) or not isinstance(cardinality.get("maximum"), int):
-        raise InterfaceProjectionError(
-            f"{edge.source_export_id}: enum helper {edge.local_helper_id!r} "
-            "result must have finite output cardinality"
-        )
 
 
 def project_consumer_interfaces(

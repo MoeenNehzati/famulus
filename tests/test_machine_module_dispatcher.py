@@ -19,6 +19,59 @@ class _FailingCertificationView:
         return CertificationDecision(False, "node-hash-mismatch", "The module changed.")
 
 
+def _v4_contract(arguments: dict[str, object]) -> dict[str, object]:
+    return {
+        "arguments": arguments,
+        "preconditions": [],
+        "interaction": {"mode": "unattended"},
+        "caller_warnings": [],
+        "outputs": [
+            {
+                "id": "result",
+                "audience": "machine",
+                "description": "Result.",
+                "type": {"kind": "string"},
+                "direct_io_ref": "stdout",
+                "cardinality": {"minimum": 1, "maximum": 1},
+                "ordering": "stable",
+                "pagination": {"kind": "none"},
+                "truncation": {"kind": "none"},
+                "empty": "Never empty.",
+            }
+        ],
+        "outcomes": [
+            {
+                "id": "success",
+                "class": "success",
+                "outputs": ["result"],
+                "effects": [],
+                "caller_action": "Continue.",
+            }
+        ],
+        "execution": {
+            "state_effect": "read-only",
+            "lifecycle": "finite",
+            "consistency": {"snapshot": "One snapshot."},
+            "verification": [{"method": "output-schema", "output_ref": "result"}],
+        },
+        "helpers": [],
+        "direct_io": {
+            "reads": [],
+            "writes": [
+                {
+                    "id": "stdout",
+                    "medium": "stdout",
+                    "access": "write",
+                    "content": "Result.",
+                    "format": "text",
+                    "sensitivity": "public",
+                }
+            ],
+            "network": [],
+        },
+    }
+
+
 def _write_module(repo: Path) -> None:
     skill = repo / "skills" / "demo-skill"
     runtime = skill / "_rtx"
@@ -157,8 +210,8 @@ def _write_v4_module(repo: Path, *, language: str = "Python>=3.11") -> None:
                     source_interface: {
                         "version": 1,
                         "description": "Run.",
-                        "contract": {
-                            "arguments": {
+                        "contract": _v4_contract(
+                            {
                                 "value": {
                                     "description": "One value.",
                                     "required": True,
@@ -173,7 +226,7 @@ def _write_v4_module(repo: Path, *, language: str = "Python>=3.11") -> None:
                                     "type": {"kind": "integer", "minimum": 1},
                                 },
                             }
-                        },
+                        ),
                         "process_binding": {
                             "kind": "process",
                             "entry": "Interface",
@@ -234,6 +287,67 @@ def _write_v4_module(repo: Path, *, language: str = "Python>=3.11") -> None:
                         },
                     }
                 },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_v4_caller(
+    repo: Path,
+    *,
+    interface: str | None = "demo-skill.interface.run",
+    version: int = 1,
+) -> None:
+    module = repo / "skills" / "caller-skill"
+    module.mkdir(parents=True)
+    (module / "SKILL.md").write_text("Caller.\n", encoding="utf-8")
+    source_id = "caller-skill.source.gateway"
+    uses = (
+        [{"interface": interface, "version": version}]
+        if interface is not None
+        else []
+    )
+    (module / "blueprints").mkdir()
+    (module / "blueprints" / "gateway.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 4,
+                "node_type": "behavioral_source",
+                "id": source_id,
+                "version": 1,
+                "description": "Caller.",
+                "gateway": {"path": "SKILL.md", "language": "Markdown"},
+                "content": [r"SKILL\.md"],
+                "dependencies": [],
+                "uses_interfaces": uses,
+                "interfaces": {},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (module / "blueprint.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 4,
+                "node_type": "module",
+                "id": "caller-skill",
+                "version": 1,
+                "description": "Caller.",
+                "gateway": {"path": "SKILL.md", "language": "Markdown"},
+                "content": [r"SKILL\.md"],
+                "authority": {"owns_filesystem": []},
+                "sources": {
+                    source_id: {
+                        "blueprint": {
+                            "base": "module-root",
+                            "path": "blueprints/gateway.yaml",
+                        }
+                    }
+                },
+                "exports": {},
             },
             sort_keys=False,
         ),
@@ -316,6 +430,7 @@ def test_module_id_is_not_publicly_callable(tmp_path: Path) -> None:
 
 def test_v4_export_uses_source_gateway_language_and_process_entry(tmp_path: Path) -> None:
     _write_v4_module(tmp_path)
+    _write_v4_caller(tmp_path)
 
     metadata = resolve_dispatch_metadata(
         caller_skill="caller-skill",
@@ -338,6 +453,7 @@ def test_v4_export_uses_source_gateway_language_and_process_entry(tmp_path: Path
 
 def test_v4_route_smoke_bypasses_required_caller_arguments(tmp_path: Path) -> None:
     _write_v4_module(tmp_path)
+    _write_v4_caller(tmp_path)
 
     metadata = resolve_dispatch_metadata(
         caller_skill="caller-skill",
@@ -357,8 +473,52 @@ def test_v4_route_smoke_bypasses_required_caller_arguments(tmp_path: Path) -> No
 
 def test_v4_process_dispatch_fails_closed_for_unsupported_language(tmp_path: Path) -> None:
     _write_v4_module(tmp_path, language="Markdown")
+    _write_v4_caller(tmp_path)
 
     with pytest.raises(InvocationError, match="unsupported process binding language"):
+        resolve_dispatch_metadata(
+            caller_skill="caller-skill",
+            target="demo-skill.interface.run",
+            args=["value"],
+            certification_view=_PassingCertificationView(),
+            repo_root=tmp_path,
+        )
+
+
+def test_v4_dispatch_rejects_unknown_caller_module(tmp_path: Path) -> None:
+    _write_v4_module(tmp_path)
+
+    with pytest.raises(InvocationError, match="caller module.*does not exist"):
+        resolve_dispatch_metadata(
+            caller_skill="caller-skill",
+            target="demo-skill.interface.run",
+            args=["value"],
+            certification_view=_PassingCertificationView(),
+            repo_root=tmp_path,
+        )
+
+
+def test_v4_dispatch_requires_exact_declared_use_in_contained_source(
+    tmp_path: Path,
+) -> None:
+    _write_v4_module(tmp_path)
+    _write_v4_caller(tmp_path, interface=None)
+
+    with pytest.raises(InvocationError, match="does not declare use.*version 1"):
+        resolve_dispatch_metadata(
+            caller_skill="caller-skill",
+            target="demo-skill.interface.run",
+            args=["value"],
+            certification_view=_PassingCertificationView(),
+            repo_root=tmp_path,
+        )
+
+
+def test_v4_dispatch_rejects_declared_use_with_wrong_version(tmp_path: Path) -> None:
+    _write_v4_module(tmp_path)
+    _write_v4_caller(tmp_path, version=2)
+
+    with pytest.raises(InvocationError, match="version 2.*target version is 1"):
         resolve_dispatch_metadata(
             caller_skill="caller-skill",
             target="demo-skill.interface.run",

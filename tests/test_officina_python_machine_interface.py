@@ -10,6 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import officina.runtime.python_machine_interface as python_interface  # noqa: E402
 from officina.runtime.python_machine_interface import (  # noqa: E402
     DispatchCall,
     DispatchDependencyResolver,
@@ -54,6 +55,22 @@ def test_load_interface_from_relative_file_spec(tmp_path: Path, monkeypatch: pyt
     interface = load_interface("_rtx/_demo.py:Interface")
 
     assert interface.__class__.__name__ == "Interface"
+
+
+def test_route_smoke_trace_supports_temporary_repository(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    runtime = skill / "_rtx"
+    runtime.mkdir(parents=True)
+    write_interface(runtime / "_demo.py")
+
+    paths = python_interface.trace_python_route_smoke_dependencies(
+        skill,
+        tmp_path,
+        "_rtx/_demo.py:Interface",
+    )
+
+    assert (runtime / "_demo.py").resolve() in paths
+    assert any(path.name == "python_machine_interface.py" for path in paths)
 
 
 def test_load_interface_preserves_package_relative_imports(

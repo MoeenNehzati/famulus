@@ -7,8 +7,10 @@ import pytest
 from officina.common.blueprint_graph import BlueprintNode, InterfaceExport, MachineInterfaceExport
 from officina.common.process_binding_compiler import (
     MachineInterfaceBindingError,
+    ProcessBindingError,
     compile_gateway_invocation,
     compile_route_smoke_invocation,
+    gateway_language_name,
     parse_caller_invocation,
 )
 
@@ -31,6 +33,25 @@ def _argument(
     if not required:
         result["default"] = default
     return result
+
+
+@pytest.mark.parametrize(
+    ("requirement", "expected"),
+    [
+        ("Python", "Python"),
+        ("Python>=3.11", "Python"),
+        ("Python>=3.11,<4", "Python"),
+    ],
+)
+def test_gateway_language_name_uses_requirement_name(
+    requirement: str,
+    expected: str,
+) -> None:
+    assert gateway_language_name(requirement) == expected
+
+
+def test_legacy_machine_binding_error_is_process_binding_error_alias() -> None:
+    assert MachineInterfaceBindingError is ProcessBindingError
 
 
 def _export(arguments: dict[str, dict[str, object]], fixed: list[dict[str, object]] | None = None) -> MachineInterfaceExport:
@@ -163,7 +184,7 @@ def test_v4_natural_language_interface_is_not_process_compilable() -> None:
         export_declaration=export.export_declaration,
     )
 
-    with pytest.raises(MachineInterfaceBindingError, match="not process-bindable"):
+    with pytest.raises(ProcessBindingError, match="not process-bindable"):
         parse_caller_invocation(natural, [], stdin_requested=False)
 
 
