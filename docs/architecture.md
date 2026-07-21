@@ -1,0 +1,345 @@
+# Famulus Architecture
+
+> **Status:** Architectural draft. This document describes the intended unified
+> architecture. It does not yet supersede the current blueprint schemas,
+> validators, node taxonomy, or runtime implementation.
+
+## Scope
+
+Famulus treats code, instructions, schemas, configuration, and other
+behavior-shaping artifacts as parts of one inspectable system. This document
+defines the common architecture of that system: its nodes, physical content,
+gateways, blueprints, interfaces, authority boundaries, dependency graph,
+discovery, and certification.
+
+More specialized documents refine this architecture:
+
+- `docs/skill-blueprints.md` explains concrete blueprint authoring;
+- `docs/certification_and_drift.md` defines certificate lifecycle and drift;
+- `docs/blueprint_search.md` defines graph-query behavior.
+
+Until this draft is adopted, conflicts are resolved in favor of the current
+schemas and implementation rather than this document.
+
+## Nodes
+
+A **node** is a logically cohesive and encapsulated part of the codebase. Nodes
+may depend on one another, but their dependencies and cross-boundary
+interactions must be explicit.
+
+Every node has:
+
+- **content**: the files and directories in the node's containment scope;
+- **a gateway**: one existing file in that scope through which the node is
+  interpreted or invoked;
+- **a language requirement**: the language or notation used by the gateway;
+- **machine requirements**, optionally: the machines known to interpret or
+  execute the gateway;
+- **a blueprint**: the standardized, machine-readable description of the node.
+
+The gateway is the node's **operational face**. The blueprint is its
+**descriptive face**. Certification verifies that the descriptive face
+accurately and completely represents the behavior available through the
+operational face and the node's behavior-relevant content.
+
+### Content and certification inputs
+
+Content membership is hierarchical. A module's scope includes the scopes of
+its contained behavioral sources, but each regular file has exactly one
+**direct owner**: its most specific declared behavioral source, or the module
+when no source owns it. Behavioral-source ownership cannot overlap between
+siblings. Repository infrastructure such as registered blueprints and
+certifier outputs may be outside node content even when stored below a module
+root.
+
+Containment scope is used for boundary and access checks; direct ownership is
+used for writer authority, undeclared cross-node access, and ordinary hash
+candidates. A module may explicitly bind its gateway to the gateway file of
+one contained behavioral source. That shared gateway is in both containment
+scopes but retains one direct owner, the behavioral source. A node blueprint
+does not separately declare which content is hash-relevant.
+
+The certifier derives each node's certification inputs from ownership, Git
+state, non-configurable safety rules, and one projectwide ordered policy at
+`references/certification/node-hash-policy.yaml`. The policy is validated by
+`references/certification/node-hash-policy.schema.json`; its exact syntax and
+examples belong in the existing `docs/certification_and_drift.md`.
+
+The certifier loads and validates the policy once per repository. It checks
+include-only `require_match` globally, then starts each node from its tracked,
+directly owned regular files plus its blueprint and gateway. Sequential
+Git-wildmatch `include` and `exclude` rules use normalized repository-relative
+paths, with the last match winning. Includes may add ignored or untracked files
+owned directly by that node, but never another node's content. Unowned paths,
+boundary crossings, traversal, symlinks, special files, and reserved certifier
+outputs are errors; an unmatched exclusion is a no-op.
+
+The blueprint, gateway, and transitive same-owner closure of authored contracts
+referenced by them are mandatory inputs. A cross-owner contract reference is a
+certification dependency, not a local hash input. A policy rule that excludes a
+mandatory input is an error. Certificates, certificate histories, audit
+records, health records, and pooled-review outputs are non-configurable
+forbidden inputs. Logs, caches, runtime state, and generated output are excluded
+through project policy unless a later rule deliberately re-includes an eligible
+directly owned regular file.
+
+The resolved manifest records path, kind, digest, Git provenance, and final
+inclusion rule. Tracked inputs and the blueprint must match `source_commit`;
+included ignored or untracked files are signed local-state claims that must stay
+unchanged during certification. `source_commit` therefore reproduces only the
+tracked subset when local inputs exist.
+
+The local node hash covers canonical node identity and blueprint data plus the
+paths, kinds, and exact bytes of the resolved inputs. Dependency hashes remain
+separate certificate data: a dependency change invalidates certification but
+does not change the dependent's local node hash.
+
+When a gateway evaluator discovers implementation files or invoked interfaces
+dynamically, every discovered item must resolve to one of three existing
+authorities: a directly owned certification input, an explicit certification
+dependency, or the certification basis. An unmapped discovered item is a
+certification error. Certification records the resolved mapping so migration
+can prove that gateway dependency reachability has not been lost.
+
+Certificate currentness also binds a signed `certification_basis_hash` covering
+the project node-input policy, certifier, schemas, hash/safety implementation,
+checks, binding compilers, and machine evaluators. Any change to the policy or
+another basis component, node, dependencies, input manifest, signature, or
+history link makes the certificate suspect.
+
+## Gateways
+
+In the initial architecture, a gateway is exactly one existing file, and the
+whole file is the gateway. A gateway cannot identify a symbol, section, line
+range, or other sub-file fragment. A later schema version may add logical
+sub-file addressing without changing the meaning of existing whole-file
+gateways.
+
+That restriction applies to gateway identity, ownership, and hash scope. An
+interface's gateway binding may still select an invocation entry within the
+file, such as a Python class, when the language provider requires one. The
+selector is an invocation detail and does not create another gateway or
+behavioral source.
+
+The gateway path already identifies the file's physical representation through
+its suffix. The blueprint therefore does not repeat a `format`, media type, or
+file-extension field. The language requirement supplies semantic information
+that the path alone cannot provide. For example, two `.json` files may contain
+ordinary JSON and JSON Schema, while two `.md` files may contain human
+documentation and instructions intended for an LLM.
+
+Gateway language and machine requirements use `X`, `X==1.2`, or intersections
+such as `X>=1.2,<2`, with operators `==`, `>=`, `>`, `<=`, and `<`. Ranges are
+valid only for ordered version families; named or date-based editions normally
+use equality. Exact grammar and examples belong in the requirement schema and
+blueprint-authoring documentation.
+
+The language requirement describes the gateway's actual language or notation;
+it does not imply that Famulus has defined a common Codex-Claude language.
+Entries in `machines` are alternatives: each listed machine is claimed to be
+capable of consuming the gateway. Each compatibility claim requires its own
+certification evidence. When a machine exposes a stable version, certification
+records the exact evaluated version even if the blueprint uses a range or bare
+name.
+
+## Blueprints
+
+Every node has one blueprint: its authoritative structured description in the
+Famulus graph. As applicable, it records identity and purpose; content and
+gateway; containment and dependencies; interfaces, bindings, and access;
+inputs, outputs, effects, outcomes, and external resources; privileges and
+filesystem authority; discovery; and certification requirements. Certification
+evidence belongs to the certificate, not the blueprint.
+
+Blueprints point to facts owned by other blueprints rather than copying those
+facts. This single-owner rule prevents a module export and its implementing
+behavioral source from becoming competing authorities for the same interface
+contract.
+
+Blueprint identity and placement follow these rules:
+
+- a module blueprint is `<module-root>/blueprint.yaml`;
+- behavioral-source blueprints are
+  `<module-root>/blueprints/<local-source-id>.yaml`;
+- module IDs are globally unique;
+- behavioral-source IDs are `<module-id>.source.<local-source-id>`;
+- source-interface IDs are
+  `<behavioral-source-id>.interface.<local-interface-name>` and are private to
+  the containing module unless exported;
+- exported interface IDs are `<module-id>.interface.<export-name>`;
+- module and behavioral-source content and gateway paths are relative to the
+  module root;
+- `module.exports` contains only externally addressable interfaces, including
+  restricted exports;
+- a skill's `SKILL.md` is normally both the module gateway and the gateway of
+  `<module-id>.source.gateway`, which directly owns the file;
+- an export's version is derived from its bound source-interface version and is
+  never an independently authored competing value.
+
+## Node kinds
+
+There are two node kinds: **modules** and **behavioral sources**.
+
+### Modules
+
+A module is an encapsulation, ownership, and authority boundary rooted at a
+directory. Its containment scope includes every contained behavioral source.
+Its directly owned content is the subset not directly owned by a contained
+source. Files registered as repository infrastructure need not belong to a
+node merely because they reside below the module root.
+
+A module owns its external identity, namespace, privileges, resource authority,
+cross-module access, exports, and discovery. An export adds public identity, a
+source-interface binding, and unrestricted or restricted access; it never
+duplicates the source contract. An unexported source interface is internal to
+the module.
+
+### Behavioral sources
+
+A behavioral source is a cohesive behavioral implementation unit contained
+within exactly one module. Its content consists of one or more files, exactly
+one of which is its gateway. In the simplest case, the behavioral source
+contains only its gateway file.
+
+A behavioral-source blueprint owns the source's intrinsic behavior, complete
+interface contracts, dependencies, inputs, outputs, effects, and external
+actions. Sources have no independent privileges: their actions must fit both
+the applicable interface contract and their module's authority. As defined
+under Content, a source may directly own a gateway also referenced by its
+module.
+
+## Interfaces and boundaries
+
+An **interface** is a named contract for interacting with a behavioral source.
+A behavioral-source blueprint defines the contract. A module blueprint may
+export that interface across the module boundary.
+
+An interface contract must explain use without implementation inspection,
+including identity/version, invocation, inputs/outputs, preconditions/outcomes,
+effects, lifecycle, and interface-specific machine capabilities as applicable.
+
+Caller authorization is not part of a source-owned interface contract.
+Cross-module authorization belongs only to the module export; same-module
+source dependencies are declared by the calling source. One common interface
+contract describes inputs, outputs, preconditions, outcomes, effects, and
+lifecycle across gateway languages. An optional gateway binding describes only
+how those contract values map onto the gateway's invocation mechanics.
+
+Gateway language, machine compatibility, and interface binding are orthogonal.
+The initial structured binding is the existing process binding for argv/stdin,
+language-provider entry selection, output channels and framing, exit signals,
+and cancellation; it applies across executable gateway languages. A
+natural-language whole-file gateway needs no additional binding object. New
+binding kinds require concrete mechanics that the common contract and gateway
+do not already express.
+
+An interface may designate another authorized interface as a bounded helper and
+bind its arguments. Helper role, authorization, finite-cardinality/read-only
+constraints, resolved definitions, and projection-size limits remain explicit
+contract and graph facts; a generic interface namespace does not erase them.
+
+Behavioral sources within the same module may interact through their internal
+gateways and interfaces. Behavioral sources belonging to different modules may
+interact only through interfaces exported by their respective module gateways.
+Direct cross-module access to another module's behavioral source or private
+content is forbidden.
+
+The interaction path for an exported call is:
+
+```text
+calling behavioral-source gateway
+  -> declared cross-module interface use
+  -> target module export
+  -> target module gateway
+  -> target behavioral-source gateway
+```
+
+The dispatcher or equivalent boundary mechanism attributes the call to the
+calling module and enforces the target export's access policy. Source-level
+`uses_interfaces` agreement is a static graph invariant; the public dispatcher
+does not need to trust a caller-supplied source identity. The implementation may
+collapse redundant local routing steps, but the graph must preserve the same
+authority checks and contract ownership.
+
+## Discovery
+
+Discovery is a module property, not a separate node kind. A module that can be
+found without an explicit dependency declares a discovery mechanism in its
+blueprint. Skills are autodiscoverable modules whose host-facing convention
+uses `SKILL.md` as the module gateway.
+
+A discovery declaration identifies the mechanism and any required name or
+placement convention. A Boolean `autodiscoverable` flag alone is insufficient
+because it does not explain how discovery occurs.
+
+## Graph
+
+Combining the blueprints produces the repository graph. The graph contains:
+
+- module-containment edges;
+- interface-definition and module-export edges;
+- behavioral-source dependency edges;
+- interface-use edges;
+- access-control relationships;
+- discovery declarations;
+- certification dependencies.
+
+Containment and interface use have different meanings. Containment assigns
+ownership and authority. An interface-use edge grants or records interaction;
+it does not transfer ownership. Cross-module reachability is valid only through
+an authorized exported-interface path.
+
+The certification graph is the following acyclic projection of that repository
+graph:
+
+```text
+module --certification-depends-on--> each contained behavioral_source
+behavioral_source --uses-source--> behavioral_source
+behavioral_source --uses-private-interface--> sibling behavioral_source
+behavioral_source --uses-export--> exporting module
+node --references-cross-owner-contract--> owning node
+```
+
+Containment itself is not bidirectional certification dependence: a behavioral
+source does not depend on its parent module merely because it operates under
+the module's authority. Module certification checks that authority and depends
+on the contained sources. A public export binding is covered by the module's
+dependency on its implementing source. Mutual uses that would cycle through
+modules or sources are invalid in the certification graph and must be rejected
+before certification.
+
+Derived analysis overlays, including `implicit_dependence` from logical-resource
+flow, do not affect certification currentness unless an approved contract
+explicitly promotes one of their edges into the certification graph.
+
+## Certification and drift
+
+Certification keeps a node's descriptive and operational faces aligned through
+structural, graph, ownership, authorization, semantic, gateway-language/binding,
+and machine-compatibility checks, then records the node and dependency
+identities. Admissibility is a phase of certification, not a parallel authority;
+only certification establishes blueprint accuracy.
+
+Node authors do not supply conformance manifests, probes, fixtures, adapter
+seams, or independent admissibility results. The certifier owns its check
+catalog and semantic review procedure. A claimed gateway language, binding, or
+machine without a supported certifier check fails certification; it is never
+accepted as unevaluated. This migration does not create a general behavioral
+probe framework. Ordinary unit and integration tests remain separate
+development checks and do not issue certification state.
+
+Certificates retain the signed history, certifier identity, private-key
+isolation, and filesystem-enforced writer boundary defined by
+`docs/certification_and_drift.md`; unified-node provenance and basis fields do
+not weaken that boundary.
+
+Drift checking recomputes the node hash, dependency manifest, and certification
+basis and validates the signed evidence and machine claims. It does not
+independently redefine the node, perform semantic conformance review, or repair
+its blueprint.
+
+## Adoption boundary
+
+This draft differs from the current implementation and changes no live
+declaration until the approved migration maps every existing fact and passes
+its adoption gates.
