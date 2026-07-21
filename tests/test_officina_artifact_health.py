@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import subprocess
 
 import pytest
 import yaml
@@ -50,6 +51,17 @@ KEY = bytes(range(32))
 def _write_yaml(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+
+
+def _commit_fixture(root: Path) -> None:
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "Tests"], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.email", "tests@example.invalid"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
 
 
 def _graph(tmp_path: Path):
@@ -318,6 +330,54 @@ def test_v4_basis_is_resolved_only_from_the_canonical_manifest(tmp_path: Path) -
     assert compute_certification_basis_hash(tmp_path) == first
     basis.write_text("two\n", encoding="utf-8")
     assert compute_certification_basis_hash(tmp_path) != first
+
+
+def test_v4_basis_rejects_deleted_tracked_literal_member(tmp_path: Path) -> None:
+    manifest = (
+        tmp_path
+        / "skills"
+        / "skill-drift"
+        / "references"
+        / "certification-basis-roots.json"
+    )
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('["basis/required.txt"]\n', encoding="utf-8")
+    required = tmp_path / "basis" / "required.txt"
+    required.parent.mkdir()
+    required.write_text("required\n", encoding="utf-8")
+    _commit_fixture(tmp_path)
+    required.unlink()
+
+    with pytest.raises(
+        ArtifactHealthError,
+        match="tracked certification basis input is missing",
+    ):
+        resolve_certification_basis_paths(tmp_path)
+
+
+def test_v4_basis_rejects_deleted_tracked_glob_member(tmp_path: Path) -> None:
+    manifest = (
+        tmp_path
+        / "skills"
+        / "skill-drift"
+        / "references"
+        / "certification-basis-roots.json"
+    )
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('["basis/*.txt"]\n', encoding="utf-8")
+    basis = tmp_path / "basis"
+    basis.mkdir()
+    (basis / "kept.txt").write_text("kept\n", encoding="utf-8")
+    deleted = basis / "deleted.txt"
+    deleted.write_text("deleted\n", encoding="utf-8")
+    _commit_fixture(tmp_path)
+    deleted.unlink()
+
+    with pytest.raises(
+        ArtifactHealthError,
+        match="tracked certification basis input is missing",
+    ):
+        resolve_certification_basis_paths(tmp_path)
 
 
 def test_v4_basis_propagates_explicit_non_atomic_fallback(

@@ -40,7 +40,9 @@ from officina.common.artifact_health import (
 from officina.common.git_provenance import check_commit_readiness as real_check_commit_readiness
 from v4_certification_fixtures import (
     MemorySecretBackend as _MemorySecretBackend,
+    contract as _v4_contract,
     create_v4_repository,
+    write_yaml as _write_v4_yaml,
 )
 
 SPEC = importlib.util.spec_from_file_location("skill_audit_certifier", MODULE_PATH)
@@ -1444,6 +1446,67 @@ def _v4_fixture(repo: Path):
     return create_v4_repository(repo)
 
 
+def _add_v4_cross_owner_contract(repo: Path):
+    module_root = repo / "skills" / "demo-skill"
+    contract_path = module_root / "contracts" / "shared.schema.json"
+    write(contract_path, '{"type":"string"}\n')
+    contract_node_id = "demo-skill.source.contract"
+    contract_interface_id = f"{contract_node_id}.interface.read"
+    _write_v4_yaml(
+        module_root / "blueprints" / "contract.yaml",
+        {
+            "schema_version": 4,
+            "node_type": "behavioral_source",
+            "id": contract_node_id,
+            "version": 1,
+            "description": "Shared contract source.",
+            "gateway": {
+                "path": "contracts/shared.schema.json",
+                "language": "JSON",
+            },
+            "content": [r"contracts/shared\.schema\.json"],
+            "dependencies": [],
+            "uses_interfaces": [],
+            "interfaces": {
+                contract_interface_id: {
+                    "version": 1,
+                    "description": "Read the shared contract.",
+                    "contract": _v4_contract(),
+                }
+            },
+        },
+    )
+    module_path = module_root / "blueprint.yaml"
+    module = yaml.safe_load(module_path.read_text(encoding="utf-8"))
+    module["sources"][contract_node_id] = {
+        "blueprint": {
+            "base": "module-root",
+            "path": "blueprints/contract.yaml",
+        }
+    }
+    module["content"].append(r"contracts/shared\.schema\.json")
+    _write_v4_yaml(module_path, module)
+    gateway_path = module_root / "blueprints" / "gateway.yaml"
+    gateway = yaml.safe_load(gateway_path.read_text(encoding="utf-8"))
+    interface = gateway["interfaces"]["demo-skill.source.gateway.interface.run"]
+    output = interface["contract"]["outputs"][0]
+    output.pop("type")
+    output["schema"] = {
+        "path": "contracts/shared.schema.json",
+        "fragment": "#",
+    }
+    _write_v4_yaml(gateway_path, gateway)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-qm", "add contract source"],
+        check=True,
+    )
+    return certifier.load_repository_blueprint_graph(
+        repo,
+        schema_root=repo / "references" / "blueprint",
+    )
+
+
 def _gate_record(gate: str) -> dict[str, object]:
     check_id, version = certifier.CERTIFIER_CHECK_REGISTRY[gate]
     return {
@@ -1593,6 +1656,57 @@ def test_private_v4_writer_exact_source_target_does_not_write_parent(tmp_path: P
 
     assert result.node_ids == ("demo-skill.source.gateway",)
     assert not certifier.certificate_log_path(graph.nodes["demo-skill"]).exists()
+
+
+def test_private_v4_writer_orders_cross_owner_contract_before_exact_target(
+    tmp_path: Path,
+) -> None:
+    _v4_fixture(tmp_path)
+    graph = _add_v4_cross_owner_contract(tmp_path)
+    target = "demo-skill.source.gateway"
+    dependency = "demo-skill.source.contract"
+    basis_paths = certifier.resolve_certification_basis_paths(tmp_path)
+    states = certifier.compute_node_hash_states(
+        graph,
+        repo_root=tmp_path,
+        policy_path=tmp_path / certifier.CANONICAL_NODE_HASH_POLICY,
+        certification_basis_hash=certifier.compute_certification_basis_hash(tmp_path),
+        certification_basis_paths=basis_paths,
+    )
+    assert any(
+        item["relation"] == "references-cross-owner-contract"
+        and item["target"] == dependency
+        for item in states[target].dependency_hashes
+    )
+    backend = _MemorySecretBackend()
+    attempted: list[str] = []
+
+    def stop_dependency(node_id: str) -> None:
+        attempted.append(node_id)
+        if node_id == dependency:
+            raise certifier.AuditError("stop dependency issuance")
+
+    with pytest.raises(certifier.AuditError, match="stop dependency issuance"):
+        _v4_certify(
+            tmp_path,
+            graph,
+            target_node_ids=(target,),
+            secret_backend=backend,
+            before_append=stop_dependency,
+        )
+
+    assert attempted == [dependency]
+    assert not certifier.certificate_log_path(graph.nodes[target]).exists()
+    assert not certifier.certificate_log_path(graph.nodes[dependency]).exists()
+
+    result = _v4_certify(
+        tmp_path,
+        graph,
+        target_node_ids=(target,),
+        secret_backend=backend,
+    )
+
+    assert result.node_ids == (dependency, target)
 
 
 @pytest.mark.parametrize(

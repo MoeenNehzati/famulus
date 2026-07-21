@@ -25,6 +25,7 @@ from officina.common.artifact_health import (
     POOLED_REVIEW_SCHEMA_INPUTS,
     ArtifactHealthError,
     GraphHealthReport,
+    NodeHashState,
     NodeHealthStatus,
     blueprint_schema_hash,
     build_node_health_record,
@@ -143,10 +144,13 @@ def _v4_hash_bytes(value: bytes) -> str:
     return "sha256:" + hashlib.sha256(value).hexdigest()
 
 
-def _v4_postorder(graph: RepositoryBlueprintGraph, requested: Sequence[str]) -> tuple[str, ...]:
-    children: dict[str, set[str]] = {node_id: set() for node_id in graph.nodes}
-    for edge in graph.certification_edges:
-        children[edge.source_node_id].add(edge.target_node_id)
+def _v4_postorder(
+    graph: RepositoryBlueprintGraph,
+    states: Mapping[str, NodeHashState],
+    requested: Sequence[str],
+) -> tuple[str, ...]:
+    """Order exact targets after every dependency in canonical hash state."""
+
     ordered: list[str] = []
     visited: set[str] = set()
 
@@ -154,8 +158,14 @@ def _v4_postorder(graph: RepositoryBlueprintGraph, requested: Sequence[str]) -> 
         if node_id in visited:
             return
         visited.add(node_id)
-        for child_id in sorted(children[node_id]):
-            visit(child_id)
+        state = states.get(node_id)
+        if not isinstance(state, NodeHashState):
+            raise AuditError(f"missing canonical v4 state for {node_id}")
+        for dependency in state.dependency_hashes:
+            target = dependency.get("target")
+            if not isinstance(target, str) or target not in graph.nodes:
+                raise AuditError(f"invalid canonical v4 dependency for {node_id}")
+            visit(target)
         ordered.append(node_id)
 
     for node_id in requested:
@@ -324,7 +334,7 @@ def _certify_v4_repository(
         return graph, states, basis_hash, basis_paths, certifier_identity
 
     graph, states, basis_hash, basis_paths, certifier_identity = derive()
-    order = _v4_postorder(graph, tuple(target_node_ids))
+    order = _v4_postorder(graph, states, tuple(target_node_ids))
     normalized_checks: dict[str, tuple[dict[str, object], ...]] = {}
 
     tracked_paths: set[Path] = {

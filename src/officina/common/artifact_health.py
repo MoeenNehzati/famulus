@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from functools import lru_cache
 import hashlib
 import json
@@ -27,7 +28,7 @@ from .blueprint_graph import (
     SkillBlueprintGraph,
     resolved_node_content_paths,
 )
-from .git_provenance import git_file_provenance
+from .git_provenance import capture_git_snapshot, git_file_provenance
 from .blueprint_template import load_schema, schema_validator
 from .process_binding_compiler import gateway_language_name
 from officina.runtime.python_machine_interface import (
@@ -411,6 +412,68 @@ def certification_basis_roots_path(repo_root: Path) -> Path:
     return Path(repo_root).resolve() / CERTIFICATION_BASIS_MANIFEST
 
 
+def _tracked_basis_paths_at_head(root: Path) -> tuple[PurePosixPath, ...]:
+    """Return paths tracked at one captured HEAD, or none outside a Git root."""
+
+    snapshot = capture_git_snapshot(root)
+    if snapshot is None or snapshot.repo_root != root:
+        return ()
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(root),
+                "ls-tree",
+                "-r",
+                "-z",
+                "--name-only",
+                snapshot.commit,
+            ],
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise ArtifactHealthError(
+            f"cannot enumerate certification basis at {snapshot.commit}: {exc}"
+        ) from exc
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ArtifactHealthError(
+            f"cannot enumerate certification basis at {snapshot.commit}: {detail}"
+        )
+    return tuple(
+        PurePosixPath(os.fsdecode(raw_path))
+        for raw_path in result.stdout.split(b"\0")
+        if raw_path
+    )
+
+
+def _basis_pattern_matches(path: PurePosixPath, pattern: PurePosixPath) -> bool:
+    """Match pathlib-style path segments, with ``**`` matching zero or more."""
+
+    path_parts = path.parts
+    pattern_parts = pattern.parts
+
+    @lru_cache(maxsize=None)
+    def matches(pattern_index: int, path_index: int) -> bool:
+        if pattern_index == len(pattern_parts):
+            return path_index == len(path_parts)
+        part = pattern_parts[pattern_index]
+        if part == "**":
+            return matches(pattern_index + 1, path_index) or (
+                path_index < len(path_parts)
+                and matches(pattern_index, path_index + 1)
+            )
+        return (
+            path_index < len(path_parts)
+            and fnmatchcase(path_parts[path_index], part)
+            and matches(pattern_index + 1, path_index + 1)
+        )
+
+    return matches(0, 0)
+
+
 def resolve_certification_basis_paths(
     repo_root: Path,
     *,
@@ -436,6 +499,7 @@ def resolve_certification_basis_paths(
         raise ArtifactHealthError(
             f"{manifest}: certification basis manifest must contain a JSON string list"
         )
+    tracked_at_head = _tracked_basis_paths_at_head(root)
     selected = {manifest}
     for pattern in raw:
         relative = Path(pattern)
@@ -443,22 +507,41 @@ def resolve_certification_basis_paths(
             raise ArtifactHealthError(
                 f"certification basis root must stay under target package: {pattern}"
             )
-        candidates = (
+        current_candidates = (
             sorted(root.glob(pattern), key=lambda path: path.as_posix())
             if any(character in pattern for character in "*?[]")
             else [root / relative]
         )
-        for path in candidates:
-            if not path.exists():
-                continue
+        tracked_candidates = {
+            root.joinpath(*path.parts)
+            for path in tracked_at_head
+            if _basis_pattern_matches(path, PurePosixPath(pattern))
+        }
+        for path in sorted(
+            {*current_candidates, *tracked_candidates},
+            key=lambda candidate: candidate.as_posix(),
+        ):
             try:
                 read_regular_file_bytes(
                     path,
                     allowed_root=root,
                     allow_non_atomic=allow_non_atomic,
                 )
-            except FileNotFoundError:
-                continue
+            except OSError as exc:
+                try:
+                    path.lstat()
+                except FileNotFoundError:
+                    if path not in tracked_candidates:
+                        continue
+                    raise ArtifactHealthError(
+                        f"tracked certification basis input is missing: {path}"
+                    ) from exc
+                except OSError:
+                    pass
+                raise ArtifactHealthError(
+                    "certification basis input is not a confined regular file: "
+                    f"{path}: {exc}"
+                ) from exc
             selected.add(path)
     return tuple(sorted(selected, key=lambda path: path.as_posix()))
 
