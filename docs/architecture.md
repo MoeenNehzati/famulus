@@ -108,13 +108,12 @@ checks, binding compilers, and machine evaluators. Any change to the policy or
 another basis component, node, dependencies, input manifest, signature, or
 history link makes the certificate suspect.
 
-Generated `machine_evidence` binds each evaluated gateway-language,
-gateway-machine, runtime-dependency, or platform claim to its authored
-requirement, exact observed version, and versioned certifier check. Platform
-evidence preserves the exact Boolean from `platform_support`; every other kind
-preserves its exact authored requirement string. Currentness requires that
-evidence to agree with the current claims, observations, and checks; it is not
-a dependency-certificate hash.
+Certification evaluates whether gateway-language, gateway-machine,
+runtime-dependency, and platform declarations accurately describe the node's
+content and behavior. These are blueprint-correctness checks, not performance
+or availability tests of the host running the certifier. Their versioned audit
+results belong in `checks`; certificates contain no host-runtime
+`machine_evidence`.
 
 ## Gateways
 
@@ -348,8 +347,12 @@ development checks and do not issue certification state.
 Certification uses one cooperative same-user writer: the existing audit writer
 renamed to `skill-certifier`. It owns signing and certificate writes by
 architecture contract; `skill-drift` remains read-only and verifies with the
-public key. Restrictive user-only permissions, append-only history, atomic
-no-follow writes, and post-write verification are defense-in-depth, not a
+public key. Every node has one append-only certificate log. Each complete entry
+contains a payload and its signature; the signature covers the payload only,
+so no self-reference is introduced. The final complete valid entry is current
+and preceding entries are history. Restrictive user-only permissions,
+atomic/no-follow writes where available, explicit opt-in non-atomic fallback,
+and post-write verification are defense-in-depth, not a
 filesystem-enforced boundary between processes running under the same UID.
 
 Within that cooperative contract, signatures and currentness checks detect

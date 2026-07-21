@@ -129,21 +129,6 @@ payload:
     node_hash: sha256:...
     source_commit: ...
   checks: []
-  machine_evidence:
-    - kind: gateway-language
-      name: Python
-      requirement: Python>=3.11,<4
-      evaluated_version: 3.13.5
-      check:
-        id: runtime-probe
-        version: 1
-    - kind: platform
-      name: linux
-      requirement: true
-      evaluated_version: 6.15.2
-      check:
-        id: platform-probe
-        version: 1
   key_id: sha256:...
   previous_entry_hash: null
   certified_at: 2026-07-20T12:00:00Z
@@ -170,24 +155,20 @@ schemas, hashing and safety implementation, checks, binding compilers, and
 machine evaluators. There is no separate policy, schema, or checker hash in the
 certificate. A change to any basis component changes this one digest.
 
-`machine_evidence` is required and may be empty. Each generated entry has a
-closed shape containing `kind`, `name`, `requirement`, `evaluated_version`, and
-`check`. Its kind is `gateway-language`, `gateway-machine`,
-`runtime-dependency`, or `platform`; `evaluated_version` is the exact observed
-version, never an authored range; and `check` contains the ID and version of
-the certifier check that established the observation. For `platform`,
-`requirement` preserves the exact authored Boolean from `platform_support`.
-For every other kind it uses the common grammar when compatible and otherwise
-preserves the exact non-empty authored requirement string. The evidence covers
-source-wide gateway implementation and intrinsic-interface claims when they
-are evaluated. It does not add a dependency-certificate hash.
+Gateway-language, gateway-machine, runtime-dependency, and platform claims are
+audited for blueprint correctness through versioned entries in `checks`. The
+certifier does not test or record the performance, installed versions, or host
+availability of those machines and dependencies; ordinary tests own those
+questions.
 
-The current certificate is authoritative for status. The complete signed
-entry is also appended to history. The first entry has
-`previous_entry_hash: null`; each later entry hashes the canonical complete
-preceding entry, including its signature. History detects modification,
-middle-entry removal, and reordering within retained history. Without an
-external anchor it cannot prove that the newest entries were not removed.
+Each node has one append-only certificate log. Every appended complete entry
+contains `payload` and `signature`, and the signature covers the canonical
+encoding of `payload` only. The first entry has `previous_entry_hash: null`;
+each later entry hashes the canonical complete preceding entry, including its
+signature. The last complete valid entry is the current certificate and earlier
+entries are history. The chain detects modification, middle-entry removal, and
+reordering within retained history. Without an external anchor it cannot prove
+that the newest entries were removed.
 
 ## Currentness and drift
 
@@ -202,8 +183,6 @@ A certificate is current only when all of the following hold:
   current;
 - its `certifier` fields match the current certifier;
 - its `certification_basis_hash` equals the current basis hash;
-- its `machine_evidence` exactly agrees with current authored requirements,
-  observed versions, and the versioned certifier checks that evaluate them;
 - its history link agrees with the retained preceding entry.
 
 A missing or malformed field, signature, dependency, or input makes the node
@@ -226,22 +205,22 @@ is_current(x):
         and certificate.payload.certifier == current_certifier_identity()
         and certificate.payload.certification_basis_hash
             == current_certification_basis_hash()
-        and certificate.payload.machine_evidence
-            == current_machine_evidence()
         and valid_history_link(certificate)
     )
 ```
 
-The certifier reconstructs the manifest, node hash, dependencies, basis hash,
-and checks internally before signing. It never signs a payload supplied as
-already validated by an LLM. It also verifies append and current-certificate
-writes before reporting success.
+When drift exists, the certifier runs its owned check scripts and LLM audit.
+After discrepancies are repaired or rejected, it reconstructs the manifest,
+node hash, dependencies, basis hash, and checks internally, signs the canonical
+payload, appends the complete signed record, and verifies the append before
+reporting success. Runtime performance and host availability remain outside
+certification. The certifier never signs a caller-supplied certificate payload.
 
 ## Authority and security boundary
 
 The existing audit writer, migrated to `skill-certifier`, is the sole
-supported writer for blueprint repair, certificate signing, and certificate
-history. `skill-drift` is read-only and verifies through the public-key path.
+supported writer for blueprint repair, certificate signing, and the append-only
+certificate log. `skill-drift` is read-only and verifies through the public-key path.
 No broker, service identity, second writer, or parallel signing route is
 introduced. Atomic no-follow writes, user-only permissions, history, and
 post-write verification remain defense in depth.

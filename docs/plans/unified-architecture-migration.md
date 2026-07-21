@@ -64,14 +64,16 @@ Linux, macOS, and Windows; no broker, service identity, second writer, special
 bootstrap, or parallel signing path is added.
 
 Windows remains a target, not a completed certificate-write platform. The
-current `src/officina/common/atomic_files.py` fails closed off POSIX. Before
-Windows v4 certification, Task 3 must generalize that existing owner in place
-to equivalent confined atomic and no-follow semantics and pass Windows-specific
-certificate tests. Until then Windows certification and v4 dispatch are
-unsupported and fail closed; no parallel Windows writer/provider is allowed.
+current `src/officina/common/atomic_files.py` fails closed off POSIX. Task 3
+generalizes that existing owner in place to equivalent confined atomic and
+no-follow semantics. Secure writes remain the default. On a host where those
+primitives are unavailable, certification fails closed unless the user
+explicitly selects the non-atomic fallback; it is never selected silently.
+No parallel Windows writer/provider is allowed.
 
-Restrictive user-only permissions, append-only history, atomic no-follow
-writes, and post-write verification remain required as defense-in-depth. They
+Restrictive user-only permissions, an append-only signed certificate log,
+atomic/no-follow writes where available, and post-write verification remain
+required as defense-in-depth. They
 do not create a security boundary between processes running as the same UID.
 Signatures and currentness checks detect drift, corruption, and changes outside
 the cooperative writer contract, but they do not defend against a malicious
@@ -124,8 +126,9 @@ semantic requirement:
 - staged-mirror validators that include every map-authorized new path, hooks,
   and generated-standard fidelity;
 - public-key verification, the cooperative certifier-only writer contract,
-  restrictive permissions as defense-in-depth, append-only history, atomic
-  no-follow writes, and post-write verification;
+  restrictive permissions as defense-in-depth, one append-only signed
+  certificate log per node, atomic/no-follow writes where available, and
+  post-write verification;
 - certificate-backed pooled review while pooled-review health authority is
   retired;
 - `implicit_dependence` as a non-certification analysis overlay.
@@ -233,10 +236,10 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   caller access only on module exports and intrinsic contracts on sources.
 - [ ] Keep source-wide `platform_support` and `runtime_dependencies` optional
   but paired, covering the behavioral-source gateway implementation and all
-  intrinsic interfaces. Require generated, version-bound `machine_evidence`
-  in certificates; platform evidence preserves the authored support Boolean,
-  every other kind preserves its authored requirement string, and the array
-  may be empty.
+  intrinsic interfaces. Certification checks whether these declarations are
+  accurate descriptions of the source; it does not test the performance or
+  availability of the host running the certifier and records no host-runtime
+  `machine_evidence`.
 - [ ] Define the ordered project hash policy. Start from Git-tracked direct
   ownership; sequential include/exclude uses last-match-wins; only include has
   `require_match`; includes may add ignored/untracked directly owned regular
@@ -350,22 +353,25 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
 - [ ] Reuse the existing bottom-up traversal, exact-target isolation, commit
   checks for tracked inputs, canonical hashing, atomic writes, no-follow
   protections, and post-write verification.
-- [ ] Replace health-record semantics with the final certificate and signed,
-  append-only history. Add public/private signing separation, key rotation,
-  certifier identity, dependency hashes, machine evidence, and
-  `certification_basis_hash`.
+- [ ] Replace health-record semantics with one append-only signed certificate
+  log per node. Each appended complete record contains a payload and signature;
+  the signature covers canonical payload bytes only, and `previous_entry_hash`
+  covers the preceding complete signed record. The last complete valid record
+  is current and preceding records are history. Add Ed25519 public/private
+  signing through the `cryptography` dependency, key rotation, certifier
+  identity, dependency hashes, and `certification_basis_hash`.
 - [ ] Keep signing and certificate writes in the existing audit-writer owner
   renamed to `skill-certifier`. Its supported interface reconstructs the
   payload internally; `skill-drift` remains a public-key, read-only consumer.
   Test the supported writer/read-only contracts without claiming protection
   from a malicious same-UID process.
 - [ ] Generalize the existing `src/officina/common/atomic_files.py` owner in
-  place before Windows v4 certification. Provide Windows-equivalent confined
-  atomic/no-follow semantics, including reparse-point and destination-escape
-  rejection, atomic replacement, durability, restrictive ACL verification,
-  and post-write verification. Until those Windows tests pass, certificate
-  writes and v4 dispatch on Windows remain unsupported and fail closed. Do not
-  add a parallel writer or platform provider file.
+  place. Provide Windows-equivalent confined atomic/no-follow semantics,
+  including reparse-point and destination-escape rejection, atomic replacement,
+  durability, restrictive ACL verification, and post-write verification. The
+  secure path is the default. Expose an explicit non-atomic fallback for hosts
+  where it cannot operate; never fall back silently. Do not add a parallel
+  writer or platform provider file.
 - [ ] Keep runtime fail-closed for missing or suspect certification. Initial
   `skill-certifier` certification uses the same certifier path and complete
   basis checks; add no special bootstrap, service, or second writer.
@@ -375,6 +381,12 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
 - [ ] Make admissibility a versioned certifier check over the final v4 graph.
   Validators may report structure but cannot persist or assert admissible,
   conformant, certified, or suspect state.
+- [ ] Keep certification about blueprint correctness. When drift is detected,
+  the certifier runs its owned check scripts and LLM audit, repairs or reports
+  discrepancies, and only after the final blueprint and content agree does it
+  recompute hashes, reconstruct the payload, sign it, and append the record.
+  Runtime performance and host availability remain ordinary test concerns and
+  are not certificate evidence.
 - [ ] Do not issue intermediate certificates for legacy topology. Before
   cutover, exercise the new core against converted temporary repositories only.
 - [ ] Keep the old public audit writer unchanged through Task 4. The final
@@ -382,8 +394,8 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   atomic cutover.
 - [ ] Make drift a read-only consumer of the shared graph, hash, basis, and
   certificate APIs. It must not sign, repair, or recompute competing judgments.
-- [ ] Test signatures, history linkage, the cooperative writer contract, exact
-  dependency agreement, local-input provenance, machine evidence,
+- [ ] Test signatures, log/history linkage, the cooperative writer contract,
+  exact dependency agreement, local-input provenance,
   mutation/HEAD races, and stale basis/policy behavior using the existing
   audit/drift test homes.
 - [ ] Run:
@@ -509,7 +521,7 @@ an authorized committed rollback point before Task 5.
 
 - [ ] Inspect the exact final diff and commit only with user authorization.
   Re-certify from that committed state and require clean drift with matching
-  node, dependency, basis, provenance, signature, history, machine, and
+  node, dependency, basis, provenance, signature, history, check, and
   certifier evidence.
 - [ ] Only then mark `docs/architecture.md` adopted and this plan complete.
 
