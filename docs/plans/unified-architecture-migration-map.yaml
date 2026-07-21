@@ -105,8 +105,8 @@ coverage_contract:
     method: recursively enumerate every member of every object-valued properties keyword as one JSON-Pointer field occurrence
     duplicate_names: distinct pointers remain distinct covered units
     pointer_encoding: RFC 6901; escape tilde as ~0 and slash as ~1
-    observed_schema_files: 34
-    observed_field_occurrences: 1171
+    observed_schema_files: 37
+    observed_field_occurrences: 1413
     schema_paths:
       include:
         - references/blueprint/**/*.schema.json
@@ -138,6 +138,73 @@ declarations:
       SKILL.md: gateway
       other: normalize the whole gateway's module-relative path by dropping the extension and leading dots/underscores, replacing slash and underscore runs with hyphens
       collision_behavior: reject; never add a suffix silently
+  mechanical_conversion:
+    principle: preserve authored facts exactly and leave unauthored semantic facts absent for certifier-owned completion; never create permissive defaults
+    node_defaults:
+      schema_version: 4
+      new_module_version: 1
+      new_behavioral_source_version: 1
+      missing_description: omit until certifier review
+      missing_machine_claims: omit until certifier review
+      module_content: enumerate current regular files below the module root, excluding registered blueprint paths and reserved certification outputs, and emit deterministic exact-match patterns
+      source_content: emit deterministic exact-match patterns for the whole-file gateway and every authored same-source behavior file; leave remaining module files directly module-owned
+    structural_draft_shape:
+      module_required: [schema_version, node_type, id, version, gateway, content, authority, sources, exports]
+      behavioral_source_required: [schema_version, node_type, id, version, gateway, content, dependencies, uses_interfaces, interfaces]
+      source_interface_required: [version]
+      optional_until_certification: [module.description, behavioral_source.description, interface.description, interface.contract]
+      partial_contract: each present contract section and nested value must satisfy its closed v4 shape, but missing semantic sections remain certifier findings rather than schema errors
+      certification_completeness: module and source descriptions plus interface description, arguments, preconditions, interaction, caller_warnings, outputs, outcomes, execution, helpers, and direct_io are mandatory before signing
+    gateway_mapping:
+      skill_file: {language: Markdown, path: preserve}
+      instruction-file: {language: Markdown, path: preserve}
+      python-entrypoint: {language: Python, path: preserve}
+      command-file: {language: Shell, path: preserve}
+      unknown_kind: reject and require a reviewed map entry
+      machines: preserve only explicitly authored claims; absence remains absence
+    interface_mapping:
+      version: preserve
+      description: preserve when authored; otherwise omit until certifier review
+      usage: preserve verbatim as optional descriptive invocation evidence
+      uses_interfaces: rename IDs and preserve exact versions
+      allowed_callers: move to the bound module export access rule
+      allow_all_callers: move to the bound module export access rule
+      behavior_sources: move to behavioral-source dependencies or same-source content according to resolved ownership
+      owns_filesystem: move to module authority while preserving allowed-reader IDs after public-ID renaming
+    process_binding_mapping:
+      binding_path: becomes the behavioral-source whole-file gateway path
+      symbol: becomes process_binding.entry verbatim
+      args_prefix: becomes process_binding.args_prefix verbatim
+      patterns: become process_binding.patterns verbatim using the generalized existing pattern grammar
+      missing_patterns: omit; never infer an unrestricted argv pattern
+    direct_io_mapping:
+      entry_id: derive deterministically as read-<one-based-index>, write-<one-based-index>, or network-<one-based-index> within each interface
+      medium: preserve verbatim in the generalized medium vocabulary
+      access: preserve verbatim in the generalized access vocabulary
+      system: preserve when authored
+      content: preserve verbatim
+      format: convert to a one-element formats list
+      formats: preserve verbatim
+      auth: preserve verbatim
+      sensitivity: preserve verbatim
+      path: preserve verbatim
+      path_match: preserve when authored; otherwise use the legacy schema default exact only when path is present
+      reason: preserve when authored
+      endpoint: never infer; certifier supplies it when semantic review establishes one
+      canonical_shape:
+        required: [id, medium, access, content, sensitivity]
+        optional: [system, formats, auth, path, path_match, reason, endpoint]
+        formats: nonempty unique string list when present
+        medium_values: [local-filesystem, remote-filesystem, repository-filesystem, home-filesystem, temporary-filesystem, network-request, network, prompt, stdin, stdout, stderr, local-system, calendar, email, subprocess, event-stream]
+        access_values: [read, write, read-write, execute, configure, request, download, upload, send, delete]
+        path_values: nonempty logical paths; confinement and ownership are certifier checks rather than relative-path syntax guesses
+        endpoint_values: nonempty strings when present; network endpoint completeness is a certifier check
+    shared_gateway_merge:
+      source_version: 1
+      interface_versions: preserve independently
+      platform_support: require exact equality across declarations before moving to source scope
+      runtime_dependencies: require semantic set equality across declarations before moving to source scope; ordering differences are normalized only after equality
+      conflict: reject and require a reviewed map entry
   unversioned:
     current_owner: legacy root blueprint plus references/blueprint/legacy-skill.schema.json
     disposition: move
@@ -214,6 +281,12 @@ declarations:
       - inputs: [skills/skill-audit/blueprint.yaml, skills/skill-audit/.SKILL.md.blueprint.yaml, skills/skill-audit/_rtx/._audit_certifier.py.blueprint.yaml]
         target_module: skill-certifier
         decision: rename the existing owner in place; do not create a second certifier
+      - inputs: [skills/connect-google/_rtx/._client_config.py.client-status.blueprint.yaml, skills/connect-google/_rtx/._client_config.py.install-client.blueprint.yaml]
+        target: skills/connect-google/blueprints/rtx-client-config.yaml
+        decision: one source owns _rtx/_client_config.py and both intrinsic interfaces; preserve each interface contract and selector, and require their source-wide platform and runtime requirements to agree before merging
+      - inputs: [skills/skill-drift/_rtx/._check_drift_state.py.compute-hashes.blueprint.yaml, skills/skill-drift/_rtx/._check_drift_state.py.drift-status.blueprint.yaml]
+        target: skills/skill-drift/blueprints/rtx-check-drift-state.yaml
+        decision: one source owns _rtx/_check_drift_state.py and both intrinsic interfaces; preserve each interface contract and selector, and require their source-wide platform and runtime requirements to agree before merging
   version_3:
     live_paths: []
     non_live_examples_and_fixtures:
@@ -440,6 +513,27 @@ schema_inventory:
       disposition: retire
       target: certifier-owned checks listed under rule_dispositions; delete only in Task 6
   field_groups:
+    - id: staged-v4-module-fields
+      schema_paths:
+        include: [references/blueprint/module.schema.json]
+        exclude: []
+      fallback: true
+      disposition: preserve
+      target: structurally loadable v4 module drafts; certifier checks descriptive completeness before certification
+    - id: staged-v4-behavioral-source-fields
+      schema_paths:
+        include: [references/blueprint/behavioral-source.schema.json]
+        exclude: []
+      fallback: true
+      disposition: preserve
+      target: structurally loadable v4 source and interface drafts; certifier checks semantic completeness and exactness before certification
+    - id: staged-v4-certificate-fields
+      schema_paths:
+        include: [references/blueprint/certificate.schema.json]
+        exclude: []
+      fallback: true
+      disposition: preserve
+      target: final signed certificate envelope reconstructed only by the certifier
     - id: legacy-blueprint-fields
       schema_paths:
         include: [references/blueprint/legacy-skill.schema.json]
@@ -935,18 +1029,12 @@ rule_dispositions:
     rules:
       - interface.document.closed@1
       - interface.identity.canonical@1
-      - interface.arguments.type-complete@1
       - interface.arguments.defaults-valid@1
       - interface.arguments.io-linked@1
-      - interface.binding.total@1
       - interface.binding.unambiguous@1
       - interface.binding.dispatch-order@1
       - interface.references.resolved@1
-      - interface.outputs.structured@1
       - interface.outputs.io-linked@1
-      - interface.outcomes.structured@1
-      - interface.execution.axes-consistent@1
-      - interface.execution.decisions-valid@1
       - interface.effects.io-consistent@1
       - interface.effects.outcome-inverse@1
       - interface.ownership.authorized@1
@@ -955,8 +1043,6 @@ rule_dispositions:
       - interface.helpers.well-bound@1
       - interface.sensitivity.transport-safe@1
       - interface.direct-io.internal-path-safe@1
-      - interface.preconditions.structured@1
-      - interface.interaction.structured@1
       - interface.injection.closed@1
       - interface.injection.export-size-bounded@1
       - interface.injection.consumer-size-bounded@1
@@ -966,6 +1052,14 @@ rule_dispositions:
     authored_manifest_or_probe_input: false
     unsupported_language_binding_or_machine_behavior: fail-certification
     rules:
+      - interface.arguments.type-complete@1
+      - interface.binding.total@1
+      - interface.outputs.structured@1
+      - interface.outcomes.structured@1
+      - interface.execution.axes-consistent@1
+      - interface.execution.decisions-valid@1
+      - interface.preconditions.structured@1
+      - interface.interaction.structured@1
       - interface.version.breaking-change@1
       - interface.gateway.accepts-binding@1
       - interface.gateway.enforces-fixed-values@1

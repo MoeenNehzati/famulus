@@ -133,6 +133,12 @@ semantic requirement:
   retired;
 - `implicit_dependence` as a non-certification analysis overlay.
 
+Structural validity is not certification. Mechanical conversion must preserve
+all authored facts without inventing missing semantics. The v4 schemas admit an
+uncertified draft with enough identity, gateway, containment, and relationship
+structure to load the graph; certifier checks require semantic completeness
+and exactness before any certificate is issued or runtime use is allowed.
+
 Authored conformance/admissibility evidence is retired, but each substantive
 rule receives one disposition: structural validator, certifier-owned check, or
 reviewed retirement. Mechanism deletion must not silently delete a safety rule.
@@ -221,6 +227,11 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   Keep semantic arguments, preconditions, outcomes, effects, lifecycle,
   helpers, and `direct_io`; group argv/stdin, entry selection, output framing,
   exit signals, and cancellation under one process-binding definition.
+- [ ] Keep the generic contract and binding vocabulary lossless for migration.
+  A structurally valid uncertified draft may omit semantic facts absent from a
+  legacy declaration; the schema validates values that are present, while the
+  certifier owns completeness and exactness. Do not add legacy schema branches,
+  permissive inferred argv, generic outcomes, or authored status fields.
 - [ ] Preserve provider-specific entry selection in that binding without
   restricting selectors to Python identifiers. Natural-language file gateways
   need no extra binding.
@@ -404,18 +415,40 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   python3 -m pytest -o pythonpath=src -q tests/test_officina_artifact_health.py tests/test_officina_atomic_files.py tests/test_officina_git_provenance.py skills/skill-audit/tests skills/skill-drift/tests
   ```
 
-## Task 4: Prove the mapped conversion without changing the live tree
+## Task 4: Convert mechanically, then certify the temporary v4 graph
 
 **Modify**
 
+- `references/blueprint/module.schema.json`
+- `references/blueprint/behavioral-source.schema.json`
+- `references/blueprint/caller-contract.schema.json`
+- `references/blueprint/direct-io.schema.json`
+- existing schema metadata, template, and schema tests
 - `src/officina/common/interface_injection_migration.py`
 - `tests/test_interface_injection_migration.py`
 - `docs/plans/unified-architecture-migration-map.yaml`
 - `scripts/migrate-blueprints-v4.py`
+- the existing `skill-audit` certifier workflow and its tests, without renaming
+  its live public route
 
 - [ ] Extend the current disposition engine into the sole migration-map
   validator and converter. The new script only parses arguments and calls this
   engine; it may not contain conversion or validation logic.
+- [ ] Distinguish structural validity from certifiability. Relax only semantic
+  presence requirements that cannot be recovered mechanically; retain closed
+  shapes, canonical identities, safe paths, resolved relationships, and exact
+  validation of every fact that is present. Implement the exact draft/final
+  split in `declarations.mechanical_conversion.structural_draft_shape` rather
+  than adding a second schema or draft-status field. Runtime remains
+  certificate-gated.
+- [ ] Preserve legacy `usage`, alternative argv patterns, process entry
+  selectors, direct-I/O facts, and other authored evidence in generalized v4
+  fields using `declarations.mechanical_conversion` in the migration map.
+  `process_binding.patterns` retains the existing pattern grammar; direct-I/O
+  uses deterministic per-interface IDs, one canonical `formats` list, and the
+  union of currently authored medium/access concepts. Do not retain a legacy
+  contract branch and do not synthesize permissive bindings, endpoints,
+  outcomes, effects, or compatibility claims.
 - [ ] Convert every mapped unversioned/v2/v3 node to v4 modules and sources,
   `.machine.`/`.llm.` public IDs to `.interface.`, existing Python symbols to
   process-binding selectors, and every legacy field to its reviewed target.
@@ -428,9 +461,22 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   traversal, unresolved references, and unmapped active paths.
 - [ ] Compare pre/post public graph and runtime-dependency projections. Run the
   conversion twice and require the second result to be a no-op.
-- [ ] Materialize the complete candidate in an isolated temporary Git checkout
-  where every map-authorized created path is tracked. Run repository validators
-  and the blueprint hook there; fail if any mapped path is absent or untracked.
+- [ ] Run the existing certifier-owned workflow on every node in dependency
+  order inside the temporary v4 repository. Semantic findings may repair only
+  the candidate blueprints. After each repair, reload and rerun structural,
+  graph, ownership, and semantic checks. Sign only a clean reconstructed final
+  state; never copy temporary certificates into the live cutover.
+- [ ] Any certifier repair that changes an ID, gateway, binding, export,
+  authorization, dependency, or runtime-dependency projection invalidates the
+  mechanical equivalence proof and requires an explicit map update and fresh
+  review. Descriptive completion that leaves those projections unchanged does
+  not alter the cutover map.
+- [ ] Materialize the candidate in a newly initialized isolated temporary Git
+  repository where every map-authorized created path is tracked. Require all
+  mapped outputs to be present and tracked. Run direct v4 schema, graph,
+  projection, idempotence, and certification checks there. Repository-wide
+  validators and the blueprint hook remain Task 5 gates after their existing
+  owners are switched to v4; do not duplicate them in the converter.
 - [ ] Run:
 
   ```bash

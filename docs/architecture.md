@@ -159,6 +159,21 @@ inputs, outputs, effects, outcomes, and external resources; privileges and
 filesystem authority; discovery; and certification requirements. Certification
 evidence belongs to the certificate, not the blueprint.
 
+Schema validity and certification are distinct. A schema-valid blueprint may
+be an uncertified draft: it must have enough identity, gateway, containment,
+and relationship structure to enter the graph, but semantic facts that cannot
+be recovered mechanically may still be absent. Absence never means approval
+or an implicit default. It is a certifier finding, and a node without a current
+certificate is unavailable to the runtime.
+
+Migration therefore has two stages. The converter losslessly moves every
+authored fact into the generic module, source, interface, process-binding, and
+direct-I/O vocabulary without inventing behavior. The certifier-owned workflow
+then audits the draft against its gateway and content, repairs missing or
+incorrect descriptive facts, reloads the graph, and repeats until the final
+blueprint is exact or certification fails. No certification status is authored
+in the blueprint; the certificate is the only persisted certification state.
+
 Blueprints point to facts owned by other blueprints rather than copying those
 facts. This single-owner rule prevents a module export and its implementing
 behavioral source from becoming competing authorities for the same interface
@@ -209,9 +224,11 @@ within exactly one module. Its content consists of one or more files, exactly
 one of which is its gateway. In the simplest case, the behavioral source
 contains only its gateway file.
 
-A behavioral-source blueprint owns the source's intrinsic behavior, complete
-interface contracts, dependencies, inputs, outputs, effects, and external
-actions. Sources have no independent privileges: their actions must fit both
+A behavioral-source blueprint owns the source's intrinsic behavior, interface
+contracts, dependencies, inputs, outputs, effects, and external actions. These
+facts must be complete before certification, but a mechanically converted
+uncertified draft may omit facts that require semantic review. Sources have no
+independent privileges: their actions must fit both
 the applicable interface contract and their module's authority. As defined
 under Content, a source may directly own a gateway also referenced by its
 module.
@@ -343,6 +360,11 @@ machine without a supported certifier check fails certification; it is never
 accepted as unevaluated. This migration does not create a general behavioral
 probe framework. Ordinary unit and integration tests remain separate
 development checks and do not issue certification state.
+
+The certifier workflow may edit a blueprint to resolve findings, but the
+signing core never accepts a caller-authored payload or treats a repair as
+evidence. After every repair it reloads schema, graph, ownership, dependency,
+and semantic state. Only a clean final pass is hashed, signed, and appended.
 
 Certification uses one cooperative same-user writer: the existing audit writer
 renamed to `skill-certifier`. It owns signing and certificate writes by

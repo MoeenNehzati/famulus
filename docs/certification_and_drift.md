@@ -25,6 +25,30 @@ dependency-only module may omit discovery. Blueprint declarations are graph
 authority. Certificates and generated review artifacts report graph state but
 never add graph edges.
 
+## Structural validity and certifiability
+
+A version-4 blueprint may be structurally valid before it is certifiable.
+Structural validation requires canonical identity, a resolvable whole-file
+gateway, containment and relationship shape, safe paths, and closed shapes for
+every semantic value that is present. It does not manufacture semantic facts
+or assert that an interface is complete.
+
+Mechanical migration preserves every authored fact in the generic v4
+vocabulary. Facts that the old declaration did not contain remain absent; they
+must not be filled with permissive argv rules, generic success outcomes, or
+other guessed defaults merely to satisfy a schema. Missing descriptions,
+contract sections, invocation details, direct-I/O facts, or compatibility
+claims are certifier findings.
+
+The certifier-owned workflow audits such a draft against the gateway and node
+content. It may repair the candidate blueprint, but each repair invalidates the
+previous audit snapshot. The workflow reloads the schema and graph and reruns
+all checks until either the blueprint is complete and exact or it reports
+failure. The signing core accepts no caller-supplied payload and signs only the
+final reconstructed state. No `certified`, `conformant`, or draft-status field
+is authored in a blueprint; availability is determined solely from a current
+certificate.
+
 ## Resolving node inputs
 
 The certifier loads one project policy from
@@ -210,11 +234,13 @@ is_current(x):
 ```
 
 When drift exists, the certifier runs its owned check scripts and LLM audit.
-After discrepancies are repaired or rejected, it reconstructs the manifest,
-node hash, dependencies, basis hash, and checks internally, signs the canonical
-payload, appends the complete signed record, and verifies the append before
-reporting success. Runtime performance and host availability remain outside
-certification. The certifier never signs a caller-supplied certificate payload.
+After each repair it discards the prior audit snapshot, reloads the blueprint
+and graph, and reruns the checks. Only after discrepancies are resolved does it
+reconstruct the manifest, node hash, dependencies, basis hash, and checks
+internally, sign the canonical payload, append the complete signed record, and
+verify the append before reporting success. Runtime performance and host
+availability remain outside certification. The certifier never signs a
+caller-supplied certificate payload.
 
 ## Authority and security boundary
 
