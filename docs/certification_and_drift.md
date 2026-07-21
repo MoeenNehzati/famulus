@@ -137,6 +137,13 @@ payload:
       check:
         id: runtime-probe
         version: 1
+    - kind: platform
+      name: linux
+      requirement: true
+      evaluated_version: 6.15.2
+      check:
+        id: platform-probe
+        version: 1
   key_id: sha256:...
   previous_entry_hash: null
   certified_at: 2026-07-20T12:00:00Z
@@ -168,9 +175,10 @@ closed shape containing `kind`, `name`, `requirement`, `evaluated_version`, and
 `check`. Its kind is `gateway-language`, `gateway-machine`,
 `runtime-dependency`, or `platform`; `evaluated_version` is the exact observed
 version, never an authored range; and `check` contains the ID and version of
-the certifier check that established the observation. `requirement` uses the
-common grammar when compatible and otherwise preserves the exact non-empty
-authored string. The evidence covers
+the certifier check that established the observation. For `platform`,
+`requirement` preserves the exact authored Boolean from `platform_support`.
+For every other kind it uses the common grammar when compatible and otherwise
+preserves the exact non-empty authored requirement string. The evidence covers
 source-wide gateway implementation and intrinsic-interface claims when they
 are evaluated. It does not add a dependency-certificate hash.
 

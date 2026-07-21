@@ -10,6 +10,15 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
 TYPED_SCHEMAS = [
+    "skill.schema.json",
+    "llm-interface.schema.json",
+    "machine-interface.schema.json",
+    "machine-module.schema.json",
+    "behavior-source.schema.json",
+    "module.schema.json",
+    "behavioral-source.schema.json",
+]
+V4_TYPED_SCHEMAS = [
     "module.schema.json",
     "behavioral-source.schema.json",
 ]
@@ -194,7 +203,7 @@ def test_schema_meta_declares_relationship_and_visibility_policy() -> None:
 
 
 def test_v4_nodes_declare_content_as_ownership_not_direct_hash_inputs() -> None:
-    for name in TYPED_SCHEMAS:
+    for name in V4_TYPED_SCHEMAS:
         properties = _load(name)["properties"]
         assert "local_hash_inputs" not in properties
         assert properties["gateway"]["x-famulus"]["audit_hash"] == "include"

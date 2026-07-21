@@ -125,6 +125,26 @@
       "type": "object",
       "required": ["kind", "name", "requirement", "evaluated_version", "check"],
       "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {"const": "platform"},
+            "requirement": {"type": "boolean"}
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "gateway-language",
+                "gateway-machine",
+                "runtime-dependency"
+              ]
+            },
+            "requirement": {"$ref": "#/definitions/authoredRequirement"}
+          }
+        }
+      ],
       "properties": {
         "kind": {
           "enum": [
@@ -135,7 +155,9 @@
           ]
         },
         "name": {"type": "string", "minLength": 1},
-        "requirement": {"$ref": "#/definitions/authoredRequirement"},
+        "requirement": {
+          "description": "Exact authored Boolean from platform_support for platform evidence; otherwise the exact authored requirement string."
+        },
         "evaluated_version": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._+:-]*$",
@@ -187,7 +209,7 @@
         "machine_evidence": {
           "type": "array",
           "items": {"$ref": "#/definitions/machineEvidence"},
-          "description": "Generated evidence binding each evaluated language, machine, dependency, or platform claim to an exact observed version and versioned certifier check."
+          "description": "Generated evidence binding each evaluated language, machine, dependency, or platform claim to its exact authored string or platform Boolean, exact observed version, and versioned certifier check."
         },
         "key_id": {"$ref": "#/definitions/sha256"},
         "previous_entry_hash": {
@@ -218,7 +240,7 @@
   "x-famulus": {
     "canonical_signature_input": "payload",
     "graph_authority": false,
-    "machine_evidence_currentness": "Each generated claim must still match the authored requirement, exact observed version, and referenced versioned certifier check.",
+    "machine_evidence_currentness": "Each generated claim must still match the authored requirement string or platform-support Boolean, exact observed version, and referenced versioned certifier check.",
     "git_reproducibility": "source_commit reproduces tracked manifest entries only; ignored and untracked entries are signed local-state claims",
     "cooperative_security_boundary": "signatures detect drift and out-of-contract changes but do not defend against a malicious same-user process"
   }

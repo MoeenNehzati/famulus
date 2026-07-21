@@ -95,10 +95,12 @@ remain non-configurable certifier invariants.
 
 Version-4 certificates require a `machine_evidence` array, which may be empty.
 Each generated entry records the evaluated gateway language, gateway machine,
-runtime dependency, or platform requirement; the exact authored requirement
-string; the exact observed version; and the versioned certifier check that
-established it. This evidence is part of
-certificate currentness and does not introduce a dependency-certificate hash.
+runtime dependency, or platform requirement. A platform entry preserves the
+exact authored Boolean from `platform_support`; every other entry preserves the
+exact authored requirement string. Each entry also records the exact observed
+version and the versioned certifier check that established it. This evidence is
+part of certificate currentness and does not introduce a dependency-certificate
+hash.
 
 `schema-meta.json` defines the annotation protocol and staged relationship
 matrix. `interface-projection.schema.json`, `pooled-review.schema.json`, and

@@ -234,7 +234,9 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
 - [ ] Keep source-wide `platform_support` and `runtime_dependencies` optional
   but paired, covering the behavioral-source gateway implementation and all
   intrinsic interfaces. Require generated, version-bound `machine_evidence`
-  in certificates; the array may be empty.
+  in certificates; platform evidence preserves the authored support Boolean,
+  every other kind preserves its authored requirement string, and the array
+  may be empty.
 - [ ] Define the ordered project hash policy. Start from Git-tracked direct
   ownership; sequential include/exclude uses last-match-wins; only include has
   `require_match`; includes may add ignored/untracked directly owned regular

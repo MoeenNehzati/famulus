@@ -245,6 +245,11 @@ def test_generated_templates_validate_against_live_and_annotated_schemas() -> No
 
 def test_each_typed_schema_generates_a_valid_authoring_template() -> None:
     for name in [
+        "skill.schema.json",
+        "llm-interface.schema.json",
+        "machine-interface.schema.json",
+        "machine-module.schema.json",
+        "behavior-source.schema.json",
         "module.schema.json",
         "behavioral-source.schema.json",
     ]:

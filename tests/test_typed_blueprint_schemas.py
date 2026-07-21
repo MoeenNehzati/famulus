@@ -589,6 +589,30 @@ def test_v4_certificate_requires_version_bound_machine_evidence() -> None:
     assert _errors(invalid_version, "certificate.schema.json")
 
 
+def test_v4_certificate_machine_evidence_requirement_type_follows_kind() -> None:
+    document = _valid_v4_certificate()
+    evidence = document["payload"]["machine_evidence"][0]
+    evidence.update(
+        kind="platform",
+        name="linux",
+        requirement=True,
+        evaluated_version="6.15.2",
+    )
+    assert _errors(document, "certificate.schema.json") == []
+
+    platform_string = deepcopy(document)
+    platform_string["payload"]["machine_evidence"][0]["requirement"] = "true"
+    assert _errors(platform_string, "certificate.schema.json")
+
+    for kind in ("gateway-language", "gateway-machine", "runtime-dependency"):
+        non_platform_boolean = deepcopy(document)
+        non_platform_boolean["payload"]["machine_evidence"][0].update(
+            kind=kind,
+            requirement=True,
+        )
+        assert _errors(non_platform_boolean, "certificate.schema.json"), kind
+
+
 def _machine_module_example(name: str) -> dict:
     return yaml.safe_load(
         (MACHINE_MODULE_EXAMPLE_ROOT / name).read_text(encoding="utf-8")

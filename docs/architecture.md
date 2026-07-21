@@ -110,9 +110,11 @@ history link makes the certificate suspect.
 
 Generated `machine_evidence` binds each evaluated gateway-language,
 gateway-machine, runtime-dependency, or platform claim to its authored
-requirement, exact observed version, and versioned certifier check. Currentness
-requires that evidence to agree with the current claims, observations, and
-checks; it is not a dependency-certificate hash.
+requirement, exact observed version, and versioned certifier check. Platform
+evidence preserves the exact Boolean from `platform_support`; every other kind
+preserves its exact authored requirement string. Currentness requires that
+evidence to agree with the current claims, observations, and checks; it is not
+a dependency-certificate hash.
 
 ## Gateways
 
