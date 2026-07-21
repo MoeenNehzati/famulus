@@ -10,6 +10,8 @@ import stat
 import subprocess
 from typing import Mapping, Sequence
 
+from .atomic_files import AtomicWriteError, read_regular_file_bytes
+
 
 _REGULAR_FILE_MODES = {"100644", "100755"}
 
@@ -183,10 +185,32 @@ def _descriptor_safe_open_supported() -> bool:
     )
 
 
+def _use_native_confined_read() -> bool:
+    """Return whether tracked inputs use the shared native handle reader."""
+
+    return os.name == "nt"
+
+
 def _read_descriptor_safe_regular_file(
-    repo_root: Path, relative_path: str
+    repo_root: Path,
+    relative_path: str,
+    *,
+    allow_non_atomic: bool = False,
 ) -> tuple[bytes | None, str | None, str | None]:
     """Read a regular input through no-follow descriptors, or fail closed."""
+
+    if _use_native_confined_read():
+        try:
+            data = read_regular_file_bytes(
+                repo_root / relative_path,
+                allowed_root=repo_root,
+                allow_non_atomic=allow_non_atomic,
+            )
+        except (AtomicWriteError, FileNotFoundError, OSError):
+            return None, None, "unsafe-worktree-input"
+        # Native Git worktrees do not expose the executable bit as a reliable
+        # filesystem mode. The index-mode comparison below remains authoritative.
+        return data, None, None
 
     if not _descriptor_safe_open_supported():
         return None, None, "descriptor-safe-open-unavailable"
@@ -250,6 +274,8 @@ def check_commit_readiness(
     snapshot: GitSnapshot | None,
     input_paths: Sequence[Path],
     expected_hashes: Mapping[str, str],
+    *,
+    allow_non_atomic: bool = False,
 ) -> CommitReadiness:
     """Determine whether exactly the supplied local inputs match captured HEAD."""
 
@@ -308,7 +334,11 @@ def check_commit_readiness(
             reasons.add(f"unreadable-commit-blob:{relative_path}")
             continue
         worktree_bytes, worktree_mode, worktree_reason = (
-            _read_descriptor_safe_regular_file(snapshot.repo_root, relative_path)
+            _read_descriptor_safe_regular_file(
+                snapshot.repo_root,
+                relative_path,
+                allow_non_atomic=allow_non_atomic,
+            )
         )
         if worktree_reason is not None:
             reasons.add(f"{worktree_reason}:{relative_path}")
@@ -316,7 +346,7 @@ def check_commit_readiness(
         if worktree_bytes is None:
             reasons.add(f"unsafe-worktree-input:{relative_path}")
             continue
-        if worktree_mode != commit_mode:
+        if worktree_mode is not None and worktree_mode != commit_mode:
             reasons.add(f"worktree-mode-differs-from-commit:{relative_path}")
             continue
         if worktree_bytes != commit_bytes:

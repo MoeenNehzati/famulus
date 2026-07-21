@@ -10,23 +10,34 @@ import officina.common as common
 import officina.common.artifact_health as artifact_health
 from officina.common.artifact_health import (
     ArtifactHealthError,
+    CERTIFIER_CHECK_REGISTRY,
+    CERTIFIER_INTERFACE_ID,
+    CERTIFIER_INTERFACE_VERSION,
+    CERTIFIER_NODE_ID,
     NodeHashState,
     NodeHealthStatus,
     blueprint_schema_hash,
     build_node_health_record,
     certify_graph,
     check_graph_health,
+    compute_certification_basis_hash,
     compute_node_hash_states,
+    derive_certifier_identity,
+    expected_certifier_checks,
     health_path_for_node,
     local_input_paths_for_node,
     node_requires_refresh,
     normalize_node_checks,
+    resolve_certification_basis_paths,
 )
 from officina.common.audit_records import (
     attach_record_authentication,
     record_authentication_matches,
 )
 from officina.common.blueprint_graph import (
+    BlueprintNode,
+    InterfaceExport,
+    RepositoryBlueprintGraph,
     load_repository_blueprint_graphs,
     load_skill_blueprint_graph,
     resolve_repository_skill_graph,
@@ -268,6 +279,186 @@ def test_duplicate_node_check_identity_is_rejected() -> None:
                 {"id": "tests", "version": 1, "passed": True, "findings": ["b"]},
             ]
         )
+
+
+def test_v4_basis_is_resolved_only_from_the_canonical_manifest(tmp_path: Path) -> None:
+    manifest = (
+        tmp_path
+        / "skills"
+        / "skill-drift"
+        / "references"
+        / "certification-basis-roots.json"
+    )
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        '["references/certification/node-hash-policy.yaml", "basis/*.txt"]\n',
+        encoding="utf-8",
+    )
+    policy = tmp_path / "references" / "certification" / "node-hash-policy.yaml"
+    _write_yaml(
+        policy,
+        {
+            "policy_version": 1,
+            "path_syntax": "gitignore",
+            "starting_set": "git-tracked-directly-owned-regular-files",
+            "rules": [],
+        },
+    )
+    basis = tmp_path / "basis" / "check.txt"
+    basis.parent.mkdir()
+    basis.write_text("one\n", encoding="utf-8")
+    outside_manifest = tmp_path / "not-authoritative.txt"
+    outside_manifest.write_text("ignored one\n", encoding="utf-8")
+
+    paths = resolve_certification_basis_paths(tmp_path)
+    first = compute_certification_basis_hash(tmp_path)
+    outside_manifest.write_text("ignored two\n", encoding="utf-8")
+
+    assert paths == tuple(sorted((manifest, policy, basis), key=lambda path: path.as_posix()))
+    assert compute_certification_basis_hash(tmp_path) == first
+    basis.write_text("two\n", encoding="utf-8")
+    assert compute_certification_basis_hash(tmp_path) != first
+
+
+def test_v4_basis_propagates_explicit_non_atomic_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = (
+        tmp_path
+        / "skills"
+        / "skill-drift"
+        / "references"
+        / "certification-basis-roots.json"
+    )
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('["basis.txt"]\n', encoding="utf-8")
+    (tmp_path / "basis.txt").write_text("basis\n", encoding="utf-8")
+    observed: list[bool] = []
+    real_read = artifact_health.read_regular_file_bytes
+
+    def capture_read(
+        path: Path,
+        *,
+        allowed_root: Path,
+        allow_non_atomic: bool = False,
+    ) -> bytes:
+        observed.append(allow_non_atomic)
+        return real_read(
+            path,
+            allowed_root=allowed_root,
+            allow_non_atomic=allow_non_atomic,
+        )
+
+    monkeypatch.setattr(artifact_health, "read_regular_file_bytes", capture_read)
+
+    resolve_certification_basis_paths(tmp_path, allow_non_atomic=True)
+    compute_certification_basis_hash(tmp_path, allow_non_atomic=True)
+
+    assert observed and all(observed)
+
+
+def test_v4_basis_rejects_manifest_escape(tmp_path: Path) -> None:
+    manifest = (
+        tmp_path
+        / "skills"
+        / "skill-drift"
+        / "references"
+        / "certification-basis-roots.json"
+    )
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('["../outside"]\n', encoding="utf-8")
+
+    with pytest.raises(ArtifactHealthError, match="stay under target package"):
+        resolve_certification_basis_paths(tmp_path)
+
+
+def test_v4_certifier_identity_and_checks_are_derived_from_registry() -> None:
+    root = Path("/repository")
+    node = BlueprintNode(
+        node_id=CERTIFIER_NODE_ID,
+        node_type="module",
+        version=1,
+        skill_root=root / "skills" / CERTIFIER_NODE_ID,
+        blueprint_path=root / "skills" / CERTIFIER_NODE_ID / "blueprint.yaml",
+        gateway_path=root / "skills" / CERTIFIER_NODE_ID / "SKILL.md",
+        declaration={},
+    )
+    export = InterfaceExport(
+        interface_id=CERTIFIER_INTERFACE_ID,
+        version=CERTIFIER_INTERFACE_VERSION,
+        local_name="certify",
+        module_node_id=CERTIFIER_NODE_ID,
+        declaration={},
+    )
+    graph = RepositoryBlueprintGraph(
+        nodes={CERTIFIER_NODE_ID: node},
+        node_edges=(),
+        exports={CERTIFIER_INTERFACE_ID: export},
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+    )
+    states = {
+        CERTIFIER_NODE_ID: NodeHashState(node_hash="sha256:" + "a" * 64)
+    }
+
+    assert derive_certifier_identity(graph, states, "b" * 40) == {
+        "interface": CERTIFIER_INTERFACE_ID,
+        "version": CERTIFIER_INTERFACE_VERSION,
+        "node_hash": "sha256:" + "a" * 64,
+        "source_commit": "b" * 40,
+    }
+    assert tuple(CERTIFIER_CHECK_REGISTRY) == ("deterministic", "semantic-audit")
+    assert expected_certifier_checks() == (
+        {
+            "id": "blueprint-accuracy",
+            "version": 1,
+            "passed": True,
+            "findings": [],
+        },
+        {
+            "id": "v4-deterministic",
+            "version": 1,
+            "passed": True,
+            "findings": [],
+        },
+    )
+
+
+@pytest.mark.parametrize("missing", ["node", "export", "state"])
+def test_v4_certifier_identity_fails_closed_when_authority_is_missing(missing: str) -> None:
+    root = Path("/repository")
+    node = BlueprintNode(
+        node_id=CERTIFIER_NODE_ID,
+        node_type="module",
+        version=1,
+        skill_root=root / "skills" / CERTIFIER_NODE_ID,
+        blueprint_path=root / "skills" / CERTIFIER_NODE_ID / "blueprint.yaml",
+        gateway_path=root / "skills" / CERTIFIER_NODE_ID / "SKILL.md",
+        declaration={},
+    )
+    export = InterfaceExport(
+        interface_id=CERTIFIER_INTERFACE_ID,
+        version=CERTIFIER_INTERFACE_VERSION,
+        local_name="certify",
+        module_node_id=CERTIFIER_NODE_ID,
+        declaration={},
+    )
+    graph = RepositoryBlueprintGraph(
+        nodes={} if missing == "node" else {CERTIFIER_NODE_ID: node},
+        node_edges=(),
+        exports={} if missing == "export" else {CERTIFIER_INTERFACE_ID: export},
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+    )
+    states = {} if missing == "state" else {
+        CERTIFIER_NODE_ID: NodeHashState(node_hash="sha256:" + "a" * 64)
+    }
+
+    with pytest.raises(ArtifactHealthError, match="certifier"):
+        derive_certifier_identity(graph, states, "b" * 40)
 
 
 def test_local_input_paths_are_exactly_node_owned_inputs(tmp_path: Path) -> None:

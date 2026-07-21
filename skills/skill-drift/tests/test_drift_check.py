@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +16,9 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "_rtx" / "_check_drift_state
 SRC_ROOT = MODULE_PATH.parents[3] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
+TEST_ROOT = MODULE_PATH.parents[3] / "tests"
+if str(TEST_ROOT) not in sys.path:
+    sys.path.insert(0, str(TEST_ROOT))
 
 from officina.common.artifact_health import (
     CANONICAL_GRAPH_SCHEMA_INPUTS,
@@ -34,12 +38,24 @@ from officina.common.pooled_blueprint import (
     pooled_review_path,
     render_pooled_review,
 )
+from v4_certification_fixtures import create_certified_fixture
 
 SPEC = importlib.util.spec_from_file_location("skill_check_drift_state", MODULE_PATH)
 checker = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 sys.modules[SPEC.name] = checker
 SPEC.loader.exec_module(checker)
+
+
+def _v4_certified_fixture(
+    repo: Path,
+    *,
+    extra_modules: tuple[str, ...] = (),
+):
+    graph, _states, _commit, _public_key_root, _backend, _key = (
+        create_certified_fixture(repo, extra_modules=extra_modules)
+    )
+    return graph
 
 
 def write(path: Path, text: str) -> None:
@@ -1109,17 +1125,11 @@ def test_target_policy_hash_uses_target_manifest(tmp_path: Path) -> None:
     install_policy_manifest(tmp_path, ["target-policy.md"])
     write(tmp_path / "target-policy.md", "target-only policy\n")
 
-    expected = checker.digest_entries(
-        [
-            *checker.entries_for_path(
-                tmp_path / "skills" / "skill-drift" / "references" / "certification-basis-roots.json",
-                tmp_path,
-            ),
-            *checker.entries_for_path(tmp_path / "target-policy.md", tmp_path),
-        ]
-    )
+    first = checker.compute_policy_hash(tmp_path)
+    write(tmp_path / "target-policy.md", "changed target policy\n")
+    second = checker.compute_policy_hash(tmp_path)
 
-    assert checker.compute_policy_hash(tmp_path) == expected
+    assert first != second
 
 
 def test_target_policy_manifest_symlink_is_rejected(tmp_path: Path, capsys) -> None:
@@ -1422,6 +1432,10 @@ def test_task_7_machine_sidecars_are_consistently_windows_unsupported() -> None:
 def test_drift_status_sidecar_declares_timestamped_report_writer() -> None:
     sidecar = MODULE_PATH.parent / "._check_drift_state.py.drift-status.blueprint.yaml"
     declaration = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+    assert "cryptography" in {
+        dependency["name"] for dependency in declaration["dependencies"]
+        if dependency["kind"] == "python-package"
+    }
 
     assert declaration["direct_io"]["writes"] == [
         {
@@ -1471,3 +1485,166 @@ def test_compute_hashes_fails_when_blueprint_is_missing(tmp_path: Path, capsys) 
     captured = capsys.readouterr()
     assert exit_code == 2
     assert "plugin-skill: missing blueprint.yaml" in captured.err
+
+
+def test_legacy_basis_wrappers_delegate_to_the_shared_owner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared_paths = (tmp_path / "canonical-one", tmp_path / "canonical-two")
+    calls: list[tuple[str, Path]] = []
+
+    def shared_hash(root: Path) -> str:
+        calls.append(("hash", root))
+        return "sha256:" + "a" * 64
+
+    def shared_resolve(root: Path) -> tuple[Path, ...]:
+        calls.append(("paths", root))
+        return shared_paths
+
+    monkeypatch.setattr(checker, "compute_shared_certification_basis_hash", shared_hash)
+    monkeypatch.setattr(checker, "resolve_shared_certification_basis_paths", shared_resolve)
+
+    assert checker.compute_certification_basis_hash(tmp_path) == "sha256:" + "a" * 64
+    assert checker.certification_basis_paths(tmp_path) == shared_paths
+    assert calls == [("hash", tmp_path.resolve()), ("paths", tmp_path.resolve())]
+
+
+def test_private_v4_drift_is_public_key_only_read_only_and_exact(tmp_path: Path) -> None:
+    graph = _v4_certified_fixture(tmp_path)
+    before = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
+
+    report = checker._check_v4_repository(
+        tmp_path,
+        target_node_ids=("demo-skill.source.gateway",),
+        public_key_root=tmp_path / "public-keys",
+    )
+
+    after = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
+    assert set(report.nodes) == {"demo-skill.source.gateway"}
+    assert report.nodes["demo-skill.source.gateway"].current
+    assert before == after
+    source = MODULE_PATH.read_text(encoding="utf-8")
+    assert "load_or_create_certificate_signing_key" not in source
+    assert "sign_certificate_payload" not in source
+    assert "rotate_certificate_signing_key" not in source
+
+
+def test_private_v4_drift_propagates_explicit_non_atomic_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _v4_certified_fixture(tmp_path)
+    real_evaluate = checker.evaluate_certificate_currentness
+    real_resolve_basis = checker.resolve_shared_certification_basis_paths
+    real_compute_basis = checker.compute_shared_certification_basis_hash
+    observed: list[str] = []
+
+    def resolve_basis_with_fallback(*args: object, **kwargs: object):
+        assert kwargs["allow_non_atomic"] is True
+        observed.append("basis-paths")
+        return real_resolve_basis(*args, **kwargs)
+
+    def compute_basis_with_fallback(*args: object, **kwargs: object):
+        assert kwargs["allow_non_atomic"] is True
+        observed.append("basis-hash")
+        return real_compute_basis(*args, **kwargs)
+
+    def evaluate_with_fallback(*args: object, **kwargs: object):
+        assert kwargs["allow_non_atomic"] is True
+        observed.append("evaluate")
+        return real_evaluate(*args, **kwargs)
+
+    monkeypatch.setattr(
+        checker,
+        "resolve_shared_certification_basis_paths",
+        resolve_basis_with_fallback,
+    )
+    monkeypatch.setattr(
+        checker,
+        "compute_shared_certification_basis_hash",
+        compute_basis_with_fallback,
+    )
+    monkeypatch.setattr(
+        checker, "evaluate_certificate_currentness", evaluate_with_fallback
+    )
+
+    report = checker._check_v4_repository(
+        tmp_path,
+        target_node_ids=("demo-skill.source.gateway",),
+        public_key_root=tmp_path / "public-keys",
+        allow_non_atomic=True,
+    )
+
+    assert report.nodes["demo-skill.source.gateway"].current
+    assert observed == ["basis-paths", "basis-hash", "evaluate"]
+
+
+def test_private_v4_drift_reports_precise_suspect_log_concern(tmp_path: Path) -> None:
+    graph = _v4_certified_fixture(tmp_path)
+    path = checker.certificate_log_path(graph.nodes["demo-skill.source.gateway"])
+    with path.open("ab") as stream:
+        stream.write(b"{}\n")
+
+    report = checker._check_v4_repository(
+        tmp_path,
+        target_node_ids=("demo-skill.source.gateway",),
+        public_key_root=tmp_path / "public-keys",
+    )
+
+    status = report.nodes["demo-skill.source.gateway"]
+    assert not status.current
+    assert status.concerns == ("suspect-certificate-log",)
+
+
+def test_private_v4_drift_derives_canonical_basis_and_certifier(tmp_path: Path) -> None:
+    _v4_certified_fixture(tmp_path)
+    policy = tmp_path / "references" / "certification" / "node-hash-policy.yaml"
+    policy.write_text(
+        policy.read_text(encoding="utf-8").replace("**/*.log", "**/*.changed"),
+        encoding="utf-8",
+    )
+
+    report = checker._check_v4_repository(
+        tmp_path,
+        target_node_ids=("demo-skill.source.gateway",),
+        public_key_root=tmp_path / "public-keys",
+    )
+
+    status = report.nodes["demo-skill.source.gateway"]
+    assert not status.current
+    assert "certification-basis-mismatch" in status.concerns
+
+
+def test_private_v4_drift_rejects_mode_only_source_commit_drift(
+    tmp_path: Path,
+) -> None:
+    _v4_certified_fixture(tmp_path)
+    gateway = tmp_path / "skills" / "demo-skill" / "SKILL.md"
+    gateway.chmod(gateway.stat().st_mode | stat.S_IXUSR)
+
+    report = checker._check_v4_repository(
+        tmp_path,
+        target_node_ids=("demo-skill.source.gateway",),
+        public_key_root=tmp_path / "public-keys",
+    )
+
+    status = report.nodes["demo-skill.source.gateway"]
+    assert not status.current
+    assert "source-commit-input-mismatch" in status.concerns
+
+
+def test_private_v4_drift_keeps_unrelated_content_isolated(
+    tmp_path: Path,
+) -> None:
+    _v4_certified_fixture(tmp_path, extra_modules=("unrelated-skill",))
+    unrelated = tmp_path / "skills" / "unrelated-skill" / "SKILL.md"
+    unrelated.chmod(unrelated.stat().st_mode | stat.S_IXUSR)
+
+    report = checker._check_v4_repository(
+        tmp_path,
+        target_node_ids=("demo-skill.source.gateway",),
+        public_key_root=tmp_path / "public-keys",
+    )
+
+    assert report.nodes["demo-skill.source.gateway"].current

@@ -3,26 +3,45 @@ from __future__ import annotations
 import importlib.util
 import json
 import shutil
+import stat
 import subprocess
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Sequence
 
 import yaml
+import pytest
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "_rtx" / "_audit_certifier.py"
 SRC_ROOT = MODULE_PATH.parents[3] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
+TEST_ROOT = MODULE_PATH.parents[3] / "tests"
+if str(TEST_ROOT) not in sys.path:
+    sys.path.insert(0, str(TEST_ROOT))
 
-from officina.common.audit_records import record_authentication_matches, record_digest_matches
+from officina.common import artifact_health, git_provenance
+from officina.common.audit_records import (
+    certificate_entry_hash,
+    load_or_create_certificate_signing_key,
+    parse_certificate_log,
+    record_authentication_matches,
+    record_digest_matches,
+    rotate_certificate_signing_key,
+)
 from officina.common.artifact_health import (
     CANONICAL_GRAPH_SCHEMA_INPUTS,
     POOLED_REVIEW_SCHEMA_INPUTS,
 )
 from officina.common.git_provenance import check_commit_readiness as real_check_commit_readiness
+from v4_certification_fixtures import (
+    MemorySecretBackend as _MemorySecretBackend,
+    create_v4_repository,
+)
 
 SPEC = importlib.util.spec_from_file_location("skill_audit_certifier", MODULE_PATH)
 certifier = importlib.util.module_from_spec(SPEC)
@@ -1409,9 +1428,571 @@ def test_skill_audit_contract_declares_runtime_io_and_partial_results() -> None:
 
     read_contents = {item["content"] for item in sidecar["direct_io"]["reads"]}
     write_contents = {item["content"] for item in sidecar["direct_io"]["writes"]}
+    assert "cryptography" in {
+        dependency["name"] for dependency in sidecar["dependencies"]
+        if dependency["kind"] == "python-package"
+    }
     assert {"blueprint", "config", "repository"} <= read_contents
     assert {"credential", "audit-record", "generated-artifact"} <= write_contents
     assert sidecar["owns_filesystem"]
     outputs = " ".join(root["skill_interface"]["outputs"])
     assert "independent" in outputs
     assert "not-written" in outputs
+
+
+def _v4_fixture(repo: Path):
+    return create_v4_repository(repo)
+
+
+def _gate_record(gate: str) -> dict[str, object]:
+    check_id, version = certifier.CERTIFIER_CHECK_REGISTRY[gate]
+    return {
+        "id": check_id,
+        "version": version,
+        "passed": True,
+        "findings": [],
+    }
+
+
+def _v4_certify(repo: Path, graph: object, **overrides: object):
+    (repo / "public-keys").mkdir(exist_ok=True)
+    options = {
+        "target_node_ids": ("demo-skill",),
+        "public_key_root": repo / "public-keys",
+        "secret_backend": _MemorySecretBackend(),
+        "deterministic_check": lambda _snapshot: _gate_record("deterministic"),
+        "semantic_audit": lambda _snapshot: _gate_record("semantic-audit"),
+        "certified_at": "2026-07-20T12:00:00Z",
+    }
+    options.update(overrides)
+    return certifier._certify_v4_repository(repo, **options)
+
+
+def test_private_v4_writer_builds_payload_bottom_up_and_verifies(tmp_path: Path) -> None:
+    graph, _states, commit = _v4_fixture(tmp_path)
+    (tmp_path / "public-keys").mkdir()
+
+    result = _v4_certify(tmp_path, graph)
+
+    assert result.source_commit == commit
+    assert result.node_ids == ("demo-skill.source.gateway", "demo-skill")
+    assert all(certifier.certificate_log_path(graph.nodes[node_id]).is_file() for node_id in result.node_ids)
+
+
+def test_private_v4_writer_propagates_explicit_non_atomic_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+    real_load = certifier.load_or_create_certificate_signing_key
+    real_evaluate = certifier.evaluate_certificate_currentness
+    real_resolve_basis = certifier.resolve_certification_basis_paths
+    real_compute_basis = certifier.compute_certification_basis_hash
+    real_append = certifier.atomic_compare_and_append_bytes
+    real_read = certifier.read_regular_file_bytes
+    observed = {
+        "append": 0,
+        "basis_hash": 0,
+        "basis_paths": 0,
+        "evaluate": 0,
+        "load": 0,
+        "read": 0,
+    }
+
+    def resolve_basis_with_fallback(*args: object, **kwargs: object):
+        assert kwargs["allow_non_atomic"] is True
+        observed["basis_paths"] += 1
+        return real_resolve_basis(*args, **kwargs)
+
+    def compute_basis_with_fallback(*args: object, **kwargs: object):
+        assert kwargs["allow_non_atomic"] is True
+        observed["basis_hash"] += 1
+        return real_compute_basis(*args, **kwargs)
+
+    def append_with_fallback(*args: object, **kwargs: object):
+        assert kwargs["allow_non_atomic"] is True
+        observed["append"] += 1
+        return real_append(*args, **kwargs)
+
+    def read_with_fallback(*args: object, **kwargs: object):
+        assert kwargs["allow_non_atomic"] is True
+        observed["read"] += 1
+        return real_read(*args, **kwargs)
+
+    def load_with_fallback(*args: object, **kwargs: object):
+        assert kwargs["allow_non_atomic"] is True
+        observed["load"] += 1
+        return real_load(*args, **kwargs)
+
+    def evaluate_with_fallback(*args: object, **kwargs: object):
+        assert kwargs["allow_non_atomic"] is True
+        observed["evaluate"] += 1
+        return real_evaluate(*args, **kwargs)
+
+    monkeypatch.setattr(
+        certifier, "load_or_create_certificate_signing_key", load_with_fallback
+    )
+    monkeypatch.setattr(
+        certifier, "evaluate_certificate_currentness", evaluate_with_fallback
+    )
+    monkeypatch.setattr(
+        certifier, "resolve_certification_basis_paths", resolve_basis_with_fallback
+    )
+    monkeypatch.setattr(
+        certifier, "compute_certification_basis_hash", compute_basis_with_fallback
+    )
+    monkeypatch.setattr(
+        certifier, "atomic_compare_and_append_bytes", append_with_fallback
+    )
+    monkeypatch.setattr(certifier, "read_regular_file_bytes", read_with_fallback)
+
+    _v4_certify(tmp_path, graph, allow_non_atomic=True)
+
+    assert observed == {
+        "append": 2,
+        "basis_hash": 5,
+        "basis_paths": 5,
+        "evaluate": 2,
+        "load": 1,
+        "read": 2,
+    }
+
+
+def test_private_v4_writer_accepts_native_confined_commit_readiness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+    monkeypatch.setattr(git_provenance, "_use_native_confined_read", lambda: True)
+    real_read = artifact_health.read_regular_file_bytes
+    observed_roots: list[Path] = []
+
+    def native_hash_read(*args: object, **kwargs: object) -> bytes:
+        assert kwargs["allow_non_atomic"] is True
+        observed_roots.append(kwargs["allowed_root"])
+        return real_read(*args, **kwargs)
+
+    monkeypatch.setattr(
+        artifact_health, "read_regular_file_bytes", native_hash_read
+    )
+
+    result = _v4_certify(tmp_path, graph, allow_non_atomic=True)
+
+    assert result.node_ids == ("demo-skill.source.gateway", "demo-skill")
+    assert tmp_path / "skills" / "demo-skill" in observed_roots
+
+
+def test_private_v4_writer_exact_source_target_does_not_write_parent(tmp_path: Path) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+
+    result = _v4_certify(
+        tmp_path,
+        graph,
+        target_node_ids=("demo-skill.source.gateway",),
+    )
+
+    assert result.node_ids == ("demo-skill.source.gateway",)
+    assert not certifier.certificate_log_path(graph.nodes["demo-skill"]).exists()
+
+
+@pytest.mark.parametrize(
+    "race", ["tracked-input", "worktree-mode", "index-mode", "head", "log"]
+)
+def test_private_v4_writer_aborts_pre_append_races(tmp_path: Path, race: str) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+
+    def mutate(node_id: str) -> None:
+        if race == "tracked-input":
+            (tmp_path / "skills" / "demo-skill" / "SKILL.md").write_text("changed\n")
+        elif race == "worktree-mode":
+            path = tmp_path / "skills" / "demo-skill" / "SKILL.md"
+            path.chmod(path.stat().st_mode | stat.S_IXUSR)
+        elif race == "index-mode":
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(tmp_path),
+                    "update-index",
+                    "--chmod=+x",
+                    "skills/demo-skill/SKILL.md",
+                ],
+                check=True,
+            )
+        elif race == "head":
+            (tmp_path / "race.txt").write_text("race\n")
+            subprocess.run(["git", "-C", str(tmp_path), "add", "race.txt"], check=True)
+            subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "race"], check=True)
+        else:
+            path = certifier.certificate_log_path(graph.nodes[node_id])
+            path.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(certifier.AuditError, match="changed"):
+        _v4_certify(tmp_path, graph, before_append=mutate)
+
+
+def test_private_v4_writer_reports_post_write_verification_failure(tmp_path: Path) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+
+    def corrupt(node_id: str) -> None:
+        path = certifier.certificate_log_path(graph.nodes[node_id])
+        with path.open("ab") as stream:
+            stream.write(b"{}\n")
+
+    with pytest.raises(certifier.AuditError, match="post-write certificate log changed"):
+        _v4_certify(tmp_path, graph, after_append=corrupt)
+
+
+def test_private_v4_writer_requires_passed_versioned_audit(tmp_path: Path) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+
+    with pytest.raises(certifier.AuditError, match="semantic-audit gate"):
+        _v4_certify(
+            tmp_path,
+            graph,
+            semantic_audit=lambda _snapshot: {
+                **_gate_record("semantic-audit"),
+                "passed": False,
+            },
+        )
+
+
+def test_private_v4_writer_controls_gate_order_for_each_exact_snapshot(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+    events: list[tuple[str, str, str]] = []
+
+    def deterministic(snapshot: object) -> dict[str, object]:
+        events.append(("deterministic", snapshot.node_id, snapshot.node_hash))
+        return _gate_record("deterministic")
+
+    def semantic(snapshot: object) -> dict[str, object]:
+        assert events[-1][:2] == ("deterministic", snapshot.node_id)
+        events.append(("semantic-audit", snapshot.node_id, snapshot.node_hash))
+        return _gate_record("semantic-audit")
+
+    result = _v4_certify(
+        tmp_path,
+        graph,
+        deterministic_check=deterministic,
+        semantic_audit=semantic,
+    )
+
+    assert [event[:2] for event in events] == [
+        ("deterministic", "demo-skill.source.gateway"),
+        ("semantic-audit", "demo-skill.source.gateway"),
+        ("deterministic", "demo-skill"),
+        ("semantic-audit", "demo-skill"),
+    ]
+    assert result.node_ids == ("demo-skill.source.gateway", "demo-skill")
+
+
+def test_private_v4_writer_certifies_the_certifier_through_the_same_path(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+
+    result = _v4_certify(
+        tmp_path,
+        graph,
+        target_node_ids=("skill-certifier",),
+    )
+
+    assert result.node_ids == (
+        "skill-certifier.source.gateway",
+        "skill-certifier",
+    )
+
+
+def test_private_v4_writer_fails_closed_without_current_certifier(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+    shutil.rmtree(tmp_path / "skills" / "skill-certifier")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "-qm", "remove certifier"],
+        check=True,
+    )
+
+    with pytest.raises(certifier.AuditError, match="certifier"):
+        _v4_certify(tmp_path, graph)
+
+
+def test_private_v4_writer_reissues_same_key_against_complete_predecessor(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+    backend = _MemorySecretBackend()
+    target = "demo-skill.source.gateway"
+
+    _v4_certify(
+        tmp_path,
+        graph,
+        target_node_ids=(target,),
+        secret_backend=backend,
+    )
+    _v4_certify(
+        tmp_path,
+        graph,
+        target_node_ids=(target,),
+        secret_backend=backend,
+    )
+
+    path = certifier.certificate_log_path(graph.nodes[target])
+    entries = parse_certificate_log(path.read_bytes(), tmp_path / "public-keys")
+    assert len(entries) == 2
+    assert entries[1]["payload"]["key_id"] == entries[0]["payload"]["key_id"]
+    assert entries[1]["payload"]["previous_entry_hash"] == certificate_entry_hash(
+        entries[0]
+    )
+
+
+def test_private_v4_writer_appends_after_rotation_against_old_signed_envelope(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+    backend = _MemorySecretBackend()
+    target = "demo-skill.source.gateway"
+
+    _v4_certify(
+        tmp_path,
+        graph,
+        target_node_ids=(target,),
+        secret_backend=backend,
+    )
+    new_key = rotate_certificate_signing_key(
+        tmp_path / "public-keys", secret_backend=backend
+    )
+    _v4_certify(
+        tmp_path,
+        graph,
+        target_node_ids=(target,),
+        secret_backend=backend,
+    )
+
+    path = certifier.certificate_log_path(graph.nodes[target])
+    entries = parse_certificate_log(path.read_bytes(), tmp_path / "public-keys")
+    assert len(entries) == 2
+    assert entries[0]["payload"]["key_id"] != new_key.key_id
+    assert entries[1]["payload"]["key_id"] == new_key.key_id
+    assert entries[1]["payload"]["previous_entry_hash"] == certificate_entry_hash(
+        entries[0]
+    )
+
+
+@pytest.mark.parametrize(
+    "race",
+    [
+        "content",
+        "worktree-mode",
+        "index-mode",
+        "head",
+        "basis",
+        "checks",
+        "log-replacement",
+    ],
+)
+def test_private_v4_writer_rederives_every_final_state_after_append(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    race: str,
+) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+    target = "demo-skill.source.gateway"
+
+    def mutate(node_id: str) -> None:
+        assert node_id == target
+        if race == "content":
+            (tmp_path / "skills" / "demo-skill" / "SKILL.md").write_text(
+                "changed after append\n",
+                encoding="utf-8",
+            )
+        elif race == "worktree-mode":
+            path = tmp_path / "skills" / "demo-skill" / "SKILL.md"
+            path.chmod(path.stat().st_mode | stat.S_IXUSR)
+        elif race == "index-mode":
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(tmp_path),
+                    "update-index",
+                    "--chmod=+x",
+                    "skills/demo-skill/SKILL.md",
+                ],
+                check=True,
+            )
+        elif race == "head":
+            (tmp_path / "head-race.txt").write_text("race\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(tmp_path), "add", "head-race.txt"], check=True
+            )
+            subprocess.run(
+                ["git", "-C", str(tmp_path), "commit", "-qm", "head race"],
+                check=True,
+            )
+        elif race == "basis":
+            policy = (
+                tmp_path
+                / "references"
+                / "certification"
+                / "node-hash-policy.yaml"
+            )
+            policy.write_text(
+                policy.read_text(encoding="utf-8").replace(
+                    "**/*.log", "**/*.changed"
+                ),
+                encoding="utf-8",
+            )
+        elif race == "checks":
+            monkeypatch.setitem(
+                certifier.CERTIFIER_CHECK_REGISTRY,
+                "deterministic",
+                ("v4-deterministic", 2),
+            )
+        else:
+            path = certifier.certificate_log_path(graph.nodes[node_id])
+            replacement = path.with_suffix(".replacement")
+            replacement.write_bytes(path.read_bytes())
+            replacement.replace(path)
+
+    with pytest.raises(certifier.AuditError, match="post-write|changed"):
+        _v4_certify(
+            tmp_path,
+            graph,
+            target_node_ids=(target,),
+            after_append=mutate,
+        )
+
+
+def test_private_v4_writer_rechecks_dependency_certificate_agreement_after_append(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+
+    def corrupt_dependency(node_id: str) -> None:
+        if node_id != "demo-skill":
+            return
+        dependency = certifier.certificate_log_path(
+            graph.nodes["demo-skill.source.gateway"]
+        )
+        with dependency.open("ab") as stream:
+            stream.write(b"{}\n")
+
+    with pytest.raises(certifier.AuditError, match="post-write"):
+        _v4_certify(tmp_path, graph, after_append=corrupt_dependency)
+
+
+def test_private_v4_writer_rechecks_forced_untracked_input_after_append(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+    source_blueprint = (
+        tmp_path / "skills" / "demo-skill" / "blueprints" / "gateway.yaml"
+    )
+    declaration = yaml.safe_load(source_blueprint.read_text(encoding="utf-8"))
+    declaration["content"].append(r"local\.txt")
+    source_blueprint.write_text(
+        yaml.safe_dump(declaration, sort_keys=False), encoding="utf-8"
+    )
+    module_blueprint = tmp_path / "skills" / "demo-skill" / "blueprint.yaml"
+    module_declaration = yaml.safe_load(
+        module_blueprint.read_text(encoding="utf-8")
+    )
+    module_declaration["content"].append(r"local\.txt")
+    module_blueprint.write_text(
+        yaml.safe_dump(module_declaration, sort_keys=False), encoding="utf-8"
+    )
+    policy_path = (
+        tmp_path / "references" / "certification" / "node-hash-policy.yaml"
+    )
+    policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+    policy["rules"].append(
+        {
+            "action": "include",
+            "pattern": "skills/demo-skill/local.txt",
+            "require_match": True,
+        }
+    )
+    policy_path.write_text(yaml.safe_dump(policy, sort_keys=False), encoding="utf-8")
+    local_input = tmp_path / "skills" / "demo-skill" / "local.txt"
+    local_input.write_text("forced local input\n", encoding="utf-8")
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "add",
+            str(source_blueprint),
+            str(module_blueprint),
+            str(policy_path),
+        ],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "-qm", "add local input policy"],
+        check=True,
+    )
+
+    def mutate(_node_id: str) -> None:
+        local_input.write_text("changed local input\n", encoding="utf-8")
+
+    with pytest.raises(certifier.AuditError, match="local input changed"):
+        _v4_certify(
+            tmp_path,
+            graph,
+            target_node_ids=("demo-skill.source.gateway",),
+            after_append=mutate,
+        )
+
+
+def test_private_v4_writers_cannot_append_against_one_predecessor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+    target = "demo-skill.source.gateway"
+    backend = _MemorySecretBackend()
+    public_key_root = tmp_path / "public-keys"
+    public_key_root.mkdir()
+    load_or_create_certificate_signing_key(
+        public_key_root,
+        secret_backend=backend,
+    )
+    certifier.certificate_log_path(graph.nodes[target]).parent.mkdir()
+    compare_barrier = threading.Barrier(2)
+    real_compare = certifier.atomic_compare_and_append_bytes
+
+    def synchronized_compare(*args: object, **kwargs: object) -> None:
+        compare_barrier.wait()
+        real_compare(*args, **kwargs)
+
+    monkeypatch.setattr(
+        certifier,
+        "atomic_compare_and_append_bytes",
+        synchronized_compare,
+    )
+
+    def issue() -> object:
+        try:
+            return _v4_certify(
+                tmp_path,
+                graph,
+                target_node_ids=(target,),
+                secret_backend=backend,
+            )
+        except certifier.AuditError as exc:
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda _index: issue(), range(2)))
+
+    assert sum(isinstance(outcome, certifier.V4CertificationResult) for outcome in outcomes) == 1
+    assert sum(isinstance(outcome, certifier.AuditError) for outcome in outcomes) == 1
+    entries = parse_certificate_log(
+        certifier.certificate_log_path(graph.nodes[target]).read_bytes(),
+        public_key_root,
+    )
+    assert len(entries) == 1

@@ -116,6 +116,58 @@ def test_unrelated_dirty_file_does_not_block_node(repo: Path) -> None:
     assert result.reasons == ()
 
 
+def test_native_confined_reader_supports_commit_readiness_and_fallback(
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = repo / "skills" / "demo" / "SKILL.md"
+    observed: list[bool] = []
+
+    def native_read(
+        target: Path,
+        *,
+        allowed_root: Path,
+        allow_non_atomic: bool = False,
+    ) -> bytes:
+        assert target == path
+        assert allowed_root == repo.resolve()
+        observed.append(allow_non_atomic)
+        return target.read_bytes()
+
+    monkeypatch.setattr(git_provenance, "_use_native_confined_read", lambda: True)
+    monkeypatch.setattr(git_provenance, "read_regular_file_bytes", native_read)
+
+    result = check_commit_readiness(
+        capture_git_snapshot(repo),
+        [path],
+        {},
+        allow_non_atomic=True,
+    )
+
+    assert result.stamp_worthy
+    assert observed == [True]
+
+
+def test_native_confined_reader_still_rejects_changed_bytes(
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = repo / "skills" / "demo" / "SKILL.md"
+    path.write_text("changed\n", encoding="utf-8")
+    monkeypatch.setattr(git_provenance, "_use_native_confined_read", lambda: True)
+    monkeypatch.setattr(
+        git_provenance,
+        "read_regular_file_bytes",
+        lambda target, **_kwargs: target.read_bytes(),
+    )
+
+    result = check_commit_readiness(capture_git_snapshot(repo), [path], {})
+
+    assert result.reasons == (
+        "worktree-differs-from-commit:skills/demo/SKILL.md",
+    )
+
+
 @pytest.mark.parametrize("state", ["staged", "unstaged", "untracked", "symlink"])
 def test_local_input_change_blocks_stamp(repo: Path, state: str) -> None:
     path = mutate_local_input(repo, state)

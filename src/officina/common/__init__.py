@@ -95,7 +95,13 @@ from .interface_injection_migration import (
     InterfaceMigrationEntry,
     build_interface_injection_migration_report,
 )
-from .atomic_files import AtomicWriteError, atomic_create_bytes, atomic_replace_bytes
+from .atomic_files import (
+    AtomicWriteError,
+    atomic_append_bytes,
+    atomic_compare_and_append_bytes,
+    atomic_create_bytes,
+    atomic_replace_bytes,
+)
 from .git_provenance import (
     CommitReadiness,
     GitSnapshot,
@@ -159,6 +165,8 @@ __all__ = [
     "RepositoryBlueprintGraph",
     "authored_node_input_paths",
     "blueprint_schema_hash",
+    "atomic_append_bytes",
+    "atomic_compare_and_append_bytes",
     "atomic_create_bytes",
     "atomic_replace_bytes",
     "format_date_key",

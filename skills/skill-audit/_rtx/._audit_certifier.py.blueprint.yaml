@@ -22,6 +22,14 @@ platform_support:
   windows: false
 dependencies:
 - kind: python-package
+  name: cryptography
+  reason: Signs private v4 certificate logs with Ed25519 during staged certification.
+  version: '>=44.0.1'
+  platforms:
+    linux: true
+    macos: true
+    windows: false
+- kind: python-package
   name: PyYAML
   reason: Parses skill blueprint files during semantic exactness checks.
   version: any

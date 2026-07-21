@@ -93,14 +93,10 @@ Git-ignore include/exclude rules with last-match-wins. Mandatory blueprint,
 gateway, and same-owner authored-contract closure and reserved-output rejection
 remain non-configurable certifier invariants.
 
-Version-4 certificates require a `machine_evidence` array, which may be empty.
-Each generated entry records the evaluated gateway language, gateway machine,
-runtime dependency, or platform requirement. A platform entry preserves the
-exact authored Boolean from `platform_support`; every other entry preserves the
-exact authored requirement string. Each entry also records the exact observed
-version and the versioned certifier check that established it. This evidence is
-part of certificate currentness and does not introduce a dependency-certificate
-hash.
+Certification audits gateway-language, gateway-machine, runtime-dependency,
+and platform declarations for blueprint correctness. The resulting versioned
+audit records belong in `checks`; certificates do not record host-runtime
+evidence or performance observations.
 
 `schema-meta.json` defines the annotation protocol and staged relationship
 matrix. `interface-projection.schema.json`, `pooled-review.schema.json`, and

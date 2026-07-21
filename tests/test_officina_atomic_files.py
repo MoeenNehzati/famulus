@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import ctypes
 import os
 import stat
+import subprocess
+import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -10,6 +14,8 @@ import pytest
 import officina.common.atomic_files as atomic_files
 from officina.common.atomic_files import (
     AtomicWriteError,
+    atomic_append_bytes,
+    atomic_compare_and_append_bytes,
     atomic_create_bytes,
     atomic_replace_bytes,
 )
@@ -46,6 +52,24 @@ class ParentSwapFixture:
 
 def _temp_entries(parent: Path, name: str) -> list[Path]:
     return list(parent.glob(f".{name}.tmp-*"))
+
+
+def _windows_native_acl_is_restrictive(path: Path, allowed_root: Path) -> bool:
+    parents, parts = atomic_files._windows_open_parent(path, allowed_root)
+    handle = -1
+    try:
+        handle, _information = atomic_files._windows_open_relative(
+            parents[-1],
+            parts[-1],
+            access=0x80 | 0x00020000 | 0x00100000,
+            share=0x1 | 0x2 | 0x4,
+            disposition=1,
+            options=0x20 | 0x40,
+        )
+        return atomic_files._windows_verify_handle_user_restrictive_acl(handle)
+    finally:
+        atomic_files._windows_close_quietly(handle)
+        atomic_files._windows_close_chain(parents)
 
 
 def test_existing_final_symlink_is_rejected(tmp_path: Path) -> None:
@@ -551,9 +575,615 @@ def test_atomic_interfaces_are_exported_from_common_package() -> None:
     assert atomic_files.AtomicWriteError is AtomicWriteError
 
     from officina.common import AtomicWriteError as exported_error
+    from officina.common import atomic_append_bytes as exported_append
+    from officina.common import (
+        atomic_compare_and_append_bytes as exported_compare_append,
+    )
     from officina.common import atomic_create_bytes as exported_create
     from officina.common import atomic_replace_bytes as exported_replace
 
     assert exported_error is AtomicWriteError
+    assert exported_append is atomic_append_bytes
+    assert exported_compare_append is atomic_compare_and_append_bytes
     assert exported_create is atomic_create_bytes
     assert exported_replace is atomic_replace_bytes
+
+
+def test_secure_append_creates_then_appends_complete_framed_records(tmp_path: Path) -> None:
+    target = tmp_path / "certificates" / "demo-skill.jsonl"
+    target.parent.mkdir()
+    first = b'{"entry":1}\n'
+    second = b'{"entry":2}\n'
+
+    atomic_append_bytes(target, first, allowed_root=tmp_path, mode=0o600)
+    atomic_append_bytes(target, second, allowed_root=tmp_path, mode=0o600)
+
+    assert target.read_bytes() == first + second
+    if os.name == "posix":
+        assert target.stat().st_mode & 0o777 == 0o600
+
+
+def test_compare_and_append_distinguishes_missing_empty_and_exact_predecessor(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "certificate.jsonl"
+    target.write_bytes(b"")
+
+    with pytest.raises(AtomicWriteError, match="predecessor mismatch"):
+        atomic_compare_and_append_bytes(
+            target,
+            b"first\n",
+            expected_previous_bytes=None,
+            allowed_root=tmp_path,
+            mode=0o600,
+        )
+    atomic_compare_and_append_bytes(
+        target,
+        b"first\n",
+        expected_previous_bytes=b"",
+        allowed_root=tmp_path,
+        mode=0o600,
+    )
+    with pytest.raises(AtomicWriteError, match="predecessor mismatch"):
+        atomic_compare_and_append_bytes(
+            target,
+            b"wrong\n",
+            expected_previous_bytes=b"",
+            allowed_root=tmp_path,
+            mode=0o600,
+        )
+    atomic_compare_and_append_bytes(
+        target,
+        b"second\n",
+        expected_previous_bytes=b"first\n",
+        allowed_root=tmp_path,
+        mode=0o600,
+    )
+
+    assert target.read_bytes() == b"first\nsecond\n"
+
+
+def test_compare_and_append_expected_empty_rejects_missing_without_creation(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "certificate.jsonl"
+
+    with pytest.raises(AtomicWriteError, match="predecessor mismatch"):
+        atomic_compare_and_append_bytes(
+            target,
+            b"first\n",
+            expected_previous_bytes=b"",
+            allowed_root=tmp_path,
+            mode=0o600,
+        )
+
+    assert not target.exists()
+
+
+def test_compare_and_append_serializes_concurrent_missing_predecessor(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "certificate.jsonl"
+    barrier = threading.Barrier(2)
+
+    def append(frame: bytes) -> bool:
+        barrier.wait()
+        try:
+            atomic_compare_and_append_bytes(
+                target,
+                frame,
+                expected_previous_bytes=None,
+                allowed_root=tmp_path,
+                mode=0o600,
+            )
+        except AtomicWriteError as exc:
+            assert "predecessor mismatch" in str(exc)
+            return False
+        return True
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(append, (b"first\n", b"second\n")))
+
+    assert sorted(outcomes) == [False, True]
+    assert target.read_bytes() in {b"first\n", b"second\n"}
+
+
+def test_secure_append_rejects_outside_and_symlink_destinations(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-certificate.jsonl"
+    victim = tmp_path / "victim.jsonl"
+    victim.write_bytes(b"safe\n")
+    symlink = tmp_path / "certificate.jsonl"
+    symlink.symlink_to(victim)
+
+    with pytest.raises(AtomicWriteError):
+        atomic_append_bytes(outside, b"outside\n", allowed_root=tmp_path, mode=0o600)
+    with pytest.raises(AtomicWriteError):
+        atomic_append_bytes(symlink, b"unsafe\n", allowed_root=tmp_path, mode=0o600)
+
+    assert not outside.exists()
+    assert victim.read_bytes() == b"safe\n"
+
+
+def test_secure_append_rejects_intermediate_symlink(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    (allowed / "certificates").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(AtomicWriteError):
+        atomic_append_bytes(
+            allowed / "certificates" / "demo.jsonl",
+            b"entry\n",
+            allowed_root=allowed,
+            mode=0o600,
+        )
+
+    assert not (outside / "demo.jsonl").exists()
+
+
+def test_secure_append_fails_closed_when_capability_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "certificate.jsonl"
+    monkeypatch.setattr(atomic_files.os, "supports_dir_fd", set())
+
+    with pytest.raises(AtomicWriteError, match="secure directory-relative replacement"):
+        atomic_append_bytes(target, b"entry\n", allowed_root=tmp_path, mode=0o600)
+
+    assert not target.exists()
+
+
+def test_explicit_non_atomic_append_fallback_is_framed_flushed_and_reread(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "certificate.jsonl"
+    monkeypatch.setattr(atomic_files.os, "supports_dir_fd", set())
+
+    atomic_append_bytes(
+        target,
+        b"entry\n",
+        allowed_root=tmp_path,
+        mode=0o600,
+        allow_non_atomic=True,
+    )
+
+    assert target.read_bytes() == b"entry\n"
+
+
+def test_explicit_non_atomic_read_preserves_missing_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "missing.json"
+    monkeypatch.setattr(atomic_files.os, "supports_dir_fd", set())
+
+    with pytest.raises(FileNotFoundError):
+        atomic_files.read_regular_file_bytes(
+            target,
+            allowed_root=tmp_path,
+            allow_non_atomic=True,
+        )
+
+
+def test_explicit_non_atomic_compare_and_append_fallback_checks_predecessor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "certificate.jsonl"
+    monkeypatch.setattr(atomic_files.os, "supports_dir_fd", set())
+
+    atomic_compare_and_append_bytes(
+        target,
+        b"first\n",
+        expected_previous_bytes=None,
+        allowed_root=tmp_path,
+        mode=0o600,
+        allow_non_atomic=True,
+    )
+    with pytest.raises(AtomicWriteError, match="predecessor mismatch"):
+        atomic_compare_and_append_bytes(
+            target,
+            b"wrong\n",
+            expected_previous_bytes=b"",
+            allowed_root=tmp_path,
+            mode=0o600,
+            allow_non_atomic=True,
+        )
+    atomic_compare_and_append_bytes(
+        target,
+        b"second\n",
+        expected_previous_bytes=b"first\n",
+        allowed_root=tmp_path,
+        mode=0o600,
+        allow_non_atomic=True,
+    )
+
+    assert target.read_bytes() == b"first\nsecond\n"
+
+
+def test_explicit_non_atomic_append_fallback_still_rejects_symlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    victim = tmp_path / "victim.jsonl"
+    victim.write_bytes(b"safe\n")
+    target = tmp_path / "certificate.jsonl"
+    target.symlink_to(victim)
+    monkeypatch.setattr(atomic_files.os, "supports_dir_fd", set())
+
+    with pytest.raises(AtomicWriteError):
+        atomic_append_bytes(
+            target,
+            b"entry\n",
+            allowed_root=tmp_path,
+            mode=0o600,
+            allow_non_atomic=True,
+        )
+
+    assert victim.read_bytes() == b"safe\n"
+
+
+def test_windows_ffi_structures_keep_handle_fields_pointer_width() -> None:
+    assert ctypes.sizeof(atomic_files._WinHandle) == ctypes.sizeof(ctypes.c_void_p)
+    assert (
+        atomic_files._WinObjectAttributes.RootDirectory.offset
+        % ctypes.sizeof(ctypes.c_void_p)
+        == 0
+    )
+    rename = atomic_files._windows_file_rename_info("certificate.jsonl", 0)
+    assert type(rename).RootDirectory.offset % ctypes.sizeof(ctypes.c_void_p) == 0
+    rename_fields = dict(type(rename)._fields_)
+    assert ctypes.sizeof(rename_fields["RootDirectory"]) == ctypes.sizeof(
+        ctypes.c_void_p
+    )
+    assert (
+        atomic_files._WinIoStatusBlock.Information.offset
+        == ctypes.sizeof(ctypes.c_void_p)
+    )
+
+
+def test_windows_file_disposition_boolean_has_native_one_byte_abi() -> None:
+    fields = dict(atomic_files._WinFileDispositionInformation._fields_)
+
+    assert fields["DeleteFile"] is ctypes.c_ubyte
+    assert ctypes.sizeof(atomic_files._WinFileDispositionInformation) == 1
+
+
+def test_windows_mark_delete_reports_native_failure_after_one_byte_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, int]] = []
+
+    class Kernel32:
+        def SetFileInformationByHandle(
+            self,
+            _handle: object,
+            _information_class: int,
+            information: object,
+            size: int,
+        ) -> int:
+            value = ctypes.cast(
+                information,
+                ctypes.POINTER(atomic_files._WinFileDispositionInformation),
+            ).contents.DeleteFile
+            calls.append((int(value), size))
+            return 0
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_modules",
+        lambda: (Kernel32(), object(), object()),
+    )
+    monkeypatch.setattr(
+        atomic_files.ctypes,
+        "get_last_error",
+        lambda: 5,
+        raising=False,
+    )
+
+    with pytest.raises(AtomicWriteError, match="winerror 5"):
+        atomic_files._windows_mark_delete(123)
+
+    assert calls == [(1, 1)]
+
+
+def test_windows_zero_file_id_is_capability_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Kernel32:
+        def GetFileInformationByHandleEx(self, *_args: object) -> int:
+            return 1
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_modules",
+        lambda: (Kernel32(), object(), object()),
+    )
+
+    with pytest.raises(AtomicWriteError) as caught:
+        atomic_files._windows_file_id(123)
+
+    assert str(caught.value) == atomic_files._CAPABILITY_ERROR
+    assert atomic_files._is_capability_error(caught.value)
+
+
+def test_windows_component_length_is_rejected_before_native_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    too_long = "a" * 32_767
+
+    def unexpected_native_call() -> tuple[object, object, object]:
+        raise AssertionError("native API called before component validation")
+
+    monkeypatch.setattr(atomic_files, "_windows_modules", unexpected_native_call)
+
+    with pytest.raises(AtomicWriteError, match="too long"):
+        atomic_files._windows_open_relative(
+            123,
+            too_long,
+            access=0,
+            disposition=1,
+            options=0,
+        )
+    with pytest.raises(AtomicWriteError, match="too long"):
+        atomic_files._windows_file_rename_info(too_long, 123)
+    with pytest.raises(AtomicWriteError, match="too long"):
+        atomic_files._windows_path_parts(tmp_path / too_long, tmp_path)
+
+
+def test_windows_component_maximum_utf16_length_is_accepted() -> None:
+    maximum = "a" * 32_766
+
+    information = atomic_files._windows_file_rename_info(maximum, 123)
+
+    assert information.FileNameLength == 0xFFFC
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 handles and ACLs; alternate=defined here and run by the Windows suite
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_secure_create_replace_append_and_acl(tmp_path: Path) -> None:
+    target = tmp_path / "certificate.jsonl"
+
+    assert atomic_create_bytes(target, b"first\n", allowed_root=tmp_path, mode=0o600)
+    atomic_append_bytes(target, b"second\n", allowed_root=tmp_path, mode=0o600)
+    atomic_compare_and_append_bytes(
+        target,
+        b"third\n",
+        expected_previous_bytes=b"first\nsecond\n",
+        allowed_root=tmp_path,
+        mode=0o600,
+    )
+    assert target.read_bytes() == b"first\nsecond\nthird\n"
+    assert _windows_native_acl_is_restrictive(target, tmp_path)
+    atomic_replace_bytes(target, b"replacement\n", allowed_root=tmp_path, mode=0o600)
+    assert target.read_bytes() == b"replacement\n"
+    assert _windows_native_acl_is_restrictive(target, tmp_path)
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 delete-on-close cleanup; alternate=the one-byte disposition ABI and failure-reporting tests run on every host
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_failed_temp_write_removes_temporary_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "certificate.jsonl"
+
+    def interrupted_write(_handle: int, _data: bytes) -> None:
+        raise AtomicWriteError("interrupted native write")
+
+    monkeypatch.setattr(atomic_files, "_windows_write_handle", interrupted_write)
+
+    with pytest.raises(AtomicWriteError, match="interrupted native write"):
+        atomic_create_bytes(target, b"entry\n", allowed_root=tmp_path, mode=0o600)
+
+    assert not target.exists()
+    assert _temp_entries(tmp_path, target.name) == []
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 reparse-point behavior; alternate=defined here and run by the Windows suite
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_reparse_destination_is_rejected(tmp_path: Path) -> None:
+    victim = tmp_path / "victim.jsonl"
+    victim.write_bytes(b"safe\n")
+    target = tmp_path / "certificate.jsonl"
+    try:
+        target.symlink_to(victim)
+    except OSError as exc:
+        # famulus-skip: category=platform-contract; reason=native symlink creation may be unavailable; alternate=the native ACL and append contract runs separately
+        pytest.skip(f"Windows symlink creation unavailable: {exc}")
+
+    with pytest.raises(AtomicWriteError):
+        atomic_append_bytes(
+            target,
+            b"unsafe\n",
+            allowed_root=tmp_path,
+            mode=0o600,
+            allow_non_atomic=True,
+        )
+
+    assert victim.read_bytes() == b"safe\n"
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 junction behavior; alternate=defined here and run by the Windows suite
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_intermediate_junction_is_rejected(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    outside = tmp_path / "outside"
+    allowed.mkdir()
+    outside.mkdir()
+    junction = allowed / "certificates"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        # famulus-skip: category=platform-contract; reason=junction creation is unavailable on this Windows host; alternate=the final-reparse native contract runs separately
+        pytest.skip(f"Windows junction creation unavailable: {result.stderr}")
+
+    with pytest.raises(AtomicWriteError, match="reparse"):
+        atomic_append_bytes(
+            junction / "demo.jsonl",
+            b"unsafe\n",
+            allowed_root=allowed,
+            mode=0o600,
+        )
+
+    assert not (outside / "demo.jsonl").exists()
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 parent-handle behavior; alternate=defined here and run by the Windows suite
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_parent_swap_cannot_redirect_replace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    allowed = tmp_path / "allowed"
+    parent = allowed / "parent"
+    displaced = allowed / "displaced"
+    parent.mkdir(parents=True)
+    target = parent / "certificate.jsonl"
+    original_open = atomic_files._windows_open_relative
+    swapped = False
+
+    def swap_after_parent_open(*args: object, **kwargs: object):
+        nonlocal swapped
+        if not swapped and len(args) > 1 and args[1] == target.name:
+            parent.rename(displaced)
+            parent.mkdir()
+            swapped = True
+        return original_open(*args, **kwargs)
+
+    monkeypatch.setattr(atomic_files, "_windows_open_relative", swap_after_parent_open)
+
+    with pytest.raises(AtomicWriteError, match="parent changed"):
+        atomic_replace_bytes(
+            target, b"bound-to-handle\n", allowed_root=allowed, mode=0o600
+        )
+
+    assert not target.exists()
+    assert not (displaced / target.name).exists()
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 DACL behavior; alternate=defined here and run by the Windows suite
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_rejects_nonrestrictive_dacl_then_repairs_on_append(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "certificate.jsonl"
+    target.write_bytes(b"first\n")
+    result = subprocess.run(
+        ["icacls", str(target), "/grant", "*S-1-1-0:F"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        # famulus-skip: category=platform-contract; reason=ACL mutation is unavailable on this Windows host; alternate=the native restrictive-ACL positive contract runs separately
+        pytest.skip(f"Windows ACL mutation unavailable: {result.stderr}")
+    assert not _windows_native_acl_is_restrictive(target, tmp_path)
+
+    atomic_append_bytes(target, b"second\n", allowed_root=tmp_path, mode=0o600)
+
+    assert _windows_native_acl_is_restrictive(target, tmp_path)
+
+
+# famulus-skip: category=platform-contract; reason=requires native 64-bit Win32 ctypes declarations; alternate=defined here and run by the Windows suite
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_ctypes_handle_signatures_are_pointer_sized() -> None:
+    import ctypes
+
+    kernel32, advapi32, ntdll = atomic_files._windows_modules()
+
+    assert ctypes.sizeof(atomic_files._WinHandle) == ctypes.sizeof(ctypes.c_void_p)
+    assert kernel32.CreateFileW.restype is atomic_files._WinHandle
+    assert kernel32.CloseHandle.argtypes == [atomic_files._WinHandle]
+    assert advapi32.GetSecurityInfo.argtypes[0] is atomic_files._WinHandle
+    assert ntdll.NtCreateFile.argtypes[0]._type_ is atomic_files._WinHandle
+
+
+# famulus-skip: category=platform-contract; reason=requires the native Win32 capability branch; alternate=the POSIX capability fallback contract runs on every non-Windows host
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_capability_failure_requires_explicit_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "certificate.jsonl"
+
+    def unavailable(*args: object, **kwargs: object):
+        raise AtomicWriteError(atomic_files._CAPABILITY_ERROR)
+
+    monkeypatch.setattr(atomic_files, "_windows_open_parent", unavailable)
+
+    with pytest.raises(AtomicWriteError, match="secure directory-relative"):
+        atomic_create_bytes(target, b"first\n", allowed_root=tmp_path, mode=0o600)
+    assert atomic_create_bytes(
+        target,
+        b"first\n",
+        allowed_root=tmp_path,
+        mode=0o600,
+        allow_non_atomic=True,
+    )
+    assert target.read_bytes() == b"first\n"
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 handles before forcing unusable file identity; alternate=the zero-ID capability classification test runs on every host
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_zero_file_id_fails_before_mutation_then_falls_back(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "certificate.jsonl"
+    target.write_bytes(b"old\n")
+
+    def unusable_identity(_handle: int) -> tuple[int, bytes]:
+        raise AtomicWriteError(atomic_files._CAPABILITY_ERROR)
+
+    monkeypatch.setattr(atomic_files, "_windows_file_id", unusable_identity)
+
+    with pytest.raises(AtomicWriteError, match="secure directory-relative"):
+        atomic_replace_bytes(target, b"new\n", allowed_root=tmp_path, mode=0o600)
+    assert target.read_bytes() == b"old\n"
+
+    atomic_replace_bytes(
+        target,
+        b"new\n",
+        allowed_root=tmp_path,
+        mode=0o600,
+        allow_non_atomic=True,
+    )
+    assert target.read_bytes() == b"new\n"
+
+
+# famulus-skip: category=platform-contract; reason=requires native LockFileEx behavior; alternate=the POSIX concurrent-predecessor contract runs on every non-Windows host
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_compare_and_append_serializes_racing_writers(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "certificate.jsonl"
+    barrier = threading.Barrier(2)
+
+    def append(frame: bytes) -> bool:
+        barrier.wait()
+        try:
+            atomic_compare_and_append_bytes(
+                target,
+                frame,
+                expected_previous_bytes=None,
+                allowed_root=tmp_path,
+                mode=0o600,
+            )
+        except AtomicWriteError as exc:
+            assert "predecessor mismatch" in str(exc)
+            return False
+        return True
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(append, (b"first\n", b"second\n")))
+
+    assert sorted(outcomes) == [False, True]

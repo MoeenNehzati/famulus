@@ -173,7 +173,7 @@ def test_run_installs_python_packages_from_runtime_dependency_manifest(tmp_path,
     )
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    write_runtime_dependencies_manifest(repo_root, ["PyYAML", "jsonschema"])
+    write_runtime_dependencies_manifest(repo_root, ["PyYAML", "jsonschema", "cryptography"])
     bin_dir = tmp_path / "bin"
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("")
@@ -183,6 +183,7 @@ def test_run_installs_python_packages_from_runtime_dependency_manifest(tmp_path,
     installed = {" ".join(cmd) for cmd in calls}
     assert any("PyYAML" in cmd for cmd in installed)
     assert any("jsonschema" in cmd for cmd in installed)
+    assert any("cryptography" in cmd for cmd in installed)
     assert not any(" rg " in f" {cmd} " for cmd in installed)
 
 

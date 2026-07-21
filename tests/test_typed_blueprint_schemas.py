@@ -511,15 +511,6 @@ def _valid_v4_certificate() -> dict:
                     "findings": [],
                 }
             ],
-            "machine_evidence": [
-                {
-                    "kind": "gateway-language",
-                    "name": "Python",
-                    "requirement": "Python>=3.11,<4",
-                    "evaluated_version": "3.13.5",
-                    "check": {"id": "runtime-probe", "version": 1},
-                }
-            ],
             "key_id": "sha256:" + "1" * 64,
             "previous_entry_hash": None,
             "certified_at": "2026-07-20T12:00:00Z",
@@ -550,67 +541,24 @@ def test_v4_certificate_signs_one_closed_payload_with_local_git_provenance() -> 
         assert _errors(invalid, "certificate.schema.json"), location
 
 
-def test_v4_certificate_requires_version_bound_machine_evidence() -> None:
+def test_v4_certificate_keeps_runtime_claim_audits_in_versioned_checks() -> None:
     document = _valid_v4_certificate()
     assert _errors(document, "certificate.schema.json") == []
 
-    empty = deepcopy(document)
-    empty["payload"]["machine_evidence"] = []
-    assert _errors(empty, "certificate.schema.json") == []
+    invalid = deepcopy(document)
+    invalid["payload"]["unexpected_field"] = []
+    assert _errors(invalid, "certificate.schema.json")
 
-    authored_runtime_requirement = deepcopy(document)
-    authored_runtime_requirement["payload"]["machine_evidence"][0].update(
-        kind="runtime-dependency",
-        name="demo-runtime",
-        requirement="3.11.*",
+    runtime_check = deepcopy(document)
+    runtime_check["payload"]["checks"].append(
+        {
+            "id": "runtime-declarations-accurate",
+            "version": 1,
+            "passed": True,
+            "findings": [],
+        }
     )
-    assert _errors(authored_runtime_requirement, "certificate.schema.json") == []
-
-    missing = deepcopy(document)
-    del missing["payload"]["machine_evidence"]
-    assert _errors(missing, "certificate.schema.json")
-
-    for field, value in (
-        ("kind", "dependency-certificate"),
-        ("name", ""),
-        ("requirement", ""),
-        ("evaluated_version", ">=3.11,<4"),
-    ):
-        invalid = deepcopy(document)
-        invalid["payload"]["machine_evidence"][0][field] = value
-        assert _errors(invalid, "certificate.schema.json"), field
-
-    invalid_check = deepcopy(document)
-    invalid_check["payload"]["machine_evidence"][0]["check"]["passed"] = True
-    assert _errors(invalid_check, "certificate.schema.json")
-
-    invalid_version = deepcopy(document)
-    invalid_version["payload"]["machine_evidence"][0]["check"]["version"] = 0
-    assert _errors(invalid_version, "certificate.schema.json")
-
-
-def test_v4_certificate_machine_evidence_requirement_type_follows_kind() -> None:
-    document = _valid_v4_certificate()
-    evidence = document["payload"]["machine_evidence"][0]
-    evidence.update(
-        kind="platform",
-        name="linux",
-        requirement=True,
-        evaluated_version="6.15.2",
-    )
-    assert _errors(document, "certificate.schema.json") == []
-
-    platform_string = deepcopy(document)
-    platform_string["payload"]["machine_evidence"][0]["requirement"] = "true"
-    assert _errors(platform_string, "certificate.schema.json")
-
-    for kind in ("gateway-language", "gateway-machine", "runtime-dependency"):
-        non_platform_boolean = deepcopy(document)
-        non_platform_boolean["payload"]["machine_evidence"][0].update(
-            kind=kind,
-            requirement=True,
-        )
-        assert _errors(non_platform_boolean, "certificate.schema.json"), kind
+    assert _errors(runtime_check, "certificate.schema.json") == []
 
 
 def _machine_module_example(name: str) -> dict:

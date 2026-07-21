@@ -23,6 +23,14 @@ platform_support:
   windows: false
 dependencies:
 - kind: python-package
+  name: cryptography
+  reason: Verifies private v4 certificate-log Ed25519 signatures used by shared hash state.
+  version: '>=44.0.1'
+  platforms:
+    linux: true
+    macos: true
+    windows: false
+- kind: python-package
   name: PyYAML
   reason: Parses typed and legacy blueprint declarations.
   version: any

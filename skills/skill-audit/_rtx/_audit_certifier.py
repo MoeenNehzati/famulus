@@ -10,6 +10,7 @@ import re
 import stat
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
@@ -19,30 +20,51 @@ import yaml
 
 from officina.common.artifact_health import (
     CANONICAL_GRAPH_SCHEMA_INPUTS,
+    CANONICAL_NODE_HASH_POLICY,
+    CERTIFIER_CHECK_REGISTRY,
     POOLED_REVIEW_SCHEMA_INPUTS,
+    ArtifactHealthError,
     GraphHealthReport,
     NodeHealthStatus,
     blueprint_schema_hash,
     build_node_health_record,
     check_graph_health,
     compute_node_hash_states,
+    compute_certification_basis_hash,
+    derive_certifier_identity,
+    expected_certifier_checks,
     health_edges,
     health_node_ids,
     health_path_for_node,
     health_postorder_node_ids,
     local_input_paths_for_node,
     node_requires_refresh,
+    normalize_node_checks,
+    resolve_certification_basis_paths,
 )
 from officina.common.audit_records import (
     attach_record_digest,
     load_or_create_hmac_key,
     record_digest_matches,
+    canonical_certificate_envelope_bytes,
+    certificate_entry_hash,
+    load_or_create_certificate_signing_key,
+    parse_certificate_log,
+    sign_certificate_payload,
 )
-from officina.common.atomic_files import atomic_replace_bytes
+from officina.common.atomic_files import (
+    AtomicWriteError,
+    atomic_compare_and_append_bytes,
+    atomic_replace_bytes,
+    read_regular_file_bytes,
+)
 from officina.common.blueprint_graph import (
+    RepositoryBlueprintGraph,
     SkillBlueprintGraph,
+    load_repository_blueprint_graph,
     load_validated_skill_blueprint_graph,
 )
+from officina.common.certification_view import certificate_log_path, evaluate_certificate_currentness
 from officina.common.git_provenance import (
     GitSnapshot,
     capture_git_snapshot,
@@ -94,6 +116,432 @@ IMPLEMENTATION_PATH_RE = re.compile(r"(?:^|[`'\"\s(])(?:_rtx/|scripts/)[A-Za-z0-
 
 class AuditError(RuntimeError):
     """Raised when certification cannot safely continue."""
+
+
+@dataclass(frozen=True)
+class V4CertificationResult:
+    """Private Task-3 result for converted temporary repositories."""
+
+    node_ids: tuple[str, ...]
+    source_commit: str
+
+
+@dataclass(frozen=True)
+class V4GateSnapshot:
+    """Exact derived node/content snapshot presented to certifier-owned gates."""
+
+    node_id: str
+    node_hash: str
+    source_commit: str
+    input_manifest: tuple[Mapping[str, object], ...]
+    dependencies: tuple[Mapping[str, object], ...]
+    certification_basis_hash: str
+    certifier_identity: Mapping[str, object]
+
+
+def _v4_hash_bytes(value: bytes) -> str:
+    return "sha256:" + hashlib.sha256(value).hexdigest()
+
+
+def _v4_postorder(graph: RepositoryBlueprintGraph, requested: Sequence[str]) -> tuple[str, ...]:
+    children: dict[str, set[str]] = {node_id: set() for node_id in graph.nodes}
+    for edge in graph.certification_edges:
+        children[edge.source_node_id].add(edge.target_node_id)
+    ordered: list[str] = []
+    visited: set[str] = set()
+
+    def visit(node_id: str) -> None:
+        if node_id in visited:
+            return
+        visited.add(node_id)
+        for child_id in sorted(children[node_id]):
+            visit(child_id)
+        ordered.append(node_id)
+
+    for node_id in requested:
+        if node_id not in graph.nodes:
+            raise AuditError(f"unknown exact v4 certification target: {node_id}")
+        visit(node_id)
+    return tuple(ordered)
+
+
+def _v4_payload(
+    repo_root: Path,
+    graph: RepositoryBlueprintGraph,
+    states: Mapping[str, object],
+    node_id: str,
+    *,
+    source_commit: str,
+    key_id: str,
+    previous_entry_hash: str | None,
+    certifier_identity: Mapping[str, object],
+    checks: Sequence[Mapping[str, object]],
+    certified_at: str,
+) -> dict[str, object]:
+    node = graph.nodes[node_id]
+    state = states[node_id]
+    if node.gateway_path is None:
+        raise AuditError(f"{node_id}: certificate subject requires a gateway path")
+    return {
+        "certificate_schema_version": 1,
+        "subject": {
+            "id": node.node_id,
+            "node_type": node.node_type,
+            "version": node.version,
+            "blueprint_path": node.blueprint_path.relative_to(repo_root).as_posix(),
+            "gateway_path": node.gateway_path.relative_to(repo_root).as_posix(),
+        },
+        "node_hash": state.node_hash,
+        "source_commit": source_commit,
+        "input_manifest": [dict(entry) for entry in state.input_manifest],
+        "dependencies": [dict(entry) for entry in state.dependency_hashes],
+        "certification_basis_hash": state.certification_basis_hash,
+        "certifier": dict(certifier_identity),
+        "checks": [dict(check) for check in checks],
+        "key_id": key_id,
+        "previous_entry_hash": previous_entry_hash,
+        "certified_at": certified_at,
+    }
+
+
+def _v4_gate_snapshot(
+    node_id: str,
+    state: object,
+    *,
+    source_commit: str,
+    certifier_identity: Mapping[str, object],
+) -> V4GateSnapshot:
+    node_hash = getattr(state, "node_hash", None)
+    basis_hash = getattr(state, "certification_basis_hash", None)
+    if not isinstance(node_hash, str) or not isinstance(basis_hash, str):
+        raise AuditError(f"{node_id}: canonical gate snapshot is unavailable")
+    return V4GateSnapshot(
+        node_id=node_id,
+        node_hash=node_hash,
+        source_commit=source_commit,
+        input_manifest=tuple(
+            dict(entry) for entry in getattr(state, "input_manifest", ())
+        ),
+        dependencies=tuple(
+            dict(entry) for entry in getattr(state, "dependency_hashes", ())
+        ),
+        certification_basis_hash=basis_hash,
+        certifier_identity=dict(certifier_identity),
+    )
+
+
+def _run_v4_gate(
+    gate_name: str,
+    callback: object,
+    snapshot: V4GateSnapshot,
+) -> dict[str, object]:
+    if gate_name not in CERTIFIER_CHECK_REGISTRY or not callable(callback):
+        raise AuditError(f"{gate_name} gate is unavailable")
+    try:
+        returned = callback(snapshot)
+        normalized = normalize_node_checks((returned,))
+    except Exception as exc:
+        raise AuditError(f"{gate_name} gate did not return a passed check") from exc
+    expected_id, expected_version = CERTIFIER_CHECK_REGISTRY[gate_name]
+    expected = {
+        "id": expected_id,
+        "version": expected_version,
+        "passed": True,
+        "findings": [],
+    }
+    if normalized != (expected,):
+        raise AuditError(f"{gate_name} gate returned a non-registry check")
+    return normalized[0]
+
+
+def _certify_v4_repository(
+    repo_root: Path,
+    *,
+    target_node_ids: Sequence[str],
+    public_key_root: Path,
+    secret_backend: object,
+    deterministic_check: object,
+    semantic_audit: object,
+    certified_at: str,
+    before_append: object | None = None,
+    after_append: object | None = None,
+    allow_non_atomic: bool = False,
+) -> V4CertificationResult:
+    """Certify exact v4 targets in a converted temporary Git repository only.
+
+    This function is deliberately not routed by the Task-3 CLI. Callers supply
+    Gate callbacks cross the cooperative LLM boundary, but this owner derives
+    their exact snapshot, order, registry identity, and every payload field.
+    """
+
+    root = Path(repo_root).resolve()
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    if root == REPO_ROOT.resolve() or not root.is_relative_to(temp_root):
+        raise AuditError("private v4 certification is restricted to temporary repositories")
+    snapshot = capture_git_snapshot(root)
+    if snapshot is None or snapshot.repo_root != root:
+        raise AuditError("v4 certification requires the exact temporary Git repository root")
+    selected_schema_root = root / "references" / "blueprint"
+    policy_path = root / CANONICAL_NODE_HASH_POLICY
+
+    def derive() -> tuple[
+        RepositoryBlueprintGraph,
+        dict[str, object],
+        str,
+        tuple[Path, ...],
+        dict[str, object],
+    ]:
+        try:
+            graph = load_repository_blueprint_graph(root, schema_root=selected_schema_root)
+            if not graph.nodes or any(
+                node.declaration.get("schema_version") != 4
+                for node in graph.nodes.values()
+            ):
+                raise AuditError(
+                    "private certificate writer accepts only all-v4 repositories"
+                )
+            basis_paths = resolve_certification_basis_paths(
+                root,
+                allow_non_atomic=allow_non_atomic,
+            )
+            basis_hash = compute_certification_basis_hash(
+                root,
+                allow_non_atomic=allow_non_atomic,
+            )
+            states = compute_node_hash_states(
+                graph,
+                repo_root=root,
+                policy_path=policy_path,
+                certification_basis_hash=basis_hash,
+                certification_basis_paths=basis_paths,
+                allow_non_atomic=allow_non_atomic,
+            )
+            certifier_identity = derive_certifier_identity(
+                graph, states, snapshot.commit
+            )
+        except ArtifactHealthError as exc:
+            raise AuditError(str(exc)) from exc
+        return graph, states, basis_hash, basis_paths, certifier_identity
+
+    graph, states, basis_hash, basis_paths, certifier_identity = derive()
+    order = _v4_postorder(graph, tuple(target_node_ids))
+    normalized_checks: dict[str, tuple[dict[str, object], ...]] = {}
+
+    tracked_paths: set[Path] = {
+        *basis_paths,
+        *(node.blueprint_path for node in graph.nodes.values()),
+    }
+    local_claims: dict[str, str] = {}
+    for node_id in order:
+        for entry in states[node_id].input_manifest:
+            path = root / entry["path"]
+            if entry["git_provenance"] == "tracked":
+                tracked_paths.add(path)
+            else:
+                local_claims[entry["path"]] = entry["digest"]
+    ordered_tracked_paths = tuple(sorted(tracked_paths))
+
+    def require_commit_readiness(current_snapshot: object, phase: str) -> None:
+        readiness = check_commit_readiness(
+            current_snapshot,
+            ordered_tracked_paths,
+            _expected_file_hashes(current_snapshot, ordered_tracked_paths),
+            allow_non_atomic=allow_non_atomic,
+        )
+        if not readiness.stamp_worthy:
+            raise AuditError(
+                f"tracked certification input changed {phase}: "
+                + ",".join(readiness.reasons)
+            )
+
+    require_commit_readiness(snapshot, "before certification")
+
+    key = load_or_create_certificate_signing_key(
+        public_key_root,
+        secret_backend=secret_backend,
+        allow_non_atomic=allow_non_atomic,
+    )
+    written: list[str] = []
+    for node_id in order:
+        log_path = certificate_log_path(graph.nodes[node_id])
+        certificate_root = log_path.parent
+        if not certificate_root.exists():
+            certificate_root.mkdir(mode=0o700)
+        try:
+            metadata = certificate_root.lstat()
+            certificate_root.resolve().relative_to(graph.nodes[node_id].skill_root.resolve())
+        except (OSError, ValueError) as exc:
+            raise AuditError(f"unsafe certificate output root: {certificate_root}") from exc
+        if certificate_root.is_symlink() or not stat.S_ISDIR(metadata.st_mode):
+            raise AuditError(f"unsafe certificate output root: {certificate_root}")
+        old_bytes: bytes | None = None
+        previous_hash = None
+        if log_path.exists():
+            old_bytes = read_regular_file_bytes(
+                log_path,
+                allowed_root=graph.nodes[node_id].skill_root,
+                allow_non_atomic=allow_non_atomic,
+            )
+            previous_entries = parse_certificate_log(
+                old_bytes,
+                public_key_root,
+                require_active_final=False,
+                allow_non_atomic=allow_non_atomic,
+            )
+            previous_hash = certificate_entry_hash(previous_entries[-1])
+        gate_snapshot = _v4_gate_snapshot(
+            node_id,
+            states[node_id],
+            source_commit=snapshot.commit,
+            certifier_identity=certifier_identity,
+        )
+        gate_records = (
+            _run_v4_gate("deterministic", deterministic_check, gate_snapshot),
+            _run_v4_gate("semantic-audit", semantic_audit, gate_snapshot),
+        )
+        normalized_checks[node_id] = normalize_node_checks(gate_records)
+        if normalized_checks[node_id] != expected_certifier_checks():
+            raise AuditError(f"{node_id}: certifier gate registry changed")
+        if callable(before_append):
+            before_append(node_id)
+        if not snapshot_head_matches(snapshot):
+            raise AuditError("HEAD changed during certification")
+        (
+            next_graph,
+            next_states,
+            next_basis_hash,
+            next_basis_paths,
+            next_certifier_identity,
+        ) = derive()
+        if (
+            next_graph != graph
+            or next_states != states
+            or next_basis_hash != basis_hash
+            or next_basis_paths != basis_paths
+            or next_certifier_identity != certifier_identity
+        ):
+            raise AuditError("graph, dependency, basis, or local input changed during certification")
+        if any(
+            _v4_hash_bytes(
+                read_regular_file_bytes(
+                    root / path,
+                    allowed_root=root,
+                    allow_non_atomic=allow_non_atomic,
+                )
+            )
+            != digest
+            for path, digest in local_claims.items()
+        ):
+            raise AuditError("local certification input changed during certification")
+        require_commit_readiness(snapshot, "before certificate append")
+        if log_path.exists():
+            if (
+                old_bytes is None
+                or read_regular_file_bytes(
+                    log_path,
+                    allowed_root=graph.nodes[node_id].skill_root,
+                    allow_non_atomic=allow_non_atomic,
+                )
+                != old_bytes
+            ):
+                raise AuditError("certificate log changed during certification")
+        elif old_bytes is not None:
+            raise AuditError("certificate log changed during certification")
+        payload = _v4_payload(
+            root,
+            graph,
+            states,
+            node_id,
+            source_commit=snapshot.commit,
+            key_id=key.key_id,
+            previous_entry_hash=previous_hash,
+            certifier_identity=certifier_identity,
+            checks=normalized_checks[node_id],
+            certified_at=certified_at,
+        )
+        envelope = sign_certificate_payload(payload, key)
+        frame = canonical_certificate_envelope_bytes(envelope) + b"\n"
+        try:
+            atomic_compare_and_append_bytes(
+                log_path,
+                frame,
+                expected_previous_bytes=old_bytes,
+                allowed_root=graph.nodes[node_id].skill_root,
+                mode=0o600,
+                allow_non_atomic=allow_non_atomic,
+            )
+        except AtomicWriteError as exc:
+            raise AuditError("certificate log changed during certification") from exc
+        try:
+            appended_metadata = log_path.lstat()
+        except OSError as exc:
+            raise AuditError("post-write certificate log is unavailable") from exc
+        if not stat.S_ISREG(appended_metadata.st_mode):
+            raise AuditError("post-write certificate log is not a regular file")
+        if callable(after_append):
+            after_append(node_id)
+        final_snapshot = capture_git_snapshot(root)
+        if (
+            final_snapshot is None
+            or final_snapshot.repo_root != root
+            or final_snapshot.commit != snapshot.commit
+        ):
+            raise AuditError("HEAD changed after certificate append")
+        (
+            final_graph,
+            final_states,
+            final_basis_hash,
+            final_basis_paths,
+            final_certifier_identity,
+        ) = derive()
+        if (
+            final_graph != next_graph
+            or final_states != next_states
+            or final_basis_hash != next_basis_hash
+            or final_basis_paths != next_basis_paths
+            or final_certifier_identity != next_certifier_identity
+        ):
+            raise AuditError(
+                "graph, dependency, basis, or local input changed after certificate append"
+            )
+        if normalized_checks[node_id] != expected_certifier_checks():
+            raise AuditError("certifier checks changed after certificate append")
+        require_commit_readiness(final_snapshot, "after certificate append")
+        try:
+            final_metadata = log_path.lstat()
+        except OSError as exc:
+            raise AuditError("post-write certificate log changed") from exc
+        if (
+            not stat.S_ISREG(final_metadata.st_mode)
+            or (final_metadata.st_dev, final_metadata.st_ino)
+            != (appended_metadata.st_dev, appended_metadata.st_ino)
+        ):
+            raise AuditError("post-write certificate log changed")
+        expected_log_bytes = (old_bytes or b"") + frame
+        if (
+            read_regular_file_bytes(
+                log_path,
+                allowed_root=final_graph.nodes[node_id].skill_root,
+                allow_non_atomic=allow_non_atomic,
+            )
+            != expected_log_bytes
+        ):
+            raise AuditError("post-write certificate log changed")
+        report = evaluate_certificate_currentness(
+            final_graph,
+            final_states,
+            repo_root=root,
+            public_key_root=public_key_root,
+            source_commit=final_snapshot.commit,
+            certifier_identity=final_certifier_identity,
+            checks_by_node=normalized_checks,
+            schema_root=selected_schema_root,
+            allow_non_atomic=allow_non_atomic,
+        )
+        if not report.nodes[node_id].current:
+            raise AuditError(f"post-write certificate verification failed for {node_id}")
+        written.append(node_id)
+    return V4CertificationResult(tuple(written), snapshot.commit)
 
 
 class Dispatcher(Protocol):

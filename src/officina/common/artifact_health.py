@@ -18,13 +18,13 @@ import jsonschema
 import yaml
 
 from .audit_records import attach_record_authentication, record_authentication_matches
+from .atomic_files import AtomicWriteError, read_regular_file_bytes
 from .blueprint_graph import (
     BlueprintEdge,
     BlueprintGraphError,
     BlueprintNode,
     RepositoryBlueprintGraph,
     SkillBlueprintGraph,
-    open_runtime_file,
     resolved_node_content_paths,
 )
 from .git_provenance import git_file_provenance
@@ -38,6 +38,21 @@ from officina.runtime.python_machine_interface import (
 
 class ArtifactHealthError(ValueError):
     """Raised when a graph cannot be certified deterministically."""
+
+
+CERTIFICATION_BASIS_MANIFEST = Path(
+    "skills/skill-drift/references/certification-basis-roots.json"
+)
+CANONICAL_NODE_HASH_POLICY = Path(
+    "references/certification/node-hash-policy.yaml"
+)
+CERTIFIER_NODE_ID = "skill-certifier"
+CERTIFIER_INTERFACE_ID = "skill-certifier.interface.certify"
+CERTIFIER_INTERFACE_VERSION = 1
+CERTIFIER_CHECK_REGISTRY: Mapping[str, tuple[str, int]] = {
+    "deterministic": ("v4-deterministic", 1),
+    "semantic-audit": ("blueprint-accuracy", 1),
+}
 
 
 @dataclass(frozen=True)
@@ -388,6 +403,157 @@ def _canonical_bytes(value: Any) -> bytes:
 
 def _hash_bytes(value: bytes) -> str:
     return "sha256:" + hashlib.sha256(value).hexdigest()
+
+
+def certification_basis_roots_path(repo_root: Path) -> Path:
+    """Return the one repository-owned certification-basis manifest path."""
+
+    return Path(repo_root).resolve() / CERTIFICATION_BASIS_MANIFEST
+
+
+def resolve_certification_basis_paths(
+    repo_root: Path,
+    *,
+    allow_non_atomic: bool = False,
+) -> tuple[Path, ...]:
+    """Resolve the canonical manifest without accepting caller-selected inputs."""
+
+    root = Path(repo_root).resolve()
+    manifest = certification_basis_roots_path(root)
+    try:
+        raw = json.loads(
+            read_regular_file_bytes(
+                manifest,
+                allowed_root=root,
+                allow_non_atomic=allow_non_atomic,
+            ).decode("utf-8")
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ArtifactHealthError(
+            f"cannot read certification basis manifest {manifest}: {exc}"
+        ) from exc
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise ArtifactHealthError(
+            f"{manifest}: certification basis manifest must contain a JSON string list"
+        )
+    selected = {manifest}
+    for pattern in raw:
+        relative = Path(pattern)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ArtifactHealthError(
+                f"certification basis root must stay under target package: {pattern}"
+            )
+        candidates = (
+            sorted(root.glob(pattern), key=lambda path: path.as_posix())
+            if any(character in pattern for character in "*?[]")
+            else [root / relative]
+        )
+        for path in candidates:
+            if not path.exists():
+                continue
+            try:
+                read_regular_file_bytes(
+                    path,
+                    allowed_root=root,
+                    allow_non_atomic=allow_non_atomic,
+                )
+            except FileNotFoundError:
+                continue
+            selected.add(path)
+    return tuple(sorted(selected, key=lambda path: path.as_posix()))
+
+
+def compute_certification_basis_hash(
+    repo_root: Path,
+    *,
+    allow_non_atomic: bool = False,
+) -> str:
+    """Hash the one canonical v4 certification-basis manifest and its files."""
+
+    root = Path(repo_root).resolve()
+    entries: list[dict[str, str]] = []
+    for path in resolve_certification_basis_paths(
+        root,
+        allow_non_atomic=allow_non_atomic,
+    ):
+        try:
+            relative = path.relative_to(root).as_posix()
+        except ValueError as exc:
+            raise ArtifactHealthError(
+                f"certification basis input is outside repository: {path}"
+            ) from exc
+        data = read_regular_file_bytes(
+            path,
+            allowed_root=root,
+            allow_non_atomic=allow_non_atomic,
+        )
+        if path == root / CANONICAL_NODE_HASH_POLICY:
+            try:
+                data = _canonical_bytes(yaml.safe_load(data.decode("utf-8")))
+            except (UnicodeError, yaml.YAMLError, TypeError, ValueError) as exc:
+                raise ArtifactHealthError(
+                    f"cannot canonicalize node hash policy: {path}"
+                ) from exc
+        entries.append({"path": relative, "digest": _hash_bytes(data)})
+    if not entries:
+        raise ArtifactHealthError("certification basis must contain at least one input")
+    return _hash_value(entries)
+
+
+def expected_certifier_checks() -> tuple[dict[str, object], ...]:
+    """Return the exact passed records owned by the versioned certifier registry."""
+
+    return normalize_node_checks(
+        {
+            "id": check_id,
+            "version": version,
+            "passed": True,
+            "findings": [],
+        }
+        for check_id, version in CERTIFIER_CHECK_REGISTRY.values()
+    )
+
+
+def derive_certifier_identity(
+    graph: RepositoryBlueprintGraph,
+    states: Mapping[str, NodeHashState],
+    source_commit: str,
+) -> dict[str, object]:
+    """Derive the certifier identity from the current v4 graph and Git snapshot."""
+
+    node = graph.nodes.get(CERTIFIER_NODE_ID)
+    if node is None or node.node_type != "module":
+        raise ArtifactHealthError("canonical certifier module is absent from the v4 graph")
+    export = graph.exports.get(CERTIFIER_INTERFACE_ID)
+    if (
+        export is None
+        or export.module_node_id != CERTIFIER_NODE_ID
+        or export.version != CERTIFIER_INTERFACE_VERSION
+    ):
+        raise ArtifactHealthError(
+            "canonical certifier interface is absent or has the wrong version"
+        )
+    state = states.get(CERTIFIER_NODE_ID)
+    node_hash = state.node_hash if isinstance(state, NodeHashState) else None
+    if (
+        not isinstance(node_hash, str)
+        or len(node_hash) != 71
+        or not node_hash.startswith("sha256:")
+        or any(character not in "0123456789abcdef" for character in node_hash[7:])
+    ):
+        raise ArtifactHealthError("canonical certifier node state is unavailable")
+    if (
+        not isinstance(source_commit, str)
+        or len(source_commit) not in {40, 64}
+        or any(character not in "0123456789abcdef" for character in source_commit)
+    ):
+        raise ArtifactHealthError("canonical certifier source commit is unavailable")
+    return {
+        "interface": CERTIFIER_INTERFACE_ID,
+        "version": CERTIFIER_INTERFACE_VERSION,
+        "node_hash": node_hash,
+        "source_commit": source_commit,
+    }
 
 
 def _hash_value(value: Any) -> str:
@@ -794,21 +960,30 @@ def _reserved_certification_output(relative_path: str) -> bool:
     )
 
 
-def _read_node_input(node: BlueprintNode, path: Path, repo_root: Path) -> bytes:
+def _read_node_input(
+    node: BlueprintNode,
+    path: Path,
+    repo_root: Path,
+    *,
+    allow_non_atomic: bool = False,
+) -> bytes:
     try:
-        binding = open_runtime_file(path, node.skill_root, repo_root)
-    except BlueprintGraphError as exc:
+        path.relative_to(repo_root)
+        return read_regular_file_bytes(
+            path,
+            allowed_root=node.skill_root,
+            allow_non_atomic=allow_non_atomic,
+        )
+    except (AtomicWriteError, BlueprintGraphError, OSError, ValueError) as exc:
         raise ArtifactHealthError(str(exc)) from exc
-    try:
-        return binding.read_bytes()
-    finally:
-        binding.close()
 
 
 def _v4_node_input_manifests(
     graph: RepositoryBlueprintGraph,
     repo_root: Path,
     policy: Mapping[str, Any],
+    *,
+    allow_non_atomic: bool = False,
 ) -> tuple[
     dict[str, tuple[dict[str, str], ...]],
     dict[str, set[str]],
@@ -934,7 +1109,12 @@ def _v4_node_input_manifests(
                 raise ArtifactHealthError(
                     f"{relative}: reserved certification output cannot be a node input"
                 )
-            payload = _read_node_input(node, path, root)
+            payload = _read_node_input(
+                node,
+                path,
+                root,
+                allow_non_atomic=allow_non_atomic,
+            )
             entries.append(
                 {
                     "path": relative,
@@ -953,6 +1133,7 @@ def _compute_v4_node_hash_states(
     policy_path: Path,
     certification_basis_hash: str,
     certification_basis_paths: Iterable[Path | str],
+    allow_non_atomic: bool = False,
 ) -> dict[str, NodeHashState]:
     trace_specs: list[tuple[str, str, str]] = []
     for node_id, node in sorted(graph.nodes.items()):
@@ -1006,7 +1187,10 @@ def _compute_v4_node_hash_states(
     before_traces = collect_traces()
     policy = load_node_hash_policy(policy_path)
     manifests, contract_dependencies = _v4_node_input_manifests(
-        graph, repo_root, policy
+        graph,
+        repo_root,
+        policy,
+        allow_non_atomic=allow_non_atomic,
     )
     node_hashes = {
         node_id: _hash_value(
@@ -1253,6 +1437,7 @@ def compute_node_hash_states(
     policy_path: Path | None = None,
     certification_basis_hash: str | None = None,
     certification_basis_paths: Iterable[Path | str] = (),
+    allow_non_atomic: bool = False,
 ) -> dict[str, NodeHashState]:
     """Compute deterministic node hash states through the one generation-aware path."""
 
@@ -1270,6 +1455,7 @@ def compute_node_hash_states(
             policy_path=policy_path,
             certification_basis_hash=certification_basis_hash,
             certification_basis_paths=certification_basis_paths,
+            allow_non_atomic=allow_non_atomic,
         )
     if not isinstance(graph, SkillBlueprintGraph):
         raise ArtifactHealthError("pre-v4 node hashing requires a skill blueprint graph")

@@ -38,18 +38,24 @@ RTX_DIR = Path(__file__).resolve().parent
 if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
-from _drift_hashes import HashEntry, digest_entries, entries_for_path, hash_interface, hash_skill
+from _drift_hashes import entries_for_path, hash_interface, hash_skill
 from _skill_sources import SkillSource, SkillSourceDiscoveryError, observed_skill_sources
 from officina.common.artifact_health import (
     CANONICAL_GRAPH_SCHEMA_INPUTS,
+    CANONICAL_NODE_HASH_POLICY,
     POOLED_REVIEW_SCHEMA_INPUTS,
+    ArtifactHealthError,
     GraphHealthReport,
     NodeHashState,
     blueprint_schema_hash,
     check_graph_health,
     compute_node_hash_states,
+    compute_certification_basis_hash as compute_shared_certification_basis_hash,
+    derive_certifier_identity,
+    expected_certifier_checks,
     health_path_for_node,
     health_node_ids,
+    resolve_certification_basis_paths as resolve_shared_certification_basis_paths,
 )
 from officina.common.audit_records import (
     HMAC_KEY_BYTES,
@@ -57,9 +63,17 @@ from officina.common.audit_records import (
     record_digest_matches,
 )
 from officina.common.blueprint_graph import (
+    RepositoryBlueprintGraph,
     SkillBlueprintGraph,
+    load_repository_blueprint_graph,
     load_validated_skill_blueprint_graph,
 )
+from officina.common.certification_view import (
+    CertificateCurrentnessReport,
+    certificate_log_path,
+    evaluate_certificate_currentness,
+)
+from officina.common.git_provenance import capture_git_snapshot
 from officina.common.pooled_blueprint import (
     check_pooled_review,
     pooled_review_health_path,
@@ -77,6 +91,70 @@ OUTPUT_SCHEMA_VERSION = 1
 
 class DriftCheckError(RuntimeError):
     """Raised when a requested skill cannot be checked."""
+
+
+def _check_v4_repository(
+    repo_root: Path,
+    *,
+    target_node_ids: Sequence[str],
+    public_key_root: Path,
+    allow_non_atomic: bool = False,
+) -> CertificateCurrentnessReport:
+    """Private Task-3 public-key-only status path for converted repositories."""
+
+    root = Path(repo_root).resolve()
+    schema_root = root / "references" / "blueprint"
+    graph = load_repository_blueprint_graph(
+        root,
+        schema_root=schema_root,
+    )
+    if not isinstance(graph, RepositoryBlueprintGraph) or any(
+        node.declaration.get("schema_version") != 4 for node in graph.nodes.values()
+    ):
+        raise DriftCheckError("private v4 drift accepts only all-v4 repositories")
+    unknown = sorted(set(target_node_ids) - set(graph.nodes))
+    if unknown:
+        raise DriftCheckError("unknown exact v4 drift target: " + ", ".join(unknown))
+    snapshot = capture_git_snapshot(root)
+    if snapshot is None or snapshot.repo_root != root:
+        raise DriftCheckError("v4 drift requires the exact Git repository root")
+    try:
+        basis_paths = resolve_shared_certification_basis_paths(
+            root,
+            allow_non_atomic=allow_non_atomic,
+        )
+        basis_hash = compute_shared_certification_basis_hash(
+            root,
+            allow_non_atomic=allow_non_atomic,
+        )
+        states = compute_node_hash_states(
+            graph,
+            repo_root=root,
+            policy_path=root / CANONICAL_NODE_HASH_POLICY,
+            certification_basis_hash=basis_hash,
+            certification_basis_paths=basis_paths,
+            allow_non_atomic=allow_non_atomic,
+        )
+        certifier_identity = derive_certifier_identity(graph, states, snapshot.commit)
+    except ArtifactHealthError as exc:
+        raise DriftCheckError(str(exc)) from exc
+    checks_by_node = {
+        node_id: expected_certifier_checks() for node_id in graph.nodes
+    }
+    report = evaluate_certificate_currentness(
+        graph,
+        states,
+        repo_root=root,
+        public_key_root=public_key_root,
+        source_commit=snapshot.commit,
+        certifier_identity=certifier_identity,
+        checks_by_node=checks_by_node,
+        schema_root=schema_root,
+        allow_non_atomic=allow_non_atomic,
+    )
+    return CertificateCurrentnessReport(
+        nodes={node_id: report.nodes[node_id] for node_id in target_node_ids}
+    )
 
 
 class PooledReviewSnapshotError(DriftCheckError):
@@ -498,36 +576,9 @@ def load_blueprint(skill_dir: Path) -> dict[str, Any]:
 
 
 def compute_certification_basis_hash(repo_root: Path) -> str:
-    """Hash the canonical certification implementation and parsed node policy."""
+    """Return the shared canonical basis hash under the pre-v4 wrapper name."""
 
-    package_root = repo_root.resolve()
-    manifest = policy_roots_path(package_root)
-    manifest_bytes = secure_read_target_file(package_root, manifest)
-    entries: list[HashEntry] = []
-    for path in certification_basis_paths(
-        package_root, manifest_bytes=manifest_bytes
-    ):
-        data = (
-            manifest_bytes
-            if path == manifest
-            else secure_read_target_file(package_root, path)
-        )
-        if path == package_root / "references" / "certification" / "node-hash-policy.yaml":
-            try:
-                parsed_policy = yaml.safe_load(data.decode("utf-8"))
-                data = json.dumps(
-                    parsed_policy,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                    allow_nan=False,
-                ).encode("utf-8")
-            except (UnicodeError, yaml.YAMLError, ValueError, TypeError) as exc:
-                raise DriftCheckError(
-                    f"cannot parse canonical node hash policy {path}: {exc}"
-                ) from exc
-        entries.append(HashEntry(display_path(path, package_root), "file", data))
-    return digest_entries(entries)
+    return compute_shared_certification_basis_hash(repo_root.resolve())
 
 
 def certification_basis_paths(
@@ -535,26 +586,13 @@ def certification_basis_paths(
     *,
     manifest_bytes: bytes | None = None,
 ) -> tuple[Path, ...]:
-    """Resolve the exact files covered by the one certification-basis manifest."""
+    """Resolve shared canonical paths under the retained pre-v4 wrapper name."""
 
-    package_root = repo_root.resolve()
-    manifest = certification_basis_roots_path(package_root)
-    selected = {manifest}
-    for pattern in load_policy_patterns(package_root, manifest_bytes=manifest_bytes):
-        relative = Path(pattern)
-        if relative.is_absolute() or ".." in relative.parts:
-            raise DriftCheckError(f"policy hash root must stay under target package: {pattern}")
-        if any(char in pattern for char in "*?[]"):
-            paths = sorted(package_root.glob(pattern), key=lambda item: item.as_posix())
-        else:
-            paths = [package_root / pattern]
-        for path in paths:
-            try:
-                secure_read_target_file(package_root, path)
-            except FileNotFoundError:
-                continue
-            selected.add(path)
-    return tuple(sorted(selected, key=lambda path: display_path(path, package_root)))
+    if manifest_bytes is not None:
+        raise DriftCheckError(
+            "caller-supplied certification basis manifest bytes are not authoritative"
+        )
+    return resolve_shared_certification_basis_paths(repo_root.resolve())
 
 
 def compute_policy_hash(repo_root: Path) -> str:
