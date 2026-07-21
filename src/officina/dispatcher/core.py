@@ -24,12 +24,14 @@ from officina.common.blueprint_graph import (
     load_validated_skill_blueprint_graph,
     open_runtime_file,
     open_runtime_python_package,
+    resolve_export,
     resolve_machine_export,
 )
 from officina.common.certification_view import CertificationView, RejectingCertificationView
-from officina.common.machine_interface_binding import (
+from officina.common.process_binding_compiler import (
     MachineInterfaceBindingError,
     compile_gateway_invocation,
+    compile_route_smoke_invocation,
     parse_caller_invocation,
 )
 from officina.common.blueprint_inventory import BlueprintInventoryError, collect_blueprints
@@ -823,7 +825,7 @@ def _current_platform_name() -> str:
     return current_platform_name()
 
 
-def _resolve_machine_module_dispatch(
+def _resolve_export_dispatch(
     *,
     root: Path,
     caller_skill: str,
@@ -833,25 +835,28 @@ def _resolve_machine_module_dispatch(
     target_version: int | None,
     certification_view: CertificationView | None,
 ) -> ResolvedInvocation | None:
-    """Resolve a target-v3 nested export, or return None for a legacy target."""
+    """Resolve a repository-graph export, or return None for a legacy target."""
 
     diagnostic_inventory = collect_blueprints(root, skip_parse_errors=True)
     target_is_module = False
     target_is_export = False
     for document in diagnostic_inventory.documents:
-        if (
-            document.declaration.get("schema_version") != 3
-            or document.node_type != "machine-module"
-        ):
-            continue
-        if document.node_id == target:
-            target_is_module = True
-        raw_interfaces = document.declaration.get("interfaces", {})
-        if isinstance(raw_interfaces, dict) and any(
-            isinstance(entry, dict) and entry.get("id") == target
-            for entry in raw_interfaces.values()
-        ):
-            target_is_export = True
+        schema_version = document.declaration.get("schema_version")
+        if schema_version == 3 and document.node_type == "machine-module":
+            if document.node_id == target:
+                target_is_module = True
+            raw_interfaces = document.declaration.get("interfaces", {})
+            if isinstance(raw_interfaces, dict) and any(
+                isinstance(entry, dict) and entry.get("id") == target
+                for entry in raw_interfaces.values()
+            ):
+                target_is_export = True
+        elif schema_version == 4 and document.node_type == "module":
+            if document.node_id == target:
+                target_is_module = True
+            raw_exports = document.declaration.get("exports", {})
+            if isinstance(raw_exports, dict) and target in raw_exports:
+                target_is_export = True
     if not target_is_module and not target_is_export:
         return None
     try:
@@ -862,19 +867,36 @@ def _resolve_machine_module_dispatch(
             f"{root / first.relative_path}: cannot load blueprint YAML: {first.message}"
         ) from exc
     except BlueprintGraphError as exc:
-        raise InvocationError(f"target v3 repository graph is invalid: {exc}") from exc
-    if target in graph.nodes and graph.nodes[target].node_type == "machine-module":
+        raise InvocationError(f"repository blueprint graph is invalid: {exc}") from exc
+    if target in graph.nodes and graph.nodes[target].node_type in {"module", "machine-module"}:
         raise InvocationError(f"module id `{target}` is not callable")
-    if target not in graph.machine_exports:
+    if target not in graph.exports:
         return None
     try:
-        module, export = resolve_machine_export(graph, target, target_version)
-        declaration = export.declaration
-        allowed = declaration.get("allowed_callers", [])
-        if declaration.get("allow_all_skills") is not True and caller_skill not in allowed:
-            raise InvocationError(
-                f"caller skill `{caller_skill}` is not allowed to call `{target}`"
-            )
+        export = graph.exports[target]
+        if export.source_node_id is None:
+            module, export = resolve_machine_export(graph, target, target_version)
+            source = module
+            declaration = export.declaration
+            allowed = declaration.get("allowed_callers", [])
+            if declaration.get("allow_all_skills") is not True and caller_skill not in allowed:
+                raise InvocationError(
+                    f"caller skill `{caller_skill}` is not allowed to call `{target}`"
+                )
+        else:
+            module, source, export = resolve_export(graph, target, target_version)
+            access = export.export_declaration.get("access") if export.export_declaration else None
+            if not isinstance(access, dict):
+                raise InvocationError(f"{target}: export access is missing")
+            allowed = access.get("allowed_callers", [])
+            if (
+                caller_skill != module.node_id
+                and access.get("allow_all_modules") is not True
+                and caller_skill not in allowed
+            ):
+                raise InvocationError(
+                    f"caller module `{caller_skill}` is not allowed to call `{target}`"
+                )
         decision = (certification_view or RejectingCertificationView()).check_export(
             module.node_id,
             export.interface_id,
@@ -885,20 +907,50 @@ def _resolve_machine_module_dispatch(
                 f"{export.interface_id}: certification rejected "
                 f"[{decision.code}]: {decision.message}"
             )
-        parsed = parse_caller_invocation(
-            export,
-            args,
-            stdin_requested=stdin_requested,
-        )
-        compiled = compile_gateway_invocation(module, export, parsed)
+        if args == ["--route-smoke"] and not stdin_requested:
+            compiled = compile_route_smoke_invocation(source, export)
+        else:
+            parsed = parse_caller_invocation(
+                export,
+                args,
+                stdin_requested=stdin_requested,
+            )
+            compiled = compile_gateway_invocation(source, export, parsed)
     except (BlueprintGraphError, MachineInterfaceBindingError) as exc:
         raise InvocationError(str(exc)) from exc
 
     target_skill = module.skill_root.name
+    runtime_declaration = dict(module.declaration)
+    if source.node_type == "behavioral_source":
+        gateway = source.declaration.get("gateway")
+        language = gateway.get("language") if isinstance(gateway, dict) else None
+        language_name = re.split(r"(?:==|>=|>|<=|<)", language, maxsplit=1)[0] if isinstance(language, str) else None
+        if language_name != "Python":
+            raise InvocationError(
+                f"{export.interface_id}: unsupported process binding language {language!r}"
+            )
+        if source.gateway_path is None or compiled.entry is None:
+            raise InvocationError(
+                f"{export.interface_id}: Python process binding requires a gateway and entry"
+            )
+        try:
+            gateway_path = source.gateway_path.relative_to(source.skill_root).as_posix()
+        except ValueError as exc:
+            raise InvocationError(
+                f"{export.interface_id}: gateway must remain inside its module"
+            ) from exc
+        runtime_declaration = {
+            "gateway": {
+                "kind": "python-entrypoint",
+                "path": gateway_path,
+                "symbol": compiled.entry,
+                "args_prefix": [],
+            }
+        }
     cwd, command, env, runtime_bindings = build_machine_runtime(
         target_skill,
         export.local_name,
-        dict(module.declaration),
+        runtime_declaration,
         list(compiled.argv),
         repo_root=root,
     )
@@ -938,7 +990,7 @@ def resolve_dispatch(
     if module_target is None and target_skill is not None and script_interface is not None:
         module_target = f"{target_skill}.machine.{script_interface}"
     if isinstance(module_target, str):
-        resolved_module = _resolve_machine_module_dispatch(
+        resolved_module = _resolve_export_dispatch(
             root=root,
             caller_skill=caller_skill,
             target=module_target,

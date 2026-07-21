@@ -149,6 +149,11 @@ def _blueprint_paths(repo_root: Path) -> tuple[Path, ...]:
             root_blueprint = skill_root / "blueprint.yaml"
             if regular_file(root_blueprint):
                 candidates.add(root_blueprint)
+            blueprints_root = skill_root / "blueprints"
+            if blueprints_root.is_dir() and not blueprints_root.is_symlink():
+                for source_blueprint in sorted(blueprints_root.glob("*.yaml")):
+                    if regular_file(source_blueprint):
+                        candidates.add(source_blueprint)
             hidden_sidecars(skill_root)
     hidden_sidecars(repo_root / "references")
     return tuple(sorted(candidates, key=lambda path: path.relative_to(repo_root).as_posix()))

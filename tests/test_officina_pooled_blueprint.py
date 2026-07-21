@@ -14,11 +14,13 @@ import officina.common.pooled_blueprint as pooled_blueprint
 from officina.common.artifact_health import certify_graph, check_graph_health
 from officina.common.audit_records import attach_record_authentication
 from officina.common.blueprint_graph import (
+    load_repository_blueprint_graph,
     load_repository_blueprint_graphs,
     load_skill_blueprint_graph,
     resolve_repository_skill_graph,
 )
 from officina.common.blueprint_template import load_schema, schema_validator
+from officina.common.certification_view import CertificateRecordView
 from officina.common.pooled_blueprint import (
     PooledReviewValidationError,
     certify_pooled_review,
@@ -42,7 +44,8 @@ def _write_yaml(path: Path, value: dict) -> None:
 
 def _copy_pool_schema_bundle(destination: Path) -> None:
     destination.mkdir()
-    for name in ("pooled-review.schema.json", "health.schema.json"):
+    names = pooled_blueprint._POOL_SCHEMA_BUNDLE | {"health.schema.json"}
+    for name in sorted(names):
         (destination / name).write_bytes((SCHEMA_ROOT / name).read_bytes())
 
 
@@ -266,7 +269,7 @@ def test_missing_pool_does_not_change_canonical_root_health(tmp_path: Path) -> N
     assert repeated.healthy
 
 
-def test_generated_pool_and_health_records_validate_against_normative_schemas(
+def test_generated_legacy_pool_is_distinct_from_v2_and_health_records_validate(
     tmp_path: Path,
 ) -> None:
     _skill, _graph, records, _root_report, pool_path, health_path = _fixture(tmp_path)
@@ -280,7 +283,10 @@ def test_generated_pool_and_health_records_validate_against_normative_schemas(
     for record in records.values():
         health_validator.validate(record)
     health_validator.validate(json.loads(health_path.read_text(encoding="utf-8")))
-    pool_validator.validate(yaml.safe_load(pool_path.read_text(encoding="utf-8")))
+    legacy_pool = yaml.safe_load(pool_path.read_text(encoding="utf-8"))
+    assert "schema_version" not in legacy_pool
+    with pytest.raises(jsonschema.ValidationError):
+        pool_validator.validate(legacy_pool)
 
 
 def test_authenticated_invalid_pooled_health_is_rejected(tmp_path: Path) -> None:
@@ -810,14 +816,10 @@ def test_selected_schema_symlink_is_rejected(
 ) -> None:
     _skill, graph, records, root_report, pool_path, health_path = _fixture(tmp_path)
     schema_root = tmp_path / "schema-symlink"
-    schema_root.mkdir()
-    for name in ("pooled-review.schema.json", "health.schema.json"):
-        destination = schema_root / name
-        source = SCHEMA_ROOT / name
-        if name == selected_name:
-            destination.symlink_to(source)
-        else:
-            destination.write_bytes(source.read_bytes())
+    _copy_pool_schema_bundle(schema_root)
+    selected = schema_root / selected_name
+    selected.unlink()
+    selected.symlink_to(SCHEMA_ROOT / selected_name)
 
     report = _check(
         pool_path,
@@ -1113,3 +1115,157 @@ def test_pooled_review_uses_repository_relative_paths_for_cross_skill_nodes(
 
     assert provider["blueprint_path"] == "$repo/skills/provider/blueprint.yaml"
     assert provider["binding_path"] == "$repo/skills/provider/SKILL.md"
+
+
+def _v4_fixture(tmp_path: Path):
+    module = tmp_path / "skills" / "demo-skill"
+    source_id = "demo-skill.source.gateway"
+    source_path = module / "blueprints" / "gateway.yaml"
+    gateway_path = module / "SKILL.md"
+    gateway_path.parent.mkdir(parents=True)
+    gateway_path.write_text("Demo instructions.\n", encoding="utf-8")
+    _write_yaml(
+        source_path,
+        {
+            "schema_version": 4,
+            "node_type": "behavioral_source",
+            "id": source_id,
+            "version": 1,
+            "description": "Instruction gateway.",
+            "gateway": {"path": "SKILL.md", "language": "Natural Language"},
+            "content": [r"SKILL\.md"],
+            "dependencies": [],
+            "uses_interfaces": [],
+            "interfaces": {},
+        },
+    )
+    _write_yaml(
+        module / "blueprint.yaml",
+        {
+            "schema_version": 4,
+            "node_type": "module",
+            "id": "demo-skill",
+            "version": 1,
+            "description": "Demo module.",
+            "gateway": {"path": "SKILL.md", "language": "Natural Language"},
+            "content": [r"SKILL\.md"],
+            "authority": {"owns_filesystem": []},
+            "sources": {
+                source_id: {
+                    "blueprint": {
+                        "base": "module-root",
+                        "path": "blueprints/gateway.yaml",
+                    }
+                }
+            },
+            "exports": {},
+        },
+    )
+    graph = load_repository_blueprint_graph(tmp_path)
+    node_hashes = {
+        node_id: "sha256:" + str(index) * 64
+        for index, node_id in enumerate(sorted(graph.nodes), start=1)
+    }
+    records = {
+        node_id: {
+            "payload": {
+                "subject": {"id": node_id},
+                "node_hash": node_hash,
+                "certified_at": "2026-07-21T12:00:00-04:00",
+            },
+            "signature": {"value": "fixture"},
+        }
+        for node_id, node_hash in node_hashes.items()
+    }
+    return graph, node_hashes, records
+
+
+def test_v4_pooled_review_is_deterministic_and_certificate_backed(
+    tmp_path: Path,
+) -> None:
+    graph, node_hashes, records = _v4_fixture(tmp_path)
+    view = CertificateRecordView(records, expected_node_hashes=node_hashes)
+
+    first = render_pooled_review(graph, view)
+    second = render_pooled_review(graph, view)
+    document = yaml.safe_load(first)
+
+    assert first == second
+    assert document["schema_version"] == 2
+    assert document["document_type"] == "pooled-blueprint-review"
+    assert [node["id"] for node in document["nodes"]] == [
+        "demo-skill",
+        "demo-skill.source.gateway",
+    ]
+    assert [node["node_type"] for node in document["nodes"]] == [
+        "module",
+        "behavioral_source",
+    ]
+    assert document["root"]["node_hash"] == node_hashes["demo-skill"]
+    assert all(node["certificate"]["status"] == "current" for node in document["nodes"])
+    assert "health" not in first
+    assert "artifact_graph_hash" not in first
+    assert "certified_health_hash" not in first
+
+
+def test_v4_pooled_review_validates_against_normative_schema(tmp_path: Path) -> None:
+    graph, node_hashes, records = _v4_fixture(tmp_path)
+    document = yaml.safe_load(
+        render_pooled_review(
+            graph,
+            CertificateRecordView(records, expected_node_hashes=node_hashes),
+        )
+    )
+
+    schema_validator(load_schema(SCHEMA_ROOT / "pooled-review.schema.json")).validate(
+        document
+    )
+
+
+def test_v4_pooled_review_rejects_missing_certificate(tmp_path: Path) -> None:
+    graph, node_hashes, records = _v4_fixture(tmp_path)
+    records.pop("demo-skill.source.gateway")
+
+    with pytest.raises(PooledReviewValidationError, match="requires a current certificate"):
+        render_pooled_review(
+            graph,
+            CertificateRecordView(records, expected_node_hashes=node_hashes),
+        )
+
+
+def test_v4_pooled_review_rejects_stale_certificate(tmp_path: Path) -> None:
+    graph, node_hashes, records = _v4_fixture(tmp_path)
+    records["demo-skill"]["payload"]["node_hash"] = "sha256:" + "9" * 64
+
+    with pytest.raises(PooledReviewValidationError, match="requires a current certificate"):
+        render_pooled_review(
+            graph,
+            CertificateRecordView(records, expected_node_hashes=node_hashes),
+        )
+
+
+def test_v4_pooled_review_requires_read_only_certificate_view(tmp_path: Path) -> None:
+    graph, _node_hashes, records = _v4_fixture(tmp_path)
+
+    with pytest.raises(PooledReviewValidationError, match="read-only certification view"):
+        render_pooled_review(graph, records)
+
+
+def test_legacy_pooled_health_cannot_certify_v4_record(tmp_path: Path) -> None:
+    path = tmp_path / ".pooled-blueprint-review.yaml"
+    path.write_text("schema_version: 2\n", encoding="utf-8")
+    v4_record = {
+        "payload": {
+            "subject": {"id": "demo-skill"},
+            "node_hash": "sha256:" + "1" * 64,
+        },
+        "signature": {"value": "fixture"},
+    }
+
+    with pytest.raises(PooledReviewValidationError, match="pre-v4"):
+        certify_pooled_review(
+            path,
+            v4_record,
+            key=b"p" * 32,
+            certified_at="2026-07-21T12:00:00-04:00",
+        )

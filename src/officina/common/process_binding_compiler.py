@@ -1,4 +1,4 @@
-"""Pure parser and argv compiler for nested machine-interface exports."""
+"""Pure parser and process-binding compiler for callable exports."""
 
 from __future__ import annotations
 
@@ -12,11 +12,15 @@ import uuid
 
 import yaml
 
-from .blueprint_graph import BlueprintNode, MachineInterfaceExport
+from .blueprint_graph import BlueprintNode, InterfaceExport
 
 
-class MachineInterfaceBindingError(ValueError):
+class ProcessBindingError(ValueError):
     """Raised when an export binding or caller invocation is ambiguous or invalid."""
+
+
+# Temporary pre-v4 source compatibility.
+MachineInterfaceBindingError = ProcessBindingError
 
 
 @dataclass(frozen=True)
@@ -29,6 +33,7 @@ class ParsedCallerInvocation:
 class CompiledInvocationPlan:
     argv: tuple[str, ...]
     stdin_argument_id: str | None
+    entry: str | None = None
 
 
 _DISPATCHER_OPTIONS = frozenset({"--caller-skill", "--dry-run", "--stdin"})
@@ -36,32 +41,70 @@ _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
 _EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
-def _arguments(export: MachineInterfaceExport) -> dict[str, dict[str, Any]]:
+def _process_binding(export: InterfaceExport) -> Mapping[str, Any]:
+    if export.source_node_id is not None:
+        binding = export.declaration.get("process_binding")
+        if not isinstance(binding, Mapping) or binding.get("kind") != "process":
+            raise ProcessBindingError(
+                f"{export.interface_id}: interface is not process-bindable"
+            )
+        return binding
+    binding = export.declaration.get("invocation_binding")
+    if not isinstance(binding, Mapping):
+        raise ProcessBindingError(
+            f"{export.interface_id}: invocation_binding must be a mapping"
+        )
+    return binding
+
+
+def _arguments(export: InterfaceExport) -> dict[str, dict[str, Any]]:
     contract = export.declaration.get("contract")
     raw = contract.get("arguments") if isinstance(contract, Mapping) else None
     if not isinstance(raw, Mapping):
-        raise MachineInterfaceBindingError(
+        raise ProcessBindingError(
             f"{export.interface_id}: contract.arguments must be a mapping"
         )
     result: dict[str, dict[str, Any]] = {}
     for argument_id, declaration in raw.items():
         if not isinstance(argument_id, str) or not isinstance(declaration, Mapping):
-            raise MachineInterfaceBindingError(
+            raise ProcessBindingError(
                 f"{export.interface_id}: every argument must be a named mapping"
             )
         result[argument_id] = dict(declaration)
+    if export.source_node_id is not None:
+        raw_bindings = _process_binding(export).get("arguments", {})
+        if not isinstance(raw_bindings, Mapping):
+            raise ProcessBindingError(
+                f"{export.interface_id}: process_binding.arguments must be a mapping"
+            )
+        unknown = sorted(set(raw_bindings) - set(result))
+        missing = sorted(set(result) - set(raw_bindings))
+        if unknown:
+            raise ProcessBindingError(
+                f"{export.interface_id}: process binding has unknown arguments {unknown}"
+            )
+        if missing:
+            raise ProcessBindingError(
+                f"{export.interface_id}: process binding is missing arguments {missing}"
+            )
+        for argument_id, binding in raw_bindings.items():
+            if not isinstance(binding, Mapping):
+                raise ProcessBindingError(
+                    f"{export.interface_id}: binding for {argument_id} must be a mapping"
+                )
+            result[argument_id]["invocation_binding"] = dict(binding)
     return result
 
 
-def _fixed_bindings(export: MachineInterfaceExport) -> list[dict[str, Any]]:
-    invocation = export.declaration.get("invocation_binding")
-    raw = invocation.get("fixed") if isinstance(invocation, Mapping) else None
+def _fixed_bindings(export: InterfaceExport) -> list[dict[str, Any]]:
+    invocation = _process_binding(export)
+    raw = invocation.get("fixed", []) if export.source_node_id is not None else invocation.get("fixed")
     if not isinstance(raw, list):
-        raise MachineInterfaceBindingError(
-            f"{export.interface_id}: invocation_binding.fixed must be a list"
+        raise ProcessBindingError(
+            f"{export.interface_id}: process binding fixed values must be a list"
         )
     if not all(isinstance(entry, Mapping) for entry in raw):
-        raise MachineInterfaceBindingError(
+        raise ProcessBindingError(
             f"{export.interface_id}: every fixed binding must be a mapping"
         )
     return [dict(entry) for entry in raw]
@@ -93,7 +136,7 @@ def _contains_secret(type_spec: object) -> bool:
     )
 
 
-def _validate_layout(export: MachineInterfaceExport) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+def _validate_layout(export: InterfaceExport) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     arguments = _arguments(export)
     fixed = _fixed_bindings(export)
     positions: dict[int, str] = {}
@@ -319,7 +362,7 @@ def _caller_tokens(argv: Sequence[str], known_names: set[str], fixed_names: set[
 
 
 def parse_caller_invocation(
-    export: MachineInterfaceExport,
+    export: InterfaceExport,
     argv: Sequence[str],
     *,
     stdin_requested: bool,
@@ -468,17 +511,77 @@ def _value_tokens(value: object) -> list[str]:
     return [_encode(value)]
 
 
+def _require_export_owner(module: BlueprintNode, export: InterfaceExport) -> None:
+    if export.source_node_id is None:
+        if module.node_type != "machine-module" or module.node_id != export.module_node_id:
+            raise ProcessBindingError(
+                f"{export.interface_id}: owning machine module does not match"
+            )
+    elif (
+        module.node_type != "behavioral_source"
+        or module.node_id != export.source_node_id
+    ):
+        raise ProcessBindingError(
+            f"{export.interface_id}: owning behavioral source does not match"
+        )
+
+
+def _process_prefix_and_entry(export: InterfaceExport) -> tuple[list[str], str | None]:
+    process_binding = _process_binding(export)
+    raw_prefix = process_binding.get("args_prefix", [])
+    if not isinstance(raw_prefix, list) or not all(
+        isinstance(token, str) and token for token in raw_prefix
+    ):
+        raise ProcessBindingError(
+            f"{export.interface_id}: args_prefix must contain non-empty strings"
+        )
+    entry = process_binding.get("entry")
+    if entry is not None and (not isinstance(entry, str) or not entry):
+        raise ProcessBindingError(f"{export.interface_id}: process entry must be non-empty")
+    return list(raw_prefix), entry
+
+
+def _fixed_argv(fixed: Sequence[Mapping[str, Any]]) -> list[str]:
+    positionals: list[tuple[int, list[str]]] = []
+    named: list[tuple[str, list[str]]] = []
+    for binding in fixed:
+        kind = binding["kind"]
+        if kind == "positional":
+            positionals.append((binding["position"], _value_tokens(binding["value"])))
+        elif kind == "option":
+            named.append((binding["name"], [binding["name"], *_value_tokens(binding["value"])]))
+        else:
+            named.append((binding["name"], [binding["name"]]))
+    argv: list[str] = []
+    for _position, tokens in sorted(positionals, key=lambda item: item[0]):
+        argv.extend(tokens)
+    for _name, tokens in sorted(named, key=lambda item: item[0]):
+        argv.extend(tokens)
+    return argv
+
+
+def compile_route_smoke_invocation(
+    module: BlueprintNode,
+    export: InterfaceExport,
+) -> CompiledInvocationPlan:
+    """Compile the shared smoke route without requiring normal caller arguments."""
+
+    _require_export_owner(module, export)
+    _argument_declarations, fixed = _validate_layout(export)
+    argv, entry = _process_prefix_and_entry(export)
+    argv.extend(_fixed_argv(fixed))
+    argv.append("--route-smoke")
+    return CompiledInvocationPlan(tuple(argv), None, entry)
+
+
 def compile_gateway_invocation(
     module: BlueprintNode,
-    export: MachineInterfaceExport,
+    export: InterfaceExport,
     parsed: ParsedCallerInvocation,
 ) -> CompiledInvocationPlan:
     """Compile a parsed call to deterministic argv without gateway prefixes."""
 
-    if module.node_type != "machine-module" or module.node_id != export.module_node_id:
-        raise MachineInterfaceBindingError(
-            f"{export.interface_id}: owning machine module does not match"
-        )
+    _require_export_owner(module, export)
     arguments, fixed = _validate_layout(export)
     positionals: list[tuple[int, list[str]]] = []
     fixed_named: list[tuple[str, list[str]]] = []
@@ -512,11 +615,11 @@ def compile_gateway_invocation(
         elif value is True:
             caller_named.append((argument_id, [binding["name"]]))
 
-    argv: list[str] = []
+    argv, entry = _process_prefix_and_entry(export)
     for _position, tokens in sorted(positionals, key=lambda item: item[0]):
         argv.extend(tokens)
     for _argument_id, tokens in sorted(caller_named, key=lambda item: item[0]):
         argv.extend(tokens)
     for _name, tokens in sorted(fixed_named, key=lambda item: item[0]):
         argv.extend(tokens)
-    return CompiledInvocationPlan(tuple(argv), stdin_argument_id)
+    return CompiledInvocationPlan(tuple(argv), stdin_argument_id, entry)

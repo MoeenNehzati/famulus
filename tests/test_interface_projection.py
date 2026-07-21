@@ -19,7 +19,9 @@ class _PassingView:
     def __init__(self) -> None:
         self.checked: list[str] = []
 
-    def check_export(self, module_id: str, interface_id: str, interface_version: int) -> CertificationDecision:
+    def check_export(
+        self, module_id: str, interface_id: str, interface_version: int
+    ) -> CertificationDecision:
         self.checked.append(interface_id)
         return CertificationDecision(True, "current", "Current.")
 
@@ -29,64 +31,25 @@ def _write_yaml(path: Path, value: object) -> None:
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
 
 
-def _skill(root: Path, name: str, uses: list[dict[str, object]]) -> Path:
-    skill = root / "skills" / name
-    skill.mkdir(parents=True, exist_ok=True)
-    (skill / "SKILL.md").write_text("Instructions.\n", encoding="utf-8")
-    _write_yaml(
-        skill / "blueprint.yaml",
-        {
-            "schema_version": 3,
-            "node_type": "skill",
-            "id": name,
-            "gateway": {"kind": "instruction-file", "path": "SKILL.md"},
-            "content": [r"SKILL\.md"],
-            "default_interface": {
-                "version": 1,
-                "description": "Default consumer.",
-                "allow_all_skills": True,
-                "uses_interfaces": uses,
-                "behavior_sources": [],
-                "direct_io": {"reads": [], "writes": [], "network": []},
-                "owns_filesystem": [],
-            },
-            "interfaces": [],
-        },
-    )
-    return skill
-
-
-def _llm_sidecar(skill: Path, local_name: str, description: str) -> str:
-    gateway = skill / "llm_interfaces" / f"{local_name}.md"
-    gateway.parent.mkdir(parents=True, exist_ok=True)
-    gateway.write_text(description + "\n", encoding="utf-8")
-    interface_id = f"{skill.name}.llm.{local_name}"
-    _write_yaml(
-        gateway.with_name(f".{gateway.name}.blueprint.yaml"),
-        {
-            "schema_version": 3,
-            "node_type": "llm-interface",
-            "id": interface_id,
-            "version": 1,
-            "description": description,
-            "gateway": {"kind": "instruction-file", "path": f"llm_interfaces/{local_name}.md"},
-            "content": [rf"llm_interfaces/{local_name}\.md"],
-            "allow_all_skills": True,
-            "uses_interfaces": [],
-            "behavior_sources": [],
-            "direct_io": {"reads": [], "writes": [], "network": []},
-            "owns_filesystem": [],
-        },
-    )
-    return interface_id
-
-
-def _contract(schema_path: str | None = None) -> dict[str, object]:
+def _contract(
+    *,
+    helper: dict[str, object] | None = None,
+    schema_path: str | None = None,
+) -> dict[str, object]:
     output: dict[str, object] = {
         "id": "result",
+        "audience": "machine",
+        "description": "Result.",
+        "direct_io_ref": "stdout",
         "cardinality": {"minimum": 0, "maximum": 100},
+        "ordering": "stable",
+        "pagination": {"kind": "none"},
+        "truncation": {"kind": "none"},
+        "empty": "May be empty.",
     }
-    if schema_path is not None:
+    if schema_path is None:
+        output["type"] = {"kind": "string"}
+    else:
         output["schema"] = {"path": schema_path, "fragment": "#"}
     return {
         "arguments": {
@@ -94,11 +57,6 @@ def _contract(schema_path: str | None = None) -> dict[str, object]:
                 "description": "Name.",
                 "required": True,
                 "sensitivity": "public",
-                "invocation_binding": {
-                    "kind": "positional",
-                    "position": 0,
-                    "arity": {"minimum": 1, "maximum": 1},
-                },
                 "type": {"kind": "string", "format": {"named": "identifier"}},
             }
         },
@@ -106,172 +64,300 @@ def _contract(schema_path: str | None = None) -> dict[str, object]:
         "interaction": {"mode": "unattended"},
         "caller_warnings": [],
         "outputs": [output],
-        "outcomes": [{"id": "success"}],
-        "execution": {"state_effect": "read-only", "lifecycle": "finite"},
+        "outcomes": [
+            {
+                "id": "success",
+                "class": "success",
+                "outputs": ["result"],
+                "effects": [],
+                "caller_action": "Continue.",
+            }
+        ],
+        "execution": {
+            "state_effect": "read-only",
+            "lifecycle": "finite",
+            "consistency": {"snapshot": "One snapshot."},
+            "verification": [{"method": "output-schema", "output_ref": "result"}],
+        },
+        "helpers": [helper] if helper is not None else [],
+        "direct_io": {
+            "reads": [],
+            "writes": [
+                {
+                    "id": "stdout",
+                    "medium": "stdout",
+                    "access": "write",
+                    "content": "Result.",
+                    "format": "text",
+                    "sensitivity": "public",
+                }
+            ],
+            "network": [],
+        },
     }
 
 
-def _export(interface_id: str, *, helpers: list[dict[str, object]] | None = None, uses: list[dict[str, object]] | None = None, schema_path: str | None = None) -> dict[str, object]:
+def _process_binding() -> dict[str, object]:
     return {
-        "id": interface_id,
-        "version": 1,
-        "description": f"Contract for {interface_id}.",
-        "allow_all_skills": True,
-        "allowed_callers": [],
-        "invocation_binding": {"fixed": []},
-        "uses_interfaces": uses or [],
-        "helpers": helpers or [],
-        "direct_io": {"reads": [], "writes": [{"id": "stdout", "medium": "stdout"}], "network": []},
-        "owns_filesystem": [{"path": "private/", "syntax": "literal", "allowed_readers": []}],
-        "contract": _contract(schema_path),
+        "kind": "process",
+        "entry": "Interface",
+        "arguments": {
+            "name": {
+                "kind": "positional",
+                "position": 0,
+                "arity": {"minimum": 1, "maximum": 1},
+            }
+        },
+        "fixed": [],
     }
+
+
+def _write_module(
+    root: Path,
+    module_id: str,
+    sources: dict[str, dict[str, object]],
+    exports: dict[str, dict[str, object]],
+) -> None:
+    module = root / "skills" / module_id
+    module.mkdir(parents=True, exist_ok=True)
+    content = sorted(
+        {
+            pattern
+            for source in sources.values()
+            for pattern in source["content"]  # type: ignore[index]
+        }
+    )
+    gateway_path = str(next(iter(sources.values()))["gateway"]["path"])  # type: ignore[index]
+    for source_id, source in sources.items():
+        _write_yaml(module / "blueprints" / f"{source_id.rsplit('.', 1)[-1]}.yaml", source)
+    _write_yaml(
+        module / "blueprint.yaml",
+        {
+            "schema_version": 4,
+            "node_type": "module",
+            "id": module_id,
+            "version": 1,
+            "description": f"{module_id} module.",
+            "gateway": {"path": gateway_path, "language": "Markdown"},
+            "content": content,
+            "authority": {"owns_filesystem": []},
+            "sources": {
+                source_id: {
+                    "blueprint": {
+                        "base": "module-root",
+                        "path": f"blueprints/{source_id.rsplit('.', 1)[-1]}.yaml",
+                    }
+                }
+                for source_id in sources
+            },
+            "exports": exports,
+        },
+    )
 
 
 def _repository(root: Path, *, oversized: bool = False) -> None:
-    provider = _skill(root, "provider-skill", [])
-    advisor = _llm_sidecar(provider, "advisor", "Provider advice.")
-    consumer = _skill(root, "consumer-skill", [])
-    coach = _llm_sidecar(consumer, "coach", "Local coaching.")
-    consumer_blueprint = yaml.safe_load((consumer / "blueprint.yaml").read_text(encoding="utf-8"))
-    consumer_blueprint["default_interface"]["uses_interfaces"] = [
-        {"interface": "provider-skill.machine.run", "version": 1},
-        {"interface": advisor, "version": 1},
-        {"interface": coach, "version": 1},
-    ]
-    _write_yaml(consumer / "blueprint.yaml", consumer_blueprint)
-
-    (provider / "result.schema.json").write_text(
-        '{"type":"object","properties":{"value":{"$ref":"value.schema.json#"}}}',
-        encoding="utf-8",
-    )
-    (provider / "value.schema.json").write_text('{"type":"string"}', encoding="utf-8")
-    runtime = provider / "_rtx"
-    runtime.mkdir(exist_ok=True)
-    (runtime / "_worker.py").write_text("class Interface:\n    pass\n", encoding="utf-8")
-    (provider / "interface-conformance.yaml").write_text("schema_version: 1\n", encoding="utf-8")
+    provider = root / "skills" / "provider-skill"
+    (provider / "_rtx").mkdir(parents=True)
+    (provider / "_rtx" / "worker.py").write_text("class Interface:\n    pass\n")
+    (provider / "_rtx" / "lookup.py").write_text("class Interface:\n    pass\n")
+    (provider / "result.schema.json").write_text('{"type":"string"}')
+    lookup_source = "provider-skill.source.lookup"
+    lookup_interface = f"{lookup_source}.interface.names"
+    worker_source = "provider-skill.source.worker"
+    run_interface = f"{worker_source}.interface.run"
     helper = {
         "id": "lookup",
         "role": "Supplies names.",
-        "interface": "provider-skill.machine.lookup",
+        "interface": lookup_interface,
         "version": 1,
         "inputs": {},
         "result": {"output_ref": "result", "selector": {"kind": "whole-output"}},
         "route": {"kind": "argument-enum", "target": "name"},
-        "empty": {"outcome": "empty", "caller_action": "Stop."},
-        "failure": {"outcome": "failed"},
+        "empty": {"outcome": "success", "caller_action": "Stop."},
+        "failure": {"outcome": "success"},
     }
-    run = _export(
-        "provider-skill.machine.run",
-        helpers=[helper],
-        uses=[{"interface": "provider-skill.machine.lookup", "version": 1}],
-        schema_path="result.schema.json",
-    )
-    if oversized:
-        run["description"] = "x" * 17_000
-    declaration = {
-        "schema_version": 3,
-        "node_type": "machine-module",
-        "id": "provider-skill.machine-module.worker",
+    lookup = {
+        "schema_version": 4,
+        "node_type": "behavioral_source",
+        "id": lookup_source,
         "version": 1,
-        "description": "Provider worker.",
-        "gateway": {
-            "kind": "python-entrypoint",
-            "path": "_rtx/_worker.py",
-            "symbol": "Interface",
-            "args_prefix": [],
-            "conformance": {
-                "adapter_protocol": "officina-python-adapters@1",
-                "bind_method": "bind_conformance_adapters",
-                "sandbox_profile": "officina-isolated-effects@1",
-            },
-        },
-        "content": [r"_rtx/_worker\.py"],
-        "conformance_manifest": {"base": "skill-root", "path": "interface-conformance.yaml"},
-        "platform_support": {"linux": True, "macos": True, "windows": True},
+        "description": "Lookup source.",
+        "gateway": {"path": "_rtx/lookup.py", "language": "Python"},
+        "content": [r"_rtx/lookup\.py"],
         "dependencies": [],
-        "behavior_sources": [],
-        "owns_filesystem": [{"path": "private/", "syntax": "literal", "allowed_readers": []}],
         "uses_interfaces": [],
         "interfaces": {
-            "run": run,
-            "lookup": _export("provider-skill.machine.lookup"),
-            "sibling": _export("provider-skill.machine.sibling"),
+            lookup_interface: {
+                "version": 1,
+                "description": "Lookup names.",
+                "contract": _contract(),
+                "process_binding": _process_binding(),
+            },
+            f"{lookup_source}.interface.sibling": {
+                "version": 1,
+                "description": "Unused sibling.",
+                "contract": _contract(),
+            },
         },
     }
-    _write_yaml(runtime / "._worker.py.blueprint.yaml", declaration)
+    worker = {
+        "schema_version": 4,
+        "node_type": "behavioral_source",
+        "id": worker_source,
+        "version": 1,
+        "description": "Worker source.",
+        "gateway": {"path": "_rtx/worker.py", "language": "Python"},
+        "content": [r"_rtx/worker\.py", r"result\.schema\.json"],
+        "dependencies": [],
+        "uses_interfaces": [{"interface": lookup_interface, "version": 1}],
+        "interfaces": {
+            run_interface: {
+                "version": 1,
+                "description": "x" * 17_000 if oversized else "Run.",
+                "contract": _contract(helper=helper, schema_path="result.schema.json"),
+                "process_binding": _process_binding(),
+            }
+        },
+    }
+    _write_module(
+        root,
+        "provider-skill",
+        {lookup_source: lookup, worker_source: worker},
+        {
+            "provider-skill.interface.run": {
+                "source_interface": run_interface,
+                "access": {"allow_all_modules": True, "allowed_callers": []},
+            }
+        },
+    )
+
+    consumer = root / "skills" / "consumer-skill"
+    consumer.mkdir(parents=True)
+    (consumer / "SKILL.md").write_text("Consumer instructions.\n")
+    consumer_source = "consumer-skill.source.gateway"
+    _write_module(
+        root,
+        "consumer-skill",
+        {
+            consumer_source: {
+                "schema_version": 4,
+                "node_type": "behavioral_source",
+                "id": consumer_source,
+                "version": 1,
+                "description": "Consumer.",
+                "gateway": {"path": "SKILL.md", "language": "Markdown"},
+                "content": [r"SKILL\.md"],
+                "dependencies": [],
+                "uses_interfaces": [
+                    {"interface": "provider-skill.interface.run", "version": 1}
+                ],
+                "interfaces": {},
+            }
+        },
+        {},
+    )
 
 
-def test_projection_selects_direct_exports_helpers_and_llm_routes_only(tmp_path: Path) -> None:
+def test_projection_selects_generic_exports_and_helper_closure(tmp_path: Path) -> None:
     _repository(tmp_path)
     graph = load_repository_blueprint_graph(tmp_path)
     certification = _PassingView()
+
     projection = project_consumer_interfaces(
-        graph, "consumer-skill.llm.default", certification
+        graph, "consumer-skill.source.gateway", certification
     )
-
     document = projection.document
-    assert list(document["interfaces"]) == ["provider-skill.machine.run"]
-    assert list(document["helper_interfaces"]) == ["provider-skill.machine.lookup"]
-    assert "provider-skill.machine.sibling" not in str(document)
-    assert "gateway" not in document["interfaces"]["provider-skill.machine.run"]
-    assert "owns_filesystem" not in document["interfaces"]["provider-skill.machine.run"]
-    assert document["llm_interfaces"]["provider-skill.llm.advisor"]["route"] == {
-        "kind": "provider-skill",
-        "skill": "provider-skill",
-    }
-    assert document["llm_interfaces"]["consumer-skill.llm.coach"]["gateway"] == "llm_interfaces/coach.md"
-    assert set(certification.checked) == {
-        "provider-skill.machine.run",
-        "provider-skill.machine.lookup",
-    }
-    assert "provider-skill-route" in projection.vocabulary
-    assert "type:string" in projection.vocabulary
-    assert all("value.schema.json" not in str(item.get("contract")) for item in document["interfaces"].values())
+
+    assert document["schema_version"] == 2
+    assert list(document["interfaces"]) == ["provider-skill.interface.run"]
+    assert list(document["helper_interfaces"]) == [
+        "provider-skill.source.lookup.interface.names"
+    ]
+    assert "sibling" not in str(document)
+    run = document["interfaces"]["provider-skill.interface.run"]
+    assert run["source_module"] == "provider-skill"
+    assert run["source_interface"] == "provider-skill.source.worker.interface.run"
+    assert run["gateway"] == {"path": "_rtx/worker.py", "language": "Python"}
+    assert run["contract"]["outputs"][0]["schema"]["path"] == "result.schema.json"
     assert document["definitions"]
-    schema_validator(load_schema("references/blueprint/interface-projection.schema.json")).validate(document)
-    assert standalone_export_size(document["interfaces"]["provider-skill.machine.run"]) > 0
+    assert set(certification.checked) == {
+        "provider-skill.interface.run",
+        "provider-skill.source.lookup.interface.names",
+    }
+    assert "type:string" in projection.vocabulary
+    schema_validator(
+        load_schema("references/blueprint/interface-projection.schema.json")
+    ).validate(document)
+    assert standalone_export_size(run) > 0
 
 
-def test_projection_rejects_failed_certification_and_combined_overflow(tmp_path: Path) -> None:
+def test_projection_rejects_failed_certification_and_combined_overflow(
+    tmp_path: Path,
+) -> None:
     _repository(tmp_path)
-    graph = load_repository_blueprint_graph(tmp_path)
     with pytest.raises(InterfaceProjectionError, match="certification-unavailable"):
         project_consumer_interfaces(
-            graph, "consumer-skill.llm.default", RejectingCertificationView()
+            load_repository_blueprint_graph(tmp_path),
+            "consumer-skill.source.gateway",
+            RejectingCertificationView(),
         )
 
     oversized = tmp_path / "oversized"
     _repository(oversized, oversized=True)
-    graph = load_repository_blueprint_graph(oversized)
     with pytest.raises(InterfaceProjectionError, match="limit is 16384"):
-        project_consumer_interfaces(graph, "consumer-skill.llm.default", _PassingView())
+        project_consumer_interfaces(
+            load_repository_blueprint_graph(oversized),
+            "consumer-skill.source.gateway",
+            _PassingView(),
+        )
 
 
 def test_projection_with_no_dependencies_is_empty_and_valid(tmp_path: Path) -> None:
-    _skill(tmp_path, "empty-skill", [])
+    module = tmp_path / "skills" / "empty-skill"
+    module.mkdir(parents=True)
+    (module / "SKILL.md").write_text("Empty.\n")
+    source_id = "empty-skill.source.gateway"
+    _write_module(
+        tmp_path,
+        "empty-skill",
+        {
+            source_id: {
+                "schema_version": 4,
+                "node_type": "behavioral_source",
+                "id": source_id,
+                "version": 1,
+                "description": "Empty.",
+                "gateway": {"path": "SKILL.md", "language": "Markdown"},
+                "content": [r"SKILL\.md"],
+                "dependencies": [],
+                "uses_interfaces": [],
+                "interfaces": {},
+            }
+        },
+        {},
+    )
     projection = project_consumer_interfaces(
-        load_repository_blueprint_graph(tmp_path),
-        "empty-skill.llm.default",
-        _PassingView(),
+        load_repository_blueprint_graph(tmp_path), source_id, _PassingView()
     )
     assert projection.document["interfaces"] == {}
     assert projection.document["helper_interfaces"] == {}
-    assert projection.document["llm_interfaces"] == {}
     assert projection.vocabulary == frozenset()
+    schema_validator(
+        load_schema("references/blueprint/interface-projection.schema.json")
+    ).validate(projection.document)
 
 
-def test_enum_helper_target_must_be_read_only_and_finitely_bounded(
-    tmp_path: Path,
-) -> None:
+def test_enum_helper_target_must_be_read_only(tmp_path: Path) -> None:
     _repository(tmp_path)
-    sidecar = next((tmp_path / "skills" / "provider-skill").rglob("._worker.py.blueprint.yaml"))
-    declaration = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
-    declaration["interfaces"]["lookup"]["contract"]["execution"]["state_effect"] = "mutating"
-    _write_yaml(sidecar, declaration)
+    path = tmp_path / "skills" / "provider-skill" / "blueprints" / "lookup.yaml"
+    declaration = yaml.safe_load(path.read_text(encoding="utf-8"))
+    target = declaration["interfaces"]["provider-skill.source.lookup.interface.names"]
+    target["contract"]["execution"]["state_effect"] = "mutating"
+    _write_yaml(path, declaration)
 
     with pytest.raises(InterfaceProjectionError, match="must be read-only"):
         project_consumer_interfaces(
             load_repository_blueprint_graph(tmp_path),
-            "consumer-skill.llm.default",
+            "consumer-skill.source.gateway",
             _PassingView(),
         )

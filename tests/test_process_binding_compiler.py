@@ -4,10 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from officina.common.blueprint_graph import BlueprintNode, MachineInterfaceExport
-from officina.common.machine_interface_binding import (
+from officina.common.blueprint_graph import BlueprintNode, InterfaceExport, MachineInterfaceExport
+from officina.common.process_binding_compiler import (
     MachineInterfaceBindingError,
     compile_gateway_invocation,
+    compile_route_smoke_invocation,
     parse_caller_invocation,
 )
 
@@ -59,6 +60,111 @@ def _module() -> BlueprintNode:
         gateway_path=root / "_rtx" / "_worker.py",
         declaration={"gateway": {"kind": "python-entrypoint", "args_prefix": ["gateway"]}},
     )
+
+
+def _v4_export() -> tuple[BlueprintNode, InterfaceExport]:
+    root = Path("/repo/skills/demo-skill")
+    source_id = "demo-skill.source.worker"
+    source = BlueprintNode(
+        node_id=source_id,
+        node_type="behavioral_source",
+        version=1,
+        skill_root=root,
+        blueprint_path=root / "blueprints" / "worker.yaml",
+        gateway_path=root / "_rtx" / "worker.py",
+        declaration={
+            "gateway": {"path": "_rtx/worker.py", "language": "Python>=3.11"}
+        },
+    )
+    declaration = {
+        "version": 1,
+        "description": "Run.",
+        "contract": {
+            "arguments": {
+                "count": {
+                    "description": "Count.",
+                    "required": True,
+                    "sensitivity": "public",
+                    "type": {"kind": "integer", "minimum": 1},
+                }
+            }
+        },
+        "process_binding": {
+            "kind": "process",
+            "entry": "Interface",
+            "args_prefix": ["run"],
+            "arguments": {
+                "count": {
+                    "kind": "option",
+                    "name": "--count",
+                    "arity": {"minimum": 1, "maximum": 1},
+                }
+            },
+            "fixed": [
+                {
+                    "kind": "option",
+                    "name": "--format",
+                    "value": "json",
+                    "type": {"kind": "string"},
+                }
+            ],
+        },
+    }
+    return source, InterfaceExport(
+        interface_id="demo-skill.interface.run",
+        version=1,
+        local_name="run",
+        module_node_id="demo-skill",
+        declaration=declaration,
+        source_node_id=source_id,
+        source_interface_id=f"{source_id}.interface.run",
+        export_declaration={
+            "source_interface": f"{source_id}.interface.run",
+            "access": {"allow_all_modules": True, "allowed_callers": []},
+        },
+    )
+
+
+def test_v4_parses_contract_values_and_compiles_separate_process_binding() -> None:
+    source, export = _v4_export()
+
+    parsed = parse_caller_invocation(
+        export, ["--count", "2"], stdin_requested=False
+    )
+    plan = compile_gateway_invocation(source, export, parsed)
+
+    assert parsed.values == {"count": 2}
+    assert plan.entry == "Interface"
+    assert plan.argv == ("run", "--count", "2", "--format", "json")
+
+
+def test_v4_route_smoke_compiles_without_required_caller_arguments() -> None:
+    source, export = _v4_export()
+
+    plan = compile_route_smoke_invocation(source, export)
+
+    assert plan.entry == "Interface"
+    assert plan.stdin_argument_id is None
+    assert plan.argv == ("run", "--format", "json", "--route-smoke")
+
+
+def test_v4_natural_language_interface_is_not_process_compilable() -> None:
+    source, export = _v4_export()
+    declaration = dict(export.declaration)
+    declaration.pop("process_binding")
+    natural = InterfaceExport(
+        interface_id=export.interface_id,
+        version=export.version,
+        local_name=export.local_name,
+        module_node_id=export.module_node_id,
+        declaration=declaration,
+        source_node_id=export.source_node_id,
+        source_interface_id=export.source_interface_id,
+        export_declaration=export.export_declaration,
+    )
+
+    with pytest.raises(MachineInterfaceBindingError, match="not process-bindable"):
+        parse_caller_invocation(natural, [], stdin_requested=False)
 
 
 def test_parse_and_compile_merges_fixed_and_public_bindings_deterministically() -> None:

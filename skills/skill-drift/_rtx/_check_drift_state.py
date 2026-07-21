@@ -32,13 +32,14 @@ from pathlib import Path
 from typing import Any, Iterator, Sequence
 
 import jsonschema
+import yaml
 
 RTX_DIR = Path(__file__).resolve().parent
 if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
 from _drift_hashes import HashEntry, digest_entries, entries_for_path, hash_interface, hash_skill
-from _skill_sources import SkillSource, observed_skill_sources
+from _skill_sources import SkillSource, SkillSourceDiscoveryError, observed_skill_sources
 from officina.common.artifact_health import (
     CANONICAL_GRAPH_SCHEMA_INPUTS,
     POOLED_REVIEW_SCHEMA_INPUTS,
@@ -496,17 +497,49 @@ def load_blueprint(skill_dir: Path) -> dict[str, Any]:
         raise DriftCheckError(str(exc)) from exc
 
 
-def compute_policy_hash(repo_root: Path) -> str:
+def compute_certification_basis_hash(repo_root: Path) -> str:
+    """Hash the canonical certification implementation and parsed node policy."""
+
     package_root = repo_root.resolve()
     manifest = policy_roots_path(package_root)
     manifest_bytes = secure_read_target_file(package_root, manifest)
-    entries = [
-        HashEntry(
-            display_path(manifest, package_root),
-            "file",
-            manifest_bytes,
+    entries: list[HashEntry] = []
+    for path in certification_basis_paths(
+        package_root, manifest_bytes=manifest_bytes
+    ):
+        data = (
+            manifest_bytes
+            if path == manifest
+            else secure_read_target_file(package_root, path)
         )
-    ]
+        if path == package_root / "references" / "certification" / "node-hash-policy.yaml":
+            try:
+                parsed_policy = yaml.safe_load(data.decode("utf-8"))
+                data = json.dumps(
+                    parsed_policy,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ).encode("utf-8")
+            except (UnicodeError, yaml.YAMLError, ValueError, TypeError) as exc:
+                raise DriftCheckError(
+                    f"cannot parse canonical node hash policy {path}: {exc}"
+                ) from exc
+        entries.append(HashEntry(display_path(path, package_root), "file", data))
+    return digest_entries(entries)
+
+
+def certification_basis_paths(
+    repo_root: Path,
+    *,
+    manifest_bytes: bytes | None = None,
+) -> tuple[Path, ...]:
+    """Resolve the exact files covered by the one certification-basis manifest."""
+
+    package_root = repo_root.resolve()
+    manifest = certification_basis_roots_path(package_root)
+    selected = {manifest}
     for pattern in load_policy_patterns(package_root, manifest_bytes=manifest_bytes):
         relative = Path(pattern)
         if relative.is_absolute() or ".." in relative.parts:
@@ -517,15 +550,33 @@ def compute_policy_hash(repo_root: Path) -> str:
             paths = [package_root / pattern]
         for path in paths:
             try:
-                data = secure_read_target_file(package_root, path)
+                secure_read_target_file(package_root, path)
             except FileNotFoundError:
                 continue
-            entries.append(HashEntry(display_path(path, package_root), "file", data))
-    return digest_entries(entries)
+            selected.add(path)
+    return tuple(sorted(selected, key=lambda path: display_path(path, package_root)))
+
+
+def compute_policy_hash(repo_root: Path) -> str:
+    """Return the pre-v4 name for the certification basis hash."""
+
+    return compute_certification_basis_hash(repo_root)
+
+
+def certification_basis_roots_path(package_root: Path) -> Path:
+    return (
+        package_root
+        / "skills"
+        / "skill-drift"
+        / "references"
+        / "certification-basis-roots.json"
+    )
 
 
 def policy_roots_path(package_root: Path) -> Path:
-    return package_root / "skills" / "skill-drift" / "references" / "policy-hash-roots.json"
+    """Return the pre-v4 name for the one basis-manifest path."""
+
+    return certification_basis_roots_path(package_root)
 
 
 def load_policy_patterns(
@@ -1296,7 +1347,10 @@ def requested_skill_sources(args: argparse.Namespace) -> list[SkillSource]:
     if args.repo_root != REPO_ROOT:
         repo_root = args.repo_root.resolve()
         return [SkillSource(source="override", package_root=repo_root, skills_root=repo_root / "skills")]
-    return observed_skill_sources()
+    try:
+        return observed_skill_sources()
+    except SkillSourceDiscoveryError as exc:
+        raise DriftCheckError(str(exc)) from exc
 
 
 def requested_scopes(args: argparse.Namespace) -> tuple[RequestedScope, ...]:

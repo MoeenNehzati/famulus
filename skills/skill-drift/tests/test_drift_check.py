@@ -63,9 +63,9 @@ def write_json(path: Path, payload: object) -> None:
 
 
 def install_policy_manifest(repo: Path, patterns: list[str] | None = None) -> Path:
-    manifest = repo / "skills" / "skill-drift" / "references" / "policy-hash-roots.json"
+    manifest = repo / "skills" / "skill-drift" / "references" / "certification-basis-roots.json"
     if patterns is None:
-        source = MODULE_PATH.parents[1] / "references" / "policy-hash-roots.json"
+        source = MODULE_PATH.parents[1] / "references" / "certification-basis-roots.json"
         write(manifest, source.read_text(encoding="utf-8"))
     else:
         write_json(manifest, patterns)
@@ -566,6 +566,32 @@ def test_policy_hash_ignores_explanatory_blueprint_document(tmp_path: Path) -> N
     assert first == second
 
 
+def test_certification_basis_hash_canonicalizes_parsed_node_policy(tmp_path: Path) -> None:
+    install_policy_manifest(
+        tmp_path, ["references/certification/node-hash-policy.yaml"]
+    )
+    policy = tmp_path / "references" / "certification" / "node-hash-policy.yaml"
+    write(
+        policy,
+        "policy_version: 1\n"
+        "path_syntax: gitignore\n"
+        "starting_set: git-tracked-directly-owned-regular-files\n"
+        "rules:\n  - action: exclude\n    pattern: '**/*.log'\n",
+    )
+
+    first = checker.compute_certification_basis_hash(tmp_path)
+    write(policy, policy.read_text(encoding="utf-8") + "# explanation only\n")
+    comments_changed = checker.compute_certification_basis_hash(tmp_path)
+    write(
+        policy,
+        policy.read_text(encoding="utf-8").replace("exclude", "include"),
+    )
+    semantics_changed = checker.compute_certification_basis_hash(tmp_path)
+
+    assert comments_changed == first
+    assert semantics_changed != first
+
+
 @pytest.mark.parametrize("module_name", ["atomic_files.py", "git_provenance.py"])
 def test_committed_shared_trust_boundary_change_invalidates_current_record(
     tmp_path: Path,
@@ -871,6 +897,77 @@ def test_status_without_skill_checks_codex_and_claude_skill_roots(
     ]
 
 
+def test_installed_sources_ignore_codex_plugin_cache_without_active_registry(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    claude_home = tmp_path / "claude-home"
+    make_skill(codex_home, "direct-skill")
+    make_skill(codex_home / "plugins" / "cache" / "market" / "stale" / "1.0", "stale-skill")
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+
+    sources = checker.observed_skill_sources()
+
+    assert [(source.source, source.skills_root) for source in sources] == [
+        ("codex", (codex_home / "skills").resolve())
+    ]
+
+
+def test_installed_sources_use_only_claude_registry_named_plugin_versions(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    claude_home = tmp_path / "claude-home"
+    active = claude_home / "plugins" / "cache" / "market" / "demo" / "2.0"
+    stale = claude_home / "plugins" / "cache" / "market" / "demo" / "1.0"
+    make_skill(active, "active-skill")
+    make_skill(stale, "stale-skill")
+    write_json(
+        claude_home / "plugins" / "installed_plugins.json",
+        {
+            "version": 2,
+            "plugins": {
+                "demo@market": [
+                    {"version": "2.0", "scope": "user", "installPath": str(active)}
+                ]
+            },
+        },
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+
+    sources = checker.observed_skill_sources()
+
+    assert [(source.source, source.skills_root) for source in sources] == [
+        ("claude", (active / "skills").resolve())
+    ]
+
+
+def test_malformed_claude_plugin_registry_fails_with_remediation(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    claude_home = tmp_path / "claude-home"
+    write_json(
+        claude_home / "plugins" / "installed_plugins.json",
+        {"version": 1, "plugins": {}},
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+
+    exit_code = checker.main(["status", "--json"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "installed_plugins.json" in captured.err
+    assert "--skill-root, --skills-root, or --repo-root" in captured.err
+
+
 def test_status_with_explicit_skill_checks_matching_installed_roots(
     tmp_path: Path,
     monkeypatch,
@@ -983,7 +1080,7 @@ def test_target_policy_hash_uses_target_manifest(tmp_path: Path) -> None:
     expected = checker.digest_entries(
         [
             *checker.entries_for_path(
-                tmp_path / "skills" / "skill-drift" / "references" / "policy-hash-roots.json",
+                tmp_path / "skills" / "skill-drift" / "references" / "certification-basis-roots.json",
                 tmp_path,
             ),
             *checker.entries_for_path(tmp_path / "target-policy.md", tmp_path),
@@ -995,7 +1092,7 @@ def test_target_policy_hash_uses_target_manifest(tmp_path: Path) -> None:
 
 def test_target_policy_manifest_symlink_is_rejected(tmp_path: Path, capsys) -> None:
     skill = make_typed_skill(tmp_path, "demo-skill")
-    manifest = tmp_path / "skills" / "skill-drift" / "references" / "policy-hash-roots.json"
+    manifest = tmp_path / "skills" / "skill-drift" / "references" / "certification-basis-roots.json"
     outside = tmp_path.parent / f"{tmp_path.name}-outside-policy-manifest.json"
     write_json(outside, [])
     manifest.unlink()

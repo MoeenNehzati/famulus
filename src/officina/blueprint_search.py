@@ -1,4 +1,4 @@
-"""Search skill blueprint YAML files with structured filters and projections.
+"""Search module and behavioral-source blueprints with structured queries.
 
 The public entry point is :func:`search_blueprints`. It is intentionally
 JSON-oriented: callers provide a plain Python query mapping and receive a list
@@ -62,12 +62,25 @@ class BlueprintSearchError(ValueError):
 
 @dataclass(frozen=True)
 class BlueprintRecord:
-    """One parsed ``skills/<skill>/blueprint.yaml`` file."""
+    """One parsed blueprint plus its containing module identity."""
 
-    skill: str
+    module: str
     path: str
     data: dict[str, Any]
     raw: str
+
+    @property
+    def skill(self) -> str:
+        """Return the pre-v4 name for the containing module."""
+
+        return self.module
+
+    @property
+    def is_v4(self) -> bool:
+        return (
+            self.data.get("schema_version") == 4
+            and self.data.get("node_type") in {"module", "behavioral_source"}
+        )
 
 
 @dataclass(frozen=True)
@@ -85,11 +98,12 @@ def iter_blueprints(
     *,
     include_hidden: bool = False,
 ) -> Iterator[BlueprintRecord]:
-    """Yield parsed blueprint records sorted by skill name.
+    """Yield parsed blueprint records sorted by repository-relative path.
 
-    Discovery is intentionally limited to ``skills/*/blueprint.yaml``. Hidden
-    skill directories are skipped by default because repo-local skills are the
-    intended search surface.
+    V4 discovery includes ``skills/*/blueprint.yaml`` and direct
+    ``skills/*/blueprints/*.yaml`` sources. Pre-v4 search keeps its root-only
+    surface until the live cutover. Hidden module directories are skipped by
+    default.
     """
 
     root = Path(repo_root)
@@ -103,13 +117,23 @@ def iter_blueprints(
         raise BlueprintSearchError(str(exc)) from exc
     for document in documents:
         relative = document.relative_path
-        if len(relative.parts) != 3 or relative.parts[0] != "skills" or relative.name != "blueprint.yaml":
+        if len(relative.parts) < 3 or relative.parts[0] != "skills":
             continue
-        skill = relative.parts[1]
-        if skill.startswith(".") and not include_hidden:
+        module = relative.parts[1]
+        if module.startswith(".") and not include_hidden:
+            continue
+        is_root = len(relative.parts) == 3 and relative.name == "blueprint.yaml"
+        is_v4_source = (
+            len(relative.parts) == 4
+            and relative.parts[2] == "blueprints"
+            and relative.suffix == ".yaml"
+            and document.declaration.get("schema_version") == 4
+            and document.node_type == "behavioral_source"
+        )
+        if not is_root and not is_v4_source:
             continue
         yield BlueprintRecord(
-            skill=skill,
+            module=module,
             path=relative.as_posix(),
             data=dict(document.declaration),
             raw=document.path.read_text(encoding="utf-8"),
@@ -140,7 +164,7 @@ def load_blueprint_record(
         rel = _relative_path(path, root)
         raise BlueprintSearchError(f"{rel}: top-level YAML value must be a mapping")
     return BlueprintRecord(
-        skill=skill or path.parent.name,
+        module=skill or _module_name(path, root),
         path=_relative_path(path, root),
         data=loaded,
         raw=raw,
@@ -241,18 +265,27 @@ def transform_record(
         raise BlueprintSearchError("comments must be one of: drop, raw")
 
     if select_spec is None:
+        if record.is_v4:
+            row = {
+                "module": record.module,
+                "id": record.data["id"],
+                "node_type": record.data["node_type"],
+                "path": record.path,
+            }
+            if comments == "raw":
+                row["raw"] = record.raw
+            if explain:
+                row["matches"] = [asdict(match) for match in matches]
+            return row
         select_spec = ["skill", "path"]
 
     if select_spec == "all":
-        row: dict[str, Any] = {
-            "skill": record.skill,
-            "path": record.path,
-            "data": record.data,
-        }
+        row: dict[str, Any] = _record_identity(record)
+        row["data"] = record.data
     else:
         if not isinstance(select_spec, Sequence) or isinstance(select_spec, (str, bytes)):
             raise BlueprintSearchError("select must be 'all', a list, or null")
-        row = {"skill": record.skill, "path": record.path, "values": {}}
+        row = {**_record_identity(record), "values": {}}
         values = row["values"]
         for item in select_spec:
             _apply_selector(record, item, values, row)
@@ -323,6 +356,22 @@ def load_query_file(path: Path | str) -> dict[str, Any]:
 
 def _skill_sort_key(path: Path) -> str:
     return path.parent.name
+
+
+def _module_name(path: Path, root: Path) -> str:
+    try:
+        relative = path.resolve(strict=False).relative_to(root.resolve(strict=False))
+    except ValueError:
+        return path.parent.name
+    if len(relative.parts) >= 2 and relative.parts[0] == "skills":
+        return relative.parts[1]
+    return path.parent.name
+
+
+def _record_identity(record: BlueprintRecord) -> dict[str, Any]:
+    if record.is_v4:
+        return {"module": record.module, "path": record.path}
+    return {"skill": record.skill, "path": record.path}
 
 
 def _infer_repo_root(path: Path) -> Path:
@@ -543,6 +592,8 @@ def _apply_selector(
     if isinstance(item, str):
         if item == "skill":
             row["skill"] = record.skill
+        elif item == "module":
+            row["module"] = record.module
         elif item == "path":
             row["path"] = record.path
         elif item == "$data":

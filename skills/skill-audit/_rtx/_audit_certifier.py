@@ -687,7 +687,13 @@ def _policy_input_paths(
     }
     paths.update(schema_root / name for name in REQUIRED_SCHEMA_INPUTS)
     reasons: set[str] = set()
-    manifest_path = repo_root / "skills" / "skill-drift" / "references" / "policy-hash-roots.json"
+    manifest_path = (
+        repo_root
+        / "skills"
+        / "skill-drift"
+        / "references"
+        / "certification-basis-roots.json"
+    )
     paths.add(manifest_path)
     patterns: list[str] = []
     if manifest_path.is_symlink():

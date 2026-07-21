@@ -56,6 +56,12 @@ class BlueprintNode:
 
         return self.gateway_path
 
+    @property
+    def module_root(self) -> Path:
+        """Return the physical module root for this node."""
+
+        return self.skill_root
+
 
 @dataclass(frozen=True)
 class BlueprintEdge:
@@ -76,12 +82,19 @@ class SkillBlueprintGraph:
 
 
 @dataclass(frozen=True)
-class MachineInterfaceExport:
+class InterfaceExport:
     interface_id: str
     version: int
     local_name: str
     module_node_id: str
     declaration: Mapping[str, JsonValue]
+    source_node_id: str | None = None
+    source_interface_id: str | None = None
+    export_declaration: Mapping[str, JsonValue] | None = None
+
+
+# Temporary pre-v4 source compatibility. Both names denote the same DTO.
+MachineInterfaceExport = InterfaceExport
 
 
 @dataclass(frozen=True)
@@ -101,19 +114,66 @@ class HelperEdge:
 
 
 @dataclass(frozen=True)
-class ModuleCertificationEdge:
-    source_module_id: str
+class CertificationEdge:
+    relation: str
+    source_node_id: str
     target_node_id: str
+    target_version: int | None = None
+
+    @property
+    def source_module_id(self) -> str:
+        """Return the legacy v3 source-module field."""
+
+        return self.source_node_id
 
 
-@dataclass(frozen=True)
+# Temporary pre-v4 source compatibility. Both names denote the same edge type.
+ModuleCertificationEdge = CertificationEdge
+
+
+@dataclass(frozen=True, init=False)
 class RepositoryBlueprintGraph:
     nodes: Mapping[str, BlueprintNode]
     node_edges: tuple[BlueprintEdge, ...]
-    machine_exports: Mapping[str, MachineInterfaceExport]
+    exports: Mapping[str, InterfaceExport]
     export_edges: tuple[ExportDependencyEdge, ...]
     helper_edges: tuple[HelperEdge, ...]
-    certification_edges: tuple[ModuleCertificationEdge, ...]
+    certification_edges: tuple[CertificationEdge, ...]
+    module_sources: Mapping[str, tuple[str, ...]]
+    direct_file_owners: Mapping[Path, str]
+
+    def __init__(
+        self,
+        *,
+        nodes: Mapping[str, BlueprintNode],
+        node_edges: tuple[BlueprintEdge, ...],
+        exports: Mapping[str, InterfaceExport] | None = None,
+        machine_exports: Mapping[str, InterfaceExport] | None = None,
+        export_edges: tuple[ExportDependencyEdge, ...],
+        helper_edges: tuple[HelperEdge, ...],
+        certification_edges: tuple[CertificationEdge, ...],
+        module_sources: Mapping[str, tuple[str, ...]] | None = None,
+        direct_file_owners: Mapping[Path, str] | None = None,
+    ) -> None:
+        if exports is not None and machine_exports is not None:
+            raise TypeError("specify exports or machine_exports, not both")
+        resolved_exports = exports if exports is not None else machine_exports
+        if resolved_exports is None:
+            resolved_exports = {}
+        object.__setattr__(self, "nodes", nodes)
+        object.__setattr__(self, "node_edges", node_edges)
+        object.__setattr__(self, "exports", resolved_exports)
+        object.__setattr__(self, "export_edges", export_edges)
+        object.__setattr__(self, "helper_edges", helper_edges)
+        object.__setattr__(self, "certification_edges", certification_edges)
+        object.__setattr__(self, "module_sources", module_sources or {})
+        object.__setattr__(self, "direct_file_owners", direct_file_owners or {})
+
+    @property
+    def machine_exports(self) -> Mapping[str, InterfaceExport]:
+        """Return the pre-v4 name for the canonical export mapping."""
+
+        return self.exports
 
 
 class RuntimeFileBinding:
@@ -169,11 +229,13 @@ _TYPED_SCHEMA_FILES = {
     (3, "machine-interface"): "machine-interface.schema.json",
     (3, "machine-module"): "machine-module.schema.json",
     (3, "behavior-source"): "behavior-source.schema.json",
+    (4, "module"): "module.schema.json",
+    (4, "behavioral_source"): "behavioral-source.schema.json",
 }
 
 
 def _is_typed_declaration(declaration: dict[str, Any]) -> bool:
-    return declaration.get("schema_version") in {2, 3} or any(
+    return declaration.get("schema_version") in {2, 3, 4} or any(
         key in declaration for key in ("blueprint_type", "node_type")
     )
 
@@ -181,7 +243,11 @@ def _is_typed_declaration(declaration: dict[str, Any]) -> bool:
 def declaration_node_type(declaration: dict[str, Any]) -> str | None:
     """Return one typed declaration's version-normalized node type."""
 
-    key = "node_type" if declaration.get("schema_version") == 3 else "blueprint_type"
+    key = (
+        "node_type"
+        if declaration.get("schema_version") in {3, 4}
+        else "blueprint_type"
+    )
     value = declaration.get(key)
     return value if isinstance(value, str) else None
 
@@ -189,7 +255,11 @@ def declaration_node_type(declaration: dict[str, Any]) -> str | None:
 def declaration_gateway(declaration: dict[str, Any]) -> dict[str, Any] | None:
     """Return one typed declaration's version-normalized gateway mapping."""
 
-    key = "gateway" if declaration.get("schema_version") == 3 else "binding"
+    key = (
+        "gateway"
+        if declaration.get("schema_version") in {3, 4}
+        else "binding"
+    )
     value = declaration.get(key)
     return value if isinstance(value, dict) else None
 
@@ -482,7 +552,7 @@ def _resolve_locator(
         raise BlueprintGraphError(f"{context}: blueprint locator must be a mapping")
     base = locator.get("base")
     raw_path = locator.get("path")
-    if base not in {"skill-root", "repository-root"}:
+    if base not in {"skill-root", "module-root", "repository-root"}:
         raise BlueprintGraphError(f"{context}: unsupported blueprint locator base {base!r}")
     if not isinstance(raw_path, str) or not raw_path:
         raise BlueprintGraphError(f"{context}: blueprint locator path must be non-empty")
@@ -491,7 +561,7 @@ def _resolve_locator(
         raise BlueprintGraphError(
             f"{context}: locator path must be relative without parent traversal"
         )
-    root = skill_root if base == "skill-root" else repo_root
+    root = skill_root if base in {"skill-root", "module-root"} else repo_root
     candidate = root / relative_path
     try:
         candidate.resolve(strict=False).relative_to(root.resolve())
@@ -1201,7 +1271,7 @@ def _typed_declaration_schema_errors(
     node_type = expected_blueprint_type or declaration_node_type(declaration)
     schema_version = declaration.get("schema_version")
     selected_version = schema_version
-    if selected_version not in {2, 3}:
+    if selected_version not in {2, 3, 4}:
         selected_version = 3 if "node_type" in declaration else 2
     try:
         schema_name = _TYPED_SCHEMA_FILES[(selected_version, node_type)]
@@ -1395,7 +1465,7 @@ def resolved_node_content_paths(
             f"{node.blueprint_path}: content ownership root must be inside the repository"
         ) from exc
 
-    if node.declaration.get("schema_version") != 3:
+    if node.declaration.get("schema_version") not in {3, 4}:
         paths: set[Path] = set()
         if node.gateway_path is not None:
             paths.add(node.gateway_path)
@@ -1745,7 +1815,7 @@ def _target_relationship_entries(
 
 
 def _reject_export_cycles(
-    exports: Mapping[str, MachineInterfaceExport],
+    exports: Mapping[str, InterfaceExport],
     edges: tuple[ExportDependencyEdge, ...],
 ) -> None:
     children: dict[str, list[str]] = {interface_id: [] for interface_id in exports}
@@ -1779,7 +1849,7 @@ def _reject_module_cycles(
     children: dict[str, list[str]] = {module_id: [] for module_id in module_ids}
     for edge in edges:
         if edge.target_node_id in module_ids:
-            children[edge.source_module_id].append(edge.target_node_id)
+            children[edge.source_node_id].append(edge.target_node_id)
     visiting: list[str] = []
     visited: set[str] = set()
 
@@ -1851,15 +1921,462 @@ def _require_platform_compatibility(
             )
 
 
+def _reject_certification_cycles(
+    node_ids: set[str], edges: tuple[CertificationEdge, ...]
+) -> None:
+    children: dict[str, list[str]] = {node_id: [] for node_id in node_ids}
+    for edge in edges:
+        if edge.source_node_id in children and edge.target_node_id in children:
+            children[edge.source_node_id].append(edge.target_node_id)
+    visiting: list[str] = []
+    visited: set[str] = set()
+
+    def visit(node_id: str) -> None:
+        if node_id in visiting:
+            start = visiting.index(node_id)
+            cycle = visiting[start:] + [node_id]
+            raise BlueprintGraphError(
+                "certification dependency cycle: " + " -> ".join(cycle)
+            )
+        if node_id in visited:
+            return
+        visiting.append(node_id)
+        for target_id in sorted(children[node_id]):
+            visit(target_id)
+        visiting.pop()
+        visited.add(node_id)
+
+    for node_id in sorted(node_ids):
+        visit(node_id)
+
+
+def _load_v4_repository_blueprint_graph(
+    root: Path,
+    documents: tuple[Any, ...],
+    *,
+    schema_root: Path | None,
+) -> RepositoryBlueprintGraph:
+    """Load the unified module/behavioral-source repository graph."""
+
+    validators: dict[str, jsonschema.Draft7Validator] = {}
+    nodes: dict[str, BlueprintNode] = {}
+    documents_by_path: dict[Path, Any] = {}
+    for document in documents:
+        if schema_root is not None:
+            errors = _typed_declaration_schema_errors(
+                document.path,
+                dict(document.declaration),
+                schema_root,
+                validators,
+            )
+            if errors:
+                raise errors[0]
+        node = _target_node_from_document(document)
+        existing = nodes.get(node.node_id)
+        if existing is not None:
+            raise BlueprintGraphError(
+                f"duplicate node id {node.node_id!r}: "
+                f"{existing.blueprint_path} and {node.blueprint_path}"
+            )
+        nodes[node.node_id] = node
+        documents_by_path[Path(os.path.abspath(document.path))] = document
+
+    modules = {
+        node.node_id: node
+        for node in nodes.values()
+        if node.node_type == "module"
+    }
+    sources = {
+        node.node_id: node
+        for node in nodes.values()
+        if node.node_type == "behavioral_source"
+    }
+    if not modules:
+        raise BlueprintGraphError("version 4 repository graph requires at least one module")
+    if len(modules) + len(sources) != len(nodes):
+        raise BlueprintGraphError("version 4 repository graph permits only module and behavioral_source nodes")
+
+    module_sources: dict[str, tuple[str, ...]] = {}
+    source_modules: dict[str, str] = {}
+    for module_id, module in sorted(modules.items()):
+        if module.skill_root.name != module_id:
+            raise BlueprintGraphError(
+                f"{module.blueprint_path}: module id {module_id!r} must match its directory"
+            )
+        raw_sources = module.declaration.get("sources")
+        if not isinstance(raw_sources, dict):
+            raise BlueprintGraphError(f"{module.blueprint_path}: sources must be a mapping")
+        contained: list[str] = []
+        for source_id, entry in sorted(raw_sources.items()):
+            if not isinstance(source_id, str) or not isinstance(entry, dict):
+                raise BlueprintGraphError(
+                    f"{module.blueprint_path}: invalid source containment entry"
+                )
+            expected_prefix = f"{module_id}.source."
+            if not source_id.startswith(expected_prefix):
+                raise BlueprintGraphError(
+                    f"{module.blueprint_path}: source {source_id!r} must use "
+                    f"module namespace {expected_prefix!r}"
+                )
+            locator_path = _resolve_locator(
+                module.skill_root,
+                entry.get("blueprint"),
+                f"{module.blueprint_path}:sources.{source_id}",
+                root,
+            )
+            source = sources.get(source_id)
+            if source is None:
+                raise BlueprintGraphError(
+                    f"{module.blueprint_path}: unresolved contained source {source_id!r}"
+                )
+            if Path(os.path.abspath(locator_path)) != Path(
+                os.path.abspath(source.blueprint_path)
+            ):
+                raise BlueprintGraphError(
+                    f"{module.blueprint_path}: source {source_id!r} locator does not "
+                    "identify its canonical blueprint"
+                )
+            previous_module = source_modules.get(source_id)
+            if previous_module is not None:
+                raise BlueprintGraphError(
+                    f"source {source_id!r} is contained by both {previous_module} and {module_id}"
+                )
+            if source.skill_root != module.skill_root:
+                raise BlueprintGraphError(
+                    f"{source.blueprint_path}: contained source must be inside module {module_id}"
+                )
+            source_modules[source_id] = module_id
+            contained.append(source_id)
+        module_sources[module_id] = tuple(contained)
+    orphan_sources = sorted(set(sources) - set(source_modules))
+    if orphan_sources:
+        raise BlueprintGraphError(
+            "behavioral sources must be contained by exactly one module: "
+            + ", ".join(orphan_sources)
+        )
+
+    source_interfaces: dict[str, tuple[BlueprintNode, Mapping[str, JsonValue]]] = {}
+    for source_id, source in sorted(sources.items()):
+        raw_interfaces = source.declaration.get("interfaces")
+        if not isinstance(raw_interfaces, dict):
+            raise BlueprintGraphError(f"{source.blueprint_path}: interfaces must be a mapping")
+        for interface_id, declaration in sorted(raw_interfaces.items()):
+            if not isinstance(interface_id, str) or not isinstance(declaration, dict):
+                raise BlueprintGraphError(
+                    f"{source.blueprint_path}: invalid source interface declaration"
+                )
+            expected_prefix = f"{source_id}.interface."
+            if not interface_id.startswith(expected_prefix):
+                raise BlueprintGraphError(
+                    f"{source.blueprint_path}: interface {interface_id!r} must use "
+                    f"source namespace {expected_prefix!r}"
+                )
+            if interface_id in source_interfaces:
+                raise BlueprintGraphError(f"duplicate source interface {interface_id!r}")
+            source_interfaces[interface_id] = (source, declaration)
+
+    exports: dict[str, InterfaceExport] = {}
+    for module_id, module in sorted(modules.items()):
+        raw_exports = module.declaration.get("exports")
+        if not isinstance(raw_exports, dict):
+            raise BlueprintGraphError(f"{module.blueprint_path}: exports must be a mapping")
+        for export_id, export_declaration in sorted(raw_exports.items()):
+            if not isinstance(export_id, str) or not isinstance(export_declaration, dict):
+                raise BlueprintGraphError(f"{module.blueprint_path}: invalid export declaration")
+            expected_prefix = f"{module_id}.interface."
+            if not export_id.startswith(expected_prefix):
+                raise BlueprintGraphError(
+                    f"{module.blueprint_path}: export {export_id!r} must use "
+                    f"module namespace {expected_prefix!r}"
+                )
+            source_interface_id = export_declaration.get("source_interface")
+            if not isinstance(source_interface_id, str):
+                raise BlueprintGraphError(
+                    f"{module.blueprint_path}: export {export_id!r} requires source_interface"
+                )
+            try:
+                source, interface_declaration = source_interfaces[source_interface_id]
+            except KeyError as exc:
+                raise BlueprintGraphError(
+                    f"{module.blueprint_path}: export {export_id!r} targets unknown "
+                    f"source interface {source_interface_id!r}"
+                ) from exc
+            if source_modules[source.node_id] != module_id:
+                raise BlueprintGraphError(
+                    f"{module.blueprint_path}: export {export_id!r} must bind a contained "
+                    "source interface"
+                )
+            exports[export_id] = InterfaceExport(
+                interface_id=export_id,
+                version=_positive_version(
+                    interface_declaration.get("version"), source_interface_id
+                ),
+                local_name=export_id.rsplit(".interface.", 1)[-1],
+                module_node_id=module_id,
+                declaration=interface_declaration,
+                source_node_id=source.node_id,
+                source_interface_id=source_interface_id,
+                export_declaration=export_declaration,
+            )
+
+    node_edges: list[BlueprintEdge] = []
+    certification_edges: list[CertificationEdge] = []
+    interface_uses_by_source: dict[str, tuple[tuple[str, int], ...]] = {}
+    for module_id, source_ids in sorted(module_sources.items()):
+        for source_id in source_ids:
+            source = sources[source_id]
+            node_edges.append(
+                BlueprintEdge(
+                    "contains-source", module_id, source_id, source.version, source.blueprint_path
+                )
+            )
+            certification_edges.append(
+                CertificationEdge("contains-source", module_id, source_id, source.version)
+            )
+
+    for source_id, source in sorted(sources.items()):
+        raw_dependencies = source.declaration.get("dependencies", [])
+        if not isinstance(raw_dependencies, list):
+            raise BlueprintGraphError(f"{source.blueprint_path}: dependencies must be a list")
+        for index, dependency in enumerate(raw_dependencies):
+            if not isinstance(dependency, dict):
+                raise BlueprintGraphError(
+                    f"{source.blueprint_path}: dependencies[{index}] must be a mapping"
+                )
+            target_id = dependency.get("source")
+            if not isinstance(target_id, str) or target_id not in sources:
+                raise BlueprintGraphError(
+                    f"{source.node_id}: unresolved behavioral source {target_id!r}"
+                )
+            target = sources[target_id]
+            version = _positive_version(
+                dependency.get("version"), f"{source.node_id}.dependencies[{index}]"
+            )
+            if target.version != version:
+                raise BlueprintGraphError(
+                    f"{source.node_id}: pins {target_id} version {version}, but target "
+                    f"version is {target.version}"
+                )
+            locator_path = _resolve_locator(
+                source.skill_root,
+                dependency.get("blueprint"),
+                f"{source.blueprint_path}:dependencies[{index}]",
+                root,
+            )
+            if Path(os.path.abspath(locator_path)) != Path(os.path.abspath(target.blueprint_path)):
+                raise BlueprintGraphError(
+                    f"{source.blueprint_path}: dependency locator for {target_id!r} "
+                    "does not identify its canonical blueprint"
+                )
+            node_edges.append(
+                BlueprintEdge("uses-source", source_id, target_id, version, target.blueprint_path)
+            )
+            certification_edges.append(
+                CertificationEdge("uses-source", source_id, target_id, version)
+            )
+
+        raw_uses = source.declaration.get("uses_interfaces", [])
+        if not isinstance(raw_uses, list):
+            raise BlueprintGraphError(f"{source.blueprint_path}: uses_interfaces must be a list")
+        uses: list[tuple[str, int]] = []
+        for index, use in enumerate(raw_uses):
+            if not isinstance(use, dict):
+                raise BlueprintGraphError(
+                    f"{source.blueprint_path}: uses_interfaces[{index}] must be a mapping"
+                )
+            target_id = use.get("interface")
+            version = _positive_version(
+                use.get("version"), f"{source.node_id}.uses_interfaces[{index}]"
+            )
+            if not isinstance(target_id, str):
+                raise BlueprintGraphError(
+                    f"{source.blueprint_path}: uses_interfaces[{index}] requires interface"
+                )
+            if target_id in source_interfaces:
+                target_source, target_declaration = source_interfaces[target_id]
+                if source_modules[target_source.node_id] != source_modules[source_id]:
+                    raise BlueprintGraphError(
+                        f"{source.node_id}: private interface {target_id!r} cannot be used cross-module"
+                    )
+                actual_version = _positive_version(target_declaration.get("version"), target_id)
+                if actual_version != version:
+                    raise BlueprintGraphError(
+                        f"{source.node_id}: pins {target_id} version {version}, but target "
+                        f"version is {actual_version}"
+                    )
+                relation = "uses-private-interface"
+                target_node_id = target_source.node_id
+            elif target_id in exports:
+                export = exports[target_id]
+                if export.version != version:
+                    raise BlueprintGraphError(
+                        f"{source.node_id}: pins {target_id} version {version}, but target "
+                        f"version is {export.version}"
+                    )
+                caller_module = source_modules[source_id]
+                access = (
+                    export.export_declaration.get("access")
+                    if isinstance(export.export_declaration, Mapping)
+                    else None
+                )
+                if not isinstance(access, Mapping):
+                    raise BlueprintGraphError(f"{target_id}: export access is missing")
+                allowed = access.get("allowed_callers", [])
+                if (
+                    caller_module != export.module_node_id
+                    and access.get("allow_all_modules") is not True
+                    and caller_module not in allowed
+                ):
+                    raise BlueprintGraphError(
+                        f"{source.node_id}: caller module {caller_module!r} is not allowed "
+                        f"by {target_id}"
+                    )
+                relation = "uses-export"
+                target_node_id = export.module_node_id
+                target_module = modules[export.module_node_id]
+                _require_platform_compatibility(
+                    source,
+                    sources[export.source_node_id],
+                    context=source.node_id,
+                )
+                _ = target_module
+            else:
+                raise BlueprintGraphError(
+                    f"{source.node_id}: unresolved interface {target_id!r}"
+                )
+            uses.append((target_id, version))
+            node_edges.append(BlueprintEdge(relation, source_id, target_id, version))
+            certification_edges.append(
+                CertificationEdge(relation, source_id, target_node_id, version)
+            )
+        interface_uses_by_source[source_id] = tuple(uses)
+
+    export_edges: list[ExportDependencyEdge] = []
+    helper_edges: list[HelperEdge] = []
+    for export_id, export in sorted(exports.items()):
+        assert export.source_node_id is not None
+        direct_uses = set(interface_uses_by_source[export.source_node_id])
+        for target_id, version in sorted(direct_uses):
+            if target_id in exports:
+                export_edges.append(ExportDependencyEdge(export_id, target_id, version))
+        contract = export.declaration.get("contract")
+        raw_helpers = contract.get("helpers", []) if isinstance(contract, Mapping) else []
+        if not isinstance(raw_helpers, list):
+            raise BlueprintGraphError(f"{export_id}: contract.helpers must be a list")
+        for index, helper in enumerate(raw_helpers):
+            if not isinstance(helper, dict):
+                raise BlueprintGraphError(f"{export_id}: helpers[{index}] must be a mapping")
+            helper_id = helper.get("id")
+            target_id = helper.get("interface")
+            version = _positive_version(helper.get("version"), f"{export_id}.helpers[{index}]")
+            if not isinstance(helper_id, str) or not isinstance(target_id, str):
+                raise BlueprintGraphError(f"{export_id}: helper requires id and interface")
+            if (target_id, version) not in direct_uses:
+                raise BlueprintGraphError(
+                    f"{export_id}: helper {helper_id!r} target must be in the "
+                    "source's effective direct interface set"
+                )
+            helper_edges.append(HelperEdge(export_id, helper_id, target_id, version, helper))
+
+    module_content: dict[str, set[Path]] = {}
+    source_content: dict[str, set[Path]] = {}
+    blueprint_paths = {Path(os.path.abspath(node.blueprint_path)) for node in nodes.values()}
+    for module_id, module in sorted(modules.items()):
+        paths = {Path(os.path.abspath(path)) for path in resolved_node_content_paths(module, root)}
+        if paths & blueprint_paths:
+            raise BlueprintGraphError(
+                f"{module.blueprint_path}: content cannot include blueprint files"
+            )
+        module_content[module_id] = paths
+    for source_id, source in sorted(sources.items()):
+        paths = {Path(os.path.abspath(path)) for path in resolved_node_content_paths(source, root)}
+        if paths & blueprint_paths:
+            raise BlueprintGraphError(
+                f"{source.blueprint_path}: content cannot include blueprint files"
+            )
+        source_content[source_id] = paths
+
+    direct_file_owners: dict[Path, str] = {}
+    for module_id, source_ids in sorted(module_sources.items()):
+        seen_source_paths: dict[Path, str] = {}
+        for source_id in source_ids:
+            missing = source_content[source_id] - module_content[module_id]
+            if missing:
+                raise BlueprintGraphError(
+                    f"{sources[source_id].blueprint_path}: source content must be contained "
+                    f"by module {module_id}: {sorted(str(path) for path in missing)}"
+                )
+            for path in sorted(source_content[source_id]):
+                previous = seen_source_paths.get(path)
+                if previous is not None:
+                    raise BlueprintGraphError(
+                        f"{sources[source_id].blueprint_path}: sibling sources {previous} "
+                        f"and {source_id} overlap at {path}"
+                    )
+                seen_source_paths[path] = source_id
+                direct_file_owners[path] = source_id
+        for path in sorted(module_content[module_id] - set(seen_source_paths)):
+            direct_file_owners[path] = module_id
+
+    edge_keys: set[tuple[str, str, str, int | None]] = set()
+    unique_certification_edges: list[CertificationEdge] = []
+    for edge in certification_edges:
+        key = (edge.relation, edge.source_node_id, edge.target_node_id, edge.target_version)
+        if key not in edge_keys:
+            edge_keys.add(key)
+            unique_certification_edges.append(edge)
+    certification_edge_tuple = tuple(
+        sorted(
+            unique_certification_edges,
+            key=lambda edge: (
+                edge.source_node_id,
+                edge.relation,
+                edge.target_node_id,
+                edge.target_version or 0,
+            ),
+        )
+    )
+    _reject_certification_cycles(set(nodes), certification_edge_tuple)
+    export_edge_tuple = tuple(
+        sorted(
+            export_edges,
+            key=lambda edge: (
+                edge.source_export_id,
+                edge.target_interface_id,
+                edge.target_version,
+            ),
+        )
+    )
+    _reject_export_cycles(exports, export_edge_tuple)
+    return RepositoryBlueprintGraph(
+        nodes=dict(sorted(nodes.items())),
+        node_edges=tuple(sorted(node_edges, key=edge_key)),
+        exports=dict(sorted(exports.items())),
+        export_edges=export_edge_tuple,
+        helper_edges=tuple(
+            sorted(helper_edges, key=lambda edge: (edge.source_export_id, edge.local_helper_id))
+        ),
+        certification_edges=certification_edge_tuple,
+        module_sources=module_sources,
+        direct_file_owners=direct_file_owners,
+    )
+
+
 def load_repository_blueprint_graph(
     repo_root: Path,
     *,
     schema_root: Path | None = None,
 ) -> RepositoryBlueprintGraph:
-    """Normalize the complete strict target-v3 repository inventory."""
+    """Normalize the complete repository inventory into one graph."""
 
     root = Path(repo_root).resolve()
     documents = tuple(iter_inventory_blueprints(root))
+    v4_documents = tuple(
+        document
+        for document in documents
+        if document.declaration.get("schema_version") == 4
+        and document.node_type in {"module", "behavioral_source"}
+    )
     target_documents = tuple(
         document
         for document in documents
@@ -1869,8 +2386,20 @@ def load_repository_blueprint_graph(
     selected_schema_root = Path(schema_root) if schema_root is not None else None
     if selected_schema_root is None:
         candidate = root / "references" / "blueprint"
-        if (candidate / "machine-module.schema.json").is_file():
+        if (candidate / "module.schema.json").is_file() or (
+            candidate / "machine-module.schema.json"
+        ).is_file():
             selected_schema_root = candidate
+    if v4_documents:
+        if target_documents:
+            raise BlueprintGraphError(
+                "repository graph cannot mix version 4 and pre-v4 target nodes"
+            )
+        return _load_v4_repository_blueprint_graph(
+            root,
+            v4_documents,
+            schema_root=selected_schema_root,
+        )
     if selected_schema_root is not None:
         validators: dict[str, jsonschema.Draft7Validator] = {}
         for document in target_documents:
@@ -1932,7 +2461,7 @@ def load_repository_blueprint_graph(
             embedded=True,
         )
 
-    machine_exports: dict[str, MachineInterfaceExport] = {}
+    machine_exports: dict[str, InterfaceExport] = {}
     module_shared_edges: dict[str, tuple[tuple[str, int], ...]] = {}
     export_local_edges: dict[str, tuple[tuple[str, int], ...]] = {}
     helper_edges: list[HelperEdge] = []
@@ -1973,7 +2502,7 @@ def load_repository_blueprint_graph(
                     f"duplicate public export id {interface_id!r} in "
                     f"{prior.module_node_id} and {module.node_id}"
                 )
-            export = MachineInterfaceExport(
+            export = InterfaceExport(
                 interface_id=interface_id,
                 version=_positive_version(
                     declaration.get("version"),
@@ -2161,7 +2690,8 @@ def load_repository_blueprint_graph(
         if source_module != target_module:
             cert_keys.add((source_module, target_module))
     certification_edges = tuple(
-        ModuleCertificationEdge(source, target) for source, target in sorted(cert_keys)
+        CertificationEdge("uses-module", source, target)
+        for source, target in sorted(cert_keys)
     )
     export_edge_tuple = tuple(
         sorted(
@@ -2182,7 +2712,7 @@ def load_repository_blueprint_graph(
     return RepositoryBlueprintGraph(
         nodes=dict(sorted(nodes.items())),
         node_edges=tuple(sorted(node_edges, key=edge_key)),
-        machine_exports=dict(sorted(machine_exports.items())),
+        exports=dict(sorted(machine_exports.items())),
         export_edges=export_edge_tuple,
         helper_edges=tuple(
             sorted(
@@ -2212,6 +2742,35 @@ def resolve_machine_export(
             f"{interface_id}: requested version {version}, but target version is {export.version}"
         )
     return graph.nodes[export.module_node_id], export
+
+
+def resolve_export(
+    graph: RepositoryBlueprintGraph,
+    interface_id: str,
+    version: int | None = None,
+) -> tuple[BlueprintNode, BlueprintNode, InterfaceExport]:
+    """Resolve one v4 public export to its module and behavioral source."""
+
+    if interface_id in graph.nodes and graph.nodes[interface_id].node_type == "module":
+        raise BlueprintGraphError(f"module id {interface_id!r} is not callable")
+    try:
+        export = graph.exports[interface_id]
+    except KeyError as exc:
+        raise BlueprintGraphError(f"unknown export {interface_id!r}") from exc
+    if version is not None and export.version != version:
+        raise BlueprintGraphError(
+            f"{interface_id}: requested version {version}, but target version is {export.version}"
+        )
+    if export.source_node_id is None:
+        raise BlueprintGraphError(
+            f"{interface_id}: pre-v4 export has no behavioral-source binding"
+        )
+    source = graph.nodes.get(export.source_node_id)
+    if source is None or source.node_type != "behavioral_source":
+        raise BlueprintGraphError(
+            f"{interface_id}: export source {export.source_node_id!r} is unavailable"
+        )
+    return graph.nodes[export.module_node_id], source, export
 
 
 def runtime_authority_for_export(

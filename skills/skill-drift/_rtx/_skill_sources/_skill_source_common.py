@@ -14,8 +14,12 @@ class SkillSource:
     skills_root: Path
 
 
+class SkillSourceDiscoveryError(ValueError):
+    """Raised when a host's authoritative installed-source state is invalid."""
+
+
 def host_skill_sources(host: str, home: Path) -> list[SkillSource]:
-    """Return direct and plugin-cache skills roots below one host home."""
+    """Return only the direct skills root below one host home."""
 
     sources: list[SkillSource] = []
     direct = home / "skills"
@@ -23,17 +27,6 @@ def host_skill_sources(host: str, home: Path) -> list[SkillSource]:
         skills_root = direct.resolve()
         sources.append(SkillSource(source=host, package_root=skills_root.parent, skills_root=skills_root))
 
-    cache = home / "plugins" / "cache"
-    if cache.is_dir():
-        for skills_root in sorted(cache.rglob("skills")):
-            if skills_root.is_dir() and any_skill_dir(skills_root):
-                sources.append(
-                    SkillSource(
-                        source=host,
-                        package_root=skills_root.parent.resolve(),
-                        skills_root=skills_root.resolve(),
-                    )
-                )
     return sources
 
 

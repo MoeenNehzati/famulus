@@ -22,12 +22,22 @@ from .artifact_health import (
     health_owner_node_id,
 )
 from .audit_records import attach_record_authentication, record_authentication_matches
-from .blueprint_graph import SkillBlueprintGraph
+from .blueprint_graph import RepositoryBlueprintGraph, SkillBlueprintGraph
+from .certification_view import CertificationView
 
 
 _DEFAULT_CERTIFIER = {"interface": "skill-audit.machine.certify", "version": 1}
 _SCHEMA_BASE_URI = "https://famulus-schema.invalid/"
-_POOL_SCHEMA_BUNDLE = frozenset({"pooled-review.schema.json", "health.schema.json"})
+_POOL_SCHEMA_BUNDLE = frozenset(
+    {
+        "pooled-review.schema.json",
+        "certificate.schema.json",
+        "common.schema.json",
+        "caller-contract.schema.json",
+        "direct-io.schema.json",
+        "legacy-skill.schema.json",
+    }
+)
 _HEALTH_SCHEMA_BUNDLE = frozenset({"health.schema.json"})
 
 
@@ -436,7 +446,10 @@ def _confined_schema_validator(
                 Path(schema_root),
             )
             document = json.loads(raw.decode("utf-8"))
-            if not isinstance(document, dict) or document.get("$id") != name:
+            declared_id = document.get("$id") if isinstance(document, dict) else None
+            if not isinstance(document, dict) or (
+                declared_id is not None and declared_id != name
+            ):
                 raise PooledReviewValidationError(
                     f"invalid bundled schema identity: {name}"
                 )
@@ -527,12 +540,121 @@ def _review_path(path: Path, graph: SkillBlueprintGraph) -> str:
             return path.as_posix()
 
 
+def _v4_review_path(path: Path, node_root: Path) -> str:
+    try:
+        return path.relative_to(node_root).as_posix()
+    except ValueError as exc:
+        raise PooledReviewValidationError(
+            f"reviewed path is outside its module: {path}"
+        ) from exc
+
+
+def _render_v4_pooled_review(
+    graph: RepositoryBlueprintGraph,
+    certification: CertificationView,
+    *,
+    root_id: str | None,
+) -> str:
+    modules = sorted(
+        node_id
+        for node_id, node in graph.nodes.items()
+        if node.node_type == "module"
+    )
+    selected_root = root_id
+    if selected_root is None:
+        if len(modules) != 1:
+            raise PooledReviewValidationError(
+                "v4 pooled review requires root_id when the graph has multiple modules"
+            )
+        selected_root = modules[0]
+    root_node = graph.nodes.get(selected_root)
+    if root_node is None or root_node.node_type != "module":
+        raise PooledReviewValidationError(
+            f"unknown pooled-review root module {selected_root!r}"
+        )
+
+    children: dict[str, set[str]] = {node_id: set() for node_id in graph.nodes}
+    for edge in graph.certification_edges:
+        children.setdefault(edge.source_node_id, set()).add(edge.target_node_id)
+    selected: set[str] = set()
+
+    def visit(node_id: str) -> None:
+        if node_id in selected:
+            return
+        selected.add(node_id)
+        for target_id in sorted(children.get(node_id, ())):
+            visit(target_id)
+
+    visit(selected_root)
+    certificates = {}
+    for node_id in sorted(selected):
+        certificate = certification.certificate_for(node_id)
+        if certificate is None:
+            raise PooledReviewValidationError(
+                f"{node_id}: pooled review requires a current certificate"
+            )
+        certificates[node_id] = certificate
+    root_certificate = certificates[selected_root]
+    nodes: list[dict[str, Any]] = []
+    for node_id in sorted(selected):
+        node = graph.nodes[node_id]
+        certificate = certificates[node_id]
+        if node.gateway_path is None:
+            raise PooledReviewValidationError(
+                f"{node_id}: reviewed node has no gateway"
+            )
+        nodes.append(
+            {
+                "id": node.node_id,
+                "node_type": node.node_type,
+                "version": node.version,
+                "blueprint_path": _v4_review_path(
+                    node.blueprint_path, node.skill_root
+                ),
+                "gateway_path": _v4_review_path(
+                    node.gateway_path, node.skill_root
+                ),
+                "declaration": deepcopy(node.declaration),
+                "certificate": {
+                    "status": "current",
+                    "node_hash": certificate.node_hash,
+                    "certificate_hash": certificate.certificate_hash,
+                },
+            }
+        )
+    document = {
+        "schema_version": 2,
+        "document_type": "pooled-blueprint-review",
+        "generated_at": root_certificate.certified_at,
+        "root": {
+            "id": selected_root,
+            "blueprint_path": _v4_review_path(
+                root_node.blueprint_path, root_node.skill_root
+            ),
+            "node_hash": root_certificate.node_hash,
+            "certificate_hash": root_certificate.certificate_hash,
+        },
+        "nodes": nodes,
+    }
+    return yaml.safe_dump(document, sort_keys=False, allow_unicode=False)
+
+
 def render_pooled_review(
-    graph: SkillBlueprintGraph,
-    records: Mapping[str, dict[str, Any]],
+    graph: SkillBlueprintGraph | RepositoryBlueprintGraph,
+    records: Mapping[str, dict[str, Any]] | CertificationView,
+    *,
+    root_id: str | None = None,
 ) -> str:
     """Render a deterministic expanded review without creating graph authority."""
 
+    if isinstance(graph, RepositoryBlueprintGraph):
+        if not hasattr(records, "certificate_for"):
+            raise PooledReviewValidationError(
+                "v4 pooled review requires a read-only certification view"
+            )
+        return _render_v4_pooled_review(graph, records, root_id=root_id)  # type: ignore[arg-type]
+
+    assert isinstance(records, Mapping)
     root_record = records[graph.root.node_id]
     certification = root_record.get("certification", {})
     nodes: list[dict[str, Any]] = []
@@ -588,6 +710,11 @@ def certify_pooled_review(
     certified_at: str,
 ) -> dict[str, Any]:
     """Create authenticated health for a generated pooled review file."""
+
+    if "payload" in root_record:
+        raise PooledReviewValidationError(
+            "pooled-review health certification is pre-v4 only"
+        )
 
     snapshot = _StableFileSnapshot.open(path, Path(path).parent)
     try:
@@ -685,6 +812,18 @@ def _records_are_admitted(
     return True
 
 
+def _is_pre_v4_pooled_review(document: object) -> bool:
+    """Recognize the live legacy shape before its exact canonical comparison."""
+
+    return (
+        isinstance(document, dict)
+        and document.get("document_type") == "pooled-blueprint-review"
+        and isinstance(document.get("root"), dict)
+        and isinstance(document.get("nodes"), list)
+        and "schema_version" not in document
+    )
+
+
 def _check_pooled_review_snapshots(
     path: Path,
     root_report: GraphHealthReport,
@@ -704,11 +843,19 @@ def _check_pooled_review_snapshots(
     try:
         pooled_bytes = pool_snapshot.content
         document = yaml.safe_load(pooled_bytes.decode("utf-8"))
+        # The normative schema is now v2. The live pre-v4 reader remains usable
+        # through Task 4 by recognizing its old envelope and then requiring the
+        # exact canonical rendering below; it does not treat that shape as v2.
+        if not _is_pre_v4_pooled_review(document):
+            raise PooledReviewValidationError("invalid pre-v4 pooled review")
+        # Keep the pre-v4 reader's confined schema loading and reference-safety
+        # checks live through Task 4.  The selected schema is v2 now, so its
+        # validator is intentionally not applied to the legacy document.
         _confined_schema_validator(
             Path(schema_root),
             "pooled-review.schema.json",
             _POOL_SCHEMA_BUNDLE,
-        ).validate(document)
+        )
     except (
         OSError,
         UnicodeError,

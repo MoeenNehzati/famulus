@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from pathlib import PurePosixPath
 import stat
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -22,8 +23,10 @@ from .blueprint_graph import (
     BlueprintNode,
     RepositoryBlueprintGraph,
     SkillBlueprintGraph,
+    open_runtime_file,
     resolved_node_content_paths,
 )
+from .git_provenance import git_file_provenance
 from .blueprint_template import load_schema, schema_validator
 
 
@@ -50,27 +53,154 @@ class GraphHealthReport:
 
 @dataclass(frozen=True)
 class NodeHashState:
-    blueprint_file_hash: str
-    blueprint_contract_hash: str
-    bound_file_hash: str | None
-    local_hash: str
-    downstream_artifact_hash: str
-    artifact_graph_hash: str
-    downstream_health_hash: str
-    certified_health_hash: str
-    dependencies: tuple[dict[str, Any], ...]
-    schema_hash: str
-    policy_hash: str
+    # Canonical v4 state.
+    node_hash: str | None = None
+    input_manifest: tuple[dict[str, str], ...] = ()
+    dependency_hashes: tuple[dict[str, Any], ...] = ()
+    certification_basis_hash: str | None = None
+    # Explicit pre-v4 health state retained only until the atomic cutover.
+    blueprint_file_hash: str | None = None
+    blueprint_contract_hash: str | None = None
+    bound_file_hash: str | None = None
+    local_hash: str | None = None
+    downstream_artifact_hash: str | None = None
+    artifact_graph_hash: str | None = None
+    downstream_health_hash: str | None = None
+    certified_health_hash: str | None = None
+    dependencies: tuple[dict[str, Any], ...] = ()
+    schema_hash: str | None = None
+    policy_hash: str | None = None
 
 
-@dataclass(frozen=True)
-class MachineModuleHashState:
-    module_id: str
-    node_hash: str
-    contract_reference_hash: str
-    reference_digests: tuple[dict[str, str], ...]
-    dependencies: tuple[dict[str, str], ...]
-    export_ids: tuple[str, ...]
+@dataclass(frozen=True, order=True)
+class RouteSmokeDependencyMapping:
+    """One dynamically loaded route-smoke file resolved to existing authority."""
+
+    path: str
+    authority: str
+    target_node_id: str | None
+
+
+def _route_smoke_repo_path(value: Path | str, repo_root: Path) -> tuple[Path, str]:
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        candidate = repo_root / candidate
+    absolute = Path(os.path.abspath(candidate))
+    try:
+        relative = absolute.relative_to(repo_root).as_posix()
+    except ValueError as exc:
+        raise ArtifactHealthError(
+            f"unmapped route-smoke dependency outside repository: {absolute}"
+        ) from exc
+    try:
+        metadata = absolute.lstat()
+    except OSError as exc:
+        raise ArtifactHealthError(
+            f"unmapped route-smoke dependency {relative}: {exc}"
+        ) from exc
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ArtifactHealthError(
+            f"unmapped route-smoke dependency is not a regular file: {relative}"
+        )
+    return absolute, relative
+
+
+def map_route_smoke_dependencies(
+    graph: RepositoryBlueprintGraph,
+    states: Mapping[str, NodeHashState],
+    *,
+    source_node_id: str,
+    loaded_paths: Iterable[Path | str],
+    certification_basis_paths: Iterable[Path | str],
+    repo_root: Path,
+) -> tuple[RouteSmokeDependencyMapping, ...]:
+    """Resolve every dynamic Python dependency to node input, edge, or basis."""
+
+    root = Path(repo_root).resolve()
+    source = graph.nodes.get(source_node_id)
+    if source is None or source.node_type != "behavioral_source":
+        raise ArtifactHealthError(
+            f"route-smoke source must be a behavioral source: {source_node_id}"
+        )
+    manifest_paths: dict[str, set[str]] = {}
+    for node_id in graph.nodes:
+        state = states.get(node_id)
+        if state is None or state.node_hash is None:
+            raise ArtifactHealthError(
+                f"{node_id}: route-smoke mapping requires canonical v4 node state"
+            )
+        paths: set[str] = set()
+        for entry in state.input_manifest:
+            path = entry.get("path")
+            if not isinstance(path, str):
+                raise ArtifactHealthError(
+                    f"{node_id}: route-smoke mapping found invalid input manifest"
+                )
+            paths.add(path)
+        manifest_paths[node_id] = paths
+
+    reachable: set[str] = set()
+    pending = [source_node_id]
+    children: dict[str, set[str]] = {node_id: set() for node_id in graph.nodes}
+    for edge in graph.certification_edges:
+        children.setdefault(edge.source_node_id, set()).add(edge.target_node_id)
+    while pending:
+        current = pending.pop()
+        for target_id in sorted(children.get(current, ())):
+            if target_id not in reachable and target_id != source_node_id:
+                reachable.add(target_id)
+                pending.append(target_id)
+
+    basis = {
+        _route_smoke_repo_path(path, root)[1]
+        for path in certification_basis_paths
+    }
+    mappings: dict[str, RouteSmokeDependencyMapping] = {}
+    for absolute, relative in (
+        _route_smoke_repo_path(path, root) for path in loaded_paths
+    ):
+        if relative in manifest_paths[source_node_id]:
+            mapping = RouteSmokeDependencyMapping(
+                relative, "direct-input", source_node_id
+            )
+        elif relative in basis:
+            mapping = RouteSmokeDependencyMapping(
+                relative, "certification-basis", None
+            )
+        else:
+            direct_owner = graph.direct_file_owners.get(absolute)
+            candidates = {
+                target_id
+                for target_id in reachable
+                if relative in manifest_paths[target_id]
+            }
+            if direct_owner in candidates:
+                candidates = {direct_owner}
+            if len(candidates) != 1:
+                detail = "no authority" if not candidates else "ambiguous authority"
+                raise ArtifactHealthError(
+                    f"unmapped route-smoke dependency {relative}: {detail}"
+                )
+            mapping = RouteSmokeDependencyMapping(
+                relative,
+                "certification-dependency",
+                next(iter(candidates)),
+            )
+        mappings[relative] = mapping
+    return tuple(mappings[path] for path in sorted(mappings))
+
+
+def route_smoke_trace_signature(
+    mappings: Iterable[RouteSmokeDependencyMapping],
+) -> tuple[tuple[str, str, str | None], ...]:
+    """Return the stable projection used for pre/post migration comparison."""
+
+    return tuple(
+        sorted(
+            (mapping.path, mapping.authority, mapping.target_node_id)
+            for mapping in mappings
+        )
+    )
 
 
 _SCHEMA_BY_NODE_TYPE = {
@@ -131,7 +261,10 @@ CANONICAL_GRAPH_SCHEMA_INPUTS = (
     "schema.annotated-draft.json",
     "template.yaml",
 )
-POOLED_REVIEW_SCHEMA_INPUTS = ("pooled-review.schema.json",)
+POOLED_REVIEW_SCHEMA_INPUTS = (
+    "pooled-review.schema.json",
+    "certificate.schema.json",
+)
 
 
 def _default_schema_root() -> Path:
@@ -335,64 +468,6 @@ def _contract_reference_manifest(module: BlueprintNode) -> tuple[dict[str, str],
     )
 
 
-def compute_machine_module_hash_states(
-    graph: RepositoryBlueprintGraph,
-    repo_root: Path,
-) -> dict[str, MachineModuleHashState]:
-    """Compute separate module node and resolved-contract reference hashes."""
-
-    root = Path(repo_root).resolve()
-    local_hashes = {
-        node_id: _target_node_hash(node, root)
-        for node_id, node in graph.nodes.items()
-    }
-    module_ids = {
-        node_id for node_id, node in graph.nodes.items() if node.node_type == "machine-module"
-    }
-    references = {
-        module_id: _contract_reference_manifest(graph.nodes[module_id])
-        for module_id in sorted(module_ids)
-    }
-    states: dict[str, MachineModuleHashState] = {}
-    for module_id in sorted(module_ids):
-        dependencies = []
-        for edge in graph.certification_edges:
-            if edge.source_module_id != module_id:
-                continue
-            target_id = edge.target_node_id
-            item = {"target": target_id, "node_hash": local_hashes[target_id]}
-            if target_id in references:
-                item["contract_reference_hash"] = _hash_value(references[target_id])
-            dependencies.append(item)
-        export_ids = tuple(
-            sorted(
-                export.interface_id
-                for export in graph.machine_exports.values()
-                if export.module_node_id == module_id
-            )
-        )
-        states[module_id] = MachineModuleHashState(
-            module_id=module_id,
-            node_hash=local_hashes[module_id],
-            contract_reference_hash=_hash_value(references[module_id]),
-            reference_digests=references[module_id],
-            dependencies=tuple(dependencies),
-            export_ids=export_ids,
-        )
-    return states
-
-
-def machine_module_hashes_current(
-    state: MachineModuleHashState,
-    *,
-    node_hash: str,
-    contract_reference_hash: str,
-) -> bool:
-    """Return currentness only when both independently recorded hashes match."""
-
-    return state.node_hash == node_hash and state.contract_reference_hash == contract_reference_hash
-
-
 @lru_cache(maxsize=None)
 def _audit_hash_policy(blueprint_type: str, schema_root_text: str) -> dict[str, str]:
     try:
@@ -531,6 +606,260 @@ def _validated_owned_input(owner_root: Path, path: Path) -> Path:
     return path
 
 
+def load_node_hash_policy(
+    policy_path: Path,
+    *,
+    schema_path: Path | None = None,
+) -> dict[str, Any]:
+    """Load and validate the canonical ordered node-input policy."""
+
+    path = Path(policy_path)
+    selected_schema = (
+        Path(schema_path)
+        if schema_path is not None
+        else _default_schema_root().parent / "certification" / "node-hash-policy.schema.json"
+    )
+    try:
+        policy = yaml.safe_load(path.read_text(encoding="utf-8"))
+        schema = json.loads(selected_schema.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, yaml.YAMLError, json.JSONDecodeError) as exc:
+        raise ArtifactHealthError(f"{path}: cannot load node hash policy: {exc}") from exc
+    if not isinstance(policy, dict):
+        raise ArtifactHealthError(f"{path}: node hash policy must be a mapping")
+    errors = sorted(
+        jsonschema.Draft7Validator(schema).iter_errors(policy),
+        key=lambda error: (tuple(str(part) for part in error.path), error.message),
+    )
+    if errors:
+        first = errors[0]
+        location = "$" + "".join(f"[{part!r}]" for part in first.path)
+        raise ArtifactHealthError(
+            f"{path}: node hash policy schema error at {location}: {first.message}"
+        )
+    return policy
+
+
+def _policy_pattern_matches(relative_path: str, pattern: str) -> bool:
+    path = PurePosixPath(relative_path)
+    candidates = [pattern]
+    if pattern.startswith("**/"):
+        candidates.append(pattern[3:])
+    return any(path.match(candidate) for candidate in candidates)
+
+
+def _reserved_certification_output(relative_path: str) -> bool:
+    path = PurePosixPath(relative_path)
+    name = path.name
+    return (
+        ".certificates" in path.parts
+        or ".certificate-history" in path.parts
+        or name == ".last_audit.json"
+        or name.endswith(".audit.json")
+        or name.endswith(".health.json")
+        or "pooled-blueprint-review" in name
+    )
+
+
+def _read_node_input(node: BlueprintNode, path: Path, repo_root: Path) -> bytes:
+    try:
+        binding = open_runtime_file(path, node.skill_root, repo_root)
+    except BlueprintGraphError as exc:
+        raise ArtifactHealthError(str(exc)) from exc
+    try:
+        return binding.read_bytes()
+    finally:
+        binding.close()
+
+
+def _v4_node_input_manifests(
+    graph: RepositoryBlueprintGraph,
+    repo_root: Path,
+    policy: Mapping[str, Any],
+) -> tuple[
+    dict[str, tuple[dict[str, str], ...]],
+    dict[str, set[str]],
+]:
+    """Resolve policy-selected inputs and cross-owner contract dependencies."""
+
+    root = Path(repo_root).resolve()
+    owned_paths = {
+        Path(os.path.abspath(path)): owner_id
+        for path, owner_id in graph.direct_file_owners.items()
+    }
+    provenance: dict[Path, str] = {}
+    relative_paths: dict[Path, str] = {}
+    for path in sorted(owned_paths):
+        try:
+            relative = path.relative_to(root).as_posix()
+            provenance[path] = git_file_provenance(root, path)
+        except (ValueError, OSError) as exc:
+            raise ArtifactHealthError(f"{path}: cannot determine Git provenance") from exc
+        relative_paths[path] = relative
+
+    selected = {
+        path: provenance[path] == "tracked"
+        for path in owned_paths
+    }
+    raw_rules = policy.get("rules")
+    if not isinstance(raw_rules, list):
+        raise ArtifactHealthError("node hash policy rules must be a list")
+    for index, rule in enumerate(raw_rules):
+        if not isinstance(rule, Mapping):
+            raise ArtifactHealthError(f"node hash policy rule {index} must be a mapping")
+        action = rule.get("action")
+        pattern = rule.get("pattern")
+        if action not in {"include", "exclude"} or not isinstance(pattern, str):
+            raise ArtifactHealthError(f"node hash policy rule {index} is invalid")
+        matches = [
+            path
+            for path, relative in relative_paths.items()
+            if _policy_pattern_matches(relative, pattern)
+        ]
+        if action == "include" and rule.get("require_match") is True and not matches:
+            raise ArtifactHealthError(
+                f"node hash policy include {pattern!r} requires at least one match"
+            )
+        for path in matches:
+            selected[path] = action == "include"
+
+    manifests: dict[str, tuple[dict[str, str], ...]] = {}
+    contract_dependencies: dict[str, set[str]] = {
+        node_id: set() for node_id in graph.nodes
+    }
+    for node_id, node in sorted(graph.nodes.items()):
+        node_paths = {
+            path
+            for path, owner_id in owned_paths.items()
+            if owner_id == node_id and selected[path]
+        }
+        mandatory_paths = {
+            Path(os.path.abspath(node.blueprint_path)),
+        }
+        if node.gateway_path is not None:
+            mandatory_paths.add(Path(os.path.abspath(node.gateway_path)))
+        for locator, _fragment in _reference_candidates(node.declaration):
+            reference_path = _resolve_reference_path(
+                node.skill_root,
+                node.skill_root,
+                locator,
+            )
+            canonical_reference = Path(os.path.abspath(reference_path))
+            owner_id = owned_paths.get(canonical_reference)
+            if owner_id is None:
+                raise ArtifactHealthError(
+                    f"{node.blueprint_path}: referenced contract {locator!r} is not "
+                    "directly owned by a node"
+                )
+            if owner_id == node_id:
+                mandatory_paths.add(canonical_reference)
+            else:
+                contract_dependencies[node_id].add(owner_id)
+
+        for mandatory_path in mandatory_paths:
+            try:
+                relative = mandatory_path.relative_to(root).as_posix()
+            except ValueError as exc:
+                raise ArtifactHealthError(
+                    f"{mandatory_path}: mandatory node input is outside the repository"
+                ) from exc
+            final_action: str | None = None
+            for rule in raw_rules:
+                pattern = rule.get("pattern") if isinstance(rule, Mapping) else None
+                if isinstance(pattern, str) and _policy_pattern_matches(relative, pattern):
+                    action = rule.get("action")
+                    final_action = action if isinstance(action, str) else None
+            if final_action == "exclude":
+                raise ArtifactHealthError(
+                    f"{node_id}: mandatory blueprint, gateway, or contract input "
+                    f"cannot be excluded: {relative}"
+                )
+            node_paths.add(mandatory_path)
+
+        entries: list[dict[str, str]] = []
+        for path in sorted(node_paths):
+            try:
+                relative = path.relative_to(root).as_posix()
+                path_provenance = provenance.get(path) or git_file_provenance(root, path)
+            except (ValueError, OSError) as exc:
+                raise ArtifactHealthError(f"{path}: cannot determine Git provenance") from exc
+            if _reserved_certification_output(relative):
+                raise ArtifactHealthError(
+                    f"{relative}: reserved certification output cannot be a node input"
+                )
+            payload = _read_node_input(node, path, root)
+            entries.append(
+                {
+                    "path": relative,
+                    "digest": _hash_bytes(payload),
+                    "git_provenance": path_provenance,
+                }
+            )
+        manifests[node_id] = tuple(entries)
+    return manifests, contract_dependencies
+
+
+def _compute_v4_node_hash_states(
+    graph: RepositoryBlueprintGraph,
+    *,
+    repo_root: Path,
+    policy_path: Path,
+    certification_basis_hash: str,
+) -> dict[str, NodeHashState]:
+    policy = load_node_hash_policy(policy_path)
+    manifests, contract_dependencies = _v4_node_input_manifests(
+        graph, repo_root, policy
+    )
+    node_hashes = {
+        node_id: _hash_value(
+            {
+                "node_id": node.node_id,
+                "node_type": node.node_type,
+                "version": node.version,
+                "input_manifest": manifests[node_id],
+            }
+        )
+        for node_id, node in sorted(graph.nodes.items())
+    }
+    dependencies_by_node: dict[str, set[tuple[str, str, int | None]]] = {
+        node_id: set() for node_id in graph.nodes
+    }
+    for edge in graph.certification_edges:
+        dependencies_by_node[edge.source_node_id].add(
+            (edge.relation, edge.target_node_id, edge.target_version)
+        )
+    for source_id, target_ids in contract_dependencies.items():
+        for target_id in target_ids:
+            dependencies_by_node[source_id].add(
+                (
+                    "references-cross-owner-contract",
+                    target_id,
+                    graph.nodes[target_id].version,
+                )
+            )
+
+    states: dict[str, NodeHashState] = {}
+    for node_id in sorted(graph.nodes):
+        dependency_hashes = tuple(
+            {
+                "relation": relation,
+                "target": target_id,
+                "version": version,
+                "node_hash": node_hashes[target_id],
+            }
+            for relation, target_id, version in sorted(
+                dependencies_by_node[node_id],
+                key=lambda item: (item[0], item[1], item[2] or 0),
+            )
+        )
+        states[node_id] = NodeHashState(
+            node_hash=node_hashes[node_id],
+            input_manifest=manifests[node_id],
+            dependency_hashes=dependency_hashes,
+            certification_basis_hash=certification_basis_hash,
+        )
+    return states
+
+
 def health_node_ids(graph: SkillBlueprintGraph) -> tuple[str, ...]:
     """Return graph nodes that own independent health records."""
 
@@ -666,16 +995,46 @@ def _node_local_hash_components(
 
 
 def compute_node_hash_states(
-    graph: SkillBlueprintGraph,
+    graph: SkillBlueprintGraph | RepositoryBlueprintGraph,
     *,
-    policy_hash: str,
-    schema_hash: str,
-    checks_by_node: Mapping[str, Sequence[Mapping[str, object]]],
-    schema_root: Path,
-    certifier: Mapping[str, Any],
+    policy_hash: str | None = None,
+    schema_hash: str | None = None,
+    checks_by_node: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
+    schema_root: Path | None = None,
+    certifier: Mapping[str, Any] | None = None,
     health_hash_overrides: Mapping[str, tuple[str, str]] | None = None,
+    repo_root: Path | None = None,
+    policy_path: Path | None = None,
+    certification_basis_hash: str | None = None,
 ) -> dict[str, NodeHashState]:
-    """Compute deterministic node hash states for a resolved blueprint graph."""
+    """Compute deterministic node hash states through the one generation-aware path."""
+
+    if isinstance(graph, RepositoryBlueprintGraph) and any(
+        node.declaration.get("schema_version") == 4 for node in graph.nodes.values()
+    ):
+        if repo_root is None or policy_path is None or certification_basis_hash is None:
+            raise ArtifactHealthError(
+                "v4 node hashing requires repo_root, policy_path, and "
+                "certification_basis_hash"
+            )
+        return _compute_v4_node_hash_states(
+            graph,
+            repo_root=repo_root,
+            policy_path=policy_path,
+            certification_basis_hash=certification_basis_hash,
+        )
+    if not isinstance(graph, SkillBlueprintGraph):
+        raise ArtifactHealthError("pre-v4 node hashing requires a skill blueprint graph")
+    if (
+        policy_hash is None
+        or schema_hash is None
+        or schema_root is None
+        or certifier is None
+    ):
+        raise ArtifactHealthError(
+            "pre-v4 node hashing requires policy_hash, schema_hash, schema_root, and certifier"
+        )
+    selected_checks_by_node = checks_by_node or {}
 
     edges_by_source = _edges_by_source(graph)
     states: dict[str, NodeHashState] = {}
@@ -736,7 +1095,7 @@ def compute_node_hash_states(
                 for item in dependencies
             ]
         )
-        checks = normalize_node_checks(checks_by_node.get(node_id, ()))
+        checks = normalize_node_checks(selected_checks_by_node.get(node_id, ()))
         certified_health_hash = _hash_value(
             {
                 "local_hash": local_hash,

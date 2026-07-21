@@ -23,6 +23,12 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from officina.blueprint_search import BlueprintSearchError, load_blueprint_record, strip_selected_paths
+from officina.common.artifact_health import (
+    NodeHashState,
+    RouteSmokeDependencyMapping,
+    map_route_smoke_dependencies,
+)
+from officina.common.blueprint_graph import RepositoryBlueprintGraph
 
 HASH_PREFIX = "sha256:"
 DEFAULT_EXCLUDE_NAMES = {"__pycache__", ".pytest_cache", ".DS_Store", ".last_audit.json"}
@@ -496,6 +502,33 @@ def python_runtime_dependency_entries(
     return dedupe_entries(entries)
 
 
+def map_python_runtime_dependencies(
+    skill_dir: Path,
+    repo_root: Path,
+    entrypoint: str,
+    *,
+    graph: RepositoryBlueprintGraph,
+    states: dict[str, NodeHashState],
+    source_node_id: str,
+    certification_basis_paths: Iterable[Path | str],
+) -> tuple[RouteSmokeDependencyMapping, ...]:
+    """Trace Python route smoke and resolve every loaded path to authority."""
+
+    loaded_paths = explore_python_runtime_dependency_files(
+        skill_dir,
+        repo_root,
+        entrypoint,
+    )
+    return map_route_smoke_dependencies(
+        graph,
+        states,
+        source_node_id=source_node_id,
+        loaded_paths=loaded_paths,
+        certification_basis_paths=certification_basis_paths,
+        repo_root=repo_root,
+    )
+
+
 def entries_for_dependency_files(files: Iterable[DependencyFile], repo_root: Path) -> list[HashEntry]:
     entries: list[HashEntry] = []
     for dependency in files:
@@ -569,10 +602,7 @@ with contextlib.redirect_stdout(io.StringIO()):
             candidate = candidate.resolve()
             if candidate.exists() and is_under(candidate, skills_root):
                 paths.append(candidate.as_posix())
-        target_interface = resolver.load_python_interface(
-            invocation.target_skill,
-            invocation.script_interface,
-        )
+        target_interface = resolver.load_resolved_python_interface(invocation)
         if target_interface is not None:
             previous_cwd = Path.cwd()
             try:

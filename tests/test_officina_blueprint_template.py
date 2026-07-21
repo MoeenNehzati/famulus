@@ -470,3 +470,49 @@ def test_typed_regeneration_selects_its_concrete_authoring_schema(tmp_path: Path
     text = output.read_text(encoding="utf-8")
     assert "typed marker" in text
     assert "legacy marker" not in text
+
+
+def test_v4_regeneration_selects_existing_module_schema_owner(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    module_dir = repo / "skills" / "demo-skill"
+    schema_dir = repo / "references" / "blueprint"
+    module_dir.mkdir(parents=True)
+    schema_dir.mkdir(parents=True)
+    blueprint = {
+        "schema_version": 4,
+        "node_type": "module",
+        "id": "demo-skill",
+    }
+    (module_dir / "blueprint.yaml").write_text(
+        yaml.safe_dump(blueprint), encoding="utf-8"
+    )
+
+    def authoring_schema(marker: str, version: int, node_type: str) -> dict:
+        return {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "required": ["schema_version", "node_type", "id"],
+            "additionalProperties": False,
+            "properties": {
+                "schema_version": {"const": version, "description": marker},
+                "node_type": {"const": node_type},
+                "id": {"type": "string"},
+            },
+        }
+
+    (schema_dir / "schema.annotated-draft.json").write_text(
+        __import__("json").dumps(authoring_schema("legacy marker", 3, "skill")),
+        encoding="utf-8",
+    )
+    (schema_dir / "module.schema.json").write_text(
+        __import__("json").dumps(authoring_schema("module marker", 4, "module")),
+        encoding="utf-8",
+    )
+
+    output = write_regenerated_skill_blueprint(
+        "demo-skill", repo_root=repo, output_dir=tmp_path
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "module marker" in text
+    assert "legacy marker" not in text

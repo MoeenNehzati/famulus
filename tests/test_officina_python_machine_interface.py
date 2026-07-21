@@ -237,6 +237,32 @@ def test_declared_dispatch_method_uses_dispatch_call(monkeypatch: pytest.MonkeyP
     assert captured["text"] is True
 
 
+def test_declared_dispatch_uses_generic_export_id_without_legacy_rewrite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_dispatch(**kwargs):
+        captured.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr("officina.dispatcher.dispatch", fake_dispatch)
+
+    class Interface(PythonMachineInterface):
+        dispatches = {
+            "read": DispatchCall(
+                caller_skill="demo-skill",
+                target_skill="cloud-files",
+                interface="cloud-files.interface.read",
+            )
+        }
+
+    assert Interface().dispatch("read") == "ok"
+    assert captured["target"] == "cloud-files.interface.read"
+    assert "script_interface" not in captured
+    assert "target_skill" not in captured
+
+
 def test_dispatch_dependency_resolver_follows_transitive_dispatches(tmp_path: Path) -> None:
     def write(path: Path, text: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

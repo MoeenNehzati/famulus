@@ -17,6 +17,8 @@ from officina.common.blueprint_graph import (
     BlueprintEdge,
     BlueprintGraphError,
     BlueprintNode,
+    CertificationEdge,
+    InterfaceExport,
     SkillBlueprintGraph,
     authored_node_input_paths,
     expanded_legacy_blueprint,
@@ -27,6 +29,7 @@ from officina.common.blueprint_graph import (
     load_skill_blueprint_graph,
     resolved_node_content_paths,
     resolve_repository_skill_graph,
+    resolve_export,
     resolve_machine_export,
     runtime_authority_for_export,
 )
@@ -75,8 +78,6 @@ def _write_v3_skill(
             "interfaces": interfaces if interfaces is not None else [],
         },
     )
-
-
 def _write_v3_machine(
     skill: Path,
     *,
@@ -245,6 +246,252 @@ def _write_shared_skill(shared_repo: Path, skill_id: str) -> None:
             "owns_filesystem": [],
         },
     )
+
+
+def _v4_contract(*, helper: dict[str, object] | None = None) -> dict[str, object]:
+    return {
+        "arguments": {},
+        "preconditions": [],
+        "interaction": {"mode": "unattended"},
+        "caller_warnings": [],
+        "outputs": [
+            {
+                "id": "result",
+                "audience": "machine",
+                "description": "Result.",
+                "type": {"kind": "string"},
+                "direct_io_ref": "stdout",
+                "cardinality": {"minimum": 1, "maximum": 1},
+                "ordering": "stable",
+                "pagination": {"kind": "none"},
+                "truncation": {"kind": "none"},
+                "empty": "Never empty.",
+            }
+        ],
+        "outcomes": [
+            {
+                "id": "success",
+                "class": "success",
+                "outputs": ["result"],
+                "effects": [],
+                "caller_action": "Continue.",
+            }
+        ],
+        "execution": {
+            "state_effect": "read-only",
+            "lifecycle": "finite",
+            "consistency": {"snapshot": "One invocation snapshot."},
+            "verification": [{"method": "output-schema", "output_ref": "result"}],
+        },
+        "helpers": [helper] if helper is not None else [],
+        "direct_io": {
+            "reads": [],
+            "writes": [
+                {
+                    "id": "stdout",
+                    "medium": "stdout",
+                    "access": "write",
+                    "content": "Result.",
+                    "format": "text",
+                    "sensitivity": "public",
+                }
+            ],
+            "network": [],
+        },
+    }
+
+
+def _write_v4_module(
+    root: Path,
+    module_id: str,
+    *,
+    caller_export: str | None = None,
+    allow_callers: list[str] | None = None,
+) -> None:
+    module = root / "skills" / module_id
+    (module / "_rtx").mkdir(parents=True)
+    (module / "SKILL.md").write_text("Instructions.\n", encoding="utf-8")
+    (module / "README.md").write_text("Module-owned.\n", encoding="utf-8")
+    (module / "_rtx" / "worker.py").write_text(
+        "class Interface:\n    pass\n", encoding="utf-8"
+    )
+    gateway_source_id = f"{module_id}.source.gateway"
+    worker_source_id = f"{module_id}.source.worker"
+    run_source_interface = f"{worker_source_id}.interface.run"
+    uses = (
+        [{"interface": caller_export, "version": 1}]
+        if caller_export is not None
+        else []
+    )
+    _write_yaml(
+        module / "blueprints" / "gateway.yaml",
+        {
+            "schema_version": 4,
+            "node_type": "behavioral_source",
+            "id": gateway_source_id,
+            "version": 1,
+            "description": "Primary instructions.",
+            "gateway": {"path": "SKILL.md", "language": "Markdown"},
+            "content": [r"SKILL\.md"],
+            "dependencies": [],
+            "uses_interfaces": uses,
+            "interfaces": {},
+        },
+    )
+    _write_yaml(
+        module / "blueprints" / "worker.yaml",
+        {
+            "schema_version": 4,
+            "node_type": "behavioral_source",
+            "id": worker_source_id,
+            "version": 1,
+            "description": "Python worker.",
+            "gateway": {"path": "_rtx/worker.py", "language": "Python>=3.11"},
+            "content": [r"_rtx/worker\.py"],
+            "platform_support": {"linux": True, "macos": True, "windows": True},
+            "runtime_dependencies": [],
+            "dependencies": [],
+            "uses_interfaces": [],
+            "interfaces": {
+                run_source_interface: {
+                    "version": 1,
+                    "description": "Run the worker.",
+                    "contract": _v4_contract(),
+                    "process_binding": {
+                        "kind": "process",
+                        "entry": "Interface",
+                        "arguments": {},
+                        "fixed": [],
+                    },
+                }
+            },
+        },
+    )
+    exports: dict[str, object] = {}
+    if allow_callers is not None:
+        exports[f"{module_id}.interface.run"] = {
+            "source_interface": run_source_interface,
+            "access": {
+                "allow_all_modules": not allow_callers,
+                "allowed_callers": allow_callers,
+            },
+        }
+    _write_yaml(
+        module / "blueprint.yaml",
+        {
+            "schema_version": 4,
+            "node_type": "module",
+            "id": module_id,
+            "version": 1,
+            "description": f"{module_id} module.",
+            "gateway": {"path": "SKILL.md", "language": "Markdown"},
+            "content": [r"SKILL\.md", r"README\.md", r"_rtx/worker\.py"],
+            "authority": {"owns_filesystem": []},
+            "sources": {
+                gateway_source_id: {
+                    "blueprint": {"base": "module-root", "path": "blueprints/gateway.yaml"}
+                },
+                worker_source_id: {
+                    "blueprint": {"base": "module-root", "path": "blueprints/worker.yaml"}
+                },
+            },
+            "exports": exports,
+        },
+    )
+
+
+def test_v4_repository_graph_uses_one_generic_export_and_direct_ownership(
+    tmp_path: Path,
+) -> None:
+    _write_v4_module(
+        tmp_path,
+        "provider-skill",
+        allow_callers=["consumer-skill"],
+    )
+    _write_v4_module(
+        tmp_path,
+        "consumer-skill",
+        caller_export="provider-skill.interface.run",
+        allow_callers=None,
+    )
+
+    graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+    module, source, export = resolve_export(
+        graph, "provider-skill.interface.run", 1
+    )
+
+    assert isinstance(export, InterfaceExport)
+    assert graph.machine_exports is graph.exports
+    assert module.node_id == "provider-skill"
+    assert source.node_id == "provider-skill.source.worker"
+    assert export.source_interface_id == (
+        "provider-skill.source.worker.interface.run"
+    )
+    assert export.version == 1
+    assert export.declaration is source.declaration["interfaces"][export.source_interface_id]
+    assert graph.direct_file_owners[
+        tmp_path / "skills" / "provider-skill" / "SKILL.md"
+    ] == "provider-skill.source.gateway"
+    assert graph.direct_file_owners[
+        tmp_path / "skills" / "provider-skill" / "README.md"
+    ] == "provider-skill"
+    assert set(graph.module_sources["provider-skill"]) == {
+        "provider-skill.source.gateway",
+        "provider-skill.source.worker",
+    }
+    assert {
+        (edge.relation, edge.source_node_id, edge.target_node_id)
+        for edge in graph.certification_edges
+    } >= {
+        (
+            "contains-source",
+            "provider-skill",
+            "provider-skill.source.gateway",
+        ),
+        (
+            "contains-source",
+            "provider-skill",
+            "provider-skill.source.worker",
+        ),
+        (
+            "uses-export",
+            "consumer-skill.source.gateway",
+            "provider-skill",
+        ),
+    }
+    assert all(isinstance(edge, CertificationEdge) for edge in graph.certification_edges)
+
+
+def test_v4_repository_graph_enforces_export_authorization_and_private_ownership(
+    tmp_path: Path,
+) -> None:
+    _write_v4_module(
+        tmp_path,
+        "provider-skill",
+        allow_callers=["different-skill"],
+    )
+    _write_v4_module(
+        tmp_path,
+        "consumer-skill",
+        caller_export="provider-skill.interface.run",
+        allow_callers=None,
+    )
+
+    with pytest.raises(BlueprintGraphError, match="consumer-skill.*not allowed"):
+        load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+
+    consumer = tmp_path / "skills" / "consumer-skill"
+    source_path = consumer / "blueprints" / "gateway.yaml"
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    source["uses_interfaces"] = [
+        {
+            "interface": "provider-skill.source.worker.interface.run",
+            "version": 1,
+        }
+    ]
+    _write_yaml(source_path, source)
+    with pytest.raises(BlueprintGraphError, match="private interface.*cross-module"):
+        load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
 
 
 @pytest.fixture

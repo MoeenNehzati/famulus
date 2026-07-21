@@ -114,6 +114,37 @@ def _literal_pathspec(relative_path: str) -> str:
     return f":(literal){relative_path}"
 
 
+def git_file_provenance(repo_root: Path, path: Path) -> str:
+    """Classify one repository file as tracked, ignored, or untracked."""
+
+    root = Path(repo_root).resolve()
+    relative_path = _repository_relative_path(path, root)
+    if relative_path is None:
+        raise ValueError(f"{path}: input is outside repository {root}")
+    try:
+        tracked = _git(
+            root,
+            "ls-files",
+            "--error-unmatch",
+            "--",
+            _literal_pathspec(relative_path),
+            check=False,
+        )
+        if tracked.returncode == 0:
+            return "tracked"
+        ignored = _git(
+            root,
+            "check-ignore",
+            "-q",
+            "--",
+            relative_path,
+            check=False,
+        )
+    except OSError as exc:
+        raise ValueError(f"{root}: Git provenance is unavailable") from exc
+    return "ignored" if ignored.returncode == 0 else "untracked"
+
+
 def _index_entries(
     repo_root: Path, relative_path: str
 ) -> tuple[tuple[str, str, str], ...] | None:

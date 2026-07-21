@@ -83,3 +83,27 @@ def test_inventory_ignores_nonhidden_sidecars_and_symlinks(tmp_path: Path) -> No
     documents = tuple(iter_blueprints(tmp_path))
 
     assert [document.node_id for document in documents] == ["valid"]
+
+
+def test_inventory_discovers_v4_behavioral_source_blueprints(tmp_path: Path) -> None:
+    module = tmp_path / "skills" / "demo-skill"
+    _write(
+        module / "blueprint.yaml",
+        "schema_version: 4\nnode_type: module\nid: demo-skill\n",
+    )
+    _write(
+        module / "blueprints" / "gateway.yaml",
+        "schema_version: 4\nnode_type: behavioral_source\nid: demo-skill.source.gateway\n",
+    )
+    _write(
+        module / "blueprints" / "nested" / "ignored.yaml",
+        "schema_version: 4\nnode_type: behavioral_source\nid: demo-skill.source.ignored\n",
+    )
+
+    documents = tuple(iter_blueprints(tmp_path))
+
+    assert [document.relative_path.as_posix() for document in documents] == [
+        "skills/demo-skill/blueprint.yaml",
+        "skills/demo-skill/blueprints/gateway.yaml",
+    ]
+    assert documents[1].owner_root == module

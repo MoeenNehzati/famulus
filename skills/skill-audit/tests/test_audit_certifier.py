@@ -201,7 +201,7 @@ def make_commit_backed(repo: Path) -> None:
     source_root = MODULE_PATH.parents[3]
     copy_schema_bundle(repo)
     policy_files = [
-        "skills/skill-drift/references/policy-hash-roots.json",
+        "skills/skill-drift/references/certification-basis-roots.json",
         "skills/skill-audit/_rtx/_audit_certifier.py",
         "src/officina/common/artifact_health.py",
         "src/officina/common/atomic_files.py",
@@ -216,7 +216,7 @@ def make_commit_backed(repo: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_root / relative, destination)
     manifest = json.loads(
-        (source_root / "skills" / "skill-drift" / "references" / "policy-hash-roots.json").read_text(
+        (source_root / "skills" / "skill-drift" / "references" / "certification-basis-roots.json").read_text(
             encoding="utf-8"
         )
     )

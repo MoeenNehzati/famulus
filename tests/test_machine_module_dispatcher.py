@@ -123,6 +123,124 @@ def _write_module(repo: Path) -> None:
     )
 
 
+def _write_v4_module(repo: Path, *, language: str = "Python>=3.11") -> None:
+    module = repo / "skills" / "demo-skill"
+    runtime = module / "_rtx"
+    runtime.mkdir(parents=True)
+    (module / "SKILL.md").write_text("Instructions.\n", encoding="utf-8")
+    (runtime / "__init__.py").write_text("", encoding="utf-8")
+    (runtime / "_worker.py").write_text(
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    def run(self, args):\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+    source_id = "demo-skill.source.worker"
+    source_interface = f"{source_id}.interface.run"
+    (module / "blueprints").mkdir()
+    (module / "blueprints" / "worker.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 4,
+                "node_type": "behavioral_source",
+                "id": source_id,
+                "version": 1,
+                "description": "Worker.",
+                "gateway": {"path": "_rtx/_worker.py", "language": language},
+                "content": [r"_rtx/(?:__init__|_worker)\.py"],
+                "platform_support": {"linux": True, "macos": True, "windows": True},
+                "runtime_dependencies": [],
+                "dependencies": [],
+                "uses_interfaces": [],
+                "interfaces": {
+                    source_interface: {
+                        "version": 1,
+                        "description": "Run.",
+                        "contract": {
+                            "arguments": {
+                                "value": {
+                                    "description": "One value.",
+                                    "required": True,
+                                    "sensitivity": "public",
+                                    "type": {"kind": "string"},
+                                },
+                                "count": {
+                                    "description": "Count.",
+                                    "required": False,
+                                    "default": 2,
+                                    "sensitivity": "public",
+                                    "type": {"kind": "integer", "minimum": 1},
+                                },
+                            }
+                        },
+                        "process_binding": {
+                            "kind": "process",
+                            "entry": "Interface",
+                            "args_prefix": ["prefix"],
+                            "arguments": {
+                                "value": {
+                                    "kind": "positional",
+                                    "position": 1,
+                                    "arity": {"minimum": 1, "maximum": 1},
+                                },
+                                "count": {
+                                    "kind": "option",
+                                    "name": "--count",
+                                    "arity": {"minimum": 1, "maximum": 1},
+                                },
+                            },
+                            "fixed": [
+                                {
+                                    "kind": "positional",
+                                    "position": 0,
+                                    "value": "run",
+                                    "type": {"kind": "string"},
+                                }
+                            ],
+                        },
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (module / "blueprint.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 4,
+                "node_type": "module",
+                "id": "demo-skill",
+                "version": 1,
+                "description": "Demo.",
+                "gateway": {"path": "SKILL.md", "language": "Markdown"},
+                "content": [r"SKILL\.md", r"_rtx/(?:__init__|_worker)\.py"],
+                "authority": {"owns_filesystem": []},
+                "sources": {
+                    source_id: {
+                        "blueprint": {
+                            "base": "module-root",
+                            "path": "blueprints/worker.yaml",
+                        }
+                    }
+                },
+                "exports": {
+                    "demo-skill.interface.run": {
+                        "source_interface": source_interface,
+                        "access": {
+                            "allow_all_modules": True,
+                            "allowed_callers": [],
+                        },
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_production_view_rejects_machine_modules_until_certification_exists(
     tmp_path: Path,
 ) -> None:
@@ -191,6 +309,60 @@ def test_module_id_is_not_publicly_callable(tmp_path: Path) -> None:
             caller_skill="caller-skill",
             target="demo-skill.machine-module.worker",
             args=[],
+            certification_view=_PassingCertificationView(),
+            repo_root=tmp_path,
+        )
+
+
+def test_v4_export_uses_source_gateway_language_and_process_entry(tmp_path: Path) -> None:
+    _write_v4_module(tmp_path)
+
+    metadata = resolve_dispatch_metadata(
+        caller_skill="caller-skill",
+        target="demo-skill.interface.run",
+        args=["value"],
+        certification_view=_PassingCertificationView(),
+        repo_root=tmp_path,
+    )
+
+    assert metadata.target == "demo-skill.interface.run"
+    assert metadata.command[-6:] == [
+        "_rtx/_worker.py:Interface",
+        "prefix",
+        "run",
+        "value",
+        "--count",
+        "2",
+    ]
+
+
+def test_v4_route_smoke_bypasses_required_caller_arguments(tmp_path: Path) -> None:
+    _write_v4_module(tmp_path)
+
+    metadata = resolve_dispatch_metadata(
+        caller_skill="caller-skill",
+        target="demo-skill.interface.run",
+        args=["--route-smoke"],
+        certification_view=_PassingCertificationView(),
+        repo_root=tmp_path,
+    )
+
+    assert metadata.command[-4:] == [
+        "_rtx/_worker.py:Interface",
+        "prefix",
+        "run",
+        "--route-smoke",
+    ]
+
+
+def test_v4_process_dispatch_fails_closed_for_unsupported_language(tmp_path: Path) -> None:
+    _write_v4_module(tmp_path, language="Markdown")
+
+    with pytest.raises(InvocationError, match="unsupported process binding language"):
+        resolve_dispatch_metadata(
+            caller_skill="caller-skill",
+            target="demo-skill.interface.run",
+            args=["value"],
             certification_view=_PassingCertificationView(),
             repo_root=tmp_path,
         )

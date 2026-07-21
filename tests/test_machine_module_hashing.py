@@ -1,164 +1,346 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 import pytest
 import yaml
 
 from officina.common.artifact_health import (
     ArtifactHealthError,
-    compute_machine_module_hash_states,
-    machine_module_hashes_current,
+    NodeHashState,
+    compute_node_hash_states,
+    map_route_smoke_dependencies,
+    route_smoke_trace_signature,
 )
 from officina.common.blueprint_graph import load_repository_blueprint_graph
 
 
-def _write_repository(root: Path) -> Path:
-    skill = root / "skills" / "hash-skill"
-    runtime = skill / "_rtx"
-    runtime.mkdir(parents=True)
-    (runtime / "_worker.py").write_text("class Interface:\n    pass\n", encoding="utf-8")
-    (skill / "defs.schema.json").write_text(
-        '{"definitions":{"value":{"type":"string"}}}', encoding="utf-8"
-    )
-    (skill / "output.schema.json").write_text(
-        '{"$ref":"defs.schema.json#/definitions/value"}', encoding="utf-8"
-    )
-    (skill / "interface-conformance.yaml").write_text(
-        "schema_version: 1\nexpected_streams:\n  stdout:\n    schema: output.schema.json\n",
-        encoding="utf-8",
-    )
-    export = {
-        "id": "hash-skill.machine.run",
-        "version": 1,
-        "description": "Run.",
-        "allow_all_skills": True,
-        "allowed_callers": [],
-        "invocation_binding": {"fixed": []},
-        "uses_interfaces": [],
+SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint"
+
+
+def _write_yaml(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+
+
+def _contract() -> dict[str, object]:
+    return {
+        "arguments": {},
+        "preconditions": [],
+        "interaction": {"mode": "unattended"},
+        "caller_warnings": [],
+        "outputs": [
+            {
+                "id": "result",
+                "audience": "machine",
+                "description": "Result.",
+                "type": {"kind": "string"},
+                "direct_io_ref": "stdout",
+                "cardinality": {"minimum": 1, "maximum": 1},
+                "ordering": "stable",
+                "pagination": {"kind": "none"},
+                "truncation": {"kind": "none"},
+                "empty": "Never empty.",
+            }
+        ],
+        "outcomes": [
+            {
+                "id": "success",
+                "class": "success",
+                "outputs": ["result"],
+                "effects": [],
+                "caller_action": "Continue.",
+            }
+        ],
+        "execution": {
+            "state_effect": "read-only",
+            "lifecycle": "finite",
+            "consistency": {"snapshot": "One snapshot."},
+            "verification": [{"method": "output-schema", "output_ref": "result"}],
+        },
         "helpers": [],
-        "direct_io": {"reads": [], "writes": [], "network": []},
-        "owns_filesystem": [],
-        "contract": {
-            "arguments": {},
-            "preconditions": [],
-            "interaction": {"mode": "unattended"},
-            "caller_warnings": [],
-            "outputs": [
+        "direct_io": {
+            "reads": [],
+            "writes": [
                 {
-                    "id": "value",
-                    "schema": {"path": "output.schema.json", "fragment": "#"},
+                    "id": "stdout",
+                    "medium": "stdout",
+                    "access": "write",
+                    "content": "Result.",
+                    "format": "text",
+                    "sensitivity": "public",
                 }
             ],
-            "outcomes": [],
-            "execution": {},
+            "network": [],
         },
     }
-    declaration = {
-        "schema_version": 3,
-        "node_type": "machine-module",
-        "id": "hash-skill.machine-module.worker",
-        "version": 1,
-        "description": "Worker.",
-        "gateway": {
-            "kind": "python-entrypoint",
-            "path": "_rtx/_worker.py",
-            "symbol": "Interface",
-            "args_prefix": [],
-            "conformance": {
-                "adapter_protocol": "officina-python-adapters@1",
-                "bind_method": "bind_conformance_adapters",
-                "sandbox_profile": "officina-isolated-effects@1",
+
+
+def _write_module(
+    root: Path,
+    module_id: str,
+    *,
+    uses_export: str | None = None,
+) -> None:
+    module = root / "skills" / module_id
+    (module / "_rtx").mkdir(parents=True)
+    (module / "SKILL.md").write_text("Instructions.\n", encoding="utf-8")
+    (module / "README.md").write_text("Module notes.\n", encoding="utf-8")
+    (module / "_rtx" / "worker.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (module / "ignored.txt").write_text("included local state\n", encoding="utf-8")
+    (module / "events.log").write_text("runtime log\n", encoding="utf-8")
+    source_id = f"{module_id}.source.gateway"
+    source_interface = f"{source_id}.interface.run"
+    _write_yaml(
+        module / "blueprints" / "gateway.yaml",
+        {
+            "schema_version": 4,
+            "node_type": "behavioral_source",
+            "id": source_id,
+            "version": 1,
+            "description": "Gateway source.",
+            "gateway": {"path": "SKILL.md", "language": "Markdown"},
+            "content": [
+                r"SKILL\.md",
+                r"_rtx/worker\.py",
+                r"ignored\.txt",
+                r"events\.log",
+            ],
+            "dependencies": [],
+            "uses_interfaces": (
+                [{"interface": uses_export, "version": 1}]
+                if uses_export is not None
+                else []
+            ),
+            "interfaces": {
+                source_interface: {
+                    "version": 1,
+                    "description": "Run.",
+                    "contract": _contract(),
+                }
             },
         },
-        "content": [r"_rtx/_worker\.py"],
-        "conformance_manifest": {
-            "base": "skill-root",
-            "path": "interface-conformance.yaml",
+    )
+    _write_yaml(
+        module / "blueprint.yaml",
+        {
+            "schema_version": 4,
+            "node_type": "module",
+            "id": module_id,
+            "version": 1,
+            "description": "Module.",
+            "gateway": {"path": "SKILL.md", "language": "Markdown"},
+            "content": [
+                r"SKILL\.md",
+                r"README\.md",
+                r"_rtx/worker\.py",
+                r"ignored\.txt",
+                r"events\.log",
+            ],
+            "authority": {"owns_filesystem": []},
+            "sources": {
+                source_id: {
+                    "blueprint": {
+                        "base": "module-root",
+                        "path": "blueprints/gateway.yaml",
+                    }
+                }
+            },
+            "exports": {
+                f"{module_id}.interface.run": {
+                    "source_interface": source_interface,
+                    "access": {"allow_all_modules": True, "allowed_callers": []},
+                }
+            },
         },
-        "platform_support": {"linux": True, "macos": True, "windows": True},
-        "dependencies": [],
-        "behavior_sources": [],
-        "owns_filesystem": [],
-        "uses_interfaces": [],
-        "interfaces": {"run": export, "inspect": {**export, "id": "hash-skill.machine.inspect"}},
-    }
-    blueprint = runtime / "._worker.py.blueprint.yaml"
-    blueprint.write_text(yaml.safe_dump(declaration, sort_keys=False), encoding="utf-8")
-    return blueprint
+    )
 
 
-def _state(root: Path):
-    graph = load_repository_blueprint_graph(root)
-    states = compute_machine_module_hash_states(graph, root)
-    return states["hash-skill.machine-module.worker"]
+def _git(root: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
 
 
-def test_module_hashes_blueprint_and_content_separately_from_contract_references(
+def _repository(tmp_path: Path) -> tuple[Path, Path]:
+    _write_module(tmp_path, "provider-skill")
+    _write_module(
+        tmp_path,
+        "consumer-skill",
+        uses_export="provider-skill.interface.run",
+    )
+    (tmp_path / ".gitignore").write_text(
+        "ignored.txt\n*.log\n", encoding="utf-8"
+    )
+    policy = tmp_path / "node-hash-policy.yaml"
+    _write_yaml(
+        policy,
+        {
+            "policy_version": 1,
+            "path_syntax": "gitignore",
+            "starting_set": "git-tracked-directly-owned-regular-files",
+            "rules": [
+                {"action": "exclude", "pattern": "**/*.log"},
+                {
+                    "action": "include",
+                    "pattern": "**/ignored.txt",
+                    "require_match": True,
+                },
+            ],
+        },
+    )
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Tests")
+    _git(tmp_path, "config", "user.email", "tests@example.invalid")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "fixture")
+    return tmp_path, policy
+
+
+def _states(root: Path, policy: Path) -> dict[str, NodeHashState]:
+    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
+    return compute_node_hash_states(
+        graph,
+        repo_root=root,
+        policy_path=policy,
+        certification_basis_hash="sha256:" + "b" * 64,
+    )
+
+
+def test_v4_uses_one_node_hash_state_and_policy_selected_input_manifest(
     tmp_path: Path,
 ) -> None:
-    blueprint = _write_repository(tmp_path)
-    first = _state(tmp_path)
+    root, policy = _repository(tmp_path)
 
-    assert first.export_ids == (
-        "hash-skill.machine.inspect",
-        "hash-skill.machine.run",
-    )
-    assert {entry["locator"] for entry in first.reference_digests} == {
-        "defs.schema.json#/definitions/value",
-        "interface-conformance.yaml#",
-        "output.schema.json#",
+    states = _states(root, policy)
+    source = states["provider-skill.source.gateway"]
+    module = states["provider-skill"]
+
+    assert isinstance(source, NodeHashState)
+    assert source.certification_basis_hash == "sha256:" + "b" * 64
+    assert {entry["git_provenance"] for entry in source.input_manifest} == {
+        "tracked",
+        "ignored",
     }
+    assert {entry["path"] for entry in source.input_manifest} == {
+        "skills/provider-skill/SKILL.md",
+        "skills/provider-skill/_rtx/worker.py",
+        "skills/provider-skill/blueprints/gateway.yaml",
+        "skills/provider-skill/ignored.txt",
+    }
+    assert "skills/provider-skill/SKILL.md" in {
+        entry["path"] for entry in module.input_manifest
+    }
+    assert all("rule" not in entry and "kind" not in entry for entry in source.input_manifest)
 
-    (tmp_path / "skills" / "hash-skill" / "defs.schema.json").write_text(
-        '{"definitions":{"value":{"type":"integer"}}}', encoding="utf-8"
+
+def test_dependency_change_does_not_recursively_change_consumer_local_hash(
+    tmp_path: Path,
+) -> None:
+    root, policy = _repository(tmp_path)
+    first = _states(root, policy)
+    consumer_id = "consumer-skill.source.gateway"
+
+    (root / "skills" / "provider-skill" / "README.md").write_text(
+        "Changed module notes.\n", encoding="utf-8"
     )
-    reference_changed = _state(tmp_path)
-    assert reference_changed.node_hash == first.node_hash
-    assert reference_changed.contract_reference_hash != first.contract_reference_hash
+    second = _states(root, policy)
 
-    (tmp_path / "skills" / "hash-skill" / "_rtx" / "_worker.py").write_text(
-        "class Interface:\n    changed = True\n", encoding="utf-8"
+    assert second[consumer_id].node_hash == first[consumer_id].node_hash
+    assert second[consumer_id].dependency_hashes != first[consumer_id].dependency_hashes
+    assert second["provider-skill"].node_hash != first["provider-skill"].node_hash
+
+
+def test_policy_last_match_wins_and_reserved_outputs_fail_closed(tmp_path: Path) -> None:
+    root, policy = _repository(tmp_path)
+    document = yaml.safe_load(policy.read_text(encoding="utf-8"))
+    document["rules"].append(
+        {"action": "include", "pattern": "**/*.log", "require_match": True}
     )
-    content_changed = _state(tmp_path)
-    assert content_changed.node_hash != reference_changed.node_hash
-
-    declaration = yaml.safe_load(blueprint.read_text(encoding="utf-8"))
-    declaration["interfaces"]["run"]["description"] = "Changed contract."
-    blueprint.write_text(yaml.safe_dump(declaration, sort_keys=False), encoding="utf-8")
-    contract_changed = _state(tmp_path)
-    assert contract_changed.node_hash != content_changed.node_hash
-
-
-def test_currentness_requires_both_hashes(tmp_path: Path) -> None:
-    _write_repository(tmp_path)
-    state = _state(tmp_path)
-    assert machine_module_hashes_current(
-        state,
-        node_hash=state.node_hash,
-        contract_reference_hash=state.contract_reference_hash,
-    )
-    assert not machine_module_hashes_current(
-        state,
-        node_hash="sha256:" + "0" * 64,
-        contract_reference_hash=state.contract_reference_hash,
-    )
-    assert not machine_module_hashes_current(
-        state,
-        node_hash=state.node_hash,
-        contract_reference_hash="sha256:" + "0" * 64,
+    _write_yaml(policy, document)
+    assert any(
+        entry["path"].endswith("events.log")
+        for entry in _states(root, policy)["provider-skill.source.gateway"].input_manifest
     )
 
+    certificate = root / "skills" / "provider-skill" / ".certificates" / "current.json"
+    certificate.parent.mkdir()
+    certificate.write_text("{}\n", encoding="utf-8")
+    module_path = root / "skills" / "provider-skill" / "blueprint.yaml"
+    module = yaml.safe_load(module_path.read_text(encoding="utf-8"))
+    module["content"].append(r"\.certificates/current\.json")
+    _write_yaml(module_path, module)
+    document["rules"].append(
+        {
+            "action": "include",
+            "pattern": "**/.certificates/**",
+            "require_match": True,
+        }
+    )
+    _write_yaml(policy, document)
+    with pytest.raises(ArtifactHealthError, match="reserved certification output"):
+        _states(root, policy)
 
-def test_reference_hashing_rejects_missing_and_symlinked_files(tmp_path: Path) -> None:
-    _write_repository(tmp_path)
-    schema = tmp_path / "skills" / "hash-skill" / "output.schema.json"
-    schema.unlink()
-    with pytest.raises(ArtifactHealthError, match="does not exist"):
-        _state(tmp_path)
 
-    schema.write_text('{"type":"string"}', encoding="utf-8")
-    schema.unlink()
-    schema.symlink_to("defs.schema.json")
-    with pytest.raises(ArtifactHealthError, match="symlink"):
-        _state(tmp_path)
+def test_route_smoke_paths_map_to_input_dependency_or_basis(tmp_path: Path) -> None:
+    root, policy = _repository(tmp_path)
+    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
+    states = _states(root, policy)
+    basis_path = root / "src" / "officina" / "runtime" / "support.py"
+    basis_path.parent.mkdir(parents=True)
+    basis_path.write_text("VALUE = 1\n", encoding="utf-8")
+
+    mappings = map_route_smoke_dependencies(
+        graph,
+        states,
+        source_node_id="consumer-skill.source.gateway",
+        loaded_paths=[
+            root / "skills" / "provider-skill" / "_rtx" / "worker.py",
+            basis_path,
+            root / "skills" / "consumer-skill" / "_rtx" / "worker.py",
+        ],
+        certification_basis_paths=[basis_path],
+        repo_root=root,
+    )
+
+    assert [
+        (mapping.path, mapping.authority, mapping.target_node_id)
+        for mapping in mappings
+    ] == [
+        (
+            "skills/consumer-skill/_rtx/worker.py",
+            "direct-input",
+            "consumer-skill.source.gateway",
+        ),
+        (
+            "skills/provider-skill/_rtx/worker.py",
+            "certification-dependency",
+            "provider-skill.source.gateway",
+        ),
+        (
+            "src/officina/runtime/support.py",
+            "certification-basis",
+            None,
+        ),
+    ]
+    assert route_smoke_trace_signature(mappings) == route_smoke_trace_signature(
+        tuple(reversed(mappings))
+    )
+
+
+def test_route_smoke_rejects_unmapped_loaded_path(tmp_path: Path) -> None:
+    root, policy = _repository(tmp_path)
+    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
+    states = _states(root, policy)
+    unmapped = root / "tools" / "unmapped.py"
+    unmapped.parent.mkdir()
+    unmapped.write_text("VALUE = 1\n", encoding="utf-8")
+
+    with pytest.raises(ArtifactHealthError, match="unmapped route-smoke dependency"):
+        map_route_smoke_dependencies(
+            graph,
+            states,
+            source_node_id="consumer-skill.source.gateway",
+            loaded_paths=[unmapped],
+            certification_basis_paths=[],
+            repo_root=root,
+        )

@@ -30,6 +30,39 @@ def _write_blueprint(root: Path, skill: str, body: str) -> None:
     path.write_text(dedent(body).lstrip(), encoding="utf-8")
 
 
+def _write_v4_blueprints(root: Path) -> None:
+    _write_blueprint(
+        root,
+        "demo-module",
+        """
+        schema_version: 4
+        node_type: module
+        id: demo-module
+        version: 1
+        exports:
+          demo-module.interface.run:
+            source_interface: demo-module.source.runner.interface.run
+        """,
+    )
+    source = root / "skills" / "demo-module" / "blueprints" / "runner.yaml"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        dedent(
+            """
+            schema_version: 4
+            node_type: behavioral_source
+            id: demo-module.source.runner
+            version: 1
+            interfaces:
+              demo-module.source.runner.interface.run:
+                version: 1
+                description: Run the module.
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+
 def test_iter_blueprints_yields_sorted_skill_records(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path,
@@ -64,6 +97,64 @@ def test_iter_blueprints_yields_sorted_skill_records(tmp_path: Path) -> None:
     assert [record.skill for record in records] == ["alpha", "zeta"]
     assert records[0].path == "skills/alpha/blueprint.yaml"
     assert records[0].data["category"] == "development-assistant"
+
+
+def test_v4_search_discovers_modules_and_direct_source_blueprints(tmp_path: Path) -> None:
+    _write_v4_blueprints(tmp_path)
+
+    records = list(iter_blueprints(tmp_path))
+    rows = search_blueprints(
+        tmp_path,
+        {
+            "filter": {"path": "node_type", "op": "eq", "value": "behavioral_source"},
+            "select": [
+                "module",
+                "path",
+                "id",
+                "node_type",
+                {"as": "interface_descriptions", "path": "interfaces.*.description"},
+            ],
+        },
+    )
+
+    assert [(record.module, record.data["id"], record.path) for record in records] == [
+        ("demo-module", "demo-module", "skills/demo-module/blueprint.yaml"),
+        (
+            "demo-module",
+            "demo-module.source.runner",
+            "skills/demo-module/blueprints/runner.yaml",
+        ),
+    ]
+    assert rows == [
+        {
+            "module": "demo-module",
+            "path": "skills/demo-module/blueprints/runner.yaml",
+            "values": {
+                "id": "demo-module.source.runner",
+                "node_type": "behavioral_source",
+                "interface_descriptions": ["Run the module."],
+            },
+        }
+    ]
+
+
+def test_v4_default_search_result_uses_generic_node_metadata(tmp_path: Path) -> None:
+    _write_v4_blueprints(tmp_path)
+
+    assert search_blueprints(tmp_path) == [
+        {
+            "module": "demo-module",
+            "id": "demo-module",
+            "node_type": "module",
+            "path": "skills/demo-module/blueprint.yaml",
+        },
+        {
+            "module": "demo-module",
+            "id": "demo-module.source.runner",
+            "node_type": "behavioral_source",
+            "path": "skills/demo-module/blueprints/runner.yaml",
+        },
+    ]
 
 
 def test_load_blueprint_record_reads_exact_path_with_repo_relative_path(tmp_path: Path) -> None:

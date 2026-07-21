@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Search skill blueprint YAML files and emit JSON results."""
+"""Search module and behavioral-source blueprint YAML files and emit JSON."""
 
 from __future__ import annotations
 
@@ -19,7 +19,10 @@ from officina.blueprint_search import BlueprintSearchError, load_query_file, sea
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Search skills/*/blueprint.yaml with structured filters and projections."
+        description=(
+            "Search module blueprint.yaml files and direct blueprints/*.yaml "
+            "behavioral sources with structured filters and projections."
+        )
     )
     parser.add_argument(
         "--repo-root",
@@ -30,7 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--query-file",
         type=Path,
-        help="YAML or JSON query file. If omitted, all blueprints are returned as skill/path rows.",
+        help="YAML or JSON query file. If omitted, generic v4 node metadata is returned.",
     )
     parser.add_argument(
         "--pretty",

@@ -37,10 +37,11 @@ class ResolvedDispatchDependency:
 class DispatchDependencyResolver:
     """Resolve declared dispatch dependencies recursively through dispatcher policy."""
 
-    def __init__(self, repo_root: Path | None = None) -> None:
+    def __init__(self, repo_root: Path | None = None, certification_view=None) -> None:
         from officina.dispatcher.core import get_repo_root
 
         self.repo_root = get_repo_root(repo_root)
+        self.certification_view = certification_view
 
     def collect(self, interface: "PythonMachineInterface") -> list[ResolvedDispatchDependency]:
         """Return all dispatch dependencies reachable from an interface."""
@@ -75,11 +76,11 @@ class DispatchDependencyResolver:
             resolved = self.resolve_call(call)
             dependency = ResolvedDispatchDependency(key=key, call=call, resolved=resolved, depth=depth)
             results.append(dependency)
-            identity = (resolved.target_skill, resolved.script_interface)
+            identity = (resolved.target_skill, resolved.target)
             if identity in visited_interfaces:
                 continue
             visited_interfaces.add(identity)
-            target_interface = self.load_python_interface(resolved.target_skill, resolved.script_interface)
+            target_interface = self.load_resolved_python_interface(resolved)
             if target_interface is None:
                 continue
             self._collect(
@@ -94,15 +95,49 @@ class DispatchDependencyResolver:
 
         from officina.dispatcher import resolve_dispatch_metadata
 
-        return resolve_dispatch_metadata(
-            caller_skill=call.caller_skill,
-            target_skill=call.target_skill,
-            script_interface=call.interface,
-            args=list(call.smoke_args),
-            stdin_requested=call.smoke_stdin,
-            target_version=call.version,
-            repo_root=self.repo_root,
-        )
+        kwargs = {
+            "caller_skill": call.caller_skill,
+            "args": list(call.smoke_args),
+            "stdin_requested": call.smoke_stdin,
+            "target_version": call.version,
+            "repo_root": self.repo_root,
+            "certification_view": self.certification_view,
+        }
+        if ".interface." in call.interface:
+            kwargs["target"] = call.interface
+        else:
+            kwargs["target_skill"] = call.target_skill
+            kwargs["script_interface"] = call.interface
+        return resolve_dispatch_metadata(**kwargs)
+
+    def load_resolved_python_interface(
+        self,
+        resolved: "ResolvedInvocationMetadata",
+    ) -> "PythonMachineInterface | None":
+        """Load a resolved runner target without reimplementing graph lookup."""
+
+        from officina.runtime.python_machine_interface_runner import load_interface
+
+        command = resolved.command
+        if (
+            len(command) < 4
+            or command[1:3]
+            != ["-m", "officina.runtime.python_machine_interface_runner"]
+        ):
+            return None
+        entrypoint = command[3]
+        previous_cwd = Path.cwd()
+        try:
+            for cached_name in list(sys.modules):
+                if cached_name == "_rtx" or cached_name.startswith("_rtx."):
+                    del sys.modules[cached_name]
+            skill_path = str(resolved.cwd)
+            sys.path[:] = [entry for entry in sys.path if entry != skill_path]
+            sys.path.insert(0, skill_path)
+            os.chdir(resolved.cwd)
+            return load_interface(entrypoint)
+        finally:
+            os.chdir(previous_cwd)
 
     def load_python_interface(
         self,
@@ -221,10 +256,17 @@ class PythonMachineInterface:
 
         from officina.dispatcher import dispatch
 
+        target_kwargs = (
+            {"target": call.interface}
+            if ".interface." in call.interface
+            else {
+                "target_skill": call.target_skill,
+                "script_interface": call.interface,
+            }
+        )
         return dispatch(
             caller_skill=call.caller_skill,
-            target_skill=call.target_skill,
-            script_interface=call.interface,
+            **target_kwargs,
             args=list(args or []),
             stdin=stdin,
             target_version=call.version,

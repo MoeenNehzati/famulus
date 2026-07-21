@@ -2,7 +2,12 @@
 from __future__ import annotations
 
 from . import _claude_skill_source, _codex_skill_source
-from ._skill_source_common import SkillSource, current_skill_source, dedupe_skill_sources
+from ._skill_source_common import (
+    SkillSource,
+    SkillSourceDiscoveryError,
+    current_skill_source,
+    dedupe_skill_sources,
+)
 
 
 def observed_skill_sources() -> list[SkillSource]:
