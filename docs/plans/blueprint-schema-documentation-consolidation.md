@@ -1,5 +1,11 @@
 # Blueprint Schema Documentation Consolidation Plan
 
+> **Deferred pending version-4 adoption and rebase — do not execute.** This
+> plan overlaps the unified migration's schema metadata, templates, generated
+> documentation, route-smoke, validator, and authoring contracts. None of its
+> proposed artifacts is authorized by that migration; resumption requires an
+> approved post-adoption rebase and fresh functional-predecessor dispositions.
+
 Status: prototype draft created; not approved for implementation.
 
 ## Goal

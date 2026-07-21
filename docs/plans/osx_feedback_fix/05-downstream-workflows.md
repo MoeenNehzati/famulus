@@ -1,5 +1,10 @@
 # Downstream Email and List Workflow Repairs Implementation Plan
 
+> **Deferred pending version-4 adoption and rebase — do not execute.** The
+> umbrella package is frozen. Its proposed artifacts are not authorized by the
+> unified migration and require fresh functional-predecessor dispositions when
+> rebased.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` or, with explicit delegation approval, `superpowers:subagent-driven-development`.
 
 **Goal:** Make fresh email/list workflows robust to malformed headers, immediately usable initialization, concurrent classifications, historical rescans, and finalization failures.

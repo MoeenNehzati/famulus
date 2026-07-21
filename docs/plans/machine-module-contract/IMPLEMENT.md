@@ -1,5 +1,11 @@
 # Machine-Module Contract Implementation Guide
 
+> **Superseded — history only.** Do not execute these phases. The current
+> implementation authority is
+> [`docs/plans/unified-architecture-migration.md`](../unified-architecture-migration.md).
+> This guide records the former version-3 sequence and its stop gates; it no
+> longer authorizes further work.
+
 This is the single entrypoint for implementing this package. The root
 `README.md` is a human overview; files `01` through `05` are normative; the
 `implementation/` directory contains the ordered execution phases.

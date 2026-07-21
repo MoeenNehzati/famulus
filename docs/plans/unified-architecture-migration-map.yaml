@@ -1,0 +1,1094 @@
+map_version: 1
+map_id: unified-architecture-v4
+
+authority:
+  plan: docs/plans/unified-architecture-migration.md
+  architecture: docs/architecture.md
+  status: resolved
+  resolution: cooperative same-user certification with one existing writer owner
+  checkpoint:
+    branch: master
+    commit: 1db45573887393696f955c00ba1e1651f0af4b68
+    relation_to_origin: "ahead 9"
+    detached_head: false
+    initial_dirty_paths: []
+    unrelated_dirty_paths: []
+    current_dirty_path_ownership: all current modified and untracked paths belong to Task 0
+    task_owned_paths:
+      - docs/architecture.md
+      - docs/certification_and_drift.md
+      - docs/plans/unified-architecture-migration.md
+      - docs/plans/migrate_audit_to_certification.md
+      - docs/plans/machine-module-contract/README.md
+      - docs/plans/machine-module-contract/IMPLEMENT.md
+      - docs/plans/post-migration-simplification/README.md
+      - docs/plans/logical-resource-addressing.md
+      - docs/plans/osx_feedback_fix/**
+      - docs/plans/per-llm-interface-personal-preferences.md
+      - docs/plans/interface-metadata-refactor.md
+      - docs/plans/blueprint-schema-documentation-consolidation.md
+      - docs/plans/unified-architecture-migration-map.yaml
+      - .superpowers/sdd/task-0-report.md
+  version_contract:
+    final_runtime_schema_version: 4
+    migration_inputs: [unversioned, 2, 3]
+    runtime_compatibility_for_old_versions: false
+    cutover: atomic
+
+execution_status_contract:
+  allowed: [active_authority, frozen_history, deferred_pending_v4_adoption_and_rebase, independent]
+  frozen_rule: a frozen or deferred plan is non-executable until its banner is removed by an approved rebase
+  predecessor_rule: proposed artifacts in a frozen or deferred plan are not authorized by this migration and require fresh functional-predecessor dispositions when rebased
+
+superseded_execution_sequences:
+  - path: docs/plans/migrate_audit_to_certification.md
+    disposition: preserve
+    execution_status: frozen_history
+    conflict: separate certification core and dual-read compatibility
+  - path: docs/plans/machine-module-contract/
+    disposition: preserve
+    execution_status: frozen_history
+    conflict: remaining version-3 conformance, certification, and declaration phases
+    retained_evidence: phases 1 through 3 landed machinery
+  - path: docs/plans/post-migration-simplification/README.md
+    disposition: preserve
+    execution_status: frozen_history
+    conflict: advisory certification, version-3 target, and migration-engine deletion
+
+overlapping_execution_plans:
+  - path: docs/plans/logical-resource-addressing.md
+    disposition: preserve
+    execution_status: deferred_pending_v4_adoption_and_rebase
+    conflict: blueprint direct-I/O schemas, graph edges, validators, certification boundaries, and generated resource overlay
+  - path: docs/plans/osx_feedback_fix/README.md
+    disposition: preserve
+    execution_status: deferred_pending_v4_adoption_and_rebase
+    conflict: installer runtime, plugin payload activation, dependency manifest, launchers, hooks, and atomic installation state
+  - path: docs/plans/per-llm-interface-personal-preferences.md
+    disposition: preserve
+    execution_status: deferred_pending_v4_adoption_and_rebase
+    conflict: LLM interface identity, sidecar blueprints, source discovery, validators, generated blocks, and skill-maker scaffolding
+  - path: docs/plans/interface-metadata-refactor.md
+    disposition: preserve
+    execution_status: deferred_pending_v4_adoption_and_rebase
+    conflict: interface metadata, direct I/O, behavior-source ownership, schemas, validators, graph views, and blueprint migration
+  - path: docs/plans/blueprint-schema-documentation-consolidation.md
+    disposition: preserve
+    execution_status: deferred_pending_v4_adoption_and_rebase
+    conflict: schema metadata, templates, generated documentation, route-smoke status, validators, and blueprint authoring authority
+
+coverage_contract:
+  unit: one live path, public ID, field occurrence, caller edge, rule ID, or named family
+  required_dispositions: [preserve, move, rename, derive, retire]
+  path_matcher:
+    root: repository root
+    normalization: repository-relative POSIX paths with no dot or parent segments
+    paths_semantics: a paths list is shorthand for a matcher with that include list, an empty exclude list, and allow_empty false
+    include_semantics: union of matches from each include pattern using pathlib.Path.glob semantics
+    exclude_semantics: subtract the union of exclude matches after includes; exclusion wins
+    literal_semantics: a pattern without glob metacharacters matches only that exact normalized path
+    empty_semantics: every include pattern must match a current path unless its matcher explicitly sets allow_empty true for an optional generated-artifact family
+  fragment_selector:
+    unit: one delimited in-file block subordinate to a parent path unit
+    parent_rule: fragment paths use coverage_contract.path_matcher and each matched parent must have exactly one whole-document disposition
+    precedence: resolve the parent path disposition first, then the fragment disposition refines only bytes inside its matched delimiters; the parent disposition governs the file and all bytes outside fragments
+    exclusivity: fragment spans in one file must be pairwise non-overlapping and each span must match exactly one generated-artifact entry
+    delimiter_rule: begin and end markers are included in the fragment and must pair exactly once by declared block ID or captured key
+  validation:
+    - reject every covered unit with zero dispositions
+    - reject every covered unit with more than one disposition
+    - reject duplicate YAML keys before interpretation
+    - reject an active path not matched by this map
+    - reject a proposed file without exactly one functional-predecessor entry
+    - reject ambiguous gateway ownership, target-path collisions, or orphan sources
+  field_enumeration:
+    method: recursively enumerate every member of every object-valued properties keyword as one JSON-Pointer field occurrence
+    duplicate_names: distinct pointers remain distinct covered units
+    pointer_encoding: RFC 6901; escape tilde as ~0 and slash as ~1
+    observed_schema_files: 34
+    observed_field_occurrences: 1171
+    schema_paths:
+      include:
+        - references/blueprint/**/*.schema.json
+        - references/blueprint/schema.json
+        - references/blueprint/schema-meta.json
+        - references/blueprint/schema.annotated-draft.json
+      exclude: []
+    selector_semantics:
+      schema_paths: use coverage_contract.path_matcher
+      pointer_prefixes: a unit matches when its pointer equals a listed prefix or begins with that prefix plus slash
+      fallback: matches only units in the selected schema paths that no non-fallback field group matches
+      precedence: non-fallback groups are evaluated as an exclusive set; overlap is an error, then exactly one fallback claims each remainder
+      empty_match: every non-fallback prefix and every fallback schema set must match at least one field occurrence
+
+declarations:
+  live_counts:
+    total_documents: 59
+    unversioned: 31
+    version_2: 28
+    version_3: 0
+  target_layout:
+    module_blueprint: "<module-root>/blueprint.yaml"
+    source_blueprint: "<module-root>/blueprints/<gateway-slug>.yaml"
+    module_id: "<module-root-name>"
+    source_id: "<module-id>.source.<gateway-slug>"
+    source_interface_id: "<source-id>.interface.<old-local-interface-name>"
+    export_id: "<module-id>.interface.<old-local-interface-name>"
+    gateway_slug:
+      SKILL.md: gateway
+      other: normalize the whole gateway's module-relative path by dropping the extension and leading dots/underscores, replacing slash and underscore runs with hyphens
+      collision_behavior: reject; never add a suffix silently
+  unversioned:
+    current_owner: legacy root blueprint plus references/blueprint/legacy-skill.schema.json
+    disposition: move
+    target: one v4 module at the same root path plus one behavioral source per distinct whole-file gateway
+    paths:
+      - skills/bib-audit/blueprint.yaml
+      - skills/cloud-files/blueprint.yaml
+      - skills/daily-plan/blueprint.yaml
+      - skills/email-client/blueprint.yaml
+      - skills/find-handoff-candidates/blueprint.yaml
+      - skills/fix-bisync/blueprint.yaml
+      - skills/formal-prose-review/blueprint.yaml
+      - skills/g-calendar/blueprint.yaml
+      - skills/get-weather/blueprint.yaml
+      - skills/git-workflow/blueprint.yaml
+      - skills/hook-maker/blueprint.yaml
+      - skills/initialize-tdd/blueprint.yaml
+      - skills/install-assistant-tools/blueprint.yaml
+      - skills/latex-workshop/blueprint.yaml
+      - skills/list-manager/blueprint.yaml
+      - skills/loose-mode/blueprint.yaml
+      - skills/make-tex-docstring/blueprint.yaml
+      - skills/math-dependency-graph/blueprint.yaml
+      - skills/notation-review/blueprint.yaml
+      - skills/pdf-to-markdown/blueprint.yaml
+      - skills/prepare-handoff/blueprint.yaml
+      - skills/proof-audit/blueprint.yaml
+      - skills/recurring-tasks/blueprint.yaml
+      - skills/refactor-skills/blueprint.yaml
+      - skills/regenerate-blueprints/blueprint.yaml
+      - skills/skill-maker/blueprint.yaml
+      - skills/technical-flow-review/blueprint.yaml
+      - skills/tight-mode/blueprint.yaml
+      - skills/tool-applicability/blueprint.yaml
+      - skills/update-skill-guidelines/blueprint.yaml
+      - skills/wrap-up/blueprint.yaml
+  version_2:
+    current_owner: typed root and sidecar blueprints plus references/blueprint/v2/
+    disposition: move
+    target: merge each root and its referenced sidecars into the same v4 module/source layout; delete hidden sidecars only after candidate equivalence and zero-reference proof
+    paths:
+      - skills/connect-google/blueprint.yaml
+      - skills/connect-google/llm_interfaces/.create-client.md.blueprint.yaml
+      - skills/connect-google/llm_interfaces/.connect-services.md.blueprint.yaml
+      - skills/connect-google/_rtx/._client_config.py.client-status.blueprint.yaml
+      - skills/connect-google/_rtx/._client_config.py.install-client.blueprint.yaml
+      - skills/connect-google/personal-preferences/.default.md.blueprint.yaml
+      - skills/connect-google/personal-preferences/.create-client.md.blueprint.yaml
+      - skills/connect-google/personal-preferences/.connect-services.md.blueprint.yaml
+      - skills/email-triage/blueprint.yaml
+      - skills/email-triage/.SKILL.md.blueprint.yaml
+      - skills/email-triage/llm_interfaces/.triage.md.blueprint.yaml
+      - skills/email-triage/_rtx/._decision_sink.py.blueprint.yaml
+      - skills/email-triage/_rtx/._envelope_gate.py.blueprint.yaml
+      - skills/email-triage/_rtx/._failure_clearer.py.blueprint.yaml
+      - skills/email-triage/_rtx/._failure_sentinel.py.blueprint.yaml
+      - skills/email-triage/_rtx/._log_compactor.py.blueprint.yaml
+      - skills/email-triage/_rtx/._mail_envelope_stream.py.blueprint.yaml
+      - skills/email-triage/_rtx/._watermark_floor.py.blueprint.yaml
+      - skills/email-triage/_rtx/._watermark_writer.py.blueprint.yaml
+      - skills/email-triage/_rtx/._write_metrics.py.blueprint.yaml
+      - skills/list-manager/.SKILL.md.blueprint.yaml
+      - skills/skill-audit/blueprint.yaml
+      - skills/skill-audit/.SKILL.md.blueprint.yaml
+      - skills/skill-audit/_rtx/._audit_certifier.py.blueprint.yaml
+      - skills/skill-drift/blueprint.yaml
+      - skills/skill-drift/.SKILL.md.blueprint.yaml
+      - skills/skill-drift/_rtx/._check_drift_state.py.compute-hashes.blueprint.yaml
+      - skills/skill-drift/_rtx/._check_drift_state.py.drift-status.blueprint.yaml
+    merge_decisions:
+      - inputs: [skills/list-manager/blueprint.yaml, skills/list-manager/.SKILL.md.blueprint.yaml]
+        target: skills/list-manager/blueprints/gateway.yaml
+        decision: merge the root inline default contract with the sidecar's additional personal-preference dependency; reject contradictory duplicate fields
+      - inputs: [skills/skill-audit/blueprint.yaml, skills/skill-audit/.SKILL.md.blueprint.yaml, skills/skill-audit/_rtx/._audit_certifier.py.blueprint.yaml]
+        target_module: skill-certifier
+        decision: rename the existing owner in place; do not create a second certifier
+  version_3:
+    live_paths: []
+    non_live_examples_and_fixtures:
+      - path: docs/plans/machine-module-contract/examples/machine-module.yaml
+        disposition: retire
+        target: history-only example; port a v4 equivalent only in active v4 schema tests
+      - path: docs/plans/machine-module-contract/examples/advanced-machine-module.yaml
+        disposition: retire
+        target: history-only example; port its preserved contract cases to v4 fixtures
+      - path: tests/fixtures/machine_modules/records.valid.yaml
+        disposition: move
+        target: v4 module/source fixture in the existing tests/fixtures tree
+      - path: tests/fixtures/machine_modules/calls.invalid.yaml
+        disposition: move
+        target: v4 invalid cross-module/private-source edge fixture
+
+public_ids:
+  rules:
+    - source: "<module>.machine.<local>"
+      disposition: rename
+      target: "<module>.interface.<local>"
+    - source: "<module>.llm.<local>"
+      disposition: rename
+      target: "<module>.interface.<local>"
+    - source: "skill-audit.(machine|llm).<local>"
+      disposition: rename
+      target: "skill-certifier.interface.<local>"
+    - source: "<module>.source.<local>"
+      disposition: preserve
+      target: "<module>.source.<local>"
+    - source: 'v3 module IDs under "<skill>.machine-module.<local>"'
+      disposition: move
+      target: '"<skill>.source.<local>" for historical conversion only'
+  machine_ids:
+    current_owner: references/blueprint/runtime_dependencies.json generated by skills/skill-maker/_rtx/_blueprint_syncer.py
+    disposition: rename
+    rule: apply the machine public-ID rule above and preserve versions
+    ids:
+      - bib-audit.machine.scripts-bib-similarity
+      - bib-audit.machine.scripts-bib-validate-bibtex
+      - cloud-files.machine.ensure-oauth
+      - cloud-files.machine.lists-delete
+      - cloud-files.machine.lists-read
+      - cloud-files.machine.lists-write
+      - cloud-files.machine.plans-delete
+      - cloud-files.machine.plans-read
+      - cloud-files.machine.plans-write
+      - cloud-files.machine.setup-oauth
+      - cloud-files.machine.write-config
+      - connect-google.machine.client-status
+      - connect-google.machine.install-client
+      - daily-plan.machine.mutate-plan
+      - daily-plan.machine.orchestrate
+      - daily-plan.machine.plan-storage
+      - daily-plan.machine.render-plan
+      - email-client.machine.accounts-add
+      - email-client.machine.accounts-list
+      - email-client.machine.accounts-remove
+      - email-client.machine.accounts-set-password
+      - email-client.machine.accounts-setup-oauth
+      - email-client.machine.accounts-update
+      - email-client.machine.live-smoke
+      - email-client.machine.mail-attachments
+      - email-client.machine.mail-folders
+      - email-client.machine.mail-list
+      - email-client.machine.mail-read
+      - email-client.machine.mail-save-attachments
+      - email-client.machine.send-email
+      - email-triage.machine.fetch-filtered-envelopes
+      - email-triage.machine.scripts-clear-failure
+      - email-triage.machine.scripts-filter-envelopes
+      - email-triage.machine.scripts-get-cutoff
+      - email-triage.machine.scripts-log-decision
+      - email-triage.machine.scripts-mark-failure
+      - email-triage.machine.scripts-prune-log
+      - email-triage.machine.scripts-update-watermark
+      - email-triage.machine.scripts-write-metrics
+      - find-handoff-candidates.machine.calibrate
+      - find-handoff-candidates.machine.scan
+      - g-calendar.machine.ensure-oauth
+      - g-calendar.machine.scripts-gcal
+      - g-calendar.machine.setup-oauth
+      - get-weather.machine.scripts-weather
+      - initialize-tdd.machine.setup-compat-aliases
+      - install-assistant-tools.machine.scripts-dev-link
+      - install-assistant-tools.machine.scripts-install
+      - install-assistant-tools.machine.scripts-launchers
+      - install-assistant-tools.machine.scripts-scaffold
+      - list-manager.machine.beautify-list
+      - list-manager.machine.cloud-create-entry
+      - list-manager.machine.cloud-delete
+      - list-manager.machine.cloud-init
+      - list-manager.machine.cloud-list-categories
+      - list-manager.machine.cloud-read
+      - list-manager.machine.cloud-read-beautify
+      - list-manager.machine.cloud-update
+      - list-manager.machine.create-entry
+      - list-manager.machine.describe-schema
+      - list-manager.machine.generate-id
+      - list-manager.machine.init-list
+      - list-manager.machine.migrate-markdown
+      - list-manager.machine.read-beautify
+      - list-manager.machine.read-list
+      - list-manager.machine.update-list
+      - math-dependency-graph.machine.scripts-build-math-dependency-graph
+      - math-dependency-graph.machine.scripts-extract-mathjax-macros
+      - math-dependency-graph.machine.scripts-serve-graph
+      - pdf-to-markdown.machine.scripts-check-marker-models
+      - pdf-to-markdown.machine.scripts-fetch-arxiv-source
+      - recurring-tasks.machine.scripts-disable
+      - recurring-tasks.machine.scripts-enable
+      - recurring-tasks.machine.scripts-ensure-agent-env
+      - recurring-tasks.machine.scripts-healthcheck
+      - recurring-tasks.machine.scripts-job-utils
+      - recurring-tasks.machine.scripts-setup
+      - recurring-tasks.machine.scripts-status
+      - recurring-tasks.machine.scripts-sync
+      - recurring-tasks.machine.scripts-test
+      - recurring-tasks.machine.scripts-view-logs
+      - regenerate-blueprints.machine.regenerate-blueprint
+      - skill-audit.machine.certify
+      - skill-drift.machine.compute-hashes
+      - skill-drift.machine.drift-status
+      - skill-maker.machine.sync-blueprints
+  llm_ids:
+    current_owner: root inline defaults and version-2 LLM sidecars
+    disposition: rename
+    rule: apply the LLM public-ID rule above; move source contracts to whole-file gateway sources
+    default_modules:
+      - bib-audit
+      - cloud-files
+      - connect-google
+      - daily-plan
+      - email-client
+      - email-triage
+      - find-handoff-candidates
+      - fix-bisync
+      - formal-prose-review
+      - g-calendar
+      - get-weather
+      - git-workflow
+      - hook-maker
+      - initialize-tdd
+      - install-assistant-tools
+      - latex-workshop
+      - list-manager
+      - loose-mode
+      - make-tex-docstring
+      - math-dependency-graph
+      - notation-review
+      - pdf-to-markdown
+      - prepare-handoff
+      - proof-audit
+      - recurring-tasks
+      - refactor-skills
+      - regenerate-blueprints
+      - skill-audit
+      - skill-drift
+      - skill-maker
+      - technical-flow-review
+      - tight-mode
+      - tool-applicability
+      - update-skill-guidelines
+      - wrap-up
+    named:
+      - connect-google.llm.create-client
+      - connect-google.llm.connect-services
+      - email-triage.llm.triage
+  behavior_source_ids:
+    disposition: preserve
+    target: preserve IDs and move their blueprints into the v4 blueprints directory
+    ids:
+      - connect-google.source.personal-preferences-default
+      - connect-google.source.personal-preferences-create-client
+      - connect-google.source.personal-preferences-connect-services
+
+schema_inventory:
+  schema_files:
+    - paths: [references/blueprint/common.schema.json, references/blueprint/caller-contract.schema.json, references/blueprint/direct-io.schema.json]
+      current_owner: shared schema primitives
+      disposition: preserve
+      target: generalize in place for v4
+    - paths: [references/blueprint/skill.schema.json, references/blueprint/legacy-skill.schema.json, references/blueprint/v2/*.schema.json]
+      current_owner: legacy and version-2 migration schemas
+      disposition: retire
+      target: migration-engine-only readers until Task 6 zero-reference proof
+    - paths: [references/blueprint/machine-module.schema.json]
+      current_owner: v3 machine-module schema
+      disposition: rename
+      target: references/blueprint/module.schema.json
+    - paths: [references/blueprint/behavior-source.schema.json]
+      current_owner: v3 behavior-source schema
+      disposition: rename
+      target: references/blueprint/behavior-source.schema.json with schema_version 4 and node_type behavioral_source
+    - paths: [references/blueprint/machine-interface.schema.json, references/blueprint/llm-interface.schema.json, references/blueprint/default-llm-interface.schema.json]
+      current_owner: v3 type-specific interface schemas
+      disposition: retire
+      target: caller-contract.schema.json plus module export and behavioral-source interface definitions
+    - paths: [references/blueprint/schema.json, references/blueprint/schema-meta.json, references/blueprint/template.yaml, references/blueprint/README.md, references/blueprint/schema.annotated-draft.json]
+      current_owner: schema gateway, metadata, templates, and generated annotated view
+      disposition: move
+      target: v4-only gateway and regenerated v4 views; old versions remain converter inputs only
+    - paths: [references/blueprint/interface-projection.schema.json]
+      current_owner: interface projection schema and src/officina/common/interface_projection.py
+      disposition: preserve
+      target: generic v4 interface IDs, source definitions, and certificate fields
+    - paths: [references/blueprint/pooled-review.schema.json]
+      current_owner: pooled review schema and src/officina/common/pooled_blueprint.py
+      disposition: preserve
+      target: certificate-backed v4 pooled review
+    - paths: [references/blueprint/health.schema.json]
+      current_owner: legacy artifact health
+      disposition: retire
+      target: references/blueprint/certificate.schema.json after fresh certification; health records are never converted into certificates
+    - paths:
+        - references/blueprint/interface-admissibility-profile.schema.json
+        - references/blueprint/interface-admissibility-result.schema.json
+        - references/blueprint/interface-admissibility.profile.yaml
+        - references/blueprint/interface-conformance.schema.json
+        - references/blueprint/conformance-boundary-operations.schema.json
+        - references/blueprint/conformance-boundary-operations.yaml
+        - references/blueprint/conformance-operations/*.schema.json
+      current_owner: authored v3 admissibility and conformance system
+      disposition: retire
+      target: certifier-owned checks listed under rule_dispositions; delete only in Task 6
+  field_groups:
+    - id: legacy-blueprint-fields
+      schema_paths:
+        include: [references/blueprint/legacy-skill.schema.json]
+        exclude: []
+      fallback: true
+      disposition: move
+      target: v4 module metadata and authority, source-owned contracts, exports, process bindings, requirements, direct I/O, ownership, and typed edges according to each pointer's semantics
+    - id: version-2-blueprint-fields
+      schema_paths:
+        include: [references/blueprint/v2/*.schema.json]
+        exclude: []
+      fallback: true
+      disposition: move
+      target: the corresponding v4 semantic owners; blueprint_type becomes node_type and schema_version becomes 4
+    - id: shared-schema-fields
+      schema_paths:
+        include: [references/blueprint/common.schema.json]
+        exclude: []
+      fallback: true
+      disposition: move
+      target: preserve locators and typed edges, rename behavior-source terms to behavioral-source, and move symbol and args_prefix into process binding
+    - id: caller-process-binding-fields
+      schema_paths:
+        include: [references/blueprint/caller-contract.schema.json]
+        exclude: []
+      pointer_prefixes:
+        - /definitions/argumentBinding
+        - /definitions/argument/properties/invocation_binding
+        - /definitions/argument/allOf/1/if/properties/invocation_binding
+        - /definitions/argument/allOf/2/then/properties/invocation_binding
+        - /definitions/interaction/oneOf/0/properties/cancellation
+        - /definitions/interaction/oneOf/1/properties/cancellation
+        - /definitions/cancellation
+        - /definitions/output/properties/channel
+        - /definitions/output/properties/encoding
+        - /definitions/output/properties/framing
+        - /definitions/signal
+        - /definitions/outcome/properties/signal
+        - /definitions/stopMethod
+        - /definitions/execution/properties/long_running/properties/stop_method
+      disposition: move
+      target: caller-contract.schema.json process-binding definition
+    - id: caller-contract-fields
+      schema_paths:
+        include: [references/blueprint/caller-contract.schema.json]
+        exclude: []
+      fallback: true
+      disposition: preserve
+      target: one generalized source-owned interface contract
+    - id: direct-io-fields
+      schema_paths:
+        include: [references/blueprint/direct-io.schema.json]
+        exclude: []
+      fallback: true
+      disposition: preserve
+      target: v4 source-owned interface contract direct_io
+    - id: skill-schema-fields
+      schema_paths:
+        include: [references/blueprint/skill.schema.json]
+        exclude: []
+      fallback: true
+      disposition: move
+      target: v4 module identity, discovery, gateway, authority, exports, and source bindings
+    - id: machine-module-conformance-fields
+      schema_paths:
+        include: [references/blueprint/machine-module.schema.json]
+        exclude: []
+      pointer_prefixes:
+        - /properties/conformance_manifest
+        - /definitions/pythonGateway/properties/conformance
+      disposition: retire
+      target: certifier-owned checks with no authored fixture, probe, adapter, or sandbox authority
+    - id: machine-module-process-binding-fields
+      schema_paths:
+        include: [references/blueprint/machine-module.schema.json]
+        exclude: []
+      pointer_prefixes:
+        - /definitions/pythonGateway/properties/symbol
+        - /definitions/pythonGateway/properties/args_prefix
+        - /definitions/export/properties/invocation_binding
+        - /definitions/fixedBinding
+      disposition: move
+      target: caller-contract.schema.json process binding; whole-file gateway identity remains separate
+    - id: machine-module-fields
+      schema_paths:
+        include: [references/blueprint/machine-module.schema.json]
+        exclude: []
+      fallback: true
+      disposition: move
+      target: v4 module plus behavioral source; contracts and versions belong to sources and export versions are derived
+    - id: behavior-source-fields
+      schema_paths:
+        include: [references/blueprint/behavior-source.schema.json]
+        exclude: []
+      fallback: true
+      disposition: rename
+      target: v4 behavioral_source with source/interface edges and generalized gateway
+    - id: legacy-interface-schema-fields
+      schema_paths:
+        include:
+          - references/blueprint/machine-interface.schema.json
+          - references/blueprint/llm-interface.schema.json
+          - references/blueprint/default-llm-interface.schema.json
+        exclude: []
+      fallback: true
+      disposition: move
+      target: source-owned contract and process binding plus module export access; machine and LLM taxonomies retire
+    - id: projection-owner-fields
+      schema_paths:
+        include: [references/blueprint/interface-projection.schema.json]
+        exclude: []
+      pointer_prefixes:
+        - /definitions/llmProjection/properties/route/properties/skill
+        - /definitions/embeddedDefinition/properties/source_skill
+      disposition: rename
+      target: module and source_module
+    - id: projection-fields
+      schema_paths:
+        include: [references/blueprint/interface-projection.schema.json]
+        exclude: []
+      fallback: true
+      disposition: preserve
+      target: generic v4 interface projection with certificate-backed definitions
+    - id: pooled-review-health-fields
+      schema_paths:
+        include: [references/blueprint/pooled-review.schema.json]
+        exclude: []
+      pointer_prefixes:
+        - /properties/root/properties/artifact_graph_hash
+        - /properties/root/properties/certified_health_hash
+        - /properties/nodes/items/properties/health
+      disposition: rename
+      target: certificate, certificate_hash, and certification_graph_hash
+    - id: pooled-review-fields
+      schema_paths:
+        include: [references/blueprint/pooled-review.schema.json]
+        exclude: []
+      fallback: true
+      disposition: move
+      target: v4 node kind, blueprint and gateway paths, declaration, and certificate-backed result
+    - id: health-record-fields
+      schema_paths:
+        include: [references/blueprint/health.schema.json]
+        exclude: []
+      fallback: true
+      disposition: retire
+      target: never convert records; reuse provenance, signing, and atomic-write mechanics as predecessors for fresh certificate fields
+    - id: admissibility-and-conformance-fields
+      schema_paths:
+        include:
+          - references/blueprint/interface-admissibility-profile.schema.json
+          - references/blueprint/interface-admissibility-result.schema.json
+          - references/blueprint/interface-conformance.schema.json
+          - references/blueprint/conformance-boundary-operations.schema.json
+          - references/blueprint/conformance-operations/*.schema.json
+        exclude: []
+      fallback: true
+      disposition: retire
+      target: certifier-owned checks in rule_dispositions; retain authored evidence until Task 6 and port every retained rule case before deletion
+    - id: schema-annotation-protocol-fields
+      schema_paths:
+        include: [references/blueprint/schema-meta.json]
+        exclude: []
+      fallback: true
+      disposition: move
+      target: v4 schema annotation, documentation, template, and enforcement metadata
+    - id: annotated-schema-view-fields
+      schema_paths:
+        include: [references/blueprint/schema.annotated-draft.json]
+        exclude: []
+      fallback: true
+      disposition: move
+      target: regenerate the annotated authoring view from the final v4 schemas and metadata
+
+runtime_and_tooling_inventory:
+  graph_hash_and_status:
+    - current_owner: [src/officina/common/blueprint_inventory.py, src/officina/common/blueprint_graph.py, src/officina/common/blueprint_template.py]
+      disposition: preserve
+      target: generalize the existing inventory, graph, and template in place to v4 modules and behavioral sources
+    - current_owner: [src/officina/common/artifact_health.py, src/officina/common/git_provenance.py, skills/skill-drift/_rtx/_drift_hashes.py]
+      disposition: move
+      target: one v4 node/dependency hash and provenance implementation; retire health semantics after cutover
+    - current_owner: [skills/skill-drift/_rtx/_check_drift_state.py, skills/skill-drift/references/policy-hash-roots.json]
+      disposition: rename
+      target: adapt compute_policy_hash to compute_certification_basis_hash and emit only certification_basis_hash
+    - current_owner: [src/officina/common/certification_view.py, src/officina/common/pooled_blueprint.py]
+      disposition: move
+      target: read-only certificate currentness and certificate-backed pooled review
+  certifier:
+    - current_owner: [skills/skill-audit/_rtx/_audit_certifier.py, src/officina/common/audit_records.py, src/officina/common/atomic_files.py]
+      disposition: rename
+      target: skill-certifier and certificate records using the same writer/safety owners; no parallel core or writer
+  binding_projection_execution:
+    - current_owner: [src/officina/common/machine_interface_binding.py]
+      disposition: rename
+      target: src/officina/common/process_binding_compiler.py
+    - current_owner: [src/officina/common/interface_projection.py]
+      disposition: preserve
+      target: generic v4 projection with helper closure and certificate gating
+    - current_owner: [src/officina/dispatcher/, src/officina/runtime/]
+      disposition: preserve
+      target: resolve and execute generic module exports through the existing dispatcher/runtime
+  migration:
+    - current_owner: [src/officina/common/interface_injection_migration.py, tests/test_interface_injection_migration.py]
+      disposition: preserve
+      target: sole map validator and converter plus regression test
+  blueprint_search:
+    current_owner: [src/officina/blueprint_search.py, scripts/search_blueprints.py, tests/test_blueprint_search.py, docs/blueprint_search.md]
+    disposition: preserve
+    target: search v4 module and blueprints/*.yaml layout; migrate selectors to generic interface/source/module terms and keep CLI documentation aligned
+  route_smoke:
+    current_owner: [src/officina/runtime/python_machine_interface.py, src/officina/runtime/python_machine_interface_runner.py, tests/test_dispatcher_route_smoke.py, tests/test_officina_python_machine_interface.py, skills/skill-drift/tests/test_dependency_explorer.py]
+    disposition: preserve
+    target: build each parser without normal arguments, trace loaded files and recursively declared dispatch dependencies, and require each discovered file/edge to map to direct ownership, explicit certification dependency, or certification basis
+    rejection: an unmapped loaded file, package initializer, helper import, or recursive dispatch target fails certification
+  helpers:
+    current_owner: [references/blueprint/machine-module.schema.json, src/officina/common/interface_projection.py, src/officina/dispatcher/, tests/test_interface_projection.py, tests/test_machine_module_dispatcher.py]
+    disposition: preserve
+    target: source-owned helper identity, bindings, authorization, bounded/read-only constraints, resolved-definition safety, acyclic closure, and projection-size limits under generic interface IDs
+  runtime_dependency_manifest:
+    current_owner: skills/skill-maker/_rtx/_blueprint_syncer.py
+    artifact: references/blueprint/runtime_dependencies.json
+    consumer: skills/install-assistant-tools/_rtx/_install_scaffold.py
+    tests: [skills/skill-maker/tests/test_blueprint_tools.py, skills/install-assistant-tools/tests/test_scaffold.py]
+    disposition: preserve
+    target: regenerate from v4 executable source interfaces while preserving dependency kind, name, version, platforms, and reason; first install remains independent of dispatcher
+
+callers:
+  live_edge_count: 14
+  representation:
+    current_owner: src/officina/runtime/python_machine_interface.py::DispatchCall
+    disposition: preserve
+    target: retain caller attribution and recursive dependency traversal while resolving the renamed generic export IDs
+  live_declarations:
+    - file: skills/daily-plan/_rtx/_day_model.py
+      caller: daily-plan
+      old_targets: [cloud-files.machine.plans-read, cloud-files.machine.plans-write, cloud-files.machine.lists-read, cloud-files.machine.lists-write, g-calendar.machine.scripts-gcal, get-weather.machine.scripts-weather, list-manager.machine.read-beautify, list-manager.machine.update-list]
+      target: rename each .machine. segment to .interface.; preserve source-declared direct edges
+    - file: skills/email-triage/_rtx/_mail_envelope_stream.py
+      caller: email-triage
+      old_targets: [email-client.machine.mail-list]
+      target: [email-client.interface.mail-list]
+    - file: skills/list-manager/_rtx/_cloud_transport.py
+      caller: list-manager
+      old_targets: [cloud-files.machine.lists-read, cloud-files.machine.lists-write]
+      target: [cloud-files.interface.lists-read, cloud-files.interface.lists-write]
+    - file: skills/skill-audit/_rtx/_audit_certifier.py
+      caller: skill-audit
+      old_targets: [skill-drift.machine.compute-hashes, skill-drift.machine.drift-status, skill-maker.machine.sync-blueprints]
+      target: [skill-drift.interface.compute-hashes, skill-drift.interface.drift-status, skill-maker.interface.sync-blueprints]
+      caller_target: skill-certifier
+  generated_and_documented_calls:
+    current_owner: [skills/*/SKILL.md, skills/skill-maker/_rtx/_blueprint_syncer.py, docs/audit_and_drift.md, docs/certification_and_drift.md, docs/installation.md, llmhooks/inject_dispatcher_context.py]
+    disposition: move
+    target: regenerate or edit to generic .interface. IDs and canonical dispatcher syntax; retire audit-only calls with docs/audit_and_drift.md
+
+generated_artifacts:
+  - paths:
+      include: [skills/*/SKILL.md]
+      exclude: []
+      allow_empty: false
+    fragment_selector:
+      kind: exact_delimited_blocks
+      blocks:
+        - id: blueprint-contract
+          begin_marker: "<!-- BEGIN BLUEPRINT CONTRACT -->"
+          end_marker: "<!-- END BLUEPRINT CONTRACT -->"
+        - id: blueprint-interfaces
+          begin_marker: "<!-- BEGIN BLUEPRINT INTERFACES -->"
+          end_marker: "<!-- END BLUEPRINT INTERFACES -->"
+    current_owner: skills/skill-maker/_rtx/_blueprint_syncer.py
+    disposition: move
+    target: regenerate from the v4 graph with module exports, source-owned contracts, and generic IDs
+  - paths: [references/blueprint/runtime_dependencies.json]
+    current_owner: skills/skill-maker/_rtx/_blueprint_syncer.py
+    disposition: preserve
+    target: regenerate with unchanged installer dependency semantics
+  - paths: [references/blueprint/template.yaml, references/blueprint/schema.annotated-draft.json, references/blueprint/schema-meta.json]
+    current_owner: [src/officina/common/blueprint_template.py, regenerate-blueprints]
+    disposition: move
+    target: regenerated v4 authoring views
+  - paths:
+      include: [docs/user/*.md, docs/contributors/*.md]
+      exclude: []
+      allow_empty: false
+    fragment_selector:
+      kind: keyed_regex_delimited_blocks
+      begin_regex: '^<!-- BEGIN AUTO-GENERATED DOCS: (?P<key>[a-z0-9-]+) -->$'
+      end_regex: '^<!-- END AUTO-GENERATED DOCS: (?P<key>[a-z0-9-]+) -->$'
+      pair_key_group: key
+    current_owner: skills/skill-maker/_rtx/_blueprint_syncer.py
+    disposition: move
+    target: regenerate from v4 module discovery metadata
+  - paths:
+      include: [skills/**/.last_audit.json, skills/**/.*.health.json, skills/**/.pooled-blueprint-review.health.json]
+      exclude: []
+      allow_empty: true
+    current_owner: [skills/skill-audit/_rtx/_audit_certifier.py, src/officina/common/artifact_health.py, src/officina/common/pooled_blueprint.py]
+    disposition: retire
+    target: fresh current certificates and append-only certificate history; never convert health/audit state
+  - paths:
+      include: [skills/**/.pooled-blueprint-review.yaml]
+      exclude: []
+      allow_empty: true
+    current_owner: src/officina/common/pooled_blueprint.py
+    disposition: preserve
+    target: certificate-backed pooled review
+  - paths: [skills/skill-drift/_build/*.md]
+    current_owner: skills/skill-drift/_rtx/_check_drift_state.py
+    disposition: preserve
+    target: non-authoritative read-only drift report with v4 node and certificate terms
+
+installed_sources:
+  current_owner: skills/skill-drift/_rtx/_skill_sources/
+  consumer: skills/skill-drift/_rtx/_check_drift_state.py
+  migration_rule: retire shared recursive cache discovery in _skill_source_common.py; retain that owner for direct roots, current dispatched root, deduplication, and common source records
+  classes:
+    - class: Codex direct skills
+      source: "$CODEX_HOME/skills"
+      disposition: preserve
+      target: discover direct installed v4 modules
+    - class: Claude direct skills
+      source: "$CLAUDE_HOME/skills"
+      disposition: preserve
+      target: discover direct installed v4 modules
+    - class: Codex plugin cache
+      source: "$CODEX_HOME/plugins/cache/**/skills"
+      disposition: retire
+      target: no automatic recursive Codex cache inspection; no verified active-plugin registry exists in this repository or on the reviewed host
+      requested_automatic_inspection: fail closed and instruct the caller to pass --skill-root, --skills-root, or --repo-root for each intended installation
+    - class: Claude installed plugins
+      source: "$CLAUDE_HOME/plugins/installed_plugins.json"
+      disposition: move
+      authority:
+        format_version: 2
+        plugins_pointer: /plugins
+        record_selector: enumerate every element of every array value in the plugins mapping
+        install_path_pointer: /installPath relative to each selected record
+        skills_root_rule: append /skills to each exact installPath named by a registry record
+      target: inspect only registry-named install paths; never recursively discover sibling or stale cache versions
+      failure_behavior: malformed, unsupported, missing, or non-resolving registry records fail plugin inspection with the exact record and remediation to repair installed_plugins.json or pass an explicit root
+    - class: current dispatcher skill root
+      source: current working directory whose parent is skills
+      disposition: preserve
+      target: exact current installed module root
+    - class: explicit skill root
+      source: --skill-root
+      disposition: preserve
+      target: exact requested module root
+    - class: explicit skills root
+      source: --skills-root
+      disposition: preserve
+      target: exact override installation root
+    - class: explicit repository root
+      source: --repo-root
+      disposition: preserve
+      target: exact repository skills root
+  unsupported_active_version_behavior: fail with the exact plugin/version and remediation; never execute a legacy runtime branch
+  automatic_codex_cache_wide_inspection:
+    status: unsupported
+    behavior: fail closed without traversing $CODEX_HOME/plugins/cache
+    remediation: pass --skill-root, --skills-root, or --repo-root for the exact intended installation until a verified Codex active-plugin authority is adopted
+
+documents:
+  - paths: [docs/architecture.md, docs/certification_and_drift.md]
+    disposition: move
+    target: final adopted v4 architecture and one-basis-hash certificate contract
+  - paths: [docs/audit_and_drift.md]
+    disposition: retire
+    target: delete in Task 6 only after zero live references
+  - paths: [docs/blueprint_search.md, docs/skill-blueprints.md, docs/skills.md, docs/scaffolding/README.md, docs/installation.md]
+    disposition: move
+    target: v4 layout, IDs, authoring, search, and unchanged dependency-manifest installer semantics
+  - paths: [docs/contributors/*.md, docs/user/*.md]
+    disposition: move
+    target: regenerate auto-generated blocks and update authored v4 terms
+  - paths: [docs/plans/unified-architecture-migration.md, docs/plans/unified-architecture-migration-map.yaml]
+    disposition: preserve
+    target: retained migration authority and adoption evidence
+  - paths: [docs/plans/migrate_audit_to_certification.md, docs/plans/machine-module-contract/**, docs/plans/post-migration-simplification/README.md]
+    disposition: preserve
+    execution_status: frozen_history
+    target: retained planning evidence excluded from active execution and active-reference rejection
+  - paths: [docs/plans/archive/**, docs/plans/completed/**, docs/superpowers/plans/**, docs/superpowers/specs/**, docs/standard-v6-conversion-assessment.md]
+    disposition: preserve
+    target: historical evidence, excluded from active runtime-authority scans
+  - paths: [docs/plans/logical-resource-addressing.md]
+    disposition: preserve
+    execution_status: deferred_pending_v4_adoption_and_rebase
+    target: rebase its blueprint, graph, validator, and certification contracts after v4 adoption; proposed artifacts require fresh predecessor dispositions
+  - paths: [docs/plans/logical-resource-registry.yaml]
+    disposition: move
+    target: generic v4 IDs while preserving implicit_dependence as a non-certification overlay
+  - paths: [docs/launchers.md]
+    disposition: preserve
+    target: update only active old IDs found by the Task 6 active-reference scan
+  - paths:
+      - docs/plans/blueprint-schema-documentation-consolidation.md
+      - docs/plans/interface-metadata-refactor.md
+      - docs/plans/osx_feedback_fix/**
+      - docs/plans/per-llm-interface-personal-preferences.md
+    disposition: preserve
+    execution_status: deferred_pending_v4_adoption_and_rebase
+    target: non-executable until rebased after v4 adoption; proposed artifacts require fresh predecessor dispositions
+  - paths: [skills/*/SKILL.md, skills/*/llm_interfaces/*.md, skills/*/personal-preferences/*.md, skills/*/references/*.md, skills/*/DEBUGGING.md]
+    disposition: move
+    target: preserve authored behavior, update old public IDs, and regenerate owned blocks; gateway files retain whole-file identity
+
+validators_and_hooks:
+  - paths: [validators/runner.py]
+    current_owner: staged-mirror repository validation orchestrator
+    disposition: preserve
+    target: include every map-authorized created/renamed path in the staged mirror and run v4-only validation at cutover
+  - paths: [skills/skill-maker/validators/blueprints.py, skills/skill-maker/validators/blueprint_relationships.py, skills/skill-maker/validators/interface_ids.py, skills/skill-maker/validators/boundaries.py, skills/skill-maker/validators/dependencies.py]
+    disposition: move
+    target: v4 shapes, unique generic IDs, containment/ownership, authorization, source dependencies, and acyclic certification graph
+  - paths: [skills/skill-maker/validators/dispatch_caller_skill.py, skills/skill-maker/validators/dispatcher_usage.py, skills/skill-maker/validators/skill_md_dispatch.py, skills/skill-maker/validators/skill_body_execution.py]
+    disposition: preserve
+    target: generic interface callers and regenerated dispatch guidance without bypasses
+  - paths: [skills/skill-maker/validators/names.py, skills/skill-maker/validators/skill_metadata.py]
+    disposition: move
+    target: module/source/interface naming and skill discovery metadata
+  - paths: [validators/contributor_docs_contract.py, validators/user_docs_cover_blueprints.py, validators/generated_skill_docs.py, validators/readme_user_contract.py, validators/skill_md_body.py, validators/skill_runtime_doc_references.py]
+    disposition: move
+    target: v4 generated-document coverage and active-reference rules
+  - paths: [validators/cross_platform.py, validators/platform_neutral.py, validators/personal_info.py, validators/portable_dates.py, validators/skill_runtime_files.py, validators/skip_hygiene.py, validators/standard_documents.py, validators/subprocess_text_encoding.py, validators/toml_io_boundary.py]
+    disposition: preserve
+    target: retain existing safety/portability checks and teach path enumerators about map-authorized v4 files where needed
+  - paths: [.githooks/skill/check-blueprints, .githooks/skill/check-dependencies, .githooks/skill/check-runtime-files, .githooks/skill/check-names, .githooks/pre-commit]
+    disposition: preserve
+    target: same hooks with v4-only schema, graph, generated-standard, and staged-mirror checks at cutover
+  - paths: [references/skill-standards/skill-guidelines.standard.yaml, references/skill-standards/skill-guidelines.md, tests/fixtures/standards/**]
+    disposition: move
+    target: canonical v4 rules plus regenerated view/fixtures with exact fidelity
+
+test_families:
+  - family: schema metadata and templates
+    paths: [tests/test_typed_blueprint_schemas.py, tests/test_blueprint_schema_metadata.py, tests/test_officina_blueprint_template.py]
+    disposition: move
+    target: v4-only runtime schemas plus old-format converter inputs
+  - family: inventory graph hashing and provenance
+    paths: [tests/test_blueprint_inventory.py, tests/test_officina_blueprint_graph.py, tests/test_machine_module_hashing.py, tests/test_officina_artifact_health.py, tests/test_officina_git_provenance.py, skills/skill-drift/tests/test_drift_hash.py]
+    disposition: move
+    target: module/source graph, one basis hash, local input provenance, and exact-target isolation
+  - family: binding dispatcher runtime helpers and route smoke
+    paths: [tests/test_machine_interface_binding.py, tests/test_machine_module_dispatcher.py, tests/test_officina_dispatcher.py, tests/test_officina_python_machine_interface.py, tests/test_dispatcher_route_smoke.py, skills/skill-drift/tests/test_dependency_explorer.py]
+    disposition: preserve
+    target: generic interface IDs, process binding, helper safety, recursive dispatch/import reachability, and route_smoke
+  - family: projection search and migration
+    paths: [tests/test_interface_projection.py, tests/test_blueprint_search.py, tests/test_interface_injection_migration.py]
+    disposition: move
+    target: v4 projection/search plus exhaustive, idempotent old-format conversion
+  - family: certification drift pooled review and atomic writes
+    paths: [tests/test_officina_atomic_files.py, tests/test_officina_audit_records.py, tests/test_officina_pooled_blueprint.py, skills/skill-audit/tests/**, skills/skill-drift/tests/test_drift_check.py]
+    disposition: move
+    target: skill-certifier, signed current certificate/history, read-only drift, certificate-backed pooled review, and direct plus exact active-plugin discovery
+  - family: admissibility and conformance
+    paths: [tests/test_interface_admissibility_catalog.py, tests/fixtures/conformance_operations/**, docs/plans/machine-module-contract/examples/*conformance*.yaml]
+    disposition: retire
+    target: port every retained rule case into validator/certifier tests before deleting authored evidence machinery
+  - family: validator and hook coverage
+    paths: [tests/validate_*.py, tests/test_validator_runner.py, tests/test_migrated_standards_fidelity.py, tests/test_standard_v6.py, tests/test_skill_refactoring_standard.py]
+    disposition: move
+    target: v4 validator, staged-mirror, hook, and generated-standard fidelity
+  - family: installer and generated dependency consumption
+    paths: [skills/install-assistant-tools/tests/**, skills/skill-maker/tests/test_blueprint_tools.py]
+    disposition: preserve
+    target: consume the regenerated manifest with identical dependency semantics and test cooperative user-scoped signing-material installation through the existing installer owner
+  - family: unaffected skill behavior and repository safeguards
+    paths:
+      include:
+        - skills/*/tests/**
+        - tests/test_officina_dates.py
+        - tests/test_officina_oauth_json.py
+        - tests/test_officina_secret_store.py
+        - tests/test_officina_toml_io.py
+        - tests/test_run_python_tests.py
+        - tests/test_skill_taxonomy_graph.py
+      exclude:
+        - skills/skill-audit/tests/**
+        - skills/skill-drift/tests/**
+        - skills/skill-maker/tests/**
+        - skills/install-assistant-tools/tests/**
+    disposition: preserve
+    target: retain behavior and safety; update only mapped public IDs/fixtures
+
+rule_dispositions:
+  catalog: references/blueprint/interface-admissibility.profile.yaml
+  coverage_count: 47
+  structural_validator:
+    owner: existing schema, graph, projection, binding, and repository validators generalized in place
+    disposition: preserve
+    rules:
+      - interface.document.closed@1
+      - interface.identity.canonical@1
+      - interface.arguments.type-complete@1
+      - interface.arguments.defaults-valid@1
+      - interface.arguments.io-linked@1
+      - interface.binding.total@1
+      - interface.binding.unambiguous@1
+      - interface.binding.dispatch-order@1
+      - interface.references.resolved@1
+      - interface.outputs.structured@1
+      - interface.outputs.io-linked@1
+      - interface.outcomes.structured@1
+      - interface.execution.axes-consistent@1
+      - interface.execution.decisions-valid@1
+      - interface.effects.io-consistent@1
+      - interface.effects.outcome-inverse@1
+      - interface.ownership.authorized@1
+      - interface.dependencies.direct@1
+      - interface.dependencies.authorized@1
+      - interface.helpers.well-bound@1
+      - interface.sensitivity.transport-safe@1
+      - interface.direct-io.internal-path-safe@1
+      - interface.preconditions.structured@1
+      - interface.interaction.structured@1
+      - interface.injection.closed@1
+      - interface.injection.export-size-bounded@1
+      - interface.injection.consumer-size-bounded@1
+  certifier_check:
+    owner: existing skill-audit certifier renamed to skill-certifier
+    disposition: move
+    authored_manifest_or_probe_input: false
+    unsupported_language_binding_or_machine_behavior: fail-certification
+    rules:
+      - interface.version.breaking-change@1
+      - interface.gateway.accepts-binding@1
+      - interface.gateway.enforces-fixed-values@1
+      - interface.outputs.conform@1
+      - interface.outcomes.conform@1
+      - interface.lifecycle.conform@1
+      - interface.effects.conform@1
+      - interface.protected-file.conform@1
+      - interface.boundary.covered@1
+      - interface.semantic.single-operation@1
+      - interface.semantic.argument-independent@1
+      - interface.semantic.descriptions-exact@1
+      - interface.semantic.outcomes-complete@1
+      - interface.semantic.io-complete@1
+      - interface.semantic.sensitivity-correct@1
+      - interface.semantic.execution-accurate@1
+      - interface.semantic.invocation-compatible@1
+      - interface.semantic.preconditions-complete@1
+      - interface.semantic.interaction-accurate@1
+      - interface.semantic.version-compatible@1
+  reviewed_retirement:
+    rules: []
+    reason: every substantive rule is retained; only the authored evidence/profile mechanism is retired
+
+certification_authority:
+  contract: cooperative same-user
+  status: resolved
+  target_platforms: [linux, macos, windows]
+  current_certificate_write_support:
+    owner: src/officina/common/atomic_files.py
+    implementation: POSIX directory-descriptor and no-follow primitives only
+    off_posix_behavior: fail closed with AtomicWriteError
+    windows_status: unsupported until the Task 3 in-place generalization and platform certificate tests pass
+  certification_platform_gate:
+    rule: a target platform is not v4-certified until the existing atomic_files owner provides equivalent confined atomic and no-follow certificate writes there and its platform tests pass
+    windows_requirement: Task 3 must generalize atomic_files.py in place for Windows reparse-point-safe confinement, atomic replacement, durability, permissions, and post-write verification
+    ownership: no parallel writer or platform provider file is authorized
+  platform_contracts:
+    linux: target user-scoped signing material and outputs with restrictive file modes
+    macos: target user-scoped signing material and outputs with restrictive file modes
+    windows: target user-scoped signing material and outputs with restrictive user ACLs, gated by the Task 3 atomic-files requirement
+  os_identity:
+    filesystem_owner: invoking OS user
+    isolation_from_same_uid_processes: false
+  writer:
+    current_owner: skills/skill-audit/_rtx/_audit_certifier.py
+    target_owner: skills/skill-certifier/
+    multiplicity: one
+    parallel_writer_or_signing_path: forbidden
+    supported_request: certify a target through the certifier-owned interface, which reconstructs and validates the payload internally
+    forbidden_request: caller-supplied certificate or signing payload
+  signing_material:
+    logical_owner: skill-certifier
+    filesystem_owner: invoking OS user
+    provisioner: skills/install-assistant-tools/
+    verifier: skill-drift uses only the public verification key through its supported path
+    permissions: user-only permissions or ACLs where the platform provides them
+    security_effect: defense-in-depth only; not isolation from a malicious same-UID process
+  certificate_outputs:
+    logical_writer: skill-certifier
+    filesystem_owner: invoking OS user
+    installer_owner: skills/install-assistant-tools/
+    write_contract: append-only history plus atomic no-follow current certificate and post-write verification
+  installer:
+    current_owner: skills/install-assistant-tools/
+    target: extend the existing user-home and user-registry scoped installation to provision and verify cooperative signing material, public verification material, and output permissions
+    new_service_or_elevation: false
+    evidence:
+      - skills/install-assistant-tools/SKILL.md declares Linux, macOS, and Windows user-scoped launcher installation
+      - docs/installation.md installs PATH, config, hooks, and launchers in user homes or the Windows user registry
+      - Windows launchers intentionally avoid administrator symlink privileges
+  failure_behavior:
+    installer: report failure if cooperative signing material or permissions cannot be provisioned and verified
+    certification: issue no certificate when signing material, currentness inputs, or safe output writes are unavailable
+    dispatcher: v4 dispatch remains unavailable until final cutover verification and fresh certificates
+  limitation: signatures and currentness detect drift, corruption, and changes outside the cooperative writer contract, but do not defend against a malicious same-UID process that can access signing material or certificate outputs
+  prohibited_artifacts: [broker, service identity, second writer, parallel signing path]
+
+functional_predecessors:
+  - proposed: docs/plans/unified-architecture-migration-map.yaml
+    disposition: derive
+    predecessor: dispersed live inventories and disposition tables in docs/plans/unified-architecture-migration.md and the three superseded sequences
+  - proposed: references/certification/node-hash-policy.yaml
+    disposition: move
+    predecessor: skills/skill-drift/references/policy-hash-roots.json plus the current local-input rules in src/officina/common/artifact_health.py
+  - proposed: references/certification/node-hash-policy.schema.json
+    disposition: derive
+    predecessor: validation conventions in references/blueprint/common.schema.json and the live policy-hash manifest contract
+  - proposed: references/blueprint/certificate.schema.json
+    disposition: move
+    predecessor: references/blueprint/health.schema.json plus docs/certification_and_drift.md
+  - proposed: scripts/migrate-blueprints-v4.py
+    disposition: derive
+    predecessor: src/officina/common/interface_injection_migration.py; the new file is argument parsing only
+  - proposed: references/blueprint/module.schema.json
+    disposition: rename
+    predecessor: references/blueprint/machine-module.schema.json
+  - proposed: src/officina/common/process_binding_compiler.py
+    disposition: rename
+    predecessor: src/officina/common/machine_interface_binding.py
+  - proposed: skills/skill-certifier/
+    disposition: rename
+    predecessor: skills/skill-audit/
+  - proposed: "skills/*/blueprints/*.yaml"
+    disposition: derive
+    predecessor: the mapped legacy/v2/v3 declaration owning the same whole-file gateway; creation is allowed only when that deterministic target path does not exist
+baseline:
+  date: 2026-07-20
+  commands:
+    - command: python3 scripts/run-python-tests.py --suite full --verbose
+      initial_sandbox_result:
+        exit_code: 1
+        summary: "3 failed, 1471 passed, 3 skipped in 135.62s"
+        environment_failures: [Claude marketplace checkout rejected host SSH config ownership, Codex GitHub clone had no DNS, lifecycle fixture could not write .git/config]
+      escalated_same_command_result:
+        exit_code: 1
+        summary: "1 failed, 1475 passed, 1 skipped in 146.80s"
+        failing_test: skills/install-assistant-tools/tests/test_claude_github_install.py::ClaudeGithubInstallTests::test_claude_plugin_marketplace_install_from_github
+        explanation: the test installs public origin/master at abd2ba8e13c6993d2f1a9abac7a317154edc178d, while this checkpoint is nine commits ahead and asserts compact dispatcher markers introduced locally by commit 81f25e8
+        classification: explained standing-health failure outside Task 0's owned paths
+    - command: python3 validators/runner.py
+      exit_code: 0
+      output: none
+    - command: bash .githooks/skill/check-blueprints
+      exit_code: 0
+      output: none

@@ -1,5 +1,10 @@
 # Cross-Platform Lifecycle and macOS Native Acceptance Implementation Plan
 
+> **Deferred pending version-4 adoption and rebase — do not execute.** The
+> umbrella package is frozen. Its proposed artifacts are not authorized by the
+> unified migration and require fresh functional-predecessor dispositions when
+> rebased.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` or, with explicit delegation approval, `superpowers:subagent-driven-development`.
 
 **Goal:** Prove clean plugin lifecycle behavior on Linux, macOS, and Windows, plus selected Google/recurring onboarding and a real temporary macOS LaunchAgent completion path from stable installed commands.

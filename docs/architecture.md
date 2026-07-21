@@ -328,10 +328,18 @@ accepted as unevaluated. This migration does not create a general behavioral
 probe framework. Ordinary unit and integration tests remain separate
 development checks and do not issue certification state.
 
-Certificates retain the signed history, certifier identity, private-key
-isolation, and filesystem-enforced writer boundary defined by
-`docs/certification_and_drift.md`; unified-node provenance and basis fields do
-not weaken that boundary.
+Certification uses one cooperative same-user writer: the existing audit writer
+renamed to `skill-certifier`. It owns signing and certificate writes by
+architecture contract; `skill-drift` remains read-only and verifies with the
+public key. Restrictive user-only permissions, append-only history, atomic
+no-follow writes, and post-write verification are defense-in-depth, not a
+filesystem-enforced boundary between processes running under the same UID.
+
+Within that cooperative contract, signatures and currentness checks detect
+drift, corruption, and changes outside the cooperative writer contract. They
+do not defend against a malicious same-UID process that can access signing
+material or certificate outputs. The architecture introduces no broker,
+service identity, second writer, or parallel signing path.
 
 Drift checking recomputes the node hash, dependency manifest, and certification
 basis and validates the signed evidence and machine claims. It does not

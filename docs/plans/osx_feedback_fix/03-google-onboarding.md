@@ -1,5 +1,10 @@
 # Shared Google Onboarding Implementation Plan
 
+> **Deferred pending version-4 adoption and rebase — do not execute.** The
+> umbrella package is frozen. Its proposed artifacts are not authorized by the
+> unified migration and require fresh functional-predecessor dispositions when
+> rebased.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` or, with explicit delegation approval, `superpowers:subagent-driven-development`.
 
 **Goal:** Authorize a selected same-account subset of Drive, Calendar, and Gmail once, store one shared credential safely, and let each service retain configuration and verification ownership.

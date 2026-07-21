@@ -53,28 +53,29 @@ Gateway identity remains a whole file. The existing Python `symbol` capability
 is preserved as an interface-owned process-binding selector, not as part of the
 gateway address or ownership identity.
 
-### Certification authority decision gate
+### Certification authority contract
 
-The live dispatcher runs skills as the same OS user. File mode alone therefore
-cannot keep a signing key from every other skill process. Before Task 3, choose
-and approve one of these architectures:
+Task 0 resolves certification authority as a cooperative same-user contract.
+The existing audit writer, renamed in place to `skill-certifier`, remains the
+one signing and certificate-output owner. `skill-drift` remains read-only and
+uses the public verification key through its supported code path. The existing
+`install-assistant-tools` owner provisions the user-scoped installation on
+Linux, macOS, and Windows; no broker, service identity, second writer, special
+bootstrap, or parallel signing path is added.
 
-1. preserve the stated security boundary by adding a separate-identity
-   certification broker that owns the private key and certificate outputs,
-   accepts only high-level certification requests, reconstructs and checks the
-   payload itself, and never exposes a general signing operation; or
-2. weaken `docs/architecture.md` and `docs/certification_and_drift.md` to a
-   cooperative same-user boundary and stop claiming filesystem-enforced key
-   isolation.
+Windows remains a target, not a completed certificate-write platform. The
+current `src/officina/common/atomic_files.py` fails closed off POSIX. Before
+Windows v4 certification, Task 3 must generalize that existing owner in place
+to equivalent confined atomic and no-follow semantics and pass Windows-specific
+certificate tests. Until then Windows certification and v4 dispatch are
+unsupported and fail closed; no parallel Windows writer/provider is allowed.
 
-The architecture currently requires option 1. Under that option normal v4
-dispatch remains fail-closed. The broker has one narrow self-bootstrap operation
-for `skill-certifier`: it verifies the committed certifier source and complete
-certification basis before issuing the certifier's first certificate, cannot
-dispatch another interface, and cannot sign a caller-supplied payload. Task 0
-must map the broker's runtime, installer, service identity, output ownership,
-and platform support before implementation. Task 3 cannot begin without that
-approved map entry.
+Restrictive user-only permissions, append-only history, atomic no-follow
+writes, and post-write verification remain required as defense-in-depth. They
+do not create a security boundary between processes running as the same UID.
+Signatures and currentness checks detect drift, corruption, and changes outside
+the cooperative writer contract, but they do not defend against a malicious
+same-UID process that can access signing material or certificate outputs.
 
 ## Creation rule
 
@@ -90,10 +91,9 @@ planned new canonical artifacts are:
   existing migration engine;
 - migrated node blueprints whose map entry proves no existing target path.
 
-If certification authority option 1 is approved, the broker executable and its
-service-install definitions are additional necessary artifacts; their exact
-paths must reuse the existing `officina` and `install-assistant-tools` owners
-and be fixed by Task 0 before creation.
+The cooperative authority decision creates no additional authority executable
+or service-install artifact. Signing and output handling remain within the
+existing `skill-certifier`, `officina`, and `install-assistant-tools` owners.
 
 Version-4 schema ownership is obtained by modifying or renaming existing schema
 files. Tests use the existing inline and `tmp_path` fixture patterns. The CLI
@@ -123,7 +123,8 @@ semantic requirement:
   inactive cached versions as active nodes;
 - staged-mirror validators that include every map-authorized new path, hooks,
   and generated-standard fidelity;
-- public-key verification, private-key isolation, append-only history, atomic
+- public-key verification, the cooperative certifier-only writer contract,
+  restrictive permissions as defense-in-depth, append-only history, atomic
   no-follow writes, and post-write verification;
 - certificate-backed pooled review while pooled-review health authority is
   retired;
@@ -137,35 +138,46 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
 
 **Modify**
 
+- `docs/architecture.md`
+- `docs/certification_and_drift.md`
 - `docs/plans/migrate_audit_to_certification.md`
 - `docs/plans/machine-module-contract/README.md`
 - `docs/plans/machine-module-contract/IMPLEMENT.md`
 - `docs/plans/post-migration-simplification/README.md`
+- `docs/plans/logical-resource-addressing.md`
+- `docs/plans/osx_feedback_fix/*.md`
+- `docs/plans/per-llm-interface-personal-preferences.md`
+- `docs/plans/interface-metadata-refactor.md`
+- `docs/plans/blueprint-schema-documentation-consolidation.md`
 
 **Create**
 
 - `docs/plans/unified-architecture-migration-map.yaml`
 
-- [ ] Record branch, commit, and dirty-path ownership. Stop on detached HEAD or
+- [x] Record branch, commit, and dirty-path ownership. Stop on detached HEAD or
   unexplained overlapping work.
-- [ ] Mark the three older implementation sequences superseded by this plan;
+- [x] Mark the three older implementation sequences superseded by this plan;
   retain them as history rather than allowing competing execution guidance.
-- [ ] Inventory every unversioned, version-2, and version-3 declaration and
+- [x] Defer every overlapping active plan pending version-4 adoption and an
+  approved rebase. Freeze each execution entrypoint and require fresh
+  functional-predecessor dispositions for its proposed artifacts.
+- [x] Inventory every unversioned, version-2, and version-3 declaration and
   every schema field, public ID, caller, generated artifact, installed-source
   class, document, validator, hook, and test family.
-- [ ] Record the current owner and exact target/retirement disposition for each
+- [x] Record the current owner and exact target/retirement disposition for each
   entry. Include blueprint search, installer dependency consumption, helper
   semantics, `route_smoke`, contributor validators, and dynamic plugin/direct
   source discovery.
-- [ ] Give every existing conformance/admissibility rule a validator,
+- [x] Give every existing conformance/admissibility rule a validator,
   certifier-check, or reviewed-retirement disposition.
-- [ ] Resolve the certification-authority decision gate. For the required
-  broker route, record supported platforms, service identity, key/output
-  ownership, high-level request contract, certifier-only bootstrap, installer,
-  and failure behavior. Unsupported platforms fail closed.
-- [ ] Reject duplicate or missing dispositions and any proposed file lacking a
+- [x] Record the resolved cooperative same-user certification authority:
+  Linux/macOS/Windows targets, the existing `skill-certifier` signing/output
+  owner, the existing installer owner, fail-closed certification behavior, the
+  Task 3 Windows atomic-writer gate, and the explicit lack of protection from
+  a malicious same-UID process.
+- [x] Reject duplicate or missing dispositions and any proposed file lacking a
   functional-predecessor decision.
-- [ ] Run the unchanged baseline:
+- [x] Run the unchanged baseline:
 
   ```bash
   python3 scripts/run-python-tests.py --suite full --verbose
@@ -330,14 +342,21 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   append-only history. Add public/private signing separation, key rotation,
   certifier identity, dependency hashes, machine evidence, and
   `certification_basis_hash`.
-- [ ] Route signing and certificate writes through the approved authority
-  mechanism. With the architecture's broker route, regular dispatcher and
-  skill processes receive only read access and the public verification key;
-  tests prove they cannot extract the key, submit a payload for signing, or
-  write certificate state.
-- [ ] Keep runtime fail-closed for missing or suspect certification. Test the
-  broker's certifier-only bootstrap and prove it cannot bootstrap or execute an
-  arbitrary node.
+- [ ] Keep signing and certificate writes in the existing audit-writer owner
+  renamed to `skill-certifier`. Its supported interface reconstructs the
+  payload internally; `skill-drift` remains a public-key, read-only consumer.
+  Test the supported writer/read-only contracts without claiming protection
+  from a malicious same-UID process.
+- [ ] Generalize the existing `src/officina/common/atomic_files.py` owner in
+  place before Windows v4 certification. Provide Windows-equivalent confined
+  atomic/no-follow semantics, including reparse-point and destination-escape
+  rejection, atomic replacement, durability, restrictive ACL verification,
+  and post-write verification. Until those Windows tests pass, certificate
+  writes and v4 dispatch on Windows remain unsupported and fail closed. Do not
+  add a parallel writer or platform provider file.
+- [ ] Keep runtime fail-closed for missing or suspect certification. Initial
+  `skill-certifier` certification uses the same certifier path and complete
+  basis checks; add no special bootstrap, service, or second writer.
 - [ ] Require the certifier implementation and tracked target inputs to match
   their commits. Bind included ignored/untracked inputs by pre-certification
   digest and abort on mutation before write.
@@ -351,9 +370,10 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   atomic cutover.
 - [ ] Make drift a read-only consumer of the shared graph, hash, basis, and
   certificate APIs. It must not sign, repair, or recompute competing judgments.
-- [ ] Test signatures, history linkage, authority boundaries, exact dependency
-  agreement, local-input provenance, machine evidence, mutation/HEAD races,
-  and stale basis/policy behavior using the existing audit/drift test homes.
+- [ ] Test signatures, history linkage, the cooperative writer contract, exact
+  dependency agreement, local-input provenance, machine evidence,
+  mutation/HEAD races, and stale basis/policy behavior using the existing
+  audit/drift test homes.
 - [ ] Run:
 
   ```bash

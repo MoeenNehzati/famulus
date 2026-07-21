@@ -58,9 +58,26 @@ The `skill-certifier` skill produces accurate blueprint files and issues certifi
 
 The `skill-drift` skill applies the read-only certification assessment. It compares the current graph with its certificates and reports each node as certified or suspect. It does not repair blueprint files or write certificates.
 
-Keeping certification and status reporting in separate skills creates an authority boundary. Only `skill-certifier` can modify blueprint files, write certificates, or access the private signing key. `skill-drift` is read-only and receives only the public verification key. This boundary is enforced by executable and filesystem permissions, not only by skill instructions. A status check therefore cannot turn into certification merely because an LLM decides that a suspect node is acceptable.
+Certification and status reporting have a cooperative same-user authority
+contract. The existing audit writer, renamed to `skill-certifier`, is the one
+supported owner of blueprint repair, signing, and certificate writes.
+`skill-drift` remains read-only and uses only the public verification key
+through its supported code path. No broker, service identity, second writer,
+or parallel signing path is introduced.
 
-This separation requires public-key signatures rather than a shared symmetric key. If both skills possessed the same authentication key, the read-only checker could also produce valid certificates. The certifier must reconstruct node and dependency hashes and perform its checks internally before signing; it must not accept an LLM-supplied certificate payload as already validated.
+Public-key signatures preserve a verification-only API for `skill-drift` and
+make drift, corruption, and changes outside the cooperative writer contract
+detectable. The certifier reconstructs node and dependency hashes and performs
+its checks internally before signing; it does not accept an LLM-supplied
+certificate payload as already validated. User-only permissions, append-only
+history, atomic no-follow writes, and post-write verification are retained as
+defense-in-depth.
+
+This is not a filesystem-enforced security boundary between same-UID
+processes. A malicious process running as the same OS user may be able to
+access signing material or certificate outputs and can therefore defeat the
+cooperative contract. Signatures and currentness do not defend against that
+attacker.
 
 Before signing, `skill-certifier` constructs the complete canonical payload. The signature field itself is not part of that payload:
 
@@ -288,7 +305,7 @@ This document proposes a simpler certification model and does not yet describe t
 | Certification reads the existing authored blueprint | Two-pass certification may repair the blueprint | The first pass discovers dependencies; the second produces the authoritative blueprint after dependencies are certified. |
 | Certification may inspect dirty local inputs but cannot stamp them | `is_committed(x)` gates certificate writing and the certificate records `source_commit` | Every certified node can be recovered from the commit named by its certificate; unrelated dirty files do not block certification. |
 | Target-only certification | Optional `repair_dependents` and graph-wide `certify_all(G)` | Callers choose whether to repair only the target closure, effects on direct dependents, or the entire graph. |
-| Shared-key authentication | Public-key signatures bound to `node_hash(skill-certifier)`, the certifier source commit, and the preceding history entry | `skill-certifier` holds the private key and write authority; each signature identifies the exact certifier version and recursively commits to the retained signature history. `skill-drift` receives only the public key and marks old current certificates suspect when the certifier changes. |
+| Shared-key authentication | Public-key signatures bound to `node_hash(skill-certifier)`, the certifier source commit, and the preceding history entry | `skill-certifier` is the sole cooperative writer and `skill-drift` uses the public key through its supported path. Signatures detect drift, corruption, and out-of-contract changes, but do not protect signing material or outputs from a malicious same-UID process. |
 | Tests and validators participate in certification health gates | Routine tests remain in ordinary validation workflows | The core certification-status algorithm focuses on blueprint accuracy and direct dependency agreement. |
 
 These changes require corresponding updates to skill names, interface IDs, blueprint dependencies, schemas, certificate formats, permission declarations, policy hashes, documentation, tests, and installed-skill migration behavior before they can replace the current implementation.

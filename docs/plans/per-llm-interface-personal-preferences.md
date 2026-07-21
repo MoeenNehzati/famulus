@@ -1,5 +1,11 @@
 # Per-LLM-Interface Personal Preferences Implementation Plan
 
+> **Deferred pending version-4 adoption and rebase — do not execute.** This
+> plan overlaps the unified migration's source/interface identity, sidecar,
+> discovery, validator, generated-block, and scaffolding contracts. None of its
+> proposed artifacts is authorized by that migration; resumption requires an
+> approved post-adoption rebase and fresh functional-predecessor dispositions.
+
 > **For Codex:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task by task.
 
 **Goal:** Establish a strict repository convention in which every LLM interface has exactly one personal-preference file, force-loads that file as the final instruction in its binding, can have its user-specific non-substantive preferences updated through `skill-maker`, and keeps the tracked canonical preference blob empty through a repository-defined Git filter.

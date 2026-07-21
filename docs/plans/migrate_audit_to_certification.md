@@ -1,5 +1,13 @@
 # Audit-to-Certification Migration Implementation Plan
 
+> **Superseded — history only.** Do not execute this sequence. The live
+> migration authority is
+> [`docs/plans/unified-architecture-migration.md`](unified-architecture-migration.md),
+> which implements certification once against the final version-4 graph,
+> adapts the existing certifier in place, and provides no legacy runtime
+> compatibility. This file is retained only as design and implementation
+> history.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Track execution with checkbox steps and stop at every review gate.
 
 **Goal:** Replace the implemented audit/health system with the certificate model in `docs/certification_and_drift.md`, migrate supported callers and installed artifacts without an unreadable intermediate state, and delete `docs/audit_and_drift.md` after every live dependency has moved.

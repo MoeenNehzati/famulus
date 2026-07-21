@@ -1,5 +1,12 @@
 # Post-Migration Simplification Implementation Plan
 
+> **Superseded — history only.** Do not execute this sequence. The live
+> migration authority is
+> [`docs/plans/unified-architecture-migration.md`](../unified-architecture-migration.md),
+> which targets version 4, requires fail-closed certification, and retains the
+> existing migration engine plus its argument-only CLI as migration evidence.
+> This file is retained only as design and implementation history.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** After live blueprints have migrated to version 3, remove the version-2 branches from the existing common and dispatcher paths, make certification advisory during generated-interface injection, and retain the current module and caller structure wherever it still works.

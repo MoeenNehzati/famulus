@@ -1,5 +1,12 @@
 # macOS Installation Feedback Remediation Umbrella Plan
 
+> **Deferred pending version-4 adoption and rebase — do not execute this
+> package or its subplans.** It overlaps the unified migration's installer,
+> plugin-discovery, manifest, launcher, hook, and atomic-state contracts. None
+> of its proposed artifacts is authorized by that migration; resumption
+> requires an approved post-adoption rebase and fresh functional-predecessor
+> dispositions for every proposed artifact.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` or, when the user explicitly authorizes delegation, `superpowers:subagent-driven-development`. Execute one linked subplan at a time and stop at its review gate.
 
 **Goal:** Turn the July 17 macOS installation failures into a cross-platform installer architecture, accepted on Linux, macOS, and Windows with an additional native macOS LaunchAgent smoke for the reported path.

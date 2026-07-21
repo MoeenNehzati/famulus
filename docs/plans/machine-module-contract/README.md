@@ -1,5 +1,13 @@
 # Machine-Module Contract Redesign
 
+> **Superseded — history only.** Do not execute this package's version-3
+> sequence. The live migration authority is
+> [`docs/plans/unified-architecture-migration.md`](../unified-architecture-migration.md).
+> Phases 1 through 3 remain useful evidence of landed machinery; the remaining
+> conformance, certification, and version-3 declaration work is replaced by
+> the unified version-4 plan. Files in this directory are retained as design
+> and implementation history.
+
 This directory is the consolidated draft authority for the machine-module,
 caller-contract, consumer-local injection, and interface-admissibility work.
 It incorporates the material content of the earlier transient plans and design
@@ -15,8 +23,8 @@ require both. The repository still contains the singular v3
 declarations are not design authority. The target v3 machine-module architecture
 exists only in this plan package.
 
-Implementation agents start at [IMPLEMENT.md](IMPLEMENT.md), not by reading the
-entire package.
+Historical readers may start at [IMPLEMENT.md](IMPLEMENT.md). Implementation
+agents must instead start at the unified migration plan linked above.
 
 ## Authority and reading order
 
