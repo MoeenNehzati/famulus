@@ -396,6 +396,19 @@
       "machine-module": {"uses-interface": ["machine-module"], "uses-behavior-source": ["behavior-source"]},
       "behavior-source": {"uses-interface": ["llm-interface", "machine-interface"], "uses-behavior-source": ["behavior-source"]}
     },
+    "v4_relationship_matrix": {
+      "module": {
+        "contains-source": ["behavioral_source"],
+        "exports-interface": ["behavioral_source"],
+        "references-cross-owner-contract": ["module", "behavioral_source"]
+      },
+      "behavioral_source": {
+        "uses-source": ["behavioral_source"],
+        "uses-private-interface": ["behavioral_source"],
+        "uses-export": ["module"],
+        "references-cross-owner-contract": ["module", "behavioral_source"]
+      }
+    },
     "behavior_source_visibility": {"skill_local": "declaring-skill-only", "repository_references": "all-skills"}
   }
 }

@@ -4,8 +4,23 @@
   "title": "Typed Blueprint Common Definitions",
   "definitions": {
     "schemaVersion": {"const": 3, "description": "Typed blueprint schema generation."},
+    "requirement": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9.+_-]*(?:(?:==|>=|>|<=|<)[A-Za-z0-9][A-Za-z0-9._-]*(?:,(?:==|>=|>|<=|<)[A-Za-z0-9][A-Za-z0-9._-]*)*)?$",
+      "description": "A language or machine requirement: a name, an exact version, or a comma-separated intersection of version constraints."
+    },
     "interfaceVersion": {"type": "integer", "minimum": 1, "description": "Human-managed public contract version."},
     "skillId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+$"},
+    "moduleId": {"$ref": "#/definitions/skillId"},
+    "behavioralSourceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "sourceInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.interface\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "exportInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.interface\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "interfaceId": {
+      "oneOf": [
+        {"$ref": "#/definitions/sourceInterfaceId"},
+        {"$ref": "#/definitions/exportInterfaceId"}
+      ]
+    },
     "llmInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.llm\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
     "machineInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.machine\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
     "canonicalInterfaceId": {
@@ -49,9 +64,42 @@
       "required": ["base", "path"],
       "additionalProperties": false,
       "properties": {
-        "base": {"enum": ["skill-root", "repository-root"], "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "skill-root"}, "doc": {"authoring": ["Choose the root against which the sidecar path is resolved."]}, "related_validation_rules": ["gateway-file"]}},
-        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "llm_interfaces/.specialized.md.blueprint.yaml"}, "doc": {"authoring": ["Use the deterministic hidden sidecar path without parent traversal."]}, "related_validation_rules": ["gateway-file"]}}
+        "base": {"enum": ["module-root", "repository-root"], "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "module-root"}, "doc": {"authoring": ["Choose the root against which the blueprint path is resolved."]}, "related_validation_rules": ["gateway-file"]}},
+        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "blueprints/gateway.yaml"}, "doc": {"authoring": ["Name the target blueprint without parent traversal."]}, "related_validation_rules": ["gateway-file"]}}
       }
+    },
+    "sourceContainment": {
+      "type": "object",
+      "required": ["blueprint"],
+      "additionalProperties": false,
+      "properties": {
+        "blueprint": {"$ref": "#/definitions/blueprintLocator", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": {"base": "module-root", "path": "blueprints/gateway.yaml"}}, "doc": {"authoring": ["Point to the contained behavioral source blueprint; its version remains source-owned."]}, "related_validation_rules": ["relationship-edge"]}}
+      }
+    },
+    "sourceDependency": {
+      "type": "object",
+      "required": ["source", "version", "blueprint", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {"$ref": "#/definitions/behavioralSourceId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "other-skill.source.policy"}, "doc": {"authoring": ["Name the direct behavioral-source dependency."]}, "related_validation_rules": ["behavior-source-edge"]}},
+        "version": {"$ref": "#/definitions/interfaceVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Pin the exact dependency version required by this source."]}, "related_validation_rules": ["version-pin"]}},
+        "blueprint": {"$ref": "#/definitions/blueprintLocator", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": {"base": "module-root", "path": "blueprints/policy.yaml"}}, "doc": {"authoring": ["Point to the dependency's behavioral-source blueprint."]}, "related_validation_rules": ["relationship-edge"]}},
+        "reason": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Supplies policy."}, "doc": {"authoring": ["State why this source directly depends on the target."]}, "related_validation_rules": ["behavior-source-edge"]}}
+      }
+    },
+    "interfaceUse": {
+      "type": "object",
+      "required": ["interface", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "interface": {"$ref": "#/definitions/interfaceId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "other-skill.interface.read"}, "doc": {"authoring": ["Name a sibling private source interface or a module export."]}, "related_validation_rules": ["relationship-edge"]}},
+        "version": {"$ref": "#/definitions/interfaceVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Pin the exact interface version required by this source."]}, "related_validation_rules": ["version-pin"]}}
+      }
+    },
+    "interfaceUseList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/definitions/interfaceUse"}
     },
     "interfaceEdge": {
       "type": "object",
@@ -112,6 +160,17 @@
       "uniqueItems": true,
       "items": {"$ref": "#/definitions/behaviorSourceEdge"}
     },
+    "gateway": {
+      "type": "object",
+      "required": ["path", "language"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "SKILL.md"}, "doc": {"authoring": ["Name exactly one existing whole-file gateway without parent traversal."]}, "related_validation_rules": ["gateway-file"]}},
+        "language": {"$ref": "#/definitions/requirement", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Markdown"}, "doc": {"authoring": ["Declare the language or notation consumed through the gateway."]}, "related_validation_rules": ["schema-shape"]}},
+        "machines": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/definitions/requirement"}, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List alternative machine requirements known to consume the gateway."]}, "related_validation_rules": ["runtime-dependency"]}}
+      },
+      "description": "A whole-file gateway plus its language and optional alternative machine requirements."
+    },
     "instructionFileGateway": {
       "type": "object",
       "required": ["kind", "path"],
@@ -170,9 +229,23 @@
     "directIo": {
       "$ref": "direct-io.schema.json",
       "description": "Immediate semantic IO. This declaration is descriptive and is not proof of subsystem confinement.",
-      "x-famulus": {"audit_hash": "exclude"}
+      "x-famulus": {"audit_hash": "include"}
     },
-    "filesystemOwnershipList": {"$ref": "legacy-skill.schema.json#/definitions/filesystemOwnershipList"},
+    "filesystemOwnershipList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["match", "path", "allowed_readers"],
+        "additionalProperties": false,
+        "properties": {
+          "match": {"enum": ["exact", "regex"], "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "exact"}, "doc": {"authoring": ["Choose exact or regex path matching."]}, "related_validation_rules": ["filesystem-ownership"]}},
+          "path": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "state.json"}, "doc": {"authoring": ["Declare the module-owned filesystem path or pattern."]}, "related_validation_rules": ["filesystem-ownership"]}},
+          "allowed_readers": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/interfaceId"}, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": []}, "doc": {"authoring": ["List generic interface IDs authorized to read this owned path."]}, "related_validation_rules": ["filesystem-ownership"]}},
+          "reason": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Explain the module's filesystem authority when useful."]}, "related_validation_rules": ["filesystem-ownership"]}}
+        }
+      }
+    },
     "metadataContent": {"$ref": "legacy-skill.schema.json#/definitions/metadataContent"},
     "metadataFormat": {"$ref": "legacy-skill.schema.json#/definitions/metadataFormat"},
     "allowedCallers": {

@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "node-hash-policy.schema.json",
+  "title": "Project Node Hash Policy",
+  "description": "Ordered project policy applied after the Git-tracked direct-ownership starting set. Rules use repository-relative gitignore patterns sequentially, with the last matching rule winning.",
+  "type": "object",
+  "required": ["policy_version", "path_syntax", "starting_set", "rules"],
+  "additionalProperties": false,
+  "properties": {
+    "policy_version": {"const": 1},
+    "path_syntax": {"const": "gitignore"},
+    "starting_set": {"const": "git-tracked-directly-owned-regular-files"},
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/definitions/rule"}
+    }
+  },
+  "definitions": {
+    "pattern": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!!)(?!.*(?:^|/)\\.\\.(?:/|$)).+$",
+      "description": "Repository-relative gitignore pattern without a negation prefix or parent traversal."
+    },
+    "rule": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["action", "pattern"],
+          "additionalProperties": false,
+          "properties": {
+            "action": {"const": "include"},
+            "pattern": {"$ref": "#/definitions/pattern"},
+            "require_match": {
+              "type": "boolean",
+              "default": false,
+              "description": "Fail project policy loading when this include matches no eligible path."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["action", "pattern"],
+          "additionalProperties": false,
+          "properties": {
+            "action": {"const": "exclude"},
+            "pattern": {"$ref": "#/definitions/pattern"}
+          }
+        }
+      ]
+    }
+  },
+  "x-famulus": {
+    "evaluation": "sequential-last-match-wins",
+    "include_eligibility": "directly-owned-regular-files-only",
+    "non_configurable_invariants": [
+      "blueprint-gateway-and-same-owner-authored-contract-closure",
+      "reserved-certification-output-rejection",
+      "path-boundary-symlink-and-special-file-safety"
+    ]
+  }
+}

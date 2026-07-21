@@ -1,12 +1,12 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "direct-io.schema.json",
-  "title": "Machine Interface Direct I/O",
-  "description": "Immediate interface-local semantic I/O. Relative private tmp/ and logs/ access may be omitted only when it is purely ephemeral or diagnostic and cannot affect output, verification, persistence, or later invocations.",
+  "title": "Interface Direct I/O",
+  "description": "Immediate source-owned interface semantic I/O. Relative private tmp/ and logs/ access may be omitted only when it is purely ephemeral or diagnostic and cannot affect output, verification, persistence, or later invocations.",
   "x-famulus": {
     "doc": {
       "authoring": [
-        "Declare only immediate export-local I/O; never copy transitive tool I/O.",
+        "Declare only immediate source-interface I/O; never copy transitive tool I/O.",
         "Private relative tmp/ and logs/ paths may be omitted only when purely ephemeral or diagnostic and behaviorally irrelevant."
       ]
     }

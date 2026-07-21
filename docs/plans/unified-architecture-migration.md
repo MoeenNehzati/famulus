@@ -195,11 +195,10 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
 - `references/blueprint/caller-contract.schema.json`
 - `references/blueprint/direct-io.schema.json`
 - `references/blueprint/skill.schema.json` as a migration input
-- rename/generalize `references/blueprint/machine-module.schema.json` to
-  `references/blueprint/module.schema.json`
-- `references/blueprint/behavior-source.schema.json`
-- `references/blueprint/interface-projection.schema.json`
-- `references/blueprint/pooled-review.schema.json`
+- stage `references/blueprint/module.schema.json` from
+  `references/blueprint/machine-module.schema.json`
+- stage `references/blueprint/behavioral-source.schema.json` from
+  `references/blueprint/behavior-source.schema.json`
 - `references/blueprint/schema.json`, `schema-meta.json`, `template.yaml`, and
   `README.md`
 - `docs/certification_and_drift.md`
@@ -226,6 +225,9 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   facts. Evolve the existing behavior-source schema into
   `behavioral_source`. Old shapes remain inputs to the migration engine only;
   the v4 schemas do not contain compatibility branches.
+- [ ] Keep the two pre-v4 predecessor schema files and live root routing
+  unchanged through Task 4. Test the staged v4 schemas directly; Task 5 removes
+  the predecessors and switches the root atomically.
 - [ ] Make module export versions derived from their source interfaces. Keep
   caller access only on module exports and intrinsic contracts on sources.
 - [ ] Define the ordered project hash policy. Start from Git-tracked direct
@@ -239,10 +241,6 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
 - [ ] Update certification documentation and the certificate schema for local
   inputs, partial Git reproducibility, and one `certification_basis_hash` that
   covers the node-input policy and all other certification machinery.
-- [ ] Generalize `interface-projection.schema.json` and
-  `pooled-review.schema.json` with their existing producers. Replace legacy
-  machine/LLM IDs and health fields with v4 interface IDs and certificate
-  fields rather than creating parallel derived-artifact schemas.
 - [ ] Extend existing tests only for new v4 and policy semantics; preserve the
   already-covered schema and path-safety cases.
 - [ ] Run:
@@ -255,6 +253,8 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
 
 **Modify**
 
+- `references/blueprint/interface-projection.schema.json`
+- `references/blueprint/pooled-review.schema.json`
 - `src/officina/common/blueprint_inventory.py`
 - `src/officina/common/blueprint_graph.py`
 - `src/officina/common/artifact_health.py`
@@ -285,6 +285,10 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
 - [ ] Add module containment, most-specific direct ownership, shared
   module/source gateway aliases, source-owned interfaces, module exports, and
   the certification projection. Preserve helper edges and projection safety.
+- [ ] Generalize `interface-projection.schema.json` and
+  `pooled-review.schema.json` atomically with their existing producers. Replace
+  legacy machine/LLM IDs and health fields with v4 interface IDs and
+  certificate fields rather than creating parallel derived-artifact schemas.
 - [ ] Generalize the existing `NodeHashState` path and eliminate the separate
   machine-module hash path. One implementation resolves policy inputs, records
   their path/kind/digest/Git provenance/final rule, computes the local node
@@ -427,6 +431,8 @@ an authorized committed rollback point before Task 5.
 - dispatcher callers, injected guidance, installed-source adapters, blueprint
   search, and installer dependency consumption;
 - runtime, projection, certification, and drift entrypoints;
+- replace the retained pre-v4 `machine-module.schema.json` and
+  `behavior-source.schema.json` routes with the staged v4 schemas;
 - rename `skill-audit` to `skill-certifier` and migrate its public IDs.
 
 - [ ] Regenerate the candidate tree from the reviewed map and copy only mapped

@@ -245,11 +245,8 @@ def test_generated_templates_validate_against_live_and_annotated_schemas() -> No
 
 def test_each_typed_schema_generates_a_valid_authoring_template() -> None:
     for name in [
-        "skill.schema.json",
-        "llm-interface.schema.json",
-        "machine-interface.schema.json",
-        "machine-module.schema.json",
-        "behavior-source.schema.json",
+        "module.schema.json",
+        "behavioral-source.schema.json",
     ]:
         schema = load_schema(Path("references/blueprint") / name)
         rendered = render_blueprint_template(schema)
@@ -273,6 +270,13 @@ def test_committed_typed_skill_template_matches_schema_generated_values() -> Non
         "SKILL.md blueprint contract block",
         "SKILL.md blueprint interface block",
     ]
+    assert committed["v4_examples"] == {
+        "module": "blueprint.yaml",
+        "behavioral_sources": [
+            "blueprints/gateway.yaml",
+            "blueprints/runner.yaml",
+        ],
+    }
 
 
 def test_schema_family_examples_create_complete_valid_documents(tmp_path: Path) -> None:
@@ -286,14 +290,24 @@ def test_schema_family_examples_create_complete_valid_documents(tmp_path: Path) 
             "skill.schema.json",
             "llm-interface.schema.json",
             "machine-interface.schema.json",
-            "behavior-source.schema.json",
+            "v2/behavior-source.schema.json",
         ]
     }
     root = yaml.safe_load(render_blueprint_template(schemas["skill.schema.json"]))
     first = yaml.safe_load(render_blueprint_template(schemas["machine-interface.schema.json"]))
     second = deepcopy(first)
     command = deepcopy(first)
-    source = yaml.safe_load(render_blueprint_template(schemas["behavior-source.schema.json"]))
+    source = {
+        "schema_version": 2,
+        "blueprint_type": "behavior-source",
+        "id": "references.source.policy",
+        "version": 1,
+        "description": "Defines shared policy.",
+        "binding": {"kind": "file", "path": "references/policy.md"},
+        "content": "config",
+        "format": "markdown",
+        "uses_behavior_sources": [],
+    }
 
     root["id"] = "example-skill"
     root["default_interface"]["behavior_sources"] = [{
@@ -319,15 +333,12 @@ def test_schema_family_examples_create_complete_valid_documents(tmp_path: Path) 
     command["id"] = "example-skill.machine.command"
     command["gateway"] = {"kind": "command-file", "path": "_cx/_command", "args_prefix": []}
     command["usage"] = ""
-    source["id"] = "references.source.policy"
-    source["gateway"] = {"kind": "file", "path": "references/policy.md"}
-
     documents = [
         (schemas["skill.schema.json"], root, skill / examples["skill_root"]),
         (schemas["machine-interface.schema.json"], first, skill / examples["shared_python_interfaces"][0]),
         (schemas["machine-interface.schema.json"], second, skill / examples["shared_python_interfaces"][1]),
         (schemas["machine-interface.schema.json"], command, skill / examples["command_interface"]),
-        (schemas["behavior-source.schema.json"], source, references / ".policy.md.blueprint.yaml"),
+        (schemas["v2/behavior-source.schema.json"], source, references / ".policy.md.blueprint.yaml"),
     ]
     for schema, document, path in documents:
         schema_validator(schema).validate(document)

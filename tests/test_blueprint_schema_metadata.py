@@ -10,11 +10,8 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
 TYPED_SCHEMAS = [
-    "skill.schema.json",
-    "llm-interface.schema.json",
-    "machine-interface.schema.json",
-    "machine-module.schema.json",
-    "behavior-source.schema.json",
+    "module.schema.json",
+    "behavioral-source.schema.json",
 ]
 REQUIRED_RULES = {
     "generated-contract-block",
@@ -181,6 +178,19 @@ def test_schema_meta_declares_relationship_and_visibility_policy() -> None:
         "skill_local": "declaring-skill-only",
         "repository_references": "all-skills",
     }
+    assert metadata["v4_relationship_matrix"] == {
+        "module": {
+            "contains-source": ["behavioral_source"],
+            "exports-interface": ["behavioral_source"],
+            "references-cross-owner-contract": ["module", "behavioral_source"],
+        },
+        "behavioral_source": {
+            "uses-source": ["behavioral_source"],
+            "uses-private-interface": ["behavioral_source"],
+            "uses-export": ["module"],
+            "references-cross-owner-contract": ["module", "behavioral_source"],
+        },
+    }
 
 
 def test_typed_nodes_declare_gateway_and_content() -> None:
@@ -216,31 +226,25 @@ def test_version_three_common_schema_uses_gateway_definition_names() -> None:
     )
 
 
-def test_behavior_source_semantic_type_is_closed_and_exact() -> None:
-    semantic_type = _load("behavior-source.schema.json")["properties"][
-        "semantic_type"
-    ]
+def test_v4_behavioral_source_uses_the_unified_node_kind_and_intrinsic_interfaces() -> None:
+    schema = _load("behavioral-source.schema.json")
+
+    assert schema["properties"]["node_type"]["const"] == "behavioral_source"
+    assert "semantic_type" not in schema["properties"]
+    assert schema["properties"]["interfaces"]["propertyNames"]["$ref"] == (
+        "common.schema.json#/definitions/sourceInterfaceId"
+    )
+
+
+def test_v4_direct_io_is_source_owned_and_included_in_node_identity() -> None:
     common = _load("common.schema.json")
-    assert semantic_type["$ref"] == "common.schema.json#/definitions/semanticType"
-    assert common["definitions"]["semanticType"]["enum"] == [
-        "policy",
-        "instructions",
-        "reference",
-        "configuration",
-        "preference",
-        "schema",
-        "template",
-        "example",
-        "checklist",
-        "dataset",
-    ]
+    direct_io = _load("direct-io.schema.json")
 
-
-def test_direct_io_is_explicitly_excluded_from_certified_contract_hashes() -> None:
-    for name in ["llm-interface.schema.json", "machine-interface.schema.json"]:
-        metadata = _load(name)["properties"]["direct_io"]["x-famulus"]
-        assert metadata["audit_hash"] == "exclude"
-        assert "does not prove" in " ".join(metadata["doc"]["authoring"])
+    assert common["definitions"]["directIo"]["x-famulus"]["audit_hash"] == (
+        "include"
+    )
+    assert direct_io["title"] == "Interface Direct I/O"
+    assert "source-owned" in direct_io["description"]
 
 
 def test_machine_interface_support_is_bounded_by_required_interfaces() -> None:

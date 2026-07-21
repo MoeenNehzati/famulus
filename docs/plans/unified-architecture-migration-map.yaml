@@ -407,7 +407,7 @@ schema_inventory:
     - paths: [references/blueprint/behavior-source.schema.json]
       current_owner: v3 behavior-source schema
       disposition: rename
-      target: references/blueprint/behavior-source.schema.json with schema_version 4 and node_type behavioral_source
+      target: references/blueprint/behavioral-source.schema.json with schema_version 4 and node_type behavioral_source
     - paths: [references/blueprint/machine-interface.schema.json, references/blueprint/llm-interface.schema.json, references/blueprint/default-llm-interface.schema.json]
       current_owner: v3 type-specific interface schemas
       disposition: retire
@@ -1063,6 +1063,9 @@ functional_predecessors:
   - proposed: references/blueprint/module.schema.json
     disposition: rename
     predecessor: references/blueprint/machine-module.schema.json
+  - proposed: references/blueprint/behavioral-source.schema.json
+    disposition: rename
+    predecessor: references/blueprint/behavior-source.schema.json
   - proposed: src/officina/common/process_binding_compiler.py
     disposition: rename
     predecessor: src/officina/common/machine_interface_binding.py

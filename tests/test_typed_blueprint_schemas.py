@@ -12,7 +12,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
-MACHINE_MODULE_FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "machine_modules"
+CERTIFICATION_ROOT = REPO_ROOT / "references" / "certification"
 CONFORMANCE_OPERATION_FIXTURE_ROOT = (
     REPO_ROOT / "tests" / "fixtures" / "conformance_operations"
 )
@@ -50,10 +50,431 @@ def _empty_io() -> dict:
     return {"reads": [], "writes": [], "network": []}
 
 
-def _machine_module_fixture(name: str) -> dict:
-    return yaml.safe_load(
-        (MACHINE_MODULE_FIXTURE_ROOT / name).read_text(encoding="utf-8")
+def test_v4_requirement_grammar_accepts_names_exact_versions_and_intersections() -> None:
+    requirement = _load("common.schema.json")["definitions"]["requirement"]
+    validator = jsonschema.Draft7Validator(requirement)
+
+    for value in ("Python", "Python==3.11", "Python>=3.11,<4"):
+        validator.validate(value)
+
+    for value in ("", "Python=3.11", "Python>=3.11,", "Python>=3.11, <4"):
+        assert list(validator.iter_errors(value)), value
+
+
+def test_v4_gateway_is_a_closed_whole_file_with_language_and_optional_machines() -> None:
+    common = _load("common.schema.json")
+    resolver = jsonschema.RefResolver.from_schema(common)
+    validator = jsonschema.Draft7Validator(
+        common["definitions"]["gateway"], resolver=resolver
     )
+
+    validator.validate({"path": "SKILL.md", "language": "Markdown"})
+    validator.validate(
+        {
+            "path": "_rtx/_runner.py",
+            "language": "Python>=3.11,<4",
+            "machines": ["CPython==3.11", "PyPy>=3.10"],
+        }
+    )
+
+    for invalid in (
+        {"path": "../escape.py", "language": "Python"},
+        {"path": "SKILL.md", "language": "Markdown", "machines": []},
+        {"path": "SKILL.md", "language": "Markdown", "kind": "file"},
+        {"path": "_rtx/_runner.py", "language": "Python", "symbol": "Interface"},
+    ):
+        assert list(validator.iter_errors(invalid)), invalid
+
+
+def test_v4_process_binding_groups_transport_and_entry_mechanics() -> None:
+    schema = _load("caller-contract.schema.json")
+    resolver = jsonschema.RefResolver.from_schema(schema)
+    validator = jsonschema.Draft7Validator(
+        schema["definitions"]["processBinding"], resolver=resolver
+    )
+    binding = {
+        "kind": "process",
+        "entry": "Interface",
+        "args_prefix": ["records"],
+        "arguments": {
+            "targets": {
+                "kind": "option",
+                "name": "--target",
+                "arity": {"minimum": 1, "maximum": None},
+            }
+        },
+        "fixed": [{"kind": "switch", "name": "--json"}],
+        "outputs": {
+            "records": {
+                "channel": "stdout",
+                "encoding": "utf-8",
+                "framing": "exactly-one-json-document",
+            }
+        },
+        "outcomes": {"ok": {"exit_codes": [0]}},
+        "cancellation": {"kind": "signal", "signal": "SIGTERM"},
+        "stop": {"kind": "dispatcher-cancel"},
+    }
+
+    validator.validate({"kind": "process"})
+    validator.validate(binding)
+
+    binding["symbol"] = "Interface"
+    assert list(validator.iter_errors(binding))
+
+
+def _valid_v4_contract() -> dict:
+    return {
+        "arguments": {
+            "target": {
+                "description": "Record identifier.",
+                "required": True,
+                "sensitivity": "public",
+                "type": {"kind": "string"},
+            }
+        },
+        "preconditions": [],
+        "interaction": {"mode": "unattended"},
+        "caller_warnings": [],
+        "outputs": [
+            {
+                "id": "record",
+                "audience": "machine",
+                "description": "Selected record.",
+                "type": {"kind": "string"},
+                "direct_io_ref": "stdout",
+                "cardinality": {"minimum": 1, "maximum": 1},
+                "ordering": "stable",
+                "pagination": {"kind": "none"},
+                "truncation": {"kind": "none"},
+                "empty": "No record is emitted.",
+            }
+        ],
+        "outcomes": [
+            {
+                "id": "ok",
+                "class": "success",
+                "outputs": ["record"],
+                "effects": [],
+                "caller_action": "Use the record.",
+            }
+        ],
+        "execution": {
+            "state_effect": "read-only",
+            "lifecycle": "finite",
+            "consistency": {"snapshot": "Reads one snapshot."},
+            "verification": [{"method": "output-schema", "output_ref": "record"}],
+        },
+        "helpers": [],
+        "direct_io": _empty_io(),
+    }
+
+
+def test_v4_interface_contract_is_semantic_and_excludes_process_mechanics() -> None:
+    validator = _validator("caller-contract.schema.json")
+    document = _valid_v4_contract()
+
+    validator.validate(document)
+
+    mechanical_aliases = (
+        ("arguments", "target", "invocation_binding"),
+        ("outputs", 0, "channel"),
+        ("outcomes", 0, "signal"),
+        ("interaction", None, "cancellation"),
+    )
+    values = (
+        {"kind": "option", "name": "--target", "arity": {"minimum": 1, "maximum": 1}},
+        "stdout",
+        {"exit_codes": [0]},
+        {"kind": "dispatcher-cancel"},
+    )
+    for location, value in zip(mechanical_aliases, values):
+        invalid = deepcopy(document)
+        section, item, field = location
+        target = invalid[section] if item is None else invalid[section][item]
+        target[field] = value
+        assert _errors(invalid, "caller-contract.schema.json"), location
+
+
+def _valid_v4_behavioral_source() -> dict:
+    return {
+        "schema_version": 4,
+        "node_type": "behavioral_source",
+        "id": "demo-skill.source.gateway",
+        "version": 1,
+        "description": "Owns the primary instructions.",
+        "gateway": {"path": "SKILL.md", "language": "Markdown"},
+        "content": [r"SKILL\.md"],
+        "dependencies": [],
+        "uses_interfaces": [],
+        "interfaces": {
+            "demo-skill.source.gateway.interface.default": {
+                "version": 1,
+                "description": "Primary instructions.",
+                "contract": _valid_v4_contract(),
+            }
+        },
+    }
+
+
+def test_v4_behavioral_source_owns_intrinsic_interfaces_and_generic_edges() -> None:
+    document = _valid_v4_behavioral_source()
+    assert _errors(document, "behavioral-source.schema.json") == []
+
+    document["interfaces"]["demo-skill.source.gateway.interface.run"] = {
+        "version": 2,
+        "description": "Run the source.",
+        "process_binding": {"kind": "process", "entry": "Interface"},
+        "contract": _valid_v4_contract(),
+    }
+    document["dependencies"] = [
+        {
+            "source": "other-skill.source.policy",
+            "version": 3,
+            "blueprint": {
+                "base": "repository-root",
+                "path": "skills/other-skill/blueprints/policy.yaml",
+            },
+            "reason": "Supplies policy.",
+        }
+    ]
+    document["uses_interfaces"] = [
+        {"interface": "other-skill.interface.read", "version": 2}
+    ]
+    assert _errors(document, "behavioral-source.schema.json") == []
+
+    document["semantic_type"] = "instructions"
+    assert _errors(document, "behavioral-source.schema.json")
+
+
+def _valid_v4_module() -> dict:
+    return {
+        "schema_version": 4,
+        "node_type": "module",
+        "id": "demo-skill",
+        "version": 1,
+        "description": "Provides the demo skill.",
+        "category": "development-assistant",
+        "role": "automation",
+        "kind": "tool",
+        "gateway": {"path": "SKILL.md", "language": "Markdown"},
+        "content": [r"SKILL\.md"],
+        "discovery": {"mechanism": "skill"},
+        "authority": {"owns_filesystem": []},
+        "sources": {
+            "demo-skill.source.gateway": {
+                "blueprint": {
+                    "base": "module-root",
+                    "path": "blueprints/gateway.yaml",
+                }
+            }
+        },
+        "exports": {
+            "demo-skill.interface.default": {
+                "source_interface": "demo-skill.source.gateway.interface.default",
+                "access": {"allow_all_modules": True, "allowed_callers": []},
+            }
+        },
+    }
+
+
+def test_v4_module_owns_discovery_authority_containment_and_access_only() -> None:
+    document = _valid_v4_module()
+    assert _errors(document, "module.schema.json") == []
+
+    dependency_only = deepcopy(document)
+    del dependency_only["discovery"]
+    assert _errors(dependency_only, "module.schema.json") == []
+
+    document["sources"]["demo-skill.source.gateway"]["version"] = 1
+    document["exports"]["demo-skill.interface.default"]["version"] = 1
+    assert _errors(document, "module.schema.json")
+
+
+def test_v4_module_export_access_preserves_unrestricted_and_allowlist_semantics() -> None:
+    document = _valid_v4_module()
+    access = document["exports"]["demo-skill.interface.default"]["access"]
+
+    access.update(allow_all_modules=False, allowed_callers=["other-skill"])
+    assert _errors(document, "module.schema.json") == []
+
+    access["allowed_callers"] = []
+    assert _errors(document, "module.schema.json")
+
+    access.update(allow_all_modules=True, allowed_callers=["other-skill"])
+    assert _errors(document, "module.schema.json")
+
+
+def test_v4_module_filesystem_authority_uses_generic_interface_readers() -> None:
+    document = _valid_v4_module()
+    ownership = {
+        "match": "exact",
+        "path": "state.json",
+        "allowed_readers": ["other-skill.interface.read"],
+        "reason": "Shares the current state.",
+    }
+    document["authority"]["owns_filesystem"] = [ownership]
+
+    assert _errors(document, "module.schema.json") == []
+
+    ownership["allowed_readers"] = ["other-skill.machine.read"]
+    assert _errors(document, "module.schema.json")
+
+
+def test_staged_live_schema_keeps_v4_nodes_isolated_until_cutover() -> None:
+    assert _errors(_valid_v4_module(), "module.schema.json") == []
+    assert _errors(
+        _valid_v4_behavioral_source(), "behavioral-source.schema.json"
+    ) == []
+
+    assert _errors(_valid_v4_module())
+    assert _errors(_valid_v4_behavioral_source())
+
+    live_refs = [choice["$ref"] for choice in _load("schema.json")["oneOf"]]
+    assert "machine-module.schema.json" in live_refs
+    assert "behavior-source.schema.json" in live_refs
+    assert "module.schema.json" not in live_refs
+    assert "behavioral-source.schema.json" not in live_refs
+
+
+def test_node_hash_policy_schema_enforces_ordered_include_exclude_rules() -> None:
+    path = CERTIFICATION_ROOT / "node-hash-policy.schema.json"
+    assert path.is_file(), "node-hash-policy.schema.json is absent"
+    schema = json.loads(path.read_text(encoding="utf-8"))
+    validator = jsonschema.Draft7Validator(schema)
+    assert schema["x-famulus"]["evaluation"] == "sequential-last-match-wins"
+    assert schema["x-famulus"]["non_configurable_invariants"] == [
+        "blueprint-gateway-and-same-owner-authored-contract-closure",
+        "reserved-certification-output-rejection",
+        "path-boundary-symlink-and-special-file-safety",
+    ]
+    document = {
+        "policy_version": 1,
+        "path_syntax": "gitignore",
+        "starting_set": "git-tracked-directly-owned-regular-files",
+        "rules": [
+            {"action": "exclude", "pattern": "**/_build/**"},
+            {
+                "action": "include",
+                "pattern": "skills/demo/_build/required.json",
+                "require_match": True,
+            },
+        ],
+    }
+    validator.validate(document)
+
+    document["rules"][0]["require_match"] = False
+    assert list(validator.iter_errors(document))
+
+    del document["rules"][0]["require_match"]
+    document["rules"][1]["pattern"] = "../escape"
+    assert list(validator.iter_errors(document))
+
+
+def test_canonical_node_hash_policy_is_closed_and_excludes_only_reserved_outputs() -> None:
+    schema = json.loads(
+        (CERTIFICATION_ROOT / "node-hash-policy.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    policy_path = CERTIFICATION_ROOT / "node-hash-policy.yaml"
+    assert policy_path.is_file(), "node-hash-policy.yaml is absent"
+    policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+
+    jsonschema.Draft7Validator(schema).validate(policy)
+    assert policy["rules"] == [
+        {"action": "exclude", "pattern": pattern}
+        for pattern in (
+            "**/*.log",
+            "**/log/**",
+            "**/logs/**",
+            "**/__pycache__/**",
+            "**/*.pyc",
+            "**/.pytest_cache/**",
+            "**/.cache/**",
+            "**/_build/**",
+            "**/build/**",
+            "**/dist/**",
+            "**/.certificates/**",
+            "**/.last_audit.json",
+            "**/.*.health.json",
+            "**/.pooled-blueprint-review.yaml",
+        )
+    ]
+
+
+def _valid_v4_certificate() -> dict:
+    digest = "sha256:" + "a" * 64
+    return {
+        "payload": {
+            "certificate_schema_version": 1,
+            "subject": {
+                "id": "demo-skill.source.gateway",
+                "node_type": "behavioral_source",
+                "version": 1,
+                "blueprint_path": "skills/demo-skill/blueprints/gateway.yaml",
+                "gateway_path": "skills/demo-skill/SKILL.md",
+            },
+            "node_hash": digest,
+            "source_commit": "b" * 40,
+            "input_manifest": [
+                {
+                    "path": "skills/demo-skill/SKILL.md",
+                    "digest": digest,
+                    "git_provenance": "untracked",
+                }
+            ],
+            "dependencies": [
+                {
+                    "relation": "uses-export",
+                    "target": "other-skill",
+                    "version": 2,
+                    "node_hash": "sha256:" + "c" * 64,
+                }
+            ],
+            "certification_basis_hash": "sha256:" + "d" * 64,
+            "certifier": {
+                "interface": "skill-certifier.interface.certify",
+                "version": 1,
+                "node_hash": "sha256:" + "e" * 64,
+                "source_commit": "f" * 64,
+            },
+            "checks": [
+                {
+                    "id": "schema-valid",
+                    "version": 1,
+                    "passed": True,
+                    "findings": [],
+                }
+            ],
+            "key_id": "sha256:" + "1" * 64,
+            "previous_entry_hash": None,
+            "certified_at": "2026-07-20T12:00:00Z",
+        },
+        "signature": {"scheme": "ed25519", "value": "base64:YWJjZA=="},
+    }
+
+
+def test_v4_certificate_signs_one_closed_payload_with_local_git_provenance() -> None:
+    path = SCHEMA_ROOT / "certificate.schema.json"
+    assert path.is_file(), "certificate.schema.json is absent"
+    document = _valid_v4_certificate()
+
+    assert _errors(document, "certificate.schema.json") == []
+
+    for location, field, value in (
+        (("root",), "key_id", "sha256:" + "2" * 64),
+        (("payload",), "hash_policy_hash", "sha256:" + "3" * 64),
+        (("dependency",), "certificate_hash", "sha256:" + "4" * 64),
+    ):
+        invalid = deepcopy(document)
+        if location == ("root",):
+            invalid[field] = value
+        elif location == ("payload",):
+            invalid["payload"][field] = value
+        else:
+            invalid["payload"]["dependencies"][0][field] = value
+        assert _errors(invalid, "certificate.schema.json"), location
 
 
 def _machine_module_example(name: str) -> dict:
@@ -440,48 +861,6 @@ def test_version_three_machine_interface_uses_gateway_and_content() -> None:
     assert _errors(document, "machine-interface.schema.json") == []
 
 
-SEMANTIC_TYPES = (
-    "policy",
-    "instructions",
-    "reference",
-    "configuration",
-    "preference",
-    "schema",
-    "template",
-    "example",
-    "checklist",
-    "dataset",
-)
-
-
-@pytest.mark.parametrize("semantic_type", SEMANTIC_TYPES)
-def test_version_three_behavior_source_uses_closed_semantic_type(
-    semantic_type: str,
-) -> None:
-    document = {
-        "schema_version": 3,
-        "node_type": "behavior-source",
-        "id": "demo-skill.source.policy",
-        "version": 1,
-        "description": "Defines policy.",
-        "gateway": {"kind": "file", "path": "references/policy.md"},
-        "content": [r"references/policy\.md"],
-        "semantic_type": semantic_type,
-        "format": "markdown",
-        "uses_behavior_sources": [],
-    }
-    assert _errors(document, "behavior-source.schema.json") == []
-
-    document["semantic_type"] = "skill"
-    assert _errors(document, "behavior-source.schema.json")
-
-
-def test_target_v3_selects_machine_modules() -> None:
-    document = _machine_module_fixture("records.valid.yaml")
-
-    assert _errors(document) == []
-
-
 @pytest.mark.parametrize(
     "removed_field",
     [
@@ -496,20 +875,16 @@ def test_target_v3_selects_machine_modules() -> None:
         "dispatcher_consequences",
     ],
 )
-def test_target_v3_rejects_removed_machine_contract_structures(
+def test_v4_rejects_removed_machine_contract_structures(
     removed_field: str,
 ) -> None:
-    document = _machine_module_fixture("records.valid.yaml")
-    document["interfaces"]["inspect-records"]["contract"][removed_field] = {}
+    document = _valid_v4_behavioral_source()
+    interface = document["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]
+    interface["contract"][removed_field] = {}
 
-    assert _errors(document)
-
-
-@pytest.mark.parametrize(
-    "name", ["machine-module.yaml", "advanced-machine-module.yaml"]
-)
-def test_target_machine_module_examples_validate(name: str) -> None:
-    assert _errors(_machine_module_example(name), "machine-module.schema.json") == []
+    assert _errors(document, "behavioral-source.schema.json")
 
 
 @pytest.mark.parametrize(
@@ -564,51 +939,70 @@ def test_conformance_operation_fixtures_cover_every_registered_operation(
                 assert errors, f"{operation_id}:{envelope} unexpectedly valid"
 
 
-def test_target_v3_rejects_command_gateways() -> None:
-    document = _machine_module_fixture("records.valid.yaml")
-    document["gateway"] = {
-        "kind": "command-file",
-        "path": "_cx/records",
-        "args_prefix": [],
-    }
-
-    assert _errors(document, "machine-module.schema.json")
-
-
-def test_target_recursive_type_branches_reject_irrelevant_fields() -> None:
-    document = _machine_module_fixture("records.valid.yaml")
-    string_type = document["interfaces"]["inspect-records"]["contract"][
-        "arguments"
-    ]["targets"]["type"]["element_type"]
+def test_v4_recursive_type_branches_reject_irrelevant_fields() -> None:
+    document = _valid_v4_behavioral_source()
+    contract = document["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]["contract"]
+    string_type = contract["arguments"]["target"]["type"]
     string_type["element_type"] = {"kind": "string"}
 
-    assert _errors(document, "machine-module.schema.json")
+    assert _errors(document, "behavioral-source.schema.json")
 
 
-def test_target_unattended_interaction_rejects_interactive_fields() -> None:
-    document = _machine_module_fixture("records.valid.yaml")
-    interaction = document["interfaces"]["inspect-records"]["contract"][
-        "interaction"
-    ]
+def test_v4_unattended_interaction_rejects_interactive_fields() -> None:
+    document = _valid_v4_behavioral_source()
+    interaction = document["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]["contract"]["interaction"]
     interaction["channel"] = "tty"
 
-    assert _errors(document, "machine-module.schema.json")
+    assert _errors(document, "behavioral-source.schema.json")
 
 
-def test_target_direct_io_rejects_literal_and_dynamic_path_together() -> None:
-    document = _machine_module_example("advanced-machine-module.yaml")
-    entry = document["interfaces"]["update-record"]["direct_io"]["reads"][0]
-    entry["path"] = "record.json"
+def test_v4_direct_io_rejects_literal_and_dynamic_path_together() -> None:
+    document = _valid_v4_behavioral_source()
+    contract = document["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]["contract"]
+    contract["direct_io"]["reads"] = [
+        {
+            "id": "record-input",
+            "medium": "local-filesystem",
+            "access": "read",
+            "content": "One record.",
+            "format": "json",
+            "sensitivity": "public",
+            "path": "record.json",
+            "path_source": {"kind": "argument", "argument_ref": "target"},
+        }
+    ]
 
-    assert _errors(document, "machine-module.schema.json")
+    assert _errors(document, "behavioral-source.schema.json")
 
 
-def test_target_helper_nested_shapes_are_closed() -> None:
-    document = _machine_module_example("advanced-machine-module.yaml")
-    helper = document["interfaces"]["inspect-account"]["helpers"][0]
+def test_v4_helper_nested_shapes_are_closed() -> None:
+    document = _valid_v4_behavioral_source()
+    contract = document["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]["contract"]
+    helper = {
+        "id": "lookup",
+        "role": "Look up the record.",
+        "interface": "other-skill.interface.read",
+        "version": 1,
+        "inputs": {},
+        "result": {"output_ref": "record", "selector": {"kind": "whole-output"}},
+        "route": {"kind": "output", "target": "record"},
+        "empty": {"outcome": "ok", "caller_action": "Use no value."},
+        "failure": {"outcome": "ok"},
+    }
+    contract["helpers"] = [helper]
+    assert _errors(document, "behavioral-source.schema.json") == []
+
     helper["result"]["unknown"] = True
 
-    assert _errors(document, "machine-module.schema.json")
+    assert _errors(document, "behavioral-source.schema.json")
 
 
 def test_target_long_running_conformance_case_requires_complete_cleanup_branch() -> None:

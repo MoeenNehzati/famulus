@@ -1,0 +1,175 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "certificate.schema.json",
+  "title": "Project Node Certificate",
+  "description": "A signed v4 module or behavioral-source certification payload. The signature covers the canonical encoding of payload and no field outside payload.",
+  "type": "object",
+  "required": ["payload", "signature"],
+  "additionalProperties": false,
+  "properties": {
+    "payload": {"$ref": "#/definitions/payload"},
+    "signature": {"$ref": "#/definitions/signature"}
+  },
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "gitCommit": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "subject": {
+      "type": "object",
+      "required": ["id", "node_type", "version", "blueprint_path", "gateway_path"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "node_type": {"enum": ["module", "behavioral_source"]},
+        "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
+        "blueprint_path": {"$ref": "common.schema.json#/definitions/relativePath"},
+        "gateway_path": {"$ref": "common.schema.json#/definitions/relativePath"}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "node_type": {"const": "module"},
+            "id": {"$ref": "common.schema.json#/definitions/moduleId"}
+          }
+        },
+        {
+          "properties": {
+            "node_type": {"const": "behavioral_source"},
+            "id": {"$ref": "common.schema.json#/definitions/behavioralSourceId"}
+          }
+        }
+      ]
+    },
+    "manifestEntry": {
+      "type": "object",
+      "required": ["path", "digest", "git_provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"$ref": "common.schema.json#/definitions/relativePath"},
+        "digest": {"$ref": "#/definitions/sha256"},
+        "git_provenance": {"enum": ["tracked", "ignored", "untracked"]}
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "required": ["relation", "target", "version", "node_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "relation": {
+          "enum": [
+            "contains-source",
+            "uses-source",
+            "uses-private-interface",
+            "uses-export",
+            "references-cross-owner-contract"
+          ]
+        },
+        "target": {
+          "oneOf": [
+            {"$ref": "common.schema.json#/definitions/moduleId"},
+            {"$ref": "common.schema.json#/definitions/behavioralSourceId"}
+          ]
+        },
+        "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
+        "node_hash": {"$ref": "#/definitions/sha256"}
+      }
+    },
+    "certifier": {
+      "type": "object",
+      "required": ["interface", "version", "node_hash", "source_commit"],
+      "additionalProperties": false,
+      "properties": {
+        "interface": {"$ref": "common.schema.json#/definitions/interfaceId"},
+        "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
+        "node_hash": {"$ref": "#/definitions/sha256"},
+        "source_commit": {"$ref": "#/definitions/gitCommit"}
+      }
+    },
+    "check": {
+      "type": "object",
+      "required": ["id", "version", "passed", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "version": {"type": "integer", "minimum": 1},
+        "passed": {"const": true},
+        "findings": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "certificate_schema_version",
+        "subject",
+        "node_hash",
+        "source_commit",
+        "input_manifest",
+        "dependencies",
+        "certification_basis_hash",
+        "certifier",
+        "checks",
+        "key_id",
+        "previous_entry_hash",
+        "certified_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "certificate_schema_version": {"const": 1},
+        "subject": {"$ref": "#/definitions/subject"},
+        "node_hash": {"$ref": "#/definitions/sha256"},
+        "source_commit": {"$ref": "#/definitions/gitCommit"},
+        "input_manifest": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/manifestEntry"}
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/dependency"}
+        },
+        "certification_basis_hash": {"$ref": "#/definitions/sha256"},
+        "certifier": {"$ref": "#/definitions/certifier"},
+        "checks": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/check"}
+        },
+        "key_id": {"$ref": "#/definitions/sha256"},
+        "previous_entry_hash": {
+          "oneOf": [
+            {"$ref": "#/definitions/sha256"},
+            {"type": "null"}
+          ]
+        },
+        "certified_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "signature": {
+      "type": "object",
+      "required": ["scheme", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "scheme": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^base64:(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)$"
+        }
+      }
+    }
+  },
+  "x-famulus": {
+    "canonical_signature_input": "payload",
+    "graph_authority": false,
+    "git_reproducibility": "source_commit reproduces tracked manifest entries only; ignored and untracked entries are signed local-state claims",
+    "cooperative_security_boundary": "signatures detect drift and out-of-contract changes but do not defend against a malicious same-user process"
+  }
+}

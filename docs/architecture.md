@@ -83,14 +83,15 @@ forbidden inputs. Logs, caches, runtime state, and generated output are excluded
 through project policy unless a later rule deliberately re-includes an eligible
 directly owned regular file.
 
-The resolved manifest records path, kind, digest, Git provenance, and final
-inclusion rule. Tracked inputs and the blueprint must match `source_commit`;
-included ignored or untracked files are signed local-state claims that must stay
+The resolved manifest records repository-relative path, digest, and Git
+provenance (`tracked`, `ignored`, or `untracked`). Tracked inputs and the
+blueprint must match `source_commit`; included ignored or untracked files are
+signed local-state claims that must stay
 unchanged during certification. `source_commit` therefore reproduces only the
 tracked subset when local inputs exist.
 
 The local node hash covers canonical node identity and blueprint data plus the
-paths, kinds, and exact bytes of the resolved inputs. Dependency hashes remain
+paths and exact bytes of the resolved inputs. Dependency hashes remain
 separate certificate data: a dependency change invalidates certification but
 does not change the dependent's local node hash.
 

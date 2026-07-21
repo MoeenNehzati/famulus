@@ -1,0 +1,32 @@
+policy_version: 1
+path_syntax: gitignore
+starting_set: git-tracked-directly-owned-regular-files
+rules:
+  - action: exclude
+    pattern: "**/*.log"
+  - action: exclude
+    pattern: "**/log/**"
+  - action: exclude
+    pattern: "**/logs/**"
+  - action: exclude
+    pattern: "**/__pycache__/**"
+  - action: exclude
+    pattern: "**/*.pyc"
+  - action: exclude
+    pattern: "**/.pytest_cache/**"
+  - action: exclude
+    pattern: "**/.cache/**"
+  - action: exclude
+    pattern: "**/_build/**"
+  - action: exclude
+    pattern: "**/build/**"
+  - action: exclude
+    pattern: "**/dist/**"
+  - action: exclude
+    pattern: "**/.certificates/**"
+  - action: exclude
+    pattern: "**/.last_audit.json"
+  - action: exclude
+    pattern: "**/.*.health.json"
+  - action: exclude
+    pattern: "**/.pooled-blueprint-review.yaml"

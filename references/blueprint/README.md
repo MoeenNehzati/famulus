@@ -2,60 +2,97 @@
 
 The concrete schemas in this directory are the canonical source for blueprint
 shape and field-level authoring rules. See
-[`docs/skill-blueprints.md`](../../docs/skill-blueprints.md) for the contributor
-architecture overview.
+[`docs/skill-blueprints.md`](../../docs/skill-blueprints.md) for the current
+contributor overview and [`docs/certification_and_drift.md`](../../docs/certification_and_drift.md)
+for the version-4 input and certificate contract.
 
-Version-3 authoring schema entry points:
+## Staged version-4 contracts
 
-- `schema.json`: compatibility dispatcher for legacy and typed blueprints
-- `skill.schema.json`: canonical skill graph root
-- `default-llm-interface.schema.json`: inline default-interface contract
-- `llm-interface.schema.json`: one file-backed LLM interface
-- `machine-interface.schema.json`: one file-backed machine interface
-- `behavior-source.schema.json`: one file-backed behavior source
-- `health.schema.json`: authenticated generated node and pool health records
-- `pooled-review.schema.json`: generated non-authoritative review document
-- `schema-meta.json`: field metadata protocol and validator-rule catalog
+Version 4 is staged for an atomic graph cutover. Validate candidates directly
+against their concrete schema:
 
-`template.yaml` is the committed schema-family artifact manifest. It names the
-canonical root with its inline default interface, behavior-source sidecar,
-machine-interface gateways, and generated-output examples. Authoring templates
-are generated from each concrete type schema, whose `x-famulus` metadata
-contains all examples and guidance.
+- `module.schema.json`: discovery, filesystem authority, contained behavioral
+  sources, and exported interfaces
+- `behavioral-source.schema.json`: a whole-file gateway, owned content,
+  dependencies, used interfaces, and intrinsic interface contracts
+- `caller-contract.schema.json`: source-owned semantic interface behavior
+- `direct-io.schema.json`: direct resource interactions used by semantic
+  contracts
+- `certificate.schema.json`: the signed current-certificate and history-entry
+  envelope
+- `common.schema.json`: shared identifiers, locators, gateways, requirements,
+  ownership, and relationship shapes
 
-## Version-3 Authoring Contract
+`schema.json` deliberately remains the live pre-v4 dispatcher until Task 5.
+It must reject direct version-4 module and behavioral-source documents during
+staging. The exact predecessor files `machine-module.schema.json` and
+`behavior-source.schema.json` stay on that live route through Task 4;
+`module.schema.json` and `behavioral-source.schema.json` are direct-tested
+candidates only. Task 5 replaces the predecessors and routing atomically.
+Other pre-v4 schema files and `v2/` remain migration inputs; do not extend them
+with version-4 behavior.
 
-Every authored node uses `schema_version: 3`, a `node_type`, a `gateway`, and a
-non-empty `content` list. Content entries are case-sensitive Python regular
-expressions evaluated with `re.fullmatch` against normalized POSIX paths
-relative to the node's ownership root. Every pattern must match at least one
-regular non-symlink file, and the resolved set must include the gateway file.
+`template.yaml` is the schema-family artifact manifest. Its existing
+`examples` and `generated_outputs` describe the live family. `v4_examples`
+names the staged module root and behavioral-source sidecars without switching
+the live generator.
 
-Resolved content has exactly one authored owner. Blueprint files, health and
-audit records, and pooled-review artifacts cannot be node content. The skill
-root owns `SKILL.md` and embeds `default_interface`; version 3 has no
-default-interface sidecar.
+## Version-4 authoring contract
 
-Behavior-source nodes classify the complete logical artifact with
-`semantic_type`. The exact values are `policy`, `instructions`, `reference`,
-`configuration`, `preference`, `schema`, `template`, `example`, `checklist`,
-and `dataset`. Machine gateways use `python-entrypoint` or `command-file`.
+Every module or behavioral source uses `schema_version: 4` and its exact
+`node_type`. A gateway is one whole existing file described by `path`,
+`language`, and optional alternative `machines`. Language and machine
+requirements use a name, an exact version, or a comma-separated intersection,
+such as `Python`, `Python==3.11`, or `Python>=3.11,<4`. Gateway fragments,
+symbols, and legacy gateway kinds are not authored. Process-specific entry and
+transport mechanics belong in an interface's optional `process_binding`.
 
-`gateway` replaces the proposed authored term `entry_point`; do not author
-`entry_point` in a version-3 node. The normalized derived-record term is
-`gateway_path`. Runtime compatibility records may still use `entrypoint`
-internally when a version-3 gateway is translated at the legacy invocation
-boundary.
+A module owns:
 
-For version-3 Python gateways, `uses_interfaces` also defines the same-skill
-provider closure admitted to the descriptor-backed runtime snapshot. The
-dispatcher opens the selected node's Python content and those provider content
-files only; undeclared `_rtx` files are excluded. Version 2 retains its
-whole-package snapshot behavior for compatibility.
+- optional discovery, currently `{mechanism: skill}`;
+- filesystem authority and suggested permissions;
+- a map of contained behavioral sources to blueprint locators; and
+- exported interface IDs, each resolving to one intrinsic source interface
+  with caller access declared as allow-all or a non-empty module allowlist.
 
-Version-2 schemas are retained under [`v2/`](v2/) for read-only compatibility.
-Their `binding` and `local_hash_inputs` fields describe existing version-2
-artifacts; do not use them for new authoring.
+Export versions are derived from their source interfaces. Contracts and
+process bindings remain intrinsic to behavioral sources; modules do not copy
+them into exports. Omitting discovery makes a module dependency-only.
+
+A behavioral source owns:
+
+- one gateway and a non-empty `content` list;
+- direct behavioral-source dependencies with exact versions and blueprint
+  locators;
+- exact-version uses of sibling private interfaces or module exports; and
+- intrinsic interfaces keyed by full source-interface ID.
+
+Each intrinsic interface defines its own version, description, semantic
+`contract`, and optional `process_binding`. Contracts define arguments,
+preconditions, interaction, warnings, outputs, outcomes, execution, helpers,
+and direct I/O. They do not contain argv/stdin bindings, output channels,
+signals, cancellation transport, or stop mechanics; those belong to
+`process_binding`.
+
+Blueprint locators use only `module-root` or `repository-root`. Content entries
+remain case-sensitive Python regular expressions matched with `re.fullmatch`
+against normalized POSIX paths under the ownership root. They declare
+ownership, not hash inclusion order.
+
+## Hash and derived artifacts
+
+The ordered project input policy is
+`../certification/node-hash-policy.yaml`, validated by its adjacent schema.
+It starts from Git-tracked directly owned regular files and applies sequential
+Git-ignore include/exclude rules with last-match-wins. Mandatory blueprint,
+gateway, and same-owner authored-contract closure and reserved-output rejection
+remain non-configurable certifier invariants.
+
+`schema-meta.json` defines the annotation protocol and staged relationship
+matrix. `interface-projection.schema.json`, `pooled-review.schema.json`, and
+their producers remain pre-v4 until they can move atomically with the version-4
+graph in Task 2. `health.schema.json` likewise remains a pre-v4 migration input;
+new version-4 certification records use `certificate.schema.json`.
 
 `legacy-skill.schema.json` is an exact migration snapshot of the former
 monolithic schema. Do not add new features to it.
