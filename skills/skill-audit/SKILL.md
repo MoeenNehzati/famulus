@@ -46,6 +46,39 @@ Mechanical certification runs through `skill-audit.machine.certify`; that
 interface owns the downstream sync, hash-computation, and post-write drift
 checks.
 
+For a v4 migration candidate, keep semantic review separate from mechanical
+finalization:
+
+1. Inspect the committed candidate and collect its completeness findings. This
+   step is read-only; it must not synthesize blueprint prose or write
+   certificates. Treat immutable legacy claims as review context, not as
+   blocking completeness findings.
+2. Review every candidate blueprint against its gateway, content, dependencies,
+   and actual interface behavior. Edit only claims supported by that evidence,
+   then rerun inspection. A structurally complete blueprint is not thereby
+   semantically correct.
+3. If review would change a mechanically protected fact such as ownership,
+   content, gateway, dependency, export, or process binding, stop and return the
+   candidate to migration rather than silently changing its projection.
+4. The mechanical materializer pins its exact commit under the reserved
+   Famulus Git ref. Commit the reviewed candidate and give finalization only
+   that exact reviewed commit; a displayed or caller-supplied mechanical commit
+   is not authority. Finalization derives the pinned baseline, proves ancestry,
+   permits only blueprint-file differences, reconstructs the mechanical graph,
+   and rejects changes to its protected projection, including helper bindings.
+   The reviewed descendant must contain exactly one
+   `Famulus-Legacy-Claims-Reconciled: sha256:<digest>` trailer matching the
+   inspection's per-occurrence legacy-claim reconciliation digest.
+5. The LLM invocation supplies semantic attestation for the reviewed commit.
+   The machine finalizer derives deterministic state, the versioned attestation
+   record, and every certificate payload field; it accepts no caller-supplied
+   check record or generated semantic default.
+
+Signing never accepts the non-atomic diagnostic fallback. Candidate-owned code
+runs from a private exact materialization of the reviewed commit; the caller
+rechecks the parent candidate afterward. This remains a cooperative same-UID
+contract and does not claim isolation from a malicious same-UID process.
+
 `SKILL.md` may describe user interaction, decision flow, and interface
 orchestration. It must not contain direct execution logic. Executable behavior,
 whether public or private, belongs behind a declared interface in

@@ -13,7 +13,7 @@
   "docs/audit_and_drift.md",
   "src/officina/*.py",
   "src/officina/common/*.py",
-  "src/officina/dispatcher/*.py",
+  "src/officina/dispatcher/**/*.py",
   "src/officina/runtime/*.py",
   "skills/skill-audit/SKILL.md",
   "skills/skill-audit/blueprint.yaml",

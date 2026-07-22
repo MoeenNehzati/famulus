@@ -12,6 +12,7 @@ from officina.common.process_binding_compiler import (
     compile_route_smoke_invocation,
     gateway_language_name,
     parse_caller_invocation,
+    select_authored_argv_pattern,
 )
 
 
@@ -146,6 +147,36 @@ def _v4_export() -> tuple[BlueprintNode, InterfaceExport]:
     )
 
 
+def _v4_pattern_export(
+    patterns: list[dict[str, object]] | None,
+) -> tuple[BlueprintNode, InterfaceExport]:
+    source, base = _v4_export()
+    process_binding: dict[str, object] = {
+        "kind": "process",
+        "entry": "Interface",
+        "args_prefix": ["audit"],
+        "arguments": {},
+        "fixed": [],
+    }
+    if patterns is not None:
+        process_binding["patterns"] = patterns
+    declaration = {
+        **base.declaration,
+        "contract": {"arguments": {}},
+        "process_binding": process_binding,
+    }
+    return source, InterfaceExport(
+        interface_id=base.interface_id,
+        version=base.version,
+        local_name=base.local_name,
+        module_node_id=base.module_node_id,
+        declaration=declaration,
+        source_node_id=base.source_node_id,
+        source_interface_id=base.source_interface_id,
+        export_declaration=base.export_declaration,
+    )
+
+
 def test_v4_parses_contract_values_and_compiles_separate_process_binding() -> None:
     source, export = _v4_export()
 
@@ -167,6 +198,270 @@ def test_v4_route_smoke_compiles_without_required_caller_arguments() -> None:
     assert plan.entry == "Interface"
     assert plan.stdin_argument_id is None
     assert plan.argv == ("run", "--format", "json", "--route-smoke")
+
+
+def test_v4_authored_pattern_validates_and_preserves_raw_argv() -> None:
+    source, export = _v4_pattern_export(
+        [
+            {
+                "name": "hashes",
+                "min_positionals": 1,
+                "allow_stdin": False,
+                "allowed_flags": ["--json"],
+            }
+        ]
+    )
+
+    parsed = parse_caller_invocation(
+        export, ["compute-hashes", "--json"], stdin_requested=False
+    )
+    plan = compile_gateway_invocation(source, export, parsed)
+
+    assert parsed.values == {}
+    assert parsed.raw_argv == ("compute-hashes", "--json")
+    assert parsed.pattern_name == "hashes"
+    assert plan.argv == ("audit", "compute-hashes", "--json")
+    assert plan.pattern_name == "hashes"
+
+
+def test_v4_raw_argv_rejected_when_no_authored_pattern_matches() -> None:
+    _source, export = _v4_pattern_export(
+        [
+            {
+                "name": "hashes",
+                "min_positionals": 1,
+                "allowed_flags": ["--json"],
+            }
+        ]
+    )
+
+    with pytest.raises(ProcessBindingError, match="does not match any declared pattern"):
+        parse_caller_invocation(
+            export, ["compute-hashes", "--bogus"], stdin_requested=False
+        )
+
+
+def test_v4_raw_argv_passthrough_does_not_activate_without_patterns() -> None:
+    _source, export = _v4_pattern_export(None)
+
+    with pytest.raises(ProcessBindingError, match="unknown option --json"):
+        parse_caller_invocation(
+            export, ["compute-hashes", "--json"], stdin_requested=False
+        )
+
+
+def test_authored_pattern_treats_unpatterned_flag_as_switch() -> None:
+    pattern, name = select_authored_argv_pattern(
+        [
+            {
+                "name": "switch",
+                "min_positionals": 1,
+                "allowed_flags": ["--verbose"],
+                "positional_patterns": {"0": "^run$"},
+            }
+        ],
+        ["--verbose", "run"],
+        stdin_requested=False,
+    )
+
+    assert pattern["name"] == name == "switch"
+
+
+def test_authored_pattern_rejects_duplicate_value_flag() -> None:
+    with pytest.raises(ProcessBindingError, match="duplicate flag --date"):
+        select_authored_argv_pattern(
+            [
+                {
+                    "name": "date",
+                    "min_positionals": 0,
+                    "allowed_flags": ["--date"],
+                    "flag_patterns": {"--date": "^safe$"},
+                }
+            ],
+            ["--date", "safe", "--date", "unsafe"],
+            stdin_requested=False,
+        )
+
+
+def test_authored_pattern_rejects_missing_value_flag_argument() -> None:
+    with pytest.raises(ProcessBindingError, match="requires a value"):
+        select_authored_argv_pattern(
+            [
+                {
+                    "name": "output",
+                    "allowed_flags": ["--output"],
+                    "flag_patterns": {"--output": ".+"},
+                }
+            ],
+            ["--output"],
+            stdin_requested=False,
+        )
+
+
+def test_authored_pattern_rejects_extra_positionals_by_default() -> None:
+    with pytest.raises(ProcessBindingError, match="does not match"):
+        select_authored_argv_pattern(
+            [{"name": "one", "min_positionals": 1}],
+            ["first", "second"],
+            stdin_requested=False,
+        )
+
+
+def test_authored_pattern_allows_extra_positionals_only_when_authored() -> None:
+    pattern, _name = select_authored_argv_pattern(
+        [
+            {
+                "name": "many",
+                "min_positionals": 1,
+                "allow_extra_positionals": True,
+            }
+        ],
+        ["first", "second"],
+        stdin_requested=False,
+    )
+
+    assert pattern["name"] == "many"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["compute-hashes", "--json"],
+        ["compute-hashes", "--output", "result.json"],
+        ["compute-hashes", "--output=result.json"],
+        ["compute-hashes", "--", "--literal"],
+    ],
+)
+def test_v4_authored_argv_pattern_preserves_accepted_predecessor_cases(
+    argv: list[str],
+) -> None:
+    patterns = [
+        {
+            "name": "hashes",
+            "min_positionals": 1,
+            "max_positionals": 2,
+            "allow_stdin": False,
+            "allowed_flags": ["--json", "--output"],
+            "flag_patterns": {"--output": r".+\.json$"},
+        }
+    ]
+
+    matching, name = select_authored_argv_pattern(
+        patterns,
+        argv,
+        stdin_requested=False,
+    )
+
+    assert matching == patterns[0]
+    assert name == "hashes"
+
+
+@pytest.mark.parametrize(
+    ("argv", "stdin_requested"),
+    [
+        (["compute-hashes"], True),
+        (["compute-hashes", "--unknown"], False),
+        (["compute-hashes", "--output", "result.txt"], False),
+        (["--json"], False),
+    ],
+)
+def test_v4_authored_argv_pattern_preserves_unmatched_predecessor_cases(
+    argv: list[str],
+    stdin_requested: bool,
+) -> None:
+    patterns = [
+        {
+            "name": "hashes",
+            "min_positionals": 1,
+            "max_positionals": 2,
+            "allow_stdin": False,
+            "allowed_flags": ["--json", "--output"],
+            "flag_patterns": {"--output": r".+\.json$"},
+        }
+    ]
+
+    with pytest.raises(
+        ProcessBindingError,
+        match="invocation does not match any declared pattern",
+    ):
+        select_authored_argv_pattern(
+            patterns,
+            argv,
+            stdin_requested=stdin_requested,
+        )
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (["compute-hashes", "--json", "--json"], "duplicate flag --json"),
+        (["compute-hashes", "--output"], "flag --output requires a value"),
+        (["compute-hashes", "--json=true"], "switch --json does not take a value"),
+    ],
+)
+def test_v4_authored_argv_pattern_preserves_predecessor_argv_errors(
+    argv: list[str],
+    message: str,
+) -> None:
+    patterns = [
+        {
+            "name": "hashes",
+            "min_positionals": 1,
+            "max_positionals": 2,
+            "allowed_flags": ["--json", "--output"],
+            "flag_patterns": {"--output": r".+\.json$"},
+        }
+    ]
+
+    with pytest.raises(ProcessBindingError, match=message):
+        select_authored_argv_pattern(
+            patterns,
+            argv,
+            stdin_requested=False,
+        )
+
+
+def test_v4_authored_argv_pattern_preserves_predecessor_ambiguity_error() -> None:
+    patterns = [
+        {"name": "first", "min_positionals": 1},
+        {"name": "second", "min_positionals": 1},
+    ]
+
+    with pytest.raises(ProcessBindingError, match="matches multiple patterns"):
+        select_authored_argv_pattern(
+            patterns,
+            ["compute-hashes"],
+            stdin_requested=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("patterns", "message"),
+    [
+        ([], "at least one pattern"),
+        ([{"name": "bad", "min_positionals": -1}], "min_positionals"),
+        (
+            [
+                {
+                    "name": "bad",
+                    "min_positionals": 1,
+                    "positional_patterns": {"nope": ".*"},
+                }
+            ],
+            "numeric index",
+        ),
+    ],
+)
+def test_v4_authored_argv_pattern_preserves_predecessor_declaration_errors(
+    patterns: list[dict[str, object]],
+    message: str,
+) -> None:
+    with pytest.raises(ProcessBindingError, match=message):
+        select_authored_argv_pattern(
+            patterns,
+            ["compute-hashes"],
+            stdin_requested=False,
+        )
 
 
 def test_v4_natural_language_interface_is_not_process_compilable() -> None:

@@ -12,8 +12,15 @@ import pytest
 
 from officina.common import git_provenance
 from officina.common.git_provenance import (
+    BLUEPRINT_V4_MECHANICAL_REF,
+    GitMaterializationError,
+    blueprint_v4_mechanical_commit,
     capture_git_snapshot,
     check_commit_readiness,
+    git_file_provenance,
+    materialize_git_commit,
+    pin_blueprint_v4_mechanical_commit,
+    run_git,
     snapshot_head_matches,
 )
 
@@ -45,6 +52,232 @@ def _git_bytes(repo: Path, *args: str, input_bytes: bytes) -> subprocess.Complet
 
 def sha256_file(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_run_git_sanitizes_ambient_routing_and_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_run(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[bytes]:
+        observed["command"] = command
+        observed.update(kwargs)
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+
+    monkeypatch.setenv("GIT_DIR", "/tmp/wrong-repository")
+    monkeypatch.setenv("GIT_WORK_TREE", "/tmp/wrong-worktree")
+    monkeypatch.setenv("GIT_INDEX_FILE", "/tmp/wrong-index")
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.hooksPath")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "/tmp/ambient-hooks")
+    monkeypatch.setenv("GIT_LITERAL_PATHSPECS", "1")
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "Ambient Author")
+    monkeypatch.setenv("UNRELATED_ENVIRONMENT_VALUE", "retained")
+    monkeypatch.setattr(git_provenance.subprocess, "run", fake_run)
+
+    result = run_git(tmp_path, "status", "--short", check=False)
+
+    assert result.returncode == 0
+    command = observed["command"]
+    assert isinstance(command, list)
+    assert command == [
+        "git",
+        "-c",
+        f"core.hooksPath={os.devnull}",
+        "-c",
+        "commit.gpgSign=false",
+        "-c",
+        "core.fsmonitor=false",
+        "-C",
+        str(tmp_path.resolve()),
+        "status",
+        "--short",
+    ]
+    environment = observed["env"]
+    assert isinstance(environment, dict)
+    assert "GIT_DIR" not in environment
+    assert "GIT_WORK_TREE" not in environment
+    assert "GIT_INDEX_FILE" not in environment
+    assert "GIT_CONFIG_COUNT" not in environment
+    assert "GIT_CONFIG_KEY_0" not in environment
+    assert "GIT_CONFIG_VALUE_0" not in environment
+    assert "GIT_LITERAL_PATHSPECS" not in environment
+    assert "GIT_AUTHOR_NAME" not in environment
+    assert environment["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert environment["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert environment["GIT_TERMINAL_PROMPT"] == "0"
+    assert environment["UNRELATED_ENVIRONMENT_VALUE"] == "retained"
+    assert {
+        name for name in environment if name.startswith("GIT_")
+    } == {
+        "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG_NOSYSTEM",
+        "GIT_TERMINAL_PROMPT",
+    }
+
+
+def test_capture_snapshot_ignores_ambient_git_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested = tmp_path / "requested"
+    decoy = tmp_path / "decoy"
+    requested.mkdir()
+    decoy.mkdir()
+    for repository, value in ((requested, "requested"), (decoy, "decoy")):
+        _git(repository, "init", "--quiet")
+        _git(repository, "config", "user.name", "Test User")
+        _git(repository, "config", "user.email", "test@example.invalid")
+        (repository / "value.txt").write_text(value, encoding="utf-8")
+        _git(repository, "add", "value.txt")
+        _git(repository, "commit", "--quiet", "-m", value)
+
+    requested_commit = _git(requested, "rev-parse", "HEAD").stdout.strip()
+    monkeypatch.setenv("GIT_DIR", str(decoy / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(decoy))
+
+    snapshot = capture_git_snapshot(requested)
+
+    assert snapshot is not None
+    assert snapshot.repo_root == requested.resolve()
+    assert snapshot.commit == requested_commit
+
+
+def test_run_git_disables_repository_hooks(tmp_path: Path) -> None:
+    run_git(tmp_path, "init", "--quiet")
+    run_git(tmp_path, "config", "user.name", "Test User")
+    run_git(tmp_path, "config", "user.email", "test@example.invalid")
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("tracked\n", encoding="utf-8")
+    run_git(tmp_path, "add", "tracked.txt")
+    hook_marker = tmp_path / "hook-ran"
+    hook = tmp_path / ".git" / "hooks" / "pre-commit"
+    hook.write_text(
+        f"#!/bin/sh\ntouch {hook_marker}\nexit 1\n",
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
+
+    result = run_git(tmp_path, "commit", "--quiet", "-m", "commit", check=False)
+
+    assert result.returncode == 0
+    assert not hook_marker.exists()
+
+
+def test_git_literal_pathspec_environment_cannot_break_provenance(
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = repo / "skills" / "demo" / "SKILL.md"
+    monkeypatch.setenv("GIT_LITERAL_PATHSPECS", "1")
+
+    assert git_file_provenance(repo, path) == "tracked"
+
+
+def test_run_git_disables_malicious_local_fsmonitor(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "--quiet")
+    marker = tmp_path / "fsmonitor-ran"
+    monitor = tmp_path / "malicious-fsmonitor"
+    monitor.write_text(
+        f"#!/bin/sh\ntouch {marker}\nexit 1\n",
+        encoding="utf-8",
+    )
+    monitor.chmod(0o755)
+    _git(tmp_path, "config", "core.fsmonitor", str(monitor))
+
+    result = run_git(tmp_path, "status", "--short", check=False)
+
+    assert result.returncode == 0
+    assert not marker.exists()
+
+
+def test_materialize_git_commit_uses_exact_commit_not_worktree(repo: Path) -> None:
+    commit = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    (repo / "skills" / "demo" / "SKILL.md").write_text(
+        "uncommitted\n", encoding="utf-8"
+    )
+    destination = repo / "materialized"
+    destination.mkdir(mode=0o700)
+
+    paths = materialize_git_commit(repo, commit, destination)
+
+    assert paths == (Path("skills/demo/SKILL.md"),)
+    assert (destination / "skills" / "demo" / "SKILL.md").read_text(
+        encoding="utf-8"
+    ) == "original\n"
+
+
+def test_materialize_git_commit_rejects_escaping_symlink_before_writes(
+    repo: Path,
+) -> None:
+    object_id = run_git(
+        repo,
+        "hash-object",
+        "-w",
+        "--stdin",
+        input_bytes=b"../../outside",
+    ).stdout.decode("ascii").strip()
+    run_git(
+        repo,
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        f"120000,{object_id},escape-link",
+    )
+    run_git(repo, "commit", "--quiet", "-m", "unsafe symlink")
+    commit = run_git(repo, "rev-parse", "HEAD").stdout.decode("ascii").strip()
+    destination = repo / "materialized"
+    destination.mkdir(mode=0o700)
+
+    with pytest.raises(GitMaterializationError, match="symlink escapes"):
+        materialize_git_commit(repo, commit, destination)
+
+    assert not tuple(destination.iterdir())
+
+
+def test_materialize_git_commit_ignores_export_attribute_transformations(
+    repo: Path,
+) -> None:
+    (repo / ".gitattributes").write_text(
+        "hidden.txt export-ignore\ntemplate.txt export-subst\n",
+        encoding="utf-8",
+    )
+    (repo / "hidden.txt").write_text("must remain\n", encoding="utf-8")
+    (repo / "template.txt").write_text("$Format:%H$\n", encoding="utf-8")
+    executable = repo / "run.sh"
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o755)
+    _git(repo, "add", ".gitattributes", "hidden.txt", "template.txt", "run.sh")
+    _git(repo, "commit", "--quiet", "-m", "export attributes")
+    commit = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    destination = repo / "materialized"
+    destination.mkdir(mode=0o700)
+
+    paths = materialize_git_commit(repo, commit, destination)
+
+    assert Path("hidden.txt") in paths
+    assert (destination / "hidden.txt").read_text(encoding="utf-8") == "must remain\n"
+    assert (destination / "template.txt").read_text(
+        encoding="utf-8"
+    ) == "$Format:%H$\n"
+    assert (destination / "run.sh").stat().st_mode & stat.S_IXUSR
+
+
+def test_blueprint_v4_mechanical_ref_is_pinned_once(repo: Path) -> None:
+    mechanical = _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    assert pin_blueprint_v4_mechanical_commit(repo, mechanical) == mechanical
+    assert blueprint_v4_mechanical_commit(repo) == mechanical
+    assert _git(repo, "rev-parse", BLUEPRINT_V4_MECHANICAL_REF).stdout.strip() == mechanical
+
+    commit_unrelated_change(repo)
+    reviewed = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    with pytest.raises(GitMaterializationError, match="already pinned"):
+        pin_blueprint_v4_mechanical_commit(repo, reviewed)
+    assert blueprint_v4_mechanical_commit(repo) == mechanical
 
 
 @pytest.fixture

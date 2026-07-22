@@ -9,6 +9,9 @@ from typing import Iterator, Mapping, TypeAlias
 
 import yaml
 
+from .atomic_files import AtomicWriteError, read_regular_file_bytes
+from .git_provenance import git_ignored_paths
+
 
 JsonScalar: TypeAlias = str | int | float | bool | None
 JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
@@ -105,23 +108,99 @@ def _normalize_json(value: object, *, location: str = "$") -> JsonValue:
     )
 
 
-def _blueprint_paths(repo_root: Path) -> tuple[Path, ...]:
-    candidates: set[Path] = set()
-    excluded_directories = {
+_EXCLUDED_INFRASTRUCTURE_DIRECTORIES = frozenset(
+    {
         ".git",
         ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".tox",
+        ".venv",
         "__pycache__",
+        "_build",
+        "build",
+        "dist",
+        "node_modules",
         "tmp",
         "logs",
         ".health",
         ".certificates",
+        ".certificate-history",
     }
+)
 
-    def regular_file(path: Path) -> bool:
-        try:
-            return stat.S_ISREG(path.lstat().st_mode)
-        except OSError:
-            return False
+
+def _regular_file(path: Path) -> bool:
+    try:
+        return stat.S_ISREG(path.lstat().st_mode)
+    except OSError:
+        return False
+
+
+def _ignored_paths(repo_root: Path) -> tuple[Path, ...]:
+    try:
+        git_marker_mode = (repo_root / ".git").lstat().st_mode
+    except FileNotFoundError:
+        return ()
+    if not (stat.S_ISDIR(git_marker_mode) or stat.S_ISREG(git_marker_mode)):
+        return ()
+    return tuple(repo_root / path for path in git_ignored_paths(repo_root))
+
+
+def _ignored_path(path: Path, ignored_paths: tuple[Path, ...]) -> bool:
+    return any(path == root or path.is_relative_to(root) for root in ignored_paths)
+
+
+def _excluded_directory(
+    path: Path,
+    *,
+    ignored_paths: tuple[Path, ...],
+) -> bool:
+    return (
+        path.name in _EXCLUDED_INFRASTRUCTURE_DIRECTORIES
+        or path.is_symlink()
+        or _ignored_path(path, ignored_paths)
+    )
+
+
+def _canonical_module_roots(
+    repo_root: Path,
+    ignored_paths: tuple[Path, ...],
+) -> tuple[Path, ...]:
+    roots: set[Path] = set()
+    skills_root = repo_root / "skills"
+    if skills_root.is_dir() and not skills_root.is_symlink():
+        roots.update(
+            path
+            for path in skills_root.iterdir()
+            if path.is_dir()
+            and not _excluded_directory(path, ignored_paths=ignored_paths)
+        )
+    for directory, directory_names, file_names in os.walk(
+        repo_root, followlinks=False
+    ):
+        directory_path = Path(directory)
+        directory_names[:] = sorted(
+            name
+            for name in directory_names
+            if not _excluded_directory(
+                directory_path / name,
+                ignored_paths=ignored_paths,
+            )
+        )
+        if "blueprint.yaml" in file_names:
+            marker = directory_path / "blueprint.yaml"
+            if _regular_file(marker) and not _ignored_path(marker, ignored_paths):
+                roots.add(directory_path)
+    return tuple(sorted(roots))
+
+
+def _blueprint_paths(
+    repo_root: Path,
+    module_roots: tuple[Path, ...],
+    ignored_paths: tuple[Path, ...],
+) -> tuple[Path, ...]:
+    candidates: set[Path] = set()
 
     def hidden_sidecars(root: Path) -> None:
         if not root.is_dir() or root.is_symlink():
@@ -131,55 +210,40 @@ def _blueprint_paths(repo_root: Path) -> tuple[Path, ...]:
             directory_names[:] = sorted(
                 name
                 for name in directory_names
-                if name not in excluded_directories
-                and not (directory_path / name).is_symlink()
+                if not _excluded_directory(
+                    directory_path / name,
+                    ignored_paths=ignored_paths,
+                )
             )
             for name in sorted(file_names):
                 if not (name.startswith(".") and name.endswith(".blueprint.yaml")):
                     continue
                 path = directory_path / name
-                if regular_file(path):
+                if _regular_file(path) and not _ignored_path(path, ignored_paths):
                     candidates.add(path)
 
-    skills_root = repo_root / "skills"
-    if skills_root.is_dir() and not skills_root.is_symlink():
-        for skill_root in sorted(skills_root.iterdir()):
-            if not skill_root.is_dir() or skill_root.is_symlink():
-                continue
-            root_blueprint = skill_root / "blueprint.yaml"
-            if regular_file(root_blueprint):
-                candidates.add(root_blueprint)
-            blueprints_root = skill_root / "blueprints"
-            if blueprints_root.is_dir() and not blueprints_root.is_symlink():
-                for source_blueprint in sorted(blueprints_root.glob("*.yaml")):
-                    if regular_file(source_blueprint):
-                        candidates.add(source_blueprint)
-            hidden_sidecars(skill_root)
+    for module_root in module_roots:
+        marker = module_root / "blueprint.yaml"
+        if _regular_file(marker) and not _ignored_path(marker, ignored_paths):
+            candidates.add(marker)
+        blueprints_root = module_root / "blueprints"
+        if blueprints_root.is_dir() and not blueprints_root.is_symlink():
+            for source_blueprint in sorted(blueprints_root.glob("*.yaml")):
+                if _regular_file(source_blueprint) and not _ignored_path(
+                    source_blueprint, ignored_paths
+                ):
+                    candidates.add(source_blueprint)
+        hidden_sidecars(module_root)
     hidden_sidecars(repo_root / "references")
     return tuple(sorted(candidates, key=lambda path: path.relative_to(repo_root).as_posix()))
 
 
-def _read_regular_no_follow(path: Path) -> str:
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-    fd = -1
-    try:
-        fd = os.open(path, flags)
-        metadata = os.fstat(fd)
-        if not stat.S_ISREG(metadata.st_mode):
-            raise OSError(f"selected blueprint is not a regular file: {path}")
-        chunks: list[bytes] = []
-        while chunk := os.read(fd, 1024 * 1024):
-            chunks.append(chunk)
-        return b"".join(chunks).decode("utf-8")
-    finally:
-        if fd >= 0:
-            os.close(fd)
-
-
-def _owner_root(repo_root: Path, path: Path) -> Path:
-    relative = path.relative_to(repo_root)
-    if len(relative.parts) >= 2 and relative.parts[0] == "skills":
-        return repo_root / "skills" / relative.parts[1]
+def _owner_root(
+    repo_root: Path, path: Path, module_roots: tuple[Path, ...]
+) -> Path:
+    owners = [root for root in module_roots if path.is_relative_to(root)]
+    if owners:
+        return max(owners, key=lambda root: len(root.parts))
     return repo_root
 
 
@@ -189,10 +253,27 @@ def collect_blueprints(
     repo_root = Path(repo_root).resolve()
     documents: list[BlueprintDocument] = []
     issues: list[BlueprintInventoryIssue] = []
-    for path in _blueprint_paths(repo_root):
+    ignored_paths = _ignored_paths(repo_root)
+    module_roots = _canonical_module_roots(repo_root, ignored_paths)
+    for index, root in enumerate(module_roots):
+        for possible_parent in module_roots[:index]:
+            if root.is_relative_to(possible_parent):
+                issues.append(
+                    BlueprintInventoryIssue(
+                        root.relative_to(repo_root) / "blueprint.yaml",
+                        "nested module roots are not allowed: "
+                        f"{possible_parent.relative_to(repo_root).as_posix()} and "
+                        f"{root.relative_to(repo_root).as_posix()}",
+                    )
+                )
+                break
+    for path in _blueprint_paths(repo_root, module_roots, ignored_paths):
         relative = path.relative_to(repo_root)
         try:
-            raw = _read_regular_no_follow(path)
+            raw = read_regular_file_bytes(
+                path,
+                allowed_root=repo_root,
+            ).decode("utf-8")
             loaded = yaml.load(raw, Loader=_StrictBlueprintLoader)
             if not isinstance(loaded, dict):
                 raise ValueError("document root must be a mapping")
@@ -206,14 +287,62 @@ def collect_blueprints(
                 BlueprintDocument(
                     path=path,
                     relative_path=relative,
-                    owner_root=_owner_root(repo_root, path),
+                    owner_root=_owner_root(repo_root, path, module_roots),
                     declaration=declaration,
                     node_type=node_type if isinstance(node_type, str) else None,
                     node_id=node_id if isinstance(node_id, str) else None,
                 )
             )
-        except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
+        except (
+            AtomicWriteError,
+            OSError,
+            UnicodeError,
+            ValueError,
+            yaml.YAMLError,
+        ) as exc:
             issues.append(BlueprintInventoryIssue(relative, str(exc)))
+    marker_documents = [
+        document
+        for document in documents
+        if document.path == document.owner_root / "blueprint.yaml"
+    ]
+    modules_by_id: dict[str, BlueprintDocument] = {}
+    for document in marker_documents:
+        declaration = document.declaration
+        if declaration.get("schema_version") == 4:
+            if declaration.get("node_type") != "module":
+                issues.append(
+                    BlueprintInventoryIssue(
+                        document.relative_path,
+                        "canonical module marker must declare node_type module",
+                    )
+                )
+                continue
+            module_id = declaration.get("id")
+            if isinstance(module_id, str) and module_id != document.owner_root.name:
+                issues.append(
+                    BlueprintInventoryIssue(
+                        document.relative_path,
+                        f"module id {module_id!r} must match its directory",
+                    )
+                )
+        module_id = declaration.get("id")
+        if not isinstance(module_id, str):
+            continue
+        previous = modules_by_id.get(module_id)
+        if previous is not None:
+            issues.append(
+                BlueprintInventoryIssue(
+                    document.relative_path,
+                    f"duplicate module id {module_id!r}: "
+                    f"{previous.relative_path.as_posix()} and "
+                    f"{document.relative_path.as_posix()}",
+                )
+            )
+        else:
+            modules_by_id[module_id] = document
+    issues.sort(key=lambda issue: (issue.relative_path.as_posix(), issue.message))
+    documents.sort(key=lambda document: document.relative_path.as_posix())
     result = BlueprintInventoryResult(tuple(documents), tuple(issues))
     if issues and not skip_parse_errors:
         raise BlueprintInventoryError(result.issues)

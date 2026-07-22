@@ -11,10 +11,10 @@
     },
     "interfaceVersion": {"type": "integer", "minimum": 1, "description": "Human-managed public contract version."},
     "skillId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+$"},
-    "moduleId": {"$ref": "#/definitions/skillId"},
-    "behavioralSourceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
-    "sourceInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.interface\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
-    "exportInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.interface\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "moduleId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "behavioralSourceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "sourceInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.interface\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "exportInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*\\.interface\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
     "interfaceId": {
       "oneOf": [
         {"$ref": "#/definitions/sourceInterfaceId"},

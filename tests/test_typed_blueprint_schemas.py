@@ -234,6 +234,16 @@ def test_v4_interface_contract_is_semantic_and_excludes_process_mechanics() -> N
         assert _errors(invalid, "caller-contract.schema.json"), location
 
 
+def test_v4_execution_requires_at_least_one_verification() -> None:
+    validator = _validator("caller-contract.schema.json").evolve(
+        schema=_load("caller-contract.schema.json")["definitions"]["v4Contract"]
+    )
+    document = _valid_v4_contract()
+    document["execution"]["verification"] = []
+
+    assert tuple(validator.iter_errors(document))
+
+
 def _valid_v4_behavioral_source() -> dict:
     return {
         "schema_version": 4,
@@ -282,6 +292,90 @@ def test_v4_behavioral_source_owns_intrinsic_interfaces_and_generic_edges() -> N
     assert _errors(document, "behavioral-source.schema.json") == []
 
     document["semantic_type"] = "instructions"
+    assert _errors(document, "behavioral-source.schema.json")
+
+
+def test_v4_structural_draft_allows_certifier_owned_semantics_to_be_absent() -> None:
+    module = _valid_v4_module()
+    source = _valid_v4_behavioral_source()
+    interface = source["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]
+
+    del module["description"]
+    del source["description"]
+    del interface["description"]
+    del interface["contract"]
+
+    assert _errors(module, "module.schema.json") == []
+    assert _errors(source, "behavioral-source.schema.json") == []
+
+
+def test_v4_structural_draft_validates_each_present_contract_section() -> None:
+    document = _valid_v4_behavioral_source()
+    interface = document["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]
+    interface["contract"] = {"arguments": {}}
+
+    assert _errors(document, "behavioral-source.schema.json") == []
+
+    interface["contract"]["invented"] = {}
+    assert _errors(document, "behavioral-source.schema.json")
+
+
+def test_v4_preserves_usage_and_legacy_argv_patterns_as_evidence() -> None:
+    document = _valid_v4_behavioral_source()
+    interface = document["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]
+    interface["usage"] = "<name> --cloud [--refresh]"
+    interface["process_binding"] = {
+        "kind": "process",
+        "entry": "Interface",
+        "patterns": [
+            {
+                "name": "cloud",
+                "min_positionals": 1,
+                "max_positionals": 1,
+                "allow_stdin": False,
+                "required_flags": ["--cloud"],
+                "allowed_flags": ["--cloud", "--refresh"],
+                "positional_patterns": {"0": "^[a-z]+$"},
+            }
+        ],
+    }
+
+    assert _errors(document, "behavioral-source.schema.json") == []
+
+    interface["process_binding"]["patterns"][0]["invented"] = True
+    assert _errors(document, "behavioral-source.schema.json")
+
+
+def test_v4_direct_io_uses_the_canonical_lossless_evidence_shape() -> None:
+    document = _valid_v4_behavioral_source()
+    direct_io = document["interfaces"][
+        "demo-skill.source.gateway.interface.default"
+    ]["contract"]["direct_io"]
+    direct_io["network"] = [
+        {
+            "id": "network-1",
+            "medium": "network-request",
+            "access": "download",
+            "system": "google-drive",
+            "content": "list",
+            "formats": ["yaml", "text"],
+            "auth": {"kind": "google-drive-oauth", "mode": "uses-existing"},
+            "sensitivity": "user-private",
+            "path": "$home/lists/<name>.yaml",
+            "path_match": "glob",
+            "reason": "Preserved authored evidence.",
+        }
+    ]
+
+    assert _errors(document, "behavioral-source.schema.json") == []
+
+    direct_io["network"][0]["format"] = "yaml"
     assert _errors(document, "behavioral-source.schema.json")
 
 
@@ -363,10 +457,20 @@ def test_v4_module_export_access_preserves_unrestricted_and_allowlist_semantics(
     assert _errors(document, "module.schema.json") == []
 
     access["allowed_callers"] = []
-    assert _errors(document, "module.schema.json")
+    assert _errors(document, "module.schema.json") == []
 
     access.update(allow_all_modules=True, allowed_callers=["other-skill"])
     assert _errors(document, "module.schema.json")
+
+
+def test_v4_module_export_can_deny_all_external_callers() -> None:
+    document = _valid_v4_module()
+    document["exports"]["demo-skill.interface.default"]["access"] = {
+        "allow_all_modules": False,
+        "allowed_callers": [],
+    }
+
+    assert _errors(document, "module.schema.json") == []
 
 
 def test_v4_module_filesystem_authority_uses_generic_interface_readers() -> None:

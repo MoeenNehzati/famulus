@@ -507,9 +507,10 @@ def resolve_certification_basis_paths(
             raise ArtifactHealthError(
                 f"certification basis root must stay under target package: {pattern}"
             )
+        is_pattern = any(character in pattern for character in "*?[]")
         current_candidates = (
             sorted(root.glob(pattern), key=lambda path: path.as_posix())
-            if any(character in pattern for character in "*?[]")
+            if is_pattern
             else [root / relative]
         )
         tracked_candidates = {
@@ -517,6 +518,7 @@ def resolve_certification_basis_paths(
             for path in tracked_at_head
             if _basis_pattern_matches(path, PurePosixPath(pattern))
         }
+        matched_regular_file = False
         for path in sorted(
             {*current_candidates, *tracked_candidates},
             key=lambda candidate: candidate.as_posix(),
@@ -543,6 +545,11 @@ def resolve_certification_basis_paths(
                     f"{path}: {exc}"
                 ) from exc
             selected.add(path)
+            matched_regular_file = True
+        if not matched_regular_file:
+            raise ArtifactHealthError(
+                f"certification basis pattern matched no files: {pattern}"
+            )
     return tuple(sorted(selected, key=lambda path: path.as_posix()))
 
 

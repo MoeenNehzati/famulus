@@ -163,6 +163,8 @@ interfaces:
         - --file
         allowed_flags:
         - --file
+        flag_patterns:
+          --file: ^.+$
         notes: Externally supported update mode; caller prepares the patch file.
       - name: stdin-batch
         min_positionals: 1
@@ -819,6 +821,8 @@ interfaces:
         allowed_flags:
         - --cloud
         - --file
+        flag_patterns:
+          --file: ^.+$
         positional_patterns:
           0: ^[a-zA-Z0-9_-]+$
         notes: Patch file must contain a YAML list of objects; quote every id string.

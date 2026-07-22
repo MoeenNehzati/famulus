@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -34,6 +33,7 @@ from officina.common.process_binding_compiler import (
     compile_route_smoke_invocation,
     gateway_language_name,
     parse_caller_invocation,
+    select_authored_argv_pattern,
 )
 from officina.common.blueprint_inventory import BlueprintInventoryError, collect_blueprints
 
@@ -292,103 +292,6 @@ def parse_canonical_target(target: str) -> tuple[str, str, str] | None:
     return skill_name, kind, interface_name
 
 
-def split_args(script_args: list[str]) -> tuple[list[str], list[str]]:
-    """Split arguments into flags and positionals."""
-    flags: list[str] = []
-    positionals: list[str] = []
-    i = 0
-    while i < len(script_args):
-        token = script_args[i]
-        if token == "--":
-            positionals.extend(script_args[i + 1 :])
-            break
-        if token.startswith("-") and token != "-":
-            flag_name = token.split("=", 1)[0]
-            flags.append(flag_name)
-            if "=" not in token and i + 1 < len(script_args):
-                next_token = script_args[i + 1]
-                if next_token != "--" and not next_token.startswith("-"):
-                    i += 1
-            i += 1
-            continue
-        positionals.append(token)
-        i += 1
-    return flags, positionals
-
-
-def validate_pattern(
-    pattern: dict[str, Any], script_args: list[str], stdin_requested: bool, pattern_name: str = ""
-) -> bool:
-    """Check if script_args matches this pattern. Returns True if it matches."""
-    flags, positionals = split_args(script_args)
-    provided_flag_set = set(flags)
-
-    allow_stdin = bool(pattern.get("allow_stdin", False))
-    if stdin_requested and not allow_stdin:
-        return False
-
-    min_positionals = pattern.get("min_positionals", 0)
-    max_positionals = pattern.get("max_positionals")
-    if not isinstance(min_positionals, int) or min_positionals < 0:
-        raise InvocationError(
-            f"pattern{' ' + pattern_name if pattern_name else ''}: min_positionals must be non-negative integer"
-        )
-    if len(positionals) < min_positionals:
-        return False
-    if max_positionals is not None:
-        if not isinstance(max_positionals, int) or max_positionals < min_positionals:
-            raise InvocationError(
-                f"pattern{' ' + pattern_name if pattern_name else ''}: max_positionals must be >= min_positionals"
-            )
-        if len(positionals) > max_positionals:
-            return False
-
-    required_flags = set(expect_string_list(pattern.get("required_flags"), "required_flags"))
-    if not required_flags.issubset(provided_flag_set):
-        return False
-
-    forbidden_flags = set(expect_string_list(pattern.get("forbidden_flags"), "forbidden_flags"))
-    if forbidden_flags & provided_flag_set:
-        return False
-
-    allowed_flags_raw = pattern.get("allowed_flags")
-    if allowed_flags_raw is not None:
-        allowed_flags = set(expect_string_list(allowed_flags_raw, "allowed_flags"))
-        unexpected = provided_flag_set - allowed_flags
-        if unexpected:
-            return False
-
-    positional_patterns = expect_mapping(pattern.get("positional_patterns"), "positional_patterns")
-    for idx_str, regex_pattern in positional_patterns.items():
-        try:
-            idx = int(idx_str)
-        except ValueError as exc:
-            raise InvocationError(f"positional_patterns key must be numeric index, got '{idx_str}'") from exc
-        if idx < 0 or idx >= len(positionals):
-            return False
-        if not re.match(regex_pattern, positionals[idx]):
-            return False
-
-    flag_patterns = expect_mapping(pattern.get("flag_patterns"), "flag_patterns")
-    for flag_name, regex_pattern in flag_patterns.items():
-        if flag_name not in provided_flag_set:
-            continue
-        flag_value = None
-        for i, arg in enumerate(script_args):
-            if arg == flag_name and i + 1 < len(script_args):
-                flag_value = script_args[i + 1]
-                break
-            if arg.startswith(flag_name + "="):
-                flag_value = arg.split("=", 1)[1]
-                break
-        if flag_value is None:
-            return False
-        if not re.match(regex_pattern, flag_value):
-            return False
-
-    return True
-
-
 def find_matching_pattern(
     surface_spec: dict[str, Any], script_args: list[str], stdin_requested: bool
 ) -> tuple[dict[str, Any], str]:
@@ -397,24 +300,15 @@ def find_matching_pattern(
     if patterns_raw is None:
         return {}, "unrestricted"
 
-    patterns = expect_list(patterns_raw, "patterns")
-    if not patterns:
-        raise InvocationError("machine interface must have at least one pattern when `patterns` is declared")
-
-    matching = None
-    matching_name = ""
-    for i, pattern in enumerate(patterns):
-        if not isinstance(pattern, dict):
-            raise InvocationError(f"pattern {i} must be a mapping")
-        pattern_name = pattern.get("name", f"pattern_{i}")
-        if validate_pattern(pattern, script_args, stdin_requested, pattern_name):
-            if matching is not None:
-                raise InvocationError("invocation matches multiple patterns; ambiguous")
-            matching = pattern
-            matching_name = pattern_name
-    if matching is None:
-        raise InvocationError("invocation does not match any declared pattern")
-    return matching, matching_name
+    try:
+        matching, matching_name = select_authored_argv_pattern(
+            patterns_raw,
+            script_args,
+            stdin_requested=stdin_requested,
+        )
+    except ProcessBindingError as exc:
+        raise InvocationError(str(exc)) from exc
+    return dict(matching), matching_name
 
 
 def resolve_machine_interface_surface(
@@ -988,7 +882,7 @@ def _resolve_export_dispatch(
         target_skill=target_skill,
         script_interface=export.local_name,
         target=export.interface_id,
-        pattern=export.local_name,
+        pattern=compiled.pattern_name or export.local_name,
         cwd=cwd,
         command=command,
         stdin=compiled.stdin_argument_id is not None,

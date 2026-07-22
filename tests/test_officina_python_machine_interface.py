@@ -1,8 +1,10 @@
 """Tests for the shared Python machine-interface runner."""
 from __future__ import annotations
 
+import ast
 import importlib
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -21,6 +23,31 @@ from officina.runtime.python_machine_interface_runner import (  # noqa: E402
     main,
     run_python_machine_interface,
 )
+
+
+def test_dispatch_call_analyzer_resolves_aliases_in_nested_imports() -> None:
+    tree = ast.parse(
+        "try:\n"
+        "    from officina.runtime.python_machine_interface import DispatchCall as Call\n"
+        "except ImportError:\n"
+        "    from officina.runtime.python_machine_interface import DispatchCall as Call\n"
+        "import officina.runtime.python_machine_interface as pmi\n"
+        "import officina.runtime.python_machine_interface\n"
+        "TARGET = 'cloud-files'\n"
+        "call = Call(caller_skill='daily-plan', target_skill=TARGET, interface='read')\n"
+        "aliased = pmi.DispatchCall(caller_skill='daily-plan', target_skill=TARGET, interface='write')\n"
+        "qualified = officina.runtime.python_machine_interface.DispatchCall(\n"
+        "    caller_skill='daily-plan', target_skill=TARGET, interface='delete'\n"
+        ")\n"
+    )
+
+    declarations = python_interface.analyze_dispatch_call_declarations(tree)
+
+    assert len(declarations) == 3
+    assert declarations[0].caller_skill == "daily-plan"
+    assert declarations[0].target_skill == "cloud-files"
+    assert declarations[0].interface == "read"
+    assert [item.interface for item in declarations] == ["read", "write", "delete"]
 
 
 def write_interface(path: Path) -> None:
@@ -71,6 +98,27 @@ def test_route_smoke_trace_supports_temporary_repository(tmp_path: Path) -> None
 
     assert (runtime / "_demo.py").resolve() in paths
     assert any(path.name == "python_machine_interface.py" for path in paths)
+
+
+def test_route_smoke_trace_prefers_candidate_local_officina_source(
+    tmp_path: Path,
+) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    runtime = skill / "_rtx"
+    runtime.mkdir(parents=True)
+    write_interface(runtime / "_demo.py")
+    live_source = Path(python_interface.__file__).resolve().parents[2]
+    candidate_source = tmp_path / "src"
+    shutil.copytree(live_source / "officina", candidate_source / "officina")
+
+    paths = python_interface.trace_python_route_smoke_dependencies(
+        skill,
+        tmp_path,
+        "_rtx/_demo.py:Interface",
+    )
+
+    assert (candidate_source / "officina" / "__init__.py").resolve() in paths
+    assert (live_source / "officina" / "__init__.py").resolve() not in paths
 
 
 def test_load_interface_preserves_package_relative_imports(

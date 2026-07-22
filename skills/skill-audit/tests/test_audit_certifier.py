@@ -1446,6 +1446,56 @@ def _v4_fixture(repo: Path):
     return create_v4_repository(repo)
 
 
+def _commit_v4_change(repo: Path, message: str) -> str:
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "--allow-empty", "-qm", message],
+        check=True,
+    )
+    return subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        text=True,
+    ).strip()
+
+
+def _commit_v4_review(repo: Path, message: str) -> str:
+    graph = certifier.load_repository_blueprint_graph(
+        repo, schema_root=repo / "references" / "blueprint"
+    )
+    context = certifier._v4_legacy_review_context(repo, graph)
+    digest = certifier._v4_reconciliation_digest(repo.resolve(), context)
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "commit",
+            "--allow-empty",
+            "-qm",
+            message + f"\n\nFamulus-Legacy-Claims-Reconciled: {digest}",
+        ],
+        check=True,
+    )
+    return subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+    ).strip()
+
+
+def _set_v4_mechanical_baseline_for_test(repo: Path, commit: str) -> None:
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "update-ref",
+            certifier.BLUEPRINT_V4_MECHANICAL_REF,
+            commit,
+        ],
+        check=True,
+    )
+
+
 def _add_v4_cross_owner_contract(repo: Path):
     module_root = repo / "skills" / "demo-skill"
     contract_path = module_root / "contracts" / "shared.schema.json"
@@ -1497,38 +1547,468 @@ def _add_v4_cross_owner_contract(repo: Path):
     }
     _write_v4_yaml(gateway_path, gateway)
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
-    subprocess.run(
-        ["git", "-C", str(repo), "commit", "-qm", "add contract source"],
-        check=True,
-    )
+    mechanical_commit = _commit_v4_change(repo, "add contract source")
+    _set_v4_mechanical_baseline_for_test(repo, mechanical_commit)
     return certifier.load_repository_blueprint_graph(
         repo,
         schema_root=repo / "references" / "blueprint",
     )
 
 
-def _gate_record(gate: str) -> dict[str, object]:
-    check_id, version = certifier.CERTIFIER_CHECK_REGISTRY[gate]
-    return {
-        "id": check_id,
-        "version": version,
-        "passed": True,
-        "findings": [],
-    }
-
-
 def _v4_certify(repo: Path, graph: object, **overrides: object):
     (repo / "public-keys").mkdir(exist_ok=True)
+    snapshot = certifier.capture_git_snapshot(repo)
+    assert snapshot is not None
     options = {
         "target_node_ids": ("demo-skill",),
         "public_key_root": repo / "public-keys",
         "secret_backend": _MemorySecretBackend(),
-        "deterministic_check": lambda _snapshot: _gate_record("deterministic"),
-        "semantic_audit": lambda _snapshot: _gate_record("semantic-audit"),
+        "reviewed_commit": snapshot.commit,
         "certified_at": "2026-07-20T12:00:00Z",
     }
     options.update(overrides)
     return certifier._certify_v4_repository(repo, **options)
+
+
+def test_v4_completeness_findings_block_signing_structural_drafts(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+    module_path = tmp_path / "skills" / "demo-skill" / "blueprint.yaml"
+    source_path = (
+        tmp_path / "skills" / "demo-skill" / "blueprints" / "gateway.yaml"
+    )
+    module = yaml.safe_load(module_path.read_text(encoding="utf-8"))
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    module.pop("description")
+    source.pop("description")
+    interface = source["interfaces"][
+        "demo-skill.source.gateway.interface.run"
+    ]
+    interface.pop("description")
+    interface["contract"] = {"direct_io": interface["contract"]["direct_io"]}
+    _write_v4_yaml(module_path, module)
+    _write_v4_yaml(source_path, source)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "-qm", "structural draft"],
+        check=True,
+    )
+    graph = certifier.load_repository_blueprint_graph(
+        tmp_path,
+        schema_root=tmp_path / "references" / "blueprint",
+    )
+
+    findings = certifier.v4_certification_completeness_findings(graph)
+
+    assert {finding.field for finding in findings} == {
+        "description",
+        "contract.arguments",
+        "contract.preconditions",
+        "contract.interaction",
+        "contract.caller_warnings",
+        "contract.outputs",
+        "contract.outcomes",
+        "contract.execution",
+        "contract.helpers",
+    }
+    with pytest.raises(certifier.AuditError, match="certification completeness"):
+        _v4_certify(tmp_path, graph)
+
+
+def test_v4_candidate_inspection_reports_findings_without_repair_or_certificates(
+    tmp_path: Path,
+) -> None:
+    _graph, _states, commit = _v4_fixture(tmp_path)
+    source_path = (
+        tmp_path / "skills" / "demo-skill" / "blueprints" / "gateway.yaml"
+    )
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    source.pop("description")
+    interface = source["interfaces"][
+        "demo-skill.source.gateway.interface.run"
+    ]
+    interface.pop("description")
+    interface["contract"] = {"direct_io": interface["contract"]["direct_io"]}
+    _write_v4_yaml(source_path, source)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "-qm", "structural draft"],
+        check=True,
+    )
+    before = source_path.read_bytes()
+
+    inspection = certifier.inspect_v4_migration_candidate(tmp_path)
+
+    assert inspection.source_commit != commit
+    assert inspection.node_ids == (
+        "demo-skill",
+        "demo-skill.source.gateway",
+        "skill-certifier",
+        "skill-certifier.source.gateway",
+    )
+    assert {finding.field for finding in inspection.findings} >= {
+        "description",
+        "contract.arguments",
+        "contract.execution",
+    }
+    assert source_path.read_bytes() == before
+    assert not tuple(tmp_path.rglob("*.certificates.jsonl"))
+
+
+def test_v4_candidate_finalization_requires_exact_reviewed_commit(
+    tmp_path: Path,
+) -> None:
+    _graph, _states, commit = _v4_fixture(tmp_path)
+
+    with pytest.raises(certifier.AuditError, match="reviewed commit"):
+        certifier.certify_v4_migration_candidate(
+            tmp_path,
+            reviewed_commit="0" * len(commit),
+            certified_at="2026-07-21T12:00:00Z",
+        )
+
+    assert not tuple(tmp_path.rglob("*.certificates.jsonl"))
+
+
+def test_v4_candidate_finalization_accepts_blueprint_only_semantic_review(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _mechanical_commit = _v4_fixture(tmp_path)
+    source_path = graph.nodes["demo-skill.source.gateway"].blueprint_path
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    source["description"] = "Reviewed gateway behavior."
+    _write_v4_yaml(source_path, source)
+    reviewed_commit = _commit_v4_review(tmp_path, "semantic review")
+
+    result = certifier.certify_v4_migration_candidate(
+        tmp_path,
+        reviewed_commit=reviewed_commit,
+        certified_at="2026-07-21T12:00:00Z",
+    )
+
+    assert result.source_commit == reviewed_commit
+
+
+def test_v4_candidate_finalization_rejects_unrecorded_claim_reconciliation(
+    tmp_path: Path,
+) -> None:
+    _graph, _states, mechanical_commit = _v4_fixture(tmp_path)
+    with pytest.raises(certifier.AuditError, match="strictly descend"):
+        certifier.certify_v4_migration_candidate(
+            tmp_path,
+            reviewed_commit=mechanical_commit,
+            certified_at="2026-07-21T12:00:00Z",
+        )
+    reviewed_commit = _commit_v4_change(tmp_path, "audit without reconciliation")
+    with pytest.raises(certifier.AuditError, match="unresolved legacy claims"):
+        certifier.certify_v4_migration_candidate(
+            tmp_path,
+            reviewed_commit=reviewed_commit,
+            certified_at="2026-07-21T12:00:00Z",
+        )
+
+
+def test_v4_candidate_review_may_repair_direct_io(tmp_path: Path) -> None:
+    graph, _states, _mechanical_commit = _v4_fixture(tmp_path)
+    source_path = graph.nodes["demo-skill.source.gateway"].blueprint_path
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    direct_io = source["interfaces"][
+        "demo-skill.source.gateway.interface.run"
+    ]["contract"]["direct_io"]
+    direct_io["writes"][0]["content"] = "Reviewed result content."
+    _write_v4_yaml(source_path, source)
+    reviewed_commit = _commit_v4_review(tmp_path, "review direct I/O")
+
+    result = certifier.certify_v4_migration_candidate(
+        tmp_path,
+        reviewed_commit=reviewed_commit,
+        certified_at="2026-07-21T12:00:00Z",
+    )
+
+    assert result.source_commit == reviewed_commit
+
+
+def test_v4_candidate_finalization_rejects_non_blueprint_review_change(
+    tmp_path: Path,
+) -> None:
+    _graph, _states, _mechanical_commit = _v4_fixture(tmp_path)
+    (tmp_path / "review-notes.txt").write_text("not a blueprint\n", encoding="utf-8")
+    reviewed_commit = _commit_v4_review(tmp_path, "non-blueprint review change")
+
+    with pytest.raises(certifier.AuditError, match="only blueprint files"):
+        certifier.certify_v4_migration_candidate(
+            tmp_path,
+            reviewed_commit=reviewed_commit,
+            certified_at="2026-07-21T12:00:00Z",
+        )
+
+    assert not tuple(tmp_path.rglob("*.certificates.jsonl"))
+
+
+def test_v4_candidate_finalization_rejects_protected_projection_change(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _mechanical_commit = _v4_fixture(tmp_path)
+    source_path = graph.nodes["demo-skill.source.gateway"].blueprint_path
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    source["gateway"]["language"] = "Reviewed-Markdown"
+    _write_v4_yaml(source_path, source)
+    reviewed_commit = _commit_v4_review(tmp_path, "change protected gateway")
+
+    with pytest.raises(certifier.AuditError, match="protected projection"):
+        certifier.certify_v4_migration_candidate(
+            tmp_path,
+            reviewed_commit=reviewed_commit,
+            certified_at="2026-07-21T12:00:00Z",
+        )
+    with pytest.raises(TypeError, match="mechanical_commit"):
+        certifier.certify_v4_migration_candidate(
+            tmp_path,
+            mechanical_commit=reviewed_commit,
+            reviewed_commit=reviewed_commit,
+            certified_at="2026-07-21T12:00:00Z",
+        )
+
+    assert not tuple(tmp_path.rglob("*.certificates.jsonl"))
+
+
+def test_v4_candidate_finalization_rejects_helper_binding_change(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _initial_commit = _v4_fixture(tmp_path)
+    source_path = graph.nodes["demo-skill.source.gateway"].blueprint_path
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    certifier_interface = "skill-certifier.interface.certify"
+    source["uses_interfaces"] = [
+        {"interface": certifier_interface, "version": 1}
+    ]
+    interface = source["interfaces"]["demo-skill.source.gateway.interface.run"]
+    interface["contract"]["helpers"] = [
+        {
+            "id": "certifier-result",
+            "role": "Read the certifier result.",
+            "interface": certifier_interface,
+            "version": 1,
+            "inputs": {},
+            "result": {
+                "output_ref": "result",
+                "selector": {"kind": "whole-output"},
+            },
+            "route": {"kind": "output", "target": "result"},
+            "empty": {"outcome": "success", "caller_action": "Continue."},
+            "failure": {"outcome": "success"},
+        }
+    ]
+    _write_v4_yaml(source_path, source)
+    mechanical_commit = _commit_v4_change(tmp_path, "mechanical helper binding")
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "update-ref",
+            certifier.BLUEPRINT_V4_MECHANICAL_REF,
+            mechanical_commit,
+        ],
+        check=True,
+    )
+    source["interfaces"]["demo-skill.source.gateway.interface.run"]["contract"][
+        "helpers"
+    ][0]["role"] = "Changed helper role."
+    _write_v4_yaml(source_path, source)
+    reviewed_commit = _commit_v4_review(tmp_path, "review helper binding")
+
+    with pytest.raises(certifier.AuditError, match="protected projection"):
+        certifier.certify_v4_migration_candidate(
+            tmp_path,
+            reviewed_commit=reviewed_commit,
+            certified_at="2026-07-21T12:00:00Z",
+        )
+
+
+def test_v4_candidate_finalization_requires_reserved_mechanical_ref(
+    tmp_path: Path,
+) -> None:
+    _graph, _states, reviewed_commit = _v4_fixture(tmp_path)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "update-ref",
+            "-d",
+            certifier.BLUEPRINT_V4_MECHANICAL_REF,
+        ],
+        check=True,
+    )
+
+    with pytest.raises(certifier.AuditError, match="mechanical baseline"):
+        certifier.certify_v4_migration_candidate(
+            tmp_path,
+            reviewed_commit=reviewed_commit,
+            certified_at="2026-07-21T12:00:00Z",
+        )
+
+
+def test_v4_inspection_separates_legacy_review_context_from_blocking_findings(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _initial_commit = _v4_fixture(tmp_path)
+    module_path = graph.nodes["demo-skill"].blueprint_path
+    source_path = graph.nodes["demo-skill.source.gateway"].blueprint_path
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    interface = source["interfaces"].pop(
+        "demo-skill.source.gateway.interface.run"
+    )
+    source[
+        "interfaces"
+    ]["demo-skill.source.gateway.interface.default"] = interface
+    _write_v4_yaml(source_path, source)
+    module = yaml.safe_load(module_path.read_text(encoding="utf-8"))
+    export = module["exports"].pop("demo-skill.interface.run")
+    export["source_interface"] = "demo-skill.source.gateway.interface.default"
+    module["exports"]["demo-skill.interface.default"] = export
+    _write_v4_yaml(module_path, module)
+    reviewed_v4 = module_path.read_bytes()
+    _write_v4_yaml(
+        module_path,
+        {
+            "schema_version": 2,
+            "blueprint_type": "skill",
+            "id": "demo-skill",
+            "skill_interface": {
+                "inputs": ["An exact legacy input claim."],
+                "outputs": [],
+                "side_effects": [],
+            },
+        },
+    )
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "--amend", "-qm", "legacy root"],
+        check=True,
+    )
+    legacy_commit = subprocess.check_output(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"], text=True
+    ).strip()
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "update-ref",
+            certifier.BLUEPRINT_V4_SOURCE_OVERLAY_REF,
+            legacy_commit,
+        ],
+        check=True,
+    )
+    module_path.write_bytes(reviewed_v4)
+    mechanical_commit = _commit_v4_change(
+        tmp_path, "materialize mechanical v4 blueprint candidate"
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "update-ref",
+            certifier.BLUEPRINT_V4_MECHANICAL_REF,
+            mechanical_commit,
+        ],
+        check=True,
+    )
+
+    inspection = certifier.inspect_v4_migration_candidate(tmp_path)
+    relocated = tmp_path.parent / f"{tmp_path.name}-relocated"
+    shutil.copytree(tmp_path, relocated)
+    relocated_inspection = certifier.inspect_v4_migration_candidate(relocated)
+
+    assert inspection.findings == ()
+    assert relocated_inspection.reconciliation_digest == inspection.reconciliation_digest
+    assert len(inspection.review_context) == 1
+    assert inspection.review_context[0].field == "legacy.skill_interface.inputs[0]"
+    assert "exact legacy input claim" in inspection.review_context[0].message
+    result = certifier.certify_v4_migration_candidate(
+        tmp_path,
+        reviewed_commit=_commit_v4_review(tmp_path, "claim reconciliation audit"),
+        certified_at="2026-07-21T12:00:00Z",
+    )
+    assert result.source_commit != mechanical_commit
+
+
+def test_v4_candidate_finalization_rejects_dirty_worktree(tmp_path: Path) -> None:
+    _graph, _states, commit = _v4_fixture(tmp_path)
+    (tmp_path / "unreviewed.txt").write_text("dirty\n", encoding="utf-8")
+
+    with pytest.raises(certifier.AuditError, match="must be clean"):
+        certifier.certify_v4_migration_candidate(
+            tmp_path,
+            reviewed_commit=commit,
+            certified_at="2026-07-21T12:00:00Z",
+        )
+
+    assert not tuple(tmp_path.rglob("*.certificates.jsonl"))
+
+
+def test_v4_final_completeness_requires_network_endpoint(tmp_path: Path) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+    source = graph.nodes["demo-skill.source.gateway"]
+    interface = source.declaration["interfaces"][
+        "demo-skill.source.gateway.interface.run"
+    ]
+    interface["contract"]["direct_io"]["network"] = [
+        {
+            "id": "network-1",
+            "medium": "network-request",
+            "access": "request",
+            "content": "Remote result.",
+            "sensitivity": "public",
+        }
+    ]
+
+    findings = certifier.v4_certification_completeness_findings(graph)
+
+    assert any(
+        finding.field == "contract.direct_io.network[0].endpoint"
+        for finding in findings
+    )
+
+
+def test_v4_candidate_finalization_uses_owned_checks_for_reviewed_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, _states, mechanical_commit = _v4_fixture(tmp_path)
+    commit = _commit_v4_review(tmp_path, "explicit audit")
+    real_deterministic = certifier._v4_deterministic_check
+    real_semantic = certifier._v4_semantic_attestation
+    events: list[tuple[str, str, str]] = []
+
+    def deterministic(snapshot: object, *args: object, **kwargs: object):
+        events.append(("deterministic", snapshot.node_id, snapshot.source_commit))
+        return real_deterministic(snapshot, *args, **kwargs)
+
+    def semantic(snapshot: object, *args: object, **kwargs: object):
+        events.append(("semantic", snapshot.node_id, snapshot.source_commit))
+        return real_semantic(snapshot, *args, **kwargs)
+
+    monkeypatch.setattr(certifier, "_v4_deterministic_check", deterministic)
+    monkeypatch.setattr(certifier, "_v4_semantic_attestation", semantic)
+
+    result = certifier.certify_v4_migration_candidate(
+        tmp_path,
+        reviewed_commit=commit,
+        certified_at="2026-07-21T12:00:00Z",
+    )
+
+    assert set(result.node_ids) == set(graph.nodes)
+    assert all(event[2] == commit for event in events)
+    assert [event[:2] for event in events] == [
+        pair
+        for node_id in result.node_ids
+        for pair in (("deterministic", node_id), ("semantic", node_id))
+    ]
 
 
 def test_private_v4_writer_builds_payload_bottom_up_and_verifies(tmp_path: Path) -> None:
@@ -1539,86 +2019,46 @@ def test_private_v4_writer_builds_payload_bottom_up_and_verifies(tmp_path: Path)
 
     assert result.source_commit == commit
     assert result.node_ids == ("demo-skill.source.gateway", "demo-skill")
-    assert all(certifier.certificate_log_path(graph.nodes[node_id]).is_file() for node_id in result.node_ids)
+    assert all(
+        certifier.certificate_log_path(graph.nodes[node_id]).is_file()
+        for node_id in result.node_ids
+    )
+    for node_id in result.node_ids:
+        entries = parse_certificate_log(
+            certifier.certificate_log_path(graph.nodes[node_id]).read_bytes(),
+            tmp_path / "public-keys",
+        )
+        assert entries[-1]["payload"]["checks"] == list(
+            certifier.expected_certifier_checks()
+        )
 
 
 def test_private_v4_writer_propagates_explicit_non_atomic_fallback(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     graph, _states, _commit = _v4_fixture(tmp_path)
-    real_load = certifier.load_or_create_certificate_signing_key
-    real_evaluate = certifier.evaluate_certificate_currentness
-    real_resolve_basis = certifier.resolve_certification_basis_paths
-    real_compute_basis = certifier.compute_certification_basis_hash
-    real_append = certifier.atomic_compare_and_append_bytes
-    real_read = certifier.read_regular_file_bytes
-    observed = {
-        "append": 0,
-        "basis_hash": 0,
-        "basis_paths": 0,
-        "evaluate": 0,
-        "load": 0,
-        "read": 0,
-    }
+    with pytest.raises(certifier.AuditError, match="diagnostic-only"):
+        _v4_certify(tmp_path, graph, allow_non_atomic=True)
+    assert not tuple((tmp_path / "public-keys").iterdir())
+    assert not tuple(tmp_path.rglob("*.certificates.jsonl"))
 
-    def resolve_basis_with_fallback(*args: object, **kwargs: object):
-        assert kwargs["allow_non_atomic"] is True
-        observed["basis_paths"] += 1
-        return real_resolve_basis(*args, **kwargs)
 
-    def compute_basis_with_fallback(*args: object, **kwargs: object):
-        assert kwargs["allow_non_atomic"] is True
-        observed["basis_hash"] += 1
-        return real_compute_basis(*args, **kwargs)
-
-    def append_with_fallback(*args: object, **kwargs: object):
-        assert kwargs["allow_non_atomic"] is True
-        observed["append"] += 1
-        return real_append(*args, **kwargs)
-
-    def read_with_fallback(*args: object, **kwargs: object):
-        assert kwargs["allow_non_atomic"] is True
-        observed["read"] += 1
-        return real_read(*args, **kwargs)
-
-    def load_with_fallback(*args: object, **kwargs: object):
-        assert kwargs["allow_non_atomic"] is True
-        observed["load"] += 1
-        return real_load(*args, **kwargs)
-
-    def evaluate_with_fallback(*args: object, **kwargs: object):
-        assert kwargs["allow_non_atomic"] is True
-        observed["evaluate"] += 1
-        return real_evaluate(*args, **kwargs)
-
-    monkeypatch.setattr(
-        certifier, "load_or_create_certificate_signing_key", load_with_fallback
+def test_private_v4_writer_rejects_non_atomic_candidate_provenance(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _commit = _v4_fixture(tmp_path)
+    subprocess.run(
+        [
+            "git", "-C", str(tmp_path), "config",
+            "famulus.candidateAtomicGuarantee", "false",
+        ],
+        check=True,
     )
-    monkeypatch.setattr(
-        certifier, "evaluate_certificate_currentness", evaluate_with_fallback
-    )
-    monkeypatch.setattr(
-        certifier, "resolve_certification_basis_paths", resolve_basis_with_fallback
-    )
-    monkeypatch.setattr(
-        certifier, "compute_certification_basis_hash", compute_basis_with_fallback
-    )
-    monkeypatch.setattr(
-        certifier, "atomic_compare_and_append_bytes", append_with_fallback
-    )
-    monkeypatch.setattr(certifier, "read_regular_file_bytes", read_with_fallback)
 
-    _v4_certify(tmp_path, graph, allow_non_atomic=True)
-
-    assert observed == {
-        "append": 2,
-        "basis_hash": 5,
-        "basis_paths": 5,
-        "evaluate": 2,
-        "load": 1,
-        "read": 2,
-    }
+    with pytest.raises(certifier.AuditError, match="non-certifiable"):
+        _v4_certify(tmp_path, graph)
+    assert not tuple((tmp_path / "public-keys").iterdir())
+    assert not tuple(tmp_path.rglob("*.certificates.jsonl"))
 
 
 def test_private_v4_writer_accepts_native_confined_commit_readiness(
@@ -1627,22 +2067,8 @@ def test_private_v4_writer_accepts_native_confined_commit_readiness(
 ) -> None:
     graph, _states, _commit = _v4_fixture(tmp_path)
     monkeypatch.setattr(git_provenance, "_use_native_confined_read", lambda: True)
-    real_read = artifact_health.read_regular_file_bytes
-    observed_roots: list[Path] = []
-
-    def native_hash_read(*args: object, **kwargs: object) -> bytes:
-        assert kwargs["allow_non_atomic"] is True
-        observed_roots.append(kwargs["allowed_root"])
-        return real_read(*args, **kwargs)
-
-    monkeypatch.setattr(
-        artifact_health, "read_regular_file_bytes", native_hash_read
-    )
-
-    result = _v4_certify(tmp_path, graph, allow_non_atomic=True)
-
-    assert result.node_ids == ("demo-skill.source.gateway", "demo-skill")
-    assert tmp_path / "skills" / "demo-skill" in observed_roots
+    with pytest.raises(certifier.AuditError, match="diagnostic-only"):
+        _v4_certify(tmp_path, graph, allow_non_atomic=True)
 
 
 def test_private_v4_writer_exact_source_target_does_not_write_parent(tmp_path: Path) -> None:
@@ -1757,49 +2183,15 @@ def test_private_v4_writer_reports_post_write_verification_failure(tmp_path: Pat
         _v4_certify(tmp_path, graph, after_append=corrupt)
 
 
-def test_private_v4_writer_requires_passed_versioned_audit(tmp_path: Path) -> None:
+def test_private_v4_writer_rejects_caller_supplied_gate_callbacks(tmp_path: Path) -> None:
     graph, _states, _commit = _v4_fixture(tmp_path)
 
-    with pytest.raises(certifier.AuditError, match="semantic-audit gate"):
+    with pytest.raises(TypeError, match="semantic_audit"):
         _v4_certify(
             tmp_path,
             graph,
-            semantic_audit=lambda _snapshot: {
-                **_gate_record("semantic-audit"),
-                "passed": False,
-            },
+            semantic_audit=lambda _snapshot: None,
         )
-
-
-def test_private_v4_writer_controls_gate_order_for_each_exact_snapshot(
-    tmp_path: Path,
-) -> None:
-    graph, _states, _commit = _v4_fixture(tmp_path)
-    events: list[tuple[str, str, str]] = []
-
-    def deterministic(snapshot: object) -> dict[str, object]:
-        events.append(("deterministic", snapshot.node_id, snapshot.node_hash))
-        return _gate_record("deterministic")
-
-    def semantic(snapshot: object) -> dict[str, object]:
-        assert events[-1][:2] == ("deterministic", snapshot.node_id)
-        events.append(("semantic-audit", snapshot.node_id, snapshot.node_hash))
-        return _gate_record("semantic-audit")
-
-    result = _v4_certify(
-        tmp_path,
-        graph,
-        deterministic_check=deterministic,
-        semantic_audit=semantic,
-    )
-
-    assert [event[:2] for event in events] == [
-        ("deterministic", "demo-skill.source.gateway"),
-        ("semantic-audit", "demo-skill.source.gateway"),
-        ("deterministic", "demo-skill"),
-        ("semantic-audit", "demo-skill"),
-    ]
-    assert result.node_ids == ("demo-skill.source.gateway", "demo-skill")
 
 
 def test_private_v4_writer_certifies_the_certifier_through_the_same_path(
@@ -2049,6 +2441,11 @@ def test_private_v4_writer_rechecks_forced_untracked_input_after_append(
         ["git", "-C", str(tmp_path), "commit", "-qm", "add local input policy"],
         check=True,
     )
+    mechanical_commit = subprocess.check_output(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        text=True,
+    ).strip()
+    _set_v4_mechanical_baseline_for_test(tmp_path, mechanical_commit)
 
     def mutate(_node_id: str) -> None:
         local_input.write_text("changed local input\n", encoding="utf-8")

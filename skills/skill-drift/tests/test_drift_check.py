@@ -81,11 +81,37 @@ def write_json(path: Path, payload: object) -> None:
 def install_policy_manifest(repo: Path, patterns: list[str] | None = None) -> Path:
     manifest = repo / "skills" / "skill-drift" / "references" / "certification-basis-roots.json"
     if patterns is None:
-        source = MODULE_PATH.parents[1] / "references" / "certification-basis-roots.json"
-        write(manifest, source.read_text(encoding="utf-8"))
-    else:
-        write_json(manifest, patterns)
+        patterns = ["references/certification/fixture-policy.md"]
+        write(repo / patterns[0], "fixture policy\n")
+    write_json(manifest, patterns)
     return manifest
+
+
+def materialize_canonical_policy_basis(repo: Path) -> Path:
+    source_root = MODULE_PATH.parents[3]
+    relative_manifest = Path(
+        "skills/skill-drift/references/certification-basis-roots.json"
+    )
+    source_manifest = source_root / relative_manifest
+    manifest = json.loads(source_manifest.read_text(encoding="utf-8"))
+    assert isinstance(manifest, list)
+    write(repo / relative_manifest, source_manifest.read_text(encoding="utf-8"))
+    for pattern in manifest:
+        assert isinstance(pattern, str)
+        matches = (
+            sorted(source_root.glob(pattern))
+            if any(character in pattern for character in "*?[]")
+            else [source_root / pattern]
+        )
+        for match in matches:
+            sources = sorted(match.rglob("*")) if match.is_dir() else [match]
+            for source in sources:
+                if not source.is_file():
+                    continue
+                destination = repo / source.relative_to(source_root)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+    return repo / relative_manifest
 
 
 def make_skill(repo: Path, name: str = "demo-skill") -> Path:
@@ -545,7 +571,7 @@ def test_extra_recorded_hash_is_stale(tmp_path: Path) -> None:
 
 
 def test_policy_hash_changes_when_skill_audit_changes(tmp_path: Path) -> None:
-    install_policy_manifest(tmp_path)
+    materialize_canonical_policy_basis(tmp_path)
     write(tmp_path / "references" / "skill-standards" / "skill-guidelines.standard.yaml", "guidelines\n")
     write(tmp_path / "references" / "blueprint" / "schema.json", "{}\n")
     write(tmp_path / "references" / "blueprint" / "template.yaml", "template\n")
@@ -559,7 +585,7 @@ def test_policy_hash_changes_when_skill_audit_changes(tmp_path: Path) -> None:
 
 
 def test_policy_hash_changes_when_canonical_skill_guidelines_change(tmp_path: Path) -> None:
-    install_policy_manifest(tmp_path)
+    materialize_canonical_policy_basis(tmp_path)
     guidelines = tmp_path / "references" / "skill-standards" / "skill-guidelines.standard.yaml"
     write(guidelines, "one\n")
 
@@ -571,7 +597,7 @@ def test_policy_hash_changes_when_canonical_skill_guidelines_change(tmp_path: Pa
 
 
 def test_policy_hash_ignores_explanatory_blueprint_document(tmp_path: Path) -> None:
-    install_policy_manifest(tmp_path)
+    materialize_canonical_policy_basis(tmp_path)
     document = tmp_path / "docs" / "skill-blueprints.md"
     write(document, "one\n")
 
@@ -630,7 +656,7 @@ def test_certification_basis_hash_tracks_nested_schema_families(
     tmp_path: Path,
     relative: str,
 ) -> None:
-    install_policy_manifest(tmp_path)
+    materialize_canonical_policy_basis(tmp_path)
     copy_schema_bundle(tmp_path)
     first = checker.compute_certification_basis_hash(tmp_path)
 
@@ -646,6 +672,7 @@ def test_committed_shared_trust_boundary_change_invalidates_current_record(
     module_name: str,
 ) -> None:
     make_typed_skill(tmp_path)
+    materialize_canonical_policy_basis(tmp_path)
     module = tmp_path / "src" / "officina" / "common" / module_name
     write(module, "one\n")
     write(

@@ -15,13 +15,13 @@
   "required": ["reads", "writes", "network"],
   "additionalProperties": false,
   "properties": {
-    "reads": {"type": "array", "items": {"$ref": "#/definitions/readEntry"}},
-    "writes": {"type": "array", "items": {"$ref": "#/definitions/writeEntry"}},
-    "network": {"type": "array", "items": {"$ref": "#/definitions/networkEntry"}}
+    "reads": {"type": "array", "items": {"$ref": "#/definitions/ioEntry"}},
+    "writes": {"type": "array", "items": {"$ref": "#/definitions/ioEntry"}},
+    "network": {"type": "array", "items": {"$ref": "#/definitions/ioEntry"}}
   },
   "definitions": {
-    "relativePath": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
-    "pathSource": {
+    "preV4RelativePath": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+    "preV4PathSource": {
       "type": "object",
       "required": ["kind", "argument_ref"],
       "additionalProperties": false,
@@ -30,7 +30,17 @@
         "argument_ref": {"type": "string", "minLength": 1}
       }
     },
-    "ioEntry": {
+    "preV4DirectIo": {
+      "type": "object",
+      "required": ["reads", "writes", "network"],
+      "additionalProperties": false,
+      "properties": {
+        "reads": {"type": "array", "items": {"$ref": "#/definitions/preV4ReadEntry"}},
+        "writes": {"type": "array", "items": {"$ref": "#/definitions/preV4WriteEntry"}},
+        "network": {"type": "array", "items": {"$ref": "#/definitions/preV4NetworkEntry"}}
+      }
+    },
+    "preV4IoEntry": {
       "type": "object",
       "required": ["id", "medium", "access", "content", "format", "sensitivity"],
       "additionalProperties": false,
@@ -42,8 +52,8 @@
         "content": {"type": "string", "minLength": 1},
         "format": {"type": "string", "minLength": 1},
         "sensitivity": {"enum": ["public", "user-private", "derived-private", "credential", "secret"]},
-        "path": {"$ref": "#/definitions/relativePath"},
-        "path_source": {"$ref": "#/definitions/pathSource"},
+        "path": {"$ref": "#/definitions/preV4RelativePath"},
+        "path_source": {"$ref": "#/definitions/preV4PathSource"},
         "endpoint": {"type": "string", "minLength": 1}
       },
       "allOf": [
@@ -51,8 +61,27 @@
         {"if": {"properties": {"medium": {"enum": ["local-filesystem", "repository-filesystem", "home-filesystem", "temporary-filesystem"]}}}, "then": {"oneOf": [{"required": ["path"]}, {"required": ["path_source"]}]}, "else": {"not": {"anyOf": [{"required": ["path"]}, {"required": ["path_source"]}]}}}
       ]
     },
-    "readEntry": {"allOf": [{"$ref": "#/definitions/ioEntry"}, {"properties": {"access": {"enum": ["read", "read-write"]}}}]},
-    "writeEntry": {"allOf": [{"$ref": "#/definitions/ioEntry"}, {"properties": {"access": {"enum": ["write", "read-write", "delete", "send", "execute", "configure"]}}}]},
-    "networkEntry": {"allOf": [{"$ref": "#/definitions/ioEntry"}, {"required": ["system", "endpoint"], "properties": {"medium": {"const": "network"}, "access": {"enum": ["read", "write", "read-write", "send", "configure"]}}}]}
+    "preV4ReadEntry": {"allOf": [{"$ref": "#/definitions/preV4IoEntry"}, {"properties": {"access": {"enum": ["read", "read-write"]}}}]},
+    "preV4WriteEntry": {"allOf": [{"$ref": "#/definitions/preV4IoEntry"}, {"properties": {"access": {"enum": ["write", "read-write", "delete", "send", "execute", "configure"]}}}]},
+    "preV4NetworkEntry": {"allOf": [{"$ref": "#/definitions/preV4IoEntry"}, {"required": ["system", "endpoint"], "properties": {"medium": {"const": "network"}, "access": {"enum": ["read", "write", "read-write", "send", "configure"]}}}]},
+    "ioEntry": {
+      "type": "object",
+      "required": ["id", "medium", "access", "content", "sensitivity"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"},
+        "medium": {"enum": ["local-filesystem", "remote-filesystem", "repository-filesystem", "home-filesystem", "temporary-filesystem", "network-request", "network", "prompt", "stdin", "stdout", "stderr", "local-system", "calendar", "email", "subprocess", "event-stream"]},
+        "access": {"enum": ["read", "write", "read-write", "execute", "configure", "request", "download", "upload", "send", "delete"]},
+        "system": {"type": "string", "minLength": 1},
+        "content": {"type": "string", "minLength": 1},
+        "formats": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "auth": {"$ref": "legacy-skill.schema.json#/definitions/metadataAuthRequirement"},
+        "sensitivity": {"enum": ["public", "user-private", "derived-private", "credential", "secret"]},
+        "path": {"type": "string", "minLength": 1},
+        "path_match": {"enum": ["exact", "glob", "regex"]},
+        "reason": {"type": "string", "minLength": 1},
+        "endpoint": {"type": "string", "minLength": 1}
+      }
+    }
   }
 }

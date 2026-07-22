@@ -4,7 +4,7 @@
   "title": "Behavioral Source Blueprint",
   "description": "Closed version 4 contract for one source-owned behavioral implementation and its intrinsic interfaces.",
   "type": "object",
-  "required": ["schema_version", "node_type", "id", "version", "description", "gateway", "content", "dependencies", "uses_interfaces", "interfaces"],
+  "required": ["schema_version", "node_type", "id", "version", "gateway", "content", "dependencies", "uses_interfaces", "interfaces"],
   "additionalProperties": false,
   "properties": {
     "schema_version": {
@@ -26,7 +26,7 @@
     "description": {
       "type": "string",
       "minLength": 1,
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Owns the primary instructions."}, "doc": {"authoring": ["Describe this source's intrinsic behavioral role."]}, "related_validation_rules": ["schema-shape"]}
+      "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": true, "example": "Owns the primary instructions."}, "doc": {"authoring": ["Describe this source's intrinsic behavioral role; certification requires this field."]}, "related_validation_rules": ["schema-shape"]}
     },
     "gateway": {
       "$ref": "common.schema.json#/definitions/gateway",
@@ -71,11 +71,12 @@
   "definitions": {
     "interface": {
       "type": "object",
-      "required": ["version", "description", "contract"],
+      "required": ["version"],
       "additionalProperties": false,
       "properties": {
         "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
         "description": {"type": "string", "minLength": 1},
+        "usage": {"type": "string", "description": "Authored descriptive invocation evidence preserved verbatim from the predecessor declaration."},
         "contract": {"$ref": "caller-contract.schema.json#/definitions/v4Contract"},
         "process_binding": {"$ref": "caller-contract.schema.json#/definitions/v4ProcessBinding"}
       }

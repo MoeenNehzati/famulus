@@ -415,7 +415,7 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   python3 -m pytest -o pythonpath=src -q tests/test_officina_artifact_health.py tests/test_officina_atomic_files.py tests/test_officina_git_provenance.py skills/skill-audit/tests skills/skill-drift/tests
   ```
 
-## Task 4: Convert mechanically, then certify the temporary v4 graph
+## Task 4: Convert mechanically, then separately certify the temporary v4 graph
 
 **Modify**
 
@@ -456,16 +456,37 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   authority, installed-source classes, generated artifacts, mapped v4 search
   semantics, and validator/hook coverage. Retire authored conformance fields
   only after their substantive-rule dispositions are complete.
-- [ ] Write candidates only to a newly created temporary directory. Reject an
+- [ ] Generalize the existing inventory's canonical marker walk so v4 modules
+  may be rooted outside `skills/*` without becoming autodiscoverable. Materialize
+  the two map-declared reference modules in place, follow only their contained
+  source blueprints, and convert the six exact raw repository behavior-source
+  records into version-pinned source dependencies without moving or copying
+  their content files.
+- [ ] Materialize the original source `HEAD` plus the exact map-authorized
+  overlay into a newly created temporary directory. Reject staged content,
+  undeclared or ignored overlay paths, unmerged/rename/copy/submodule states,
+  index disagreements, and any source fingerprint change during conversion.
+  Reject an
   existing output directory, ambiguous ownership, collisions, orphan sources,
   traversal, unresolved references, and unmapped active paths.
-- [ ] Compare pre/post public graph and runtime-dependency projections. Run the
-  conversion twice and require the second result to be a no-op.
-- [ ] Run the existing certifier-owned workflow on every node in dependency
+- [ ] Compare pre/post public graph, runtime-dependency, and behavioral-source
+  dependency projections against independently constructed predecessor
+  projections. Run the conversion twice and require the second result to be a
+  no-op. The mechanical command stops here with
+  `candidate_status=mechanical-review-required`; it must not invent missing
+  semantics, repair declarations, or issue certificates.
+- [ ] After review of the mechanical candidate, record every legacy
+  `skill_interface` claim against its unique map-derived default export in an
+  explicit descendant audit commit. Finalization rejects an unresolved claim
+  or a missing/mismatched reconciliation digest. Then run the existing certifier-owned workflow on every node in dependency
   order inside the temporary v4 repository. Semantic findings may repair only
   the candidate blueprints. After each repair, reload and rerun structural,
   graph, ownership, and semantic checks. Sign only a clean reconstructed final
-  state; never copy temporary certificates into the live cutover.
+  state; never copy temporary certificates into the live cutover. Execute
+  candidate-owned certifier code from a private exact worktree of the reviewed
+  commit and independently recheck the parent candidate afterward. This is a
+  cooperative same-UID safeguard against accidental mutable-tree drift, not a
+  hostile same-UID transaction boundary.
 - [ ] Any certifier repair that changes an ID, gateway, binding, export,
   authorization, dependency, or runtime-dependency projection invalidates the
   mechanical equivalence proof and requires an explicit map update and fresh

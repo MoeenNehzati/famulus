@@ -332,6 +332,16 @@ def test_v4_basis_is_resolved_only_from_the_canonical_manifest(tmp_path: Path) -
     assert compute_certification_basis_hash(tmp_path) != first
 
 
+def test_canonical_basis_includes_nested_dispatcher_python_package() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    paths = resolve_certification_basis_paths(repo_root)
+
+    assert (
+        repo_root / "src" / "officina" / "dispatcher" / "platforms" / "__init__.py"
+    ) in paths
+
+
 def test_v4_basis_rejects_deleted_tracked_literal_member(tmp_path: Path) -> None:
     manifest = (
         tmp_path
@@ -351,6 +361,42 @@ def test_v4_basis_rejects_deleted_tracked_literal_member(tmp_path: Path) -> None
     with pytest.raises(
         ArtifactHealthError,
         match="tracked certification basis input is missing",
+    ):
+        resolve_certification_basis_paths(tmp_path)
+
+
+def test_v4_basis_rejects_missing_untracked_literal_member(tmp_path: Path) -> None:
+    manifest = (
+        tmp_path
+        / "skills"
+        / "skill-drift"
+        / "references"
+        / "certification-basis-roots.json"
+    )
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('["basis/required.txt"]\n', encoding="utf-8")
+
+    with pytest.raises(
+        ArtifactHealthError,
+        match="certification basis pattern matched no files",
+    ):
+        resolve_certification_basis_paths(tmp_path)
+
+
+def test_v4_basis_rejects_glob_that_matches_no_files(tmp_path: Path) -> None:
+    manifest = (
+        tmp_path
+        / "skills"
+        / "skill-drift"
+        / "references"
+        / "certification-basis-roots.json"
+    )
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('["basis/**/*.py"]\n', encoding="utf-8")
+
+    with pytest.raises(
+        ArtifactHealthError,
+        match="certification basis pattern matched no files",
     ):
         resolve_certification_basis_paths(tmp_path)
 

@@ -199,6 +199,15 @@ Blueprint identity and placement follow these rules:
 - an export's version is derived from its bound source-interface version and is
   never an independently authored competing value.
 
+Repository inventory discovers modules through canonical
+`<module-root>/blueprint.yaml` markers, not through a `skills/*` path
+assumption. The bounded marker walk excludes registered infrastructure and
+ignored working directories, rejects duplicate identities, nested module
+roots, and marker/identity collisions, and follows behavioral-source
+blueprints only from each accepted module's `blueprints/` directory. Placement
+does not imply host discovery: modules without a `discovery` declaration are
+reachable only through explicit graph relationships.
+
 ## Node kinds
 
 There are two node kinds: **modules** and **behavioral sources**.

@@ -27,6 +27,8 @@ MachineInterfaceBindingError = ProcessBindingError
 class ParsedCallerInvocation:
     values: Mapping[str, object]
     stdin_requested: bool
+    raw_argv: tuple[str, ...] | None = None
+    pattern_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,7 @@ class CompiledInvocationPlan:
     argv: tuple[str, ...]
     stdin_argument_id: str | None
     entry: str | None = None
+    pattern_name: str | None = None
 
 
 _DISPATCHER_OPTIONS = frozenset({"--caller-skill", "--dry-run", "--stdin"})
@@ -367,6 +370,199 @@ def _caller_tokens(argv: Sequence[str], known_names: set[str], fixed_names: set[
     return positionals, named
 
 
+def _pattern_string_list(value: object, context: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item for item in value
+    ):
+        raise ProcessBindingError(f"{context}: expected list of non-empty strings")
+    return value
+
+
+def _pattern_mapping(value: object, context: str) -> Mapping[str, object]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ProcessBindingError(f"{context}: expected mapping")
+    return value
+
+
+def _split_pattern_argv(
+    argv: Sequence[str], *, value_flags: set[str]
+) -> tuple[dict[str, str | None], list[str]]:
+    flags: dict[str, str | None] = {}
+    positionals: list[str] = []
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token == "--":
+            positionals.extend(argv[index + 1 :])
+            break
+        if token.startswith("-") and token != "-":
+            flag, separator, inline_value = token.partition("=")
+            if flag in flags:
+                raise ProcessBindingError(f"duplicate flag {flag}")
+            if flag in value_flags:
+                if separator:
+                    if not inline_value:
+                        raise ProcessBindingError(f"flag {flag} requires a value")
+                    flags[flag] = inline_value
+                else:
+                    if index + 1 >= len(argv) or argv[index + 1] == "--":
+                        raise ProcessBindingError(f"flag {flag} requires a value")
+                    value = argv[index + 1]
+                    if value.startswith("-") and value != "-":
+                        raise ProcessBindingError(f"flag {flag} requires a value")
+                    flags[flag] = value
+                    index += 1
+            else:
+                if separator:
+                    raise ProcessBindingError(f"switch {flag} does not take a value")
+                flags[flag] = None
+            index += 1
+            continue
+        positionals.append(token)
+        index += 1
+    return flags, positionals
+
+
+def _authored_argv_pattern_matches(
+    pattern: Mapping[str, object],
+    argv: Sequence[str],
+    *,
+    stdin_requested: bool,
+    pattern_name: str,
+) -> bool:
+    flag_patterns = _pattern_mapping(pattern.get("flag_patterns"), "flag_patterns")
+    flags, positionals = _split_pattern_argv(
+        argv, value_flags={str(flag) for flag in flag_patterns}
+    )
+    provided_flags = set(flags)
+
+    if stdin_requested and not bool(pattern.get("allow_stdin", False)):
+        return False
+
+    minimum = pattern.get("min_positionals", 0)
+    maximum = pattern.get("max_positionals")
+    allow_extra = pattern.get("allow_extra_positionals", False)
+    if not isinstance(allow_extra, bool):
+        raise ProcessBindingError(
+            f"pattern {pattern_name}: allow_extra_positionals must be boolean"
+        )
+    if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 0:
+        raise ProcessBindingError(
+            f"pattern {pattern_name}: min_positionals must be non-negative integer"
+        )
+    if len(positionals) < minimum:
+        return False
+    if maximum is not None:
+        if (
+            not isinstance(maximum, int)
+            or isinstance(maximum, bool)
+            or maximum < minimum
+        ):
+            raise ProcessBindingError(
+                f"pattern {pattern_name}: max_positionals must be >= min_positionals"
+            )
+        if len(positionals) > maximum:
+            return False
+    elif not allow_extra and len(positionals) > minimum:
+        return False
+
+    required = set(
+        _pattern_string_list(pattern.get("required_flags"), "required_flags")
+    )
+    if not required.issubset(provided_flags):
+        return False
+    forbidden = set(
+        _pattern_string_list(pattern.get("forbidden_flags"), "forbidden_flags")
+    )
+    if forbidden & provided_flags:
+        return False
+    if "allowed_flags" in pattern:
+        allowed = set(
+            _pattern_string_list(pattern.get("allowed_flags"), "allowed_flags")
+        )
+        if provided_flags - allowed:
+            return False
+
+    positional_patterns = _pattern_mapping(
+        pattern.get("positional_patterns"), "positional_patterns"
+    )
+    for raw_index, regex_pattern in positional_patterns.items():
+        try:
+            position = int(raw_index)
+        except (TypeError, ValueError) as exc:
+            raise ProcessBindingError(
+                f"positional_patterns key must be numeric index, got {raw_index!r}"
+            ) from exc
+        if not isinstance(regex_pattern, str):
+            raise ProcessBindingError(
+                f"positional_patterns[{raw_index!r}]: expected regex string"
+            )
+        if position < 0 or position >= len(positionals):
+            return False
+        if re.match(regex_pattern, positionals[position]) is None:
+            return False
+
+    for raw_flag, regex_pattern in flag_patterns.items():
+        if not isinstance(raw_flag, str) or not isinstance(regex_pattern, str):
+            raise ProcessBindingError(
+                "flag_patterns: expected flag names mapped to regex strings"
+            )
+        if raw_flag not in provided_flags:
+            continue
+        flag_value = flags[raw_flag]
+        if (
+            not isinstance(flag_value, str)
+            or len(flag_value) > 4096
+            or len(regex_pattern) > 1024
+            or re.fullmatch(regex_pattern, flag_value) is None
+        ):
+            return False
+    return True
+
+
+def select_authored_argv_pattern(
+    patterns: object,
+    argv: Sequence[str],
+    *,
+    stdin_requested: bool,
+) -> tuple[Mapping[str, object], str]:
+    """Select the sole authored argv pattern matching one caller invocation."""
+
+    if not isinstance(patterns, list):
+        raise ProcessBindingError("patterns: expected list")
+    if not patterns:
+        raise ProcessBindingError(
+            "machine interface must have at least one pattern when `patterns` is declared"
+        )
+    matching: Mapping[str, object] | None = None
+    matching_name = ""
+    for index, pattern in enumerate(patterns):
+        if not isinstance(pattern, Mapping):
+            raise ProcessBindingError(f"pattern {index} must be a mapping")
+        raw_name = pattern.get("name", f"pattern_{index}")
+        if not isinstance(raw_name, str) or not raw_name:
+            raise ProcessBindingError(f"pattern {index}: name must be non-empty")
+        if _authored_argv_pattern_matches(
+            pattern,
+            argv,
+            stdin_requested=stdin_requested,
+            pattern_name=raw_name,
+        ):
+            if matching is not None:
+                raise ProcessBindingError(
+                    "invocation matches multiple patterns; ambiguous"
+                )
+            matching = pattern
+            matching_name = raw_name
+    if matching is None:
+        raise ProcessBindingError("invocation does not match any declared pattern")
+    return matching, matching_name
+
+
 def parse_caller_invocation(
     export: InterfaceExport,
     argv: Sequence[str],
@@ -376,6 +572,17 @@ def parse_caller_invocation(
     """Parse only the caller-visible argument tail for one export."""
 
     arguments, fixed = _validate_layout(export)
+    process_binding = _process_binding(export)
+    if export.source_node_id is not None and "patterns" in process_binding:
+        _pattern, pattern_name = select_authored_argv_pattern(
+            process_binding["patterns"],
+            argv,
+            stdin_requested=stdin_requested,
+        )
+        if not arguments and not fixed:
+            return ParsedCallerInvocation(
+                {}, stdin_requested, tuple(argv), pattern_name
+            )
     positional = sorted(
         (
             (declaration["invocation_binding"]["position"], argument_id, declaration)
@@ -589,6 +796,28 @@ def compile_gateway_invocation(
 
     _require_export_owner(module, export)
     arguments, fixed = _validate_layout(export)
+    if parsed.raw_argv is not None:
+        process_binding = _process_binding(export)
+        if (
+            export.source_node_id is None
+            or "patterns" not in process_binding
+            or arguments
+            or fixed
+        ):
+            raise ProcessBindingError(
+                f"{export.interface_id}: raw argv requires an authored process-binding pattern"
+            )
+        select_authored_argv_pattern(
+            process_binding["patterns"],
+            parsed.raw_argv,
+            stdin_requested=parsed.stdin_requested,
+        )
+        argv, entry = _process_prefix_and_entry(export)
+        argv.extend(parsed.raw_argv)
+        stdin_argument_id = "__authored_pattern_stdin__" if parsed.stdin_requested else None
+        return CompiledInvocationPlan(
+            tuple(argv), stdin_argument_id, entry, parsed.pattern_name
+        )
     positionals: list[tuple[int, list[str]]] = []
     fixed_named: list[tuple[str, list[str]]] = []
     for binding in fixed:

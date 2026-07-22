@@ -120,7 +120,7 @@ def _contract(
                     "medium": "stdout",
                     "access": "write",
                     "content": "Result.",
-                    "format": "text",
+                    "formats": ["text"],
                     "sensitivity": "public",
                 }
             ],

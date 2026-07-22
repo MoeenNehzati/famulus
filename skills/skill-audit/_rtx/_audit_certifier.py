@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import hashlib
 import json
 import os
@@ -67,9 +68,16 @@ from officina.common.blueprint_graph import (
 )
 from officina.common.certification_view import certificate_log_path, evaluate_certificate_currentness
 from officina.common.git_provenance import (
+    BLUEPRINT_V4_MECHANICAL_REF,
+    BLUEPRINT_V4_SOURCE_OVERLAY_REF,
+    GitMaterializationError,
     GitSnapshot,
+    blueprint_v4_mechanical_commit,
+    blueprint_v4_source_overlay_commit,
     capture_git_snapshot,
     check_commit_readiness,
+    materialize_git_commit,
+    run_git,
     snapshot_head_matches,
 )
 from officina.common.pooled_blueprint import (
@@ -138,6 +146,230 @@ class V4GateSnapshot:
     dependencies: tuple[Mapping[str, object], ...]
     certification_basis_hash: str
     certifier_identity: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class V4CompletenessFinding:
+    """One certifier-owned semantic presence requirement for a v4 draft."""
+
+    subject_id: str
+    blueprint_path: Path
+    field: str
+    message: str
+
+
+V4_REQUIRED_CONTRACT_SECTIONS = (
+    "arguments",
+    "preconditions",
+    "interaction",
+    "caller_warnings",
+    "outputs",
+    "outcomes",
+    "execution",
+    "helpers",
+    "direct_io",
+)
+
+
+def v4_certification_completeness_findings(
+    graph: RepositoryBlueprintGraph,
+) -> tuple[V4CompletenessFinding, ...]:
+    """Return deterministic semantic omissions that prohibit v4 signing."""
+
+    findings: list[V4CompletenessFinding] = []
+    for node_id, node in sorted(graph.nodes.items()):
+        description = node.declaration.get("description")
+        if not isinstance(description, str) or not description.strip():
+            findings.append(
+                V4CompletenessFinding(
+                    node_id,
+                    node.blueprint_path,
+                    "description",
+                    "module and behavioral-source descriptions are mandatory before signing",
+                )
+            )
+        if node.node_type != "behavioral_source":
+            continue
+        interfaces = node.declaration.get("interfaces", {})
+        if not isinstance(interfaces, Mapping):
+            continue
+        for interface_id, interface in sorted(interfaces.items()):
+            if not isinstance(interface_id, str) or not isinstance(interface, Mapping):
+                continue
+            interface_description = interface.get("description")
+            if (
+                not isinstance(interface_description, str)
+                or not interface_description.strip()
+            ):
+                findings.append(
+                    V4CompletenessFinding(
+                        interface_id,
+                        node.blueprint_path,
+                        "description",
+                        "interface description is mandatory before signing",
+                    )
+                )
+            contract = interface.get("contract")
+            for section in V4_REQUIRED_CONTRACT_SECTIONS:
+                if not isinstance(contract, Mapping) or section not in contract:
+                    findings.append(
+                        V4CompletenessFinding(
+                            interface_id,
+                            node.blueprint_path,
+                            f"contract.{section}",
+                            f"contract section {section} is mandatory before signing",
+                        )
+                    )
+            if isinstance(contract, Mapping):
+                execution = contract.get("execution")
+                verification = (
+                    execution.get("verification")
+                    if isinstance(execution, Mapping)
+                    else None
+                )
+                if isinstance(execution, Mapping) and (
+                    not isinstance(verification, list) or not verification
+                ):
+                    findings.append(
+                        V4CompletenessFinding(
+                            interface_id,
+                            node.blueprint_path,
+                            "contract.execution.verification",
+                            "final execution verification must be nonempty before signing",
+                        )
+                    )
+                direct_io = contract.get("direct_io")
+                network = (
+                    direct_io.get("network")
+                    if isinstance(direct_io, Mapping)
+                    else None
+                )
+                if isinstance(network, list):
+                    for index, entry in enumerate(network):
+                        if isinstance(entry, Mapping) and not (
+                            isinstance(entry.get("endpoint"), str)
+                            and entry["endpoint"].strip()
+                        ):
+                            findings.append(
+                                V4CompletenessFinding(
+                                    interface_id,
+                                    node.blueprint_path,
+                                    f"contract.direct_io.network[{index}].endpoint",
+                                    "network endpoint must be complete before signing",
+                                )
+                            )
+    return tuple(findings)
+
+
+def v4_protected_projection(
+    graph: RepositoryBlueprintGraph,
+) -> dict[str, object]:
+    """Project every migration fact that a semantic repair may not change."""
+
+    projected: dict[str, object] = {}
+    for node_id, node in sorted(graph.nodes.items()):
+        declaration = node.declaration
+        record: dict[str, object] = {
+            "node_type": node.node_type,
+            "version": node.version,
+            "gateway": deepcopy(declaration.get("gateway")),
+            "content": deepcopy(declaration.get("content")),
+        }
+        if node.node_type == "module":
+            record.update(
+                {
+                    "authority": deepcopy(declaration.get("authority")),
+                    "sources": deepcopy(declaration.get("sources")),
+                    "exports": deepcopy(declaration.get("exports")),
+                    "discovery": deepcopy(declaration.get("discovery")),
+                }
+            )
+        else:
+            interfaces = declaration.get("interfaces", {})
+            record.update(
+                {
+                    "dependencies": deepcopy(declaration.get("dependencies")),
+                    "uses_interfaces": deepcopy(
+                        declaration.get("uses_interfaces")
+                    ),
+                    "platform_support": deepcopy(
+                        declaration.get("platform_support")
+                    ),
+                    "runtime_dependencies": deepcopy(
+                        declaration.get("runtime_dependencies")
+                    ),
+                    "interfaces": {
+                        interface_id: {
+                            "version": interface.get("version"),
+                            "process_binding": deepcopy(
+                                interface.get("process_binding")
+                            ),
+                        }
+                        for interface_id, interface in sorted(interfaces.items())
+                        if isinstance(interface_id, str)
+                        and isinstance(interface, Mapping)
+                    },
+                }
+            )
+        projected[node_id] = record
+    helper_edges = tuple(
+        {
+            "source_export_id": edge.source_export_id,
+            "local_helper_id": edge.local_helper_id,
+            "target_interface_id": edge.target_interface_id,
+            "target_version": edge.target_version,
+            "binding": deepcopy(edge.binding),
+        }
+        for edge in sorted(
+            graph.helper_edges,
+            key=lambda item: (
+                item.source_export_id,
+                item.local_helper_id,
+                item.target_interface_id,
+                item.target_version,
+            ),
+        )
+    )
+    return {"nodes": projected, "helper_edges": helper_edges}
+
+
+@dataclass(frozen=True)
+class V4CandidateInspection:
+    """Read-only semantic-completeness report for one committed candidate."""
+
+    node_ids: tuple[str, ...]
+    source_commit: str
+    findings: tuple[V4CompletenessFinding, ...]
+    review_context: tuple["V4LegacyReviewContext", ...]
+    reconciliation_digest: str
+
+
+@dataclass(frozen=True)
+class V4LegacyReviewContext:
+    """One immutable legacy claim supplied as non-blocking review evidence."""
+
+    subject_id: str
+    blueprint_path: Path
+    field: str
+    message: str
+    target_id: str
+    claim: str
+
+
+class _EphemeralSecretBackend:
+    name = "ephemeral-v4-candidate"
+
+    def __init__(self) -> None:
+        self._values: dict[tuple[str, str], str] = {}
+
+    def store(self, namespace: str, key: str, secret: str) -> None:
+        self._values[(namespace, key)] = secret
+
+    def lookup(self, namespace: str, key: str) -> str | None:
+        return self._values.get((namespace, key))
+
+    def clear(self, namespace: str, key: str) -> bool:
+        return self._values.pop((namespace, key), None) is not None
 
 
 def _v4_hash_bytes(value: bytes) -> str:
@@ -240,28 +472,231 @@ def _v4_gate_snapshot(
     )
 
 
-def _run_v4_gate(
-    gate_name: str,
-    callback: object,
-    snapshot: V4GateSnapshot,
-) -> dict[str, object]:
-    if gate_name not in CERTIFIER_CHECK_REGISTRY or not callable(callback):
-        raise AuditError(f"{gate_name} gate is unavailable")
+def _passed_v4_check(gate_name: str) -> dict[str, object]:
     try:
-        returned = callback(snapshot)
-        normalized = normalize_node_checks((returned,))
-    except Exception as exc:
-        raise AuditError(f"{gate_name} gate did not return a passed check") from exc
-    expected_id, expected_version = CERTIFIER_CHECK_REGISTRY[gate_name]
-    expected = {
-        "id": expected_id,
-        "version": expected_version,
+        check_id, version = CERTIFIER_CHECK_REGISTRY[gate_name]
+    except KeyError as exc:
+        raise AuditError(f"{gate_name} gate is unavailable") from exc
+    return {
+        "id": check_id,
+        "version": version,
         "passed": True,
         "findings": [],
     }
-    if normalized != (expected,):
-        raise AuditError(f"{gate_name} gate returned a non-registry check")
-    return normalized[0]
+
+
+def _v4_deterministic_check(
+    snapshot: V4GateSnapshot,
+    *,
+    graph: RepositoryBlueprintGraph,
+    states: Mapping[str, NodeHashState],
+) -> dict[str, object]:
+    """Assert that the owned derived state is exactly the state being signed."""
+
+    node = graph.nodes.get(snapshot.node_id)
+    state = states.get(snapshot.node_id)
+    if node is None or not isinstance(state, NodeHashState):
+        raise AuditError(f"{snapshot.node_id}: deterministic state is unavailable")
+    reconstructed = _v4_gate_snapshot(
+        snapshot.node_id,
+        state,
+        source_commit=snapshot.source_commit,
+        certifier_identity=snapshot.certifier_identity,
+    )
+    if reconstructed != snapshot:
+        raise AuditError(f"{snapshot.node_id}: deterministic snapshot changed")
+    if any(
+        finding.subject_id in {node.node_id, *node.declaration.get("interfaces", {})}
+        for finding in v4_certification_completeness_findings(graph)
+    ):
+        raise AuditError(f"{snapshot.node_id}: deterministic completeness failed")
+    return _passed_v4_check("deterministic")
+
+
+def _v4_semantic_attestation(
+    snapshot: V4GateSnapshot,
+    *,
+    reviewed_commit: str,
+) -> dict[str, object]:
+    """Record that the LLM attested this exact committed snapshot."""
+
+    if not reviewed_commit or snapshot.source_commit != reviewed_commit:
+        raise AuditError(f"{snapshot.node_id}: semantic review does not match HEAD")
+    return _passed_v4_check("semantic-audit")
+
+
+def _v4_blueprint_paths(
+    graph: RepositoryBlueprintGraph,
+    repo_root: Path,
+) -> set[Path]:
+    try:
+        return {
+            node.blueprint_path.relative_to(repo_root)
+            for node in graph.nodes.values()
+        }
+    except ValueError as exc:
+        raise AuditError("v4 blueprint path escapes its repository") from exc
+
+
+def _materialize_v4_local_inputs(
+    source_root: Path,
+    target_root: Path,
+    states: Mapping[str, NodeHashState],
+    *,
+    allow_non_atomic: bool,
+) -> None:
+    """Overlay exact ignored/untracked node inputs needed to load the graph."""
+
+    relative_paths = {
+        Path(entry["path"])
+        for state in states.values()
+        for entry in state.input_manifest
+        if entry.get("git_provenance") != "tracked"
+        and isinstance(entry.get("path"), str)
+    }
+    for relative in sorted(relative_paths):
+        if relative.is_absolute() or ".." in relative.parts:
+            raise AuditError("local v4 input escapes the candidate repository")
+        current = target_root
+        for part in relative.parts[:-1]:
+            current = current / part
+            try:
+                metadata = current.lstat()
+            except FileNotFoundError:
+                current.mkdir(mode=0o700)
+                metadata = current.lstat()
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                raise AuditError(f"unsafe local v4 input parent: {relative.as_posix()}")
+        target = target_root / relative
+        if target.exists() or target.is_symlink():
+            raise AuditError(f"local v4 input collides with commit: {relative.as_posix()}")
+        try:
+            data = read_regular_file_bytes(
+                source_root / relative,
+                allowed_root=source_root,
+                allow_non_atomic=allow_non_atomic,
+            )
+            atomic_replace_bytes(
+                target,
+                data,
+                allowed_root=target_root,
+                mode=0o600,
+                allow_non_atomic=allow_non_atomic,
+            )
+        except (AtomicWriteError, OSError) as exc:
+            raise AuditError(
+                f"cannot materialize local v4 input: {relative.as_posix()}"
+            ) from exc
+
+
+def _validate_v4_semantic_attestation(
+    repo_root: Path,
+    reviewed_graph: RepositoryBlueprintGraph,
+    reviewed_states: Mapping[str, NodeHashState],
+    *,
+    mechanical_commit: str,
+    reviewed_commit: str,
+    allow_non_atomic: bool,
+) -> None:
+    """Prove that LLM review changed semantics but no protected mechanics."""
+
+    with tempfile.TemporaryDirectory(prefix="v4-mechanical-commit-") as raw_root:
+        mechanical_root = Path(raw_root)
+        try:
+            materialize_git_commit(
+                repo_root,
+                mechanical_commit,
+                mechanical_root,
+                allow_non_atomic=allow_non_atomic,
+            )
+            _materialize_v4_local_inputs(
+                repo_root,
+                mechanical_root,
+                reviewed_states,
+                allow_non_atomic=allow_non_atomic,
+            )
+            mechanical_graph = load_repository_blueprint_graph(
+                mechanical_root,
+                schema_root=mechanical_root / "references" / "blueprint",
+            )
+        except (GitMaterializationError, ArtifactHealthError, OSError, ValueError) as exc:
+            raise AuditError(f"mechanical commit cannot be reconstructed: {exc}") from exc
+        if not mechanical_graph.nodes or any(
+            node.declaration.get("schema_version") != 4
+            for node in mechanical_graph.nodes.values()
+        ):
+            raise AuditError("mechanical commit does not contain an all-v4 graph")
+        ancestry = run_git(
+            repo_root,
+            "merge-base",
+            "--is-ancestor",
+            mechanical_commit,
+            reviewed_commit,
+            check=False,
+        )
+        if ancestry.returncode != 0:
+            raise AuditError("mechanical commit is not an ancestor of reviewed commit")
+        changed = run_git(
+            repo_root,
+            "diff",
+            "--name-only",
+            "--no-renames",
+            "--no-ext-diff",
+            "-z",
+            mechanical_commit,
+            reviewed_commit,
+            "--",
+            check=False,
+        )
+        if changed.returncode != 0:
+            raise AuditError("cannot compare mechanical and reviewed commits")
+        changed_paths = {
+            Path(os.fsdecode(raw_path))
+            for raw_path in changed.stdout.rstrip(b"\0").split(b"\0")
+            if raw_path
+        }
+        allowed_paths = _v4_blueprint_paths(
+            mechanical_graph, mechanical_root
+        ) | _v4_blueprint_paths(reviewed_graph, repo_root)
+        unexpected = sorted(changed_paths - allowed_paths)
+        if unexpected:
+            raise AuditError(
+                "semantic review may change only blueprint files: "
+                + ", ".join(path.as_posix() for path in unexpected)
+            )
+        if v4_protected_projection(mechanical_graph) != v4_protected_projection(
+            reviewed_graph
+        ):
+            raise AuditError("semantic review changed the protected projection")
+
+
+def _verify_executing_candidate_certifier(
+    root: Path,
+    graph: RepositoryBlueprintGraph,
+    states: Mapping[str, NodeHashState],
+) -> None:
+    executing = Path(__file__).resolve()
+    try:
+        executing_relative = executing.relative_to(root).as_posix()
+    except ValueError as exc:
+        raise AuditError("executing certifier bytes are outside the candidate") from exc
+    owners = [
+        node_id
+        for node_id, node in graph.nodes.items()
+        if node.node_type == "behavioral_source"
+        and node.gateway_path is not None
+        and node.gateway_path.resolve() == executing
+    ]
+    if len(owners) != 1:
+        raise AuditError("executing certifier bytes have no unique candidate owner")
+    executing_digest = "sha256:" + hashlib.sha256(executing.read_bytes()).hexdigest()
+    owner_state = states.get(owners[0])
+    if not isinstance(owner_state, NodeHashState) or not any(
+        entry.get("path") == executing_relative
+        and entry.get("digest") == executing_digest
+        for entry in owner_state.input_manifest
+    ):
+        raise AuditError("executing certifier bytes do not match the candidate manifest")
 
 
 def _certify_v4_repository(
@@ -270,33 +705,49 @@ def _certify_v4_repository(
     target_node_ids: Sequence[str],
     public_key_root: Path,
     secret_backend: object,
-    deterministic_check: object,
-    semantic_audit: object,
+    reviewed_commit: str,
     certified_at: str,
     before_append: object | None = None,
     after_append: object | None = None,
     allow_non_atomic: bool = False,
+    require_candidate_execution: bool = False,
 ) -> V4CertificationResult:
     """Certify exact v4 targets in a converted temporary Git repository only.
 
-    This function is deliberately not routed by the Task-3 CLI. Callers supply
-    Gate callbacks cross the cooperative LLM boundary, but this owner derives
-    their exact snapshot, order, registry identity, and every payload field.
+    This function is deliberately not routed by the Task-3 CLI. The LLM boundary
+    supplies only the exact reviewed commit. This owner derives
+    the reserved mechanical baseline, validates the review transition, and
+    derives every deterministic state, check record, identity, and payload field.
     """
 
+    if allow_non_atomic:
+        raise AuditError("non-atomic mode is diagnostic-only and cannot sign")
+
     root = Path(repo_root).resolve()
+    atomic = run_git(
+        root, "config", "--bool", "--get", "famulus.candidateAtomicGuarantee",
+        check=False,
+    )
+    if atomic.returncode == 0 and atomic.stdout.strip() == b"false":
+        raise AuditError("non-atomic diagnostic candidate is non-certifiable")
     temp_root = Path(tempfile.gettempdir()).resolve()
     if root == REPO_ROOT.resolve() or not root.is_relative_to(temp_root):
         raise AuditError("private v4 certification is restricted to temporary repositories")
     snapshot = capture_git_snapshot(root)
     if snapshot is None or snapshot.repo_root != root:
         raise AuditError("v4 certification requires the exact temporary Git repository root")
+    if snapshot.commit != reviewed_commit:
+        raise AuditError("v4 certification HEAD does not match the reviewed commit")
+    try:
+        mechanical_commit = blueprint_v4_mechanical_commit(root)
+    except GitMaterializationError as exc:
+        raise AuditError(f"candidate mechanical baseline is unavailable: {exc}") from exc
     selected_schema_root = root / "references" / "blueprint"
     policy_path = root / CANONICAL_NODE_HASH_POLICY
 
     def derive() -> tuple[
         RepositoryBlueprintGraph,
-        dict[str, object],
+        dict[str, NodeHashState],
         str,
         tuple[Path, ...],
         dict[str, object],
@@ -309,6 +760,14 @@ def _certify_v4_repository(
             ):
                 raise AuditError(
                     "private certificate writer accepts only all-v4 repositories"
+                )
+            completeness = v4_certification_completeness_findings(graph)
+            if completeness:
+                first = completeness[0]
+                raise AuditError(
+                    "v4 certification completeness failed: "
+                    f"{first.subject_id}:{first.field} "
+                    f"({len(completeness)} finding(s))"
                 )
             basis_paths = resolve_certification_basis_paths(
                 root,
@@ -329,11 +788,21 @@ def _certify_v4_repository(
             certifier_identity = derive_certifier_identity(
                 graph, states, snapshot.commit
             )
+            if require_candidate_execution:
+                _verify_executing_candidate_certifier(root, graph, states)
         except ArtifactHealthError as exc:
             raise AuditError(str(exc)) from exc
         return graph, states, basis_hash, basis_paths, certifier_identity
 
     graph, states, basis_hash, basis_paths, certifier_identity = derive()
+    _validate_v4_semantic_attestation(
+        root,
+        graph,
+        states,
+        mechanical_commit=mechanical_commit,
+        reviewed_commit=reviewed_commit,
+        allow_non_atomic=allow_non_atomic,
+    )
     order = _v4_postorder(graph, states, tuple(target_node_ids))
     normalized_checks: dict[str, tuple[dict[str, object], ...]] = {}
 
@@ -406,8 +875,11 @@ def _certify_v4_repository(
             certifier_identity=certifier_identity,
         )
         gate_records = (
-            _run_v4_gate("deterministic", deterministic_check, gate_snapshot),
-            _run_v4_gate("semantic-audit", semantic_audit, gate_snapshot),
+            _v4_deterministic_check(gate_snapshot, graph=graph, states=states),
+            _v4_semantic_attestation(
+                gate_snapshot,
+                reviewed_commit=reviewed_commit,
+            ),
         )
         normalized_checks[node_id] = normalize_node_checks(gate_records)
         if normalized_checks[node_id] != expected_certifier_checks():
@@ -430,7 +902,9 @@ def _certify_v4_repository(
             or next_basis_paths != basis_paths
             or next_certifier_identity != certifier_identity
         ):
-            raise AuditError("graph, dependency, basis, or local input changed during certification")
+            raise AuditError(
+                "graph, dependency, basis, or local input changed during certification"
+            )
         if any(
             _v4_hash_bytes(
                 read_regular_file_bytes(
@@ -549,9 +1023,265 @@ def _certify_v4_repository(
             allow_non_atomic=allow_non_atomic,
         )
         if not report.nodes[node_id].current:
-            raise AuditError(f"post-write certificate verification failed for {node_id}")
+            raise AuditError(
+                f"post-write certificate verification failed for {node_id}"
+            )
         written.append(node_id)
     return V4CertificationResult(tuple(written), snapshot.commit)
+
+
+def _load_v4_migration_candidate(
+    repo_root: Path,
+) -> tuple[Path, GitSnapshot, RepositoryBlueprintGraph]:
+    root = Path(repo_root).resolve()
+    atomic = run_git(
+        root, "config", "--bool", "--get", "famulus.candidateAtomicGuarantee",
+        check=False,
+    )
+    if atomic.returncode == 0 and atomic.stdout.strip() == b"false":
+        raise AuditError("non-atomic diagnostic candidate is non-certifiable")
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    if not root.is_relative_to(temp_root):
+        raise AuditError("v4 migration workflow is restricted to temporary repositories")
+    snapshot = capture_git_snapshot(root)
+    if snapshot is None or snapshot.repo_root != root:
+        raise AuditError("v4 migration workflow requires an isolated Git repository")
+    dirty = run_git(root, "status", "--porcelain=v1", "-z", check=False)
+    if dirty.returncode != 0 or dirty.stdout:
+        raise AuditError("v4 migration candidate must be clean")
+    schema_root = root / "references" / "blueprint"
+    try:
+        graph = load_repository_blueprint_graph(root, schema_root=schema_root)
+    except Exception as exc:
+        raise AuditError(f"v4 migration candidate graph is invalid: {exc}") from exc
+    if not graph.nodes or any(
+        node.declaration.get("schema_version") != 4 for node in graph.nodes.values()
+    ):
+        raise AuditError("v4 migration workflow requires an all-v4 repository")
+    return root, snapshot, graph
+
+
+def _v4_module_renames(root: Path) -> dict[str, str]:
+    try:
+        migration_map = yaml.safe_load(
+            (root / "docs/plans/unified-architecture-migration-map.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        decisions = migration_map["declarations"]["version_2"]["merge_decisions"]
+    except (OSError, UnicodeError, yaml.YAMLError, KeyError, TypeError) as exc:
+        raise AuditError("candidate migration map cannot derive claim targets") from exc
+    renames: dict[str, str] = {}
+    for decision in decisions:
+        if not isinstance(decision, Mapping) or "target_module" not in decision:
+            continue
+        inputs = decision.get("inputs")
+        target = decision.get("target_module")
+        owners = {
+            Path(value).parts[1]
+            for value in inputs or ()
+            if isinstance(value, str)
+            and len(Path(value).parts) >= 3
+            and Path(value).parts[0] == "skills"
+        }
+        if len(owners) != 1 or not isinstance(target, str):
+            raise AuditError("candidate migration map has ambiguous claim target")
+        renames[owners.pop()] = target
+    return renames
+
+
+def _v4_legacy_review_context(
+    root: Path, graph: RepositoryBlueprintGraph
+) -> tuple[V4LegacyReviewContext, ...]:
+    """Read immutable legacy claims without treating them as failed checks."""
+
+    context: list[V4LegacyReviewContext] = []
+    try:
+        root_commit = blueprint_v4_source_overlay_commit(root)
+    except GitMaterializationError as exc:
+        raise AuditError("candidate authorized source overlay is unavailable") from exc
+    renames = _v4_module_renames(root)
+    tree = run_git(
+        root, "ls-tree", "-r", "--name-only", "-z", root_commit, check=False
+    )
+    if tree.returncode != 0:
+        raise AuditError("candidate legacy root tree is unavailable")
+    for raw_path in tree.stdout.rstrip(b"\0").split(b"\0"):
+        if not raw_path:
+            continue
+        relative = Path(os.fsdecode(raw_path))
+        if (
+            len(relative.parts) != 3
+            or relative.parts[0] != "skills"
+            or relative.name != "blueprint.yaml"
+        ):
+            continue
+        shown = run_git(
+            root,
+            "show",
+            f"{root_commit}:{relative.as_posix()}",
+            check=False,
+        )
+        if shown.returncode != 0:
+            raise AuditError(
+                f"candidate legacy evidence is unavailable: {relative.as_posix()}"
+            )
+        try:
+            document = yaml.safe_load(shown.stdout.decode("utf-8"))
+        except (UnicodeError, yaml.YAMLError) as exc:
+            raise AuditError(
+                f"candidate legacy evidence is invalid: {relative.as_posix()}"
+            ) from exc
+        summary = document.get("skill_interface") if isinstance(document, Mapping) else None
+        if summary is None:
+            continue
+        if not isinstance(summary, Mapping):
+            raise AuditError(
+                f"candidate legacy skill_interface is invalid: {relative.as_posix()}"
+            )
+        subject = relative.parts[1]
+        target_id = f"{renames.get(subject, subject)}.interface.default"
+        owners = [
+            (node.node_id, export.get("source_interface"))
+            for node in graph.nodes.values()
+            if node.node_type == "module"
+            and isinstance(
+                export := node.declaration.get("exports", {}).get(target_id),
+                Mapping,
+            )
+        ]
+        if len(owners) != 1 or not isinstance(owners[0][1], str):
+            raise AuditError(
+                f"legacy skill_interface has no unique default target: {subject}"
+            )
+        for section in ("inputs", "outputs", "side_effects"):
+            claims = summary.get(section, [])
+            if not isinstance(claims, list) or not all(
+                isinstance(claim, str) for claim in claims
+            ):
+                raise AuditError(
+                    f"candidate legacy skill_interface.{section} is invalid: "
+                    f"{relative.as_posix()}"
+                )
+            for index, claim in enumerate(claims):
+                context.append(
+                    V4LegacyReviewContext(
+                        subject,
+                        root / relative,
+                        f"legacy.skill_interface.{section}[{index}]",
+                        "review exact immutable legacy claim against "
+                        f"{target_id}: {claim}",
+                        target_id,
+                        claim,
+                    )
+                )
+    return tuple(context)
+
+
+def _v4_reconciliation_digest(
+    root: Path,
+    context: Sequence[V4LegacyReviewContext],
+) -> str:
+    payload = [
+        {
+            "subject_id": item.subject_id,
+            "blueprint_path": item.blueprint_path.relative_to(root).as_posix(),
+            "field": item.field,
+            "target_id": item.target_id,
+            "claim": item.claim,
+        }
+        for item in context
+    ]
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _require_v4_reconciliation_commit(
+    root: Path,
+    *,
+    mechanical_commit: str,
+    reviewed_commit: str,
+    digest: str,
+) -> None:
+    if reviewed_commit == mechanical_commit:
+        raise AuditError("reviewed commit must strictly descend from mechanical baseline")
+    message = run_git(root, "show", "-s", "--format=%B", reviewed_commit, check=False)
+    if message.returncode != 0:
+        raise AuditError("reviewed audit commit message is unavailable")
+    trailer = f"Famulus-Legacy-Claims-Reconciled: {digest}"
+    lines = message.stdout.decode("utf-8").splitlines()
+    if lines.count(trailer) != 1:
+        raise AuditError("reviewed audit commit has unresolved legacy claims")
+
+
+def inspect_v4_migration_candidate(repo_root: Path) -> V4CandidateInspection:
+    """Report blocking omissions and immutable semantic-review context."""
+
+    root, snapshot, graph = _load_v4_migration_candidate(repo_root)
+    context = _v4_legacy_review_context(root, graph)
+    return V4CandidateInspection(
+        node_ids=tuple(sorted(graph.nodes)),
+        source_commit=snapshot.commit,
+        findings=v4_certification_completeness_findings(graph),
+        review_context=context,
+        reconciliation_digest=_v4_reconciliation_digest(root, context),
+    )
+
+
+def certify_v4_migration_candidate(
+    repo_root: Path,
+    *,
+    reviewed_commit: str,
+    certified_at: str | None = None,
+) -> V4CertificationResult:
+    """Certify an exact candidate commit after cooperative LLM review."""
+
+    root, snapshot, graph = _load_v4_migration_candidate(repo_root)
+    if snapshot.commit != reviewed_commit:
+        raise AuditError("candidate HEAD does not match the reviewed commit")
+    try:
+        mechanical_commit = blueprint_v4_mechanical_commit(root)
+    except GitMaterializationError as exc:
+        raise AuditError("candidate mechanical baseline is unavailable") from exc
+    context = _v4_legacy_review_context(root, graph)
+    _require_v4_reconciliation_commit(
+        root,
+        mechanical_commit=mechanical_commit,
+        reviewed_commit=reviewed_commit,
+        digest=_v4_reconciliation_digest(root, context),
+    )
+    findings = v4_certification_completeness_findings(graph)
+    if findings:
+        first = findings[0]
+        raise AuditError(
+            "candidate semantic review left certification findings: "
+            f"{first.subject_id}:{first.field} ({len(findings)} finding(s))"
+        )
+    timestamp = certified_at or datetime.now().astimezone().isoformat(
+        timespec="seconds"
+    )
+    public_key_root = root / ".candidate-certification" / "public-keys"
+    current = root
+    for part in public_key_root.relative_to(root).parts:
+        current = current / part
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            current.mkdir(mode=0o700)
+            metadata = current.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise AuditError(f"unsafe candidate key path component: {current}")
+    return _certify_v4_repository(
+        root,
+        target_node_ids=tuple(sorted(graph.nodes)),
+        public_key_root=public_key_root,
+        secret_backend=_EphemeralSecretBackend(),
+        reviewed_commit=reviewed_commit,
+        certified_at=timestamp,
+        require_candidate_execution=(
+            os.environ.get("FAMULUS_CANDIDATE_CERTIFIER") == "1"
+        ),
+    )
 
 
 class Dispatcher(Protocol):

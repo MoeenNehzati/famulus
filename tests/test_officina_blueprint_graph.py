@@ -292,7 +292,7 @@ def _v4_contract(*, helper: dict[str, object] | None = None) -> dict[str, object
                     "medium": "stdout",
                     "access": "write",
                     "content": "Result.",
-                    "format": "text",
+                    "formats": ["text"],
                     "sensitivity": "public",
                 }
             ],
@@ -307,6 +307,7 @@ def _write_v4_module(
     *,
     caller_export: str | None = None,
     allow_callers: list[str] | None = None,
+    interface_version: int = 1,
 ) -> None:
     module = root / "skills" / module_id
     (module / "_rtx").mkdir(parents=True)
@@ -319,7 +320,7 @@ def _write_v4_module(
     worker_source_id = f"{module_id}.source.worker"
     run_source_interface = f"{worker_source_id}.interface.run"
     uses = (
-        [{"interface": caller_export, "version": 1}]
+        [{"interface": caller_export, "version": interface_version}]
         if caller_export is not None
         else []
     )
@@ -354,7 +355,7 @@ def _write_v4_module(
             "uses_interfaces": [],
             "interfaces": {
                 run_source_interface: {
-                    "version": 1,
+                    "version": interface_version,
                     "description": "Run the worker.",
                     "contract": _v4_contract(),
                     "process_binding": {
@@ -460,6 +461,35 @@ def test_v4_repository_graph_uses_one_generic_export_and_direct_ownership(
         ),
     }
     assert all(isinstance(edge, CertificationEdge) for edge in graph.certification_edges)
+
+
+def test_v4_same_module_export_dependency_targets_its_source_without_cycle(
+    tmp_path: Path,
+) -> None:
+    _write_v4_module(
+        tmp_path,
+        "provider-skill",
+        caller_export="provider-skill.interface.run",
+        allow_callers=[],
+        interface_version=2,
+    )
+
+    graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+
+    assert (
+        "uses-export",
+        "provider-skill.source.gateway",
+        "provider-skill.source.worker",
+        1,
+    ) in {
+        (
+            edge.relation,
+            edge.source_node_id,
+            edge.target_node_id,
+            edge.target_version,
+        )
+        for edge in graph.certification_edges
+    }
 
 
 @pytest.mark.parametrize("node_type", [None, "invented-node"])

@@ -7,28 +7,15 @@ authority:
   status: resolved
   resolution: cooperative same-user certification with one existing writer owner
   checkpoint:
+    kind: task_4_source_base
     branch: master
-    commit: 1db45573887393696f955c00ba1e1651f0af4b68
-    relation_to_origin: "ahead 9"
+    commit: d662313920c29d8aa7c7fd6ff7fa191f54eb62e6
+    relation_to_origin: "ahead 19 at Task 4 capture"
     detached_head: false
     initial_dirty_paths: []
     unrelated_dirty_paths: []
-    current_dirty_path_ownership: all current modified and untracked paths belong to Task 0
-    task_owned_paths:
-      - docs/architecture.md
-      - docs/certification_and_drift.md
-      - docs/plans/unified-architecture-migration.md
-      - docs/plans/migrate_audit_to_certification.md
-      - docs/plans/machine-module-contract/README.md
-      - docs/plans/machine-module-contract/IMPLEMENT.md
-      - docs/plans/post-migration-simplification/README.md
-      - docs/plans/logical-resource-addressing.md
-      - docs/plans/osx_feedback_fix/**
-      - docs/plans/per-llm-interface-personal-preferences.md
-      - docs/plans/interface-metadata-refactor.md
-      - docs/plans/blueprint-schema-documentation-consolidation.md
-      - docs/plans/unified-architecture-migration-map.yaml
-      - .superpowers/sdd/task-0-report.md
+    current_dirty_path_ownership: exact Task 4 paths and states are declared under candidate_source.authorized_overlay
+    task_owned_paths: candidate_source.authorized_overlay
   version_contract:
     final_runtime_schema_version: 4
     migration_inputs: [unversioned, 2, 3]
@@ -39,6 +26,52 @@ execution_status_contract:
   allowed: [active_authority, frozen_history, deferred_pending_v4_adoption_and_rebase, independent]
   frozen_rule: a frozen or deferred plan is non-executable until its banner is removed by an approved rebase
   predecessor_rule: proposed artifacts in a frozen or deferred plan are not authorized by this migration and require fresh functional-predecessor dispositions when rebased
+
+candidate_source:
+  local_includes:
+    - scripts/migrate-blueprints-v4.py
+  authorized_overlay:
+    - {path: docs/architecture.md, state: modified}
+    - {path: docs/plans/unified-architecture-migration-map.yaml, state: modified}
+    - {path: docs/plans/unified-architecture-migration.md, state: modified}
+    - {path: references/blueprint/behavioral-source.schema.json, state: modified}
+    - {path: references/blueprint/caller-contract.schema.json, state: modified}
+    - {path: references/blueprint/common.schema.json, state: modified}
+    - {path: references/blueprint/direct-io.schema.json, state: modified}
+    - {path: references/blueprint/machine-module.schema.json, state: modified}
+    - {path: references/blueprint/module.schema.json, state: modified}
+    - {path: scripts/migrate-blueprints-v4.py, state: added}
+    - {path: skills/skill-audit/SKILL.md, state: modified}
+    - {path: skills/skill-audit/_rtx/_audit_certifier.py, state: modified}
+    - {path: skills/skill-audit/tests/test_audit_certifier.py, state: modified}
+    - {path: skills/skill-drift/references/certification-basis-roots.json, state: modified}
+    - {path: skills/skill-drift/tests/test_drift_check.py, state: modified}
+    - {path: skills/list-manager/blueprint.yaml, state: modified}
+    - {path: skills/skill-maker/validators/dispatch_caller_skill.py, state: modified}
+    - {path: src/officina/common/artifact_health.py, state: modified}
+    - {path: src/officina/common/blueprint_graph.py, state: modified}
+    - {path: src/officina/common/blueprint_inventory.py, state: modified}
+    - {path: src/officina/common/git_provenance.py, state: modified}
+    - {path: src/officina/common/interface_injection_migration.py, state: modified}
+    - {path: src/officina/common/process_binding_compiler.py, state: modified}
+    - {path: src/officina/dispatcher/core.py, state: modified}
+    - {path: src/officina/runtime/python_machine_interface.py, state: modified}
+    - {path: tests/test_blueprint_inventory.py, state: modified}
+    - {path: tests/test_dispatcher_route_smoke.py, state: modified}
+    - {path: tests/test_interface_injection_migration.py, state: modified}
+    - {path: tests/test_interface_projection.py, state: modified}
+    - {path: tests/test_machine_module_dispatcher.py, state: modified}
+    - {path: tests/test_machine_module_hashing.py, state: modified}
+    - {path: tests/test_officina_artifact_health.py, state: modified}
+    - {path: tests/test_officina_blueprint_graph.py, state: modified}
+    - {path: tests/test_officina_certification_view.py, state: modified}
+    - {path: tests/test_officina_git_provenance.py, state: modified}
+    - {path: tests/test_officina_python_machine_interface.py, state: modified}
+    - {path: tests/test_process_binding_compiler.py, state: modified}
+    - {path: tests/test_typed_blueprint_schemas.py, state: modified}
+    - {path: tests/v4_certification_fixtures.py, state: modified}
+  module_rename_literal_files:
+    - skills/skill-drift/references/certification-basis-roots.json
 
 superseded_execution_sequences:
   - path: docs/plans/migrate_audit_to_certification.md
@@ -106,7 +139,7 @@ coverage_contract:
     duplicate_names: distinct pointers remain distinct covered units
     pointer_encoding: RFC 6901; escape tilde as ~0 and slash as ~1
     observed_schema_files: 37
-    observed_field_occurrences: 1413
+    observed_field_occurrences: 1429
     schema_paths:
       include:
         - references/blueprint/**/*.schema.json
@@ -123,9 +156,9 @@ coverage_contract:
 
 declarations:
   live_counts:
-    total_documents: 59
+    total_documents: 58
     unversioned: 31
-    version_2: 28
+    version_2: 27
     version_3: 0
   target_layout:
     module_blueprint: "<module-root>/blueprint.yaml"
@@ -177,6 +210,18 @@ declarations:
       args_prefix: becomes process_binding.args_prefix verbatim
       patterns: become process_binding.patterns verbatim using the generalized existing pattern grammar
       missing_patterns: omit; never infer an unrestricted argv pattern
+    python_package_support:
+      initializer_disposition: create-behavioral-source
+      sibling_python_disposition: same-source-unless-claimed
+      nested_packages: distinct-support-sources
+      imported_source_dependencies: ast-resolved-exact
+      non_python_and_blueprint_files: exclude
+      collision_behavior: reject
+      created_path_predecessor: initializer-and-unclaimed-direct-python-siblings
+      import_search_roots:
+        default: [module-root]
+        by_gateway:
+          skills/skill-drift/_rtx/_check_drift_state.py: [gateway-parent, module-root]
     direct_io_mapping:
       entry_id: derive deterministically as read-<one-based-index>, write-<one-based-index>, or network-<one-based-index> within each interface
       medium: preserve verbatim in the generalized medium vocabulary
@@ -205,6 +250,117 @@ declarations:
       platform_support: require exact equality across declarations before moving to source scope
       runtime_dependencies: require semantic set equality across declarations before moving to source scope; ordering differences are normalized only after equality
       conflict: reject and require a reviewed map entry
+      reviewed_conflicts:
+        - module: email-client
+          gateway: _rtx/_email_accounts.py
+          runtime_dependencies: set-union
+          reason: accounts-setup-oauth alone authors the keyring package requirement, but every selector shares the same imported Python source; the source-wide union preserves that authored requirement without adding a new dependency
+        - module: list-manager
+          gateway: _rtx/_render_bridge.py
+          runtime_dependencies: set-union
+          reason: local and cloud rendering selectors author the same package requirements with context-specific reasons; the source-wide union preserves both authored statements
+        - module: list-manager
+          gateway: _rtx/_yaml_store.py
+          runtime_dependencies: set-union
+          reason: the shared list-store implementation exposes local and cloud selectors with selector-specific package requirements and reasons; the source-wide union preserves every authored requirement
+        - module: recurring-tasks
+          gateway: _rtx/_job_control.py
+          runtime_dependencies: set-union
+          reason: the shared job-control source exposes selectors with operation-specific dependency statements; the source-wide union preserves all authored requirements and reasons
+        - module: skill-drift
+          gateway: _rtx/_check_drift_state.py
+          runtime_dependencies: set-union
+          reason: compute-hashes and drift-status author identical package requirements but distinct cryptography rationales; the source-wide union preserves both authored records without weakening general equality
+    reference_modules:
+      - root: references/skill-standards
+        id: skill-standards
+        gateway: {path: skill-guidelines.standard.yaml, language: YAML}
+        sources:
+          - id: skill-standards.source.skill-guidelines
+            version: 1
+            blueprint: blueprints/skill-guidelines.yaml
+            gateway: {path: skill-guidelines.md, language: Markdown}
+            legacy: {path: $repo/references/skill-standards/skill-guidelines.md, content: skill, format: markdown}
+          - id: skill-standards.source.llm-interface-design
+            version: 1
+            blueprint: blueprints/llm-interface-design.yaml
+            gateway: {path: llm-interface-design.md, language: Markdown}
+            legacy: {path: $repo/references/skill-standards/llm-interface-design.md, content: skill, format: markdown}
+          - id: skill-standards.source.skill-refactoring
+            version: 1
+            blueprint: blueprints/skill-refactoring.yaml
+            gateway: {path: skill-refactoring.md, language: Markdown}
+            legacy: {path: $repo/references/skill-standards/skill-refactoring.md, content: skill, format: markdown}
+      - root: references/blueprint
+        id: blueprint
+        gateway: {path: schema.json, language: JSON-Schema}
+        sources:
+          - id: blueprint.source.schema-annotated-draft
+            version: 1
+            blueprint: blueprints/schema-annotated-draft.yaml
+            gateway: {path: schema.annotated-draft.json, language: JSON-Schema}
+            legacy: {path: $repo/references/blueprint/schema.annotated-draft.json, content: blueprint, format: json}
+    legacy_behavior_source_dependencies:
+      - consumer: regenerate-blueprints.machine.regenerate-blueprint
+        authored:
+          path: $repo/references/blueprint/schema.annotated-draft.json
+          content: blueprint
+          format: json
+          reason: Supplies schema documentation and validation rules for regenerated output.
+        target:
+          source: blueprint.source.schema-annotated-draft
+          version: 1
+          blueprint: {base: repository-root, path: references/blueprint/blueprints/schema-annotated-draft.yaml}
+      - consumer: update-skill-guidelines.llm.default
+        authored:
+          path: $repo/references/skill-standards/skill-guidelines.md
+          content: skill
+          format: markdown
+          reason: Defines the shared standard maintained by this skill.
+        target:
+          source: skill-standards.source.skill-guidelines
+          version: 1
+          blueprint: {base: repository-root, path: references/skill-standards/blueprints/skill-guidelines.yaml}
+      - consumer: skill-maker.llm.default
+        authored:
+          path: $repo/references/skill-standards/skill-guidelines.md
+          content: skill
+          format: markdown
+          reason: Defines repository skill-module standards used when creating or editing skills.
+        target:
+          source: skill-standards.source.skill-guidelines
+          version: 1
+          blueprint: {base: repository-root, path: references/skill-standards/blueprints/skill-guidelines.yaml}
+      - consumer: refactor-skills.llm.default
+        authored:
+          path: $repo/references/skill-standards/skill-guidelines.md
+          content: skill
+          format: markdown
+          reason: Defines repository skill-module standards used during refactoring.
+        target:
+          source: skill-standards.source.skill-guidelines
+          version: 1
+          blueprint: {base: repository-root, path: references/skill-standards/blueprints/skill-guidelines.yaml}
+      - consumer: refactor-skills.llm.default
+        authored:
+          path: $repo/references/skill-standards/llm-interface-design.md
+          content: skill
+          format: markdown
+          reason: Defines when and how to decompose LLM-facing skill interfaces.
+        target:
+          source: skill-standards.source.llm-interface-design
+          version: 1
+          blueprint: {base: repository-root, path: references/skill-standards/blueprints/llm-interface-design.yaml}
+      - consumer: refactor-skills.llm.default
+        authored:
+          path: $repo/references/skill-standards/skill-refactoring.md
+          content: skill
+          format: markdown
+          reason: Defines both diagnostic signals and behavior-preserving refactoring moves.
+        target:
+          source: skill-standards.source.skill-refactoring
+          version: 1
+          blueprint: {base: repository-root, path: references/skill-standards/blueprints/skill-refactoring.yaml}
   unversioned:
     current_owner: legacy root blueprint plus references/blueprint/legacy-skill.schema.json
     disposition: move
@@ -266,7 +422,6 @@ declarations:
       - skills/email-triage/_rtx/._watermark_floor.py.blueprint.yaml
       - skills/email-triage/_rtx/._watermark_writer.py.blueprint.yaml
       - skills/email-triage/_rtx/._write_metrics.py.blueprint.yaml
-      - skills/list-manager/.SKILL.md.blueprint.yaml
       - skills/skill-audit/blueprint.yaml
       - skills/skill-audit/.SKILL.md.blueprint.yaml
       - skills/skill-audit/_rtx/._audit_certifier.py.blueprint.yaml
@@ -275,9 +430,6 @@ declarations:
       - skills/skill-drift/_rtx/._check_drift_state.py.compute-hashes.blueprint.yaml
       - skills/skill-drift/_rtx/._check_drift_state.py.drift-status.blueprint.yaml
     merge_decisions:
-      - inputs: [skills/list-manager/blueprint.yaml, skills/list-manager/.SKILL.md.blueprint.yaml]
-        target: skills/list-manager/blueprints/gateway.yaml
-        decision: merge the root inline default contract with the sidecar's additional personal-preference dependency; reject contradictory duplicate fields
       - inputs: [skills/skill-audit/blueprint.yaml, skills/skill-audit/.SKILL.md.blueprint.yaml, skills/skill-audit/_rtx/._audit_certifier.py.blueprint.yaml]
         target_module: skill-certifier
         decision: rename the existing owner in place; do not create a second certifier
@@ -287,6 +439,11 @@ declarations:
       - inputs: [skills/skill-drift/_rtx/._check_drift_state.py.compute-hashes.blueprint.yaml, skills/skill-drift/_rtx/._check_drift_state.py.drift-status.blueprint.yaml]
         target: skills/skill-drift/blueprints/rtx-check-drift-state.yaml
         decision: one source owns _rtx/_check_drift_state.py and both intrinsic interfaces; preserve each interface contract and selector, and require their source-wide platform and runtime requirements to agree before merging
+  non_live_local_artifacts:
+    - path: skills/list-manager/.SKILL.md.blueprint.yaml
+      state: ignored-stale-local
+      disposition: exclude
+      reason: the ignored sidecar references a preference gateway and source sidecar that do not exist and have no Git history, while the tracked root, SKILL.md, and runtime author no such dependency
   version_3:
     live_paths: []
     non_live_examples_and_fixtures:
@@ -534,6 +691,14 @@ schema_inventory:
       fallback: true
       disposition: preserve
       target: final signed certificate envelope reconstructed only by the certifier
+    - id: legacy-skill-interface-retirement
+      schema_paths:
+        include: [references/blueprint/legacy-skill.schema.json]
+        exclude: []
+      pointer_prefixes: [/properties/skill_interface]
+      fallback: false
+      disposition: retire
+      target: certifier-owned reconciliation against the SKILL.md gateway source default interface contract; retire each exact legacy claim only after it is covered, corrected in existing canonical v4 fields, or rejected as inaccurate with gateway and content evidence
     - id: legacy-blueprint-fields
       schema_paths:
         include: [references/blueprint/legacy-skill.schema.json]
@@ -646,8 +811,8 @@ schema_inventory:
         include: [references/blueprint/interface-projection.schema.json]
         exclude: []
       pointer_prefixes:
-        - /definitions/llmProjection/properties/route/properties/skill
-        - /definitions/embeddedDefinition/properties/source_skill
+        - /definitions/legacyLlmInterface/properties/route/properties/skill
+        - /definitions/legacyEmbeddedDefinition/properties/source_skill
       disposition: rename
       target: module and source_module
     - id: projection-fields
@@ -662,9 +827,11 @@ schema_inventory:
         include: [references/blueprint/pooled-review.schema.json]
         exclude: []
       pointer_prefixes:
-        - /properties/root/properties/artifact_graph_hash
-        - /properties/root/properties/certified_health_hash
-        - /properties/nodes/items/properties/health
+        - /definitions/legacyRoot/properties/artifact_graph_hash
+        - /definitions/legacyRoot/properties/certified_health_hash
+        - /definitions/legacyNode/properties/health
+        - /definitions/legacyHealth/properties/artifact_graph_hash
+        - /definitions/legacyHealth/properties/certified_health_hash
       disposition: rename
       target: certificate, certificate_hash, and certification_graph_hash
     - id: pooled-review-fields
@@ -1168,7 +1335,25 @@ functional_predecessors:
     predecessor: skills/skill-audit/
   - proposed: "skills/*/blueprints/*.yaml"
     disposition: derive
-    predecessor: the mapped legacy/v2/v3 declaration owning the same whole-file gateway; creation is allowed only when that deterministic target path does not exist
+    predecessor: the mapped legacy/v2/v3 declaration owning the same whole-file gateway; Python package-support paths are excluded and instead use declarations.mechanical_conversion.python_package_support.created_path_predecessor
+  - proposed: references/skill-standards/blueprint.yaml
+    disposition: derive
+    predecessor: references/skill-standards/skill-guidelines.standard.yaml plus the three mapped repository behavior-source consumers
+  - proposed: references/skill-standards/blueprints/skill-guidelines.yaml
+    disposition: derive
+    predecessor: references/skill-standards/skill-guidelines.md and its three exact mapped consumers
+  - proposed: references/skill-standards/blueprints/llm-interface-design.yaml
+    disposition: derive
+    predecessor: references/skill-standards/llm-interface-design.md and its exact refactor-skills consumer
+  - proposed: references/skill-standards/blueprints/skill-refactoring.yaml
+    disposition: derive
+    predecessor: references/skill-standards/skill-refactoring.md and its exact refactor-skills consumer
+  - proposed: references/blueprint/blueprint.yaml
+    disposition: derive
+    predecessor: references/blueprint/schema.json plus the mapped regenerate-blueprints consumer
+  - proposed: references/blueprint/blueprints/schema-annotated-draft.yaml
+    disposition: derive
+    predecessor: references/blueprint/schema.annotated-draft.json and its exact mapped regenerate-blueprints consumer
 baseline:
   date: 2026-07-20
   commands:

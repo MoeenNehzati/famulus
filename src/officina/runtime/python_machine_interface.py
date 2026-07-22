@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import subprocess
@@ -18,6 +19,98 @@ class PythonRouteSmokeTraceError(RuntimeError):
     """Raised when a Python route-smoke dependency trace cannot complete."""
 
 
+@dataclass(frozen=True)
+class DispatchCallDeclaration:
+    """One alias-resolved DispatchCall declaration in a Python syntax tree."""
+
+    caller_skill: str | None
+    target_skill: str | None
+    interface: str | None
+    lineno: int
+    keywords: Mapping[str, ast.Constant]
+
+
+def analyze_dispatch_call_declarations(
+    tree: ast.AST,
+) -> tuple[DispatchCallDeclaration, ...]:
+    """Return only DispatchCall constructors imported from the runtime owner."""
+
+    direct: set[str] = set()
+    modules: set[str] = set()
+    constants: dict[str, str] = {}
+    if isinstance(tree, ast.Module):
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == (
+                "officina.runtime.python_machine_interface"
+            ):
+                direct.update(
+                    alias.asname or alias.name
+                    for alias in node.names
+                    if alias.name == "DispatchCall"
+                )
+            elif isinstance(node, ast.Import):
+                modules.update(
+                    alias.asname or alias.name
+                    for alias in node.names
+                    if alias.name == "officina.runtime.python_machine_interface"
+                )
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1:
+                target = node.targets[0]
+                if (
+                    isinstance(target, ast.Name)
+                    and isinstance(node.value, ast.Constant)
+                    and isinstance(node.value.value, str)
+                ):
+                    constants[target.id] = node.value.value
+
+    def resolved(value: ast.AST | None) -> str | None:
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            return value.value
+        if isinstance(value, ast.Name):
+            return constants.get(value.id)
+        return None
+
+    declarations: list[DispatchCallDeclaration] = []
+
+    def qualified_name(node: ast.AST) -> str | None:
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            prefix = qualified_name(node.value)
+            return f"{prefix}.{node.attr}" if prefix is not None else None
+        return None
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        function = node.func
+        function_name = qualified_name(function)
+        recognized = function_name in direct or function_name in {
+            f"{module}.DispatchCall" for module in modules
+        }
+        if not recognized:
+            continue
+        keywords = {
+            keyword.arg: keyword.value
+            for keyword in node.keywords
+            if keyword.arg is not None
+            and isinstance(keyword.value, ast.Constant)
+            and isinstance(keyword.value.value, str)
+        }
+        values = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg}
+        declarations.append(
+            DispatchCallDeclaration(
+                caller_skill=resolved(values.get("caller_skill")),
+                target_skill=resolved(values.get("target_skill")),
+                interface=resolved(values.get("interface")),
+                lineno=getattr(node, "lineno", 0),
+                keywords=keywords,
+            )
+        )
+    return tuple(declarations)
+
+
 def trace_python_route_smoke_dependencies(
     skill_dir: Path,
     repo_root: Path,
@@ -27,7 +120,12 @@ def trace_python_route_smoke_dependencies(
 
     skill_root = skill_dir.resolve()
     repository_root = repo_root.resolve()
-    source_root = Path(__file__).resolve().parents[2]
+    candidate_source_root = repository_root / "src"
+    source_root = (
+        candidate_source_root
+        if (candidate_source_root / "officina").is_dir()
+        else Path(__file__).resolve().parents[2]
+    )
     trace_code = r"""
 import contextlib
 import io

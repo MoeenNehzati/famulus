@@ -5,15 +5,28 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import re
 import stat
 import subprocess
 from typing import Mapping, Sequence
 
-from .atomic_files import AtomicWriteError, read_regular_file_bytes
+from .atomic_files import (
+    AtomicWriteError,
+    atomic_replace_bytes,
+    read_regular_file_bytes,
+)
 
 
 _REGULAR_FILE_MODES = {"100644", "100755"}
+_MATERIALIZED_FILE_MODES = {*_REGULAR_FILE_MODES, "120000"}
+_FULL_GIT_OBJECT_ID = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})")
+BLUEPRINT_V4_MECHANICAL_REF = "refs/famulus/blueprint-v4-mechanical"
+BLUEPRINT_V4_SOURCE_OVERLAY_REF = "refs/famulus/blueprint-v4-source-overlay"
+
+
+class GitMaterializationError(RuntimeError):
+    """Raised when one exact commit cannot be materialized safely."""
 
 
 @dataclass(frozen=True)
@@ -29,15 +42,385 @@ class CommitReadiness:
     reasons: tuple[str, ...]
 
 
+def run_git(
+    repo_root: Path,
+    *args: str,
+    check: bool = True,
+    input_bytes: bytes | None = None,
+) -> subprocess.CompletedProcess[bytes]:
+    """Run Git at ``repo_root`` without ambient routing, config, or hooks."""
+
+    environment = os.environ.copy()
+    for name in tuple(environment):
+        if name.startswith("GIT_"):
+            environment.pop(name, None)
+    environment.update(
+        {
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+    )
+    command = [
+        "git",
+        "-c",
+        f"core.hooksPath={os.devnull}",
+        "-c",
+        "commit.gpgSign=false",
+        "-c",
+        "core.fsmonitor=false",
+        "-C",
+        os.fspath(Path(repo_root).resolve()),
+        *args,
+    ]
+    return subprocess.run(
+        command,
+        check=check,
+        capture_output=True,
+        input=input_bytes,
+        env=environment,
+    )
+
+
+def _exact_git_commit(repo_root: Path, commit: str) -> str:
+    if not isinstance(commit, str) or _FULL_GIT_OBJECT_ID.fullmatch(commit) is None:
+        raise GitMaterializationError("Git operation requires a full commit ID")
+    verified = run_git(
+        repo_root,
+        "rev-parse",
+        "--verify",
+        f"{commit}^{{commit}}",
+        check=False,
+    )
+    if verified.returncode != 0:
+        raise GitMaterializationError("Git commit is unavailable")
+    try:
+        resolved = verified.stdout.decode("ascii").strip()
+    except UnicodeError as exc:
+        raise GitMaterializationError("Git commit ID is invalid") from exc
+    if resolved.lower() != commit.lower():
+        raise GitMaterializationError("Git commit ID did not resolve exactly")
+    return resolved
+
+
+def blueprint_v4_mechanical_commit(repo_root: Path) -> str:
+    """Return the immutable candidate mechanical baseline from its reserved ref."""
+
+    root = Path(repo_root).resolve()
+    result = run_git(
+        root,
+        "rev-parse",
+        "--verify",
+        f"{BLUEPRINT_V4_MECHANICAL_REF}^{{commit}}",
+        check=False,
+    )
+    if result.returncode != 0:
+        raise GitMaterializationError("blueprint v4 mechanical baseline is unavailable")
+    try:
+        commit = result.stdout.decode("ascii").strip()
+    except UnicodeError as exc:
+        raise GitMaterializationError(
+            "blueprint v4 mechanical baseline is invalid"
+        ) from exc
+    return _exact_git_commit(root, commit)
+
+
+def pin_blueprint_v4_mechanical_commit(repo_root: Path, commit: str) -> str:
+    """Create the reserved candidate baseline ref once, without replacement."""
+
+    root = Path(repo_root).resolve()
+    resolved = _exact_git_commit(root, commit)
+    existing = run_git(
+        root,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        BLUEPRINT_V4_MECHANICAL_REF,
+        check=False,
+    )
+    if existing.returncode == 0:
+        raise GitMaterializationError("blueprint v4 mechanical baseline is already pinned")
+    if existing.returncode not in {0, 1}:
+        raise GitMaterializationError("cannot inspect blueprint v4 mechanical baseline")
+    created = run_git(
+        root,
+        "update-ref",
+        "--create-reflog",
+        BLUEPRINT_V4_MECHANICAL_REF,
+        resolved,
+        "",
+        check=False,
+    )
+    if created.returncode != 0:
+        raise GitMaterializationError("cannot pin blueprint v4 mechanical baseline")
+    pinned = blueprint_v4_mechanical_commit(root)
+    if pinned != resolved:
+        raise GitMaterializationError("blueprint v4 mechanical baseline changed")
+    return pinned
+
+
+def blueprint_v4_source_overlay_commit(repo_root: Path) -> str:
+    """Return the immutable authorized preconversion overlay commit."""
+
+    root = Path(repo_root).resolve()
+    result = run_git(
+        root,
+        "rev-parse",
+        "--verify",
+        f"{BLUEPRINT_V4_SOURCE_OVERLAY_REF}^{{commit}}",
+        check=False,
+    )
+    if result.returncode != 0:
+        raise GitMaterializationError("blueprint v4 source overlay is unavailable")
+    return _exact_git_commit(root, result.stdout.decode("ascii").strip())
+
+
+def pin_blueprint_v4_source_overlay_commit(repo_root: Path, commit: str) -> str:
+    """Create the reserved source-overlay ref once, without replacement."""
+
+    root = Path(repo_root).resolve()
+    resolved = _exact_git_commit(root, commit)
+    created = run_git(
+        root,
+        "update-ref",
+        BLUEPRINT_V4_SOURCE_OVERLAY_REF,
+        resolved,
+        "",
+        check=False,
+    )
+    if created.returncode != 0:
+        raise GitMaterializationError("cannot pin blueprint v4 source overlay")
+    pinned = blueprint_v4_source_overlay_commit(root)
+    if pinned != resolved:
+        raise GitMaterializationError("blueprint v4 source overlay changed")
+    return pinned
+
+
+def _tree_relative_path(raw: str) -> Path:
+    if not raw or "\\" in raw or "\0" in raw:
+        raise GitMaterializationError("Git tree contains an unsafe path")
+    relative = PurePosixPath(raw)
+    if relative.is_absolute() or not relative.parts or any(
+        part in {"", ".", ".."} or ":" in part for part in relative.parts
+    ):
+        raise GitMaterializationError("Git tree contains an unsafe path")
+    return Path(*relative.parts)
+
+
+def _tree_symlink_is_confined(relative: Path, target: str) -> bool:
+    if not target or "\\" in target or "\0" in target:
+        return False
+    link = PurePosixPath(target)
+    if link.is_absolute() or any(":" in part for part in link.parts):
+        return False
+    resolved = list(relative.parent.parts)
+    for part in link.parts:
+        if part in {"", "."}:
+            continue
+        if part == "..":
+            if not resolved:
+                return False
+            resolved.pop()
+        else:
+            resolved.append(part)
+    return True
+
+
+def _materialization_parent(root: Path, relative: Path) -> Path:
+    current = root
+    for component in relative.parts[:-1]:
+        current = current / component
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            current.mkdir(mode=0o700)
+            metadata = current.lstat()
+        except OSError as exc:
+            raise GitMaterializationError(
+                f"cannot create Git tree parent: {relative.as_posix()}"
+            ) from exc
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise GitMaterializationError(
+                f"Git tree parent is unsafe: {relative.as_posix()}"
+            )
+    return current
+
+
+def materialize_git_commit(
+    repo_root: Path,
+    commit: str,
+    destination: Path,
+    *,
+    allow_non_atomic: bool = False,
+) -> tuple[Path, ...]:
+    """Materialize one full commit into an existing empty private directory.
+
+    Paths, modes, and object IDs come from the exact commit tree; bytes come
+    directly from its blobs, so export attributes and worktree filters cannot
+    transform the result.
+    """
+
+    root = Path(repo_root).resolve()
+    target_root = Path(destination)
+    if target_root.is_symlink():
+        raise GitMaterializationError("Git materialization destination is unsafe")
+    try:
+        target_root = target_root.resolve(strict=True)
+        target_metadata = target_root.lstat()
+    except OSError as exc:
+        raise GitMaterializationError(
+            "Git materialization destination must be an existing directory"
+        ) from exc
+    if (
+        not stat.S_ISDIR(target_metadata.st_mode)
+        or any(target_root.iterdir())
+        or (
+            os.name == "posix"
+            and (
+                target_metadata.st_uid != os.geteuid()
+                or stat.S_IMODE(target_metadata.st_mode) & 0o022
+            )
+        )
+    ):
+        raise GitMaterializationError(
+            "Git materialization destination must be an empty private directory"
+        )
+    repository = run_git(root, "rev-parse", "--show-toplevel", check=False)
+    if repository.returncode != 0:
+        raise GitMaterializationError("Git repository is unavailable")
+    try:
+        discovered_root = Path(repository.stdout.decode("utf-8").strip()).resolve()
+    except UnicodeError as exc:
+        raise GitMaterializationError("Git repository root is invalid") from exc
+    if discovered_root != root:
+        raise GitMaterializationError("Git materialization requires the repository root")
+    resolved_commit = _exact_git_commit(root, commit)
+    tree = run_git(
+        root,
+        "ls-tree",
+        "-r",
+        "-z",
+        "--full-tree",
+        resolved_commit,
+        check=False,
+    )
+    if tree.returncode != 0:
+        raise GitMaterializationError("Git commit tree is unavailable")
+
+    records: list[tuple[Path, str, bytes | str, int]] = []
+    seen: set[Path] = set()
+    for record in tree.stdout.rstrip(b"\0").split(b"\0"):
+        if not record:
+            continue
+        metadata, separator, raw_path = record.partition(b"\t")
+        fields = metadata.split()
+        if not separator or len(fields) != 3:
+            raise GitMaterializationError("Git commit tree entry is invalid")
+        try:
+            mode, object_type, object_id = (
+                field.decode("ascii") for field in fields
+            )
+        except UnicodeError as exc:
+            raise GitMaterializationError("Git commit tree entry is invalid") from exc
+        if object_type != "blob" or mode not in _MATERIALIZED_FILE_MODES:
+            raise GitMaterializationError("Git commit tree entry type is unsupported")
+        relative = _tree_relative_path(os.fsdecode(raw_path))
+        if relative in seen:
+            raise GitMaterializationError(
+                f"Git tree contains duplicate path: {relative.as_posix()}"
+            )
+        seen.add(relative)
+        blob = run_git(root, "cat-file", "blob", object_id, check=False)
+        if blob.returncode != 0:
+            raise GitMaterializationError(
+                f"Git tree blob is unavailable: {relative.as_posix()}"
+            )
+        if mode == "120000":
+            target = os.fsdecode(blob.stdout)
+            if not _tree_symlink_is_confined(relative, target):
+                raise GitMaterializationError(
+                    f"Git tree symlink escapes destination: {relative.as_posix()}"
+                )
+            records.append((relative, "symlink", target, 0))
+        else:
+            file_mode = 0o755 if mode == "100755" else 0o644
+            records.append((relative, "file", blob.stdout, file_mode))
+
+    materialized: list[Path] = []
+    try:
+        for relative, kind, value, mode in records:
+            parent = _materialization_parent(target_root, relative)
+            target = parent / relative.name
+            if target.exists() or target.is_symlink():
+                raise GitMaterializationError(
+                    f"Git tree path collides: {relative.as_posix()}"
+                )
+            if kind == "file":
+                if not isinstance(value, bytes):
+                    raise GitMaterializationError("Git tree file payload is invalid")
+                atomic_replace_bytes(
+                    target,
+                    value,
+                    allowed_root=target_root,
+                    mode=mode,
+                    allow_non_atomic=allow_non_atomic,
+                )
+            else:
+                if not isinstance(value, str):
+                    raise GitMaterializationError("Git tree symlink is invalid")
+                os.symlink(value, target)
+            materialized.append(relative)
+    except (AtomicWriteError, OSError) as exc:
+        raise GitMaterializationError("Git commit materialization failed") from exc
+    return tuple(sorted(materialized, key=lambda path: path.as_posix()))
+
+
 def _git(
     repo_root: Path,
     *args: str,
     check: bool = True,
 ) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        ["git", "-C", os.fspath(repo_root), *args],
-        check=check,
-        capture_output=True,
+    return run_git(repo_root, *args, check=check)
+
+
+def _git_ignored_entries(repo_root: Path) -> tuple[tuple[Path, bool], ...]:
+    try:
+        result = run_git(
+            repo_root,
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--ignored=matching",
+            "--untracked-files=all",
+            check=False,
+        )
+    except OSError:
+        return ()
+    if result.returncode != 0:
+        return ()
+    entries: list[tuple[Path, bool]] = []
+    for record in result.stdout.rstrip(b"\0").split(b"\0"):
+        if not record.startswith(b"!! "):
+            continue
+        raw_path = record[3:]
+        is_directory = raw_path.endswith(b"/")
+        entries.append(
+            (Path(os.fsdecode(raw_path[:-1] if is_directory else raw_path)), is_directory)
+        )
+    return tuple(sorted(entries, key=lambda entry: entry[0].as_posix()))
+
+
+def git_ignored_paths(repo_root: Path) -> tuple[Path, ...]:
+    """Return all repository-relative paths ignored by standard Git rules."""
+
+    return tuple(path for path, _is_directory in _git_ignored_entries(repo_root))
+
+
+def git_ignored_directories(repo_root: Path) -> tuple[Path, ...]:
+    """Return repository-relative directories ignored by standard Git rules."""
+
+    return tuple(
+        path for path, is_directory in _git_ignored_entries(repo_root) if is_directory
     )
 
 

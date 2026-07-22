@@ -5,6 +5,10 @@ import ast
 import sys
 from pathlib import Path
 
+from officina.runtime.python_machine_interface import (
+    analyze_dispatch_call_declarations,
+)
+
 
 def _python_files(skill_dir: Path) -> list[Path]:
     paths: list[Path] = []
@@ -30,11 +34,9 @@ def _module_string_constants(tree: ast.Module) -> dict[str, str]:
     return constants
 
 
-def _dispatch_aliases(tree: ast.AST) -> tuple[set[str], set[str], set[str], set[str], list[int]]:
+def _dispatch_aliases(tree: ast.AST) -> tuple[set[str], set[str], list[int]]:
     direct: set[str] = set()
     modules: set[str] = set()
-    dispatch_call_direct: set[str] = set()
-    python_machine_modules: set[str] = set()
     legacy_famulus_lines: list[int] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module in {
@@ -46,19 +48,13 @@ def _dispatch_aliases(tree: ast.AST) -> tuple[set[str], set[str], set[str], set[
                     direct.add(alias.asname or alias.name)
         elif isinstance(node, ast.ImportFrom) and node.module == "famulus.dispatcher":
             legacy_famulus_lines.append(getattr(node, "lineno", 0))
-        elif isinstance(node, ast.ImportFrom) and node.module == "officina.runtime.python_machine_interface":
-            for alias in node.names:
-                if alias.name == "DispatchCall":
-                    dispatch_call_direct.add(alias.asname or alias.name)
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name in {"script_dispatcher", "officina.dispatcher"}:
                     modules.add(alias.asname or alias.name)
                 elif alias.name == "famulus.dispatcher":
                     legacy_famulus_lines.append(getattr(node, "lineno", 0))
-                elif alias.name == "officina.runtime.python_machine_interface":
-                    python_machine_modules.add(alias.asname or alias.name)
-    return direct, modules, dispatch_call_direct, python_machine_modules, legacy_famulus_lines
+    return direct, modules, legacy_famulus_lines
 
 
 def _is_dispatch_call(node: ast.Call, direct_aliases: set[str], module_aliases: set[str]) -> bool:
@@ -66,19 +62,6 @@ def _is_dispatch_call(node: ast.Call, direct_aliases: set[str], module_aliases: 
     if isinstance(func, ast.Name):
         return func.id in direct_aliases
     if isinstance(func, ast.Attribute) and func.attr == "dispatch" and isinstance(func.value, ast.Name):
-        return func.value.id in module_aliases
-    return False
-
-
-def _is_dispatch_call_declaration(
-    node: ast.Call,
-    direct_aliases: set[str],
-    module_aliases: set[str],
-) -> bool:
-    func = node.func
-    if isinstance(func, ast.Name):
-        return func.id in direct_aliases
-    if isinstance(func, ast.Attribute) and func.attr == "DispatchCall" and isinstance(func.value, ast.Name):
         return func.value.id in module_aliases
     return False
 
@@ -111,27 +94,31 @@ def validate(repo_root: Path) -> list[str]:
             (
                 direct_aliases,
                 module_aliases,
-                dispatch_call_aliases,
-                python_machine_modules,
                 legacy_famulus_lines,
             ) = _dispatch_aliases(tree)
             for lineno in legacy_famulus_lines:
                 errors.append(
                     f"{rel}:{lineno}: import officina.dispatcher instead of removed famulus.dispatcher"
                 )
-            if not direct_aliases and not module_aliases and not dispatch_call_aliases and not python_machine_modules:
+            for declaration in analyze_dispatch_call_declarations(tree):
+                if declaration.caller_skill is None:
+                    errors.append(
+                        f"{rel}:{declaration.lineno}: DispatchCall() must include caller_skill "
+                        "as a literal or module-level string constant"
+                    )
+                elif declaration.caller_skill != skill_name:
+                    errors.append(
+                        f"{rel}:{declaration.lineno}: caller_skill resolves to `{declaration.caller_skill}`, expected `{skill_name}`"
+                    )
+
+            if not direct_aliases and not module_aliases:
                 continue
 
             for node in ast.walk(tree):
                 if not isinstance(node, ast.Call):
                     continue
                 is_dispatch_call = _is_dispatch_call(node, direct_aliases, module_aliases)
-                is_dispatch_call_declaration = _is_dispatch_call_declaration(
-                    node,
-                    dispatch_call_aliases,
-                    python_machine_modules,
-                )
-                if not is_dispatch_call and not is_dispatch_call_declaration:
+                if not is_dispatch_call:
                     continue
 
                 caller_expr = None
@@ -142,8 +129,7 @@ def validate(repo_root: Path) -> list[str]:
 
                 lineno = getattr(node, "lineno", 0)
                 if caller_expr is None:
-                    call_name = "DispatchCall()" if is_dispatch_call_declaration else "dispatch() call"
-                    errors.append(f"{rel}:{lineno}: {call_name} must include caller_skill")
+                    errors.append(f"{rel}:{lineno}: dispatch() call must include caller_skill")
                     continue
 
                 resolved = _resolve_string(caller_expr, constants)

@@ -2232,7 +2232,12 @@ def _load_v4_repository_blueprint_graph(
                         f"by {target_id}"
                     )
                 relation = "uses-export"
-                target_node_id = export.module_node_id
+                target_node_id = (
+                    export.source_node_id
+                    if caller_module == export.module_node_id
+                    else export.module_node_id
+                )
+                assert target_node_id is not None
                 target_module = modules[export.module_node_id]
                 _require_platform_compatibility(
                     source,
@@ -2246,8 +2251,18 @@ def _load_v4_repository_blueprint_graph(
                 )
             uses.append((target_id, version))
             node_edges.append(BlueprintEdge(relation, source_id, target_id, version))
+            certification_target = (
+                sources[target_node_id]
+                if target_node_id in sources
+                else modules[target_node_id]
+            )
             certification_edges.append(
-                CertificationEdge(relation, source_id, target_node_id, version)
+                CertificationEdge(
+                    relation,
+                    source_id,
+                    target_node_id,
+                    certification_target.version,
+                )
             )
         interface_uses_by_source[source_id] = tuple(uses)
 

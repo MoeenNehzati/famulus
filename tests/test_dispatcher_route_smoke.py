@@ -76,7 +76,7 @@ def _v4_contract() -> dict[str, object]:
                     "medium": "stdout",
                     "access": "write",
                     "content": "Result.",
-                    "format": "text",
+                    "formats": ["text"],
                     "sensitivity": "public",
                 }
             ],

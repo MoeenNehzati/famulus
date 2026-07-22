@@ -23,6 +23,10 @@ from officina.common.audit_records import (
 )
 from officina.common.blueprint_graph import load_repository_blueprint_graph
 from officina.common.certification_view import certificate_log_path
+from officina.common.git_provenance import (
+    pin_blueprint_v4_mechanical_commit,
+    pin_blueprint_v4_source_overlay_commit,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -96,7 +100,7 @@ def contract() -> dict[str, object]:
                     "medium": "stdout",
                     "access": "write",
                     "content": "Result.",
-                    "format": "text",
+                    "formats": ["text"],
                     "sensitivity": "public",
                 }
             ],
@@ -172,6 +176,12 @@ def create_v4_repository(
 ):
     schema_root = root / "references" / "blueprint"
     shutil.copytree(SOURCE_SCHEMA_ROOT, schema_root)
+    migration_map = root / "docs/plans/unified-architecture-migration-map.yaml"
+    migration_map.parent.mkdir(parents=True, exist_ok=True)
+    migration_map.write_text(
+        "declarations:\n  version_2:\n    merge_decisions: []\n",
+        encoding="utf-8",
+    )
     certification_root = root / "references" / "certification"
     certification_root.mkdir(parents=True)
     shutil.copy2(
@@ -230,13 +240,25 @@ def create_v4_repository(
         check=True,
     )
     subprocess.run(["git", "-C", str(root), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "commit",
+            "-qm",
+            "materialize mechanical v4 blueprint candidate",
+        ],
+        check=True,
+    )
     commit = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"],
         check=True,
         capture_output=True,
         text=True,
     ).stdout.strip()
+    pin_blueprint_v4_mechanical_commit(root, commit)
+    pin_blueprint_v4_source_overlay_commit(root, commit)
     graph = load_repository_blueprint_graph(root, schema_root=schema_root)
     basis_paths = resolve_certification_basis_paths(root)
     states = compute_node_hash_states(

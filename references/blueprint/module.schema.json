@@ -4,7 +4,7 @@
   "title": "Module Blueprint",
   "description": "Closed version 4 contract for one module ownership, authority, discovery, containment, and export boundary.",
   "type": "object",
-  "required": ["schema_version", "node_type", "id", "version", "description", "gateway", "content", "authority", "sources", "exports"],
+  "required": ["schema_version", "node_type", "id", "version", "gateway", "content", "authority", "sources", "exports"],
   "additionalProperties": false,
   "properties": {
     "schema_version": {
@@ -26,7 +26,7 @@
     "description": {
       "type": "string",
       "minLength": 1,
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Provides an example skill."}, "doc": {"authoring": ["Describe the module's external role."]}, "related_validation_rules": ["schema-shape"]}
+      "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": true, "example": "Provides an example skill."}, "doc": {"authoring": ["Describe the module's external role; certification requires this field."]}, "related_validation_rules": ["schema-shape"]}
     },
     "category": {
       "$ref": "legacy-skill.schema.json#/properties/category",
@@ -98,7 +98,7 @@
         "allowed_callers": {"type": "array", "uniqueItems": true, "items": {"$ref": "common.schema.json#/definitions/moduleId"}}
       },
       "allOf": [
-        {"if": {"properties": {"allow_all_modules": {"const": true}}}, "then": {"properties": {"allowed_callers": {"maxItems": 0}}}, "else": {"properties": {"allowed_callers": {"minItems": 1}}}}
+        {"if": {"properties": {"allow_all_modules": {"const": true}}}, "then": {"properties": {"allowed_callers": {"maxItems": 0}}}}
       ]
     },
     "export": {
