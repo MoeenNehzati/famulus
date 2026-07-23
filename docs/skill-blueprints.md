@@ -1,193 +1,161 @@
 # Skill Blueprints
 
-This document explains the architecture of Famulus skill blueprints for
-contributors. It is a conceptual guide, not a second schema specification.
-The concrete schemas under [`references/blueprint/`](../references/blueprint/)
-are authoritative for fields, types, required values, examples, contract-hash
-participation, and validation-rule traceability.
+This guide explains the live blueprint model. The schemas under
+[`references/blueprint/`](../references/blueprint/) remain authoritative for
+field shapes and required values.
 
-## Purpose
+## Model
 
-A blueprint describes a skill as an explicit artifact graph. The graph makes
-the skill's public interfaces, instruction sources, implementation bindings,
-dependencies, IO, and ownership boundaries inspectable without inferring them
-from directory layout or prose.
+Every blueprint describes one node. The repository has exactly two node kinds:
 
-Blueprints serve three related workflows:
+- a `module` is a directory-rooted identity, namespace, discovery, access, and
+  authority boundary;
+- a `behavioral_source` is a cohesive implementation or instruction unit
+  contained by exactly one module.
 
-- authors declare the intended skill contract;
-- validators check the declared graph against repository and filesystem rules;
-- audit and drift tooling certify the graph and later detect relevant changes.
+Every node has content, one whole-file gateway, and one blueprint. The gateway
+is its operational face; the blueprint is its descriptive face. Certification
+checks that they agree.
 
-The blueprint is not the skill's implementation and does not replace its LLM
-instructions. It records the contract that connects those artifacts.
+An interface is owned by a behavioral source. It is private to the containing
+module unless the module exports it. An export adds a public ID and access
+policy but does not copy the interface contract or version.
 
-## Authority Model
-
-Each blueprint-backed skill has one canonical graph root:
+## Layout and identity
 
 ```text
-skills/<skill>/blueprint.yaml
+<module-root>/
+  blueprint.yaml
+  blueprints/
+    gateway.yaml
+    runner.yaml
+  SKILL.md
+  _rtx/
+    _runner.py
 ```
 
-That root owns skill-level identity, the default LLM interface contract, and
-locators for additional interface nodes. Each additional interface or
-behavior-source node owns its own contract in a hidden sidecar beside the file
-it binds. Nodes point to dependencies; they do not copy facts owned by those
-dependencies.
-
-The authority order is:
-
-1. Authored root and subordinate blueprint files define the graph.
-2. Files bound by those nodes provide instructions, behavior, or executable
-   implementation.
-3. Generated `SKILL.md` blocks, pooled reviews, manifests, and health records
-   are derived views or certification state. They do not add graph authority.
-
-[`schema.json`](../references/blueprint/schema.json) is the compatibility entry
-point for the schema family. New typed authoring uses the concrete schemas
-listed in the [blueprint reference index](../references/blueprint/README.md).
-
-## Graph Nodes
-
-The typed graph has four authored node kinds.
-
-### Skill root
-
-The skill root owns facts about the skill as a whole, the inline
-`default_interface`, and version-pinned locators for additional interfaces.
-The inline interface has the canonical ID `<skill>.llm.default` and is
-implicitly bound to `SKILL.md`.
-
-### LLM interface
-
-An LLM-interface node binds one instruction file, such as `SKILL.md` or a named
-file under `llm_interfaces/`. It declares the behavior sources and callable
-interfaces used by that prompt surface.
-
-LLM interfaces are instruction surfaces. They are selected by skill-routing
-logic and are not executed by the dispatcher.
-
-### Machine interface
-
-A machine-interface node binds one private runtime entrypoint or command file.
-It declares the callable contract used by the dispatcher, including access,
-platform, dependency, IO, and filesystem-ownership metadata.
-
-Hand-authored LLM instructions should name the canonical machine interface,
-not its private runtime path. Field shapes and binding restrictions belong to
-the machine-interface schema rather than this document.
-
-### Behavior source
-
-A behavior-source node binds one file that influences an interface or another
-behavior source. Examples include a policy document, configuration file, or
-shared repository standard. Directories are not bound as behavior-source
-nodes; a collection that needs graph identity must expose a concrete file.
-
-Repository-owned behavior sources live under `references/`. Skill-local
-sources remain owned by their skill. Cross-skill behavior should be consumed
-through declared interfaces rather than by reaching into another skill's
-private files.
-
-## File Layout
-
-A subordinate node sidecar is hidden beside its bound file:
+The canonical identities are:
 
 ```text
-SKILL.md
-blueprint.yaml  # includes default_interface
-
-_rtx/_worker.py
-_rtx/._worker.py.blueprint.yaml
-
-references/policy.md
-references/.policy.md.blueprint.yaml
+module:             <module-id>
+behavioral source:  <module-id>.source.<local-source-id>
+source interface:   <source-id>.interface.<local-interface-name>
+module export:      <module-id>.interface.<export-name>
 ```
 
-If multiple nodes bind the same file, their sidecar names are qualified by
-local node name. The skill root alone keeps the unsuffixed `blueprint.yaml`
-name.
+Module blueprints are `<module-root>/blueprint.yaml`. Directly contained source
+blueprints are `<module-root>/blueprints/*.yaml`. Inventory follows those
+declarations; hidden sidecars and directory conventions do not create nodes.
 
-Existing typed skills may retain `.SKILL.md.blueprint.yaml` as a compatibility
-representation, but a root must not define both forms. The exact naming rules and examples are maintained in the concrete schemas and
-the committed artifact-layout manifest, not here.
+## Module blueprint
 
-## Authored And Generated Artifacts
+A module blueprint owns:
 
-Authored contract inputs include:
+- identity, description, gateway, and module content scope;
+- contained-source blueprint locators;
+- exported interface IDs and caller access;
+- filesystem authority and optional host discovery.
 
-- the root `blueprint.yaml` and default-bound `SKILL.md`;
-- reachable interface and behavior-source sidecars;
-- the instruction, runtime, and source files bound by those nodes.
+For example:
 
-Generated or local-state outputs include:
+```yaml
+schema_version: 4
+node_type: module
+id: example-skill
+version: 1
+description: Example module.
+gateway: {path: SKILL.md, language: Markdown}
+content: [SKILL\.md, _rtx/_runner\.py]
+authority: {owns_filesystem: []}
+discovery: {mechanism: skill}
+sources:
+  example-skill.source.gateway:
+    blueprint: {base: module-root, path: blueprints/gateway.yaml}
+  example-skill.source.runner:
+    blueprint: {base: module-root, path: blueprints/runner.yaml}
+exports:
+  example-skill.interface.run:
+    source_interface: example-skill.source.runner.interface.run
+    access:
+      allow_all_modules: false
+      allowed_callers: [approved-caller]
+```
 
-- blueprint contract and interface blocks injected into `SKILL.md`;
-- repository-level generated manifests;
-- node health records and legacy audit records;
-- pooled blueprint reviews and their health records.
+Only exports cross module boundaries. Restricted exports are still exports;
+private source interfaces are omitted from `exports`.
 
-Generated artifacts must agree with the authored graph, but they never become
-inputs that silently redefine it.
+## Behavioral-source blueprint
 
-The inline default has no independent health record. Root skill health covers
-the root contract, `SKILL.md`, and the default interface's downstream edges.
+A behavioral-source blueprint owns:
 
-## Authoring Workflow
+- its gateway and directly owned content;
+- intrinsic interfaces and their contracts;
+- source dependencies and used interfaces;
+- process bindings, direct I/O, effects, platform support, and runtime
+  dependencies.
 
-When creating or changing a skill:
+```yaml
+schema_version: 4
+node_type: behavioral_source
+id: example-skill.source.runner
+version: 1
+description: Implements the run operation.
+gateway: {path: _rtx/_runner.py, language: Python>=3.11}
+content: [_rtx/_runner\.py]
+dependencies: []
+uses_interfaces: []
+interfaces:
+  example-skill.source.runner.interface.run:
+    version: 1
+    description: Run one operation.
+    contract: {}
+    process_binding:
+      kind: process
+      entry: Interface
+      patterns: []
+```
 
-1. Design the user-facing LLM and machine interfaces before choosing file
-   layout.
-2. Write the skill instructions according to the
-   generated [skill module standards](../references/skill-standards/skill-guidelines.md).
-3. Create the root and subordinate blueprints from their concrete schemas.
-4. Declare every behavior-relevant bound file and cross-interface dependency
-   on the node that uses it.
-5. Refresh generated blueprint artifacts through the `skill-maker` sync
-   interface.
-6. Run repository validation and relevant tests before certification.
+The abbreviated empty contract and patterns above illustrate ownership only;
+real callable interfaces must satisfy the complete schemas.
 
-For the repository's concrete scaffolding workflow, see
-[`docs/scaffolding/README.md`](scaffolding/README.md).
+For a typical skill, `SKILL.md` is both the module gateway and the gateway of
+`<module-id>.source.gateway`. The source directly owns the file. This does not
+create a second contract or blueprint for the same node.
 
-## Validation, Audit, And Drift
+## Ownership and dependencies
 
-Schema validation checks document shape. Repository validators additionally
-check relationships that require filesystem or graph context, such as locator
-resolution, binding containment, node identity, access control, and dependency
-compatibility.
+Module content contains source content, but each regular file has exactly one
+direct owner: its most specific source, or the module if no source owns it.
+Sibling source ownership cannot overlap.
 
-Audit and drift have separate roles:
+A source declares another source in `dependencies` when its behavior depends
+on that source as a unit. It declares callable contracts in
+`uses_interfaces`. Same-module uses may target private source interfaces.
+Cross-module uses must target an authorized module export.
 
-- `skill-audit` judges whether the declared graph exactly represents the
-  selected skill closure and writes certification state when commit-backed
-  requirements are satisfied;
-- `skill-drift` mechanically determines whether the installed artifacts still
-  match that certification state.
+Blueprints reference facts owned elsewhere instead of copying them. In
+particular, modules do not duplicate source contracts, and consumers do not
+duplicate provider contracts.
 
-Health records and pooled reviews are auxiliary outputs. They cannot add nodes
-or edges to the authored graph. See
-[`docs/audit_and_drift.md`](audit_and_drift.md) for the certification and drift
-model.
+## Authoring workflow
 
-## Migration
+1. Define the module boundary, sources, gateways, and direct ownership.
+2. Define each source interface and its complete contract.
+3. Export only the interfaces intended to cross the module boundary.
+4. Declare source and interface dependencies at the source that uses them.
+5. Run the `skill-maker.interface.sync-blueprints` check and repository
+   validators.
+6. Review blueprints against actual gateways and content, then certify the
+   exact committed state through `skill-certifier.interface.certify`.
 
-Legacy monolithic blueprints remain a compatibility boundary while skills move
-to typed, file-backed nodes. A migration should preserve canonical interface
-identity and observable behavior unless a contract change is explicitly
-approved. Move one interface at a time and validate the reachable graph after
-each step.
+Generated `SKILL.md` blocks and runtime-dependency indexes are derived views.
+Certificate logs are certification state. None of them add nodes or graph
+relationships.
 
-Generated reviews and health records are never migration inputs.
+## Related documentation
 
-## Reference Map
-
-- [Blueprint reference index](../references/blueprint/README.md)
-- [Compatibility schema entry point](../references/blueprint/schema.json)
-- [Schema metadata protocol](../references/blueprint/schema-meta.json)
-- Generated [skill module standards](../references/skill-standards/skill-guidelines.md)
-- [LLM interface design](../references/skill-standards/llm-interface-design.md)
-- [Skill scaffolding](scaffolding/README.md)
-- [Audit and drift](audit_and_drift.md)
+- [Architecture](architecture.md)
+- [Certification and drift](certification_and_drift.md)
+- [Blueprint search](blueprint_search.md)
+- [Scaffolding](scaffolding/README.md)
+- [Blueprint schema reference](../references/blueprint/README.md)

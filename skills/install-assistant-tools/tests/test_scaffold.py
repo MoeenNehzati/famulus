@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
 import _install_scaffold as scaffold
-import officina.common.audit_records as audit_records
+import officina.common.certificate_records as certificate_records
 from _install_launcher._base_launcher import LauncherInstallerBase
 
 
@@ -254,12 +254,12 @@ def test_certificate_signing_material_capability_uses_shared_owner(
     calls = []
     public_key_root = tmp_path / "repo" / "keys"
     monkeypatch.setattr(
-        audit_records,
+        certificate_records,
         "provision_certificate_signing_material",
         lambda repo_root: calls.append(repo_root),
     )
     monkeypatch.setattr(
-        audit_records,
+        certificate_records,
         "certificate_public_key_root",
         lambda repo_root: public_key_root,
     )
@@ -282,7 +282,7 @@ def test_certificate_signing_material_capability_fails_closed(
         raise ValueError("verification failed")
 
     monkeypatch.setattr(
-        audit_records,
+        certificate_records,
         "provision_certificate_signing_material",
         fail,
     )
@@ -301,7 +301,7 @@ def test_certificate_signing_material_dry_run_does_not_write(
     monkeypatch,
 ):
     monkeypatch.setattr(
-        audit_records,
+        certificate_records,
         "provision_certificate_signing_material",
         lambda _repo_root: (_ for _ in ()).throw(
             AssertionError("dry-run wrote signing material")

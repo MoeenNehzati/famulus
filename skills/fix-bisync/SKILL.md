@@ -19,7 +19,7 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `fix-bisync.interface.default` — Diagnose a live bisync job and gate preventive edits and repair execution on explicit user choice.

@@ -43,31 +43,20 @@ def parse_cli() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_cli()
-    target: str | None = None
-    target_skill: str | None = None
-    script_interface: str | None = None
     script_args = list(args.rest)
-
-    if (
-        ".interface." in args.target_or_skill
-        or ".machine." in args.target_or_skill
-        or ".llm." in args.target_or_skill
-    ):
-        target = args.target_or_skill
-    else:
-        if not script_args:
-            print("error: shorthand invocation requires <target-skill> <machine-interface>", file=sys.stderr)
-            return 2
-        target_skill = args.target_or_skill
-        script_interface = script_args.pop(0)
+    target = args.target_or_skill
+    if ".interface." not in target:
+        print(
+            "error: target must be a fully qualified `<module>.interface.<name>` export",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         if args.dry_run:
             payload = resolve_dispatch_metadata(
                 caller_skill=args.caller_skill,
                 target=target,
-                target_skill=target_skill,
-                script_interface=script_interface,
                 args=script_args,
                 stdin_requested=args.stdin,
             ).as_payload()
@@ -78,8 +67,6 @@ def main() -> int:
         completed = dispatch(
             caller_skill=args.caller_skill,
             target=target,
-            target_skill=target_skill,
-            script_interface=script_interface,
             args=script_args,
             stdin=stdin,
             capture_output=True,

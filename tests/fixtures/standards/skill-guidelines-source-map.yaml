@@ -1,4 +1,4 @@
-source_sha256: 1a18981c0c8618b0ffdbd57bd54d272d9cfa9cccdfd063367f68f5b6c14be3a5
+source_sha256: 2ed65f9c5b93832221181a330a16ca72871c364925416c7d4712d42b18b52307
 units:
 - id: guidelines-semantic-001
   kind: semantic
@@ -32,12 +32,15 @@ units:
   kind: semantic
   start: 7
   end: 9
-  text: "**1. Skill identity and contract come first** \u2014 every skill has a stable\ndash-separated name and declares its dependency and interface contract before\nworkflow instructions."
+  text: "**1. Skill identity and contract come first** \u2014 every skill has a stable\ndash-separated\
+    \ name and declares its dependency and interface contract before\nworkflow instructions."
   content_digest: sha256:bfaf0b3fe22932eae81ae12a533d2b34e38d1ffb4b390fc2d267e3dbef3b1e66
   target:
     target_ref: skill-guidelines.identity-contract.guidance-001
     field: /statement
-    expected: "**1. Skill identity and contract come first** \u2014 every skill has a stable\ndash-separated name and declares its dependency and interface contract before\nworkflow instructions."
+    expected: "**1. Skill identity and contract come first** \u2014 every skill has a stable\n\
+      dash-separated name and declares its dependency and interface contract before\nworkflow\
+      \ instructions."
 - id: guidelines-semantic-004
   kind: semantic
   start: 11
@@ -49,7 +52,8 @@ units:
   target:
     target_ref: skill-guidelines.identity-contract.requirement-001#source-block
     field: /statement
-    expected: 'The skill directory name and frontmatter `name:` must match exactly. Skill names
+    expected: 'The skill directory name and frontmatter `name:` must match exactly. Skill
+      names
 
       must be lower-case, dash-separated, and at least two words:'
 - id: guidelines-semantic-005
@@ -91,569 +95,170 @@ units:
 - id: guidelines-semantic-007
   kind: semantic
   start: 22
-  end: 23
-  text: 'Historical legacy skills may keep a hand-authored dependency block in
-
-    `SKILL.md`:'
-  content_digest: sha256:8088d7df0a9bfa18bc447a0acbe67d3a09031a340742b3569c7c66d20dd63132
-  target:
-    target_ref: skill-guidelines.identity-contract.requirement-003#source-block
-    field: /statement
-    expected: 'Historical legacy skills may keep a hand-authored dependency block in
-
-      `SKILL.md`:'
-- id: guidelines-semantic-008
-  kind: semantic
-  start: 25
-  end: 32
-  text: '```markdown
-
-    Category: automation
-
-
-    Dependencies:
-
-    - list-manager
-
-    - g-calendar
-
-    - get-weather
-
-    ```'
-  content_digest: sha256:5a9c18457730d6bd5e4403f0bf16351aa60d407a008c4252ff5fc7248676f8a4
-  target:
-    target_ref: skill-guidelines.identity-contract.example-002
-    field: /statement
-    expected: '```markdown
-
-      Category: automation
-
-
-      Dependencies:
-
-      - list-manager
-
-      - g-calendar
-
-      - get-weather
-
-      ```'
-- id: guidelines-semantic-009
-  kind: semantic
-  start: 34
-  end: 35
-  text: 'Use `Dependencies: none` when the skill must not invoke other skills. List only
-
-    skill names, not paths, files, or implementation details.'
-  content_digest: sha256:71e52de6201ddae105e45e56b0cf7358c4afab5513c784c17905775c9e399faa
-  target:
-    target_ref: skill-guidelines.identity-contract.requirement-004#source-block
-    field: /statement
-    expected: 'Use `Dependencies: none` when the skill must not invoke other skills. List only
-
-      skill names, not paths, files, or implementation details.'
-- id: guidelines-semantic-010
-  kind: semantic
-  start: 37
-  end: 43
-  text: 'In this repository, local skills use one canonical `blueprint.yaml` graph root
-
-    next to `SKILL.md`. Generate its initial values from `skill.schema.json`, then
-
-    define its default LLM interface inline and create typed hidden sidecars for
-
-    additional interfaces and behavior sources from their concrete schemas. The committed
-
-    `references/blueprint/template.yaml` is an artifact-layout manifest, not a
-
-    copyable root blueprint. The canonical root plus the subordinate files
-
-    reachable through its locators are the source of truth for:'
-  content_digest: sha256:4002ac5d444a579ecceb9ab60778359ee6bce1fd9f3fb3ecb91d14fcc581fc57
-  target:
-    target_ref: skill-guidelines.identity-contract.guidance-002
-    field: /statement
-    expected: 'In this repository, local skills use one canonical `blueprint.yaml` graph root
-
-      next to `SKILL.md`. Generate its initial values from `skill.schema.json`, then
-
-      define its default LLM interface inline and create typed hidden sidecars for
-
-      additional interfaces and behavior sources from their concrete schemas. The committed
-
-      `references/blueprint/template.yaml` is an artifact-layout manifest, not a
-
-      copyable root blueprint. The canonical root plus the subordinate files
-
-      reachable through its locators are the source of truth for:'
-- id: guidelines-semantic-011
-  kind: semantic
-  start: 45
-  end: 45
-  text: '- `category`'
-  content_digest: sha256:c77e1837adcde36f0bcfa77e1c5536773166684cb878e75895c6953131bab9cd
-  target:
-    target_ref: skill-guidelines.identity-contract.guidance-003
-    field: /statement
-    expected: '- `category`'
-- id: guidelines-semantic-012
-  kind: semantic
-  start: 46
-  end: 46
-  text: '- `role`'
-  content_digest: sha256:e480623700a851db5e0e59e46ff7cff6aeb94ebce1fd351c99856d80c0bf58d5
-  target:
-    target_ref: skill-guidelines.identity-contract.guidance-004
-    field: /statement
-    expected: '- `role`'
-- id: guidelines-semantic-013
-  kind: semantic
-  start: 47
-  end: 47
-  text: '- `kind`'
-  content_digest: sha256:d2582d91b36d3d7e11576ea8d9902b7c10af07123fe68660944429070df8a8c2
-  target:
-    target_ref: skill-guidelines.identity-contract.guidance-005
-    field: /statement
-    expected: '- `kind`'
-- id: guidelines-semantic-014
-  kind: semantic
-  start: 48
-  end: 48
-  text: '- `suggested_permissions`'
-  content_digest: sha256:bcd27bf3445c3a5134f61b00bfcf7d802c4e8515a993b78e724415001573d36c
-  target:
-    target_ref: skill-guidelines.identity-contract.guidance-006
-    field: /statement
-    expected: '- `suggested_permissions`'
-- id: guidelines-semantic-015
-  kind: semantic
-  start: 49
-  end: 49
-  text: '- `skill_interface`'
-  content_digest: sha256:d06ad6fc47578ed4c44eff3359dafa001e1ee5923e8ce687a326a59647081bf7
-  target:
-    target_ref: skill-guidelines.identity-contract.guidance-007
-    field: /statement
-    expected: '- `skill_interface`'
-- id: guidelines-semantic-016
-  kind: semantic
-  start: 50
-  end: 50
-  text: '- interface locators and interface-local contracts'
-  content_digest: sha256:c598f37626e7ed7dba0d4b39c9b0ca93316db703abfd11bfb6c295f1789c0147
-  target:
-    target_ref: skill-guidelines.identity-contract.guidance-008
-    field: /statement
-    expected: '- interface locators and interface-local contracts'
-- id: guidelines-semantic-017
-  kind: semantic
-  start: 52
-  end: 55
-  text: 'For blueprint skills, the top-of-file contract block in `SKILL.md` is generated
-
-    from the canonical graph. Authored root and subordinate blueprints are
-
-    canonical; generated blocks, pooled reviews, health records, and repo-level
-
-    manifests are not graph authority and must match the authored graph exactly.'
-  content_digest: sha256:3fa45c246a9bd7c8af892b0bd2a19f18df580c498590cc3d3d88d35662a4a600
-  target:
-    target_ref: skill-guidelines.identity-contract.requirement-005#source-block
-    field: /statement
-    expected: 'For blueprint skills, the top-of-file contract block in `SKILL.md` is generated
-
-      from the canonical graph. Authored root and subordinate blueprints are
-
-      canonical; generated blocks, pooled reviews, health records, and repo-level
-
-      manifests are not graph authority and must match the authored graph exactly.'
-- id: guidelines-semantic-018
-  kind: semantic
-  start: 57
-  end: 65
-  text: 'Cross-skill use is declared on the interface that performs it, through
-
-    `uses_interfaces`. Do not add top-level skill dependency lists. If an LLM
-
-    surface delegates to another skill, point to that skill''s LLM interface. If a
-
-    machine interface calls another machine interface, declare that exact
-
-    version-pinned machine interface edge.
-
-    In schema-version-2 LLM-interface and behavior-source bodies, use canonical
-
-    `skill.llm.name` or `skill.machine.name` IDs, never bare cross-skill names.
-
-    Every interface ID named in the body must be declared by that same node''s
-
-    `uses_interfaces`.'
-  content_digest: sha256:f25596fe491e214366c84d3e5634bb76620069845923d2ae9fa179aed99a5a9a
-  target:
-    target_ref: skill-guidelines.identity-contract.requirement-006#source-block
-    field: /statement
-    expected: 'Cross-skill use is declared on the interface that performs it, through
-
-      `uses_interfaces`. Do not add top-level skill dependency lists. If an LLM
-
-      surface delegates to another skill, point to that skill''s LLM interface. If a
-
-      machine interface calls another machine interface, declare that exact
-
-      version-pinned machine interface edge.
-
-      In schema-version-2 LLM-interface and behavior-source bodies, use canonical
-
-      `skill.llm.name` or `skill.machine.name` IDs, never bare cross-skill names.
-
-      Every interface ID named in the body must be declared by that same node''s
-
-      `uses_interfaces`.'
-- id: guidelines-semantic-019
-  kind: semantic
-  start: 67
-  end: 67
-  text: "**Blueprint authoring \u2014 REQUIRED: Use the concrete schema**"
-  content_digest: sha256:b2697b0aa8a74c5e944420818b765b5b287678d444f30eeb80ebdbea888fbd29
+  end: 22
+  text: "**Blueprint authoring \u2014 REQUIRED: Use the version 4 schemas**"
+  content_digest: sha256:81239a4bc757806b838b7ff1c11d92cd4a5aa5622c1b6bcde7dd437f759d5cea
   target:
     target_ref: skill-guidelines.blueprint-authoring.requirement-001#source-block
     field: /statement
-    expected: "**Blueprint authoring \u2014 REQUIRED: Use the concrete schema**"
-- id: guidelines-semantic-020
+    expected: "**Blueprint authoring \u2014 REQUIRED: Use the version 4 schemas**"
+- id: guidelines-semantic-008
   kind: semantic
-  start: 69
-  end: 73
-  text: 'Generate each new root or subordinate blueprint from its concrete type schema.
+  start: 24
+  end: 28
+  text: 'Generate module roots from `references/blueprint/module.schema.json`
 
-    Do not copy `references/blueprint/template.yaml` into a skill. The complete
+    and behavioral sources from
 
-    type-specific authoring, creation, hash, and validator traceability rules live
+    `references/blueprint/behavioral-source.schema.json`. Do not copy
 
-    in `references/blueprint/*.schema.json` and `schema-meta.json`; the manifest
+    `references/blueprint/template.yaml` into a module; it documents the
 
-    only demonstrates deterministic filenames and generated outputs.'
-  content_digest: sha256:a73a962b69a1505e72cc3cc23d1e15e9608d25738be8f296dd83f548137bd115
+    artifact layout rather than a complete declaration.'
+  content_digest: sha256:7168073c8dab71ddcd8ea246dda007e12f8a25fa04cc3765b459a11661b5aaed
   target:
     target_ref: skill-guidelines.blueprint-authoring.requirement-002#source-block
     field: /statement
-    expected: 'Generate each new root or subordinate blueprint from its concrete type schema.
+    expected: 'Generate module roots from `references/blueprint/module.schema.json`
 
-      Do not copy `references/blueprint/template.yaml` into a skill. The complete
+      and behavioral sources from
 
-      type-specific authoring, creation, hash, and validator traceability rules live
+      `references/blueprint/behavioral-source.schema.json`. Do not copy
 
-      in `references/blueprint/*.schema.json` and `schema-meta.json`; the manifest
+      `references/blueprint/template.yaml` into a module; it documents the
 
-      only demonstrates deterministic filenames and generated outputs.'
-- id: guidelines-semantic-021
+      artifact layout rather than a complete declaration.'
+- id: guidelines-semantic-009
   kind: semantic
-  start: 75
-  end: 75
-  text: '**Blueprint authoring notes**'
-  content_digest: sha256:e7abff809a361ae0e50a1c5fff85b1103ca32559aed39c2b88f795d06121d98a
-  target:
-    target_ref: skill-guidelines.blueprint-authoring-notes.guidance-001
-    field: /statement
-    expected: '**Blueprint authoring notes**'
-- id: guidelines-semantic-022
-  kind: semantic
-  start: 77
-  end: 78
-  text: "- `category`: required single string from the typed enum in\n  `references/blueprint/schema.json`."
-  content_digest: sha256:b8625d238031cbc86a33ab126fc37d47b7287f9c85eda87cee59eddbdf737cc3
-  target:
-    target_ref: skill-guidelines.blueprint-authoring-notes.requirement-001#source-block
-    field: /statement
-    expected: "- `category`: required single string from the typed enum in\n  `references/blueprint/schema.json`."
-- id: guidelines-semantic-023
-  kind: semantic
-  start: 79
-  end: 81
-  text: "- `role`: required single string from the typed enum in\n  `references/blueprint/schema.json`; it names the primary user-facing domain\n  for generated docs and graph clustering."
-  content_digest: sha256:263ae15e46c9fb0020b57b5ab4fd494774f92144ca9afb5ea46b9e163e226872
-  target:
-    target_ref: skill-guidelines.blueprint-authoring-notes.requirement-002#source-block
-    field: /statement
-    expected: "- `role`: required single string from the typed enum in\n  `references/blueprint/schema.json`; it names the primary user-facing domain\n  for generated docs and graph clustering."
-- id: guidelines-semantic-024
-  kind: semantic
-  start: 82
-  end: 84
-  text: "- `kind`: required single string from the typed enum in\n  `references/blueprint/schema.json`; it names the primary shape of help the\n  skill provides for generated docs and filters."
-  content_digest: sha256:68893b33e213cad518494b0cf5af44c47557f7982e14aa2429739f93acd54ad8
-  target:
-    target_ref: skill-guidelines.blueprint-authoring-notes.requirement-003#source-block
-    field: /statement
-    expected: "- `kind`: required single string from the typed enum in\n  `references/blueprint/schema.json`; it names the primary shape of help the\n  skill provides for generated docs and filters."
-- id: guidelines-semantic-025
-  kind: semantic
-  start: 85
-  end: 86
-  text: "- `suggested_permissions`: advisory mapping with `bash` and `network` lists.\n  Every entry must include a `reason`."
-  content_digest: sha256:f2681ed80c66f880d75384ca59f0c0baf42dac10006c05facdeedbb002adc67f
-  target:
-    target_ref: skill-guidelines.blueprint-authoring-notes.requirement-004#source-block
-    field: /statement
-    expected: "- `suggested_permissions`: advisory mapping with `bash` and `network` lists.\n  Every entry must include a `reason`."
-- id: guidelines-semantic-026
-  kind: semantic
-  start: 87
-  end: 88
-  text: "- `skill_interface`: three plain-language lists (`inputs`, `outputs`,\n  `side_effects`) that describe the skill's high-level contract."
-  content_digest: sha256:e8b82bdde11e99672f376a0ba506b0234f8fffbf2b4e7d82a2bc2aadc4dd9e04
-  target:
-    target_ref: skill-guidelines.blueprint-authoring-notes.guidance-002
-    field: /statement
-    expected: "- `skill_interface`: three plain-language lists (`inputs`, `outputs`,\n  `side_effects`) that describe the skill's high-level contract."
-- id: guidelines-semantic-027
-  kind: semantic
-  start: 89
-  end: 90
-  text: "- `default_interface`: the inline contract for canonical\n  `skill.llm.default`; its identity and `SKILL.md` binding are implicit."
-  content_digest: sha256:9cf596766aa7f02aca1c1149157da5c12074cd888a00beba2fe29f75fd0fa657
-  target:
-    target_ref: skill-guidelines.blueprint-authoring-notes.guidance-003
-    field: /statement
-    expected: "- `default_interface`: the inline contract for canonical\n  `skill.llm.default`; its identity and `SKILL.md` binding are implicit."
-- id: guidelines-semantic-028
-  kind: semantic
-  start: 91
-  end: 93
-  text: "- `interfaces`: version-pinned locators for additional LLM and machine\n  interface sidecars. Existing typed skills may retain a default-interface\n  sidecar during compatibility migration, but must not declare both forms."
-  content_digest: sha256:55af98e6ac3b7880acb7ec0af98e03798e6e7b14809102c8f38743ffdf3a2fa8
-  target:
-    target_ref: skill-guidelines.blueprint-authoring-notes.requirement-005#source-block
-    field: /statement
-    expected: "- `interfaces`: version-pinned locators for additional LLM and machine\n  interface sidecars. Existing typed skills may retain a default-interface\n  sidecar during compatibility migration, but must not declare both forms."
-- id: guidelines-semantic-029
-  kind: semantic
-  start: 94
-  end: 96
-  text: "- `blueprint_type`: one of `skill`, `llm-interface`, `machine-interface`, or\n  `behavior-source`. A typed file states its own type instead of wrapping its\n  facts in another interface-name mapping."
-  content_digest: sha256:55a96d13ba5d3e0c10c1ba535eeed5da359b2e6729e9fb797510589e9297c820
-  target:
-    target_ref: skill-guidelines.blueprint-authoring-notes.guidance-004
-    field: /statement
-    expected: "- `blueprint_type`: one of `skill`, `llm-interface`, `machine-interface`, or\n  `behavior-source`. A typed file states its own type instead of wrapping its\n  facts in another interface-name mapping."
-- id: guidelines-semantic-030
-  kind: semantic
-  start: 98
-  end: 104
-  text: 'Every subordinate blueprint binds exactly one existing regular file and is
-
-    hidden beside it. A single node bound to `foo.py` uses
-
-    `.foo.py.blueprint.yaml`; multiple nodes on the same file use qualified names
-
-    such as `.foo.py.read.blueprint.yaml`. Generated health uses the corresponding
-
-    `.health.json` suffix. The skill root alone keeps `blueprint.yaml` and
-
-    `.last_audit.json`. The inline default is part of the root rather than a
-
-    subordinate sidecar. Directories never receive blueprints.'
-  content_digest: sha256:ed22fb55e53966a31c10859516f8914c0e26911fdd04e0bc267ec8d334b9af09
-  target:
-    target_ref: skill-guidelines.blueprint-authoring-notes.requirement-006#source-block
-    field: /statement
-    expected: 'Every subordinate blueprint binds exactly one existing regular file and is
-
-      hidden beside it. A single node bound to `foo.py` uses
-
-      `.foo.py.blueprint.yaml`; multiple nodes on the same file use qualified names
-
-      such as `.foo.py.read.blueprint.yaml`. Generated health uses the corresponding
-
-      `.health.json` suffix. The skill root alone keeps `blueprint.yaml` and
-
-      `.last_audit.json`. The inline default is part of the root rather than a
-
-      subordinate sidecar. Directories never receive blueprints.'
-- id: guidelines-semantic-031
-  kind: semantic
-  start: 106
-  end: 110
-  text: 'In schema version 3, every node declares `content`: case-sensitive regular
-
-    expressions that resolve to the behavior-defining files owned by that node.
-
-    Exactly one resolved content file is the node''s `gateway`. Content ownership is
-
-    exclusive across the repository: two nodes must not claim the same file, and an
-
-    `owns_filesystem` entry must not overlap content owned by another node.'
-  content_digest: sha256:6008864f56650ae2e4bf7e2b79cc1991dd2eab0ee36c7e77f64e876b4b6c10d9
-  target:
-    target_ref: skill-guidelines.blueprint-authoring-notes.requirement-007#source-block
-    field: /statement
-    expected: 'In schema version 3, every node declares `content`: case-sensitive regular
-
-      expressions that resolve to the behavior-defining files owned by that node.
-
-      Exactly one resolved content file is the node''s `gateway`. Content ownership is
-
-      exclusive across the repository: two nodes must not claim the same file, and an
-
-      `owns_filesystem` entry must not overlap content owned by another node.'
-- id: guidelines-semantic-032
-  kind: semantic
-  start: 112
-  end: 118
-  text: '`skill-audit` generates node health bottom-up and may generate
-
-    `.pooled-blueprint-review.yaml` plus its health file for review. Pooled files
-
-    are never graph inputs. The schema family defines canonical health fields,
-
-    SHA-256 projections, HMAC-SHA-256 authentication, and which authored fields
-
-    participate in contract hashes. Health, pool, and key files are ignored local
-
-    state. The inline default and `SKILL.md` are certified by root skill health;
-
-    they do not receive a second health identity. Do not hand-author health files.'
-  content_digest: sha256:92386be523f61717ac5ffa25695919c83b2705bcea4594611dd2f714d52731b7
-  target:
-    target_ref: skill-guidelines.blueprint-authoring-notes.requirement-008#source-block
-    field: /statement
-    expected: '`skill-audit` generates node health bottom-up and may generate
-
-      `.pooled-blueprint-review.yaml` plus its health file for review. Pooled files
-
-      are never graph inputs. The schema family defines canonical health fields,
-
-      SHA-256 projections, HMAC-SHA-256 authentication, and which authored fields
-
-      participate in contract hashes. Health, pool, and key files are ignored local
-
-      state. The inline default and `SKILL.md` are certified by root skill health;
-
-      they do not receive a second health identity. Do not hand-author health files.'
-- id: guidelines-semantic-033
-  kind: semantic
-  start: 120
-  end: 120
+  start: 30
+  end: 30
   text: '**Canonical interface names**'
   content_digest: sha256:dfd089380d122723f5edf7ebf3842733239ed1159ec7707ae6dad57f403cd4b9
   target:
     target_ref: skill-guidelines.canonical-interface-names.guidance-001
     field: /statement
     expected: '**Canonical interface names**'
-- id: guidelines-semantic-034
+- id: guidelines-semantic-010
   kind: semantic
-  start: 122
-  end: 122
+  start: 32
+  end: 32
   text: 'Every blueprint interface has a canonical fully qualified name:'
   content_digest: sha256:7a263dc3c288e557ff192f5183828a0e2849c15f8722add3a67f8a729f482044
   target:
     target_ref: skill-guidelines.canonical-interface-names.guidance-002
     field: /statement
     expected: 'Every blueprint interface has a canonical fully qualified name:'
-- id: guidelines-semantic-035
+- id: guidelines-semantic-011
   kind: semantic
-  start: 124
-  end: 124
-  text: '- machine interface: `skill.machine.name`'
-  content_digest: sha256:c34990cf04bca8bfc06f52c4251f31219fa5e66d1cce591ac9a081c6f1e4cd82
+  start: 34
+  end: 34
+  text: '- module export: `<module>.interface.<name>`'
+  content_digest: sha256:71d8317310860e53398f701cad50521c68041a78b869291da0cb3694eb4957fb
   target:
     target_ref: skill-guidelines.canonical-interface-names.guidance-003
     field: /statement
-    expected: '- machine interface: `skill.machine.name`'
-- id: guidelines-semantic-036
+    expected: '- module export: `<module>.interface.<name>`'
+- id: guidelines-semantic-012
   kind: semantic
-  start: 125
-  end: 125
-  text: '- llm interface: `skill.llm.name`'
-  content_digest: sha256:6f4caefed487709598e12c62f11477331b792a5a2faa2f5f285129324e88e4c8
+  start: 36
+  end: 36
+  text: '- source-owned interface: `<module>.source.<source>.interface.<name>`'
+  content_digest: sha256:1a6b2e84efd1f1e1e6551f0f79830ca315b54d74465932a2ef85632776dd8751
   target:
     target_ref: skill-guidelines.canonical-interface-names.guidance-004
     field: /statement
-    expected: '- llm interface: `skill.llm.name`'
-- id: guidelines-semantic-037
+    expected: '- source-owned interface: `<module>.source.<source>.interface.<name>`'
+- id: guidelines-semantic-013
   kind: semantic
-  start: 127
-  end: 128
-  text: 'The local `<name>` is the final component of the subordinate blueprint''s `id`.
+  start: 38
+  end: 39
+  text: 'The local `<name>` is the final component of the interface ID.
 
     It must be dash-separated and must **not** contain `.`.'
-  content_digest: sha256:9466be84433b0920a05429b98d3cdca14314c9ac89dd2ec4587c2e9d4784ad71
+  content_digest: sha256:16f5cff2f03c5f5a66dbdd5e640d1ca58ae3e16ed3626eed19f057b446f93190
   target:
     target_ref: skill-guidelines.canonical-interface-names.requirement-001#source-block
     field: /statement
-    expected: 'The local `<name>` is the final component of the subordinate blueprint''s `id`.
+    expected: 'The local `<name>` is the final component of the interface ID.
 
       It must be dash-separated and must **not** contain `.`.'
-- id: guidelines-semantic-038
+- id: guidelines-semantic-014
   kind: semantic
-  start: 130
-  end: 130
-  text: 'The canonical invocation form for machine interfaces is:'
-  content_digest: sha256:b55ed92a80d31c5fd4cdbe61240cdc4acc8856ffef0a359bfc3d7a167461022d
+  start: 41
+  end: 41
+  text: 'The canonical invocation form for a process-bound module export is:'
+  content_digest: sha256:6b5110349981cd3c302a87e9f04602050782a72eb0005aad13e6c3c5b9ab0c73
   target:
     target_ref: skill-guidelines.canonical-interface-names.guidance-005
     field: /statement
-    expected: 'The canonical invocation form for machine interfaces is:'
-- id: guidelines-semantic-039
+    expected: 'The canonical invocation form for a process-bound module export is:'
+- id: guidelines-semantic-015
   kind: semantic
-  start: 132
-  end: 134
+  start: 43
+  end: 45
   text: '```bash
 
-    dispatcher --caller-skill daily-plan list-manager.machine.read-list /tmp/todo.yaml
+    dispatcher --caller-skill daily-plan list-manager.interface.read-list /tmp/todo.yaml
 
     ```'
-  content_digest: sha256:a996011486850a4b8b12762f32163690ba72bf2b9bd71d7db2f18d2710f5e3ee
+  content_digest: sha256:8508c19ea1bab91561b02fb6b83a89616bda50390ec3b3621096c9d23403be0d
   target:
     target_ref: skill-guidelines.canonical-interface-names.example-001
     field: /statement
     expected: '```bash
 
-      dispatcher --caller-skill daily-plan list-manager.machine.read-list /tmp/todo.yaml
+      dispatcher --caller-skill daily-plan list-manager.interface.read-list /tmp/todo.yaml
 
       ```'
-- id: guidelines-semantic-040
+- id: guidelines-semantic-016
   kind: semantic
-  start: 136
-  end: 138
-  text: 'For Python skill code, every machine-interface class that may invoke another
+  start: 47
+  end: 49
+  text: 'Every Python behavioral-source gateway that may invoke another
 
-    skill must define a declared dispatch menu on the interface. Runtime code calls
+    module must define a declared dispatch menu. Runtime code calls
 
     only entries from that menu, never raw dispatcher APIs:'
-  content_digest: sha256:7dc2f4e998c05d1f58741fa9d8f2b8389dc811a138267682f9cbce0c8f0fd40a
+  content_digest: sha256:039c03ae8e6fe5284ab9f24c3dda990f51f6135f582ca5c90fa5bd896544bbb7
   target:
     target_ref: skill-guidelines.canonical-interface-names.requirement-002#source-block
     field: /statement
-    expected: 'For Python skill code, every machine-interface class that may invoke another
+    expected: 'Every Python behavioral-source gateway that may invoke another
 
-      skill must define a declared dispatch menu on the interface. Runtime code calls
+      module must define a declared dispatch menu. Runtime code calls
 
       only entries from that menu, never raw dispatcher APIs:'
-- id: guidelines-semantic-041
+- id: guidelines-semantic-017
   kind: semantic
-  start: 140
-  end: 152
-  text: "```python\nfrom officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface\n\n\nclass Interface(PythonMachineInterface):\n    dispatches = {\n        \"read-list\": DispatchCall(\n            caller_skill=\"daily-plan\",\n            target_skill=\"list-manager\",\n            interface=\"read-list\",\n        )\n    }\n```"
+  start: 51
+  end: 63
+  text: "```python\nfrom officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface\n\
+    \n\nclass Interface(PythonMachineInterface):\n    dispatches = {\n        \"read-list\"\
+    : DispatchCall(\n            caller_skill=\"daily-plan\",\n            target_skill=\"\
+    list-manager\",\n            interface=\"read-list\",\n        )\n    }\n```"
   content_digest: sha256:d9c333ccfacec7e9a9b7272d221c5aa2cdf659c71b58790e252313c5c3c9971d
   target:
     target_ref: skill-guidelines.canonical-interface-names.example-002
     field: /statement
-    expected: "```python\nfrom officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface\n\n\nclass Interface(PythonMachineInterface):\n    dispatches = {\n        \"read-list\": DispatchCall(\n            caller_skill=\"daily-plan\",\n            target_skill=\"list-manager\",\n            interface=\"read-list\",\n        )\n    }\n```"
-- id: guidelines-semantic-042
+    expected: "```python\nfrom officina.runtime.python_machine_interface import DispatchCall,\
+      \ PythonMachineInterface\n\n\nclass Interface(PythonMachineInterface):\n    dispatches\
+      \ = {\n        \"read-list\": DispatchCall(\n            caller_skill=\"daily-plan\"\
+      ,\n            target_skill=\"list-manager\",\n            interface=\"read-list\",\n\
+      \        )\n    }\n```"
+- id: guidelines-semantic-018
   kind: semantic
-  start: 154
-  end: 154
+  start: 65
+  end: 65
   text: 'Then execute by key:'
   content_digest: sha256:10f0382f5a5c380e519d5da76b725cd6de432824eb3b510f1d1a342e18fec48f
   target:
     target_ref: skill-guidelines.canonical-interface-names.guidance-006
     field: /statement
     expected: 'Then execute by key:'
-- id: guidelines-semantic-043
+- id: guidelines-semantic-019
   kind: semantic
-  start: 156
-  end: 158
+  start: 67
+  end: 69
   text: '```python
 
     self.dispatch("read-list", args=["/tmp/todo.yaml"])
@@ -668,10 +273,10 @@ units:
       self.dispatch("read-list", args=["/tmp/todo.yaml"])
 
       ```'
-- id: guidelines-semantic-044
+- id: guidelines-semantic-020
   kind: semantic
-  start: 160
-  end: 162
+  start: 71
+  end: 73
   text: 'Do not import or call `officina.dispatcher` from skill runtime code. Do not
 
     invoke the `dispatcher` CLI from Python skill code, and do not modify `sys.path`
@@ -686,10 +291,10 @@ units:
       invoke the `dispatcher` CLI from Python skill code, and do not modify `sys.path`
 
       to reach dispatcher internals.'
-- id: guidelines-semantic-045
+- id: guidelines-semantic-021
   kind: semantic
-  start: 164
-  end: 168
+  start: 75
+  end: 79
   text: 'This is mechanically checked by
 
     `skills/skill-maker/validators/dispatcher_usage.py`, which rejects raw
@@ -712,1196 +317,157 @@ units:
       `skills/skill-maker/validators/dispatch_caller_skill.py`, which verifies every
 
       `DispatchCall(caller_skill=...)` statically resolves to the owning skill name.'
-- id: guidelines-semantic-046
+- id: guidelines-semantic-022
   kind: semantic
-  start: 170
-  end: 170
-  text: '**Machine interfaces**'
-  content_digest: sha256:e349d3fbd4606db2c223d5af7e4c9cf3a4609cf62f15ded2c767f620541c3fd6
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-001
-    field: /statement
-    expected: '**Machine interfaces**'
-- id: guidelines-semantic-047
-  kind: semantic
-  start: 172
-  end: 172
-  text: 'A `machine-interface` sidecar is the dispatcher-executable contract. It owns:'
-  content_digest: sha256:9efa832e3356f699de4c28f1b7758bb8fba6b4ec5bf5d9470fe29c078b862ef2
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-002
-    field: /statement
-    expected: 'A `machine-interface` sidecar is the dispatcher-executable contract. It owns:'
-- id: guidelines-semantic-048
-  kind: semantic
-  start: 174
-  end: 174
-  text: "- `version` \u2014 the major version of this interface contract"
-  content_digest: sha256:a94ae5907aac823886d74e6179559d06ac4ad9926228379b60c9188828604c42
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-003
-    field: /statement
-    expected: "- `version` \u2014 the major version of this interface contract"
-- id: guidelines-semantic-049
-  kind: semantic
-  start: 175
-  end: 175
-  text: "- `description` \u2014 what the interface does"
-  content_digest: sha256:f3439014f04172f7b71eee2fcd6d58588ec67b33e20874d48ac5268900288b2e
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-004
-    field: /statement
-    expected: "- `description` \u2014 what the interface does"
-- id: guidelines-semantic-050
-  kind: semantic
-  start: 176
-  end: 176
-  text: "- `usage` \u2014 complete invocation argument template"
-  content_digest: sha256:97515656821dd67348d57e88d14a42e3a8484fc889f0d1c6859a460377c59b3e
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-005
-    field: /statement
-    expected: "- `usage` \u2014 complete invocation argument template"
-- id: guidelines-semantic-051
-  kind: semantic
-  start: 177
-  end: 177
-  text: "- `patterns` \u2014 positional/flag/stdin constraints"
-  content_digest: sha256:f4d1f3ea6d49748335efcb0f7f72b607c50775ca68d04a3c0a6d1c46ce0718f3
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-006
-    field: /statement
-    expected: "- `patterns` \u2014 positional/flag/stdin constraints"
-- id: guidelines-semantic-052
-  kind: semantic
-  start: 178
-  end: 178
-  text: "- `allow_all_skills` / `allowed_callers` \u2014 access control"
-  content_digest: sha256:720d14bb742347bfe1c95f11bf5eb69434f93a1e7c03b762d34aec7bd73a03a9
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-007
-    field: /statement
-    expected: "- `allow_all_skills` / `allowed_callers` \u2014 access control"
-- id: guidelines-semantic-053
-  kind: semantic
-  start: 179
-  end: 180
-  text: "- `platform_support` \u2014 explicit Linux/macOS/Windows support booleans for this\n  machine interface"
-  content_digest: sha256:82a74512502eafc9d9247d1570496c0722d70b75c34e3a5d443eddce1a55f093
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-008
-    field: /statement
-    expected: "- `platform_support` \u2014 explicit Linux/macOS/Windows support booleans for this\n  machine interface"
-- id: guidelines-semantic-054
-  kind: semantic
-  start: 181
-  end: 182
-  text: "- `binding` \u2014 one private Python entrypoint under `_rtx` or directly executed\n  command file under `_cx`"
-  content_digest: sha256:0f9a184f0316bcc2850a75ece5c282006c79d1a36a6a28eb5302859858e72270
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-009
-    field: /statement
-    expected: "- `binding` \u2014 one private Python entrypoint under `_rtx` or directly executed\n  command file under `_cx`"
-- id: guidelines-semantic-055
-  kind: semantic
-  start: 183
-  end: 183
-  text: "- `dependencies` \u2014 factual runtime package and executable requirements"
-  content_digest: sha256:f74b18724ed5dcb7257e080872b728097e544a457ba81f7b81898186ce771683
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-010
-    field: /statement
-    expected: "- `dependencies` \u2014 factual runtime package and executable requirements"
-- id: guidelines-semantic-056
-  kind: semantic
-  start: 184
-  end: 184
-  text: "- `behavior_sources` \u2014 edges to typed file-backed behavior-source nodes"
-  content_digest: sha256:f32e92eb902b87d3c6a11bf0e45945a8aa21432ec8fbce9abb2a5eb9347e9eb4
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-011
-    field: /statement
-    expected: "- `behavior_sources` \u2014 edges to typed file-backed behavior-source nodes"
-- id: guidelines-semantic-057
-  kind: semantic
-  start: 185
-  end: 186
-  text: "- `direct_io` \u2014 immediate semantic IO for generated docs, search, graphs, and\n  safety summaries"
-  content_digest: sha256:4d7bb3836b667f34bb3f7aefe60570f842d58bc702aa0082ea7dc4e7f418ae41
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-012
-    field: /statement
-    expected: "- `direct_io` \u2014 immediate semantic IO for generated docs, search, graphs, and\n  safety summaries"
-- id: guidelines-semantic-058
-  kind: semantic
-  start: 187
-  end: 188
-  text: "- `owns_filesystem` \u2014 interface-owned filesystem paths and explicitly allowed\n  reader interfaces"
-  content_digest: sha256:5395939dea1bbf3e244aca17ac1d0a868bb83b40df9de371b0777d40a56138c4
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-013
-    field: /statement
-    expected: "- `owns_filesystem` \u2014 interface-owned filesystem paths and explicitly allowed\n  reader interfaces"
-- id: guidelines-semantic-059
-  kind: semantic
-  start: 190
-  end: 199
-  text: '`binding` is **internal metadata**. Python interfaces use `kind:
-
-    python-entrypoint`, a `_rtx/*.py` path, and a symbol. Command interfaces use
-
-    `kind: command-file` and a tracked executable under `_cx`. The dispatcher
-
-    executes command files directly as argv; inline shell strings, direct Bash
-
-    declarations, and `bash -c` are forbidden. Public interface IDs remain
-
-    `skill.machine.name` for both binding kinds.
-
-    Binding paths must be relative, contain no parent traversal, and remain inside
-
-    the corresponding `_rtx` or `_cx` directory after symlink resolution.
-
-    Hand-authored LLM-facing text must never expose `_cx/...`; name the canonical
-
-    machine interface instead.'
-  content_digest: sha256:7fcacb0d50275f8973531c52478dcf4482f92045dcdbc060ea5b8c98da240e0b
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-001#source-block
-    field: /statement
-    expected: '`binding` is **internal metadata**. Python interfaces use `kind:
-
-      python-entrypoint`, a `_rtx/*.py` path, and a symbol. Command interfaces use
-
-      `kind: command-file` and a tracked executable under `_cx`. The dispatcher
-
-      executes command files directly as argv; inline shell strings, direct Bash
-
-      declarations, and `bash -c` are forbidden. Public interface IDs remain
-
-      `skill.machine.name` for both binding kinds.
-
-      Binding paths must be relative, contain no parent traversal, and remain inside
-
-      the corresponding `_rtx` or `_cx` directory after symlink resolution.
-
-      Hand-authored LLM-facing text must never expose `_cx/...`; name the canonical
-
-      machine interface instead.'
-- id: guidelines-semantic-060
-  kind: semantic
-  start: 201
-  end: 203
-  text: 'Every executable `machine-interface` sidecar must declare `dependencies`.
-
-    Use `dependencies: []` when the interface has no non-stdlib Python package or
-
-    external executable requirements. Otherwise list one object per requirement:'
-  content_digest: sha256:f7ba20171df686253091247383941015a5bf75821bc79441059961189a0caad7
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-002#source-block
-    field: /statement
-    expected: 'Every executable `machine-interface` sidecar must declare `dependencies`.
-
-      Use `dependencies: []` when the interface has no non-stdlib Python package or
-
-      external executable requirements. Otherwise list one object per requirement:'
-- id: guidelines-semantic-061
-  kind: semantic
-  start: 205
-  end: 228
-  text: "```yaml\nplatform_support:\n  linux: true\n  macos: true\n  windows: false\n\ndependencies:\n  - kind: python-package\n    name: PyYAML\n    version: \">=6\"\n    platforms:\n      linux: true\n      macos: true\n      windows: false\n    reason: \"Reads YAML input files.\"\n  - kind: binary\n    name: curl\n    version: any\n    platforms:\n      linux: true\n      macos: true\n      windows: false\n    reason: \"Fetches remote JSON from the API.\"\n```"
-  content_digest: sha256:c36929d849e1c90c7d9d5b14f5601a809aaf5733aaf4a98d7261f34f7b976553
-  target:
-    target_ref: skill-guidelines.machine-interfaces.example-001
-    field: /statement
-    expected: "```yaml\nplatform_support:\n  linux: true\n  macos: true\n  windows: false\n\ndependencies:\n  - kind: python-package\n    name: PyYAML\n    version: \">=6\"\n    platforms:\n      linux: true\n      macos: true\n      windows: false\n    reason: \"Reads YAML input files.\"\n  - kind: binary\n    name: curl\n    version: any\n    platforms:\n      linux: true\n      macos: true\n      windows: false\n    reason: \"Fetches remote JSON from the API.\"\n```"
-- id: guidelines-semantic-062
-  kind: semantic
-  start: 230
-  end: 231
-  text: '`platform_support` is required on every machine interface. It is an explicit
-
-    three-boolean object, not a free-form OS list:'
-  content_digest: sha256:638bb99e5af382f68159970eb915b88844644f725f71425059cac52fce61b7af
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-003#source-block
-    field: /statement
-    expected: '`platform_support` is required on every machine interface. It is an explicit
-
-      three-boolean object, not a free-form OS list:'
-- id: guidelines-semantic-063
-  kind: semantic
-  start: 233
-  end: 233
-  text: '- `linux`'
-  content_digest: sha256:29075e3169b4efd9a810b76fa0e8852a22f987077c87e42e12950fb6c48d9e0d
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-014
-    field: /statement
-    expected: '- `linux`'
-- id: guidelines-semantic-064
-  kind: semantic
-  start: 234
-  end: 234
-  text: '- `macos`'
-  content_digest: sha256:e5f62615cfa40392dde41cd0233ddbf1d3d709aa2081d80569c0a28042841609
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-015
-    field: /statement
-    expected: '- `macos`'
-- id: guidelines-semantic-065
-  kind: semantic
-  start: 235
-  end: 235
-  text: '- `windows`'
-  content_digest: sha256:fe87a1960699d693dfa757640fbcdb73e0e956889e06a0e42a286723b2aa0ff6
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-016
-    field: /statement
-    expected: '- `windows`'
-- id: guidelines-semantic-066
-  kind: semantic
-  start: 237
-  end: 238
-  text: 'Set each boolean deliberately. Do not omit unsupported platforms. Use `macos`,
-
-    not `osx`.'
-  content_digest: sha256:6e37ee1f18cb1b999a8924d0d64e2020355eb49c68b5227d65ed20029d2e942a
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-004#source-block
-    field: /statement
-    expected: 'Set each boolean deliberately. Do not omit unsupported platforms. Use `macos`,
-
-      not `osx`.'
-- id: guidelines-semantic-067
-  kind: semantic
-  start: 240
-  end: 243
-  text: 'Do not declare skill-level platform support. Skill-level summaries for docs,
-
-    graphs, installers, and validators must be derived from
-
-    reachable machine sidecar `platform_support`. A skill may have both portable and
-
-    platform-specific machine interfaces.'
-  content_digest: sha256:645306a846e94d9103e8edf8a1a4a1a587317a4a2a9a6dbc1583b42cfeb2a548
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-005#source-block
-    field: /statement
-    expected: 'Do not declare skill-level platform support. Skill-level summaries for docs,
-
-      graphs, installers, and validators must be derived from
-
-      reachable machine sidecar `platform_support`. A skill may have both portable and
-
-      platform-specific machine interfaces.'
-- id: guidelines-semantic-068
-  kind: semantic
-  start: 245
-  end: 249
-  text: 'Every dependency must declare `kind`, `name`, `version`, `platforms`, and
-
-    `reason`. `platforms` uses the same required booleans as `platform_support` and
-
-    must not claim a platform that the owning interface does not support. Use
-
-    `version: any` only when there is no known lower bound, exact version, or useful
-
-    human-readable constraint.'
-  content_digest: sha256:84c594334f0adad70d1d347065f58d1e133b2e655e064abed5d869038387721f
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-006#source-block
-    field: /statement
-    expected: 'Every dependency must declare `kind`, `name`, `version`, `platforms`, and
-
-      `reason`. `platforms` uses the same required booleans as `platform_support` and
-
-      must not claim a platform that the owning interface does not support. Use
-
-      `version: any` only when there is no known lower bound, exact version, or useful
-
-      human-readable constraint.'
-- id: guidelines-semantic-069
-  kind: semantic
-  start: 251
-  end: 251
-  text: 'Allowed dependency kinds are closed and non-overlapping:'
-  content_digest: sha256:6d25f7dd8467fc49c1bc7ab19aa385554944ccdb46caa19586d2961cbff6aeff
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-017
-    field: /statement
-    expected: 'Allowed dependency kinds are closed and non-overlapping:'
-- id: guidelines-semantic-070
-  kind: semantic
-  start: 253
-  end: 254
-  text: "- `python-package` \u2014 installable Python package requirement. `name` is the\n  package/runtime requirement name, not necessarily the import name."
-  content_digest: sha256:6262357e425a9aabe332d1fe83be68284cacb695e782e86954354fb4be3f6976
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-018
-    field: /statement
-    expected: "- `python-package` \u2014 installable Python package requirement. `name` is the\n  package/runtime requirement name, not necessarily the import name."
-- id: guidelines-semantic-071
-  kind: semantic
-  start: 255
-  end: 255
-  text: "- `binary` \u2014 executable expected on `PATH`."
-  content_digest: sha256:aafb7d9c81731112dc684b7896ae354436a63f2178a4f9921d6c50b7a7bc64e7
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-019
-    field: /statement
-    expected: "- `binary` \u2014 executable expected on `PATH`."
-- id: guidelines-semantic-072
-  kind: semantic
-  start: 256
-  end: 257
-  text: "- `system-service` \u2014 service manager or daemon facility such as `systemd` or\n  `launchd`."
-  content_digest: sha256:dc917653d7fda60eade1dc0ac79c699f0c3ac3ee1eb984921ab49789d9344701
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-020
-    field: /statement
-    expected: "- `system-service` \u2014 service manager or daemon facility such as `systemd` or\n  `launchd`."
-- id: guidelines-semantic-073
-  kind: semantic
-  start: 258
-  end: 258
-  text: "- `system-library` \u2014 native/shared library requirement outside Python."
-  content_digest: sha256:4b8cce73ddd3b183585e956aa61ba010a5ce2f17cff19755065e99b14bca3f64
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-021
-    field: /statement
-    expected: "- `system-library` \u2014 native/shared library requirement outside Python."
-- id: guidelines-semantic-074
-  kind: semantic
-  start: 259
-  end: 260
-  text: "- `external-application` \u2014 installed GUI or full application such as Chrome or\n  Audiveris."
-  content_digest: sha256:80f1ee254fd07eb1f88b4b19ad5ebdf23ce8d658fbe66aa726fbbfaedab2e4e0
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-022
-    field: /statement
-    expected: "- `external-application` \u2014 installed GUI or full application such as Chrome or\n  Audiveris."
-- id: guidelines-semantic-075
-  kind: semantic
-  start: 261
-  end: 262
-  text: "- `runtime` \u2014 language/runtime requirement such as Python, Node, Java, or a\n  shell runtime."
-  content_digest: sha256:29e0947748018cd0cdfece22aeeec7520b9d76f64d5e5d50ce74597aafa465cc
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-023
-    field: /statement
-    expected: "- `runtime` \u2014 language/runtime requirement such as Python, Node, Java, or a\n  shell runtime."
-- id: guidelines-semantic-076
-  kind: semantic
-  start: 263
-  end: 263
-  text: "- `model-data` \u2014 local model, checkpoint, cache, or other required data bundle."
-  content_digest: sha256:10bd068bc51a54ecd01d456a385942abd8c7f7bc28adb32fbb91e131ce933b3e
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-007#source-block
-    field: /statement
-    expected: "- `model-data` \u2014 local model, checkpoint, cache, or other required data bundle."
-- id: guidelines-semantic-077
-  kind: semantic
-  start: 265
-  end: 267
-  text: 'Where a dependency subfield has a bounded vocabulary, use the schema''s finite
-
-    options rather than inventing adjacent names. For `kind: system-service`,
-
-    `name` must be one of:'
-  content_digest: sha256:1df54cd23c579cc4d49c83ccc99b86738f5cc8715233462b75d2cb0098b40465
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-008#source-block
-    field: /statement
-    expected: 'Where a dependency subfield has a bounded vocabulary, use the schema''s finite
-
-      options rather than inventing adjacent names. For `kind: system-service`,
-
-      `name` must be one of:'
-- id: guidelines-semantic-078
-  kind: semantic
-  start: 269
-  end: 269
-  text: '- `systemd-user`'
-  content_digest: sha256:f626c335abb1ae90f68d1e2c10249c6d35b72b63b5d7a38e63f42855d797d1f5
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-024
-    field: /statement
-    expected: '- `systemd-user`'
-- id: guidelines-semantic-079
-  kind: semantic
-  start: 270
-  end: 270
-  text: '- `launchd`'
-  content_digest: sha256:a5fbc1297e69d5d2bb6f47e87813c944706bb3e39ddf7d44c3446447b0e0fd93
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-025
-    field: /statement
-    expected: '- `launchd`'
-- id: guidelines-semantic-080
-  kind: semantic
-  start: 271
-  end: 271
-  text: '- `task-scheduler`'
-  content_digest: sha256:eea153dc7173dbff2bd1ade845aff32fcf7162d7b10f21db6e6744694c196ab9
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-026
-    field: /statement
-    expected: '- `task-scheduler`'
-- id: guidelines-semantic-081
-  kind: semantic
-  start: 272
-  end: 272
-  text: '- `cron`'
-  content_digest: sha256:2f981dd5192424852a4e93322f681cb9be14e09d5550823484618c30bf4f53ca
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-027
-    field: /statement
-    expected: '- `cron`'
-- id: guidelines-semantic-082
-  kind: semantic
-  start: 274
-  end: 278
-  text: 'Do not encode APIs, OAuth, credentials, or network access as dependency kinds.
-
-    Represent those through `direct_io.network`, auth metadata, and setup
-
-    interfaces. Runtime dependencies are factual environment requirements. They are
-
-    separate from top-level `suggested_permissions`, which remains developer
-
-    judgment about a good baseline approval set and must not be inferred from code.'
-  content_digest: sha256:81bac1c555c428681e6f2587400f4bf945e3fe814498cf874f71807ba30e160f
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-009#source-block
-    field: /statement
-    expected: 'Do not encode APIs, OAuth, credentials, or network access as dependency kinds.
-
-      Represent those through `direct_io.network`, auth metadata, and setup
-
-      interfaces. Runtime dependencies are factual environment requirements. They are
-
-      separate from top-level `suggested_permissions`, which remains developer
-
-      judgment about a good baseline approval set and must not be inferred from code.'
-- id: guidelines-semantic-083
-  kind: semantic
-  start: 280
-  end: 282
-  text: 'The blueprint sync tool generates `references/blueprint/runtime_dependencies.json`
-
-    from these declarations. Installers and other non-YAML consumers should read
-
-    that JSON manifest instead of parsing blueprint YAML at runtime.'
-  content_digest: sha256:8928c4b9a3270f3e4f336783e5a5830a03580671d210a5e1f84322e2f64d4137
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-010#source-block
-    field: /statement
-    expected: 'The blueprint sync tool generates `references/blueprint/runtime_dependencies.json`
-
-      from these declarations. Installers and other non-YAML consumers should read
-
-      that JSON manifest instead of parsing blueprint YAML at runtime.'
-- id: guidelines-semantic-084
-  kind: semantic
-  start: 284
-  end: 284
-  text: Every interface must declare `behavior_sources` directly.
-  content_digest: sha256:20d5d5fdead873c58d29597846e9f6280525c60d422adbb02d557fdf91360ed0
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-011#source-block
-    field: /statement
-    expected: Every interface must declare `behavior_sources` directly.
-- id: guidelines-semantic-085
-  kind: semantic
-  start: 286
-  end: 293
-  text: 'Behavior sources are regular files that the interface reads as
-
-    instructions, rules, schemas, templates, examples, parser tables, checklists, or
-
-    other behavior-shaping material. They are not the user''s subject input. A
-
-    Markdown interface should list the Markdown files it points to and loads. A
-
-    Python machine interface should list non-code files such as JSON schemas,
-
-    prompt templates, examples, policy files, and config files that affect behavior.
-
-    Python imports, `_rtx/` entrypoint files, and dispatcher targets are discovered
-
-    mechanically; do not duplicate them in behavior sources.'
-  content_digest: sha256:62781fb0ee779301e23806a56a24c205d64b71f782674c9ff2cdffed37e605f8
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-012#source-block
-    field: /statement
-    expected: 'Behavior sources are regular files that the interface reads as
-
-      instructions, rules, schemas, templates, examples, parser tables, checklists, or
-
-      other behavior-shaping material. They are not the user''s subject input. A
-
-      Markdown interface should list the Markdown files it points to and loads. A
-
-      Python machine interface should list non-code files such as JSON schemas,
-
-      prompt templates, examples, policy files, and config files that affect behavior.
-
-      Python imports, `_rtx/` entrypoint files, and dispatcher targets are discovered
-
-      mechanically; do not duplicate them in behavior sources.'
-- id: guidelines-semantic-086
-  kind: semantic
-  start: 295
-  end: 301
-  text: 'Use `behavior_sources: []` only after checking that the interface has no
-
-    non-code behavior-shaping files. Each edge points to a typed behavior-source
-
-    sidecar, carries the consumer-local `reason`, and pins a version. The target
-
-    node owns its binding, content, format, description, and any edges to other
-
-    behavior sources. All binding paths are relative to the skill root. Directory
-
-    bindings are forbidden; bind a concrete dispatcher, manifest, index, or README
-
-    file when a collection needs graph identity.'
-  content_digest: sha256:7b3224f2fb1cd170f75ff6ce00312e345deadccf4815d22c46f4f54a2efe2869
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-013#source-block
-    field: /statement
-    expected: 'Use `behavior_sources: []` only after checking that the interface has no
-
-      non-code behavior-shaping files. Each edge points to a typed behavior-source
-
-      sidecar, carries the consumer-local `reason`, and pins a version. The target
-
-      node owns its binding, content, format, description, and any edges to other
-
-      behavior sources. All binding paths are relative to the skill root. Directory
-
-      bindings are forbidden; bind a concrete dispatcher, manifest, index, or README
-
-      file when a collection needs graph identity.'
-- id: guidelines-semantic-087
-  kind: semantic
-  start: 303
-  end: 306
-  text: 'Every machine and LLM interface must declare `version`. Bump it only when that
-
-    interface''s exported contract changes in a breaking way. A skill''s version is
-
-    the version of its `llm.default` interface; there is no separate top-level skill
-
-    version field.'
-  content_digest: sha256:8446ec61e0b81051537d7fcadc81fbb5cb0eee25a2eed4c93611a2fa5df92f95
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-014#source-block
-    field: /statement
-    expected: 'Every machine and LLM interface must declare `version`. Bump it only when that
-
-      interface''s exported contract changes in a breaking way. A skill''s version is
-
-      the version of its `llm.default` interface; there is no separate top-level skill
-
-      version field.'
-- id: guidelines-semantic-088
-  kind: semantic
-  start: 308
-  end: 312
-  text: 'Every machine and LLM interface must also declare `direct_io` with `reads`,
-
-    `writes`, and `network` lists. `direct_io` is immediate-only: describe only the
-
-    IO performed by that interface itself, and never copy IO from interfaces listed
-
-    in `uses_interfaces`. Generated documentation and graphs derive transitive IO by
-
-    recursively following `uses_interfaces`.'
-  content_digest: sha256:5fcbfebe03db02c3ef64e299bd98601a60eb08e5113c5c8b730718ba4f2d83e1
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-015#source-block
-    field: /statement
-    expected: 'Every machine and LLM interface must also declare `direct_io` with `reads`,
-
-      `writes`, and `network` lists. `direct_io` is immediate-only: describe only the
-
-      IO performed by that interface itself, and never copy IO from interfaces listed
-
-      in `uses_interfaces`. Generated documentation and graphs derive transitive IO by
-
-      recursively following `uses_interfaces`.'
-- id: guidelines-semantic-089
-  kind: semantic
-  start: 314
-  end: 318
-  text: '`direct_io.content` must stay coarse and user-meaningful. It names the object
-
-    for docs, search, and graphs, not internal fields. Use values such as `email`,
-
-    `calendar-event`, `proof`, `report`, or `credential`; do not introduce
-
-    field-level values such as `email-subject`, `email-body`, `event-title`, or
-
-    `document-id`.'
-  content_digest: sha256:fa09b511480597e46d8163f8d31d30d03b4adc0c10da88e66958cdf3b9c4fccf
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-016#source-block
-    field: /statement
-    expected: '`direct_io.content` must stay coarse and user-meaningful. It names the object
-
-      for docs, search, and graphs, not internal fields. Use values such as `email`,
-
-      `calendar-event`, `proof`, `report`, or `credential`; do not introduce
-
-      field-level values such as `email-subject`, `email-body`, `event-title`, or
-
-      `document-id`.'
-- id: guidelines-semantic-090
-  kind: semantic
-  start: 320
-  end: 327
-  text: 'Use `direct_io.format` for one known format and `direct_io.formats` for a
-
-    finite family of possible formats. Never set both on the same entry. When a path
-
-    describes a family of files, set `path_match: glob` and use the documented
-
-    minimal glob syntax: `*` within a segment, `**` as a complete segment, and a
-
-    final extension family such as `*.{md,pdf}`. Prefer this over broad values such
-
-    as `mixed`. Do not use nonstandard forms such as `*.[md|pdf]`. Use
-
-    `path_match: regex` only when a glob cannot express the family; regex paths
-
-    must compile and should declare explicit `format` or `formats` values.'
-  content_digest: sha256:2425434854134626bcb3cff4224bc11b1608ffb205c62154f50104a2f0c5722f
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-017#source-block
-    field: /statement
-    expected: 'Use `direct_io.format` for one known format and `direct_io.formats` for a
-
-      finite family of possible formats. Never set both on the same entry. When a path
-
-      describes a family of files, set `path_match: glob` and use the documented
-
-      minimal glob syntax: `*` within a segment, `**` as a complete segment, and a
-
-      final extension family such as `*.{md,pdf}`. Prefer this over broad values such
-
-      as `mixed`. Do not use nonstandard forms such as `*.[md|pdf]`. Use
-
-      `path_match: regex` only when a glob cannot express the family; regex paths
-
-      must compile and should declare explicit `format` or `formats` values.'
-- id: guidelines-semantic-091
-  kind: semantic
-  start: 329
-  end: 334
-  text: 'Every machine and LLM interface must declare `owns_filesystem`. Use `[]` when
-
-    the interface owns no filesystem paths. If an interface owns a path, only that
-
-    interface may write matching `direct_io.writes` entries; only that interface and
-
-    the canonical interfaces named in `allowed_readers` may read matching
-
-    `direct_io.reads` entries. Ownership paths can be exact strings or regexes.
-
-    Two different interfaces must not own overlapping filesystem paths.'
-  content_digest: sha256:132ca76a53e5530da5f06496d4c98ae1aed6f6414e3cfde2c89d055fa9f0848e
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-018#source-block
-    field: /statement
-    expected: 'Every machine and LLM interface must declare `owns_filesystem`. Use `[]` when
-
-      the interface owns no filesystem paths. If an interface owns a path, only that
-
-      interface may write matching `direct_io.writes` entries; only that interface and
-
-      the canonical interfaces named in `allowed_readers` may read matching
-
-      `direct_io.reads` entries. Ownership paths can be exact strings or regexes.
-
-      Two different interfaces must not own overlapping filesystem paths.'
-- id: guidelines-semantic-092
-  kind: semantic
-  start: 336
-  end: 343
-  text: "Filesystem write validation treats resolved node `content` and declared\n`owns_filesystem` paths as one ownership domain. A node's content contributes\nimplicit exact ownership claims; `owns_filesystem` contributes additional\nexplicit exact or regex claims. No ownership claims may overlap across nodes,\nand no node may declare a local-filesystem `direct_io.writes` entry\u2014whether\nexact, glob, or regex\u2014that matches content or an `owns_filesystem` path owned by\nanother node. Keep `content` separate because it defines the files included in\nnode hashing and certification; `owns_filesystem` does not become content."
-  content_digest: sha256:6f141ee5abc5c829f47e2c0c1a24a3e5d5b0defcb34633df7b33ccf657de92ff
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-019#source-block
-    field: /statement
-    expected: "Filesystem write validation treats resolved node `content` and declared\n`owns_filesystem` paths as one ownership domain. A node's content contributes\nimplicit exact ownership claims; `owns_filesystem` contributes additional\nexplicit exact or regex claims. No ownership claims may overlap across nodes,\nand no node may declare a local-filesystem `direct_io.writes` entry\u2014whether\nexact, glob, or regex\u2014that matches content or an `owns_filesystem` path owned by\nanother node. Keep `content` separate because it defines the files included in\nnode hashing and certification; `owns_filesystem` does not become content."
-- id: guidelines-semantic-093
-  kind: semantic
-  start: 345
-  end: 346
-  text: 'For `kind: python-entrypoint`, health dependency exploration combines
-
-    three surfaces:'
-  content_digest: sha256:10bd7298a8ae07fcbd78b8fea61cef6b13e06e82a10d0b374398cc6a25afc8ad
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-028
-    field: /statement
-    expected: 'For `kind: python-entrypoint`, health dependency exploration combines
-
-      three surfaces:'
-- id: guidelines-semantic-094
-  kind: semantic
-  start: 348
-  end: 349
-  text: "- typed `behavior_sources` for non-code behavior-shaping files, including\n  schemas, templates, examples, policy files, and parser tables;"
-  content_digest: sha256:34a286b0fa7b8f6fee455f50e25d702173f4d6e763fe293816d820d873f6b1ec
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-029
-    field: /statement
-    expected: "- typed `behavior_sources` for non-code behavior-shaping files, including\n  schemas, templates, examples, policy files, and parser tables;"
-- id: guidelines-semantic-095
-  kind: semantic
-  start: 350
-  end: 352
-  text: "- class-level `dispatches = {...}` entries made of `DispatchCall(...)` for\n  cross-skill machine-interface dependencies, followed recursively through\n  dispatcher resolution;"
-  content_digest: sha256:99e530dac1bd8dd678471ee2fcaf9f7f30edbd678b87fc0376afcb932304f3bb
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-030
-    field: /statement
-    expected: "- class-level `dispatches = {...}` entries made of `DispatchCall(...)` for\n  cross-skill machine-interface dependencies, followed recursively through\n  dispatcher resolution;"
-- id: guidelines-semantic-096
-  kind: semantic
-  start: 353
-  end: 354
-  text: "- `route_smoke()` for same-skill dynamic Python imports that normal execution\n  performs lazily."
-  content_digest: sha256:76abcd0ed97545e05b912918342f35c92ecf3089433add4c68dca135487f62b9
-  target:
-    target_ref: skill-guidelines.machine-interfaces.guidance-031
-    field: /statement
-    expected: "- `route_smoke()` for same-skill dynamic Python imports that normal execution\n  performs lazily."
-- id: guidelines-semantic-097
-  kind: semantic
-  start: 356
-  end: 360
-  text: 'If a Python file can affect behavior and is not otherwise covered by declared
-
-    imports or `DispatchCall`, the interface''s `route_smoke()` must import the code
-
-    path cheaply and without real side effects. Non-code behavior files must be
-
-    declared through typed behavior-source nodes. Health exploration does not execute
-
-    normal `run(...)` just to discover dependencies.'
-  content_digest: sha256:5a70a0d72ba4d56fdd304c23ec733211971f4d23f81edfa1d0b3080266c1f57c
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-020#source-block
-    field: /statement
-    expected: 'If a Python file can affect behavior and is not otherwise covered by declared
-
-      imports or `DispatchCall`, the interface''s `route_smoke()` must import the code
-
-      path cheaply and without real side effects. Non-code behavior files must be
-
-      declared through typed behavior-source nodes. Health exploration does not execute
-
-      normal `run(...)` just to discover dependencies.'
-- id: guidelines-semantic-098
-  kind: semantic
-  start: 362
-  end: 364
-  text: 'Pattern semantics are per interface, not per grouped command. Every
-
-    `machine-interface` sidecar is one canonical callable interface. Do not
-
-    reintroduce grouped parent interfaces with hidden subinterface ids.'
-  content_digest: sha256:b10758740ce05d30b94890f62de14a06847e1fa26cf65552d8fbb87907aff4b9
-  target:
-    target_ref: skill-guidelines.machine-interfaces.requirement-021#source-block
-    field: /statement
-    expected: 'Pattern semantics are per interface, not per grouped command. Every
-
-      `machine-interface` sidecar is one canonical callable interface. Do not
-
-      reintroduce grouped parent interfaces with hidden subinterface ids.'
-- id: guidelines-semantic-099
-  kind: semantic
-  start: 366
-  end: 366
-  text: '**LLM interfaces**'
-  content_digest: sha256:116b89423c265883cd6919273696116516dab7fb246cd5268a78333288e4c780
-  target:
-    target_ref: skill-guidelines.llm-interfaces.guidance-001
-    field: /statement
-    expected: '**LLM interfaces**'
-- id: guidelines-semantic-100
-  kind: semantic
-  start: 368
-  end: 371
-  text: 'An `llm-interface` is not callable through the dispatcher. It documents a
-
-    skill-owned prompt surface routed by higher-level skill logic. The default
-
-    interface is embedded in the root; additional named interfaces use sidecars.
-
-    An LLM interface owns:'
-  content_digest: sha256:3d504469b87cdf1dee5b23a8a7d230448d703ee855165bcf3b7f4a6bcac51dbf
-  target:
-    target_ref: skill-guidelines.llm-interfaces.guidance-002
-    field: /statement
-    expected: 'An `llm-interface` is not callable through the dispatcher. It documents a
-
-      skill-owned prompt surface routed by higher-level skill logic. The default
-
-      interface is embedded in the root; additional named interfaces use sidecars.
-
-      An LLM interface owns:'
-- id: guidelines-semantic-101
-  kind: semantic
-  start: 373
-  end: 373
-  text: '- `version`'
-  content_digest: sha256:29b3721d27cbe75534a16d6ff2cfa61afa00a28e861ac42d9f867383d1999874
-  target:
-    target_ref: skill-guidelines.llm-interfaces.guidance-003
-    field: /statement
-    expected: '- `version`'
-- id: guidelines-semantic-102
-  kind: semantic
-  start: 374
-  end: 374
-  text: '- `description`'
-  content_digest: sha256:5bb457c2389cb9287722a2e1421bdcefcb0d02be404de4f3e8f808e4626a6164
-  target:
-    target_ref: skill-guidelines.llm-interfaces.guidance-004
-    field: /statement
-    expected: '- `description`'
-- id: guidelines-semantic-103
-  kind: semantic
-  start: 375
-  end: 375
-  text: "- `binding` \u2014 where the interface definition lives"
-  content_digest: sha256:c028d87fb8487d8aa92976117d41490cdc948a4baefb6e3edaf0724a193cc5ce
-  target:
-    target_ref: skill-guidelines.llm-interfaces.guidance-005
-    field: /statement
-    expected: "- `binding` \u2014 where the interface definition lives"
-- id: guidelines-semantic-104
-  kind: semantic
-  start: 376
-  end: 376
-  text: "- `behavior_sources` \u2014 additional non-code files that shape prompt behavior"
-  content_digest: sha256:0742bf5190478c24953cf41ae67febfbfe096cbe7181761e325a55d569bced67
-  target:
-    target_ref: skill-guidelines.llm-interfaces.guidance-006
-    field: /statement
-    expected: "- `behavior_sources` \u2014 additional non-code files that shape prompt behavior"
-- id: guidelines-semantic-105
-  kind: semantic
-  start: 377
-  end: 377
-  text: '- `direct_io`'
-  content_digest: sha256:39d4e1c161c09b182568526c8f2fe04a5e791feb455df5c92ce0e1faeea3a56e
-  target:
-    target_ref: skill-guidelines.llm-interfaces.guidance-007
-    field: /statement
-    expected: '- `direct_io`'
-- id: guidelines-semantic-106
-  kind: semantic
-  start: 378
-  end: 378
-  text: '- `owns_filesystem`'
-  content_digest: sha256:1926d8c89dbb73fdb6097e6fc4e2417a36e9032c5c184fddf616fc47e23e62ef
-  target:
-    target_ref: skill-guidelines.llm-interfaces.guidance-008
-    field: /statement
-    expected: '- `owns_filesystem`'
-- id: guidelines-semantic-107
-  kind: semantic
-  start: 379
-  end: 379
-  text: "- `allow_all_skills` / `allowed_callers` \u2014 access control for other skills"
-  content_digest: sha256:ab6d8c5ed57114a4b61d3a284409183c3fdd5b7b458b8e8aef833a25fd7064eb
-  target:
-    target_ref: skill-guidelines.llm-interfaces.guidance-009
-    field: /statement
-    expected: "- `allow_all_skills` / `allowed_callers` \u2014 access control for other skills"
-- id: guidelines-semantic-108
-  kind: semantic
-  start: 380
-  end: 380
-  text: '- optional routing or documentation metadata'
-  content_digest: sha256:d9ee01c2b10ca381cc1f334ac6cb0c86f1cfc23be1b4aadd703cd96bbe385e6a
-  target:
-    target_ref: skill-guidelines.llm-interfaces.guidance-010
-    field: /statement
-    expected: '- optional routing or documentation metadata'
-- id: guidelines-semantic-109
-  kind: semantic
-  start: 382
-  end: 386
-  text: 'Sidecar LLM bindings use `kind: instruction-file` and one regular local file.
-
-    The mandatory `skill.llm.default` identity and its `SKILL.md` binding are
-
-    implied by `default_interface`; another LLM interface may bind a file such as
-
-    `llm_interfaces/summarize.md`. URI and directory bindings are forbidden. All
-
-    explicit binding paths are relative to the skill root.'
-  content_digest: sha256:7759e296dc9bb1fb80512d9d31ddcbebf8b56190ab2428a36fa6d1fb45d5a63e
-  target:
-    target_ref: skill-guidelines.llm-interfaces.requirement-001#source-block
-    field: /statement
-    expected: 'Sidecar LLM bindings use `kind: instruction-file` and one regular local file.
-
-      The mandatory `skill.llm.default` identity and its `SKILL.md` binding are
-
-      implied by `default_interface`; another LLM interface may bind a file such as
-
-      `llm_interfaces/summarize.md`. URI and directory bindings are forbidden. All
-
-      explicit binding paths are relative to the skill root.'
-- id: guidelines-semantic-110
-  kind: semantic
-  start: 388
-  end: 394
-  text: 'Local LLM interface Markdown beyond `SKILL.md` lives under
-
-    `skills/<skill-name>/llm_interfaces/`. It is the Markdown counterpart to
-
-    `_rtx/`: use `llm_interfaces/` for local LLM-facing instruction surfaces, and
-
-    use `references/` for supporting behavior sources such as checklists, examples,
-
-    parser notes, templates, or policy material loaded by those interfaces.
-
-    For decomposition guidance, see
-
-    `references/skill-standards/llm-interface-design.md`.'
-  content_digest: sha256:dd77de830d9442a6f61d5ee4436f44da4095248b8ab2bcee99d337dd4a88e74c
-  target:
-    target_ref: skill-guidelines.llm-interfaces.guidance-011
-    field: /statement
-    expected: 'Local LLM interface Markdown beyond `SKILL.md` lives under
-
-      `skills/<skill-name>/llm_interfaces/`. It is the Markdown counterpart to
-
-      `_rtx/`: use `llm_interfaces/` for local LLM-facing instruction surfaces, and
-
-      use `references/` for supporting behavior sources such as checklists, examples,
-
-      parser notes, templates, or policy material loaded by those interfaces.
-
-      For decomposition guidance, see
-
-      `references/skill-standards/llm-interface-design.md`.'
-- id: guidelines-semantic-111
-  kind: semantic
-  start: 396
-  end: 398
-  text: 'Use `binding`, not `invocation`, because LLM interfaces are descriptive routing
-
-    surfaces rather than dispatcher-executed programs. `invocation` is forbidden under
-
-    named `llm-interface` sidecars.'
-  content_digest: sha256:1fdb59a0dcca6f8af0bb919f577d7c43bc60809e4441b8abe52bd0bd3d6e7b27
-  target:
-    target_ref: skill-guidelines.llm-interfaces.requirement-002#source-block
-    field: /statement
-    expected: 'Use `binding`, not `invocation`, because LLM interfaces are descriptive routing
-
-      surfaces rather than dispatcher-executed programs. `invocation` is forbidden under
-
-      named `llm-interface` sidecars.'
-- id: guidelines-semantic-112
-  kind: semantic
-  start: 400
-  end: 400
-  text: 'Every new typed skill root defines its default interface inline:'
-  content_digest: sha256:519d147ab193c09aad591bf60da10491fd3d3753e701cf51c2843d95d5d5e669
-  target:
-    target_ref: skill-guidelines.llm-interfaces.guidance-012
-    field: /statement
-    expected: 'Every new typed skill root defines its default interface inline:'
-- id: guidelines-semantic-113
-  kind: semantic
-  start: 402
-  end: 412
-  text: "```yaml\ndefault_interface:\n  version: 1\n  description: Primary LLM-facing skill instructions.\n  behavior_sources: []\n  direct_io:\n    reads: []\n    writes: []\n    network: []\n  owns_filesystem: []\n```"
-  content_digest: sha256:aa8678c75c211d02bb89e6664e657ecd02ad0bd070eff61fb2470325523eb066
-  target:
-    target_ref: skill-guidelines.llm-interfaces.example-001
-    field: /statement
-    expected: "```yaml\ndefault_interface:\n  version: 1\n  description: Primary LLM-facing skill instructions.\n  behavior_sources: []\n  direct_io:\n    reads: []\n    writes: []\n    network: []\n  owns_filesystem: []\n```"
-- id: guidelines-semantic-114
-  kind: semantic
-  start: 414
-  end: 416
-  text: 'This defines `example-skill.llm.default` and binds `SKILL.md` without a
-
-    `.SKILL.md.blueprint.yaml` file. For short skills it may contain the complete
-
-    workflow; for larger skills it may route to named LLM interfaces.'
-  content_digest: sha256:5869fd30218f0b92fd3d2684cf9c8c16052d0d65295c7741dd1532143d9af537
-  target:
-    target_ref: skill-guidelines.llm-interfaces.requirement-003#source-block
-    field: /statement
-    expected: 'This defines `example-skill.llm.default` and binds `SKILL.md` without a
-
-      `.SKILL.md.blueprint.yaml` file. For short skills it may contain the complete
-
-      workflow; for larger skills it may route to named LLM interfaces.'
-- id: guidelines-semantic-115
-  kind: semantic
-  start: 418
-  end: 418
+  start: 81
+  end: 81
   text: '**Dispatcher role**'
   content_digest: sha256:f147ba81493028880ff9296971e01b01c9ba535226c1726fbdc562f8230e5b00
   target:
     target_ref: skill-guidelines.dispatcher-role.guidance-001
     field: /statement
     expected: '**Dispatcher role**'
-- id: guidelines-semantic-116
+- id: guidelines-semantic-023
   kind: semantic
-  start: 420
-  end: 424
+  start: 83
+  end: 87
   text: 'The installed `dispatcher` command and the shared dispatcher runtime are the
 
-    only sanctioned local cross-skill machine boundaries for blueprint-migrated
+    only sanctioned local cross-module process boundary. Python behavioral-source
 
-    skills. Python skill runtime code must reach that boundary through declared
+    runtime code must reach that boundary through declared
 
     `DispatchCall` entries and `PythonMachineInterface.dispatch()`. The
 
     dispatcher runtime''s job is to:'
-  content_digest: sha256:b2ed0607f184393445f73d8b839d35bc3083a66ee6b31b6d77666a2ace5c34bd
+  content_digest: sha256:d589530ab2133b2a1f01e5affd9fa163b010f1f829df22273ecbc43741cdcb49
   target:
     target_ref: skill-guidelines.dispatcher-role.requirement-001#source-block
     field: /statement
     expected: 'The installed `dispatcher` command and the shared dispatcher runtime are the
 
-      only sanctioned local cross-skill machine boundaries for blueprint-migrated
+      only sanctioned local cross-module process boundary. Python behavioral-source
 
-      skills. Python skill runtime code must reach that boundary through declared
+      runtime code must reach that boundary through declared
 
       `DispatchCall` entries and `PythonMachineInterface.dispatch()`. The
 
       dispatcher runtime''s job is to:'
-- id: guidelines-semantic-117
+- id: guidelines-semantic-024
   kind: semantic
-  start: 426
-  end: 426
-  text: 1. Parse the target canonical name `skill.machine.name`
-  content_digest: sha256:2074b7bc04f26ce0509b14ec30c2dfd2a90f4d2cfc07c9b771b1767be5c8c877
+  start: 89
+  end: 89
+  text: 1. Parse the canonical target `<module>.interface.<name>`
+  content_digest: sha256:42abf0c6d64057b5772d656d70202ab799e35ee23315e69281823b46c30232dd
   target:
     target_ref: skill-guidelines.dispatcher-role.guidance-002
     field: /statement
-    expected: 1. Parse the target canonical name `skill.machine.name`
-- id: guidelines-semantic-118
+    expected: 1. Parse the canonical target `<module>.interface.<name>`
+- id: guidelines-semantic-025
   kind: semantic
-  start: 427
-  end: 427
-  text: 2. Resolve the callee `blueprint.yaml`
-  content_digest: sha256:656c3c8c5b9c7fe6a5045486dc1888b04b0957472df768bdde38c6ff7d314595
+  start: 91
+  end: 91
+  text: 2. Load the callee's version 4 module graph and resolve the export
+  content_digest: sha256:5276b55cb2d6a2900e4faf29b5ad660f9efa8198b2247a5000ca37ebe02260ea
   target:
     target_ref: skill-guidelines.dispatcher-role.guidance-003
     field: /statement
-    expected: 2. Resolve the callee `blueprint.yaml`
-- id: guidelines-semantic-119
+    expected: 2. Load the callee's version 4 module graph and resolve the export
+- id: guidelines-semantic-026
   kind: semantic
-  start: 428
-  end: 428
-  text: 3. Follow the root edge to the target `machine-interface` sidecar
-  content_digest: sha256:ba4b1336e40dcbf058812f88f49075fec82717df0f06323cc2b0365af5f767c4
+  start: 93
+  end: 93
+  text: 3. Verify the export's module-level access policy
+  content_digest: sha256:217fc7943d06e8781e4271772cf06ee145e84e6c787f838be8ddc4c9af721e6b
   target:
     target_ref: skill-guidelines.dispatcher-role.guidance-004
     field: /statement
-    expected: 3. Follow the root edge to the target `machine-interface` sidecar
-- id: guidelines-semantic-120
+    expected: 3. Verify the export's module-level access policy
+- id: guidelines-semantic-027
   kind: semantic
-  start: 429
-  end: 429
-  text: 4. Verify `allow_all_skills` / `allowed_callers`
-  content_digest: sha256:0f49555d37e2dbc69bb9334d1adf0129c47fa90d04c6a1398014bd80c236a0c8
+  start: 95
+  end: 95
+  text: 4. Parse caller arguments against the source-owned interface contract
+  content_digest: sha256:70c2c6f4a721b8633786486acc0e080a8b9e1cd9b1816481c0438685ed2759e7
   target:
     target_ref: skill-guidelines.dispatcher-role.guidance-005
     field: /statement
-    expected: 4. Verify `allow_all_skills` / `allowed_callers`
-- id: guidelines-semantic-121
+    expected: 4. Parse caller arguments against the source-owned interface contract
+- id: guidelines-semantic-028
   kind: semantic
-  start: 430
-  end: 430
-  text: 5. Match caller argv against declared `patterns`
-  content_digest: sha256:06df3cce8533b27725de0e80ef7e969a4e0be4d4e48efd3f6cc736959449c5c0
+  start: 97
+  end: 97
+  text: 5. Compile the interface's process binding against its source gateway
+  content_digest: sha256:bdce32d9dad81087fc1fd084e876fbd6811e351a92794b59000cdba21497930d
   target:
     target_ref: skill-guidelines.dispatcher-role.guidance-006
     field: /statement
-    expected: 5. Match caller argv against declared `patterns`
-- id: guidelines-semantic-122
+    expected: 5. Compile the interface's process binding against its source gateway
+- id: guidelines-semantic-029
   kind: semantic
-  start: 431
-  end: 431
-  text: 6. Resolve the private file `binding`
-  content_digest: sha256:ef80fb975a1924b9565ab9c13181ed4fe04ad3985bebdad3b8959fe63e4aecf1
+  start: 99
+  end: 99
+  text: 6. Build an invocation plan without depending on the caller's working directory
+  content_digest: sha256:04c9011856eb06d6a3f63a4e39e137e3fec0576d6ce066b2b3eb041fbf63f3b1
   target:
     target_ref: skill-guidelines.dispatcher-role.guidance-007
     field: /statement
-    expected: 6. Resolve the private file `binding`
-- id: guidelines-semantic-123
+    expected: 6. Build an invocation plan without depending on the caller's working directory
+- id: guidelines-semantic-030
   kind: semantic
-  start: 432
-  end: 432
-  text: 7. Execute the interface without depending on the caller's working directory
-  content_digest: sha256:4930fa5606d37196605ad4dd13a85eb2bc2b70ed73092587aec68838b70c1de8
+  start: 101
+  end: 101
+  text: 7. Return the dry-run plan or execute it
+  content_digest: sha256:aa779903078827375be74d99905d560bf971ccd2fe0212720effabcc0aebfd66
   target:
     target_ref: skill-guidelines.dispatcher-role.guidance-008
     field: /statement
-    expected: 7. Execute the interface without depending on the caller's working directory
-- id: guidelines-semantic-124
+    expected: 7. Return the dry-run plan or execute it
+- id: guidelines-semantic-031
   kind: semantic
-  start: 434
-  end: 436
-  text: 'The pattern-based approach enables compile-time validation: git hooks verify
+  start: 103
+  end: 105
+  text: 'The graph and process-binding approach enables static validation: git hooks verify
 
-    that only allowed skills can export restricted interfaces, catching misuse
+    that only authorized modules use restricted exports, catching misuse
 
     before deployment rather than only at runtime.'
-  content_digest: sha256:d4b911aa590d75b560fb2928e9db0c1a6f583e12a1ff692a6abe5c9a854c0e9e
+  content_digest: sha256:c4f6e8a5b97d5c3d558af44d4d86d376904e2c90376cbf7b7e88c69c8253e356
   target:
     target_ref: skill-guidelines.dispatcher-role.requirement-002#source-block
     field: /statement
-    expected: 'The pattern-based approach enables compile-time validation: git hooks verify
+    expected: 'The graph and process-binding approach enables static validation: git hooks
+      verify
 
-      that only allowed skills can export restricted interfaces, catching misuse
+      that only authorized modules use restricted exports, catching misuse
 
       before deployment rather than only at runtime.'
-- id: guidelines-semantic-125
+- id: guidelines-semantic-032
   kind: semantic
-  start: 438
-  end: 438
+  start: 107
+  end: 107
   text: 'Use `--dry-run` to inspect the resolved invocation without executing it:'
   content_digest: sha256:e8bfc22075793d7019ba512c552b0cab375341457e7ce024659e34bbc1b55421
   target:
     target_ref: skill-guidelines.dispatcher-role.guidance-009
     field: /statement
     expected: 'Use `--dry-run` to inspect the resolved invocation without executing it:'
-- id: guidelines-semantic-126
+- id: guidelines-semantic-033
   kind: semantic
-  start: 440
-  end: 443
-  text: "```bash\ndispatcher --dry-run --caller-skill daily-plan \\\n  list-manager.machine.read-list /tmp/todo.yaml\n```"
-  content_digest: sha256:f25bd355d076955a5b89f94b592551b9a0eab30696c8f2954369c3d9caa8939e
+  start: 109
+  end: 112
+  text: "```bash\ndispatcher --dry-run --caller-skill daily-plan \\\n  list-manager.interface.read-list\
+    \ /tmp/todo.yaml\n```"
+  content_digest: sha256:d564f0fc0c11b8bd275d5e4d8566daee25088182c64c14591368d858afae7fb5
   target:
     target_ref: skill-guidelines.dispatcher-role.example-001
     field: /statement
-    expected: "```bash\ndispatcher --dry-run --caller-skill daily-plan \\\n  list-manager.machine.read-list /tmp/todo.yaml\n```"
-- id: guidelines-semantic-127
+    expected: "```bash\ndispatcher --dry-run --caller-skill daily-plan \\\n  list-manager.interface.read-list\
+      \ /tmp/todo.yaml\n```"
+- id: guidelines-semantic-034
   kind: semantic
-  start: 445
-  end: 447
+  start: 114
+  end: 116
   text: 'Every `DispatchCall(...)` declaration must include `caller_skill` set to the
 
     owning skill''s exact name; that value must be a string literal or a module-level
@@ -1916,20 +482,20 @@ units:
       owning skill''s exact name; that value must be a string literal or a module-level
 
       string constant that resolves statically.'
-- id: guidelines-semantic-128
+- id: guidelines-semantic-035
   kind: semantic
-  start: 449
-  end: 449
+  start: 118
+  end: 118
   text: '**Private runtime files**'
   content_digest: sha256:57b85bab91629dc6f9c450dadb4f42917d52ecd734f55873b68fb868ddbec70d
   target:
     target_ref: skill-guidelines.private-runtime-files.guidance-001
     field: /statement
     expected: '**Private runtime files**'
-- id: guidelines-semantic-129
+- id: guidelines-semantic-036
   kind: semantic
-  start: 451
-  end: 454
+  start: 120
+  end: 123
   text: 'Skill implementation files live under the private runtime-execution package
 
     `skills/<skill-name>/_rtx/`. `_rtx` is an implementation namespace, not public
@@ -1948,10 +514,10 @@ units:
       documentation vocabulary. Public skill docs must describe interfaces, not
 
       runtime files.'
-- id: guidelines-semantic-130
+- id: guidelines-semantic-037
   kind: semantic
-  start: 456
-  end: 459
+  start: 125
+  end: 128
   text: 'Every non-exempt file or package directory under `_rtx/` must use a private
 
     multi-part stem. The rule cascades through nested packages: every directory
@@ -1970,10 +536,10 @@ units:
       component below `_rtx/` and every runtime filename stem must match the same
 
       private naming convention.'
-- id: guidelines-semantic-131
+- id: guidelines-semantic-038
   kind: semantic
-  start: 461
-  end: 465
+  start: 130
+  end: 134
   text: '```text
 
     _rtx/_Calendar_Gateway.py
@@ -1996,20 +562,20 @@ units:
       _rtx/_install_launcher/_windows_launcher.py
 
       ```'
-- id: guidelines-semantic-132
+- id: guidelines-semantic-039
   kind: semantic
-  start: 467
-  end: 467
+  start: 136
+  end: 136
   text: 'Every private directory name and every runtime filename stem must match:'
   content_digest: sha256:f5b3903bd0b5d6f556183c3620128c2995942d671ff4d1cf91c2aada3a5773ba
   target:
     target_ref: skill-guidelines.private-runtime-files.requirement-003#source-block
     field: /statement
     expected: 'Every private directory name and every runtime filename stem must match:'
-- id: guidelines-semantic-133
+- id: guidelines-semantic-040
   kind: semantic
-  start: 469
-  end: 471
+  start: 138
+  end: 140
   text: '```regex
 
     ^_[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$
@@ -2024,10 +590,10 @@ units:
       ^_[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$
 
       ```'
-- id: guidelines-semantic-134
+- id: guidelines-semantic-041
   kind: semantic
-  start: 473
-  end: 478
+  start: 142
+  end: 147
   text: 'That means each private runtime path component starts with `_` and has at
 
     least two underscore-separated segments after it. Case is allowed, but
@@ -2054,10 +620,10 @@ units:
       allowed runtime file suffix list currently contains `.py`; add to that list
 
       deliberately only if this policy is relaxed later.'
-- id: guidelines-semantic-135
+- id: guidelines-semantic-042
   kind: semantic
-  start: 480
-  end: 481
+  start: 149
+  end: 150
   text: 'Skill-facing Markdown (`SKILL.md` and skill-local Markdown outside tests and
 
     assets) must not mention:'
@@ -2068,58 +634,64 @@ units:
     expected: 'Skill-facing Markdown (`SKILL.md` and skill-local Markdown outside tests and
 
       assets) must not mention:'
-- id: guidelines-semantic-136
+- id: guidelines-semantic-043
   kind: semantic
-  start: 483
-  end: 483
+  start: 152
+  end: 152
   text: '- `_rtx`'
   content_digest: sha256:2762adf8e192e6404048ce2e0cd9728d45a55fbff70e5143395f2f2df06d90f5
   target:
     target_ref: skill-guidelines.private-runtime-files.guidance-002
     field: /statement
     expected: '- `_rtx`'
-- id: guidelines-semantic-137
+- id: guidelines-semantic-044
   kind: semantic
-  start: 484
-  end: 484
+  start: 154
+  end: 154
   text: '- runtime filenames ending in an allowed runtime suffix such as `.py`'
   content_digest: sha256:8acb2e25763a0ae39a44b5437304bb6230bbe6673a6bf8796212a7773de9debc
   target:
     target_ref: skill-guidelines.private-runtime-files.guidance-003
     field: /statement
     expected: '- runtime filenames ending in an allowed runtime suffix such as `.py`'
-- id: guidelines-semantic-138
+- id: guidelines-semantic-045
   kind: semantic
-  start: 485
-  end: 486
-  text: "- normalized forms of private runtime stems, such as `_Calendar_Gateway`,\n  `Calendar_Gateway`, `calendar gateway`, or `calendar-gateway`"
+  start: 156
+  end: 157
+  text: "- normalized forms of private runtime stems, such as `_Calendar_Gateway`,\n  `Calendar_Gateway`,\
+    \ `calendar gateway`, or `calendar-gateway`"
   content_digest: sha256:38c30dd2606caeb287f3dee052d91461beee9ba148e1401562e1589a8e23dd61
   target:
     target_ref: skill-guidelines.private-runtime-files.guidance-004
     field: /statement
-    expected: "- normalized forms of private runtime stems, such as `_Calendar_Gateway`,\n  `Calendar_Gateway`, `calendar gateway`, or `calendar-gateway`"
-- id: guidelines-semantic-139
+    expected: "- normalized forms of private runtime stems, such as `_Calendar_Gateway`,\n\
+      \  `Calendar_Gateway`, `calendar gateway`, or `calendar-gateway`"
+- id: guidelines-semantic-046
   kind: semantic
-  start: 488
-  end: 490
-  text: 'Blueprints bind public interface names to private runtime modules. Tests,
+  start: 159
+  end: 162
+  text: 'Module exports bind public names to source-owned interfaces; process bindings
+
+    may route those interfaces to private runtime modules. Tests,
 
     validators, and migration/design docs may mention runtime file details when
 
     they are defining or checking the convention.'
-  content_digest: sha256:916afd81bcde6be9272f650b7c4fad79dde1d5c52da22e751d5dd6c8f6e36a23
+  content_digest: sha256:41a25e1ed9dca293d94ac8f97166b89ec05ad7841e1ba9c9d3796a65a9bd9859
   target:
     target_ref: skill-guidelines.private-runtime-files.requirement-006#source-block
     field: /statement
-    expected: 'Blueprints bind public interface names to private runtime modules. Tests,
+    expected: 'Module exports bind public names to source-owned interfaces; process bindings
+
+      may route those interfaces to private runtime modules. Tests,
 
       validators, and migration/design docs may mention runtime file details when
 
       they are defining or checking the convention.'
-- id: guidelines-semantic-140
+- id: guidelines-semantic-047
   kind: semantic
-  start: 492
-  end: 499
+  start: 164
+  end: 171
   text: 'This is mechanically checked by `validators/skill_runtime_files.py` and
 
     `validators/skill_runtime_doc_references.py`, plus
@@ -2154,140 +726,142 @@ units:
       `tests/validate_skill_runtime_doc_references.py`, and
 
       `tests/validate_skill_body_execution.py`.'
-- id: guidelines-semantic-141
+- id: guidelines-semantic-048
   kind: semantic
-  start: 501
-  end: 501
+  start: 173
+  end: 173
   text: '**Import discipline**'
   content_digest: sha256:b0b7650af7bd5ec9f8aeacd3a79a8077507ed8cd001b22ece03fe23a8a47c999
   target:
     target_ref: skill-guidelines.import-discipline.guidance-001
     field: /statement
     expected: '**Import discipline**'
-- id: guidelines-semantic-142
+- id: guidelines-semantic-049
   kind: semantic
-  start: 503
-  end: 503
+  start: 175
+  end: 175
   text: 'Skill Python files may import only:'
   content_digest: sha256:c13cbca6cf6a6eda2311583f826d224960d5a4bae815504e47cfaf1c722be796
   target:
     target_ref: skill-guidelines.import-discipline.requirement-001#source-block
     field: /statement
     expected: 'Skill Python files may import only:'
-- id: guidelines-semantic-143
+- id: guidelines-semantic-050
   kind: semantic
-  start: 505
-  end: 505
+  start: 177
+  end: 177
   text: '- relative modules from their own skill-local `_rtx/` package'
   content_digest: sha256:e65522e7c5cbce9aa7314e44e0abc25f8a3a3e95c6c3badd20bacb19c79a7d72
   target:
     target_ref: skill-guidelines.import-discipline.guidance-002
     field: /statement
     expected: '- relative modules from their own skill-local `_rtx/` package'
-- id: guidelines-semantic-144
+- id: guidelines-semantic-051
   kind: semantic
-  start: 506
-  end: 506
+  start: 179
+  end: 179
   text: '- first-party shared packages under `src/officina/`'
   content_digest: sha256:892724e80b74e73603fd8728212413bf972e129a010c5d965bd72ca0030bac4b
   target:
     target_ref: skill-guidelines.import-discipline.guidance-003
     field: /statement
     expected: '- first-party shared packages under `src/officina/`'
-- id: guidelines-semantic-145
+- id: guidelines-semantic-052
   kind: semantic
-  start: 507
-  end: 507
+  start: 181
+  end: 181
   text: '- stdlib and approved third-party packages'
   content_digest: sha256:a900432e8c87b45ca3bad637ce9a79b81c820d477a82aa09149fe7bdd4e47efb
   target:
     target_ref: skill-guidelines.import-discipline.guidance-004
     field: /statement
     expected: '- stdlib and approved third-party packages'
-- id: guidelines-semantic-146
+- id: guidelines-semantic-053
   kind: semantic
-  start: 509
-  end: 509
+  start: 183
+  end: 183
   text: 'They must not import:'
   content_digest: sha256:65ce72277dec92e1ce1504eedd20099bafb049a39521c899ac652f81b4d1698e
   target:
     target_ref: skill-guidelines.import-discipline.requirement-002#source-block
     field: /statement
     expected: 'They must not import:'
-- id: guidelines-semantic-147
+- id: guidelines-semantic-054
   kind: semantic
-  start: 511
-  end: 511
+  start: 185
+  end: 185
   text: '- another skill''s Python modules directly'
   content_digest: sha256:7b1ca1a8d0ee55b35451c5c3929e74612074d33099ac854da29d5364bc96aa9d
   target:
     target_ref: skill-guidelines.import-discipline.guidance-005
     field: /statement
     expected: '- another skill''s Python modules directly'
-- id: guidelines-semantic-148
+- id: guidelines-semantic-055
   kind: semantic
-  start: 512
-  end: 512
+  start: 187
+  end: 187
   text: '- repo-maintainer packages outside `src/officina/`'
   content_digest: sha256:a28891dd5a05c48607ffc465a70f334485148bdcef1a837598687b7a6dbb32be
   target:
     target_ref: skill-guidelines.import-discipline.guidance-006
     field: /statement
     expected: '- repo-maintainer packages outside `src/officina/`'
-- id: guidelines-semantic-149
+- id: guidelines-semantic-056
   kind: semantic
-  start: 513
-  end: 514
-  text: "- another skill's runtime directory through `sys.path`, path loading, or\n  dynamic module tricks"
+  start: 189
+  end: 190
+  text: "- another skill's runtime directory through `sys.path`, path loading, or\n  dynamic\
+    \ module tricks"
   content_digest: sha256:c1f9b82fe3425434d08eebe4b52f1eb7d899e90114bc27a50c5768910d6407d9
   target:
     target_ref: skill-guidelines.import-discipline.guidance-007
     field: /statement
-    expected: "- another skill's runtime directory through `sys.path`, path loading, or\n  dynamic module tricks"
-- id: guidelines-semantic-150
+    expected: "- another skill's runtime directory through `sys.path`, path loading, or\n\
+      \  dynamic module tricks"
+- id: guidelines-semantic-057
   kind: semantic
-  start: 516
-  end: 516
+  start: 192
+  end: 192
   text: 'This is the intended model:'
   content_digest: sha256:45d1179341de311c6dfd89f9c9b37b43dfc5a01b2b8d86dea07340905c88fb0b
   target:
     target_ref: skill-guidelines.import-discipline.guidance-008
     field: /statement
     expected: 'This is the intended model:'
-- id: guidelines-semantic-151
+- id: guidelines-semantic-058
   kind: semantic
-  start: 518
-  end: 518
+  start: 194
+  end: 194
   text: '- local reuse inside one skill: relative imports'
   content_digest: sha256:ecf26497aa0ac0e3cbc2c7e1c569dc800d2babcdc5eddec62641fe7275fabe5c
   target:
     target_ref: skill-guidelines.import-discipline.guidance-009
     field: /statement
     expected: '- local reuse inside one skill: relative imports'
-- id: guidelines-semantic-152
+- id: guidelines-semantic-059
   kind: semantic
-  start: 519
-  end: 519
+  start: 196
+  end: 196
   text: '- generic shared infrastructure: `officina.*`'
   content_digest: sha256:6aaf918e82a6c3cc615f5a57394567c9a57f29445ab10bd127280aec6844d64d
   target:
     target_ref: skill-guidelines.import-discipline.guidance-010
     field: /statement
     expected: '- generic shared infrastructure: `officina.*`'
-- id: guidelines-semantic-153
+- id: guidelines-semantic-060
   kind: semantic
-  start: 520
-  end: 521
+  start: 198
+  end: 199
   text: "- cross-skill behavior: declared `DispatchCall` entries plus\n  `PythonMachineInterface.dispatch()`"
   content_digest: sha256:f87c46245e2d78e15c1604820a8dd365dcd69ea293f6a5ba96ae3c95f8bcdd0b
   target:
     target_ref: skill-guidelines.import-discipline.guidance-011
     field: /statement
     expected: "- cross-skill behavior: declared `DispatchCall` entries plus\n  `PythonMachineInterface.dispatch()`"
-- id: guidelines-semantic-154
+- id: guidelines-semantic-061
   kind: semantic
-  start: 523
-  end: 525
+  start: 201
+  end: 203
   text: 'The dispatch discipline is mechanically checked by
 
     `skills/skill-maker/validators/dispatcher_usage.py` and
@@ -2302,42 +876,46 @@ units:
       `skills/skill-maker/validators/dispatcher_usage.py` and
 
       `skills/skill-maker/validators/dispatch_caller_skill.py`.'
-- id: guidelines-semantic-155
+- id: guidelines-semantic-062
   kind: semantic
-  start: 527
-  end: 530
-  text: 'Because machine interfaces run with the skill root on `PYTHONPATH`, modules
+  start: 205
+  end: 209
+  text: 'Because Python behavioral-source gateways run with the module root on
+
+    `PYTHONPATH`, files
 
     under `_rtx/` may use relative imports to share same-skill helpers. Nested
 
     runtime packages are allowed only when their directory names and file stems
 
     follow the cascading private `_rtx/` naming rule above.'
-  content_digest: sha256:23930814c9fd51bb4f5cddadbaa48b765168a64cb4136863c3765600cc19dd97
+  content_digest: sha256:239624022331cb69e21b64414678e4caaaf3d17f705ed54271ca423a99412ddf
   target:
     target_ref: skill-guidelines.import-discipline.requirement-003#source-block
     field: /statement
-    expected: 'Because machine interfaces run with the skill root on `PYTHONPATH`, modules
+    expected: 'Because Python behavioral-source gateways run with the module root on
+
+      `PYTHONPATH`, files
 
       under `_rtx/` may use relative imports to share same-skill helpers. Nested
 
       runtime packages are allowed only when their directory names and file stems
 
       follow the cascading private `_rtx/` naming rule above.'
-- id: guidelines-semantic-156
+- id: guidelines-semantic-063
   kind: semantic
-  start: 532
-  end: 532
+  start: 211
+  end: 211
   text: '**TOML IO boundary**'
   content_digest: sha256:4c209f73f385f6e67f8ce2db392a89394757b6abc36895177d5497a6f8a55c5b
   target:
     target_ref: skill-guidelines.toml-io-boundary.guidance-001
     field: /statement
     expected: '**TOML IO boundary**'
-- id: guidelines-semantic-157
+- id: guidelines-semantic-064
   kind: semantic
-  start: 534
-  end: 536
+  start: 213
+  end: 215
   text: 'Production Python code must not construct, read, write, or parse TOML files
 
     directly. TOML filenames are a controlled boundary because host-specific paths
@@ -2352,30 +930,34 @@ units:
       directly. TOML filenames are a controlled boundary because host-specific paths
 
       and TOML string escaping interact badly when callers hand-roll config text.'
-- id: guidelines-semantic-158
+- id: guidelines-semantic-065
   kind: semantic
-  start: 538
-  end: 538
+  start: 217
+  end: 217
   text: 'Use the shared TOML IO boundary:'
   content_digest: sha256:dd30d97cdf82cafaf74dfe9cd581fba48325cb99bdbcb8ed095c399865de6ce1
   target:
     target_ref: skill-guidelines.toml-io-boundary.guidance-002
     field: /statement
     expected: 'Use the shared TOML IO boundary:'
-- id: guidelines-semantic-159
+- id: guidelines-semantic-066
   kind: semantic
-  start: 540
-  end: 548
-  text: "```python\nfrom officina.common import toml_io\n\nwith toml_io.open(base_dir, \"settings.toml\", \"r\") as f:\n    settings_text = f.read()\n\nwith toml_io.open(base_dir, f\"{name}.settings.toml\", \"w\") as f:\n    f.write(settings_text)\n```"
+  start: 219
+  end: 227
+  text: "```python\nfrom officina.common import toml_io\n\nwith toml_io.open(base_dir, \"\
+    settings.toml\", \"r\") as f:\n    settings_text = f.read()\n\nwith toml_io.open(base_dir,\
+    \ f\"{name}.settings.toml\", \"w\") as f:\n    f.write(settings_text)\n```"
   content_digest: sha256:a92915e080f76dabc5a0bd07ffc2e3af76fdcbe3701549bbe417ce8a1e2365cf
   target:
     target_ref: skill-guidelines.toml-io-boundary.example-001
     field: /statement
-    expected: "```python\nfrom officina.common import toml_io\n\nwith toml_io.open(base_dir, \"settings.toml\", \"r\") as f:\n    settings_text = f.read()\n\nwith toml_io.open(base_dir, f\"{name}.settings.toml\", \"w\") as f:\n    f.write(settings_text)\n```"
-- id: guidelines-semantic-160
+    expected: "```python\nfrom officina.common import toml_io\n\nwith toml_io.open(base_dir,\
+      \ \"settings.toml\", \"r\") as f:\n    settings_text = f.read()\n\nwith toml_io.open(base_dir,\
+      \ f\"{name}.settings.toml\", \"w\") as f:\n    f.write(settings_text)\n```"
+- id: guidelines-semantic-067
   kind: semantic
-  start: 550
-  end: 559
+  start: 229
+  end: 238
   text: 'Outside `src/officina/common/toml_io.py`, a `.toml` filename may appear only as
 
     the direct filename argument to `toml_io.open(...)`. Do not build TOML filenames
@@ -2399,7 +981,8 @@ units:
   target:
     target_ref: skill-guidelines.toml-io-boundary.requirement-002#source-block
     field: /statement
-    expected: 'Outside `src/officina/common/toml_io.py`, a `.toml` filename may appear only as
+    expected: 'Outside `src/officina/common/toml_io.py`, a `.toml` filename may appear only
+      as
 
       the direct filename argument to `toml_io.open(...)`. Do not build TOML filenames
 
@@ -2418,10 +1001,10 @@ units:
       `codex_toml.py`, so both the TOML boundary and platform-neutral boundary stay
 
       explicit.'
-- id: guidelines-semantic-161
+- id: guidelines-semantic-068
   kind: semantic
-  start: 561
-  end: 564
+  start: 240
+  end: 243
   text: '`toml_io.open(...)` owns UTF-8 text mode, filename validation, and parse
 
     validation after writes. This rule is enforced by
@@ -2440,20 +1023,20 @@ units:
       `validators/toml_io_boundary.py`, with behavior tests in
 
       `tests/validate_toml_io_boundary.py`.'
-- id: guidelines-semantic-162
+- id: guidelines-semantic-069
   kind: semantic
-  start: 566
-  end: 566
+  start: 245
+  end: 245
   text: '**Subprocess text boundaries**'
   content_digest: sha256:6453a75fec3c542851d9098f6d707583dc5015b854aca522bea73260c7a47682
   target:
     target_ref: skill-guidelines.subprocess-text-boundaries.guidance-001
     field: /statement
     expected: '**Subprocess text boundaries**'
-- id: guidelines-semantic-163
+- id: guidelines-semantic-070
   kind: semantic
-  start: 568
-  end: 570
+  start: 247
+  end: 249
   text: 'Production Python code that asks `subprocess` for text must set both
 
     `encoding` and `errors` explicitly on that call. Binary subprocess use is fine
@@ -2468,30 +1051,32 @@ units:
       `encoding` and `errors` explicitly on that call. Binary subprocess use is fine
 
       when callers intentionally handle bytes themselves.'
-- id: guidelines-semantic-164
+- id: guidelines-semantic-071
   kind: semantic
-  start: 572
-  end: 572
+  start: 251
+  end: 251
   text: 'Use UTF-8 strict for project-owned/user-facing text:'
   content_digest: sha256:109f5339cad953692d3606b943b8ed2787e945b9f1aa586804db52757ad892af
   target:
     target_ref: skill-guidelines.subprocess-text-boundaries.guidance-002
     field: /statement
     expected: 'Use UTF-8 strict for project-owned/user-facing text:'
-- id: guidelines-semantic-165
+- id: guidelines-semantic-072
   kind: semantic
-  start: 574
-  end: 583
-  text: "```python\nsubprocess.run(\n    cmd,\n    capture_output=True,\n    text=True,\n    encoding=\"utf-8\",\n    errors=\"strict\",\n    check=False,\n)\n```"
+  start: 253
+  end: 262
+  text: "```python\nsubprocess.run(\n    cmd,\n    capture_output=True,\n    text=True,\n\
+    \    encoding=\"utf-8\",\n    errors=\"strict\",\n    check=False,\n)\n```"
   content_digest: sha256:897663cf4bda63a14d32402c0896e183f22d64941ca09cfb1a72c166ba846988
   target:
     target_ref: skill-guidelines.subprocess-text-boundaries.example-001
     field: /statement
-    expected: "```python\nsubprocess.run(\n    cmd,\n    capture_output=True,\n    text=True,\n    encoding=\"utf-8\",\n    errors=\"strict\",\n    check=False,\n)\n```"
-- id: guidelines-semantic-166
+    expected: "```python\nsubprocess.run(\n    cmd,\n    capture_output=True,\n    text=True,\n\
+      \    encoding=\"utf-8\",\n    errors=\"strict\",\n    check=False,\n)\n```"
+- id: guidelines-semantic-073
   kind: semantic
-  start: 585
-  end: 588
+  start: 264
+  end: 267
   text: 'For byte streams whose contract is not ordinary text, keep binary mode and
 
     decode explicitly at the boundary with the correct error policy. For git
@@ -2510,11 +1095,11 @@ units:
       path-list output, use UTF-8 with `surrogateescape` so unusual filenames remain
 
       round-trippable.'
-- id: guidelines-semantic-167
+- id: guidelines-semantic-074
   kind: semantic
-  start: 590
-  end: 595
-  text: 'The shared dispatcher owns this boundary for machine-interface calls: text-mode
+  start: 269
+  end: 274
+  text: 'The shared dispatcher owns this boundary for process-bound exports: text-mode
 
     dispatcher invocations use UTF-8 strict in the parent process, and Python module
 
@@ -2525,11 +1110,11 @@ units:
     `tests/test_officina_dispatcher.py` and
 
     `tests/validate_subprocess_text_encoding.py`.'
-  content_digest: sha256:fea32dbf93484743b75e7a524aec9423ff735147e94e67e9e53b55fe546e01ab
+  content_digest: sha256:5ef8a7d1dac4435122150da8ad7a2035bd4d65fcc3083187d86d4096e7958684
   target:
     target_ref: skill-guidelines.subprocess-text-boundaries.guidance-003
     field: /statement
-    expected: 'The shared dispatcher owns this boundary for machine-interface calls: text-mode
+    expected: 'The shared dispatcher owns this boundary for process-bound exports: text-mode
 
       dispatcher invocations use UTF-8 strict in the parent process, and Python module
 
@@ -2540,64 +1125,69 @@ units:
       `tests/test_officina_dispatcher.py` and
 
       `tests/validate_subprocess_text_encoding.py`.'
-- id: guidelines-semantic-168
+- id: guidelines-semantic-075
   kind: semantic
-  start: 597
-  end: 597
+  start: 276
+  end: 276
   text: '**Injection lifecycle**'
   content_digest: sha256:dace03c9615536f940b4023af46cce45a330d657216330044bbdbe6b2d7899a7
   target:
     target_ref: skill-guidelines.injection-lifecycle.guidance-001
     field: /statement
     expected: '**Injection lifecycle**'
-- id: guidelines-semantic-169
+- id: guidelines-semantic-076
   kind: semantic
-  start: 599
-  end: 600
+  start: 278
+  end: 279
   text: '`../../skills/skill-maker/_rtx/_blueprint_syncer.py` injects and refreshes the
 
-    generated artifacts for blueprint skills:'
-  content_digest: sha256:b01d5e779298770447aab1cd410c2cd18786d2e4e651acd283ab8c6d927fbb53
+    generated artifacts for autodiscoverable modules:'
+  content_digest: sha256:fe852572809d715e874f678ab3a363e3b311761fbcfd88f0b983a11ed6618920
   target:
     target_ref: skill-guidelines.injection-lifecycle.guidance-002
     field: /statement
-    expected: '`../../skills/skill-maker/_rtx/_blueprint_syncer.py` injects and refreshes the
+    expected: '`../../skills/skill-maker/_rtx/_blueprint_syncer.py` injects and refreshes
+      the
 
-      generated artifacts for blueprint skills:'
-- id: guidelines-semantic-170
+      generated artifacts for autodiscoverable modules:'
+- id: guidelines-semantic-077
   kind: semantic
-  start: 602
-  end: 603
-  text: "- the generated contract block placed immediately after the YAML frontmatter in\n  `SKILL.md`"
+  start: 281
+  end: 282
+  text: "- the generated contract block placed immediately after the YAML frontmatter in\n\
+    \  `SKILL.md`"
   content_digest: sha256:cfd0f079a49027750d6ad5af967b6879e880a6884e6d4c8db5b371471b0287b6
   target:
     target_ref: skill-guidelines.injection-lifecycle.guidance-003
     field: /statement
-    expected: "- the generated contract block placed immediately after the YAML frontmatter in\n  `SKILL.md`"
-- id: guidelines-semantic-171
+    expected: "- the generated contract block placed immediately after the YAML frontmatter\
+      \ in\n  `SKILL.md`"
+- id: guidelines-semantic-078
   kind: semantic
-  start: 604
-  end: 605
-  text: "- the generated owner-facing interface sections placed immediately after the\n  contract block"
+  start: 284
+  end: 285
+  text: "- the generated owner-facing interface sections placed immediately after the\n  contract\
+    \ block"
   content_digest: sha256:d163f5faca6788cd2879c0613dfa1e8e25f809c9e3593d7505737c802fb87b62
   target:
     target_ref: skill-guidelines.injection-lifecycle.guidance-004
     field: /statement
-    expected: "- the generated owner-facing interface sections placed immediately after the\n  contract block"
-- id: guidelines-semantic-172
+    expected: "- the generated owner-facing interface sections placed immediately after the\n\
+      \  contract block"
+- id: guidelines-semantic-079
   kind: semantic
-  start: 606
-  end: 607
+  start: 287
+  end: 288
   text: "- repo-level manifests such as\n  `references/blueprint/runtime_dependencies.json`"
   content_digest: sha256:169860328e3936ea8c9f6d6f85586f1b739afa88d3908422884320c85c1052bd
   target:
     target_ref: skill-guidelines.injection-lifecycle.guidance-005
     field: /statement
     expected: "- repo-level manifests such as\n  `references/blueprint/runtime_dependencies.json`"
-- id: guidelines-semantic-173
+- id: guidelines-semantic-080
   kind: semantic
-  start: 609
-  end: 611
+  start: 290
+  end: 292
   text: 'That generated content is not user-authored. Do not edit it by hand. These
 
     checks are enforced on every commit by `validators/runner.py` (called from
@@ -2612,20 +1202,24 @@ units:
       checks are enforced on every commit by `validators/runner.py` (called from
 
       `.githooks/pre-commit`) via the skill-maker validators.'
-- id: guidelines-semantic-174
+- id: guidelines-semantic-081
   kind: semantic
-  start: 613
-  end: 617
-  text: "**2. Skill taxonomy** \u2014 declare `category`, `role`, and `kind` in\n`blueprint.yaml`. Each must be one of the typed enum values in\n`references/blueprint/schema.json`. `category` remains compatibility metadata\nduring the migration; `role` and `kind` are the user-facing documentation and\ngraph taxonomy."
-  content_digest: sha256:83488b3b2fd03b610fce39ca5d6fb56ac269d3c462ab71c16aa6eae90e560edf
+  start: 294
+  end: 297
+  text: "**2. Skill taxonomy** \u2014 autodiscoverable modules declare `category`, `role`,\n\
+    and `kind` in `blueprint.yaml` using the typed fields in\n`references/blueprint/module.schema.json`.\
+    \ These fields provide user-facing\ndocumentation and graph taxonomy."
+  content_digest: sha256:44f986197eb2e90a0e9e0121347998a038a0271dd1e4c6f04bf017bca527f2b2
   target:
     target_ref: skill-guidelines.skill-taxonomy.requirement-001#source-block
     field: /statement
-    expected: "**2. Skill taxonomy** \u2014 declare `category`, `role`, and `kind` in\n`blueprint.yaml`. Each must be one of the typed enum values in\n`references/blueprint/schema.json`. `category` remains compatibility metadata\nduring the migration; `role` and `kind` are the user-facing documentation and\ngraph taxonomy."
-- id: guidelines-semantic-175
+    expected: "**2. Skill taxonomy** \u2014 autodiscoverable modules declare `category`, `role`,\n\
+      and `kind` in `blueprint.yaml` using the typed fields in\n`references/blueprint/module.schema.json`.\
+      \ These fields provide user-facing\ndocumentation and graph taxonomy."
+- id: guidelines-semantic-082
   kind: semantic
-  start: 619
-  end: 621
+  start: 299
+  end: 301
   text: 'For `research-assistant` skills applied to `.tex` files: check whether a
 
     top-of-document profile comment exists before proceeding; if not, use
@@ -2640,140 +1234,179 @@ units:
       top-of-document profile comment exists before proceeding; if not, use
 
       `make-tex-docstring` first.'
-- id: guidelines-semantic-176
+- id: guidelines-semantic-083
   kind: semantic
-  start: 623
-  end: 624
-  text: "**3. `my-X` naming and structure** \u2014 a personal override of upstream skill `X`\nis named `my-X`. Every `my-X` skill must follow this layout:"
+  start: 303
+  end: 304
+  text: "**3. `my-X` naming and structure** \u2014 a personal override of upstream skill `X`\n\
+    is named `my-X`. Every `my-X` skill must follow this layout:"
   content_digest: sha256:5674c18c12e363857d8b4e820eebf235e504dcba70b4572b9363f504d3a733a4
   target:
     target_ref: skill-guidelines.personal-override-structure.requirement-001#source-block
     field: /statement
-    expected: "**3. `my-X` naming and structure** \u2014 a personal override of upstream skill `X`\nis named `my-X`. Every `my-X` skill must follow this layout:"
-- id: guidelines-semantic-177
+    expected: "**3. `my-X` naming and structure** \u2014 a personal override of upstream skill\
+      \ `X`\nis named `my-X`. Every `my-X` skill must follow this layout:"
+- id: guidelines-semantic-084
   kind: semantic
-  start: 626
-  end: 626
+  start: 306
+  end: 306
   text: '- Personal overrides and additions at the top.'
   content_digest: sha256:2e0a3e49aa14019551ce77da568bb11ed0b5f38445db1e86acbed7e055467872
   target:
     target_ref: skill-guidelines.personal-override-structure.guidance-001
     field: /statement
     expected: '- Personal overrides and additions at the top.'
-- id: guidelines-semantic-178
+- id: guidelines-semantic-085
   kind: semantic
-  start: 627
-  end: 628
-  text: "- Then a **REQUIRED \u2014 NON-NEGOTIABLE** instruction to invoke the original `X`\n  skill at the bottom."
+  start: 308
+  end: 309
+  text: "- Then a **REQUIRED \u2014 NON-NEGOTIABLE** instruction to invoke the original `X`\n\
+    \  skill at the bottom."
   content_digest: sha256:5f95f2b043427d0364b895a32cb3b5329a9cee1d5d44e1da2126f9f7ffd01252
   target:
     target_ref: skill-guidelines.personal-override-structure.requirement-002#source-block
     field: /statement
-    expected: "- Then a **REQUIRED \u2014 NON-NEGOTIABLE** instruction to invoke the original `X`\n  skill at the bottom."
-- id: guidelines-semantic-179
+    expected: "- Then a **REQUIRED \u2014 NON-NEGOTIABLE** instruction to invoke the original\
+      \ `X`\n  skill at the bottom."
+- id: guidelines-semantic-086
   kind: semantic
-  start: 630
-  end: 635
-  text: "**4. `suggested_permissions`** \u2014 permission suggestions live in\n`blueprint.yaml`, not in per-skill sidecar files. `suggested_permissions` is\nadvisory, not a grant. It should explain what is safe and useful to pre-approve\nfor smoother execution. Do not cascade another skill's suggested permissions\nhere; declare the actual interface edge in `uses_interfaces` and let permission\ntooling derive transitive grants from the interface graph."
-  content_digest: sha256:61c6f47e576073f2538315970e0dc854fdbc773d9ac8823963e4cfd7c0285832
+  start: 311
+  end: 316
+  text: "**4. `suggested_permissions`** \u2014 permission suggestions live in the module's\n\
+    `blueprint.yaml`, not in separate permission files. `suggested_permissions` is\nadvisory,\
+    \ not a grant. It should explain what is safe and useful to pre-approve\nfor smoother\
+    \ execution. Do not cascade another module's suggested permissions;\ndeclare the exact\
+    \ interface edge in `uses_interfaces` and let permission tooling\nderive transitive grants\
+    \ from the interface graph."
+  content_digest: sha256:50d2512f55f4b4021a8efcb49f121b396e27803ec54bc01cbaf25252d0b6beaf
   target:
     target_ref: skill-guidelines.suggested-permissions.requirement-001#source-block
     field: /statement
-    expected: "**4. `suggested_permissions`** \u2014 permission suggestions live in\n`blueprint.yaml`, not in per-skill sidecar files. `suggested_permissions` is\nadvisory, not a grant. It should explain what is safe and useful to pre-approve\nfor smoother execution. Do not cascade another skill's suggested permissions\nhere; declare the actual interface edge in `uses_interfaces` and let permission\ntooling derive transitive grants from the interface graph."
-- id: guidelines-semantic-180
+    expected: "**4. `suggested_permissions`** \u2014 permission suggestions live in the module's\n\
+      `blueprint.yaml`, not in separate permission files. `suggested_permissions` is\nadvisory,\
+      \ not a grant. It should explain what is safe and useful to pre-approve\nfor smoother\
+      \ execution. Do not cascade another module's suggested permissions;\ndeclare the exact\
+      \ interface edge in `uses_interfaces` and let permission tooling\nderive transitive\
+      \ grants from the interface graph."
+- id: guidelines-semantic-087
   kind: semantic
-  start: 637
-  end: 640
-  text: "**5. Frontmatter `description:` is a trigger declaration, not a summary** \u2014\nwrite it as \"Use when...\" followed by the triggering conditions and symptoms\nthat signal this skill applies. Never summarize the workflow, steps, or outputs\nin the description."
+  start: 318
+  end: 321
+  text: "**5. Frontmatter `description:` is a trigger declaration, not a summary** \u2014\n\
+    write it as \"Use when...\" followed by the triggering conditions and symptoms\nthat signal\
+    \ this skill applies. Never summarize the workflow, steps, or outputs\nin the description."
   content_digest: sha256:70144a93a334a065c26d270901af65939f90b1b2d1b8abe2a31fee5ed30a0ff8
   target:
     target_ref: skill-guidelines.trigger-description.requirement-001#source-block
     field: /statement
-    expected: "**5. Frontmatter `description:` is a trigger declaration, not a summary** \u2014\nwrite it as \"Use when...\" followed by the triggering conditions and symptoms\nthat signal this skill applies. Never summarize the workflow, steps, or outputs\nin the description."
-- id: guidelines-semantic-181
+    expected: "**5. Frontmatter `description:` is a trigger declaration, not a summary** \u2014\
+      \nwrite it as \"Use when...\" followed by the triggering conditions and symptoms\nthat\
+      \ signal this skill applies. Never summarize the workflow, steps, or outputs\nin the\
+      \ description."
+- id: guidelines-semantic-088
   kind: semantic
-  start: 642
-  end: 644
-  text: "**6. Output-focused, terse writing** \u2014 specify what to invoke and how to\ninterpret output. Implementation internals belong in tool/script docs, not\n`SKILL.md`. Every line earns its place."
+  start: 323
+  end: 325
+  text: "**6. Output-focused, terse writing** \u2014 specify what to invoke and how to\ninterpret\
+    \ output. Implementation internals belong in tool/script docs, not\n`SKILL.md`. Every\
+    \ line earns its place."
   content_digest: sha256:6439bafbf701bc838b1be73309800860a009f79081f93af9c473952c8103d1b4
   target:
     target_ref: skill-guidelines.output-focused-writing.guidance-001
     field: /statement
-    expected: "**6. Output-focused, terse writing** \u2014 specify what to invoke and how to\ninterpret output. Implementation internals belong in tool/script docs, not\n`SKILL.md`. Every line earns its place."
-- id: guidelines-semantic-182
+    expected: "**6. Output-focused, terse writing** \u2014 specify what to invoke and how\
+      \ to\ninterpret output. Implementation internals belong in tool/script docs, not\n`SKILL.md`.\
+      \ Every line earns its place."
+- id: guidelines-semantic-089
   kind: semantic
-  start: 646
-  end: 651
-  text: "**7. The canonical blueprint graph owns all interface definitions** \u2014 the root\nowns skill-level facts and points to neighbors; every subordinate blueprint\nowns its own facts and points to its direct neighbors. A node never repeats a\nneighbor's intrinsic information. The generated interface blocks in `SKILL.md`\nare derived views of that graph. The skill body must not restate, re-explain,\nor re-invoke any interface. Specifically:"
-  content_digest: sha256:d3f679917ee9354e8cc0b9ba4a9d613a9d7669b40cfceda5c6d8dfc65f920e6c
+  start: 327
+  end: 332
+  text: "**7. The canonical blueprint graph owns all interface definitions** \u2014 the module\n\
+    blueprint owns module facts, source containment, exports, and access; every\nbehavioral-source\
+    \ blueprint owns its content, dependencies, and interface\ncontracts. A node never repeats\
+    \ a neighbor's intrinsic information. Generated\ninterface blocks in `SKILL.md` are derived\
+    \ views of that graph. The skill body\nmust not restate, re-explain, or re-invoke any\
+    \ interface. Specifically:"
+  content_digest: sha256:88e659e048bb2e14c35c35215ba8f07a9926a9fc85f8d9d23e18dfb060bea4f9
   target:
     target_ref: skill-guidelines.canonical-blueprint-ownership.requirement-001#source-block
     field: /statement
-    expected: "**7. The canonical blueprint graph owns all interface definitions** \u2014 the root\nowns skill-level facts and points to neighbors; every subordinate blueprint\nowns its own facts and points to its direct neighbors. A node never repeats a\nneighbor's intrinsic information. The generated interface blocks in `SKILL.md`\nare derived views of that graph. The skill body must not restate, re-explain,\nor re-invoke any interface. Specifically:"
-- id: guidelines-semantic-183
+    expected: "**7. The canonical blueprint graph owns all interface definitions** \u2014\
+      \ the module\nblueprint owns module facts, source containment, exports, and access;\
+      \ every\nbehavioral-source blueprint owns its content, dependencies, and interface\n\
+      contracts. A node never repeats a neighbor's intrinsic information. Generated\ninterface\
+      \ blocks in `SKILL.md` are derived views of that graph. The skill body\nmust not restate,\
+      \ re-explain, or re-invoke any interface. Specifically:"
+- id: guidelines-semantic-090
   kind: semantic
-  start: 653
-  end: 654
-  text: "- a machine sidecar's `description` describes what the machine interface\n  does."
-  content_digest: sha256:e751bd75ed62e26bd4fbd170c8d5721b8811ed84a52695f0c4f0cc13f95124ef
+  start: 334
+  end: 334
+  text: '- a source interface''s `description` describes what the interface does.'
+  content_digest: sha256:c28eb728ad5df4e8ef71395873aa82ab213c33566312c03a8e32b0ef9c65d1d3
   target:
     target_ref: skill-guidelines.canonical-blueprint-ownership.guidance-001
     field: /statement
-    expected: "- a machine sidecar's `description` describes what the machine interface\n  does."
-- id: guidelines-semantic-184
+    expected: '- a source interface''s `description` describes what the interface does.'
+- id: guidelines-semantic-091
   kind: semantic
-  start: 655
-  end: 656
+  start: 336
+  end: 337
   text: "- its `usage` provides the complete invocation argument\n  template."
   content_digest: sha256:f6b4537f62d6f53fad097708b889c726314fd8ba355f72dd3f589a64362d9afc
   target:
     target_ref: skill-guidelines.canonical-blueprint-ownership.guidance-002
     field: /statement
     expected: "- its `usage` provides the complete invocation argument\n  template."
-- id: guidelines-semantic-185
+- id: guidelines-semantic-092
   kind: semantic
-  start: 657
-  end: 658
-  text: "- `patterns[*].notes` gives mode-specific detail where multiple calling modes\n  exist."
+  start: 339
+  end: 340
+  text: "- `patterns[*].notes` gives mode-specific detail where multiple calling modes\n \
+    \ exist."
   content_digest: sha256:03ae201f9335c817e7f63afcd1309b2f1e45735dbfb1dea641f20ed3ef016c8e
   target:
     target_ref: skill-guidelines.canonical-blueprint-ownership.guidance-003
     field: /statement
-    expected: "- `patterns[*].notes` gives mode-specific detail where multiple calling modes\n  exist."
-- id: guidelines-semantic-186
+    expected: "- `patterns[*].notes` gives mode-specific detail where multiple calling modes\n\
+      \  exist."
+- id: guidelines-semantic-093
   kind: semantic
-  start: 659
-  end: 661
-  text: "- an additional LLM sidecar documents its bound instruction file and\n  description, but never a dispatcher invocation; the default interface is\n  documented by the root's `default_interface`."
-  content_digest: sha256:e4f472b4da12b913f1f66c7b8f695ab438aa52bc39680362a38c0886808284d0
+  start: 342
+  end: 343
+  text: "- a source interface owns its contract and optional process binding; a module\n \
+    \ export names that interface and access policy without copying either."
+  content_digest: sha256:012aef39be0f6cdb5e62fa695e03812da5de03633c12ae47e302ca590bdff356
   target:
     target_ref: skill-guidelines.canonical-blueprint-ownership.requirement-002#source-block
     field: /statement
-    expected: "- an additional LLM sidecar documents its bound instruction file and\n  description, but never a dispatcher invocation; the default interface is\n  documented by the root's `default_interface`."
-- id: guidelines-semantic-187
+    expected: "- a source interface owns its contract and optional process binding; a module\n\
+      \  export names that interface and access policy without copying either."
+- id: guidelines-semantic-094
   kind: semantic
-  start: 662
-  end: 663
-  text: "- The skill body references interface names only \u2014 it never shows\n  `dispatcher --caller-skill` invocations or runtime file paths."
+  start: 345
+  end: 346
+  text: "- The skill body references interface names only \u2014 it never shows\n  `dispatcher\
+    \ --caller-skill` invocations or runtime file paths."
   content_digest: sha256:edef9f72143ae51a4ce3d1aba4134a0d15d5947e927d083eb7d8650caa9e63bd
   target:
     target_ref: skill-guidelines.canonical-blueprint-ownership.requirement-003#source-block
     field: /statement
-    expected: "- The skill body references interface names only \u2014 it never shows\n  `dispatcher --caller-skill` invocations or runtime file paths."
-- id: guidelines-semantic-188
+    expected: "- The skill body references interface names only \u2014 it never shows\n  `dispatcher\
+      \ --caller-skill` invocations or runtime file paths."
+- id: guidelines-semantic-095
   kind: semantic
-  start: 665
-  end: 665
+  start: 348
+  end: 348
   text: The generated blocks must be sufficient for a first-attempt correct invocation.
   content_digest: sha256:4962428898cd6b1e02534041e6090bf38a6969ada77bad6c2e74e31ac74fb09e
   target:
     target_ref: skill-guidelines.canonical-blueprint-ownership.requirement-004#source-block
     field: /statement
     expected: The generated blocks must be sufficient for a first-attempt correct invocation.
-- id: guidelines-semantic-189
+- id: guidelines-semantic-096
   kind: semantic
-  start: 667
-  end: 669
+  start: 350
+  end: 352
   text: '**Interfaces that require runtime state should say so explicitly in the skill
 
     body.** When an operation depends on information only available at call time,
@@ -2788,210 +1421,265 @@ units:
       body.** When an operation depends on information only available at call time,
 
       the skill body must instruct the model to read that state first.'
-- id: guidelines-semantic-190
+- id: guidelines-semantic-097
   kind: semantic
-  start: 671
-  end: 674
-  text: "**8. Commit and push after every skill change** \u2014 when a skill is created or\nmodified and the result is complete, show the user the diff and ask for\nconfirmation before committing. Once confirmed, stage the changed files,\ncommit, and push to `origin`."
+  start: 354
+  end: 357
+  text: "**8. Commit and push after every skill change** \u2014 when a skill is created or\n\
+    modified and the result is complete, show the user the diff and ask for\nconfirmation\
+    \ before committing. Once confirmed, stage the changed files,\ncommit, and push to `origin`."
   content_digest: sha256:4aa343e674b7e1447d37dfc62101b1e33c4bbbd8749f76a21cc118793b9fb7cc
   target:
     target_ref: skill-guidelines.change-publication-workflow.guidance-001
     field: /statement
-    expected: "**8. Commit and push after every skill change** \u2014 when a skill is created or\nmodified and the result is complete, show the user the diff and ask for\nconfirmation before committing. Once confirmed, stage the changed files,\ncommit, and push to `origin`."
-- id: guidelines-semantic-191
+    expected: "**8. Commit and push after every skill change** \u2014 when a skill is created\
+      \ or\nmodified and the result is complete, show the user the diff and ask for\nconfirmation\
+      \ before committing. Once confirmed, stage the changed files,\ncommit, and push to `origin`."
+- id: guidelines-semantic-098
   kind: semantic
-  start: 676
-  end: 676
+  start: 359
+  end: 359
   text: "**9. Skills are components in an evolving system \u2014 design accordingly.**"
   content_digest: sha256:f1c97dc31948ae38f63c20a2c47b498b89aa3200bce4533666cdcfaa6e4579b8
   target:
     target_ref: skill-guidelines.system-evolution.guidance-001
     field: /statement
     expected: "**9. Skills are components in an evolving system \u2014 design accordingly.**"
-- id: guidelines-semantic-192
+- id: guidelines-semantic-099
   kind: semantic
-  start: 678
-  end: 679
-  text: "- **Reuse, don't reimplement.** Before writing new behavior, check whether an\n  existing skill already covers it. If yes, invoke or extend that skill."
+  start: 361
+  end: 362
+  text: "- **Reuse, don't reimplement.** Before writing new behavior, check whether an\n \
+    \ existing skill already covers it. If yes, invoke or extend that skill."
   content_digest: sha256:9677f1336d5a8ac1b172943f29a21eec0cac4beec8ef7970efef437865f5fa9d
   target:
     target_ref: skill-guidelines.system-evolution.guidance-002
     field: /statement
-    expected: "- **Reuse, don't reimplement.** Before writing new behavior, check whether an\n  existing skill already covers it. If yes, invoke or extend that skill."
-- id: guidelines-semantic-193
+    expected: "- **Reuse, don't reimplement.** Before writing new behavior, check whether\
+      \ an\n  existing skill already covers it. If yes, invoke or extend that skill."
+- id: guidelines-semantic-100
   kind: semantic
-  start: 680
-  end: 681
-  text: "- **Depend on interfaces, not internals.** There are only two valid\n  cross-skill boundaries:"
-  content_digest: sha256:b1d86dff5506450ce3a01918781a65662a9e62ff742f613d7ca374998b49c570
+  start: 364
+  end: 365
+  text: "- **Depend on interfaces, not internals.** There are only two valid\n  cross-module\
+    \ boundaries:"
+  content_digest: sha256:f82acd9a9919a92a5282b3101d7f37f38c2a3aee8e62d6665170b8e43a1dbac7
   target:
     target_ref: skill-guidelines.system-evolution.requirement-001#source-block
     field: /statement
-    expected: "- **Depend on interfaces, not internals.** There are only two valid\n  cross-skill boundaries:"
-- id: guidelines-semantic-194
+    expected: "- **Depend on interfaces, not internals.** There are only two valid\n  cross-module\
+      \ boundaries:"
+- id: guidelines-semantic-101
   kind: semantic
-  start: 682
-  end: 682
-  text: '  - invoke the dependency skill as a skill'
-  content_digest: sha256:28e95904bdad31602feb7caa9a08cb17437ef01a9adbf58f63afbb9a83d5f461
+  start: 367
+  end: 367
+  text: '  - invoke the dependency module through its autodiscovered gateway'
+  content_digest: sha256:31e57d50c11bcafe56a07357b097af6074411981a2b3e82b936a05908f706c5f
   target:
     target_ref: skill-guidelines.system-evolution.guidance-003
     field: /statement
-    expected: '  - invoke the dependency skill as a skill'
-- id: guidelines-semantic-195
+    expected: '  - invoke the dependency module through its autodiscovered gateway'
+- id: guidelines-semantic-102
   kind: semantic
-  start: 683
-  end: 684
-  text: "  - call the dependency skill's exported machine interface through `dispatcher`\n    or a declared `DispatchCall` used by `PythonMachineInterface.dispatch()`"
-  content_digest: sha256:95754bfe90940d7169be6f20daf28526c7bb700872ade8bbea86807a0639adc7
+  start: 369
+  end: 370
+  text: "  - call the dependency module's export through `dispatcher` or a declared\n    `DispatchCall`\
+    \ used by `PythonMachineInterface.dispatch()`"
+  content_digest: sha256:149639ac76edcff15a087895181453f57595b6aaab6da4dc475049c689de8d9a
   target:
     target_ref: skill-guidelines.system-evolution.guidance-004
     field: /statement
-    expected: "  - call the dependency skill's exported machine interface through `dispatcher`\n    or a declared `DispatchCall` used by `PythonMachineInterface.dispatch()`"
-- id: guidelines-semantic-196
+    expected: "  - call the dependency module's export through `dispatcher` or a declared\n\
+      \    `DispatchCall` used by `PythonMachineInterface.dispatch()`"
+- id: guidelines-semantic-103
   kind: semantic
-  start: 685
-  end: 687
-  text: "- **Do not introduce new cross-skill Python imports.** If behavior should be\n  shared across skills, expose it through a skill invocation, exported machine\n  interface, or a first-party shared package under `src/officina/`."
-  content_digest: sha256:c2eeaa17767c3ef14b5e9c37cbef2c7f0c05d4074ef654c677964d97d9a83845
+  start: 372
+  end: 374
+  text: "- **Do not introduce new cross-module Python imports.** If behavior should be\n \
+    \ shared across modules, expose it through a module gateway, module export, or a\n  first-party\
+    \ shared package under `src/officina/`."
+  content_digest: sha256:a504c14f1a132f7ea6f51cca696c751f16271afb419b15701eff2c546ba962da
   target:
     target_ref: skill-guidelines.system-evolution.requirement-002#source-block
     field: /statement
-    expected: "- **Do not introduce new cross-skill Python imports.** If behavior should be\n  shared across skills, expose it through a skill invocation, exported machine\n  interface, or a first-party shared package under `src/officina/`."
-- id: guidelines-semantic-197
+    expected: "- **Do not introduce new cross-module Python imports.** If behavior should\
+      \ be\n  shared across modules, expose it through a module gateway, module export, or\
+      \ a\n  first-party shared package under `src/officina/`."
+- id: guidelines-semantic-104
   kind: semantic
-  start: 688
-  end: 688
+  start: 376
+  end: 376
   text: '- **Do not reach into another skill''s runtime directory from local runtime code.**'
   content_digest: sha256:94de6b2af0cd12be2687a3ed1a53ae8a710c1e77366914b413f2156285e22479
   target:
     target_ref: skill-guidelines.system-evolution.requirement-003#source-block
     field: /statement
-    expected: '- **Do not reach into another skill''s runtime directory from local runtime code.**'
-- id: guidelines-semantic-198
+    expected: '- **Do not reach into another skill''s runtime directory from local runtime
+      code.**'
+- id: guidelines-semantic-105
   kind: semantic
-  start: 689
-  end: 693
-  text: "- **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative. A\n  skill may refer to files under its own directory, to shared `../references/`\n  material, and to shared repo tools under `../../tools/`. It must not mention\n  parent-path addresses such as `../other-skill/...`, `../../skills/...`, or\n  any absolute filesystem path to another skill."
+  start: 378
+  end: 382
+  text: "- **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative. A\n \
+    \ skill may refer to files under its own directory, to shared `../references/`\n  material,\
+    \ and to shared repo tools under `../../tools/`. It must not mention\n  parent-path addresses\
+    \ such as `../other-skill/...`, `../../skills/...`, or\n  any absolute filesystem path\
+    \ to another skill."
   content_digest: sha256:f478104fe0b5b23a94bcee76f1245061df98cdd8f5cca7158499b71869b99796
   target:
     target_ref: skill-guidelines.system-evolution.requirement-004#source-block
     field: /statement
-    expected: "- **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative. A\n  skill may refer to files under its own directory, to shared `../references/`\n  material, and to shared repo tools under `../../tools/`. It must not mention\n  parent-path addresses such as `../other-skill/...`, `../../skills/...`, or\n  any absolute filesystem path to another skill."
-- id: guidelines-semantic-199
+    expected: "- **Keep SKILL.md references local.** Paths in `SKILL.md` must be relative.\
+      \ A\n  skill may refer to files under its own directory, to shared `../references/`\n\
+      \  material, and to shared repo tools under `../../tools/`. It must not mention\n  parent-path\
+      \ addresses such as `../other-skill/...`, `../../skills/...`, or\n  any absolute filesystem\
+      \ path to another skill."
+- id: guidelines-semantic-106
   kind: semantic
-  start: 694
-  end: 695
-  text: "- **Make your own interface explicit.** State what inputs your skill expects\n  and what outputs it produces. For blueprint skills:"
-  content_digest: sha256:076e3116c45d436e21471a105e8c3d37344c61dfff1c87bff6e1a805fe9797e6
+  start: 384
+  end: 385
+  text: "- **Make your own interface explicit.** State what inputs your module expects\n \
+    \ and what outputs it produces:"
+  content_digest: sha256:f3d708581cb28f3e05918f66793625272fbc3c06edd2094cfb0bcf720d8d943a
   target:
     target_ref: skill-guidelines.system-evolution.guidance-005
     field: /statement
-    expected: "- **Make your own interface explicit.** State what inputs your skill expects\n  and what outputs it produces. For blueprint skills:"
-- id: guidelines-semantic-200
+    expected: "- **Make your own interface explicit.** State what inputs your module expects\n\
+      \  and what outputs it produces:"
+- id: guidelines-semantic-107
   kind: semantic
-  start: 696
-  end: 696
-  text: '  - `skill_interface` describes the skill-level contract'
-  content_digest: sha256:d31a084153cf0c06e32702867cb068f53033414a2a5908e142b8e625bb1f1337
+  start: 387
+  end: 387
+  text: '  - the module blueprint declares sources, exports, and export access'
+  content_digest: sha256:8382f89175451297aeb2135521024724ded127f169d92b81ba2b7ee149ec8644
   target:
     target_ref: skill-guidelines.system-evolution.guidance-006
     field: /statement
-    expected: '  - `skill_interface` describes the skill-level contract'
-- id: guidelines-semantic-201
+    expected: '  - the module blueprint declares sources, exports, and export access'
+- id: guidelines-semantic-108
   kind: semantic
-  start: 697
-  end: 697
-  text: '  - `machine-interface` sidecars describe dispatcher-callable interfaces'
-  content_digest: sha256:6fbd36184ad9bb441f188b6b6512da35f1e09f79c1f9d7fcf74d0c4958e62565
+  start: 389
+  end: 389
+  text: '  - each behavioral source declares its own interfaces and direct dependencies'
+  content_digest: sha256:0db7a7fb10091b888bf1b150faac4b1e46461ab52b04cd99a6233a309e07dc98
   target:
     target_ref: skill-guidelines.system-evolution.guidance-007
     field: /statement
-    expected: '  - `machine-interface` sidecars describe dispatcher-callable interfaces'
-- id: guidelines-semantic-202
+    expected: '  - each behavioral source declares its own interfaces and direct dependencies'
+- id: guidelines-semantic-109
   kind: semantic
-  start: 698
-  end: 699
-  text: "  - root `default_interface` describes the default LLM-facing interface, while\n    `llm-interface` sidecars describe additional named LLM-facing interfaces"
-  content_digest: sha256:4926a78f05f40a30123c545ded84bb3d30ab87a6f4db1abc4dd7255bc518f565
+  start: 391
+  end: 391
+  text: '  - `uses_interfaces` records exact sibling or exported interface dependencies'
+  content_digest: sha256:ce7f07d279e725ba852f94e0416c14741f89af08bca6a59ef9162bb70378ff7b
   target:
     target_ref: skill-guidelines.system-evolution.guidance-008
     field: /statement
-    expected: "  - root `default_interface` describes the default LLM-facing interface, while\n    `llm-interface` sidecars describe additional named LLM-facing interfaces"
-- id: guidelines-semantic-203
+    expected: '  - `uses_interfaces` records exact sibling or exported interface dependencies'
+- id: guidelines-semantic-110
   kind: semantic
-  start: 700
-  end: 700
-  text: '  - `direct_io` describes immediate semantic IO for each interface'
-  content_digest: sha256:04181d576d3c4c65eb8b3da0e0cf2395d2bcfb533e2f6e396d69d91fb11b515d
+  start: 393
+  end: 393
+  text: '  - each interface contract describes its immediate semantic IO'
+  content_digest: sha256:2428f6284cfd560e35e891534109ab0e54c359448f217af98d26ace75149ec86
   target:
     target_ref: skill-guidelines.system-evolution.guidance-009
     field: /statement
-    expected: '  - `direct_io` describes immediate semantic IO for each interface'
-- id: guidelines-semantic-204
+    expected: '  - each interface contract describes its immediate semantic IO'
+- id: guidelines-semantic-111
   kind: semantic
-  start: 701
-  end: 702
-  text: "  - `owns_filesystem` declares interface-owned filesystem paths and permitted\n    readers"
-  content_digest: sha256:00834e6f8fac0ca5d107ee8f371511358edeb96fa97dbc5e1be6b1c0ea0897b9
+  start: 395
+  end: 395
+  text: '  - `content` declares the files owned by each node'
+  content_digest: sha256:08fd0fa815fbbcc3741a6206ff2db3e1f9be96c369802122bde1addb617a3335
   target:
     target_ref: skill-guidelines.system-evolution.guidance-010
     field: /statement
-    expected: "  - `owns_filesystem` declares interface-owned filesystem paths and permitted\n    readers"
-- id: guidelines-semantic-205
+    expected: '  - `content` declares the files owned by each node'
+- id: guidelines-semantic-112
   kind: semantic
-  start: 703
-  end: 703
-  text: '  - `version` on each interface is the major version of that public contract'
-  content_digest: sha256:50a7a4d5cf232fad63dff9ffe15432f535d13478dcfcd9fe36ddb2ad5642c908
+  start: 397
+  end: 397
+  text: '  - dependency and interface versions are exact'
+  content_digest: sha256:8ec9913b1d6029e057b106fed8e812da627759b8b36a615392ee69d682525279
   target:
     target_ref: skill-guidelines.system-evolution.guidance-011
     field: /statement
-    expected: '  - `version` on each interface is the major version of that public contract'
-- id: guidelines-semantic-206
+    expected: '  - dependency and interface versions are exact'
+- id: guidelines-semantic-113
   kind: semantic
-  start: 705
-  end: 716
-  text: "**10. No code in SKILL.md \u2014 runtime files only, with one exception** \u2014 skill files\nmust not contain executable code logic. Any logic belongs in a dedicated file\nunder `_rtx/`, except when the skill's purpose is to provide an interface to\na specific external tool and that tool is declared in frontmatter `tools:`.\nHand-authored `SKILL.md` bodies must also avoid executable-file names and paths\nin execution contexts, such as `run tmp.py`, `python helper.py`, `use\ninstall.sh`, or `launch tool.exe`. If normal operation requires execution, put\nthe mechanics behind a blueprint machine interface and refer to the interface\nname and outcome in prose. Generated blueprint interface blocks may contain\ninvocation details because they are owned by `blueprint.yaml`.\nOpaque `_cx/...` paths are forbidden anywhere in the hand-authored body, even\noutside an explicit execution sentence."
-  content_digest: sha256:3511cf10d2c17cec823a38c93809b3c5cfbcfbe80c4498418c9182dc189fa2cb
+  start: 399
+  end: 410
+  text: "**10. No code in SKILL.md \u2014 runtime files only, with one exception** \u2014\
+    \ skill files\nmust not contain executable code logic. Any logic belongs in a dedicated\
+    \ file\nunder `_rtx/`, except when the skill's purpose is to provide an interface to\n\
+    a specific external tool and that tool is declared in frontmatter `tools:`.\nHand-authored\
+    \ `SKILL.md` bodies must also avoid executable-file names and paths\nin execution contexts,\
+    \ such as `run tmp.py`, `python helper.py`, `use\ninstall.sh`, or `launch tool.exe`. If\
+    \ normal operation requires execution, put\nthe mechanics behind a process-bound behavioral-source\
+    \ interface exported by\nthe module and refer to the export name and outcome in prose.\
+    \ Generated\nblueprint interface blocks may contain invocation details because they are\n\
+    derived from the version 4 graph. Opaque `_cx/...` paths are forbidden anywhere\nin the\
+    \ hand-authored body, even outside an explicit execution sentence."
+  content_digest: sha256:64918ae43615702e6a4c5a5dd5bdc243cbd93399e305b2c07cdaa2f18858081e
   target:
     target_ref: skill-guidelines.runtime-code-boundary.requirement-001#source-block
     field: /statement
-    expected: "**10. No code in SKILL.md \u2014 runtime files only, with one exception** \u2014 skill files\nmust not contain executable code logic. Any logic belongs in a dedicated file\nunder `_rtx/`, except when the skill's purpose is to provide an interface to\na specific external tool and that tool is declared in frontmatter `tools:`.\nHand-authored `SKILL.md` bodies must also avoid executable-file names and paths\nin execution contexts, such as `run tmp.py`, `python helper.py`, `use\ninstall.sh`, or `launch tool.exe`. If normal operation requires execution, put\nthe mechanics behind a blueprint machine interface and refer to the interface\nname and outcome in prose. Generated blueprint interface blocks may contain\ninvocation details because they are owned by `blueprint.yaml`.\nOpaque `_cx/...` paths are forbidden anywhere in the hand-authored body, even\noutside an explicit execution sentence."
-- id: guidelines-semantic-207
+    expected: "**10. No code in SKILL.md \u2014 runtime files only, with one exception** \u2014\
+      \ skill files\nmust not contain executable code logic. Any logic belongs in a dedicated\
+      \ file\nunder `_rtx/`, except when the skill's purpose is to provide an interface to\n\
+      a specific external tool and that tool is declared in frontmatter `tools:`.\nHand-authored\
+      \ `SKILL.md` bodies must also avoid executable-file names and paths\nin execution contexts,\
+      \ such as `run tmp.py`, `python helper.py`, `use\ninstall.sh`, or `launch tool.exe`.\
+      \ If normal operation requires execution, put\nthe mechanics behind a process-bound\
+      \ behavioral-source interface exported by\nthe module and refer to the export name and\
+      \ outcome in prose. Generated\nblueprint interface blocks may contain invocation details\
+      \ because they are\nderived from the version 4 graph. Opaque `_cx/...` paths are forbidden\
+      \ anywhere\nin the hand-authored body, even outside an explicit execution sentence."
+- id: guidelines-semantic-114
   kind: semantic
-  start: 718
-  end: 720
-  text: "**11. State data lives under the skill's directory** \u2014 any persistent state a\nskill writes must be stored under the skill's own directory, not under system\ndirectories or elsewhere outside the skills tree."
+  start: 412
+  end: 414
+  text: "**11. State data lives under the skill's directory** \u2014 any persistent state\
+    \ a\nskill writes must be stored under the skill's own directory, not under system\ndirectories\
+    \ or elsewhere outside the skills tree."
   content_digest: sha256:346ba6ede78951bc861a19a1ad7bf237e439ade0d4592e4b1ae28caf49d335a5
   target:
     target_ref: skill-guidelines.state-ownership.requirement-001#source-block
     field: /statement
-    expected: "**11. State data lives under the skill's directory** \u2014 any persistent state a\nskill writes must be stored under the skill's own directory, not under system\ndirectories or elsewhere outside the skills tree."
-- id: guidelines-semantic-208
+    expected: "**11. State data lives under the skill's directory** \u2014 any persistent\
+      \ state a\nskill writes must be stored under the skill's own directory, not under system\n\
+      directories or elsewhere outside the skills tree."
+- id: guidelines-semantic-115
   kind: semantic
-  start: 722
-  end: 724
-  text: "**12. Sensitive configs live under `~/.config/<skill-name>/`** \u2014 passwords,\nAPI keys, OAuth tokens, and credentials must go there, never under the skill\ndirectory."
+  start: 416
+  end: 418
+  text: "**12. Sensitive configs live under `~/.config/<skill-name>/`** \u2014 passwords,\n\
+    API keys, OAuth tokens, and credentials must go there, never under the skill\ndirectory."
   content_digest: sha256:2ecdd55259286b7340e9d692e67bd18fd42173abcbfa9dd004180e2e3e1adc50
   target:
     target_ref: skill-guidelines.sensitive-configs.requirement-001#source-block
     field: /statement
-    expected: "**12. Sensitive configs live under `~/.config/<skill-name>/`** \u2014 passwords,\nAPI keys, OAuth tokens, and credentials must go there, never under the skill\ndirectory."
-- id: guidelines-semantic-209
+    expected: "**12. Sensitive configs live under `~/.config/<skill-name>/`** \u2014 passwords,\n\
+      API keys, OAuth tokens, and credentials must go there, never under the skill\ndirectory."
+- id: guidelines-semantic-116
   kind: semantic
-  start: 726
-  end: 728
-  text: "**13. Prefer widely available, cross-platform tools at every layer** \u2014\nlanguage, runtime, and any external tools invoked. Skills must work out of the\nbox across Linux, macOS, and Windows on machines other than your own."
+  start: 420
+  end: 422
+  text: "**13. Prefer widely available, cross-platform tools at every layer** \u2014\nlanguage,\
+    \ runtime, and any external tools invoked. Skills must work out of the\nbox across Linux,\
+    \ macOS, and Windows on machines other than your own."
   content_digest: sha256:55e8a4600d01b554fd494042e5513e49f13ae5375e7feb65fdcc70d0f6527dca
   target:
     target_ref: skill-guidelines.cross-platform-tools.requirement-001#source-block
     field: /statement
-    expected: "**13. Prefer widely available, cross-platform tools at every layer** \u2014\nlanguage, runtime, and any external tools invoked. Skills must work out of the\nbox across Linux, macOS, and Windows on machines other than your own."
-- id: guidelines-semantic-210
+    expected: "**13. Prefer widely available, cross-platform tools at every layer** \u2014\
+      \nlanguage, runtime, and any external tools invoked. Skills must work out of the\nbox\
+      \ across Linux, macOS, and Windows on machines other than your own."
+- id: guidelines-semantic-117
   kind: semantic
-  start: 730
-  end: 739
+  start: 424
+  end: 433
   text: 'Shared code under `src/officina/common/` must be host-neutral by default. Put
 
     repo-wide policy there only when more than one skill can plausibly need the
@@ -3034,10 +1722,10 @@ units:
       instead of importing `keyring` directly or shelling out to host-specific
 
       credential commands.'
-- id: guidelines-semantic-211
+- id: guidelines-semantic-118
   kind: semantic
-  start: 741
-  end: 746
+  start: 435
+  end: 440
   text: 'Date and time formatting at IO boundaries must avoid host-specific formatting
 
     extensions. In Python, do not use GNU/POSIX-only or Windows-only `strftime`
@@ -3064,10 +1752,10 @@ units:
       `officina.common.dates` instead of retyping ad hoc formatting logic in each
 
       skill. This is mechanically checked by `validators/portable_dates.py`.'
-- id: guidelines-semantic-212
+- id: guidelines-semantic-119
   kind: semantic
-  start: 748
-  end: 751
+  start: 442
+  end: 445
   text: '**14. Shared skill content must stay neutral about which specific AI-assistant
 
     host it runs under, and must mention operating systems only in explicit
@@ -3086,214 +1774,244 @@ units:
       platform-support metadata or platform-named implementation files.** Enforced by
 
       `validators/platform_neutral.py`.'
-- id: guidelines-semantic-213
+- id: guidelines-semantic-120
   kind: semantic
-  start: 753
-  end: 754
-  text: "- `SKILL.md` and any generically named runtime file must not name a specific\n  host or operating system."
+  start: 447
+  end: 448
+  text: "- `SKILL.md` and any generically named runtime file must not name a specific\n  host\
+    \ or operating system."
   content_digest: sha256:c2dc338cd8572dd46d13637716823b3ada58879c3505d90c31e7a3cd69fcdba8
   target:
     target_ref: skill-guidelines.assistant-neutrality.requirement-002#source-block
     field: /statement
-    expected: "- `SKILL.md` and any generically named runtime file must not name a specific\n  host or operating system."
-- id: guidelines-semantic-214
+    expected: "- `SKILL.md` and any generically named runtime file must not name a specific\n\
+      \  host or operating system."
+- id: guidelines-semantic-121
   kind: semantic
-  start: 755
-  end: 758
-  text: "- authored blueprint files may name operating systems only in structured\n  `platform_support` and dependency `platforms` metadata. Do not put\n  platform-specific prose or implementation guidance in generic blueprint\n  fields."
+  start: 450
+  end: 453
+  text: "- authored blueprint files may name operating systems only in structured\n  `platform_support`\
+    \ and dependency `platforms` metadata. Do not put\n  platform-specific prose or implementation\
+    \ guidance in generic blueprint\n  fields."
   content_digest: sha256:8d69d94a564233b4acd3a28bc92a8467a54f9eb93496bd3a71bbef6f1a1f0bdd
   target:
     target_ref: skill-guidelines.assistant-neutrality.requirement-003#source-block
     field: /statement
-    expected: "- authored blueprint files may name operating systems only in structured\n  `platform_support` and dependency `platforms` metadata. Do not put\n  platform-specific prose or implementation guidance in generic blueprint\n  fields."
-- id: guidelines-semantic-215
+    expected: "- authored blueprint files may name operating systems only in structured\n\
+      \  `platform_support` and dependency `platforms` metadata. Do not put\n  platform-specific\
+      \ prose or implementation guidance in generic blueprint\n  fields."
+- id: guidelines-semantic-122
   kind: semantic
-  start: 759
-  end: 760
-  text: "- Blueprint schema documentation and blueprint validation/sync tooling may name\n  the allowed platform keys because they define and enforce that metadata."
+  start: 455
+  end: 456
+  text: "- Blueprint schema documentation and blueprint validation/sync tooling may name\n\
+    \  the allowed platform keys because they define and enforce that metadata."
   content_digest: sha256:a53351f5bee90059b9974b6bf25c0f810a689d6fbaba2b5d26e78071b42d61e2
   target:
     target_ref: skill-guidelines.assistant-neutrality.requirement-004#source-block
     field: /statement
-    expected: "- Blueprint schema documentation and blueprint validation/sync tooling may name\n  the allowed platform keys because they define and enforce that metadata."
-- id: guidelines-semantic-216
+    expected: "- Blueprint schema documentation and blueprint validation/sync tooling may\
+      \ name\n  the allowed platform keys because they define and enforce that metadata."
+- id: guidelines-semantic-123
   kind: semantic
-  start: 761
-  end: 763
-  text: "- If a skill or shared package genuinely needs platform-specific logic, put\n  that logic in a file whose own filename names the platform, such as\n  `claude`, `codex`, `windows`, `osx`, or `linux`."
+  start: 458
+  end: 460
+  text: "- If a skill or shared package genuinely needs platform-specific logic, put\n  that\
+    \ logic in a file whose own filename names the platform, such as\n  `claude`, `codex`,\
+    \ `windows`, `osx`, or `linux`."
   content_digest: sha256:3c7d3319906ef521778205e183d08e783781f19fba20b2abb94d439bf3e1addd
   target:
     target_ref: skill-guidelines.assistant-neutrality.guidance-001
     field: /statement
-    expected: "- If a skill or shared package genuinely needs platform-specific logic, put\n  that logic in a file whose own filename names the platform, such as\n  `claude`, `codex`, `windows`, `osx`, or `linux`."
-- id: guidelines-semantic-217
+    expected: "- If a skill or shared package genuinely needs platform-specific logic, put\n\
+      \  that logic in a file whose own filename names the platform, such as\n  `claude`,\
+      \ `codex`, `windows`, `osx`, or `linux`."
+- id: guidelines-semantic-124
   kind: semantic
-  start: 764
-  end: 766
-  text: "- A small cross-platform adapter may temporarily dispatch to platform-specific\n  commands while a backend split is pending, but new platform-specific command\n  bodies should live in platform-named files."
+  start: 462
+  end: 464
+  text: "- A small cross-platform adapter may temporarily dispatch to platform-specific\n\
+    \  commands while a backend split is pending, but new platform-specific command\n  bodies\
+    \ should live in platform-named files."
   content_digest: sha256:7af45d069f9248d0471184b57b2b8c05f2516e5b5d4f008483cebe87de848605
   target:
     target_ref: skill-guidelines.assistant-neutrality.requirement-005#source-block
     field: /statement
-    expected: "- A small cross-platform adapter may temporarily dispatch to platform-specific\n  commands while a backend split is pending, but new platform-specific command\n  bodies should live in platform-named files."
-- id: guidelines-semantic-218
+    expected: "- A small cross-platform adapter may temporarily dispatch to platform-specific\n\
+      \  commands while a backend split is pending, but new platform-specific command\n  bodies\
+      \ should live in platform-named files."
+- id: guidelines-semantic-125
   kind: semantic
-  start: 767
-  end: 769
-  text: "- `__init__.py` remains the conventional aggregation seam for\n  platform-specific modules. It may import platform-named files and re-export\n  a host-neutral API for the rest of the codebase."
+  start: 466
+  end: 468
+  text: "- `__init__.py` remains the conventional aggregation seam for\n  platform-specific\
+    \ modules. It may import platform-named files and re-export\n  a host-neutral API for\
+    \ the rest of the codebase."
   content_digest: sha256:8d04df4bf8ed2ef134d390e563883256555d86b2e5b582196d75bbad74cf315b
   target:
     target_ref: skill-guidelines.assistant-neutrality.requirement-006#source-block
     field: /statement
-    expected: "- `__init__.py` remains the conventional aggregation seam for\n  platform-specific modules. It may import platform-named files and re-export\n  a host-neutral API for the rest of the codebase."
+    expected: "- `__init__.py` remains the conventional aggregation seam for\n  platform-specific\
+      \ modules. It may import platform-named files and re-export\n  a host-neutral API for\
+      \ the rest of the codebase."
 - id: guidelines-context-001
   kind: contextual
-  start: 771
-  end: 771
+  start: 470
+  end: 470
   text: '---'
   content_digest: sha256:f52d711103d50a437830c6fbcd04fb4bab49a0f82f6d26d1c791c6e8488dd090
   contextual_reason: Markdown separator.
-- id: guidelines-semantic-220
+- id: guidelines-semantic-126
   kind: semantic
-  start: 773
-  end: 773
+  start: 472
+  end: 472
   text: '## Validator and test conventions'
   content_digest: sha256:6d0fd0e3f4ad8ad4ff9a687b612b995b7d834444bf8432bbd9d0194c784a1ca6
   target:
     target_ref: skill-guidelines.validator-test-conventions.guidance-001
     field: /statement
     expected: '## Validator and test conventions'
-- id: guidelines-semantic-221
+- id: guidelines-semantic-127
   kind: semantic
-  start: 775
-  end: 776
-  text: 'Conformance checks run on every commit via `validators/runner.py` (called from
+  start: 474
+  end: 475
+  text: 'Mechanical repository checks run on every commit via `validators/runner.py` (called
+    from
 
     `.githooks/pre-commit`). The runner auto-discovers two packages:'
-  content_digest: sha256:b0f70dda21882cecde78d37f2210a682229b28954639bb36c5f9220d4f746c5e
+  content_digest: sha256:0fa0450ac7e99b6f3ef79a74c87f0679462112699addbf45f31b36a8debcc3d1
   target:
     target_ref: skill-guidelines.validator-test-conventions.guidance-002
     field: /statement
-    expected: 'Conformance checks run on every commit via `validators/runner.py` (called from
+    expected: 'Mechanical repository checks run on every commit via `validators/runner.py`
+      (called from
 
       `.githooks/pre-commit`). The runner auto-discovers two packages:'
-- id: guidelines-semantic-222
+- id: guidelines-semantic-128
   kind: semantic
-  start: 778
-  end: 778
+  start: 477
+  end: 477
   text: "- **`validators/`** \u2014 repo-wide checks"
   content_digest: sha256:96592bbf6771bf676142e00722dc19639373da8de20fa3144ad483c676f7cc03
   target:
     target_ref: skill-guidelines.validator-test-conventions.guidance-003
     field: /statement
     expected: "- **`validators/`** \u2014 repo-wide checks"
-- id: guidelines-semantic-223
+- id: guidelines-semantic-129
   kind: semantic
-  start: 779
-  end: 779
+  start: 479
+  end: 479
   text: "- **`skills/skill-maker/validators/`** \u2014 skill-system checks"
   content_digest: sha256:b200d44d5bf3562d7639648485a31ecfb208e91b693df32d63177262b7b88a7d
   target:
     target_ref: skill-guidelines.validator-test-conventions.guidance-004
     field: /statement
     expected: "- **`skills/skill-maker/validators/`** \u2014 skill-system checks"
-- id: guidelines-semantic-224
+- id: guidelines-semantic-130
   kind: semantic
-  start: 781
-  end: 781
+  start: 481
+  end: 481
   text: '### Adding a new validator'
   content_digest: sha256:02ab6c6adc48a6e6062dbdcc8c50f582c791ee47cbf76e9f8b30f447ed340990
   target:
     target_ref: skill-guidelines.adding-validator.guidance-001
     field: /statement
     expected: '### Adding a new validator'
-- id: guidelines-semantic-225
+- id: guidelines-semantic-131
   kind: semantic
-  start: 783
-  end: 784
+  start: 483
+  end: 484
   text: "1. Create `validators/<name>.py` or\n   `skills/skill-maker/validators/<name>.py`."
   content_digest: sha256:083320295d2710dc596a2cd185baea4fdf9933ed43a074828614f1f1d2160a90
   target:
     target_ref: skill-guidelines.adding-validator.guidance-002
     field: /statement
     expected: "1. Create `validators/<name>.py` or\n   `skills/skill-maker/validators/<name>.py`."
-- id: guidelines-semantic-226
+- id: guidelines-semantic-132
   kind: semantic
-  start: 785
-  end: 785
+  start: 486
+  end: 486
   text: '2. Export exactly one function: `validate(repo_root: Path) -> list[str]`.'
   content_digest: sha256:19a255a2f1cb85a0a47800185c434717a5f92df3e9de58ad8d717b1765904584
   target:
     target_ref: skill-guidelines.adding-validator.guidance-003
     field: /statement
     expected: '2. Export exactly one function: `validate(repo_root: Path) -> list[str]`.'
-- id: guidelines-semantic-227
+- id: guidelines-semantic-133
   kind: semantic
-  start: 786
-  end: 786
+  start: 488
+  end: 488
   text: 3. Optionally add a `main()` so it can be run standalone.
   content_digest: sha256:1427d971a4e319dcad5be9e145f395a2ca46f5394067c7f940271cd53d5a6588
   target:
     target_ref: skill-guidelines.adding-validator.guidance-004
     field: /statement
     expected: 3. Optionally add a `main()` so it can be run standalone.
-- id: guidelines-semantic-228
+- id: guidelines-semantic-134
   kind: semantic
-  start: 787
-  end: 790
-  text: "4. Add a `tests/validate_<name>.py` with at least a pass case and a fail case.\n   Use `pytest` conventions (plain functions, `tmp_path` fixture for\n   isolation). Load the validator via `importlib.util.spec_from_file_location`\n   rather than importing it as a package."
+  start: 490
+  end: 493
+  text: "4. Add a `tests/validate_<name>.py` with at least a pass case and a fail case.\n\
+    \   Use `pytest` conventions (plain functions, `tmp_path` fixture for\n   isolation).\
+    \ Load the validator via `importlib.util.spec_from_file_location`\n   rather than importing\
+    \ it as a package."
   content_digest: sha256:36ca062775f8f8f444989398d7e19e30ed61df34d3c2462c754592a61c473e92
   target:
     target_ref: skill-guidelines.adding-validator.guidance-005
     field: /statement
-    expected: "4. Add a `tests/validate_<name>.py` with at least a pass case and a fail case.\n   Use `pytest` conventions (plain functions, `tmp_path` fixture for\n   isolation). Load the validator via `importlib.util.spec_from_file_location`\n   rather than importing it as a package."
-- id: guidelines-semantic-229
+    expected: "4. Add a `tests/validate_<name>.py` with at least a pass case and a fail case.\n\
+      \   Use `pytest` conventions (plain functions, `tmp_path` fixture for\n   isolation).\
+      \ Load the validator via `importlib.util.spec_from_file_location`\n   rather than importing\
+      \ it as a package."
+- id: guidelines-semantic-135
   kind: semantic
-  start: 792
-  end: 792
+  start: 495
+  end: 495
   text: "The runner picks up the new file automatically \u2014 no registration needed."
   content_digest: sha256:acc89da37a68d9c5b0a36b2b1a8a5a8136b4f0266d427257c82f91d439448b18
   target:
     target_ref: skill-guidelines.adding-validator.guidance-006
     field: /statement
     expected: "The runner picks up the new file automatically \u2014 no registration needed."
-- id: guidelines-semantic-230
+- id: guidelines-semantic-136
   kind: semantic
-  start: 794
-  end: 794
+  start: 497
+  end: 497
   text: '### Test file conventions'
   content_digest: sha256:c16f3902444d6a8606f076dd0fc2f2753ca26e937b37821b8007311dc3a4fba2
   target:
     target_ref: skill-guidelines.test-file-conventions.guidance-001
     field: /statement
     expected: '### Test file conventions'
-- id: guidelines-semantic-231
+- id: guidelines-semantic-137
   kind: semantic
-  start: 796
-  end: 796
+  start: 499
+  end: 499
   text: '- Validator tests live in `tests/validate_<name>.py`.'
   content_digest: sha256:e45416560c482330cf66910e0f176e6237b93e12916791eb852a7b24fd2f93f0
   target:
     target_ref: skill-guidelines.test-file-conventions.guidance-002
     field: /statement
     expected: '- Validator tests live in `tests/validate_<name>.py`.'
-- id: guidelines-semantic-232
+- id: guidelines-semantic-138
   kind: semantic
-  start: 797
-  end: 797
+  start: 501
+  end: 501
   text: '- Behavior tests live in `skills/<skill-name>/tests/`.'
   content_digest: sha256:cd7773620150613ff5047817bd696b266559029be1f4d65717c303c329246f89
   target:
     target_ref: skill-guidelines.test-file-conventions.guidance-003
     field: /statement
     expected: '- Behavior tests live in `skills/<skill-name>/tests/`.'
-- id: guidelines-semantic-233
+- id: guidelines-semantic-139
   kind: semantic
-  start: 798
-  end: 799
-  text: "- Use `importlib.util.spec_from_file_location` to load validators in tests \u2014\n  avoids package naming collisions and works regardless of working directory."
+  start: 503
+  end: 504
+  text: "- Use `importlib.util.spec_from_file_location` to load validators in tests \u2014\
+    \n  avoids package naming collisions and works regardless of working directory."
   content_digest: sha256:d70ef184cdb90ec845d5bb123a47396bbd5a62da003c7b2f930c8aae252bbc73
   target:
     target_ref: skill-guidelines.test-file-conventions.guidance-004
     field: /statement
-    expected: "- Use `importlib.util.spec_from_file_location` to load validators in tests \u2014\n  avoids package naming collisions and works regardless of working directory."
+    expected: "- Use `importlib.util.spec_from_file_location` to load validators in tests\
+      \ \u2014\n  avoids package naming collisions and works regardless of working directory."

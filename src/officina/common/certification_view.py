@@ -10,16 +10,30 @@ from typing import Any, Mapping, Protocol, Sequence
 
 import jsonschema
 
-from .artifact_health import (
-    ArtifactHealthError,
+from .certification_hashing import (
+    CertificationHashError,
+    CANONICAL_NODE_HASH_POLICY,
     CERTIFIER_NODE_ID,
     NodeHashState,
+    compute_certification_basis_hash,
+    compute_node_hash_states,
+    derive_certifier_identity,
+    expected_certifier_checks,
     normalize_node_checks,
     resolve_certification_basis_paths,
 )
 from .atomic_files import AtomicWriteError, read_regular_file_bytes
-from .audit_records import CertificateLogError, parse_certificate_log
-from .blueprint_graph import BlueprintNode, RepositoryBlueprintGraph
+from .certificate_records import (
+    CertificateLogError,
+    certificate_public_key_root,
+    parse_certificate_log,
+)
+from .blueprint_graph import (
+    BlueprintGraphError,
+    BlueprintNode,
+    RepositoryBlueprintGraph,
+    load_repository_blueprint_graph,
+)
 from .blueprint_template import load_schema, schema_validator
 from .git_provenance import capture_git_snapshot, check_commit_readiness
 
@@ -66,7 +80,7 @@ class CertificationView(Protocol):
         module_id: str,
         interface_id: str,
         interface_version: int,
-        source_node_id: str | None,
+        source_node_id: str,
     ) -> CertificationDecision: ...
 
     def certificate_for(self, node_id: str) -> CurrentCertificate | None: ...
@@ -119,7 +133,7 @@ class CertificateRecordView:
         module_id: str,
         interface_id: str,
         interface_version: int,
-        source_node_id: str | None,
+        source_node_id: str,
     ) -> CertificationDecision:
         del interface_version
         certificate = self.certificate_for(module_id)
@@ -129,14 +143,13 @@ class CertificateRecordView:
                 "certification-unavailable",
                 f"{module_id}: no current certificate for {interface_id}",
             )
-        if source_node_id is not None:
-            source_certificate = self.certificate_for(source_node_id)
-            if source_certificate is None:
-                return CertificationDecision(
-                    False,
-                    "source-certification-unavailable",
-                    f"{source_node_id}: no current certificate for {interface_id}",
-                )
+        source_certificate = self.certificate_for(source_node_id)
+        if source_certificate is None:
+            return CertificationDecision(
+                False,
+                "source-certification-unavailable",
+                f"{source_node_id}: no current certificate for {interface_id}",
+            )
         return CertificationDecision(True, "current", "Current certificate.")
 
 
@@ -177,7 +190,7 @@ def _expected_checks(
 ) -> list[dict[str, object]]:
     try:
         return [dict(check) for check in normalize_node_checks(checks_by_node.get(node_id, ()))]
-    except ArtifactHealthError as exc:
+    except CertificationHashError as exc:
         raise ValueError(f"{node_id}: invalid expected certification checks: {exc}") from exc
 
 
@@ -258,7 +271,7 @@ def evaluate_certificate_currentness(
                     allow_non_atomic=allow_non_atomic,
                 ).stamp_worthy
             )
-    except (ArtifactHealthError, OSError, TypeError, ValueError):
+    except (CertificationHashError, OSError, TypeError, ValueError):
         pass
 
     for node_id, node in sorted(graph.nodes.items()):
@@ -394,7 +407,7 @@ class CertificateCurrentnessView:
         module_id: str,
         interface_id: str,
         interface_version: int,
-        source_node_id: str | None,
+        source_node_id: str,
     ) -> CertificationDecision:
         return self._record_view.check_export(
             module_id,
@@ -404,21 +417,294 @@ class CertificateCurrentnessView:
         )
 
 
+@dataclass(frozen=True)
+class RepositoryCertificationState:
+    """One canonical repository graph, hash, identity, and certificate snapshot."""
+
+    graph: RepositoryBlueprintGraph
+    states: Mapping[str, NodeHashState]
+    source_commit: str
+    certification_basis_hash: str
+    certifier_identity: Mapping[str, object]
+    currentness: CertificateCurrentnessReport
+
+
+class RepositoryCertificationError(ValueError):
+    """Raised when the canonical repository certification state cannot be derived."""
+
+
+def derive_repository_certification_state(
+    repo_root: Path,
+    *,
+    public_key_root: Path | None = None,
+    allow_non_atomic: bool = False,
+) -> RepositoryCertificationState:
+    """Derive the sole repository-backed certification state used by readers."""
+
+    root = Path(repo_root).resolve()
+    schema_root = root / "references" / "blueprint"
+    try:
+        graph = load_repository_blueprint_graph(root, schema_root=schema_root)
+        if any(
+            node.declaration.get("schema_version") != 4
+            for node in graph.nodes.values()
+        ):
+            raise RepositoryCertificationError(
+                "repository certification accepts only all-v4 repositories"
+            )
+        snapshot = capture_git_snapshot(root)
+        if snapshot is None or snapshot.repo_root != root:
+            raise RepositoryCertificationError(
+                "repository certification requires the exact Git repository root"
+            )
+        basis_paths = resolve_certification_basis_paths(
+            root,
+            allow_non_atomic=allow_non_atomic,
+        )
+        basis_hash = compute_certification_basis_hash(
+            root,
+            allow_non_atomic=allow_non_atomic,
+        )
+        states = compute_node_hash_states(
+            graph,
+            repo_root=root,
+            policy_path=root / CANONICAL_NODE_HASH_POLICY,
+            certification_basis_hash=basis_hash,
+            certification_basis_paths=basis_paths,
+            allow_non_atomic=allow_non_atomic,
+        )
+        certifier_identity = derive_certifier_identity(
+            graph,
+            states,
+            snapshot.commit,
+        )
+        checks_by_node = {
+            node_id: expected_certifier_checks() for node_id in graph.nodes
+        }
+        currentness = evaluate_certificate_currentness(
+            graph,
+            states,
+            repo_root=root,
+            public_key_root=(
+                certificate_public_key_root(root)
+                if public_key_root is None
+                else Path(public_key_root)
+            ),
+            source_commit=snapshot.commit,
+            certifier_identity=certifier_identity,
+            checks_by_node=checks_by_node,
+            schema_root=schema_root,
+            allow_non_atomic=allow_non_atomic,
+        )
+    except RepositoryCertificationError:
+        raise
+    except (
+        CertificationHashError,
+        BlueprintGraphError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise RepositoryCertificationError(str(exc)) from exc
+    return RepositoryCertificationState(
+        graph=graph,
+        states=states,
+        source_commit=snapshot.commit,
+        certification_basis_hash=basis_hash,
+        certifier_identity=certifier_identity,
+        currentness=currentness,
+    )
+
+
+def _initial_certificate_state_admissible(
+    state: RepositoryCertificationState,
+) -> bool:
+    """Return whether initial certification is pristine or a valid resumable prefix."""
+
+    allowed_concerns = {
+        "missing-certificate-log",
+        *(
+            f"dependency-not-current:{node_id}"
+            for node_id in state.graph.nodes
+        ),
+    }
+    existing: set[str] = set()
+    for node_id, node in state.graph.nodes.items():
+        if certificate_log_path(node).exists():
+            existing.add(node_id)
+        status = state.currentness.nodes.get(node_id)
+        if status is None:
+            return False
+        if node_id in existing:
+            if not status.current:
+                return False
+        elif any(concern not in allowed_concerns for concern in status.concerns):
+            return False
+
+    order: list[str] = []
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(node_id: str) -> bool:
+        if node_id in visited:
+            return True
+        if node_id in visiting:
+            return False
+        state_for_node = state.states.get(node_id)
+        if not isinstance(state_for_node, NodeHashState):
+            return False
+        visiting.add(node_id)
+        for dependency in state_for_node.dependency_hashes:
+            target = (
+                dependency.get("target")
+                if isinstance(dependency, Mapping)
+                else None
+            )
+            if isinstance(target, str) and target in state.graph.nodes:
+                if not visit(target):
+                    return False
+        visiting.remove(node_id)
+        visited.add(node_id)
+        order.append(node_id)
+        return True
+
+    if CERTIFIER_NODE_ID not in state.graph.nodes or not visit(CERTIFIER_NODE_ID):
+        return False
+    if not existing <= set(order):
+        return False
+    return existing == set(order[: len(existing)])
+
+
+def _flag_value(argv: Sequence[str], flag: str) -> str | None:
+    try:
+        index = argv.index(flag)
+    except ValueError:
+        return None
+    if index + 1 >= len(argv) or argv[index + 1].startswith("--"):
+        return None
+    if flag in argv[index + 2 :]:
+        return None
+    return argv[index + 1]
+
+
+class RepositoryCertificationView(CertificateCurrentnessView):
+    """Current-certificate admission plus the sole bounded initial route."""
+
+    def __init__(
+        self,
+        report: CertificateCurrentnessReport,
+        *,
+        repo_root: Path,
+        source_commit: str,
+        bootstrap_allowed: bool,
+    ) -> None:
+        super().__init__(report)
+        self.repo_root = Path(repo_root).resolve()
+        self.source_commit = source_commit
+        self.bootstrap_allowed = bootstrap_allowed
+
+    def check_bootstrap(
+        self,
+        *,
+        caller_module_id: str,
+        interface_id: str,
+        pattern_name: str | None,
+        argv: Sequence[str],
+    ) -> CertificationDecision:
+        """Admit only the certifier's exact initial mechanical/certification calls."""
+
+        rejected = CertificationDecision(
+            False,
+            "certification-unavailable",
+            "no current certificate admits this invocation",
+        )
+        if not self.bootstrap_allowed or caller_module_id != CERTIFIER_NODE_ID:
+            return rejected
+        tokens = tuple(argv)
+        if interface_id == "skill-drift.interface.compute-hashes":
+            if tokens and tokens[0] == "compute-hashes":
+                return CertificationDecision(
+                    True,
+                    "initial-certification",
+                    "Bounded read-only hash computation for initial certification.",
+                )
+            return rejected
+        if interface_id == "skill-maker.interface.sync-blueprints":
+            if pattern_name == "check" and tokens == ("--check",):
+                return CertificationDecision(
+                    True,
+                    "initial-certification",
+                    "Bounded blueprint synchronization check for initial certification.",
+                )
+            return rejected
+        if interface_id != "skill-certifier.interface.certify":
+            return rejected
+        if not tokens or tokens[0] != "certify":
+            return rejected
+        positionals: list[str] = []
+        index = 1
+        while index < len(tokens):
+            token = tokens[index]
+            if token in {"--reviewed-repository", "--reviewed-commit"}:
+                index += 2
+                continue
+            if token == "--json":
+                index += 1
+                continue
+            if token.startswith("--"):
+                return rejected
+            positionals.append(token)
+            index += 1
+        reviewed_repository = _flag_value(tokens, "--reviewed-repository")
+        reviewed_commit = _flag_value(tokens, "--reviewed-commit")
+        if (
+            positionals == [CERTIFIER_NODE_ID]
+            and reviewed_repository is not None
+            and Path(reviewed_repository).resolve() == self.repo_root
+            and reviewed_commit == self.source_commit
+        ):
+            return CertificationDecision(
+                True,
+                "initial-certification",
+                "Bounded initial certification of the canonical certifier.",
+            )
+        return rejected
+
+
+def repository_certification_view(
+    repo_root: Path,
+    *,
+    allow_non_atomic: bool = False,
+) -> RepositoryCertificationView:
+    """Construct the canonical production view from current repository state."""
+
+    state = derive_repository_certification_state(
+        repo_root,
+        allow_non_atomic=allow_non_atomic,
+    )
+    return RepositoryCertificationView(
+        state.currentness,
+        repo_root=repo_root,
+        source_commit=state.source_commit,
+        bootstrap_allowed=_initial_certificate_state_admissible(state),
+    )
+
+
 class RejectingCertificationView:
-    """Phase-2 production placeholder; Phase 4 supplies the backed view."""
+    """Fail-closed view used when canonical repository state is unavailable."""
 
     def check_export(
         self,
         module_id: str,
         interface_id: str,
         interface_version: int,
-        source_node_id: str | None,
+        source_node_id: str,
     ) -> CertificationDecision:
         del module_id, interface_id, interface_version, source_node_id
         return CertificationDecision(
             False,
             "certification-unavailable",
-            "machine-module certification is not available until Phase 4",
+            "repository certification state is unavailable",
         )
 
     def certificate_for(self, node_id: str) -> CurrentCertificate | None:

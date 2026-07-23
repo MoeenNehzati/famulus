@@ -19,6 +19,8 @@ concrete schema:
   process-binding definitions
 - `direct-io.schema.json`: direct resource interactions used by semantic
   contracts
+- `interface-projection.schema.json`: bounded projections of callable exports
+- `pooled-review.schema.json`: generated certificate-backed review projections
 - `certificate.schema.json`: the signed current-certificate and history-entry
   envelope
 - `common.schema.json`: shared identifiers, locators, gateways, requirements,
@@ -27,9 +29,8 @@ concrete schema:
 `schema.json` is the live dispatcher and accepts only version-4 modules and
 behavioral sources. `schema.annotated-draft.json` is the matching authoring
 entry point; it delegates field-level guidance to those same two concrete
-schemas. Pre-v4 schema files, including `machine-module.schema.json`,
-`behavior-source.schema.json`, and `v2/`, remain migration inputs for Task 6;
-do not extend them with version-4 behavior.
+schemas. Earlier schema families have been retired; their conversion behavior
+is preserved only in the migration engine and its regression evidence.
 
 `template.yaml` is the schema-family artifact manifest. Its `examples` name
 the live module root and ordinary behavioral-source blueprints under
@@ -90,14 +91,11 @@ Git-ignore include/exclude rules with last-match-wins. Mandatory blueprint,
 gateway, and same-owner authored-contract closure and reserved-output rejection
 remain non-configurable certifier invariants.
 
-Certification audits gateway-language, gateway-machine, runtime-dependency,
+Certification reviews gateway-language, gateway-machine, runtime-dependency,
 and platform declarations for blueprint correctness. The resulting versioned
-audit records belong in `checks`; certificates do not record host-runtime
+review records belong in `checks`; certificates do not record host-runtime
 evidence or performance observations.
 
 `schema-meta.json` defines the annotation protocol and relationship matrix.
-Pre-v4 projection, pooled-review, and health schemas remain migration inputs;
-new version-4 certification records use `certificate.schema.json`.
-
-`legacy-skill.schema.json` is an exact migration snapshot of the former
-monolithic schema. Do not add new features to it.
+Pre-v4 declarations and health records are retained only as migration-engine
+evidence; live certification records use `certificate.schema.json`.

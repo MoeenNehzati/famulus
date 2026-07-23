@@ -4,35 +4,31 @@ import json
 from pathlib import Path
 
 import jsonschema
-import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
-TYPED_SCHEMAS = [
-    "skill.schema.json",
-    "llm-interface.schema.json",
-    "machine-interface.schema.json",
-    "machine-module.schema.json",
-    "behavior-source.schema.json",
-    "module.schema.json",
-    "behavioral-source.schema.json",
-]
-V4_TYPED_SCHEMAS = [
-    "module.schema.json",
-    "behavioral-source.schema.json",
-]
+V4_TYPED_SCHEMAS = ("module.schema.json", "behavioral-source.schema.json")
 REQUIRED_RULES = {
-    "generated-contract-block",
-    "gateway-sidecar-naming",
-    "content-exclusive",
-    "content-tracked",
-    "content-non-symlink",
-    "semantic-type",
-    "behavior-source-visibility",
-    "relationship-matrix",
-    "commit-backed-stamp",
+    "access-control",
+    "behavioral-source-edge",
+    "canonical-id",
     "canonical-pooled-review",
+    "content-exclusive",
+    "content-files",
+    "dispatcher-argv-pattern",
+    "content-non-symlink",
+    "direct-io-description",
+    "filesystem-ownership",
+    "gateway-file",
+    "generated-contract-block",
+    "interface-body-use",
+    "relationship-edge",
+    "relationship-matrix",
+    "root-directory-id",
+    "runtime-dependency",
+    "schema-shape",
+    "version-pin",
 }
 
 
@@ -40,11 +36,11 @@ def _load(name: str) -> dict:
     return json.loads((SCHEMA_ROOT / name).read_text(encoding="utf-8"))
 
 
-def test_typed_schema_fields_contain_complete_authoring_and_hash_metadata() -> None:
+def test_v4_schema_fields_contain_complete_authoring_metadata() -> None:
     protocol = _load("schema-meta.json")
     catalog = protocol["x-famulus"]["validation_rule_catalog"]
 
-    for name in TYPED_SCHEMAS:
+    for name in V4_TYPED_SCHEMAS:
         schema = _load(name)
         jsonschema.Draft7Validator(protocol).validate(schema)
         required = set(schema["required"])
@@ -53,7 +49,7 @@ def test_typed_schema_fields_contain_complete_authoring_and_hash_metadata() -> N
             assert isinstance(metadata, dict), f"{name}:{field} missing x-famulus"
             expected_status = "required" if field in required else "optional"
             assert metadata["field_status"] == expected_status
-            assert metadata["audit_hash"] in {"include", "exclude"}
+            assert "audit_hash" not in metadata
             assert isinstance(metadata["template"]["include"], bool)
             assert metadata["doc"]["authoring"]
             assert metadata["related_validation_rules"]
@@ -62,7 +58,9 @@ def test_typed_schema_fields_contain_complete_authoring_and_hash_metadata() -> N
 
 def test_common_schema_nested_fields_have_complete_authoring_metadata() -> None:
     protocol = _load("schema-meta.json")
-    metadata_validator = jsonschema.Draft7Validator(protocol["definitions"]["fieldMetadata"])
+    metadata_validator = jsonschema.Draft7Validator(
+        protocol["definitions"]["fieldMetadata"]
+    )
     common = _load("common.schema.json")
 
     def visit(schema: object, path: str) -> None:
@@ -81,8 +79,15 @@ def test_common_schema_nested_fields_have_complete_authoring_metadata() -> None:
                 metadata_validator.validate(metadata)
                 expected = "required" if field in required else "optional"
                 assert metadata["field_status"] == expected, f"{path}.{field}"
+                assert "audit_hash" not in metadata, f"{path}.{field}"
                 visit(child, f"{path}.{field}")
-        for keyword in ("definitions", "items", "allOf", "oneOf", "anyOf", "if", "then", "else"):
+        for keyword in (
+            "definitions",
+            "items",
+            "allOf",
+            "oneOf",
+            "anyOf",
+        ):
             child = schema.get(keyword)
             if keyword == "definitions" and isinstance(child, dict):
                 for name, definition in child.items():
@@ -93,101 +98,73 @@ def test_common_schema_nested_fields_have_complete_authoring_metadata() -> None:
     visit(common, "common")
 
 
+def test_live_schema_annotations_have_no_audit_hash_authority() -> None:
+    def visit(value: object, path: str) -> None:
+        if isinstance(value, list):
+            for index, child in enumerate(value):
+                visit(child, f"{path}[{index}]")
+            return
+        if not isinstance(value, dict):
+            return
+        metadata = value.get("x-famulus")
+        if isinstance(metadata, dict):
+            assert "audit_hash" not in metadata, path
+        for key, child in value.items():
+            visit(child, f"{path}.{key}")
+
+    for name in (*V4_TYPED_SCHEMAS, "common.schema.json"):
+        visit(_load(name), name)
+
+
+def test_schema_meta_contains_only_v4_repository_validation_authority() -> None:
+    metadata = _load("schema-meta.json")
+
+    assert set(metadata["definitions"]) == {
+        "enforcementMetadata",
+        "fieldMetadata",
+        "repositoryValidationRule",
+        "validationRule",
+    }
+    assert metadata["definitions"]["validationRule"] == {
+        "$ref": "#/definitions/repositoryValidationRule"
+    }
+    field_metadata = metadata["definitions"]["fieldMetadata"]
+    assert "audit_hash" not in field_metadata["required"]
+    assert "audit_hash" not in field_metadata["properties"]
+    assert "hashing" not in metadata["description"].lower()
+    catalog = metadata["x-famulus"]["validation_rule_catalog"]
+    assert REQUIRED_RULES <= set(catalog)
+    assert {entry["rule_kind"] for entry in catalog.values()} == {
+        "repository-validation"
+    }
+    assert not any(rule_id.startswith("interface.") for rule_id in catalog)
+
+
 def test_validation_rule_catalog_points_to_existing_enforcement_and_tests() -> None:
     protocol = _load("schema-meta.json")
     catalog = protocol["x-famulus"]["validation_rule_catalog"]
-    entry_schema = dict(protocol["definitions"]["validationRule"])
+    entry_schema = dict(protocol["definitions"]["repositoryValidationRule"])
     entry_schema["definitions"] = protocol["definitions"]
     entry_validator = jsonschema.Draft7Validator(entry_schema)
 
     for rule_id, rule in catalog.items():
         entry_validator.validate(rule)
-        if rule["rule_kind"] == "repository-validation":
-            assert (REPO_ROOT / rule["validator"]).is_file(), rule_id
-            assert all((REPO_ROOT / path).is_file() for path in rule["tests"]), rule_id
-        else:
-            assert rule["validator"] in {
-                "json-schema",
-                "interface-static",
-                "interface-graph",
-                "interface-projection",
-                "interface-conformance",
-                "semantic-review",
-            }
-            assert (REPO_ROOT / rule["positive_fixture"]).is_file(), rule_id
-            assert (REPO_ROOT / rule["negative_fixture"]).is_file(), rule_id
+        assert (REPO_ROOT / rule["validator"]).is_file(), rule_id
+        assert all((REPO_ROOT / path).is_file() for path in rule["tests"]), rule_id
+        assert rule["enforcement"]["state"] in {"schema", "current"}, rule_id
+        assert rule["enforcement"]["task"] == "current", rule_id
+        assert rule["enforcement"]["acceptance"] != "not-yet-available", rule_id
 
 
-def test_completed_health_and_typed_graph_rules_are_current() -> None:
-    catalog = _load("schema-meta.json")["x-famulus"]["validation_rule_catalog"]
-    expected_acceptance = {
-        "gateway-file": "isolated-validator",
-        "content-files": "isolated-validator",
-        "content-exclusive": "isolated-validator",
-        "direct-io-description": "isolated-validator",
-        "filesystem-ownership": "isolated-validator",
-        "behavior-source-edge": "isolated-validator",
-        "generated-contract-block": "isolated-validator",
-        "content-tracked": "isolated-validator",
-        "content-non-symlink": "isolated-validator",
-        "behavior-source-visibility": "isolated-validator",
-        "relationship-matrix": "isolated-validator",
-        "commit-backed-stamp": "isolated-graph",
-        "canonical-pooled-review": "isolated-graph",
-    }
-
-    for rule_id, acceptance in expected_acceptance.items():
-        enforcement = catalog[rule_id]["enforcement"]
-        assert enforcement["state"] == "current", rule_id
-        assert enforcement["acceptance"] == acceptance, rule_id
-        assert enforcement["acceptance"] != "not-yet-available", rule_id
-        assert "will" not in enforcement["note"].lower(), rule_id
-        assert "future" not in enforcement["note"].lower(), rule_id
-
-
-def test_schema_meta_catalogs_every_repository_rule() -> None:
-    catalog = _load("schema-meta.json")["x-famulus"]["validation_rule_catalog"]
-
-    assert REQUIRED_RULES <= set(catalog)
-
-
-def test_schema_meta_declares_relationship_and_visibility_policy() -> None:
+def test_schema_meta_declares_only_the_v4_relationship_matrix() -> None:
     metadata = _load("schema-meta.json")["x-famulus"]
 
+    assert set(metadata) == {
+        "field_metadata_ref",
+        "relationship_matrix",
+        "validation_rule_catalog",
+    }
     assert metadata["relationship_matrix"] == {
-        "skill": {
-            "declares-interface": [
-                "llm-interface",
-                "machine-interface",
-                "machine-module",
-            ]
-        },
-        "llm-interface": {
-            "uses-interface": [
-                "llm-interface",
-                "machine-interface",
-                "machine-module",
-            ],
-            "uses-behavior-source": ["behavior-source"],
-        },
-        "machine-interface": {
-            "uses-interface": ["machine-interface"],
-            "uses-behavior-source": ["behavior-source"],
-        },
-        "machine-module": {
-            "uses-interface": ["machine-module"],
-            "uses-behavior-source": ["behavior-source"],
-        },
-        "behavior-source": {
-            "uses-interface": ["llm-interface", "machine-interface"],
-            "uses-behavior-source": ["behavior-source"],
-        },
-    }
-    assert metadata["behavior_source_visibility"] == {
-        "skill_local": "declaring-skill-only",
-        "repository_references": "all-skills",
-    }
-    assert metadata["v4_relationship_matrix"] == {
         "module": {
             "contains-source": ["behavioral_source"],
             "exports-interface": ["behavioral_source"],
@@ -206,111 +183,43 @@ def test_v4_nodes_declare_content_as_ownership_not_direct_hash_inputs() -> None:
     for name in V4_TYPED_SCHEMAS:
         properties = _load(name)["properties"]
         assert "local_hash_inputs" not in properties
-        assert properties["gateway"]["x-famulus"]["audit_hash"] == "include"
+        assert "audit_hash" not in properties["gateway"]["x-famulus"]
         field = properties["content"]
         assert field["type"] == "array"
         assert field["uniqueItems"] is True
         assert field["minItems"] == 1
-        assert field["x-famulus"]["audit_hash"] == "include"
+        assert "audit_hash" not in field["x-famulus"]
         assert field["x-famulus"]["related_validation_rules"] == [
             "content-files",
             "content-exclusive",
         ]
 
-
-def test_hash_metadata_scopes_tracked_content_rules_to_pre_v4() -> None:
-    common = _load("common.schema.json")
-    catalog = _load("schema-meta.json")["x-famulus"]["validation_rule_catalog"]
-
-    assert "pre-v4" in common["x-famulus"]["content_ownership_policy"][
-        "content"
+    policy = _load("common.schema.json")["x-famulus"][
+        "content_ownership_policy"
     ]
-    assert "ownership" in common["x-famulus"]["v4_content_ownership_policy"][
-        "content"
-    ]
-    assert "node-input policy" in common["x-famulus"][
-        "v4_content_ownership_policy"
-    ]["content"]
-    assert "pre-v4" in catalog["content-tracked"]["description"]
-    assert "pre-v4" in catalog["commit-backed-stamp"]["description"]
+    assert "ownership" in policy["content"]
+    assert "node-input policy" in policy["content"]
 
 
-def test_version_three_common_schema_uses_gateway_definition_names() -> None:
-    definitions = _load("common.schema.json")["definitions"]
-
-    assert {
-        "instructionFileGateway",
-        "skillGateway",
-        "pythonGateway",
-        "commandFileGateway",
-        "behaviorSourceGateway",
-    } <= set(definitions)
-    assert not any(name.endswith("EntryPoint") for name in definitions)
-    assert definitions["pythonGateway"]["properties"]["kind"]["const"] == (
-        "python-entrypoint"
-    )
-
-
-def test_v4_behavioral_source_uses_the_unified_node_kind_and_intrinsic_interfaces() -> None:
+def test_v4_behavioral_source_has_intrinsic_interfaces_and_source_owned_io() -> None:
     schema = _load("behavioral-source.schema.json")
+    direct_io = _load("direct-io.schema.json")
 
     assert schema["properties"]["node_type"]["const"] == "behavioral_source"
     assert "semantic_type" not in schema["properties"]
     assert schema["properties"]["interfaces"]["propertyNames"]["$ref"] == (
         "common.schema.json#/definitions/sourceInterfaceId"
     )
-
-
-def test_v4_direct_io_is_source_owned_without_changing_pre_v4_hash_metadata() -> None:
-    common = _load("common.schema.json")
-    direct_io = _load("direct-io.schema.json")
-
-    assert common["definitions"]["directIo"]["x-famulus"]["audit_hash"] == "exclude"
     assert direct_io["title"] == "Interface Direct I/O"
     assert "source-owned" in direct_io["description"]
-
-
-def test_machine_interface_support_is_bounded_by_required_interfaces() -> None:
-    interfaces: dict[str, dict] = {}
-    for path in REPO_ROOT.glob("skills/*/blueprint.yaml"):
-        declaration = yaml.safe_load(path.read_text(encoding="utf-8"))
-        declared_interfaces = declaration.get("interfaces", {})
-        machine = (
-            declared_interfaces.get("machine", {})
-            if isinstance(declared_interfaces, dict)
-            else {}
-        )
-        if isinstance(machine, dict):
-            for local_name, specification in machine.items():
-                interfaces[f"{path.parent.name}.machine.{local_name}"] = specification
-    for path in REPO_ROOT.glob("skills/*/_rtx/.*.blueprint.yaml"):
-        declaration = yaml.safe_load(path.read_text(encoding="utf-8"))
-        if declaration.get("blueprint_type") == "machine-interface" or declaration.get(
-            "node_type"
-        ) == "machine-interface":
-            interfaces[declaration["id"]] = declaration
-
-    for interface_id, declaration in interfaces.items():
-        support = declaration["platform_support"]
-        for edge in declaration.get("uses_interfaces", []):
-            target_id = edge["interface"]
-            target_support = interfaces[target_id]["platform_support"]
-            for platform, supported in support.items():
-                assert not supported or target_support[platform], (
-                    f"{interface_id} claims {platform} support but required "
-                    f"interface {target_id} does not"
-                )
+    assert not any(name.startswith("preV4") for name in direct_io["definitions"])
 
 
 def test_runtime_dependency_platforms_are_documented_as_applicability() -> None:
     metadata = _load("schema-meta.json")["x-famulus"]["validation_rule_catalog"]
     rule = metadata["runtime-dependency"]
     wording = " ".join(
-        [
-            rule["description"],
-            rule["creation"],
-            rule["enforcement"]["note"],
-        ]
+        [rule["description"], rule["creation"], rule["enforcement"]["note"]]
     ).lower()
 
     assert "where each dependency applies" in wording

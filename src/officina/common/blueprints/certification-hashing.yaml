@@ -1,0 +1,97 @@
+content:
+- certification_hashing\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/atomic-files.yaml
+  reason: Imports descriptor-safe file reads from atomic_files.py.
+  source: common.source.atomic-files
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/blueprint-graph.yaml
+  reason: Imports v4 repository graph and node types from blueprint_graph.py.
+  source: common.source.blueprint-graph
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/git-provenance.yaml
+  reason: Imports Git snapshots and file provenance from git_provenance.py.
+  source: common.source.git-provenance
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/process-binding-compiler.yaml
+  reason: Imports gateway-language normalization from process_binding_compiler.py.
+  source: common.source.process-binding-compiler
+  version: 1
+description: Resolves the canonical certification basis and node inputs, computes deterministic v4 node hashes, maps route-smoke dependencies, and derives certifier identity and expected checks.
+gateway:
+  language: Python
+  path: certification_hashing.py
+id: common.source.certification-hashing
+interfaces:
+  common.source.certification-hashing.interface.python-api:
+    contract:
+      arguments:
+        operation:
+          description: Canonical v4 hashing operation to perform.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - {value: map-route-smoke, description: "Map loaded route-smoke files to declared node, dependency, or certification-basis authority."}
+            - {value: resolve-certification-basis, description: Resolve the repository-owned certification-basis manifest.}
+            - {value: hash-certification-basis, description: Hash the resolved certification-basis inputs.}
+            - {value: expected-checks, description: Return the exact versioned checks owned by the certifier.}
+            - {value: derive-certifier-identity, description: "Derive certifier identity from the v4 graph, node state, and source commit."}
+            - {value: hash-nodes, description: Compute canonical v4 node hash states from the graph and node-input policy.}
+        repository-root:
+          description: Exact repository root for policy, Git provenance, and certification-basis operations.
+          required: false
+          sensitivity: user-private
+          direct_io_ref: repository-inputs
+          type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}
+        inputs:
+          description: Operation-specific graph, node state, policy path, source commit, or route-smoke data.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, description: Operation-specific Python values supplied by the caller.}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - id: result
+        audience: machine
+        description: Canonical hash, resolved path tuple, node-state mapping, route-smoke mapping, check tuple, or certifier identity.
+        direct_io_ref: return-value
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Collection-valued operations can return an empty collection when no matching input exists.
+        type: {kind: string, sensitivity: user-private, description: Operation-specific immutable Python value or mapping.}
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [], caller_action: Consume the canonical result without creating a parallel hash or certification authority.}
+      - {id: invalid-input, class: error, outputs: [], effects: [], caller_action: "Correct graph, policy, path, Git, hash, or route-smoke inputs before retrying."}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {snapshot: "Each operation derives its result from the graph, files, and Git state observed during that call."}
+        verification:
+        - {method: output-schema, output_ref: result}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: repository-inputs, medium: repository-filesystem, access: read, content: "node-owned files, blueprints, schemas, hash policy, and certification-basis inputs", formats: [yaml, json, text, binary], sensitivity: user-private, path: "<repository-root>/**", path_match: glob}
+        - {id: git-state, medium: local-system, access: read, content: "tracked paths, ignored-path matching, source commit, and file provenance", formats: [git], sensitivity: derived-private, system: git}
+        writes:
+        - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [python-object], sensitivity: user-private}
+        network: []
+    description: Computes canonical v4 certification-basis and node hash state for Python callers.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

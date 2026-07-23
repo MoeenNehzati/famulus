@@ -12,7 +12,7 @@ PROFILE = ROOT / "references/document-standards/document-profile.standard.yaml"
 GUIDELINES_VIEW = ROOT / "references/skill-standards/skill-guidelines.md"
 PROFILE_VIEW = ROOT / "references/document-standards/document-profile.md"
 SOURCE_DIGESTS = {
-    "skill-guidelines.md": "1a18981c0c8618b0ffdbd57bd54d272d9cfa9cccdfd063367f68f5b6c14be3a5",
+    "skill-guidelines.md": "2ed65f9c5b93832221181a330a16ca72871c364925416c7d4712d42b18b52307",
     "document-profile-schema.md": "178bbd7c1fc076208fe576f871ab7bba936941fce83fdb7a46f784b1cb28d967",
 }
 
@@ -48,7 +48,6 @@ def test_skill_guidelines_make_v4_the_only_live_blueprint_authoring_family():
     families = {family["id"]: family for family in document["standards"]}
     live = families["skill-guidelines.module-behavioral-source-v4"]
     assert "sole live blueprint and interface authoring authority" in live["summary"]
-    assert "Task 6 migration input" in live["summary"]
 
     serialized = yaml.safe_dump(live, sort_keys=False)
     statements = "\n".join(
@@ -76,28 +75,84 @@ def test_skill_guidelines_make_v4_the_only_live_blueprint_authoring_family():
     ):
         assert required in serialized
 
-    legacy_markers = re.compile(
-        r"machine-interface|llm-interface|machine-module|behavior-source|"
-        r"\.machine\.|\.llm\.|default_interface|blueprint_type|"
-        r"hidden sidecar|machine sidecar|LLM sidecar|"
-        r"schema version [23]|schema-version-[23]|version 3"
+    legacy_markers = (
+        "machine" "-interface",
+        "llm" "-interface",
+        "machine" "-module",
+        "behavior" "-source",
+        ".machine" ".",
+        ".llm" ".",
+        "default_interface",
+        "blueprint_type",
+        "skill_interface",
+        "hidden sidecar",
+        "skill" "-audit",
+        "task 6 migration input",
+        "schema version 3",
+        "schema-version-2",
+        ".last_audit",
+        ".pooled-blueprint",
     )
-    for family in document["standards"]:
-        if family["id"] == live["id"]:
-            continue
-        if legacy_markers.search(yaml.safe_dump(family, sort_keys=False)):
-            assert "Task 6 migration input" in family.get("summary", ""), family["id"]
+    for path in (
+        GUIDELINES,
+        GUIDELINES_VIEW,
+        FIXTURES / "skill-guidelines.md",
+        FIXTURES / "skill-guidelines-source-map.yaml",
+        FIXTURES / "skill-guidelines-frozen-ids.yaml",
+        FIXTURES / "skill-guidelines-enforcement-ledger.yaml",
+    ):
+        text = path.read_text().lower()
+        assert not [marker for marker in legacy_markers if marker in text], path
 
     rendered = GUIDELINES_VIEW.read_text()
     assert rendered.index("## Version 4 modules and behavioral sources") < rendered.index(
         "## 1. Skill identity and contract come first"
     )
 
+def test_interface_design_is_one_source_owned_authority():
+    standards_root = ROOT / "references/skill-standards"
+    guide = standards_root / "interface-design.md"
+    guide_text = guide.read_text()
+    lowered = guide_text.lower()
+
+    assert "interface is a named contract owned by one `behavioral_source`" in lowered
+    assert re.search(r"gateway\s+language and process binding are orthogonal", lowered)
+    for retired in (
+        standards_root / ("llm" "-interface-design.md"),
+        standards_root / ("instruction" "-source-design.md"),
+        standards_root / "blueprints" / ("llm" "-interface-design.yaml"),
+        standards_root / "blueprints" / ("instruction" "-source-design.yaml"),
+    ):
+        assert not retired.exists()
+    for marker in (
+        "llm" "-interface",
+        "machine" "-interface",
+        "llm" "_interfaces/",
+        ".llm" ".",
+        ".machine" ".",
+    ):
+        assert marker not in lowered
+
+    root_blueprint = yaml.safe_load((standards_root / "blueprint.yaml").read_text())
+    assert "skill-standards.source.interface-design" in root_blueprint["sources"]
+    design_blueprint = yaml.safe_load(
+        (standards_root / "blueprints/interface-design.yaml").read_text()
+    )
+    assert design_blueprint["gateway"]["path"] == "interface-design.md"
+    assert design_blueprint["id"] == "skill-standards.source.interface-design"
+
+    consumer = (ROOT / "skills/refactor-skills/SKILL.md").read_text()
+    consumer_blueprint = (
+        ROOT / "skills/refactor-skills/blueprints/gateway.yaml"
+    ).read_text()
+    assert "references/skill-standards/interface-design.md" in consumer
+    assert "skill-standards.source.interface-design" in consumer_blueprint
+
 def test_skill_hooks_describe_the_live_v4_guideline_contract():
     blueprint_hook = (ROOT / ".githooks/skill/check-blueprints").read_text()
     assert "v4 module/source" in blueprint_hook
     assert "v3" not in blueprint_hook
-    assert "machine-module" not in blueprint_hook
+    assert "machine" "-module" not in blueprint_hook
 
     dependency_hook = (ROOT / ".githooks/skill/check-dependencies").read_text()
     assert "source `uses_interfaces`" in dependency_hook
@@ -149,11 +204,12 @@ def test_guideline_headings_are_preserved_as_families_and_view_is_readable():
         assert phrase in rendered
     assert not re.search(r"^#{2,6} (?:Requirement|Guidance|Example|Procedure) [0-9]{3}$", rendered, re.M)
     assert rendered.count("# Skill Module Standards") == 1
-    ordered = ["## A skill is a software module.", "## 1. Skill identity and contract come first", "## Blueprint authoring", "## Machine interfaces", "## Validator and test conventions"]
+    ordered = ["## A skill is a software module.", "## 1. Skill identity and contract come first", "## Blueprint authoring", "## Canonical interface names", "## Validator and test conventions"]
     assert [rendered.index(text) for text in ordered] == sorted(rendered.index(text) for text in ordered)
     source_size = len((FIXTURES / "skill-guidelines.md").read_text())
     assert len(rendered) < source_size * 1.35
-    assert "- `category`\n\n- `role`\n\n- `kind`" in rendered
+    assert "the module blueprint declares sources, exports, and export access" in rendered
+    assert "each behavioral source declares its own interfaces and direct dependencies" in rendered
     assert "```python\nfrom officina.runtime.python_machine_interface" in rendered and "class Interface(PythonMachineInterface):" in rendered
     assert "1. Create `validators/<name>.py`" in rendered and "4. Add a `tests/validate_<name>.py`" in rendered
 
@@ -168,7 +224,7 @@ def test_every_fenced_source_block_is_one_verbatim_unit_and_contiguous_in_view()
         assert block in semantic_text
         assert block in rendered
     tags = {block.splitlines()[0] for block in fenced}
-    assert {"```python", "```bash", "```yaml", "```text"} <= tags
+    assert {"```python", "```bash", "```text"} <= tags
     assert any("regex" in tag for tag in tags)
 
 def test_guideline_block_ids_are_frozen_family_local_ids():

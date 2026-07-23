@@ -40,33 +40,6 @@ def _write_yaml(path: Path, value: object) -> None:
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
 
 
-def _write_legacy_projection_consumer(root: Path) -> str:
-    skill = root / "skills" / "legacy-skill"
-    skill.mkdir(parents=True)
-    (skill / "SKILL.md").write_text("Legacy instructions.\n", encoding="utf-8")
-    _write_yaml(
-        skill / "blueprint.yaml",
-        {
-            "schema_version": 3,
-            "node_type": "skill",
-            "id": "legacy-skill",
-            "gateway": {"kind": "instruction-file", "path": "SKILL.md"},
-            "content": [r"SKILL\.md"],
-            "default_interface": {
-                "version": 1,
-                "description": "Default consumer.",
-                "allow_all_skills": True,
-                "uses_interfaces": [],
-                "behavior_sources": [],
-                "direct_io": {"reads": [], "writes": [], "network": []},
-                "owns_filesystem": [],
-            },
-            "interfaces": [],
-        },
-    )
-    return "legacy-skill.llm.default"
-
-
 def _contract(
     *,
     helper: dict[str, object] | None = None,
@@ -327,7 +300,7 @@ def test_projection_selects_generic_exports_and_helper_closure(tmp_path: Path) -
     assert standalone_export_size(run) > 0
 
 
-def test_projection_rejects_failed_certification_and_combined_overflow(
+def test_projection_rejects_failed_certification_and_standalone_overflow(
     tmp_path: Path,
 ) -> None:
     _repository(tmp_path)
@@ -340,7 +313,11 @@ def test_projection_rejects_failed_certification_and_combined_overflow(
 
     oversized = tmp_path / "oversized"
     _repository(oversized, oversized=True)
-    with pytest.raises(InterfaceProjectionError, match="limit is 16384"):
+    with pytest.raises(
+        InterfaceProjectionError,
+        match=r"provider-skill\.interface\.run: standalone interface projection "
+        r"is \d+ bytes; limit is 12288",
+    ):
         project_consumer_interfaces(
             load_repository_blueprint_graph(oversized),
             "consumer-skill.source.gateway",
@@ -378,23 +355,6 @@ def test_projection_with_no_dependencies_is_empty_and_valid(tmp_path: Path) -> N
     assert projection.document["interfaces"] == {}
     assert projection.document["helper_interfaces"] == {}
     assert projection.vocabulary == frozenset()
-    schema_validator(
-        load_schema("references/blueprint/interface-projection.schema.json")
-    ).validate(projection.document)
-
-
-def test_legacy_projection_producer_validates_against_shared_schema(
-    tmp_path: Path,
-) -> None:
-    consumer_id = _write_legacy_projection_consumer(tmp_path)
-
-    projection = project_consumer_interfaces(
-        load_repository_blueprint_graph(tmp_path),
-        consumer_id,
-        _PassingView(),
-    )
-
-    assert projection.document["schema_version"] == 1
     schema_validator(
         load_schema("references/blueprint/interface-projection.schema.json")
     ).validate(projection.document)

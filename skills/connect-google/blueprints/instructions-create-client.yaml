@@ -1,5 +1,5 @@
 content:
-- llm_interfaces/create\-client\.md
+- instructions/create\-client\.md
 dependencies:
 - blueprint:
     base: module-root
@@ -10,10 +10,10 @@ dependencies:
 description: Provides privacy-preserving Google Cloud Console guidance for creating and downloading a Desktop OAuth client JSON.
 gateway:
   language: Markdown
-  path: llm_interfaces/create-client.md
-id: connect-google.source.llm-interfaces-create-client
+  path: instructions/create-client.md
+id: connect-google.source.instructions-create-client
 interfaces:
-  connect-google.source.llm-interfaces-create-client.interface.create-client:
+  connect-google.source.instructions-create-client.interface.create-client:
     contract:
       arguments:
         services: {description: Supported Google services whose required APIs and scopes should be considered., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
@@ -52,6 +52,6 @@ interfaces:
 node_type: behavioral_source
 schema_version: 4
 uses_interfaces:
-- interface: connect-google.source.llm-interfaces-connect-services.interface.connect-services
+- interface: connect-google.source.instructions-connect-services.interface.connect-services
   version: 1
 version: 1

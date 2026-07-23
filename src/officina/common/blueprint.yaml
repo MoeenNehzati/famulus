@@ -2,9 +2,9 @@ authority:
   owns_filesystem: []
 content:
 - __init__\.py
-- artifact_health\.py
+- certification_hashing\.py
 - atomic_files\.py
-- audit_records\.py
+- certificate_records\.py
 - blueprint_graph\.py
 - blueprint_inventory\.py
 - blueprint_template\.py
@@ -19,13 +19,13 @@ content:
 - toml_io\.py
 description: Shared, narrowly exported Python helpers for secure file updates, project date keys, OAuth JSON, credential storage, and controlled TOML access.
 exports:
-  common.interface.artifact-health:
+  common.interface.certification-hashing:
     access:
       allow_all_modules: false
       allowed_callers:
       - skill-certifier
       - skill-drift
-    source_interface: common.source.artifact-health.interface.python-api
+    source_interface: common.source.certification-hashing.interface.python-api
   common.interface.atomic-files:
     access:
       allow_all_modules: false
@@ -33,14 +33,14 @@ exports:
       - skill-maker
       - skill-certifier
     source_interface: common.source.atomic-files.interface.python-api
-  common.interface.audit-records:
+  common.interface.certificate-records:
     access:
       allow_all_modules: false
       allowed_callers:
       - install-assistant-tools
       - skill-certifier
       - skill-drift
-    source_interface: common.source.audit-records.interface.python-api
+    source_interface: common.source.certificate-records.interface.python-api
   common.interface.blueprint-graph:
     access:
       allow_all_modules: false
@@ -115,18 +115,18 @@ id: common
 node_type: module
 schema_version: 4
 sources:
-  common.source.artifact-health:
+  common.source.certification-hashing:
     blueprint:
       base: module-root
-      path: blueprints/artifact-health.yaml
+      path: blueprints/certification-hashing.yaml
   common.source.atomic-files:
     blueprint:
       base: module-root
       path: blueprints/atomic-files.yaml
-  common.source.audit-records:
+  common.source.certificate-records:
     blueprint:
       base: module-root
-      path: blueprints/audit-records.yaml
+      path: blueprints/certificate-records.yaml
   common.source.blueprint-graph:
     blueprint:
       base: module-root

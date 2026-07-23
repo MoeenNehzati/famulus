@@ -42,9 +42,9 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `list-manager.interface.beautify-list` — Render YAML list entries from stdin (nested bullet-list markdown by default for todo/triage; --table for a flat GFM table, --diff for the legacy diff-fenced view). Pass YAML via stdin using `dispatcher --stdin`.
   - `dispatcher --caller-skill list-manager list-manager.interface.beautify-list [-D|--no-descriptions] [--markdown|--table|--diff] [--relative-deadlines] [--ids]`
   - Reads YAML from stdin and renders user-facing list output. No allowed_flags restriction: -D/--markdown/--table/--diff/--relative-deadlines/--ids all pass through.
@@ -91,7 +91,7 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
   - file-mode: Externally supported update mode; caller prepares the patch file.
   - stdin-batch: Internal convenience mode for the owning skill when feeding YAML directly.
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `list-manager.interface.default` — Primary LLM-facing skill instructions.

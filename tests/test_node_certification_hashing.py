@@ -7,15 +7,18 @@ import subprocess
 import pytest
 import yaml
 
-import officina.common.artifact_health as artifact_health
-from officina.common.artifact_health import (
-    ArtifactHealthError,
+import officina.common.certification_hashing as certification_hashing
+from officina.common.certification_hashing import (
+    CertificationHashError,
     NodeHashState,
     compute_node_hash_states,
     map_route_smoke_dependencies,
     route_smoke_trace_signature,
 )
-from officina.common.blueprint_graph import load_repository_blueprint_graph
+from officina.common.blueprint_graph import (
+    BlueprintGraphError,
+    load_repository_blueprint_graph,
+)
 from officina.common.git_provenance import git_file_provenance
 
 
@@ -216,7 +219,7 @@ def _states(
 
 
 def _python_certification_basis_paths() -> tuple[Path, ...]:
-    source_root = Path(artifact_health.__file__).resolve().parents[2]
+    source_root = Path(certification_hashing.__file__).resolve().parents[2]
     return tuple(sorted((source_root / "officina").rglob("*.py")))
 
 
@@ -446,7 +449,7 @@ def test_policy_last_match_wins_and_reserved_outputs_fail_closed(tmp_path: Path)
         }
     )
     _write_yaml(policy, document)
-    with pytest.raises(ArtifactHealthError, match="reserved certification output"):
+    with pytest.raises(BlueprintGraphError, match="certification artifact"):
         _states(root, policy)
 
 
@@ -472,7 +475,7 @@ def test_git_policy_matcher_covers_tracked_ignored_and_untracked_files(
         "skills/**/notes.tmp": {untracked},
     }
     assert {
-        pattern: artifact_health._git_exclude_matches(  # type: ignore[attr-defined]
+        pattern: certification_hashing._git_exclude_matches(  # type: ignore[attr-defined]
             root, candidates, pattern
         )
         for pattern in cases
@@ -580,7 +583,7 @@ def test_route_smoke_maps_transitive_contract_only_dependency(
     )
 
     assert mappings == (
-        artifact_health.RouteSmokeDependencyMapping(
+        certification_hashing.RouteSmokeDependencyMapping(
             "skills/provider-skill/contracts/child.schema.json",
             "certification-dependency",
             contract_b,
@@ -614,7 +617,7 @@ def test_route_smoke_rejects_invalid_dependency_state_shape_or_target(
         states[source_id], dependency_hashes=dependency_hashes
     )
 
-    with pytest.raises(ArtifactHealthError, match="invalid dependency hash"):
+    with pytest.raises(CertificationHashError, match="invalid dependency hash"):
         map_route_smoke_dependencies(
             graph,
             states,
@@ -633,7 +636,7 @@ def test_route_smoke_rejects_unmapped_loaded_path(tmp_path: Path) -> None:
     unmapped.parent.mkdir()
     unmapped.write_text("VALUE = 1\n", encoding="utf-8")
 
-    with pytest.raises(ArtifactHealthError, match="unmapped route-smoke dependency"):
+    with pytest.raises(CertificationHashError, match="unmapped route-smoke dependency"):
         map_route_smoke_dependencies(
             graph,
             states,
@@ -650,7 +653,7 @@ def test_v4_hash_preparation_rejects_unmapped_route_smoke_dependency(
     root, policy = _repository(tmp_path)
     _make_python_gateway(root, "provider-skill", import_unowned=True)
 
-    with pytest.raises(ArtifactHealthError, match="unmapped route-smoke dependency"):
+    with pytest.raises(CertificationHashError, match="unmapped route-smoke dependency"):
         _states(
             root,
             policy,
@@ -685,12 +688,12 @@ def test_v4_hash_preparation_rejects_pre_post_route_smoke_change(
     )
     traces = iter(((worker,), (worker, source_blueprint)))
     monkeypatch.setattr(
-        artifact_health,
+        certification_hashing,
         "trace_python_route_smoke_dependencies",
         lambda *_args: next(traces),
     )
 
-    with pytest.raises(ArtifactHealthError, match="route-smoke dependency trace changed"):
+    with pytest.raises(CertificationHashError, match="route-smoke dependency trace changed"):
         _states(root, policy)
 
 
@@ -793,5 +796,5 @@ def test_v4_hashing_rejects_cycle_after_cross_owner_contract_edges(
         "contracts/a.json",
     )
 
-    with pytest.raises(ArtifactHealthError, match="certification dependency cycle"):
+    with pytest.raises(CertificationHashError, match="certification dependency cycle"):
         _states(root, policy)

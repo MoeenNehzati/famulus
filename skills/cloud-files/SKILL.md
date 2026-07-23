@@ -34,9 +34,9 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `cloud-files.interface.ensure-oauth` — Check cloud-files OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill cloud-files) as part of connecting remotes.
   - `dispatcher --caller-skill cloud-files cloud-files.interface.ensure-oauth --home <dir> [--dry-run]`
   - Check OAuth status and guide setup for cloud-files.
@@ -65,7 +65,7 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
   - `dispatcher --caller-skill cloud-files cloud-files.interface.write-config --home <dir> [--remote-llm-root <path>] [--dry-run]`
   - Write cloud-files config.json.
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `cloud-files.interface.default` — Primary LLM-facing skill instructions.

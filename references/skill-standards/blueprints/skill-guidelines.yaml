@@ -4,9 +4,9 @@ content:
 dependencies:
 - blueprint:
     base: module-root
-    path: blueprints/llm-interface-design.yaml
-  reason: Routes the LLM-interface section to its detailed same-module standard.
-  source: skill-standards.source.llm-interface-design
+    path: blueprints/interface-design.yaml
+  reason: Routes source-owned interface and instruction-source design to its detailed same-module standard.
+  source: skill-standards.source.interface-design
   version: 1
 description: Defines the canonical standards governing skill identity, boundaries, interfaces, runtime ownership, and validation.
 gateway:

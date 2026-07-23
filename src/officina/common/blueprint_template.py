@@ -30,10 +30,6 @@ _HEADER_LINES = [
 _AUTHORING_SCHEMA_BY_TYPE = {
     "module": "module.schema.json",
     "behavioral_source": "behavioral-source.schema.json",
-    "skill": "skill.schema.json",
-    "llm-interface": "llm-interface.schema.json",
-    "machine-module": "machine-module.schema.json",
-    "behavior-source": "behavior-source.schema.json",
 }
 
 
@@ -132,18 +128,12 @@ def _default_schema_path(repo_root: Path, blueprint: object | None = None) -> Pa
     if isinstance(blueprint, dict) and blueprint.get("schema_version") == 4:
         node_type = blueprint.get("node_type")
         schema_name = _AUTHORING_SCHEMA_BY_TYPE.get(node_type)
-        if schema_name in {"module.schema.json", "behavioral-source.schema.json"}:
+        if schema_name is not None:
             return repo_root / "references" / "blueprint" / schema_name
-    if (
-        isinstance(blueprint, dict)
-        and blueprint.get("schema_version") == 2
-        and blueprint.get("blueprint_type") == "skill"
-    ):
-        return repo_root / "references" / "blueprint" / "skill.schema.json"
-    annotated = repo_root / "references" / "blueprint" / "schema.annotated-draft.json"
-    if annotated.exists():
-        return annotated
-    return repo_root / "references" / "blueprint" / "schema.json"
+    raise ValueError(
+        "blueprint authoring requires schema_version 4 and node_type "
+        "module or behavioral_source"
+    )
 
 
 def refresh_blueprint_documentation(
@@ -203,15 +193,12 @@ def _select_authoring_schema(
 
     if not isinstance(schema, SchemaDocument) or schema.get("$id") != "schema.json":
         return schema
-    blueprint_type = (
-        values.get("node_type", values.get("blueprint_type"))
-        if values is not None
-        else None
-    )
-    document_name = _AUTHORING_SCHEMA_BY_TYPE.get(
-        blueprint_type,
-        "legacy-skill.schema.json",
-    )
+    blueprint_type = values.get("node_type") if values is not None else None
+    document_name = _AUTHORING_SCHEMA_BY_TYPE.get(blueprint_type)
+    if document_name is None:
+        raise ValueError(
+            "blueprint authoring requires node_type module or behavioral_source"
+        )
     document = schema.documents.get(document_name)
     if document is None:
         raise ValueError(f"missing bundled authoring schema: {document_name}")
@@ -464,8 +451,8 @@ def _value_from_schema(schema: JsonMapping, root: JsonMapping) -> Any:
         for candidate in (
             "example",
             "example-skill",
-            "example-skill.machine.example",
-            "example-skill.machine-module.example",
+            "example-skill.interface.example",
+            "example-skill.source.example",
             "_rtx/_worker.py",
             "Interface",
             "--example",

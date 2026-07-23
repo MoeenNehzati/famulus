@@ -1,0 +1,128 @@
+content:
+- certificate_records\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/atomic-files.yaml
+  reason: Imports confined atomic public-key operations from atomic_files.py.
+  source: common.source.atomic-files
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/secret-store.yaml
+  reason: Imports private certification-key storage from secret_store.py.
+  source: common.source.secret-store
+  version: 1
+description: Canonicalizes certificate payloads and envelopes, manages Ed25519 certification keys, signs and verifies certificates, and validates append-only hash-linked certificate logs.
+gateway:
+  language: Python
+  path: certificate_records.py
+id: common.source.certificate-records
+interfaces:
+  common.source.certificate-records.interface.python-api:
+    contract:
+      arguments:
+        operation:
+          description: Certificate-record or signing-key operation to perform.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - {value: canonicalize-certificate, description: Canonicalize a certificate payload or complete envelope.}
+            - {value: hash-envelope, description: Hash one canonical complete certificate envelope.}
+            - {value: load-key, description: Load the active Ed25519 signing key or one retained public key.}
+            - {value: provision-signing-material, description: Create or verify the initial Ed25519 signing material.}
+            - {value: rotate-signing-key, description: Generate a new Ed25519 pair and atomically switch the active-key selector.}
+            - {value: sign-certificate, description: Sign one canonical certificate payload.}
+            - {value: verify-certificate, description: Verify one certificate envelope against retained public material.}
+            - {value: parse-certificate-log, description: Parse and verify one canonical hash-linked certificate log.}
+        value:
+          description: Payload, envelope, log bytes, or key identifier required by the selected operation.
+          required: false
+          sensitivity: secret
+          type: {kind: string, description: "Operation-specific Python mapping, string, or bytes value."}
+        key-root:
+          description: Confined directory containing retained public keys and the active-key selector.
+          required: false
+          sensitivity: user-private
+          direct_io_ref: public-key-store
+          type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: false, access: read-write}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Provisioning and rotation write retained public verification material and store private key material in the configured secret backend.
+      outputs:
+      - id: result
+        audience: machine
+        description: Canonical bytes, envelope hash, verification result, signing key, signed envelope, parsed certificate entries, or public key.
+        direct_io_ref: return-value
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Verification can return false; successful log parsing returns at least one entry.
+        type: {kind: string, sensitivity: secret, description: "Operation-specific Python return value that can contain private key material."}
+      outcomes:
+      - {id: completed-read-only, class: success, outputs: [result], effects: [], caller_action: "Use the returned canonical, verified, parsed, or loaded value."}
+      - {id: signing-key-created, class: success, outputs: [result], effects: [key-files, secret-material], caller_action: Retain public verification material and protect the private secret.}
+      - {id: signing-key-rotated, class: success, outputs: [result], effects: [key-files, secret-material], caller_action: Retain prior public keys for historical verification.}
+      - {id: invalid-certificate, class: error, outputs: [], effects: [], caller_action: "Reject malformed values, invalid hashes or signatures, broken chains, or inconsistent key identifiers."}
+      - {id: key-write-failed, class: partial, outputs: [], effects: [key-files, secret-material], caller_action: Inspect retained public files and the secret backend before retrying.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Verification and key loading use the active selector and retained public files observed during the call; canonicalization is deterministic.}
+        effects:
+        - id: key-files
+          direct_io_ref: public-key-store
+          action: update
+          value_source: {kind: output, output_ref: result}
+          may_occur_in_outcomes: [signing-key-created, signing-key-rotated, key-write-failed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: public-key-store}
+          reversibility: {compensatable: Restore the prior active selector while retaining generated public keys for historical verification.}
+        - id: secret-material
+          direct_io_ref: secret-store
+          action: update
+          value_source: {kind: output, output_ref: result}
+          may_occur_in_outcomes: [signing-key-created, signing-key-rotated, key-write-failed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: secret-store}
+          reversibility: {compensatable: Clear an unused generated private key from the configured secret backend.}
+        mutation_safety:
+          atomicity: {per_effect_only: Public files and the active selector are atomic per file; secret-store and filesystem changes are separate effects.}
+          concurrent_invocations: {safe: Exclusive public-key creation and post-write reload detect collisions; callers serialize intentional rotations.}
+          idempotency: {non_idempotent: Rotation and absent-key provisioning generate fresh random key material.}
+          on_uncertain_completion: {verify_then_decide: "Reload the active selector, public key, and private-key pair before generating another key."}
+          partial_effects_on_failure: {possible: Generated public or private material can remain retained when a later selector update fails.}
+          rollback_on_failure: {available: Initial provisioning clears its secret if public-key creation fails; rotation preserves historical public material.}
+        verification:
+        - {method: output-schema, output_ref: result}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: public-key-store, medium: local-filesystem, access: read-write, content: active key ID and retained Ed25519 public PEM files, formats: [text, pem], sensitivity: credential, path: "<key-root>/{active-key-id,*.pub}", path_match: glob, system: filesystem}
+        - {id: secret-store, medium: local-system, access: read, content: Ed25519 private key selected by key ID, formats: [base64], sensitivity: secret, system: configured-secret-backend}
+        writes:
+        - {id: public-key-store, medium: local-filesystem, access: read-write, content: active key ID and retained Ed25519 public PEM files, formats: [text, pem], sensitivity: credential, path: "<key-root>/{active-key-id,*.pub}", path_match: glob, system: filesystem}
+        - {id: secret-store, medium: local-system, access: write, content: Ed25519 private key selected by key ID, formats: [base64], sensitivity: secret, system: configured-secret-backend}
+        - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [python-object], sensitivity: secret}
+        network: []
+    description: Manages Ed25519 keys and canonical append-only certificate records for Python callers.
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: cryptography
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Implements Ed25519 key and signature primitives.
+  version: '>=44.0.1'
+schema_version: 4
+uses_interfaces: []
+version: 1

@@ -91,6 +91,6 @@ platform_support:
 runtime_dependencies: []
 schema_version: 4
 uses_interfaces:
-- interface: common.interface.audit-records
+- interface: common.interface.certificate-records
   version: 1
 version: 1

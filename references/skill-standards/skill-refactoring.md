@@ -228,7 +228,7 @@ Identify repeated content or reference material and move it to top-level `refere
 
 1. Move repeated content, tables, guidelines, or schemas to a top-level reference file.
 
-2. Use an `@` include only when every route through the owning LLM interface needs the reference; otherwise name the file and its observable read condition in the selected route.
+2. Use an `@` include only when every instruction route through the source-owned interface needs the reference; otherwise name the file and its observable read condition in the selected route.
    - Requires: move-reference
 
 3. Exercise unconditional or conditional loading as applicable.

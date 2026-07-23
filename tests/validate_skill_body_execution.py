@@ -70,7 +70,7 @@ def test_generated_blocks_are_ignored(tmp_path: Path) -> None:
         "`_rtx/_run_tool.py`\n"
         "<!-- END BLUEPRINT CONTRACT -->\n"
         "<!-- BEGIN BLUEPRINT INTERFACES -->\n"
-        "dispatcher --caller-skill demo-skill demo-skill.machine.run _rtx/_run_tool.py\n"
+        "dispatcher --caller-skill demo-skill demo-skill.interface.run _rtx/_run_tool.py\n"
         "<!-- END BLUEPRINT INTERFACES -->\n"
         "Use the `run` interface.\n",
     )

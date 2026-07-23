@@ -7,7 +7,7 @@ import subprocess
 
 import yaml
 
-from officina.common.artifact_health import (
+from officina.common.certification_hashing import (
     CANONICAL_NODE_HASH_POLICY,
     CERTIFIER_INTERFACE_ID,
     compute_certification_basis_hash,
@@ -16,7 +16,7 @@ from officina.common.artifact_health import (
     expected_certifier_checks,
     resolve_certification_basis_paths,
 )
-from officina.common.audit_records import (
+from officina.common.certificate_records import (
     canonical_certificate_envelope_bytes,
     load_or_create_certificate_signing_key,
     sign_certificate_payload,

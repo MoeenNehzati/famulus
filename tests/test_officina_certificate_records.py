@@ -6,30 +6,20 @@ from pathlib import Path
 
 import pytest
 
-import officina.common.audit_records as audit_records
+import officina.common.certificate_records as certificate_records
 import officina.common.atomic_files as atomic_files
-from officina.common.atomic_files import AtomicWriteError
-from officina.common.audit_records import (
+from officina.common.certificate_records import (
     CertificateLogError,
-    attach_record_authentication,
-    attach_record_hash,
-    attach_record_digest,
     canonical_certificate_envelope_bytes,
     canonical_certificate_payload_bytes,
-    canonical_health_record_bytes,
     certificate_entry_hash,
     certificate_public_key_root,
-    compute_record_digest,
     load_active_certificate_key_id,
     load_certificate_public_key,
     load_certificate_signing_key,
-    load_hmac_key,
     load_or_create_certificate_signing_key,
-    load_or_create_hmac_key,
     parse_certificate_log,
     provision_certificate_signing_material,
-    record_authentication_matches,
-    record_digest_matches,
     rotate_certificate_signing_key,
     sign_certificate_payload,
     verify_certificate_envelope,
@@ -62,252 +52,26 @@ def _certificate_payload(key_id: str, previous_entry_hash: str | None) -> dict[s
     }
 
 
-def test_record_digest_ignores_existing_digest_field() -> None:
-    record = {"skill": "demo-skill", "checks": {"semantic": {"passed": True}}}
-    signed = attach_record_digest(record)
-
-    assert signed["record_digest"] == compute_record_digest(signed)
-    assert record_digest_matches(signed)
-
-
-def test_record_digest_changes_when_record_content_changes() -> None:
-    signed = attach_record_digest({"skill": "demo-skill", "checks": {"semantic": {"passed": True}}})
-
-    signed["checks"]["semantic"]["passed"] = False
-
-    assert not record_digest_matches(signed)
-
-
-def test_health_record_canonicalization_is_order_independent() -> None:
-    left = {"subject": {"version": 1, "id": "demo-skill"}, "checks": []}
-    right = {"checks": [], "subject": {"id": "demo-skill", "version": 1}}
-
-    assert canonical_health_record_bytes(left) == canonical_health_record_bytes(right)
-
-
-def test_health_record_canonicalization_rejects_floats() -> None:
-    with pytest.raises(TypeError, match="floating-point"):
-        canonical_health_record_bytes({"coverage": 0.5})
-
-
-def test_health_record_canonicalization_rejects_float_nested_in_tuple() -> None:
-    with pytest.raises(TypeError, match="floating-point"):
-        canonical_health_record_bytes({"coverage": ({"ratio": (1, 0.5)},)})
-
-
-def test_manual_edit_with_recomputed_record_hash_still_fails_mac() -> None:
-    key = bytes(range(32))
-    authenticated = attach_record_authentication(
-        {"subject": {"id": "demo-skill"}, "checks": [{"id": "schema", "passed": True}]},
-        key,
-    )
-    tampered = {
-        **authenticated,
-        "checks": [{"id": "schema", "passed": False}],
-    }
-    tampered = attach_record_hash(tampered)
-
-    assert not record_authentication_matches(tampered, key)
-
-
-def test_authentication_rejects_wrong_key() -> None:
-    authenticated = attach_record_authentication({"subject": {"id": "demo-skill"}}, b"a" * 32)
-
-    assert record_authentication_matches(authenticated, b"a" * 32)
-    assert not record_authentication_matches(authenticated, b"b" * 32)
-
-
-def test_record_hash_authenticates_source_commit_and_input_paths() -> None:
-    payload = {
-        "subject": {"id": "demo-skill"},
-        "hashes": {"certified_health_hash": "sha256:" + "1" * 64},
-        "source": {
-            "vcs": "git",
-            "commit": "a" * 40,
-            "input_paths": ["skills/demo-skill/blueprint.yaml"],
-        },
-    }
-    first = attach_record_authentication(payload, b"a" * 32)
-    second = attach_record_authentication(
-        {
-            **payload,
-            "source": {**payload["source"], "commit": "b" * 40},
-        },
-        b"a" * 32,
-    )
-    third = attach_record_authentication(
-        {
-            **payload,
-            "source": {
-                **payload["source"],
-                "input_paths": [
-                    "skills/demo-skill/blueprint.yaml",
-                    "skills/demo-skill/SKILL.md",
-                ],
-            },
-        },
-        b"a" * 32,
-    )
-
-    assert len({first["record_hash"], second["record_hash"], third["record_hash"]}) == 3
-
-
-def test_hmac_key_is_created_once_with_private_posix_mode(tmp_path) -> None:
-    path = tmp_path / ".health-authentication-key"
-
-    first = load_or_create_hmac_key(path, allowed_root=tmp_path)
-    second = load_or_create_hmac_key(path, allowed_root=tmp_path)
-
-    assert len(first) == 32
-    assert second == first
-    if os.name == "posix":
-        assert path.stat().st_mode & 0o777 == 0o600
-
-
-def test_existing_hmac_key_must_be_exactly_32_bytes(tmp_path) -> None:
-    path = tmp_path / ".health-authentication-key"
-    path.write_bytes(b"short")
-
-    with pytest.raises(ValueError, match="exactly 32 bytes"):
-        load_or_create_hmac_key(path, allowed_root=tmp_path)
-
-
-def test_interrupted_hmac_key_creation_leaves_no_short_key(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / ".health-authentication-key"
-
-    def interrupt(*args: object, **kwargs: object) -> bool:
-        raise OSError("injected interruption")
-
-    monkeypatch.setattr(audit_records, "atomic_create_bytes", interrupt)
-
-    with pytest.raises(OSError, match="injected interruption"):
-        load_or_create_hmac_key(path, allowed_root=tmp_path)
-
-    assert not path.exists()
-
-
-def test_hmac_key_creation_loads_concurrent_winner(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / ".health-authentication-key"
-    winner = b"w" * 32
-
-    def lose_race(
-        destination, data: bytes, *, allowed_root, mode: int
-    ) -> bool:
-        assert destination == path
-        assert len(data) == 32
-        assert allowed_root == tmp_path
-        assert mode == 0o600
-        path.write_bytes(winner)
-        return False
-
-    monkeypatch.setattr(audit_records, "atomic_create_bytes", lose_race)
-
-    assert load_or_create_hmac_key(path, allowed_root=tmp_path) == winner
-
-
-def test_hmac_key_creation_rejects_malformed_concurrent_winner(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / ".health-authentication-key"
-
-    def lose_race(
-        destination, data: bytes, *, allowed_root, mode: int
-    ) -> bool:
-        assert destination == path
-        assert len(data) == 32
-        assert allowed_root == tmp_path
-        assert mode == 0o600
-        path.write_bytes(b"short")
-        return False
-
-    monkeypatch.setattr(audit_records, "atomic_create_bytes", lose_race)
-
-    with pytest.raises(ValueError, match="exactly 32 bytes"):
-        load_or_create_hmac_key(path, allowed_root=tmp_path)
-
-
-def test_read_only_hmac_key_loader_never_creates_missing_key(tmp_path) -> None:
-    path = tmp_path / ".health-authentication-key"
-
-    with pytest.raises(FileNotFoundError):
-        load_hmac_key(path, allowed_root=tmp_path)
-
-    assert not path.exists()
-
-
-def test_read_only_hmac_key_loader_validates_size(tmp_path) -> None:
-    path = tmp_path / ".health-authentication-key"
-    path.write_bytes(b"k" * 32)
-
-    assert load_hmac_key(path, allowed_root=tmp_path) == b"k" * 32
-
-    path.write_bytes(b"short")
-    with pytest.raises(ValueError, match="exactly 32 bytes"):
-        load_hmac_key(path, allowed_root=tmp_path)
-
-
-def test_existing_hmac_key_rejects_final_symlink(tmp_path) -> None:
-    outside = tmp_path.parent / f"{tmp_path.name}-outside-key"
-    outside.write_bytes(b"x" * 32)
-    path = tmp_path / ".health-authentication-key"
-    path.symlink_to(outside)
-
-    with pytest.raises(AtomicWriteError, match="symbolic link"):
-        load_hmac_key(path, allowed_root=tmp_path)
-
-
-def test_existing_hmac_key_read_is_stable_across_final_replacement(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path = tmp_path / ".health-authentication-key"
-    original = b"a" * 32
-    path.write_bytes(original)
-    displaced = tmp_path / "displaced-key"
-    real_open = atomic_files._secure_open
-
-    def replace_after_open(target, flags: int, mode: int = 0o777, *, dir_fd=None) -> int:
-        descriptor = real_open(target, flags, mode, dir_fd=dir_fd)
-        if dir_fd is not None and target == path.name:
-            path.rename(displaced)
-            path.write_bytes(b"b" * 32)
-        return descriptor
-
-    monkeypatch.setattr(atomic_files, "_secure_open", replace_after_open)
-
-    assert load_hmac_key(path, allowed_root=tmp_path) == original
-    assert path.read_bytes() == b"b" * 32
-
-
-def test_existing_hmac_key_read_is_stable_across_parent_replacement(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    allowed_root = tmp_path / "allowed"
-    parent = allowed_root / "keys"
-    parent.mkdir(parents=True)
-    path = parent / ".health-authentication-key"
-    original = b"a" * 32
-    path.write_bytes(original)
-    displaced = allowed_root / "displaced-keys"
-    real_open = atomic_files._secure_open
-
-    def replace_after_open(target, flags: int, mode: int = 0o777, *, dir_fd=None) -> int:
-        descriptor = real_open(target, flags, mode, dir_fd=dir_fd)
-        if dir_fd is not None and target == parent.name:
-            parent.rename(displaced)
-            parent.mkdir()
-            (parent / path.name).write_bytes(b"b" * 32)
-        return descriptor
-
-    monkeypatch.setattr(atomic_files, "_secure_open", replace_after_open)
-
-    assert load_hmac_key(path, allowed_root=allowed_root) == original
-    assert path.read_bytes() == b"b" * 32
+def test_certificate_record_owner_does_not_expose_legacy_hmac_authority() -> None:
+    for name in (
+        "RECORD_DIGEST_FIELD",
+        "RECORD_HASH_FIELD",
+        "AUTHENTICATION_FIELD",
+        "HEALTH_MAC_DOMAIN",
+        "HMAC_KEY_BYTES",
+        "canonical_record_bytes",
+        "compute_record_digest",
+        "attach_record_digest",
+        "record_digest_matches",
+        "canonical_health_record_bytes",
+        "compute_record_hash",
+        "attach_record_hash",
+        "attach_record_authentication",
+        "record_authentication_matches",
+        "load_or_create_hmac_key",
+        "load_hmac_key",
+    ):
+        assert not hasattr(certificate_records, name)
 
 
 def test_certificate_payload_and_envelope_canonicalization_is_stable() -> None:
@@ -531,9 +295,9 @@ def test_certificate_key_lifecycle_propagates_explicit_non_atomic_fallback(
     create_flags: list[bool] = []
     replace_flags: list[bool] = []
     read_flags: list[bool] = []
-    real_create = audit_records.atomic_create_bytes
-    real_replace = audit_records.atomic_replace_bytes
-    real_read = audit_records.read_regular_file_bytes
+    real_create = certificate_records.atomic_create_bytes
+    real_replace = certificate_records.atomic_replace_bytes
+    real_read = certificate_records.read_regular_file_bytes
 
     def capture_create(
         path: Path,
@@ -582,9 +346,9 @@ def test_certificate_key_lifecycle_propagates_explicit_non_atomic_fallback(
             allow_non_atomic=allow_non_atomic,
         )
 
-    monkeypatch.setattr(audit_records, "atomic_create_bytes", capture_create)
-    monkeypatch.setattr(audit_records, "atomic_replace_bytes", capture_replace)
-    monkeypatch.setattr(audit_records, "read_regular_file_bytes", capture_read)
+    monkeypatch.setattr(certificate_records, "atomic_create_bytes", capture_create)
+    monkeypatch.setattr(certificate_records, "atomic_replace_bytes", capture_replace)
+    monkeypatch.setattr(certificate_records, "read_regular_file_bytes", capture_read)
 
     first = load_or_create_certificate_signing_key(
         public_key_root,

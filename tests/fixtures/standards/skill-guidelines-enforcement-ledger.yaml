@@ -3,21 +3,17 @@ references:
   kind: validation-entrypoint
   integration_point: precommit
   description: Git pre-commit entrypoint that invokes the repository validation runner.
-- path: references/blueprint/*.schema.json
+- path: references/blueprint/behavioral-source.schema.json
+  kind: schema-authority
+- path: references/blueprint/module.schema.json
   kind: schema-authority
 - path: references/blueprint/runtime_dependencies.json
   kind: generated-artifact
-- path: references/blueprint/schema.json
-  kind: schema-authority
 - path: references/blueprint/template.yaml
-  kind: documentation-reference
-- path: references/skill-standards/llm-interface-design.md
   kind: documentation-reference
 - path: skills/
   kind: directory-or-package
 - path: skills/<skill-name>/_rtx/
-  kind: directory-or-package
-- path: skills/<skill-name>/llm_interfaces/
   kind: directory-or-package
 - path: skills/<skill-name>/tests/
   kind: directory-or-package

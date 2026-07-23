@@ -21,13 +21,13 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `get-weather.interface.scripts-weather` — Fetch weather data for a location and date range, returning hourly forecast JSON.
   - `dispatcher --caller-skill get-weather get-weather.interface.scripts-weather [--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]`
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `get-weather.interface.default` — Primary LLM-facing skill instructions.

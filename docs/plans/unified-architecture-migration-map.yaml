@@ -320,16 +320,16 @@ declarations:
       - root: src/officina/common
         id: common
         gateway: {path: __init__.py, language: Python}
-        content: [__init__.py, artifact_health.py, atomic_files.py, audit_records.py, blueprint_graph.py, blueprint_inventory.py, blueprint_template.py, certification_view.py, codex_toml.py, dates.py, git_provenance.py, oauth_json.py, pooled_blueprint.py, process_binding_compiler.py, secret_store.py, toml_io.py]
+        content: [__init__.py, certification_hashing.py, atomic_files.py, certificate_records.py, blueprint_graph.py, blueprint_inventory.py, blueprint_template.py, certification_view.py, codex_toml.py, dates.py, git_provenance.py, oauth_json.py, pooled_blueprint.py, process_binding_compiler.py, secret_store.py, toml_io.py]
         exports:
-          common.interface.artifact-health:
-            source_interface: common.source.artifact-health.interface.python-api
+          common.interface.certification-hashing:
+            source_interface: common.source.certification-hashing.interface.python-api
             access: {allow_all_modules: false, allowed_callers: [skill-certifier, skill-drift]}
           common.interface.atomic-files:
             source_interface: common.source.atomic-files.interface.python-api
             access: {allow_all_modules: false, allowed_callers: [skill-maker, skill-certifier]}
-          common.interface.audit-records:
-            source_interface: common.source.audit-records.interface.python-api
+          common.interface.certificate-records:
+            source_interface: common.source.certificate-records.interface.python-api
             access: {allow_all_modules: false, allowed_callers: [install-assistant-tools, skill-certifier, skill-drift]}
           common.interface.blueprint-graph:
             source_interface: common.source.blueprint-graph.interface.python-api
@@ -362,20 +362,18 @@ declarations:
             source_interface: common.source.toml-io.interface.python-api
             access: {allow_all_modules: false, allowed_callers: [install-assistant-tools]}
         sources:
-          - id: common.source.artifact-health
+          - id: common.source.certification-hashing
             version: 1
-            blueprint: blueprints/artifact-health.yaml
-            gateway: {path: artifact_health.py, language: Python}
-            legacy: {path: $repo/src/officina/common/artifact_health.py, content: code, format: python}
+            blueprint: blueprints/certification-hashing.yaml
+            gateway: {path: certification_hashing.py, language: Python}
+            legacy: {path: $repo/src/officina/common/certification_hashing.py, content: code, format: python}
             dependencies:
-              - {source: common.source.atomic-files, version: 1, blueprint: {base: module-root, path: blueprints/atomic-files.yaml}, reason: Imports atomic file reads and errors from atomic_files.py.}
-              - {source: common.source.audit-records, version: 1, blueprint: {base: module-root, path: blueprints/audit-records.yaml}, reason: Imports record authentication helpers from audit_records.py.}
-              - {source: common.source.blueprint-graph, version: 1, blueprint: {base: module-root, path: blueprints/blueprint-graph.yaml}, reason: Imports graph types and resolved content paths from blueprint_graph.py.}
-              - {source: common.source.blueprint-template, version: 1, blueprint: {base: module-root, path: blueprints/blueprint-template.yaml}, reason: Imports schema loading and validation from blueprint_template.py.}
-              - {source: common.source.git-provenance, version: 1, blueprint: {base: module-root, path: blueprints/git-provenance.yaml}, reason: Imports Git snapshot and file provenance from git_provenance.py.}
-              - {source: common.source.process-binding-compiler, version: 1, blueprint: {base: module-root, path: blueprints/process-binding-compiler.yaml}, reason: Imports gateway requirement parsing from process_binding_compiler.py.}
+              - {source: common.source.atomic-files, version: 1, blueprint: {base: module-root, path: blueprints/atomic-files.yaml}, reason: Imports descriptor-safe file reads from atomic_files.py.}
+              - {source: common.source.blueprint-graph, version: 1, blueprint: {base: module-root, path: blueprints/blueprint-graph.yaml}, reason: Imports v4 repository graph and node types from blueprint_graph.py.}
+              - {source: common.source.git-provenance, version: 1, blueprint: {base: module-root, path: blueprints/git-provenance.yaml}, reason: Imports Git snapshots and file provenance from git_provenance.py.}
+              - {source: common.source.process-binding-compiler, version: 1, blueprint: {base: module-root, path: blueprints/process-binding-compiler.yaml}, reason: Imports gateway-language normalization from process_binding_compiler.py.}
             interfaces:
-              common.source.artifact-health.interface.python-api: {version: 1, description: Computes deterministic graph health and certification hashes for Python callers.}
+              common.source.certification-hashing.interface.python-api: {version: 1, description: Computes canonical v4 certification-basis and node hash state for Python callers.}
           - id: common.source.atomic-files
             version: 1
             blueprint: blueprints/atomic-files.yaml
@@ -383,18 +381,18 @@ declarations:
             legacy: {path: $repo/src/officina/common/atomic_files.py, content: code, format: python}
             interfaces:
               common.source.atomic-files.interface.python-api: {version: 1, description: Provides atomic file operations to Python callers.}
-          - id: common.source.audit-records
+          - id: common.source.certificate-records
             version: 1
-            blueprint: blueprints/audit-records.yaml
-            gateway: {path: audit_records.py, language: Python}
-            legacy: {path: $repo/src/officina/common/audit_records.py, content: code, format: python}
+            blueprint: blueprints/certificate-records.yaml
+            gateway: {path: certificate_records.py, language: Python}
+            legacy: {path: $repo/src/officina/common/certificate_records.py, content: code, format: python}
             dependencies:
               - {source: common.source.atomic-files, version: 1, blueprint: {base: module-root, path: blueprints/atomic-files.yaml}, reason: Imports confined atomic record operations from atomic_files.py.}
               - {source: common.source.secret-store, version: 1, blueprint: {base: module-root, path: blueprints/secret-store.yaml}, reason: Imports certification key storage from secret_store.py.}
             runtime_dependencies:
-              - {kind: python-package, name: cryptography, version: '>=44.0.1', platforms: {linux: true, macos: true, windows: true}, reason: Implements the Ed25519 key and signature primitives imported by audit_records.py.}
+              - {kind: python-package, name: cryptography, version: '>=44.0.1', platforms: {linux: true, macos: true, windows: true}, reason: Implements the Ed25519 key and signature primitives imported by certificate_records.py.}
             interfaces:
-              common.source.audit-records.interface.python-api: {version: 1, description: "Reads, authenticates, signs, and writes certification records for Python callers."}
+              common.source.certificate-records.interface.python-api: {version: 1, description: Manages Ed25519 keys and canonical append-only certificate records for Python callers.}
           - id: common.source.blueprint-graph
             version: 1
             blueprint: blueprints/blueprint-graph.yaml
@@ -425,9 +423,9 @@ declarations:
             gateway: {path: certification_view.py, language: Python}
             legacy: {path: $repo/src/officina/common/certification_view.py, content: code, format: python}
             dependencies:
-              - {source: common.source.artifact-health, version: 1, blueprint: {base: module-root, path: blueprints/artifact-health.yaml}, reason: Imports node-hash and certification-basis evaluation from artifact_health.py.}
+              - {source: common.source.certification-hashing, version: 1, blueprint: {base: module-root, path: blueprints/certification-hashing.yaml}, reason: Imports node-hash and certification-basis evaluation from certification_hashing.py.}
               - {source: common.source.atomic-files, version: 1, blueprint: {base: module-root, path: blueprints/atomic-files.yaml}, reason: Imports descriptor-safe certificate reads from atomic_files.py.}
-              - {source: common.source.audit-records, version: 1, blueprint: {base: module-root, path: blueprints/audit-records.yaml}, reason: Imports certificate log parsing from audit_records.py.}
+              - {source: common.source.certificate-records, version: 1, blueprint: {base: module-root, path: blueprints/certificate-records.yaml}, reason: Imports certificate log parsing from certificate_records.py.}
               - {source: common.source.blueprint-graph, version: 1, blueprint: {base: module-root, path: blueprints/blueprint-graph.yaml}, reason: Imports graph node and repository graph types from blueprint_graph.py.}
               - {source: common.source.blueprint-template, version: 1, blueprint: {base: module-root, path: blueprints/blueprint-template.yaml}, reason: Imports schema loading and validation from blueprint_template.py.}
               - {source: common.source.git-provenance, version: 1, blueprint: {base: module-root, path: blueprints/git-provenance.yaml}, reason: Imports snapshot capture and commit readiness from git_provenance.py.}
@@ -471,8 +469,6 @@ declarations:
             gateway: {path: pooled_blueprint.py, language: Python}
             legacy: {path: $repo/src/officina/common/pooled_blueprint.py, content: code, format: python}
             dependencies:
-              - {source: common.source.artifact-health, version: 1, blueprint: {base: module-root, path: blueprints/artifact-health.yaml}, reason: Imports graph-health report and owner helpers from artifact_health.py.}
-              - {source: common.source.audit-records, version: 1, blueprint: {base: module-root, path: blueprints/audit-records.yaml}, reason: Imports record authentication helpers from audit_records.py.}
               - {source: common.source.blueprint-graph, version: 1, blueprint: {base: module-root, path: blueprints/blueprint-graph.yaml}, reason: Imports repository and skill graph types from blueprint_graph.py.}
               - {source: common.source.certification-view, version: 1, blueprint: {base: module-root, path: blueprints/certification-view.yaml}, reason: Imports the certification view protocol from certification_view.py.}
             interfaces:
@@ -512,14 +508,14 @@ declarations:
             legacy: {path: $repo/references/skill-standards/skill-guidelines.md, content: skill, format: markdown}
             content: [skill-guidelines.md, skill-guidelines.standard.yaml]
             dependencies:
-              - source: skill-standards.source.llm-interface-design
+              - source: skill-standards.source.interface-design
                 version: 1
-                blueprint: {base: module-root, path: blueprints/llm-interface-design.yaml}
-                reason: Routes the LLM-interface section to its detailed same-module standard.
-          - id: skill-standards.source.llm-interface-design
+                blueprint: {base: module-root, path: blueprints/interface-design.yaml}
+                reason: Routes source-owned interface and instruction-source design to its detailed same-module standard.
+          - id: skill-standards.source.interface-design
             version: 1
-            blueprint: blueprints/llm-interface-design.yaml
-            gateway: {path: llm-interface-design.md, language: Markdown}
+            blueprint: blueprints/interface-design.yaml
+            gateway: {path: interface-design.md, language: Markdown}
             legacy: {path: $repo/references/skill-standards/llm-interface-design.md, content: skill, format: markdown}
           - id: skill-standards.source.skill-refactoring
             version: 1
@@ -545,24 +541,21 @@ declarations:
       - {consumer: regenerate-blueprints.source.rtx-blueprint-regenerator, interface: common.interface.blueprint-template, version: 1, python_import: officina.common.blueprint_template}
       - {consumer: skill-maker.source.rtx-blueprint-syncer, interface: common.interface.atomic-files, version: 1, python_import: officina.common.atomic_files}
       - {consumer: skill-maker.source.rtx-blueprint-syncer, interface: common.interface.blueprint-graph, version: 1, python_import: officina.common.blueprint_graph}
-      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.atomic-files, version: 1, python_import: officina.common.atomic_files}
-      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.artifact-health, version: 1, python_import: officina.common.artifact_health}
-      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.audit-records, version: 1, python_import: officina.common.audit_records}
-      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.blueprint-graph, version: 1, python_import: officina.common.blueprint_graph}
-      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.certification-view, version: 1, python_import: officina.common.certification_view}
-      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.git-provenance, version: 1, python_import: officina.common.git_provenance}
-      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.pooled-blueprint, version: 1, python_import: officina.common.pooled_blueprint}
-      - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.artifact-health, version: 1, python_import: officina.common.artifact_health}
-      - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.audit-records, version: 1, python_import: officina.common.audit_records}
+      - {consumer: skill-certifier.source.rtx-certifier, interface: common.interface.atomic-files, version: 1, python_import: officina.common.atomic_files}
+      - {consumer: skill-certifier.source.rtx-certifier, interface: common.interface.certification-hashing, version: 1, python_import: officina.common.certification_hashing}
+      - {consumer: skill-certifier.source.rtx-certifier, interface: common.interface.certificate-records, version: 1, python_import: officina.common.certificate_records}
+      - {consumer: skill-certifier.source.rtx-certifier, interface: common.interface.blueprint-graph, version: 1, python_import: officina.common.blueprint_graph}
+      - {consumer: skill-certifier.source.rtx-certifier, interface: common.interface.certification-view, version: 1, python_import: officina.common.certification_view}
+      - {consumer: skill-certifier.source.rtx-certifier, interface: common.interface.git-provenance, version: 1, python_import: officina.common.git_provenance}
+      - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.certification-hashing, version: 1, python_import: officina.common.certification_hashing}
+      - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.certificate-records, version: 1, python_import: officina.common.certificate_records}
       - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.blueprint-graph, version: 1, python_import: officina.common.blueprint_graph}
       - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.certification-view, version: 1, python_import: officina.common.certification_view}
-      - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.git-provenance, version: 1, python_import: officina.common.git_provenance}
-      - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.pooled-blueprint, version: 1, python_import: officina.common.pooled_blueprint}
       - {consumer: daily-plan.source.rtx-init, interface: common.interface.dates, version: 1, python_import: officina.common.dates}
       - {consumer: install-assistant-tools.source.rtx-config-bridge, interface: common.interface.codex-toml, version: 1, python_import: officina.common.codex_toml}
       - {consumer: install-assistant-tools.source.rtx-config-bridge, interface: common.interface.toml-io, version: 1, python_import: officina.common.toml_io}
       - {consumer: install-assistant-tools.source.rtx-agent-launchers, interface: common.interface.toml-io, version: 1, python_import: officina.common.toml_io}
-      - {consumer: install-assistant-tools.source.rtx-install-scaffold, interface: common.interface.audit-records, version: 1, python_import: officina.common.audit_records}
+      - {consumer: install-assistant-tools.source.rtx-install-scaffold, interface: common.interface.certificate-records, version: 1, python_import: officina.common.certificate_records}
       - {consumer: email-client.source.rtx-smtp-transport, interface: common.interface.secret-store, version: 1, python_import: officina.common.secret_store}
       - {consumer: email-client.source.rtx-init, interface: common.interface.secret-store, version: 1, python_import: officina.common.secret_store}
       - {consumer: email-client.source.rtx-email-accounts, interface: common.interface.secret-store, version: 1, python_import: officina.common.secret_store}
@@ -688,11 +681,11 @@ declarations:
           path: $repo/references/skill-standards/llm-interface-design.md
           content: skill
           format: markdown
-          reason: Defines when and how to decompose LLM-facing skill interfaces.
+          reason: Defines source-owned interface contracts and when to decompose natural-language instruction sources.
         target:
-          source: skill-standards.source.llm-interface-design
+          source: skill-standards.source.interface-design
           version: 1
-          blueprint: {base: repository-root, path: references/skill-standards/blueprints/llm-interface-design.yaml}
+          blueprint: {base: repository-root, path: references/skill-standards/blueprints/interface-design.yaml}
       - consumer: refactor-skills.llm.default
         authored:
           path: $repo/references/skill-standards/skill-refactoring.md
@@ -781,11 +774,7 @@ declarations:
       - inputs: [skills/skill-drift/_rtx/._check_drift_state.py.compute-hashes.blueprint.yaml, skills/skill-drift/_rtx/._check_drift_state.py.drift-status.blueprint.yaml]
         target: skills/skill-drift/blueprints/rtx-check-drift-state.yaml
         decision: one source owns _rtx/_check_drift_state.py and both intrinsic interfaces; preserve each interface contract and selector, and require their source-wide platform and runtime requirements to agree before merging
-  non_live_local_artifacts:
-    - path: skills/list-manager/.SKILL.md.blueprint.yaml
-      state: ignored-stale-local
-      disposition: exclude
-      reason: the ignored sidecar references a preference gateway and source sidecar that do not exist and have no Git history, while the tracked root, SKILL.md, and runtime author no such dependency
+  non_live_local_artifacts: []
   version_3:
     live_paths: []
     non_live_examples_and_fixtures:
@@ -1433,6 +1422,13 @@ documents:
   - paths: [docs/plans/archive/**, docs/plans/completed/**, docs/superpowers/plans/**, docs/superpowers/specs/**, docs/standard-v6-conversion-assessment.md]
     disposition: preserve
     target: historical evidence, excluded from active runtime-authority scans
+  - paths: [lessons/2026-07-13.md]
+    disposition: preserve
+    execution_status: frozen_history
+    target: historical evidence, excluded from active runtime-authority scans
+  - paths: [lessons/**]
+    disposition: preserve
+    target: historical evidence, excluded from active runtime-authority scans
   - paths: [docs/plans/logical-resource-addressing.md]
     disposition: preserve
     execution_status: deferred_pending_v4_adoption_and_rebase
@@ -1451,9 +1447,9 @@ documents:
     disposition: preserve
     execution_status: deferred_pending_v4_adoption_and_rebase
     target: non-executable until rebased after v4 adoption; proposed artifacts require fresh predecessor dispositions
-  - paths: [skills/*/SKILL.md, skills/*/llm_interfaces/*.md, skills/*/personal-preferences/*.md, skills/*/references/*.md, skills/*/DEBUGGING.md]
+  - paths: [skills/*/SKILL.md, skills/*/llm_interfaces/*.md, skills/*/instructions/*.md, skills/*/personal-preferences/*.md, skills/*/references/*.md, skills/*/DEBUGGING.md]
     disposition: move
-    target: preserve authored behavior, update old public IDs, and regenerate owned blocks; gateway files retain whole-file identity
+    target: preserve authored behavior, rename the obsolete llm_interfaces directory to instructions where present, update old public IDs, and regenerate owned blocks; gateway files retain whole-file identity
 
 validators_and_hooks:
   - paths: [validators/runner.py]
@@ -1488,7 +1484,7 @@ test_families:
     disposition: move
     target: v4-only runtime schemas plus old-format converter inputs
   - family: inventory graph hashing and provenance
-    paths: [tests/test_blueprint_inventory.py, tests/test_officina_blueprint_graph.py, tests/test_machine_module_hashing.py, tests/test_officina_artifact_health.py, tests/test_officina_git_provenance.py, skills/skill-drift/tests/test_drift_hash.py]
+    paths: [tests/test_blueprint_inventory.py, tests/test_officina_blueprint_graph.py, tests/test_node_certification_hashing.py, tests/test_officina_certification_hashing.py, tests/test_officina_git_provenance.py]
     disposition: move
     target: module/source graph, one basis hash, local input provenance, and exact-target isolation
   - family: binding dispatcher runtime helpers and route smoke
@@ -1500,7 +1496,7 @@ test_families:
     disposition: move
     target: v4 projection/search plus exhaustive, idempotent old-format conversion
   - family: certification drift pooled review and atomic writes
-    paths: [tests/test_officina_atomic_files.py, tests/test_officina_audit_records.py, tests/test_officina_pooled_blueprint.py, skills/skill-audit/tests/**, skills/skill-drift/tests/test_drift_check.py]
+    paths: [tests/test_officina_atomic_files.py, tests/test_officina_certificate_records.py, tests/test_officina_pooled_blueprint.py, skills/skill-certifier/tests/**, skills/skill-drift/tests/test_drift_check.py]
     disposition: move
     target: skill-certifier, signed current certificate/history, read-only drift, certificate-backed pooled review, and direct plus exact active-plugin discovery
   - family: admissibility and conformance
@@ -1676,6 +1672,27 @@ functional_predecessors:
   - proposed: src/officina/common/process_binding_compiler.py
     disposition: rename
     predecessor: src/officina/common/machine_interface_binding.py
+  - proposed: src/officina/common/certification_hashing.py
+    disposition: rename
+    predecessor: src/officina/common/artifact_health.py
+  - proposed: src/officina/common/certificate_records.py
+    disposition: rename
+    predecessor: src/officina/common/audit_records.py
+  - proposed: src/officina/common/blueprints/certification-hashing.yaml
+    disposition: rename
+    predecessor: src/officina/common/blueprints/artifact-health.yaml
+  - proposed: src/officina/common/blueprints/certificate-records.yaml
+    disposition: rename
+    predecessor: src/officina/common/blueprints/audit-records.yaml
+  - proposed: tests/test_officina_certification_hashing.py
+    disposition: rename
+    predecessor: tests/test_officina_artifact_health.py
+  - proposed: tests/test_officina_certificate_records.py
+    disposition: rename
+    predecessor: tests/test_officina_audit_records.py
+  - proposed: tests/test_node_certification_hashing.py
+    disposition: rename
+    predecessor: tests/test_machine_module_hashing.py
   - proposed: src/officina/common/blueprint.yaml
     disposition: derive
     predecessor: src/officina/common/__init__.py plus the thirteen restricted-export and two private helper submodules declared under declarations.mechanical_conversion.supplemental_modules
@@ -1685,6 +1702,24 @@ functional_predecessors:
   - proposed: skills/skill-certifier/
     disposition: rename
     predecessor: skills/skill-audit/
+  - proposed: skills/skill-certifier/_rtx/_node_certifier.py
+    disposition: rename
+    predecessor: skills/skill-certifier/_rtx/_audit_certifier.py
+  - proposed: skills/skill-certifier/blueprints/rtx-certifier.yaml
+    disposition: rename
+    predecessor: skills/skill-certifier/blueprints/rtx-audit-certifier.yaml
+  - proposed: skills/skill-certifier/tests/test_certifier.py
+    disposition: rename
+    predecessor: skills/skill-certifier/tests/test_audit_certifier.py
+  - proposed: skills/connect-google/instructions/connect-services.md
+    disposition: rename
+    predecessor: skills/connect-google/llm_interfaces/connect-services.md
+  - proposed: skills/connect-google/instructions/create-client.md
+    disposition: rename
+    predecessor: skills/connect-google/llm_interfaces/create-client.md
+  - proposed: skills/email-triage/instructions/triage.md
+    disposition: rename
+    predecessor: skills/email-triage/llm_interfaces/triage.md
   - proposed: "skills/*/blueprints/*.yaml"
     disposition: derive
     predecessor: the mapped legacy/v2/v3 declaration owning the same whole-file gateway; Python package-support paths are excluded and instead use declarations.mechanical_conversion.python_package_support.created_path_predecessor
@@ -1694,9 +1729,12 @@ functional_predecessors:
   - proposed: references/skill-standards/blueprints/skill-guidelines.yaml
     disposition: derive
     predecessor: references/skill-standards/skill-guidelines.md and its three exact mapped consumers
-  - proposed: references/skill-standards/blueprints/llm-interface-design.yaml
-    disposition: derive
-    predecessor: references/skill-standards/llm-interface-design.md and its exact refactor-skills consumer
+  - proposed: references/skill-standards/interface-design.md
+    disposition: rename
+    predecessor: references/skill-standards/llm-interface-design.md
+  - proposed: references/skill-standards/blueprints/interface-design.yaml
+    disposition: rename
+    predecessor: references/skill-standards/blueprints/llm-interface-design.yaml
   - proposed: references/skill-standards/blueprints/skill-refactoring.yaml
     disposition: derive
     predecessor: references/skill-standards/skill-refactoring.md and its exact refactor-skills consumer

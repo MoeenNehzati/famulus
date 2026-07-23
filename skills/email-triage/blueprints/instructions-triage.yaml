@@ -1,13 +1,13 @@
 content:
-- llm_interfaces/triage\.md
+- instructions/triage\.md
 dependencies: []
 description: Owns the LLM-directed, watermark-safe email triage workflow and its routing decisions.
 gateway:
   language: Markdown
-  path: llm_interfaces/triage.md
-id: email-triage.source.llm-interfaces-triage
+  path: instructions/triage.md
+id: email-triage.source.instructions-triage
 interfaces:
-  email-triage.source.llm-interfaces-triage.interface.triage:
+  email-triage.source.instructions-triage.interface.triage:
     contract:
       arguments: {}
       preconditions: []

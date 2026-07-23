@@ -37,9 +37,7 @@ from officina.runtime.python_machine_interface import PythonMachineInterface
 from officina.runtime.python_machine_interface_runner import run_python_machine_interface
 from officina.common.blueprint_graph import (
     RepositoryBlueprintGraph,
-    expanded_legacy_blueprint,
     load_repository_blueprint_graph,
-    load_skill_blueprint_graph,
 )
 from officina.common.atomic_files import atomic_replace_bytes
 from officina.common.certification_view import CertificationView
@@ -54,12 +52,6 @@ USED_INTERFACES_START = "<!-- BEGIN BLUEPRINT USED INTERFACES -->"
 USED_INTERFACES_END = "<!-- END BLUEPRINT USED INTERFACES -->"
 RUNTIME_DEPENDENCIES_PATH = REPO_ROOT / "references" / "blueprint" / "runtime_dependencies.json"
 BLUEPRINT_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
-DEPENDENCY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+\-\[\]]*$")
-PYTHON_MACHINE_INTERFACE_ENTRYPOINT_RE = re.compile(
-    r"^_rtx/[A-Za-z_][A-Za-z0-9_]*\.py:[A-Za-z_][A-Za-z0-9_]*$"
-)
-RELATIVE_PATH_RE = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$)).+")
-REMOVED_DIRECT_FIELDS = ("directly_reads", "directly_executes", "directly_writes")
 PLATFORM_NAMES = ("linux", "macos", "windows")
 RUNTIME_DEPENDENCY_KINDS = (
     "python-package",
@@ -70,698 +62,80 @@ RUNTIME_DEPENDENCY_KINDS = (
     "runtime",
     "model-data",
 )
-RUNTIME_SYSTEM_SERVICE_NAMES = (
-    "systemd-user",
-    "launchd",
-    "task-scheduler",
-    "cron",
-)
-
-
 @dataclass(frozen=True)
-class SkillBlueprint:
+class ModuleBlueprint:
     name: str
     path: Path
     data: dict[str, Any]
-    repository_graph: RepositoryBlueprintGraph | None = None
+    repository_graph: RepositoryBlueprintGraph
 
 
 class BlueprintError(Exception):
     """Raised when a blueprint is invalid."""
 
 
-def normalized_categories(data: dict[str, Any], context: str) -> list[str]:
+def module_category(data: dict[str, Any], context: str) -> str:
     value = data.get("category")
-    if isinstance(value, str):
-        if not value.strip():
-            raise BlueprintError(f"{context}: `category` must not be empty")
-        return [value]
-    if isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value):
-        return value
-    raise BlueprintError(f"{context}: `category` must be a string or list of non-empty strings")
+    if not isinstance(value, str) or not value.strip():
+        raise BlueprintError(
+            f"{context}: `category` must be a non-empty string"
+        )
+    return value
 
 
-def load_blueprints() -> dict[str, SkillBlueprint]:
-    blueprints: dict[str, SkillBlueprint] = {}
+def load_blueprints() -> dict[str, ModuleBlueprint]:
+    blueprints: dict[str, ModuleBlueprint] = {}
     paths = sorted(SKILLS_ROOT.glob("*/blueprint.yaml"))
     try:
-        loaded = {
-            path: yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            for path in paths
-        }
-    except (OSError, UnicodeError, yaml.YAMLError) as exc:
-        raise BlueprintError(f"cannot inspect blueprint inventory: {exc}") from exc
-    if any(
-        isinstance(raw, dict) and raw.get("schema_version") == 4
-        for raw in loaded.values()
-    ):
-        if not all(
-            isinstance(raw, dict) and raw.get("schema_version") == 4
-            for raw in loaded.values()
-        ):
-            raise BlueprintError("v4 authoring does not support a mixed skill inventory")
-        try:
-            graph = load_repository_blueprint_graph(
-                SKILLS_ROOT.parent,
-                schema_root=BLUEPRINT_SCHEMA_ROOT,
-            )
-        except (OSError, ValueError) as exc:
-            raise BlueprintError(str(exc)) from exc
-        for path, raw in loaded.items():
-            skill_name = path.parent.name
-            module = graph.nodes.get(skill_name)
-            if module is None or module.node_type != "module":
-                raise BlueprintError(f"{path}: repository graph has no matching module")
-            blueprints[skill_name] = SkillBlueprint(
-                skill_name,
-                path,
-                dict(module.declaration),
-                graph,
-            )
-        return blueprints
-
-    for path, raw in loaded.items():
-        skill_name = path.parent.name
-        if not isinstance(raw, dict):
-            raise BlueprintError(f"{path}: top level must be a mapping")
-        if raw.get("schema_version") == 2 or "blueprint_type" in raw:
-            try:
-                raw = expanded_legacy_blueprint(
-                    load_skill_blueprint_graph(
-                        path.parent,
-                        schema_root=BLUEPRINT_SCHEMA_ROOT,
-                    )
-                )
-            except ValueError as exc:
-                raise BlueprintError(str(exc)) from exc
-        blueprints[skill_name] = SkillBlueprint(skill_name, path, raw)
+        graph = load_repository_blueprint_graph(
+            SKILLS_ROOT.parent,
+            schema_root=BLUEPRINT_SCHEMA_ROOT,
+        )
+    except (OSError, ValueError) as exc:
+        raise BlueprintError(str(exc)) from exc
+    for path in paths:
+        module_id = path.parent.name
+        module = graph.nodes.get(module_id)
+        if module is None or module.node_type != "module":
+            raise BlueprintError(f"{path}: repository graph has no matching module")
+        blueprints[module_id] = ModuleBlueprint(
+            module_id,
+            path,
+            dict(module.declaration),
+            graph,
+        )
     return blueprints
 
 
-def expect_mapping(value: Any, context: str) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise BlueprintError(f"{context}: expected mapping")
-    return value
-
-
-def expect_list_of_strings(value: Any, context: str) -> list[str]:
-    if value is None:
-        return []
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise BlueprintError(f"{context}: expected list of strings")
-    return value
-
-
-def expect_invocation(value: Any, context: str, errors: list[str]) -> None:
-    """Validate machine-interface invocation metadata."""
-    if not isinstance(value, dict):
-        errors.append(f"{context}: expected mapping")
-        return
-    kind = value.get("kind")
-    if kind == "python_machine_interface":
-        target = value.get("entrypoint")
-        if not isinstance(target, str) or not target:
-            errors.append(f"{context}: python_machine_interface invocation needs non-empty `entrypoint`")
-            return
-        if not PYTHON_MACHINE_INTERFACE_ENTRYPOINT_RE.fullmatch(target):
-            errors.append(
-                f"{context}: python_machine_interface entrypoint must look like "
-                "`_rtx/file.py:Interface`"
-            )
-        args_prefix = value.get("args_prefix", [])
-        if not isinstance(args_prefix, list) or not all(isinstance(token, str) and token for token in args_prefix):
-            errors.append(f"{context}: python_machine_interface invocation needs string list `args_prefix`")
-        expect_behavior_sources(value.get("behavior_sources"), f"{context}.behavior_sources", errors)
-        return
-    if kind == "command_file":
-        path = value.get("path")
-        if not isinstance(path, str) or not path.startswith("_cx/"):
-            errors.append(f"{context}: command_file path must be under `_cx/`")
-        args_prefix = value.get("args_prefix", [])
-        if not isinstance(args_prefix, list) or not all(
-            isinstance(token, str) and token for token in args_prefix
-        ):
-            errors.append(f"{context}: command_file invocation needs string list `args_prefix`")
-        expect_behavior_sources(value.get("behavior_sources"), f"{context}.behavior_sources", errors)
-        return
-    errors.append(
-        f"{context}: invocation kind must be `python_machine_interface` or `command_file`"
-    )
-
-
-def invocation_entrypoint_file(value: Any) -> str | None:
-    if not isinstance(value, dict):
-        return None
-    kind = value.get("kind")
-    if kind == "python_machine_interface":
-        entrypoint = value.get("entrypoint")
-        if isinstance(entrypoint, str) and ":" in entrypoint:
-            return entrypoint.split(":", 1)[0]
-        return None
-    if kind == "command_file":
-        path = value.get("path")
-        return path if isinstance(path, str) else None
-    return None
-
-
-def expect_behavior_sources(value: Any, context: str, errors: list[str]) -> list[str]:
-    if value is None:
-        errors.append(f"{context}: required list, use [] when there are no behavior sources")
-        return []
-    if not isinstance(value, list):
-        errors.append(f"{context}: expected list")
-        return []
-    paths: list[str] = []
-    seen: set[str] = set()
-    for idx, entry in enumerate(value):
-        entry_context = f"{context}[{idx}]"
-        if not isinstance(entry, dict):
-            errors.append(f"{entry_context}: expected mapping")
-            continue
-        path = entry.get("path")
-        content = entry.get("content")
-        fmt = entry.get("format")
-        reason = entry.get("reason")
-        if not isinstance(path, str) or not path:
-            errors.append(f"{entry_context}.path: expected non-empty string")
-        elif not RELATIVE_PATH_RE.fullmatch(path):
-            errors.append(f"{entry_context}.path: must be relative and must not contain `..` path segments")
-        elif path in seen:
-            errors.append(f"{entry_context}.path: duplicate behavior source `{path}`")
-        else:
-            seen.add(path)
-            paths.append(path)
-        if not isinstance(content, str) or not content:
-            errors.append(f"{entry_context}.content: expected non-empty string")
-        if not isinstance(fmt, str) or not fmt:
-            errors.append(f"{entry_context}.format: expected non-empty string")
-        if not isinstance(reason, str) or not reason.strip():
-            errors.append(f"{entry_context}.reason: expected non-empty string")
-    return paths
-
-
-def expect_runtime_dependencies(value: Any, context: str, errors: list[str]) -> None:
-    if value is None:
-        errors.append(f"{context}: required list, use [] when the interface has no runtime dependencies")
-        return
-    if not isinstance(value, list):
-        errors.append(f"{context}: expected list")
-        return
-
-    seen: set[tuple[str, str]] = set()
-    for idx, entry in enumerate(value):
-        entry_context = f"{context}[{idx}]"
-        if not isinstance(entry, dict):
-            errors.append(f"{entry_context}: expected mapping")
-            continue
-        kind = entry.get("kind")
-        name = entry.get("name")
-        version = entry.get("version")
-        platforms = entry.get("platforms")
-        reason = entry.get("reason")
-        if kind not in RUNTIME_DEPENDENCY_KINDS:
-            allowed = "`, `".join(RUNTIME_DEPENDENCY_KINDS)
-            errors.append(f"{entry_context}.kind: must be one of `{allowed}`")
-        if not isinstance(name, str) or not name.strip():
-            errors.append(f"{entry_context}.name: must be a non-empty string")
-        elif not DEPENDENCY_NAME_RE.fullmatch(name):
-            errors.append(f"{entry_context}.name: must be a package or executable name, not a path or shell command")
-        elif kind == "system-service" and name not in RUNTIME_SYSTEM_SERVICE_NAMES:
-            allowed = "`, `".join(RUNTIME_SYSTEM_SERVICE_NAMES)
-            errors.append(f"{entry_context}.name: system-service must be one of `{allowed}`")
-        if not isinstance(version, str) or not version.strip():
-            errors.append(f"{entry_context}.version: must be a non-empty string, use `any` when unconstrained")
-        expect_platform_support(platforms, f"{entry_context}.platforms", errors)
-        if not isinstance(reason, str) or not reason.strip():
-            errors.append(f"{entry_context}.reason: must be a non-empty string")
-        if isinstance(kind, str) and isinstance(name, str):
-            key = (kind, name)
-            if key in seen:
-                errors.append(f"{entry_context}: duplicate dependency `{kind}:{name}`")
-            seen.add(key)
-
-
-def expect_platform_support(value: Any, context: str, errors: list[str]) -> dict[str, bool] | None:
-    if not isinstance(value, dict):
-        errors.append(f"{context}: expected mapping with linux/macos/windows booleans")
-        return None
-    result: dict[str, bool] = {}
-    extra = set(value) - set(PLATFORM_NAMES)
-    if extra:
-        errors.append(f"{context}: unsupported platform keys {sorted(extra)}")
-    for platform in PLATFORM_NAMES:
-        item = value.get(platform)
-        if not isinstance(item, bool):
-            errors.append(f"{context}.{platform}: must be boolean")
-        else:
-            result[platform] = item
-    return result
-
-
-def reject_removed_direct_fields(spec: dict[str, Any], context: str, errors: list[str]) -> None:
-    for field in REMOVED_DIRECT_FIELDS:
-        if field in spec:
-            errors.append(
-                f"{context}.{field}: removed; use `direct_io` for immediate I/O and "
-                "`behavior_sources` for behavior-shaping files"
-            )
-
-
-def expect_llm_binding(value: Any, context: str, errors: list[str]) -> None:
-    if not isinstance(value, dict):
-        errors.append(f"{context}: expected mapping")
-        return
-    kind = value.get("kind")
-    if kind == "skill_file":
-        path = value.get("path")
-        if path != "SKILL.md":
-            errors.append(f"{context}: skill_file binding `path` must be `SKILL.md`")
-        extra = set(value) - {"kind", "path"}
-        if extra:
-            errors.append(f"{context}: skill_file binding only accepts `kind` and `path`")
-        return
-    if kind == "markdown_file":
-        path = value.get("path")
-        if not isinstance(path, str) or not path.strip():
-            errors.append(f"{context}: markdown_file binding needs non-empty `path`")
-        elif path.startswith("/"):
-            errors.append(f"{context}: markdown_file binding `path` must be relative to the blueprint directory")
-        return
-    if kind == "uri":
-        uri = value.get("uri")
-        if not isinstance(uri, str) or not uri.strip():
-            errors.append(f"{context}: uri binding needs non-empty `uri`")
-        elif ":" not in uri:
-            errors.append(f"{context}: uri binding `uri` must be absolute")
-        return
-    errors.append(f"{context}: binding kind must be `skill_file`, `markdown_file`, or `uri`")
-
-
-def normalized_interface_maps(
-    data: dict[str, Any], context: str
-) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
-    interfaces = expect_mapping(data.get("interfaces"), f"{context}.interfaces")
-    machine = expect_mapping(interfaces.get("machine"), f"{context}.interfaces.machine")
-    llm = expect_mapping(interfaces.get("llm"), f"{context}.interfaces.llm")
-    return machine, llm
-
-
-def validate_patterns(errors: list[str], patterns: Any, context: str) -> None:
-    if patterns is None:
-        return
-    if not isinstance(patterns, list):
-        errors.append(f"{context}: `patterns` must be a list")
-        return
-    if not patterns:
-        errors.append(f"{context}: `patterns` must have at least one pattern")
-        return
-    for idx, pattern in enumerate(patterns):
-        if not isinstance(pattern, dict):
-            errors.append(f"{context}[{idx}]: expected mapping")
-            continue
-        min_pos = pattern.get("min_positionals", 0)
-        if not isinstance(min_pos, int) or min_pos < 0:
-            errors.append(f"{context}[{idx}]: min_positionals must be non-negative integer")
-        max_pos = pattern.get("max_positionals")
-        if max_pos is not None and (not isinstance(max_pos, int) or max_pos < min_pos):
-            errors.append(f"{context}[{idx}]: max_positionals must be >= min_positionals")
-        for field_name in ("allow_stdin", "allow_extra_positionals"):
-            if field_name in pattern and not isinstance(pattern[field_name], bool):
-                errors.append(f"{context}[{idx}]: {field_name} must be boolean")
-        for field_name in ("required_flags", "allowed_flags", "forbidden_flags"):
-            if field_name in pattern:
-                try:
-                    expect_list_of_strings(pattern[field_name], f"{context}[{idx}].{field_name}")
-                except BlueprintError as exc:
-                    errors.append(str(exc))
-
-
-def validate_access_surface(
-    errors: list[str],
-    spec: dict[str, Any],
-    context: str,
-    *,
-    allow_id: bool,
-) -> None:
-    if allow_id and "id" in spec and (not isinstance(spec["id"], str) or not spec["id"].strip()):
-        errors.append(f"{context}: `id` must be a non-empty string")
-
-    validate_patterns(errors, spec.get("patterns"), f"{context}.patterns")
-
-    if "allow_all_skills" in spec and not isinstance(spec["allow_all_skills"], bool):
-        errors.append(f"{context}: `allow_all_skills` must be a boolean")
-    if "allowed_callers" in spec:
-        try:
-            expect_list_of_strings(spec["allowed_callers"], f"{context}.allowed_callers")
-        except BlueprintError as exc:
-            errors.append(str(exc))
-
-
-def expect_interface_version(value: Any, context: str, errors: list[str]) -> int | None:
-    if not isinstance(value, int) or value < 1:
-        errors.append(f"{context}.version: must be a positive integer")
-        return None
-    return value
-
-
-def default_llm_version(data: dict[str, Any], context: str, errors: list[str] | None = None) -> int | None:
-    try:
-        _machine, llm = normalized_interface_maps(data, context)
-    except BlueprintError as exc:
-        if errors is not None:
-            errors.append(str(exc))
-        return None
-    default = llm.get("default")
-    if not isinstance(default, dict):
-        if errors is not None:
-            errors.append(f"{context}: interfaces.llm.default is required")
-        return None
-    version = default.get("version")
-    if not isinstance(version, int) or version < 1:
-        if errors is not None:
-            errors.append(f"{context}: interfaces.llm.default.version must be a positive integer")
-        return None
-    return version
-
-
-def canonical_interface_versions(skill_name: str, data: dict[str, Any]) -> dict[str, int]:
-    machine, llm = normalized_interface_maps(data, f"{skill_name}.interfaces")
-    versions: dict[str, int] = {}
-    for namespace, specs in (("machine", machine), ("llm", llm)):
-        for interface_name, spec in specs.items():
-            if not isinstance(spec, dict):
-                continue
-            version = spec.get("version")
-            if isinstance(version, int) and version >= 1:
-                versions[f"{skill_name}.{namespace}.{interface_name}"] = version
-    return versions
-
-
-def split_canonical_interface(name: str) -> tuple[str, str, str] | None:
-    parts = name.split(".")
-    if len(parts) != 3:
-        return None
-    skill_name, namespace, interface_name = parts
-    if not skill_name or namespace not in {"machine", "llm"} or not interface_name:
-        return None
-    return skill_name, namespace, interface_name
-
-
-def validate_interface_uses(blueprints: dict[str, SkillBlueprint]) -> list[str]:
-    errors: list[str] = []
-    versions: dict[str, int] = {}
-    for skill_name, blueprint in blueprints.items():
-        try:
-            versions.update(canonical_interface_versions(skill_name, blueprint.data))
-        except BlueprintError:
-            continue
-
-    for skill_name, blueprint in blueprints.items():
-        try:
-            machine, llm = normalized_interface_maps(blueprint.data, str(blueprint.path))
-        except BlueprintError:
-            continue
-        for namespace, specs in (("machine", machine), ("llm", llm)):
-            for interface_name, spec in specs.items():
-                if not isinstance(spec, dict):
-                    continue
-                context = f"{blueprint.path}: interfaces.{namespace}.{interface_name}.uses_interfaces"
-                raw_uses = spec.get("uses_interfaces", [])
-                if not isinstance(raw_uses, list):
-                    errors.append(f"{context}: expected list")
-                    continue
-                for idx, entry in enumerate(raw_uses):
-                    entry_context = f"{context}[{idx}]"
-                    if not isinstance(entry, dict):
-                        errors.append(f"{entry_context}: expected mapping with `interface` and `version`")
-                        continue
-                    target = entry.get("interface")
-                    pinned = entry.get("version")
-                    if not isinstance(target, str) or not target:
-                        errors.append(f"{entry_context}.interface: expected non-empty string")
-                        continue
-                    parsed = split_canonical_interface(target)
-                    if parsed is None:
-                        errors.append(f"{entry_context}.interface: must be `skill.machine.name` or `skill.llm.name`")
-                        continue
-                    target_skill, target_namespace, _target_name = parsed
-                    if namespace == "machine" and target_namespace != "machine":
-                        errors.append(f"{entry_context}.interface targets {target}; machine interfaces may only use machine interfaces")
-                    if namespace == "llm" and target_namespace == "machine" and target_skill != skill_name:
-                        errors.append(
-                            f"{entry_context}.interface targets {target}; LLM interfaces may only use same-skill machine interfaces"
-                        )
-                    actual = versions.get(target)
-                    if actual is None:
-                        errors.append(f"{entry_context}.interface targets unknown interface {target}")
-                    elif pinned != actual:
-                        errors.append(f"{entry_context} pins {target} version {pinned}, but target version is {actual}")
-    return errors
-
-
-def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
-    errors: list[str] = []
-    for name, blueprint in blueprints.items():
-        data = blueprint.data
-        if data.get("schema_version") == 4:
-            if data.get("node_type") != "module":
-                errors.append(f"{blueprint.path}: v4 skill root must be a module")
-            if data.get("id") != name:
-                errors.append(f"{blueprint.path}: module id must match its directory")
-            if blueprint.repository_graph is None:
-                errors.append(f"{blueprint.path}: v4 repository graph is missing")
-            continue
-        try:
-            normalized_categories(data, str(blueprint.path))
-        except BlueprintError as exc:
-            errors.append(str(exc))
-
-        if "interface_version" in data:
-            errors.append(f"{blueprint.path}: top-level `interface_version` has been removed; set interface `version` fields")
-        if "depends_on" in data:
-            errors.append(f"{blueprint.path}: top-level `depends_on` has been removed; use interface `uses_interfaces`")
-        if "script_interfaces" in data:
-            errors.append(f"{blueprint.path}: `script_interfaces` has been removed; use `interfaces.machine`")
-        if not isinstance(data.get("interfaces"), dict):
-            errors.append(f"{blueprint.path}: `interfaces` must be a mapping")
-
-        suggested_permissions = expect_mapping(
-            data.get("suggested_permissions"), f"{blueprint.path}:suggested_permissions"
-        )
-        for category, entries in suggested_permissions.items():
-            if category not in {"bash", "network"}:
-                errors.append(f"{blueprint.path}: unsupported suggested_permissions category `{category}`")
-                continue
-            if not isinstance(entries, list):
-                errors.append(f"{blueprint.path}: suggested_permissions.{category} must be a list")
-                continue
-            for idx, entry in enumerate(entries):
-                context = f"{blueprint.path}: suggested_permissions.{category}[{idx}]"
-                if not isinstance(entry, dict):
-                    errors.append(f"{context}: expected mapping")
-                    continue
-                if not isinstance(entry.get("reason"), str) or not entry["reason"].strip():
-                    errors.append(f"{context}: missing non-empty `reason`")
-                if category == "bash":
-                    if not isinstance(entry.get("command"), list) or not all(
-                        isinstance(token, str) and token for token in entry["command"]
-                    ):
-                        errors.append(f"{context}: bash permission needs non-empty string list `command`")
-                    if "args_prefix" in entry and not (
-                        isinstance(entry["args_prefix"], list)
-                        and all(isinstance(token, str) and token for token in entry["args_prefix"])
-                    ):
-                        errors.append(f"{context}: args_prefix must be a list of non-empty strings")
-                if category == "network":
-                    kind = entry.get("kind")
-                    if kind not in {"web_search", "web_fetch"}:
-                        errors.append(f"{context}: network permission kind must be `web_search` or `web_fetch`")
-                    if kind == "web_fetch":
-                        domains = entry.get("domains")
-                        if not isinstance(domains, list) or not all(
-                            isinstance(domain, str) and domain for domain in domains
-                        ):
-                            errors.append(f"{context}: web_fetch permission needs non-empty string list `domains`")
-
-        machine_interfaces, llm_interfaces = normalized_interface_maps(data, str(blueprint.path))
-        for interface_name, interface_spec in machine_interfaces.items():
-            context = f"{blueprint.path}: interfaces.machine.{interface_name}"
-            if not isinstance(interface_spec, dict):
-                errors.append(f"{context}: expected mapping")
-                continue
-            expect_interface_version(interface_spec.get("version"), context, errors)
-            validate_access_surface(errors, interface_spec, context, allow_id=False)
-            interface_platforms = expect_platform_support(
-                interface_spec.get("platform_support"),
-                f"{context}.platform_support",
-                errors,
-            )
-            if "runtime" in interface_spec:
-                errors.append(f"{context}.runtime: renamed to `invocation`")
-            expect_invocation(interface_spec.get("invocation"), f"{context}.invocation", errors)
-            expect_runtime_dependencies(interface_spec.get("dependencies"), f"{context}.dependencies", errors)
-            if interface_platforms is not None:
-                for idx, dependency in enumerate(interface_spec.get("dependencies") or []):
-                    if not isinstance(dependency, dict):
-                        continue
-                    dependency_platforms = dependency.get("platforms")
-                    if not isinstance(dependency_platforms, dict):
-                        continue
-                    for platform in PLATFORM_NAMES:
-                        if dependency_platforms.get(platform) is True and interface_platforms.get(platform) is not True:
-                            errors.append(
-                                f"{context}.dependencies[{idx}].platforms.{platform}: "
-                                "dependency cannot support a platform the interface does not support"
-                            )
-            reject_removed_direct_fields(interface_spec, context, errors)
-        for interface_name, interface_spec in llm_interfaces.items():
-            context = f"{blueprint.path}: interfaces.llm.{interface_name}"
-            if not isinstance(interface_spec, dict):
-                errors.append(f"{context}: expected mapping")
-                continue
-            expect_interface_version(interface_spec.get("version"), context, errors)
-            if not isinstance(interface_spec.get("description"), str) or not interface_spec["description"].strip():
-                errors.append(f"{context}: missing non-empty `description`")
-            binding = interface_spec.get("binding")
-            file = interface_spec.get("file")
-            if binding is None:
-                if not isinstance(file, str) or not file.strip():
-                    errors.append(f"{context}: missing `binding` (or non-empty `file`)")
-                elif file.startswith("/"):
-                    errors.append(f"{context}: `file` must be relative to the blueprint directory")
-            else:
-                expect_llm_binding(binding, f"{context}.binding", errors)
-            if "runtime" in interface_spec:
-                errors.append(f"{context}.runtime: llm interfaces must not define `runtime`")
-            if "invocation" in interface_spec:
-                errors.append(f"{context}.invocation: llm interfaces must not define `invocation`")
-            expect_behavior_sources(interface_spec.get("behavior_sources"), f"{context}.behavior_sources", errors)
-            if "allow_all_skills" in interface_spec and not isinstance(interface_spec["allow_all_skills"], bool):
-                errors.append(f"{context}: `allow_all_skills` must be a boolean")
-            if "allowed_callers" in interface_spec:
-                try:
-                    expect_list_of_strings(interface_spec["allowed_callers"], f"{context}.allowed_callers")
-                except BlueprintError as exc:
-                    errors.append(str(exc))
-            reject_removed_direct_fields(interface_spec, context, errors)
-        default_llm = llm_interfaces.get("default")
-        if not isinstance(default_llm, dict):
-            errors.append(f"{blueprint.path}: interfaces.llm.default is required")
-        else:
-            binding = default_llm.get("binding")
-            if binding != {"kind": "skill_file", "path": "SKILL.md"}:
-                errors.append(
-                    f"{blueprint.path}: interfaces.llm.default.binding must be "
-                    "`{kind: skill_file, path: SKILL.md}`"
-                )
-    legacy_blueprints = {
-        name: blueprint
-        for name, blueprint in blueprints.items()
-        if blueprint.data.get("schema_version") != 4
-    }
-    errors.extend(validate_interface_uses(legacy_blueprints))
-    return errors
-
-
-def exported_interfaces(skill_name: str, data: dict[str, Any]) -> list[str]:
-    """Return ids of public interfaces."""
-    machine, llm = normalized_interface_maps(data, "interfaces")
-    result: list[str] = []
-    for interface_name, spec in sorted(machine.items()):
-        if not isinstance(spec, dict):
-            continue
-        if bool(spec.get("allow_all_skills", False)):
-            result.append(f"{skill_name}.machine.{interface_name}")
-    for interface_name, spec in sorted(llm.items()):
-        if not isinstance(spec, dict):
-            continue
-        if bool(spec.get("allow_all_skills", False)):
-            result.append(f"{skill_name}.llm.{interface_name}")
-    return result
-
-
-def owner_interfaces(
-    data: dict[str, Any],
-) -> list[tuple[str, str | None, str | None, list[tuple[str | None, str | None]]]]:
-    """Return (id, description, usage, pattern_notes) for each interface, sorted by id."""
-    interfaces, _llm = normalized_interface_maps(data, "interfaces")
-    result: list[tuple[str, str | None, str | None, list[tuple[str | None, str | None]]]] = []
-    for interface_name, spec in sorted(interfaces.items()):
-        if not isinstance(spec, dict):
-            continue
-        description = spec.get("description")
-        clean_description = description.strip() if isinstance(description, str) and description.strip() else None
-        usage = spec.get("usage")
-        if usage is None:
-            clean_usage = None
-        elif isinstance(usage, str):
-            clean_usage = usage.strip()
-        else:
-            clean_usage = None
-        patterns = spec.get("patterns") or []
-        pattern_notes: list[tuple[str | None, str | None]] = []
-        if isinstance(patterns, list):
-            for pattern in patterns:
-                if not isinstance(pattern, dict):
-                    continue
-                name = pattern.get("name") or None
-                notes = pattern.get("notes") or None
-                if name or notes:
-                    pattern_notes.append((name, notes))
-        result.append((interface_name, clean_description, clean_usage, pattern_notes))
-    return result
-
-
 def generated_contract_block(
-    skill_name: str,
+    module_id: str,
     data: dict[str, Any],
-    repository_graph: RepositoryBlueprintGraph | None = None,
+    repository_graph: RepositoryBlueprintGraph,
 ) -> str:
-    categories = normalized_categories(data, "generated_contract_block")
+    category = module_category(data, "generated_contract_block")
     uses: list[str] = []
-    if data.get("schema_version") == 4:
-        if repository_graph is None:
-            raise BlueprintError("v4 contract generation requires repository graph")
-        version = data.get("version")
-        if not isinstance(version, int) or version < 1:
-            raise BlueprintError(f"{skill_name}: v4 module version must be positive")
-        for source_id in repository_graph.module_sources.get(skill_name, ()):
-            source = repository_graph.nodes[source_id]
-            for entry in source.declaration.get("uses_interfaces", []) or []:
-                if isinstance(entry, dict) and isinstance(entry.get("interface"), str):
-                    pinned = entry.get("version")
-                    suffix = f"@{pinned}" if isinstance(pinned, int) else ""
-                    uses.append(f"{source_id} -> {entry['interface']}{suffix}")
-        exports = sorted(
-            export_id
-            for export_id, export in repository_graph.exports.items()
-            if export.module_node_id == skill_name
-        )
-    else:
-        version = default_llm_version(data, "generated_contract_block") or 1
-        machine, llm = normalized_interface_maps(data, "interfaces")
-        for namespace, specs in (("machine", machine), ("llm", llm)):
-            for interface_name, spec in sorted(specs.items()):
-                if not isinstance(spec, dict):
-                    continue
-                for entry in spec.get("uses_interfaces", []) or []:
-                    if isinstance(entry, dict) and isinstance(entry.get("interface"), str):
-                        pinned = entry.get("version")
-                        if isinstance(pinned, int):
-                            uses.append(f"{skill_name}.{namespace}.{interface_name} -> {entry['interface']}@{pinned}")
-                        else:
-                            uses.append(f"{skill_name}.{namespace}.{interface_name} -> {entry['interface']}")
-        exports = exported_interfaces(skill_name, data)
+    version = data.get("version")
+    if not isinstance(version, int) or version < 1:
+        raise BlueprintError(f"{module_id}: module version must be positive")
+    for source_id in repository_graph.module_sources.get(module_id, ()):
+        source = repository_graph.nodes[source_id]
+        for entry in source.declaration.get("uses_interfaces", []) or []:
+            if isinstance(entry, dict) and isinstance(entry.get("interface"), str):
+                pinned = entry.get("version")
+                suffix = f"@{pinned}" if isinstance(pinned, int) else ""
+                uses.append(f"{source_id} -> {entry['interface']}{suffix}")
+    exports = sorted(
+        export_id
+        for export_id, export in repository_graph.exports.items()
+        if export.module_node_id == module_id
+    )
 
     lines = [
         CONTRACT_START,
         "> Generated from `blueprint.yaml`. Do not edit this block by hand.",
         "",
     ]
-    lines.extend(f"Category: {category}" for category in categories)
-    lines.append("")
+    lines.extend([f"Category: {category}", ""])
 
     lines.append(f"Skill Version: {version}")
     lines.append("")
@@ -785,52 +159,38 @@ def generated_contract_block(
 
 
 def generated_interface_block(
-    skill_name: str,
-    data: dict[str, Any],
-    repository_graph: RepositoryBlueprintGraph | None = None,
+    module_id: str,
+    repository_graph: RepositoryBlueprintGraph,
 ) -> str:
-    is_v4 = data.get("schema_version") == 4
-    if is_v4:
-        if repository_graph is None:
-            raise BlueprintError("v4 interface generation requires repository graph")
-        visible_machine = []
-        visible_llm = []
-        for export_id, export in sorted(repository_graph.exports.items()):
-            if export.module_node_id != skill_name:
-                continue
-            spec = export.declaration
-            description = spec.get("description")
-            binding = spec.get("process_binding")
-            if isinstance(binding, dict):
-                patterns = binding.get("patterns") or []
-                notes = [
-                    (pattern.get("name"), pattern.get("notes"))
-                    for pattern in patterns
-                    if isinstance(pattern, dict)
-                    and (pattern.get("name") or pattern.get("notes"))
-                ]
-                visible_machine.append(
-                    (
-                        export_id,
-                        description.strip()
-                        if isinstance(description, str) and description.strip()
-                        else None,
-                        spec.get("usage") if isinstance(spec.get("usage"), str) else None,
-                        notes,
-                    )
+    process_exports = []
+    instruction_exports = []
+    for export_id, export in sorted(repository_graph.exports.items()):
+        if export.module_node_id != module_id:
+            continue
+        spec = export.declaration
+        description = spec.get("description")
+        binding = spec.get("process_binding")
+        if isinstance(binding, dict):
+            patterns = binding.get("patterns") or []
+            notes = [
+                (pattern.get("name"), pattern.get("notes"))
+                for pattern in patterns
+                if isinstance(pattern, dict)
+                and (pattern.get("name") or pattern.get("notes"))
+            ]
+            process_exports.append(
+                (
+                    export_id,
+                    description.strip()
+                    if isinstance(description, str) and description.strip()
+                    else None,
+                    spec.get("usage") if isinstance(spec.get("usage"), str) else None,
+                    notes,
                 )
-            elif isinstance(description, str) and description.strip():
-                visible_llm.append((export_id, spec))
-    else:
-        visible_machine = owner_interfaces(data)
-        _machine, llm_interfaces = normalized_interface_maps(data, "interfaces")
-        visible_machine = [entry for entry in visible_machine if entry[1]]
-        visible_llm = [
-            (name, spec)
-            for name, spec in sorted(llm_interfaces.items())
-            if isinstance(spec, dict) and isinstance(spec.get("description"), str) and spec["description"].strip()
-        ]
-    if not visible_machine and not visible_llm:
+            )
+        elif isinstance(description, str) and description.strip():
+            instruction_exports.append((export_id, spec))
+    if not process_exports and not instruction_exports:
         return ""
 
     lines = [
@@ -838,22 +198,17 @@ def generated_interface_block(
         "> Generated from `blueprint.yaml`. Do not edit this block by hand.",
         "",
     ]
-    if visible_machine:
+    if process_exports:
         lines.extend([
-            "Owner-Facing Machine Interfaces:",
+            "Dispatcher Interfaces:",
             "",
-            "Use the installed `dispatcher` command for this skill's machine interfaces:",
+            "Use the installed `dispatcher` command for these process-bound interfaces:",
         ])
-        for interface_name, description, usage, pattern_notes in visible_machine:
+        for interface_name, description, usage, pattern_notes in process_exports:
             lines.append(f"- `{interface_name}` — {description}")
             args = f" {usage}" if usage else ("" if usage == "" else " ...")
-            target = (
-                interface_name
-                if is_v4
-                else f"{skill_name}.machine.{interface_name}"
-            )
             lines.append(
-                f"  - `dispatcher --caller-skill {skill_name} {target}{args}`"
+                f"  - `dispatcher --caller-skill {module_id} {interface_name}{args}`"
             )
             for pat_name, pat_notes in pattern_notes:
                 if pat_name and pat_notes:
@@ -861,25 +216,14 @@ def generated_interface_block(
                 elif pat_notes:
                     lines.append(f"  - {pat_notes}")
         lines.append("")
-    if visible_llm:
+    if instruction_exports:
         lines.extend([
-            "Owner-Facing LLM Interfaces:",
+            "Instruction Interfaces:",
             "",
             "These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:",
         ])
-        for interface_name, spec in visible_llm:
+        for interface_name, spec in instruction_exports:
             lines.append(f"- `{interface_name}` — {spec['description'].strip()}")
-            binding = spec.get("binding")
-            if isinstance(binding, dict):
-                kind = binding.get("kind")
-                if kind == "skill_file" and isinstance(binding.get("path"), str):
-                    lines.append(f"  - binding: skill file `{binding['path']}`")
-                elif kind == "markdown_file" and isinstance(binding.get("path"), str):
-                    lines.append(f"  - binding: relative markdown path `{binding['path']}`")
-                elif kind == "uri" and isinstance(binding.get("uri"), str):
-                    lines.append(f"  - binding: uri `{binding['uri']}`")
-            elif isinstance(spec.get("file"), str):
-                lines.append(f"  - binding: relative markdown path `{spec['file']}`")
     lines.extend([INTERFACES_END, ""])
     return "\n".join(lines)
 
@@ -892,14 +236,12 @@ def sync_contract_block(skill_file: Path, contract_block: str) -> str:
             rf"{re.escape(CONTRACT_START)}.*?{re.escape(CONTRACT_END)}\n?",
             re.DOTALL,
         )
-        updated = pattern.sub(contract_block, text, count=1)
-        return strip_legacy_contract_metadata(updated)
+        return pattern.sub(contract_block, text, count=1)
 
     match = re.match(r"(---\n.*?\n---\n+)", text, re.DOTALL)
     if not match:
         raise BlueprintError(f"{skill_file}: missing YAML frontmatter")
-    updated = text[: match.end()] + contract_block + text[match.end() :]
-    return strip_legacy_contract_metadata(updated)
+    return text[: match.end()] + contract_block + text[match.end() :]
 
 
 def sync_interface_block(text: str, interface_block: str) -> str:
@@ -932,7 +274,7 @@ def generated_used_interfaces_block(document: Mapping[str, Any]) -> str:
 
     selected = any(
         bool(document.get(field))
-        for field in ("interfaces", "helper_interfaces", "llm_interfaces")
+        for field in ("interfaces", "helper_interfaces")
     )
     if not selected:
         return ""
@@ -998,11 +340,8 @@ def plan_consumer_interface_updates(
     owners: dict[Path, str] = {}
     for consumer_id, projection in sorted(projections.items()):
         node = repository_graph.nodes.get(consumer_id)
-        if node is None or node.node_type not in {
-            "llm-interface",
-            "behavioral_source",
-        }:
-            raise BlueprintError(f"unknown LLM consumer {consumer_id!r}")
+        if node is None or node.node_type != "behavioral_source":
+            raise BlueprintError(f"unknown behavioral-source consumer {consumer_id!r}")
         gateway = node.gateway_path
         if gateway is None:
             raise BlueprintError(f"{consumer_id}: missing gateway")
@@ -1028,11 +367,8 @@ def plan_consumer_interface_updates(
         planned[absolute] = sync_used_interfaces_block(
             current,
             block,
-            root_consumer=(
-                consumer_id.endswith(".llm.default")
-                if node.node_type == "llm-interface"
-                else absolute == (node.skill_root / "SKILL.md").resolve(strict=False)
-            ),
+            root_consumer=absolute
+            == (node.skill_root / "SKILL.md").resolve(strict=False),
         )
     return planned
 
@@ -1072,63 +408,16 @@ def apply_consumer_interface_updates(planned: Mapping[Path, str]) -> None:
         )
 
 
-def strip_legacy_contract_metadata(text: str) -> str:
-    """Remove stale top-of-file Category/Dependencies lines after blueprint injection."""
-    if CONTRACT_END not in text:
-        return text
-
-    prefix, suffix = text.split(CONTRACT_END, 1)
-    lines = suffix.splitlines()
-    cutoff = len(lines)
-    for idx, line in enumerate(lines):
-        if line.startswith("## ") or line == INTERFACES_START:
-            cutoff = idx
-            break
-
-    cleaned_prefix: list[str] = []
-    i = 0
-    while i < cutoff:
-        line = lines[i]
-        if re.fullmatch(r"Category:\s*.+", line):
-            i += 1
-            continue
-        if re.fullmatch(r"Dependencies:\s*none\s*", line):
-            i += 1
-            continue
-        if re.fullmatch(r"Dependencies:\s*", line):
-            i += 1
-            while i < cutoff and re.fullmatch(r"\s*-\s+.+", lines[i]):
-                i += 1
-            continue
-        cleaned_prefix.append(line)
-        i += 1
-
-    remainder = cleaned_prefix + lines[cutoff:]
-    rebuilt = "\n".join(remainder)
-    rebuilt = re.sub(r"\n{3,}", "\n\n", rebuilt)
-    if suffix.endswith("\n"):
-        rebuilt += "\n"
-    return prefix + CONTRACT_END + rebuilt
-
-
-def sync_skill(blueprint: SkillBlueprint, check_only: bool) -> list[str]:
+def sync_module(blueprint: ModuleBlueprint, check_only: bool) -> list[str]:
     data = blueprint.data
     skill_dir = blueprint.path.parent
     expected_skill = sync_contract_block(
         skill_dir / "SKILL.md",
-        generated_contract_block(
-            blueprint.name,
-            data,
-            blueprint.repository_graph,
-        ),
+        generated_contract_block(blueprint.name, data, blueprint.repository_graph),
     )
     expected_skill = sync_interface_block(
         expected_skill,
-        generated_interface_block(
-            blueprint.name,
-            data,
-            blueprint.repository_graph,
-        ),
+        generated_interface_block(blueprint.name, blueprint.repository_graph),
     )
 
     errors: list[str] = []
@@ -1144,7 +433,9 @@ def sync_skill(blueprint: SkillBlueprint, check_only: bool) -> list[str]:
     return errors
 
 
-def generated_runtime_dependencies_manifest(blueprints: dict[str, SkillBlueprint]) -> dict[str, Any]:
+def generated_runtime_dependencies_manifest(
+    blueprints: dict[str, ModuleBlueprint],
+) -> dict[str, Any]:
     """Build the stdlib-readable dependency manifest from blueprint interfaces."""
     skills: dict[str, Any] = {}
     all_dependencies: dict[str, set[str]] = {kind: set() for kind in RUNTIME_DEPENDENCY_KINDS}
@@ -1214,44 +505,28 @@ def generated_runtime_dependencies_manifest(blueprints: dict[str, SkillBlueprint
 
     for skill_name, blueprint in sorted(blueprints.items()):
         generated_interfaces: dict[str, Any] = {}
-
-        if blueprint.data.get("schema_version") == 4:
-            graph = blueprint.repository_graph
-            if graph is None:
-                raise BlueprintError(
-                    f"{blueprint.path}: v4 dependency generation requires repository graph"
-                )
-            interface_items = []
-            for export_id, export in sorted(graph.exports.items()):
-                if export.module_node_id != skill_name:
-                    continue
-                interface_spec = export.declaration
-                if not isinstance(interface_spec.get("process_binding"), dict):
-                    continue
-                source = (
-                    graph.nodes.get(export.source_node_id)
-                    if export.source_node_id is not None
-                    else None
-                )
-                enriched = {
-                    **interface_spec,
-                    "dependencies": (
-                        reachable_runtime_dependencies(graph, source.node_id)
-                        if source is not None
-                        else []
-                    ),
-                }
-                interface_items.append(
-                    (export.local_name, export_id, enriched)
-                )
-        else:
-            machine_interfaces, _ = normalized_interface_maps(
-                blueprint.data, str(blueprint.path)
+        graph = blueprint.repository_graph
+        interface_items = []
+        for export_id, export in sorted(graph.exports.items()):
+            if export.module_node_id != skill_name:
+                continue
+            interface_spec = export.declaration
+            if not isinstance(interface_spec.get("process_binding"), dict):
+                continue
+            source = (
+                graph.nodes.get(export.source_node_id)
+                if export.source_node_id is not None
+                else None
             )
-            interface_items = [
-                (interface_name, f"{skill_name}.machine.{interface_name}", interface_spec)
-                for interface_name, interface_spec in sorted(machine_interfaces.items())
-            ]
+            enriched = {
+                **interface_spec,
+                "dependencies": (
+                    reachable_runtime_dependencies(graph, source.node_id)
+                    if source is not None
+                    else []
+                ),
+            }
+            interface_items.append((export.local_name, export_id, enriched))
 
         for interface_name, interface_id_value, interface_spec in interface_items:
             if not isinstance(interface_spec, dict):
@@ -1306,7 +581,7 @@ def generated_runtime_dependencies_manifest(blueprints: dict[str, SkillBlueprint
 
 
 def sync_runtime_dependencies_manifest(
-    blueprints: dict[str, SkillBlueprint],
+    blueprints: dict[str, ModuleBlueprint],
     check_only: bool,
 ) -> list[str]:
     expected = json.dumps(generated_runtime_dependencies_manifest(blueprints), indent=2) + "\n"
@@ -1343,9 +618,9 @@ def run_sync(*, check_only: bool) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    errors = validate_blueprints(blueprints)
+    errors: list[str] = []
     for blueprint in blueprints.values():
-        errors.extend(sync_skill(blueprint, check_only=check_only))
+        errors.extend(sync_module(blueprint, check_only=check_only))
     errors.extend(sync_runtime_dependencies_manifest(blueprints, check_only=check_only))
 
     if errors:

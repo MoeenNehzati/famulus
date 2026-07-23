@@ -5,14 +5,14 @@ authority:
     - args_prefix:
       - --caller-skill
       - find-handoff-candidates
-      - find-handoff-candidates.machine.scan
+      - find-handoff-candidates.interface.scan
       command:
       - dispatcher
       reason: Read-only scan of local session transcript files; no writes, no network.
     - args_prefix:
       - --caller-skill
       - find-handoff-candidates
-      - find-handoff-candidates.machine.calibrate
+      - find-handoff-candidates.interface.calibrate
       command:
       - dispatcher
       reason: Read-only diagnostic tool for re-deriving default threshold reference

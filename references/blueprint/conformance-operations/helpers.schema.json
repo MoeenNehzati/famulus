@@ -1,9 +1,0 @@
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "conformance-operations/helpers.schema.json",
-  "definitions": {
-    "invokeRequest": {"type": "object", "required": ["operation_version", "parameters"], "additionalProperties": false, "properties": {"operation_version": {"const": 1}, "parameters": {"type": "object", "required": ["helper", "arguments"], "additionalProperties": false, "properties": {"helper": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"}, "arguments": {"type": "object"}}}}},
-    "invokeSuccess": {"type": "object", "required": ["ok", "result"], "additionalProperties": false, "properties": {"ok": {"const": true}, "result": {"type": "object", "required": ["outcome", "outputs"], "additionalProperties": false, "properties": {"outcome": {"type": "string", "minLength": 1}, "outputs": {"type": "object"}}}}},
-    "error": {"$ref": "common.schema.json#/definitions/error"}
-  }
-}

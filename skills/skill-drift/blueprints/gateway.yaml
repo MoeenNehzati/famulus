@@ -1,8 +1,14 @@
 content:
 - SKILL\.md
-dependencies: []
-description: Defines the LLM-facing rules for selecting exact-target status or hash
-  checks and for keeping audit-currentness separate from optional live health results.
+dependencies:
+- source: skill-certifier.source.gateway
+  version: 1
+  blueprint:
+    base: repository-root
+    path: skills/skill-certifier/blueprints/gateway.yaml
+  reason: Defines the exclusive certification writer whose state this read-only module inspects.
+description: Defines the LLM-facing rules for reading exact signed-certificate
+  currentness and canonical v4 node hashes.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -12,21 +18,20 @@ interfaces:
     contract:
       arguments:
         request:
-          description: Request to inspect installed skill drift state or compute current
-            target-relative hashes.
+          description: Request to inspect installed module certificate drift or
+            compute canonical node hashes.
           required: true
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
       preconditions: []
       interaction: {mode: unattended}
       caller_warnings:
-      - external-side-effect: Human-readable status mode writes a timestamped Markdown
-          report; optional health mode executes repository validators and target tests.
+      - external-side-effect: Human-readable status mode writes a timestamped
+          certificate-drift Markdown report.
       outputs:
       - id: response
         audience: both
-        description: Exact drift or hash result with audit and optional health signals
-          kept separate.
+        description: Exact certificate-currentness or canonical-hash result.
         direct_io_ref: write-1
         type: {kind: string, sensitivity: derived-private}
         cardinality: {minimum: 1, maximum: 1}
@@ -35,12 +40,12 @@ interfaces:
         truncation: {kind: none}
         empty: Never empty.
       outcomes:
-      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Report the generated result without rewriting records or reinterpreting health failures as audit drift.}
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Report the generated result without writing or reinterpreting certificate state.}
       - {id: failed, class: error, outputs: [response], effects: [], caller_action: "Report the target-resolution, safe-read, hashing, or status error."}
       execution:
         state_effect: read-only
         lifecycle: finite
-        consistency: {snapshot: "The response reflects installed files, records, and optional health checks observed during this invocation."}
+        consistency: {snapshot: The response reflects the shared repository certification-state snapshot observed during this invocation.}
         verification: [{method: output-schema, output_ref: response}]
       helpers: []
       direct_io:
@@ -49,10 +54,13 @@ interfaces:
         - {id: read-1, medium: prompt, access: read, system: agent-runtime, content: drift or hash request, formats: [text], sensitivity: user-private}
         writes:
         - {id: write-1, medium: prompt, access: write, system: agent-runtime, content: drift or hash result, formats: [markdown], sensitivity: derived-private}
-    description: Instructions for exact-target, target-relative skill drift and hash
-      checks.
+    description: Instructions for exact-target certificate drift and canonical node-hash checks.
     version: 1
 node_type: behavioral_source
 schema_version: 4
-uses_interfaces: []
+uses_interfaces:
+- interface: skill-drift.interface.compute-hashes
+  version: 1
+- interface: skill-drift.interface.drift-status
+  version: 1
 version: 1

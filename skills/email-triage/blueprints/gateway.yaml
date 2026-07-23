@@ -61,6 +61,6 @@ interfaces:
 node_type: behavioral_source
 schema_version: 4
 uses_interfaces:
-- interface: email-triage.source.llm-interfaces-triage.interface.triage
+- interface: email-triage.source.instructions-triage.interface.triage
   version: 2
 version: 1

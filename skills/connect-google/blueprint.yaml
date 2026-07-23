@@ -15,8 +15,8 @@ content:
 - SKILL\.md
 - _rtx/__init__\.py
 - _rtx/_client_config\.py
-- llm_interfaces/connect\-services\.md
-- llm_interfaces/create\-client\.md
+- instructions/connect\-services\.md
+- instructions/create\-client\.md
 - personal\-preferences/connect\-services\.md
 - personal\-preferences/create\-client\.md
 - personal\-preferences/default\.md
@@ -37,13 +37,13 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - connect-google
-    source_interface: connect-google.source.llm-interfaces-connect-services.interface.connect-services
+    source_interface: connect-google.source.instructions-connect-services.interface.connect-services
   connect-google.interface.create-client:
     access:
       allow_all_modules: false
       allowed_callers:
       - connect-google
-    source_interface: connect-google.source.llm-interfaces-create-client.interface.create-client
+    source_interface: connect-google.source.instructions-create-client.interface.create-client
   connect-google.interface.default:
     access:
       allow_all_modules: true
@@ -68,14 +68,14 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  connect-google.source.llm-interfaces-connect-services:
+  connect-google.source.instructions-connect-services:
     blueprint:
       base: module-root
-      path: blueprints/llm-interfaces-connect-services.yaml
-  connect-google.source.llm-interfaces-create-client:
+      path: blueprints/instructions-connect-services.yaml
+  connect-google.source.instructions-create-client:
     blueprint:
       base: module-root
-      path: blueprints/llm-interfaces-create-client.yaml
+      path: blueprints/instructions-create-client.yaml
   connect-google.source.personal-preferences-connect-services:
     blueprint:
       base: module-root

@@ -6,6 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 
 import yaml
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -264,19 +265,24 @@ def test_annotated_authoring_schema_routes_only_live_v4_nodes() -> None:
     )
 
 
-def test_each_typed_schema_generates_a_valid_authoring_template() -> None:
+def test_each_live_schema_generates_a_valid_authoring_template() -> None:
     for name in [
-        "skill.schema.json",
-        "llm-interface.schema.json",
-        "machine-interface.schema.json",
-        "machine-module.schema.json",
-        "behavior-source.schema.json",
         "module.schema.json",
         "behavioral-source.schema.json",
     ]:
         schema = load_schema(Path("references/blueprint") / name)
         rendered = render_blueprint_template(schema)
         schema_validator(schema).validate(yaml.safe_load(rendered))
+
+
+def test_compatibility_entry_rejects_pre_v4_authoring_values() -> None:
+    schema = load_schema(Path("references/blueprint/schema.json"))
+
+    with pytest.raises(ValueError, match="module or behavioral_source"):
+        refresh_blueprint_documentation(
+            schema,
+            "schema_version: 3\nnode_type: skill\nid: old\n",
+        )
 
 
 def test_committed_template_describes_the_live_v4_layout() -> None:
@@ -464,14 +470,19 @@ def test_write_regenerated_skill_blueprint_writes_tmp_output(tmp_path: Path) -> 
     original = render_blueprint_template(schema, doc_mode="compact")
     (skill_dir / "blueprint.yaml").write_text(original, encoding="utf-8")
 
-    output = write_regenerated_skill_blueprint("demo-skill", repo_root=repo, output_dir=tmp_path)
+    output = write_regenerated_skill_blueprint(
+        "demo-skill",
+        repo_root=repo,
+        output_dir=tmp_path,
+        schema_path=schema_dir / "schema.annotated-draft.json",
+    )
 
     assert output == tmp_path / "demo-skill_blueprint.yaml"
     assert yaml.safe_load(output.read_text(encoding="utf-8")) == yaml.safe_load(original)
     assert "# @schema-doc path=name" in output.read_text(encoding="utf-8")
 
 
-def test_typed_regeneration_selects_its_concrete_authoring_schema(tmp_path: Path) -> None:
+def test_regeneration_rejects_pre_v4_blueprints(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     skill_dir = repo / "skills" / "demo-skill"
     schema_dir = repo / "references" / "blueprint"
@@ -500,11 +511,12 @@ def test_typed_regeneration_selects_its_concrete_authoring_schema(tmp_path: Path
         __import__("json").dumps(authoring_schema("typed marker")), encoding="utf-8"
     )
 
-    output = write_regenerated_skill_blueprint("demo-skill", repo_root=repo, output_dir=tmp_path)
-
-    text = output.read_text(encoding="utf-8")
-    assert "typed marker" in text
-    assert "legacy marker" not in text
+    with pytest.raises(ValueError, match="schema_version 4"):
+        write_regenerated_skill_blueprint(
+            "demo-skill",
+            repo_root=repo,
+            output_dir=tmp_path,
+        )
 
 
 def test_v4_regeneration_selects_existing_module_schema_owner(tmp_path: Path) -> None:

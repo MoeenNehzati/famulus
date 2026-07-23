@@ -14,7 +14,7 @@ authority:
     - args_prefix:
       - --caller-skill
       - bib-audit
-      - bib-audit.machine.scripts-bib-similarity
+      - bib-audit.interface.scripts-bib-similarity
       command:
       - dispatcher
       reason: Runs the local bib-audit duplicate/version candidate detector through
@@ -22,7 +22,7 @@ authority:
     - args_prefix:
       - --caller-skill
       - bib-audit
-      - bib-audit.machine.scripts-bib-validate-bibtex
+      - bib-audit.interface.scripts-bib-validate-bibtex
       command:
       - dispatcher
       reason: Runs the local bib-audit BibTeX/natbib validator through the shared

@@ -37,9 +37,9 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `email-client.interface.accounts-add` — Register a new account nickname. Gmail IMAP/SMTP settings are the default; pass explicit host/port flags for other providers. App-password auth is the default; use --auth gmail-oauth for Gmail OAuth.
   - `dispatcher --caller-skill email-client email-client.interface.accounts-add --nickname <nick> --email <addr> [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls] [--auth app-password|gmail-oauth]`
 - `email-client.interface.accounts-list` — List registered account nicknames with their email/display name (no secrets).
@@ -67,7 +67,7 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `email-client.interface.send-email` — Send an email via SMTP; body comes from stdin.
   - `dispatcher --caller-skill email-client email-client.interface.send-email --from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]`
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `email-client.interface.default` — Primary LLM-facing skill instructions.

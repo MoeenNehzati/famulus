@@ -45,7 +45,7 @@ def test_default_interface_routes_only_to_triage_v2() -> None:
     assert default["uses_interfaces"] == [
         {
             "interface": (
-                "email-triage.source.llm-interfaces-triage.interface.triage"
+                "email-triage.source.instructions-triage.interface.triage"
             ),
             "version": 2,
         }
@@ -61,8 +61,8 @@ def test_default_interface_routes_only_to_triage_v2() -> None:
 def test_preference_management_files_are_removed() -> None:
     root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
     removed = [
-        SKILL_ROOT / "llm_interfaces" / "update-personal-preferences.md",
-        SKILL_ROOT / "llm_interfaces" / ".update-personal-preferences.md.blueprint.yaml",
+        SKILL_ROOT / "instructions" / "update-personal-preferences.md",
+        SKILL_ROOT / "instructions" / ".update-personal-preferences.md.blueprint.yaml",
         SKILL_ROOT / "references" / "personal-preferences.md",
         SKILL_ROOT / "references" / ".personal-preferences.md.blueprint.yaml",
     ]
@@ -98,7 +98,7 @@ def test_triage_contract_has_no_preference_source_or_read() -> None:
 
 
 def test_canonical_triage_workflow_is_retained() -> None:
-    body = (SKILL_ROOT / "llm_interfaces" / "triage.md").read_text(
+    body = (SKILL_ROOT / "instructions" / "triage.md").read_text(
         encoding="utf-8"
     )
 
@@ -121,7 +121,7 @@ def test_canonical_triage_workflow_is_retained() -> None:
 
 
 def test_triage_uses_mail_read_interface_without_raw_invocation_template() -> None:
-    body = (SKILL_ROOT / "llm_interfaces" / "triage.md").read_text(
+    body = (SKILL_ROOT / "instructions" / "triage.md").read_text(
         encoding="utf-8"
     )
 

@@ -1815,7 +1815,7 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Implements the Ed25519 key and signature primitives imported by audit_records.py."
+              "reason": "Implements Ed25519 key and signature primitives."
             },
             {
               "kind": "python-package",
@@ -1846,7 +1846,7 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Implements the Ed25519 key and signature primitives imported by audit_records.py."
+              "reason": "Implements Ed25519 key and signature primitives."
             },
             {
               "kind": "python-package",
@@ -6144,18 +6144,7 @@
                 "macos": true,
                 "windows": false
               },
-              "reason": "Parses skill blueprint files during semantic exactness checks."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Parses typed and legacy blueprint declarations."
+              "reason": "Parses v4 blueprint declarations during semantic inspection."
             },
             {
               "kind": "python-package",
@@ -6177,18 +6166,7 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Implements the Ed25519 key and signature primitives imported by audit_records.py."
-            },
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Validates typed health records against target schema snapshots."
+              "reason": "Implements Ed25519 key and signature primitives."
             },
             {
               "kind": "python-package",
@@ -6212,17 +6190,6 @@
           "dependencies": [
             {
               "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Parses typed and legacy blueprint declarations."
-            },
-            {
-              "kind": "python-package",
               "name": "cryptography",
               "version": ">=44.0.1",
               "platforms": {
@@ -6230,18 +6197,7 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Implements the Ed25519 key and signature primitives imported by audit_records.py."
-            },
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Validates typed health records against target schema snapshots."
+              "reason": "Implements Ed25519 key and signature primitives."
             },
             {
               "kind": "python-package",
@@ -6261,17 +6217,6 @@
           "dependencies": [
             {
               "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Parses typed and legacy blueprint declarations."
-            },
-            {
-              "kind": "python-package",
               "name": "cryptography",
               "version": ">=44.0.1",
               "platforms": {
@@ -6279,18 +6224,7 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Implements the Ed25519 key and signature primitives imported by audit_records.py."
-            },
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Validates typed health records against target schema snapshots."
+              "reason": "Implements Ed25519 key and signature primitives."
             },
             {
               "kind": "python-package",

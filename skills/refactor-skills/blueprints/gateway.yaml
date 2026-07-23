@@ -3,9 +3,9 @@ content:
 dependencies:
 - blueprint:
     base: repository-root
-    path: references/skill-standards/blueprints/llm-interface-design.yaml
-  reason: Defines when and how to decompose LLM-facing skill interfaces.
-  source: skill-standards.source.llm-interface-design
+    path: references/skill-standards/blueprints/interface-design.yaml
+  reason: Defines source-owned interface contracts and when to decompose natural-language instruction sources.
+  source: skill-standards.source.interface-design
   version: 1
 - blueprint:
     base: repository-root
@@ -68,7 +68,7 @@ interfaces:
         - {id: request, medium: prompt, access: read, system: agent-runtime, content: "Refactoring target, requested scope, approvals, and user decisions.", formats: [text], sensitivity: user-private}
         - {id: repository-state, medium: repository-filesystem, access: read, content: 'Target SKILL.md, blueprint graph, generated contract blocks, current diff, and any approved private runtime implementation.', formats: [markdown, yaml, json, python, shell, git-metadata, text], sensitivity: user-private, reason: "Characterize observable behavior, preserve public contracts, and verify each move."}
         - {id: refactoring-standards, medium: repository-filesystem, access: read, path: references/skill-standards/skill-refactoring.md, path_match: exact, content: Canonical smell catalog and ordered behavior-preserving refactoring moves., formats: [markdown], sensitivity: public, reason: Audit every smell and choose the prescribed move.}
-        - {id: interface-guide, medium: repository-filesystem, access: read, path: references/skill-standards/llm-interface-design.md, path_match: exact, content: Conditional LLM-interface decomposition standard., formats: [markdown], sensitivity: public, reason: Evaluate substantial distinct use cases or read-only and mutating paths when decomposition signals are present.}
+        - {id: interface-guide, medium: repository-filesystem, access: read, path: references/skill-standards/interface-design.md, path_match: exact, content: Source-owned interface and conditional instruction-source decomposition standard., formats: [markdown], sensitivity: public, reason: Evaluate substantial distinct use cases or read-only and mutating paths when decomposition signals are present.}
         writes:
         - {id: response, medium: prompt, access: write, system: agent-runtime, content: "Characterization, findings, plan, approval gate, and verified result.", formats: [markdown], sensitivity: derived-private}
         - {id: repository-write, medium: repository-filesystem, access: write, content: 'Approved skill source, runtime, blueprint, generated contract, and Git metadata changes.', formats: [markdown, yaml, json, python, shell, git-metadata, text], sensitivity: user-private, reason: Apply one approved behavior-preserving move at a time and optionally record the confirmed commit.}

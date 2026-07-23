@@ -7,7 +7,8 @@ This is the maintainer and skill-extension entrypoint for Famulus. Start here if
 The skill system is built around a small set of explicit authored surfaces:
 
 - [`SKILL.md`](../../skills/skill-maker/SKILL.md) for trigger and usage guidance
-- [`blueprint.yaml`](../../skills/skill-maker/blueprint.yaml) for dependencies, interfaces, and invocation constraints
+- [`blueprint.yaml`](../../skills/skill-maker/blueprint.yaml) for the module boundary, exports, access, and discovery
+- `blueprints/*.yaml` for behavioral sources, intrinsic interfaces, dependencies, and process bindings
 - private runtime files, tests, schemas, and references for implementation
 
 Start with these architecture and contract references:
@@ -19,7 +20,9 @@ Start with these architecture and contract references:
 
 ## How Skills Stay in Sync
 
-[`blueprint.yaml`](../../skills/skill-maker/blueprint.yaml) is the canonical machine-readable contract. Generated `SKILL.md` blocks and repo-level blueprint manifests are refreshed through [skills/skill-maker/_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py):
+The module and contained-source blueprints are the canonical machine-readable
+graph. Generated `SKILL.md` blocks and repository indexes are refreshed through
+[skills/skill-maker/_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py):
 
 ```bash
 python3 skills/skill-maker/_rtx/_blueprint_syncer.py
@@ -28,7 +31,7 @@ python3 skills/skill-maker/_rtx/_blueprint_syncer.py
 Cross-skill script calls should go through the dispatcher boundary, not direct script reach-through:
 
 ```bash
-dispatcher --caller-skill <caller> <callee> <interface-id> [args...]
+dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]
 ```
 
 ## Validation and Enforcement
@@ -54,8 +57,8 @@ These skills own the authoring conventions, scaffolding rules, and skill-system 
 - `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine
 - `refactor-skills` — Audit and refactor existing skills against local conventions
 - `regenerate-blueprints` — A refreshed blueprint.yaml for an existing skill generated under /tmp without modifying the skill
-- `skill-certifier` — Certifying local skill audit state after mechanical checks and blueprint exactness checks should write fresh audit records
-- `skill-drift` — Reading or checking the local audit state of Famulus skills
+- `skill-certifier` — Mechanical checks and semantic review should issue fresh node certificates for an exact committed repository state
+- `skill-drift` — Reading signed certificate currentness or canonical node hashes for Famulus modules
 - `skill-maker` — Author new skills that conform to the repo's skill-writing guideline
 - `update-skill-guidelines` — Change the skill-writing standard and its mechanical checks in lockstep
 <!-- END AUTO-GENERATED DOCS: skill-making-development-assistant -->

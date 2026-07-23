@@ -40,8 +40,8 @@ Identify content that is repeated across multiple skills or that is reference
 material (tables, guidelines, schemas). Move it to top-level
 `references/<name>.md`.
 
-Use an `@` include only when every route through the owning LLM interface needs
-the reference. When only a particular route needs it, name the file in that
+Use an `@` include only when every instruction route through the source-owned
+interface needs the reference. When only a particular route needs it, name the file in that
 route's instructions, state the observable condition for reading it, and load
 it only after that route is selected.
 **Preserve:** Content must be identical before and after — only the location changes.

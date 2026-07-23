@@ -26,23 +26,33 @@ def _git(repo: Path, *args: str) -> None:
     )
 
 
-def test_inventory_discovers_roots_and_hidden_sidecars_in_lexical_order(
+def test_inventory_discovers_only_canonical_v4_modules_and_direct_sources(
     tmp_path: Path,
 ) -> None:
-    _write(tmp_path / "skills" / "zeta" / "blueprint.yaml", "schema_version: 3\nnode_type: skill\nid: zeta\n")
-    _write(tmp_path / "skills" / "alpha" / "blueprint.yaml", "schema_version: 3\nnode_type: skill\nid: alpha\n")
-    _write(tmp_path / "skills" / "alpha" / "_rtx" / "._worker.py.blueprint.yaml", "schema_version: 3\nnode_type: machine-module\nid: alpha.machine-module.worker\n")
-    _write(tmp_path / "references" / ".policy.md.blueprint.yaml", "schema_version: 3\nnode_type: behavior-source\nid: references.source.policy\n")
+    _write(tmp_path / "skills" / "zeta" / "blueprint.yaml", "schema_version: 4\nnode_type: module\nid: zeta\n")
+    _write(tmp_path / "skills" / "alpha" / "blueprint.yaml", "schema_version: 4\nnode_type: module\nid: alpha\n")
+    _write(tmp_path / "skills" / "alpha" / "blueprints" / "worker.yaml", "schema_version: 4\nnode_type: behavioral_source\nid: alpha.source.worker\n")
+    _write(
+        tmp_path / "skills" / "alpha" / "_rtx" / "._worker.py.blueprint.yaml",
+        "schema_version: 3\nnode_type: machine" "-module\nid: alpha.machine"
+        "-module.worker\n",
+    )
+    _write(
+        tmp_path / "references" / ".policy.md.blueprint.yaml",
+        "schema_version: 3\nnode_type: behavior" "-source\nid: references.source.policy\n",
+    )
 
     documents = tuple(iter_blueprints(tmp_path))
 
     assert [item.relative_path.as_posix() for item in documents] == sorted(
         item.relative_path.as_posix() for item in documents
     )
-    module = next(item for item in documents if item.node_type == "machine-module")
-    assert module.owner_root == tmp_path / "skills" / "alpha"
-    repository_source = next(item for item in documents if item.node_id == "references.source.policy")
-    assert repository_source.owner_root == tmp_path
+    assert [item.node_id for item in documents] == [
+        "alpha",
+        "alpha.source.worker",
+        "zeta",
+    ]
+    assert documents[1].owner_root == tmp_path / "skills" / "alpha"
 
 
 @pytest.mark.parametrize(
@@ -68,7 +78,7 @@ def test_strict_inventory_aggregates_parse_and_normalization_failures(
 def test_diagnostic_collection_returns_valid_documents_and_all_issues(
     tmp_path: Path,
 ) -> None:
-    _write(tmp_path / "skills" / "valid" / "blueprint.yaml", "schema_version: 3\nnode_type: skill\nid: valid\n")
+    _write(tmp_path / "skills" / "valid" / "blueprint.yaml", "schema_version: 4\nnode_type: module\nid: valid\n")
     _write(tmp_path / "skills" / "a" / "blueprint.yaml", "id: one\nid: two\n")
     _write(tmp_path / "skills" / "b" / "blueprint.yaml", "- invalid\n")
 
@@ -83,7 +93,7 @@ def test_diagnostic_collection_returns_valid_documents_and_all_issues(
 
 def test_inventory_ignores_nonhidden_sidecars_and_symlinks(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "valid"
-    _write(skill / "blueprint.yaml", "id: valid\n")
+    _write(skill / "blueprint.yaml", "schema_version: 4\nnode_type: module\nid: valid\n")
     _write(skill / "plain.blueprint.yaml", "id: not-a-sidecar\n")
     outside = tmp_path / "outside"
     _write(outside / ".escaped.blueprint.yaml", "id: escaped\n")
@@ -148,6 +158,10 @@ def test_inventory_discovers_generic_v4_module_root_and_follows_sources(
 def test_inventory_reports_malformed_source_under_conventional_skill_root(
     tmp_path: Path,
 ) -> None:
+    _write(
+        tmp_path / "skills" / "demo-skill" / "blueprint.yaml",
+        "schema_version: 4\nnode_type: module\nid: demo-skill\n",
+    )
     _write(
         tmp_path / "skills" / "demo-skill" / "blueprints" / "broken.yaml",
         "schema_version: 4\n? [not, a, string]: invalid\n",
@@ -240,7 +254,7 @@ def test_inventory_prunes_individually_ignored_blueprint_files(
     )
     _write(
         module / ".ignored.md.blueprint.yaml",
-        "schema_version: 3\nnode_type: behavior-source\nid: ignored-sidecar\n",
+        "schema_version: 3\nnode_type: behavior" "-source\nid: ignored-sidecar\n",
     )
 
     documents = tuple(iter_blueprints(tmp_path))
@@ -249,6 +263,16 @@ def test_inventory_prunes_individually_ignored_blueprint_files(
         "visible-module",
         "visible-module.source.visible",
     ]
+
+
+def test_inventory_rejects_pre_v4_module_markers(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "skills" / "legacy" / "blueprint.yaml",
+        "schema_version: 3\nnode_type: skill\nid: legacy\n",
+    )
+
+    with pytest.raises(BlueprintInventoryError, match="schema_version 4.*node_type module"):
+        tuple(iter_blueprints(tmp_path))
 
 
 def test_inventory_rejects_ancestor_replaced_by_symlink(

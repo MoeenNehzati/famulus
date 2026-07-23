@@ -162,7 +162,7 @@ standards:
             ordered: true
             steps:
               - {kind: step, id: move-reference, instruction: "Move repeated content, tables, guidelines, or schemas to a top-level reference file."}
-              - {kind: step, id: choose-loading-route, instruction: "Use an `@` include only when every route through the owning LLM interface needs the reference; otherwise name the file and its observable read condition in the selected route.", requires: [move-reference]}
+              - {kind: step, id: choose-loading-route, instruction: "Use an `@` include only when every instruction route through the source-owned interface needs the reference; otherwise name the file and its observable read condition in the selected route.", requires: [move-reference]}
               - {kind: step, id: verify-loading, instruction: "Exercise unconditional or conditional loading as applicable.", verification: "For an unconditional include, invoke the skill and confirm the reference content is loaded. For conditional routing, exercise both paths and confirm the file is loaded only on the route that needs it.", requires: [choose-loading-route]}
             invariants: [{id: preserve-content, statement: "Content must be identical before and after; only the location changes."}]
             risk: {level: low, statement: "Low, but test the loading behavior."}

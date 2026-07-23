@@ -1,257 +1,116 @@
-# Maintainer Scaffolding and Blueprint Schema
+# Maintainer Scaffolding
 
-This document explains the maintainer-facing layer of the repo: the contract
-machinery that keeps skills explicit, composable, and checkable.
+This document describes the repository machinery that keeps modules explicit,
+composable, and checkable. Start with
+[`skills/skill-maker/`](../../skills/skill-maker/): it owns blueprint
+synchronization and the skill-system validators.
 
-If you want one entry point, start with [skills/skill-maker/](../../skills/skill-maker/). It owns the
-blueprint sync script, most skill-system validators, and the rules that other
-skills are expected to follow.
+## Authored surfaces
 
-Render a local HTML version with `python3 scripts/generate-previews.py --target scaffolding`.
+A skill module normally contains:
 
-<img src="../../graphs/scaffolding-responsibility-map.svg" alt="Scaffolding responsibility map" style="max-width: 100%; width: auto; height: auto; display: block; margin: 1.5rem auto;">
-<p class="graph-caption">The core promise: one explicit convention for skills, one mechanical path for enforcing it, and one clearer end state for the assistant as the toolset grows.</p>
+```text
+skills/<name>/
+  SKILL.md
+  blueprint.yaml
+  blueprints/
+    gateway.yaml
+    <implementation>.yaml
+  _rtx/
+  tests/
+```
 
-## Core pitch
+- `SKILL.md` is the discoverable instruction gateway.
+- `blueprint.yaml` defines the module boundary, contained sources, exports,
+  access, authority, and discovery.
+- `blueprints/*.yaml` define behavioral sources, their intrinsic interfaces,
+  dependencies, process bindings, and direct I/O.
+- private implementation and tests provide the behavior described by those
+  blueprints.
 
-You can sell the core of this system as making your assistant from scratch
-easier by forcing a convention that an LLM will not reliably converge to on its
-own.
+The module blueprint and behavioral-source blueprints are authored authority.
+Generated documentation blocks and indexes are derived views. Certificate logs
+are certification state.
 
-It is not the only good convention. The point is that it is explicit and
-machine-evaluable. The repo defines a standard for:
+## Generated views
 
-- what a skill does
-- what code it relies on
-- what systems it touches
-- what other skills it touches
-- how those touches are allowed to happen
+[`skills/skill-maker/_rtx/_blueprint_syncer.py`](../../skills/skill-maker/_rtx/_blueprint_syncer.py)
+derives:
 
-That standard is checked by code, not by the LLM's self-discipline. When the
-LLM makes a mistake, the machine can flag it. In this repo that enforcement
-happens through generated artifacts, validators, and pre-commit hooks.
+- blueprint contract and interface blocks in `SKILL.md`;
+- `references/blueprint/runtime_dependencies.json`;
+- other registered generated documentation.
 
-The result is a kind of meta-programming for LLMs: you are not only asking the
-model to write skills, you are also giving it an external structure that keeps
-those skills cohesive, limits what they can see and touch, and reduces overlap
-between tools.
+Do not edit generated blocks by hand. Run the exported check:
 
-## Responsibility map
+```bash
+dispatcher --caller-skill skill-certifier \
+  skill-maker.interface.sync-blueprints --check
+```
 
-As the repo explains its parts, each part should be tied to an end goal:
+Run without `--check` only when intentionally refreshing generated artifacts.
 
-| Part | Responsible for | End goal |
-|---|---|---|
-| `SKILL.md` | trigger conditions, usage guidance, owned responsibility | cohesive skills |
-| `blueprint.yaml` | dependencies, interfaces, permissions hints, cross-skill boundaries | explicit touch surface |
-| `_rtx/` | private runtime implementation behind the skill contract | implementation without leaking boundaries |
-| blueprint sync | generated blocks and manifests that stay aligned with the blueprint | one canonical contract source |
-| `dispatcher` / `script_dispatcher` | allowed cross-skill script invocation only | narrow, predictable composition |
-| validators | boundary checks, schema checks, sync checks, metadata checks | machine-flagged LLM mistakes |
-| pre-commit and CI | enforcement before merge and after push | convention that actually holds over time |
+## Runtime boundary
 
-## Structure at a glance
+Cross-module execution uses one public form:
 
-<img src="../../graphs/skill-development-framework.svg" alt="Skill development framework" style="max-width: 100%; width: auto; height: auto; display: block; margin: 1.5rem auto;">
-<p class="graph-caption">This graph is the structural overview. The sections below unpack what each part owns and which end goal it protects.</p>
+```bash
+dispatcher --caller-skill <caller-module> \
+  <provider-module>.interface.<export> [arguments...]
+```
 
-## 1. The authored contract
+The dispatcher:
 
-This layer is what the LLM writes directly. It should stay small, explicit, and
-owned by the skill.
+1. loads the repository module/source graph;
+2. resolves the module export to its contained source interface;
+3. checks the caller's declared interface use and the export access policy;
+4. requires current certificates for the exporting module and implementing
+   source;
+5. compiles the source-owned process binding;
+6. invokes the gateway through its runtime provider.
 
-Each skill has three authored surfaces:
+Callers do not invoke another module's private runtime path or private source
+interface.
 
-1. `SKILL.md` says when the skill applies and how to use it.
-2. `blueprint.yaml` says what the skill is allowed to depend on and export.
-3. Private runtime files, tests, schemas, and references implement the behavior.
+## Validation and certification
 
-Responsibilities in this layer:
+Validation has three layers:
 
-- `SKILL.md`
-  - Responsible for keeping the skill cohesive around one function and making
-    invocation understandable to the model.
-- `blueprint.yaml`
-  - Responsible for making dependencies, interfaces, permissions hints, and
-    cross-skill boundaries explicit.
-- `_rtx/`
-  - Responsible for holding the real logic so the skill contract is not mixed
-    with ad hoc code in prose.
+- the v4 schemas validate closed document shapes;
+- repository validators check identities, ownership, exports, dependencies,
+  access, process bindings, and generated views;
+- `skill-certifier` performs semantic review and issues append-only signed
+  certificates for the exact committed graph state.
 
-The scaffolding exists to keep these three surfaces aligned.
+`skill-drift` is a read-only certificate-currentness consumer. It does not
+write a parallel health or conformance state.
 
-## Canonical files
+## Safe change routes
 
-- [skills/skill-maker/SKILL.md](../../skills/skill-maker/SKILL.md)
-  - The maintainer entry point for creating or editing skills.
-- Generated [references/skill-standards/skill-guidelines.md](../../references/skill-standards/skill-guidelines.md)
-  - Repo-wide skill authoring rules.
-- [references/blueprint/template.yaml](../../references/blueprint/template.yaml)
-  - The comment-rich starting point for new `blueprint.yaml` files.
-- [references/blueprint/schema.json](../../references/blueprint/schema.json)
-  - The formal schema for individual blueprints.
-- [docs/skill-blueprints.md](../skill-blueprints.md)
-  - The conceptual overview of the blueprint architecture and lifecycle.
-- [references/blueprint/README.md](../../references/blueprint/README.md)
-  - Short index into the blueprint reference set.
+When changing a module:
 
-## 2. The canonical source and generated views
+1. Edit the module or source blueprint that owns the fact.
+2. Edit its gateway or content as needed.
+3. Run blueprint sync in check mode, then refresh intentionally if required.
+4. Run the affected validators and tests.
+5. Review the final blueprints against actual behavior.
+6. Certify the exact committed state.
 
-Hand-authored:
+When changing the architecture or schema:
 
-- `skills/<name>/SKILL.md`
-- `skills/<name>/blueprint.yaml`
-- the skill's implementation files
-
-Generated from `blueprint.yaml`:
-
-- the contract block near the top of `SKILL.md`
-- the owner-facing interface block in `SKILL.md`
-- repo-level manifests such as
-  `references/blueprint/runtime_dependencies.json`
-
-[skills/skill-maker/_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py) is the sync boundary
-between the authored blueprint and generated artifacts. Do not edit generated
-blocks by hand.
-
-This part is responsible for one end goal in particular: there should be one
-canonical contract source, not several drifting copies.
-
-## 3. The boundary specification
-
-The checked-in schema is in [references/blueprint/schema.json](../../references/blueprint/schema.json).
-
-At the top level, the live blueprint contract currently covers:
-
-- `category`
-- `role`
-- `kind`
-- `skill_interface`
-- `suggested_permissions`
-- `interfaces`
-
-`category` is compatibility classification. `role` and `kind` are the
-documentation and graph taxonomy fields. There is no top-level
-`interface_version` or `depends_on`; each interface declares its own `version`,
-and cross-skill use is declared through version-pinned `uses_interfaces`.
-
-The most important high-friction part is `interfaces.machine`, because that is
-where the repo makes executable boundaries explicit. Each machine interface
-declares:
-
-- optional `description` and `usage` for the generated `SKILL.md` block
-- `patterns` that constrain valid argv/stdin forms
-- `allow_all_skills` and `allowed_callers` access rules
-- `runtime`, which tells the dispatcher how to execute the interface
-- `dependencies`, which lists factual package and executable requirements
-
-That is the contract the dispatcher enforces at runtime. This part is
-responsible for making it mechanically clear what a skill may touch and how it
-may touch it.
-
-## 4. The runtime boundary
-
-Cross-skill calls are not supposed to reach into another skill's private
-runtime directory directly.
-
-The intended runtime path is:
-
-1. A caller declares a dependency in its `blueprint.yaml`.
-2. The caller invokes `dispatcher --caller-skill ...` or
-   `script_dispatcher.dispatch(...)`.
-3. [script_dispatcher/src/script_dispatcher/core.py](../../script_dispatcher/src/script_dispatcher/core.py) loads the callee's
-   `blueprint.yaml`.
-4. The dispatcher resolves the requested interface id, checks dependency and
-   caller permissions, matches the invocation against declared patterns, and
-   executes the command in the declared working directory.
-
-This is why the blueprint is more than documentation. It is the runtime policy
-surface for local script composition. This part is responsible for narrow,
-predictable composition rather than ad hoc reach-through between skills.
-
-## 5. The enforcement path
-
-The repo has two main validation layers.
-
-Schema layer:
-
-- [references/blueprint/schema.json](../../references/blueprint/schema.json) validates the structure of each blueprint.
-
-Relationship and boundary layer:
-
-- `skills/skill-maker/validators/*.py` validates dependency declarations,
-  interface-id uniqueness, boundary rules, dispatcher usage, generated block
-  layout, and other skill-system invariants.
-- [`validators/*.py`](../../validators/) handles repo-wide checks outside the skill contract itself.
-
-[validators/runner.py](../../validators/runner.py) discovers validators from both packages and runs them
-against a git-tracked mirror of the repo, so validators see staged content
-without being confused by untracked local scratch files.
-
-The key claim here is that the standard is evaluated by machine, not by trusting
-the LLM to remember the convention correctly. This layer is responsible for
-flagging mistakes before they become the new normal.
-
-## 6. Why this reduces overlap
-
-<img src="../../graphs/skill-taxonomy.svg" alt="Skill taxonomy" style="max-width: 100%; width: auto; height: auto; display: block; margin: 1.5rem auto;">
-<p class="graph-caption">The skill taxonomy is one visible outcome of the scaffolding discipline: a toolset that stays partitioned enough for the LLM to choose among skills without every tool collapsing into the same fuzzy surface.</p>
-
-Because skills are pushed toward one owned job, one declared boundary, and one
-explicit interface surface, the toolset becomes easier for the model to invoke:
-
-- skills overlap less
-- each skill sees less
-- cross-skill calls are narrower
-- ambiguous "everything tool" behavior is harder to smuggle in
-
-This is one of the practical senses in which the repo is doing
-"meta-programming for LLMs".
-
-## 7. Why `skill-maker` is the entry point
-
-`skill-maker` is where the system is easiest to understand from the inside:
-
-- its [SKILL.md](../../skills/skill-maker/SKILL.md) points directly at the generated [references/skill-standards/skill-guidelines.md](../../references/skill-standards/skill-guidelines.md)
-- its [`validators/`](../../skills/skill-maker/validators/) directory is the main skill-system enforcement surface
-- its [_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py) shows what the blueprint generates
-- its tests exercise the blueprint tooling itself
-
-If you are trying to understand "how does this repo scaffold skills?", that
-directory is the shortest path to the answer.
-
-## 8. Safe change routes
-
-If you are changing a skill:
-
-1. Start from `references/blueprint/template.yaml`.
-2. Edit the skill's `blueprint.yaml`.
-3. Sync generated artifacts with
-   `skills/skill-maker/_rtx/_blueprint_syncer.py`.
-4. Run the relevant validators and tests.
-
-If you are changing the schema or scaffolding:
-
-1. Update `references/blueprint/schema.json`.
-2. Update `references/blueprint/template.yaml`.
-3. Update `docs/skill-blueprints.md` only if the architecture or lifecycle changed.
-4. Update `references/skill-standards/skill-guidelines.standard.yaml` and regenerate `skill-guidelines.md` if the skill-module rules changed.
-5. Update any affected validators under `skills/skill-maker/validators/`.
-6. Rerun sync and validation so the generated artifacts and docs stay aligned.
-
-## 9. Related surfaces
-
-- `README.md`
-  - High-level package overview, including the maintainer-facing section.
-- [README.md](../../README.md)
-  - High-level package overview, including the maintainer-facing section.
-- [script_dispatcher/](../../script_dispatcher/)
-  - Runtime implementation of blueprint-based script invocation.
-- [validators/](../../validators/)
-  - Repo-wide checks.
-- [llmhooks/](../../llmhooks/) and [hooks/](../../hooks/)
-  - Hook scaffolding and plugin glue.
-- [skills/refactor-skills/](../../skills/refactor-skills/)
-  - Audits existing skills against the shared rules.
-- [skills/update-skill-guidelines/](../../skills/update-skill-guidelines/)
-  - Changes the guideline and validator expectations together.
+1. Update the existing schema, graph, compiler, or validator owner; do not add
+   a parallel authority.
+2. Update
+   `references/skill-standards/skill-guidelines.standard.yaml` when the
+   authoring law changes, then regenerate its derived view.
+3. Update the relevant conceptual documentation.
+4. Run the complete validation and certification suites.
+
+## Canonical references
+
+- [Architecture](../architecture.md)
+- [Skill blueprints](../skill-blueprints.md)
+- [Certification and drift](../certification_and_drift.md)
+- [Blueprint search](../blueprint_search.md)
+- [Blueprint schemas](../../references/blueprint/README.md)
+- [Generated skill guidelines](../../references/skill-standards/skill-guidelines.md)

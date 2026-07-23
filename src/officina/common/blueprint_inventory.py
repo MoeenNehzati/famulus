@@ -168,14 +168,6 @@ def _canonical_module_roots(
     ignored_paths: tuple[Path, ...],
 ) -> tuple[Path, ...]:
     roots: set[Path] = set()
-    skills_root = repo_root / "skills"
-    if skills_root.is_dir() and not skills_root.is_symlink():
-        roots.update(
-            path
-            for path in skills_root.iterdir()
-            if path.is_dir()
-            and not _excluded_directory(path, ignored_paths=ignored_paths)
-        )
     for directory, directory_names, file_names in os.walk(
         repo_root, followlinks=False
     ):
@@ -202,26 +194,6 @@ def _blueprint_paths(
 ) -> tuple[Path, ...]:
     candidates: set[Path] = set()
 
-    def hidden_sidecars(root: Path) -> None:
-        if not root.is_dir() or root.is_symlink():
-            return
-        for directory, directory_names, file_names in os.walk(root, followlinks=False):
-            directory_path = Path(directory)
-            directory_names[:] = sorted(
-                name
-                for name in directory_names
-                if not _excluded_directory(
-                    directory_path / name,
-                    ignored_paths=ignored_paths,
-                )
-            )
-            for name in sorted(file_names):
-                if not (name.startswith(".") and name.endswith(".blueprint.yaml")):
-                    continue
-                path = directory_path / name
-                if _regular_file(path) and not _ignored_path(path, ignored_paths):
-                    candidates.add(path)
-
     for module_root in module_roots:
         marker = module_root / "blueprint.yaml"
         if _regular_file(marker) and not _ignored_path(marker, ignored_paths):
@@ -233,8 +205,6 @@ def _blueprint_paths(
                     source_blueprint, ignored_paths
                 ):
                     candidates.add(source_blueprint)
-        hidden_sidecars(module_root)
-    hidden_sidecars(repo_root / "references")
     return tuple(sorted(candidates, key=lambda path: path.relative_to(repo_root).as_posix()))
 
 
@@ -279,9 +249,7 @@ def collect_blueprints(
                 raise ValueError("document root must be a mapping")
             declaration = _normalize_json(loaded)
             assert isinstance(declaration, dict)
-            node_type = declaration.get("node_type") or declaration.get(
-                "blueprint_type"
-            )
+            node_type = declaration.get("node_type")
             node_id = declaration.get("id")
             documents.append(
                 BlueprintDocument(
@@ -309,23 +277,26 @@ def collect_blueprints(
     modules_by_id: dict[str, BlueprintDocument] = {}
     for document in marker_documents:
         declaration = document.declaration
-        if declaration.get("schema_version") == 4:
-            if declaration.get("node_type") != "module":
-                issues.append(
-                    BlueprintInventoryIssue(
-                        document.relative_path,
-                        "canonical module marker must declare node_type module",
-                    )
+        if (
+            declaration.get("schema_version") != 4
+            or declaration.get("node_type") != "module"
+        ):
+            issues.append(
+                BlueprintInventoryIssue(
+                    document.relative_path,
+                    "canonical module marker must declare schema_version 4 "
+                    "and node_type module",
                 )
-                continue
-            module_id = declaration.get("id")
-            if isinstance(module_id, str) and module_id != document.owner_root.name:
-                issues.append(
-                    BlueprintInventoryIssue(
-                        document.relative_path,
-                        f"module id {module_id!r} must match its directory",
-                    )
+            )
+            continue
+        module_id = declaration.get("id")
+        if isinstance(module_id, str) and module_id != document.owner_root.name:
+            issues.append(
+                BlueprintInventoryIssue(
+                    document.relative_path,
+                    f"module id {module_id!r} must match its directory",
                 )
+            )
         module_id = declaration.get("id")
         if not isinstance(module_id, str):
             continue

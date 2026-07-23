@@ -34,7 +34,7 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `formal-prose-review.interface.default` — Review grammar, clarity, concision, and formal tone without silently changing mathematical or substantive content.

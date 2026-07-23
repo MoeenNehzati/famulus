@@ -19,7 +19,7 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `prepare-handoff.interface.default` — Review recent work, obtain approval, encode project-local continuity, and close with exact machine-readable sentinels.

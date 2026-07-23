@@ -30,9 +30,9 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `recurring-tasks.interface.scripts-disable` — Disable a job by setting enabled: false in jobs.yaml and syncing native scheduler entries.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-disable <name>`
 - `recurring-tasks.interface.scripts-enable` — Enable a job by setting enabled: true in jobs.yaml and syncing native scheduler entries.
@@ -54,7 +54,7 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `recurring-tasks.interface.scripts-view-logs` — Tail the run log for a job (default 50 lines).
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-view-logs <job-name> [--lines N]`
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `recurring-tasks.interface.default` — Primary LLM-facing skill instructions.
@@ -75,7 +75,7 @@ The skill provides dispatcher interfaces for all operations:
 - Check status and health
 - Sync systemd units
 
-See the **Owner-Facing Machine Interfaces** block above for the exact dispatcher commands.
+See the **Dispatcher Interfaces** block above for the exact commands.
 
 ## Architecture (Simplified)
 
@@ -121,7 +121,7 @@ jobs:
 
 ## Operations
 
-Use the dispatcher interfaces listed in the **Owner-Facing Machine Interfaces** block above. Key operations:
+Use the interfaces listed in the **Dispatcher Interfaces** block above. Key operations:
 
 - **Setup (first time):** `scripts-sync` generates systemd units from jobs.yaml and enables all enabled jobs.
 - **Enable/Disable:** `scripts-enable` and `scripts-disable` modify jobs.yaml and resync systemd units.

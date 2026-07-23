@@ -20,10 +20,8 @@ from typing import Any, Iterable, Mapping, Sequence
 import yaml
 
 from .blueprint_graph import (
-    BlueprintGraphError,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
-    load_repository_blueprint_graphs,
 )
 from .blueprint_inventory import collect_blueprints
 from .atomic_files import (
@@ -121,7 +119,7 @@ def build_interface_injection_migration_report(
             raise InterfaceInjectionMigrationError(
                 f"{interface_id}: invalid disposition {disposition!r}"
             )
-        target_exists = interface_id in graph.machine_exports
+        target_exists = interface_id in graph.exports
         if disposition == "add-direct-edge" and not target_exists:
             raise InterfaceInjectionMigrationError(
                 f"{interface_id}: add-direct-edge requires a target export"
@@ -206,6 +204,22 @@ class MigrationFinding:
     message: str
     target_id: str | None = None
     claim: str | None = None
+
+
+@dataclass(frozen=True)
+class ActiveReferenceFinding:
+    code: str
+    path: Path
+    line: int
+    reference: str
+
+    def as_document(self) -> dict[str, object]:
+        return {
+            "code": self.code,
+            "path": self.path.as_posix(),
+            "line": self.line,
+            "reference": self.reference,
+        }
 
 
 @dataclass(frozen=True)
@@ -353,6 +367,196 @@ def _require_relative_path(value: object, context: str) -> str:
             f"{context}: path must be relative and traversal-free"
         )
     return value
+
+
+_ACTIVE_REFERENCE_TEXT_MARKERS = (
+    ("legacy-public-interface-namespace", ".machine."),
+    ("legacy-public-interface-namespace", ".llm."),
+    ("legacy-node-kind", "machine-module"),
+    ("legacy-node-kind", "machine_module"),
+    ("legacy-node-kind", "llm-interface"),
+    ("legacy-node-kind", "llm_interface"),
+    ("legacy-node-kind", "behavior-source"),
+    ("legacy-certifier-name", "skill-audit"),
+    ("legacy-certifier-name", "skill_audit"),
+    ("legacy-audit-document", "audit_and_drift"),
+    ("legacy-binding-owner", "machine_interface_binding"),
+)
+
+_ACTIVE_REFERENCE_PATH_MARKERS = (
+    ("legacy-health-authority", "references/blueprint/health.schema.json"),
+    (
+        "legacy-admissibility-authority",
+        "references/blueprint/interface-admissibility",
+    ),
+    (
+        "legacy-conformance-authority",
+        "references/blueprint/interface-conformance.schema.json",
+    ),
+    (
+        "legacy-conformance-authority",
+        "references/blueprint/conformance-boundary-operations",
+    ),
+    (
+        "legacy-conformance-authority",
+        "references/blueprint/conformance-operations/",
+    ),
+    ("legacy-audit-document", "docs/audit_and_drift.md"),
+)
+
+_MIGRATION_EVIDENCE_PATHS = frozenset(
+    {
+        Path("docs/plans/unified-architecture-migration.md"),
+        Path("docs/plans/unified-architecture-migration-map.yaml"),
+        Path("scripts/migrate-blueprints-v4.py"),
+        Path("src/officina/common/interface_injection_migration.py"),
+        Path("tests/test_interface_injection_migration.py"),
+    }
+)
+
+_NON_ACTIVE_EXECUTION_STATUSES = frozenset(
+    {"frozen_history", "deferred_pending_v4_adoption_and_rebase"}
+)
+
+
+def _historical_reference_patterns(
+    migration_map: Mapping[str, Any],
+) -> tuple[str, ...]:
+    documents = migration_map.get("documents", [])
+    if not isinstance(documents, list):
+        raise InterfaceInjectionMigrationError(
+            "migration-map documents must be a list"
+        )
+    patterns: list[str] = []
+    for index, entry in enumerate(documents):
+        if not isinstance(entry, Mapping):
+            raise InterfaceInjectionMigrationError(
+                f"documents[{index}] must be a mapping"
+            )
+        target = entry.get("target", "")
+        excluded = (
+            entry.get("execution_status") in _NON_ACTIVE_EXECUTION_STATUSES
+            or isinstance(target, str)
+            and "historical evidence" in target
+        )
+        if not excluded:
+            continue
+        matcher = entry.get("paths")
+        raw_patterns = (
+            matcher
+            if isinstance(matcher, list)
+            else matcher.get("include")
+            if isinstance(matcher, Mapping)
+            else None
+        )
+        if not isinstance(raw_patterns, list) or not raw_patterns:
+            raise InterfaceInjectionMigrationError(
+                f"documents[{index}].paths must declare include patterns"
+            )
+        for pattern_index, value in enumerate(raw_patterns):
+            patterns.append(
+                _require_relative_path(
+                    value,
+                    f"documents[{index}].paths.include[{pattern_index}]",
+                )
+            )
+    return tuple(sorted(set(patterns)))
+
+
+def _matches_any_reference_pattern(path: Path, patterns: Sequence[str]) -> bool:
+    candidate = PurePosixPath(path.as_posix())
+    for pattern in patterns:
+        if pattern.endswith("/**"):
+            prefix = pattern[:-3].rstrip("/")
+            if candidate.as_posix() == prefix or candidate.as_posix().startswith(
+                prefix + "/"
+            ):
+                return True
+        elif candidate.match(pattern):
+            return True
+    return False
+
+
+def check_active_migration_references(
+    repo_root: Path,
+    migration_map: Mapping[str, Any],
+) -> tuple[ActiveReferenceFinding, ...]:
+    """Find legacy v4-migration references outside classified evidence."""
+
+    raw_root = Path(repo_root)
+    if raw_root.is_symlink():
+        raise InterfaceInjectionMigrationError("repository root must not be a symlink")
+    root = raw_root.resolve()
+    tracked = run_git(root, "ls-files", "-z", check=False)
+    if tracked.returncode != 0:
+        raise InterfaceInjectionMigrationError(
+            "active-reference check requires a Git worktree"
+        )
+    try:
+        tracked_paths = tuple(
+            sorted(
+                Path(item)
+                for item in tracked.stdout.decode("utf-8").split("\0")
+                if item
+            )
+        )
+    except UnicodeError as exc:
+        raise InterfaceInjectionMigrationError(
+            "tracked path inventory is not UTF-8"
+        ) from exc
+
+    historical_patterns = _historical_reference_patterns(migration_map)
+    findings: list[ActiveReferenceFinding] = []
+    for relative in tracked_paths:
+        if relative in _MIGRATION_EVIDENCE_PATHS or _matches_any_reference_pattern(
+            relative, historical_patterns
+        ):
+            continue
+        path_text = relative.as_posix()
+        candidate = root / relative
+        if not candidate.exists():
+            continue
+        for code, marker in _ACTIVE_REFERENCE_PATH_MARKERS:
+            if marker in path_text:
+                findings.append(
+                    ActiveReferenceFinding(code, relative, 0, marker.rsplit("/", 1)[-1])
+                )
+        if candidate.is_symlink() or not candidate.is_file():
+            continue
+        try:
+            data = read_regular_file_bytes(candidate, allowed_root=root)
+        except (AtomicWriteError, OSError) as exc:
+            raise InterfaceInjectionMigrationError(
+                f"cannot read tracked file during active-reference check: {path_text}"
+            ) from exc
+        if b"\0" in data:
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeError:
+            continue
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            for code, marker in _ACTIVE_REFERENCE_TEXT_MARKERS:
+                if marker in line:
+                    findings.append(
+                        ActiveReferenceFinding(
+                            code,
+                            relative,
+                            line_number,
+                            marker,
+                        )
+                    )
+    return tuple(
+        sorted(
+            findings,
+            key=lambda finding: (
+                finding.path.as_posix(),
+                finding.line,
+                finding.code,
+                finding.reference,
+            ),
+        )
+    )
 
 
 def _read_mapping(path: Path) -> dict[str, Any]:
@@ -633,6 +837,32 @@ def compile_migration_plan(migration_map: Mapping[str, Any]) -> CompiledMigratio
         tuple(sorted(public_id_paths)),
         dict(sorted(overlay.items())),
     )
+
+
+def validate_post_adoption_migration_map(
+    migration_map: Mapping[str, Any],
+) -> None:
+    """Validate map invariants that remain meaningful after the atomic cutover."""
+
+    if migration_map.get("map_version") != 1:
+        raise InterfaceInjectionMigrationError(
+            "post-adoption migration map requires map_version 1"
+        )
+    authority = migration_map.get("authority")
+    version_contract = (
+        authority.get("version_contract")
+        if isinstance(authority, Mapping)
+        else None
+    )
+    if (
+        not isinstance(version_contract, Mapping)
+        or version_contract.get("final_runtime_schema_version") != 4
+    ):
+        raise InterfaceInjectionMigrationError(
+            "post-adoption migration map requires final runtime schema version 4"
+        )
+    compile_migration_plan(migration_map)
+    _historical_reference_patterns(migration_map)
 
 
 def _target_module_id(
@@ -1184,6 +1414,125 @@ def _typed_behavioral_source_input(
         gateway_language=language,
         dependencies=tuple(deepcopy(dependencies)),
     )
+
+
+def _legacy_declaration_inputs(
+    declarations: Mapping[Path, Mapping[str, Any]],
+) -> tuple[
+    dict[str, tuple[Path, Mapping[str, Any]]],
+    dict[str, tuple[_InterfaceInput, ...]],
+    dict[str, tuple[_BehavioralSourceInput, ...]],
+]:
+    """Parse only the mapped legacy declarations needed by the converter."""
+
+    roots: dict[str, tuple[Path, Mapping[str, Any]]] = {}
+    typed_interfaces: dict[str, list[_InterfaceInput]] = {}
+    typed_sources: dict[str, list[_BehavioralSourceInput]] = {}
+    for relative, declaration in declarations.items():
+        if len(relative.parts) < 3 or relative.parts[0] != "skills":
+            raise InterfaceInjectionMigrationError(
+                f"mapped declaration has no module owner: {relative.as_posix()}"
+            )
+        module_id = relative.parts[1]
+        if relative == Path("skills") / module_id / "blueprint.yaml":
+            schema_version = declaration.get("schema_version")
+            if schema_version not in (None, 2):
+                raise InterfaceInjectionMigrationError(
+                    f"{relative.as_posix()}: unsupported root schema version"
+                )
+            if schema_version == 2 and declaration.get("blueprint_type") != "skill":
+                raise InterfaceInjectionMigrationError(
+                    f"{relative.as_posix()}: version 2 root must be a skill"
+                )
+            if schema_version == 2 and declaration.get("id") != module_id:
+                raise InterfaceInjectionMigrationError(
+                    f"{relative.as_posix()}: root ID does not match its owner"
+                )
+            roots[module_id] = (relative, declaration)
+        elif declaration.get("schema_version") is None:
+            raise InterfaceInjectionMigrationError(
+                f"unversioned declaration must be a module root: {relative.as_posix()}"
+            )
+        elif declaration.get("schema_version") == 2:
+            blueprint_type = declaration.get("blueprint_type")
+            if blueprint_type in {"llm-interface", "machine-interface"}:
+                typed_interfaces.setdefault(module_id, []).append(
+                    _typed_interface_input(declaration)
+                )
+            elif blueprint_type == "behavior-source":
+                typed_sources.setdefault(module_id, []).append(
+                    _typed_behavioral_source_input(
+                        declaration, module_id=module_id
+                    )
+                )
+            else:
+                raise InterfaceInjectionMigrationError(
+                    f"{relative.as_posix()}: unsupported version 2 node type"
+                )
+        else:
+            raise InterfaceInjectionMigrationError(
+                f"{relative.as_posix()}: unsupported schema version"
+            )
+
+    missing_roots = sorted((set(typed_interfaces) | set(typed_sources)) - set(roots))
+    if missing_roots:
+        raise InterfaceInjectionMigrationError(
+            f"mapped sidecars have no module root: {missing_roots}"
+        )
+    return (
+        roots,
+        {
+            module_id: tuple(entries)
+            for module_id, entries in typed_interfaces.items()
+        },
+        {
+            module_id: tuple(entries)
+            for module_id, entries in typed_sources.items()
+        },
+    )
+
+
+def _legacy_module_interface_inputs(
+    roots: Mapping[str, tuple[Path, Mapping[str, Any]]],
+    typed_interfaces: Mapping[str, Sequence[_InterfaceInput]],
+    migration_map: Mapping[str, Any] | None,
+) -> dict[str, tuple[_InterfaceInput, ...]]:
+    """Combine embedded and sidecar interfaces for conversion."""
+
+    result: dict[str, tuple[_InterfaceInput, ...]] = {}
+    for old_module_id, (_root_path, declaration) in sorted(roots.items()):
+        interfaces = (
+            _unversioned_interfaces(old_module_id, declaration)
+            if declaration.get("schema_version") is None
+            else ()
+        )
+        interfaces += tuple(typed_interfaces.get(old_module_id, ()))
+        default_interface = _typed_default_interface_input(
+            old_module_id, declaration
+        )
+        if default_interface is not None:
+            interfaces += (default_interface,)
+        by_old_id: dict[str, _InterfaceInput] = {}
+        for interface in interfaces:
+            previous = by_old_id.get(interface.old_id)
+            if previous is not None:
+                if not _duplicate_interface_merge_is_reviewed(
+                    migration_map,
+                    module_id=old_module_id,
+                    gateway_path=interface.gateway_path,
+                ):
+                    raise InterfaceInjectionMigrationError(
+                        f"{interface.old_id}: ambiguous duplicate declarations"
+                    )
+                by_old_id[interface.old_id] = _merge_interface_inputs(
+                    previous, interface
+                )
+            else:
+                by_old_id[interface.old_id] = interface
+        result[old_module_id] = tuple(
+            by_old_id[key] for key in sorted(by_old_id)
+        )
+    return result
 
 
 def _regular_module_content(
@@ -2380,237 +2729,115 @@ def _v4_semantic_edge_projection(
     return dict(sorted(projection.items()))
 
 
-def _legacy_graph_predecessor_projections(
+def _legacy_predecessor_projections(
     repo_root: Path,
-    migration_map: Mapping[str, Any] | None,
+    interfaces_by_module: Mapping[str, Sequence[_InterfaceInput]],
+    typed_sources: Mapping[str, Sequence[_BehavioralSourceInput]],
+    source_targets: Mapping[str, tuple[str, Path, _BehavioralSourceInput]],
+    migration_plan: CompiledMigrationPlan | None,
     *,
-    allowed_source_paths: set[Path] | None = None,
     behavior_dependency_mappings: Mapping[
         tuple[str, str], _LegacyBehaviorDependencyMapping
     ] | None = None,
 ) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
-    """Project authored predecessor facts from validated legacy graphs."""
+    """Project authored facts from conversion-normalized legacy declarations."""
 
     root = Path(repo_root).resolve()
-    plan = compile_migration_plan(migration_map) if migration_map is not None else None
-    try:
-        graphs = load_repository_blueprint_graphs(root)
-    except BlueprintGraphError as exc:
-        missing = re.search(r"missing subordinate blueprint for (\S+)$", str(exc))
-        if missing is not None:
-            raise InterfaceInjectionMigrationError(
-                f"unresolved behavioral source {missing.group(1)!r}"
-            ) from exc
-        raise InterfaceInjectionMigrationError(
-            f"cannot project validated legacy graphs: {exc}"
-        ) from exc
     public_exports: dict[str, object] = {}
     runtime_sources: dict[str, object] = {}
     semantic: dict[str, object] = {}
-    interface_sources: dict[str, str] = {}
     private_interfaces: dict[str, str] = {}
-    source_nodes: dict[str, tuple[str, Any]] = {}
     source_facts: dict[str, tuple[str, str, set[str]]] = {}
 
-    def declared_behavior_evidence(node: Any) -> list[Mapping[str, Any]]:
-        raw = node.declaration.get("behavior_sources")
-        invocation = node.declaration.get("invocation")
-        if raw is None and isinstance(invocation, Mapping):
-            raw = invocation.get("behavior_sources")
-        return [item for item in raw or [] if isinstance(item, Mapping)]
-
-    for old_module_id, graph in sorted(graphs.items()):
-        module_id = _target_module_id(old_module_id, plan)
-        grouped: dict[str, list[Any]] = {}
-        for node in graph.nodes.values():
-            if node.node_type in {"llm-interface", "machine-interface"}:
-                if node.gateway_path is None:
-                    raise InterfaceInjectionMigrationError(
-                        f"{node.node_id}: legacy graph interface has no gateway"
-                    )
-                gateway = node.gateway_path.relative_to(graph.skill_root).as_posix()
-                grouped.setdefault(gateway, []).append(node)
-            elif node.node_type == "behavior-source":
-                local = node.node_id.split(".source.", 1)[1]
-                source_id = f"{module_id}.source.{local}"
-                source_nodes[node.node_id] = (source_id, node)
-        for gateway, nodes in grouped.items():
+    for old_module_id, interfaces in sorted(interfaces_by_module.items()):
+        module_id = _target_module_id(old_module_id, migration_plan)
+        grouped: dict[str, list[_InterfaceInput]] = {}
+        for interface in interfaces:
+            grouped.setdefault(interface.gateway_path, []).append(interface)
+        for gateway, source_interfaces in grouped.items():
             source_id = f"{module_id}.source.{_source_slug(gateway)}"
-            for node in nodes:
-                local_name = node.node_id.split(
-                    ".machine." if ".machine." in node.node_id else ".llm.", 1
-                )[1]
-                export_id = _rename_interface_id(node.node_id, plan)
-                private_id = f"{source_id}.interface.{local_name}"
-                interface_sources[node.node_id] = source_id
+            for interface in source_interfaces:
+                export_id = _rename_interface_id(
+                    interface.old_id, migration_plan
+                )
+                private_id = f"{source_id}.interface.{interface.local_name}"
                 private_interfaces[export_id] = private_id
                 public_exports[export_id] = {
-                    "version": node.version,
+                    "version": interface.version,
                     "source_interface": private_id,
                     "access": {
-                        "allow_all_modules": node.declaration.get("allow_all_skills")
-                        is True,
+                        "allow_all_modules": interface.allow_all_modules,
                         "allowed_callers": sorted(
-                            _target_module_id(caller, plan)
-                            for caller in node.declaration.get("allowed_callers", [])
+                            _target_module_id(caller, migration_plan)
+                            for caller in interface.allowed_callers
                         ),
                     },
                 }
 
-    for old_module_id, graph in sorted(graphs.items()):
-        module_id = _target_module_id(old_module_id, plan)
-        groups: dict[str, list[Any]] = {}
-        for node in graph.nodes.values():
-            if node.node_type not in {"llm-interface", "machine-interface"}:
-                continue
-            source_id = interface_sources[node.node_id]
-            groups.setdefault(source_id, []).append(node)
-        for source_id, nodes in sorted(groups.items()):
-            gateway = nodes[0].gateway_path.relative_to(graph.skill_root).as_posix()
+    for old_module_id, interfaces in sorted(interfaces_by_module.items()):
+        module_id = _target_module_id(old_module_id, migration_plan)
+        groups: dict[str, list[_InterfaceInput]] = {}
+        for interface in interfaces:
+            groups.setdefault(interface.gateway_path, []).append(interface)
+        for gateway, source_interfaces in sorted(groups.items()):
+            source_id = f"{module_id}.source.{_source_slug(gateway)}"
             content = {gateway}
-            for node in nodes:
-                local_inputs = node.declaration.get("local_hash_inputs", [])
-                if isinstance(local_inputs, list):
-                    content.update(
-                        value for value in local_inputs if isinstance(value, str)
-                    )
-                for evidence in declared_behavior_evidence(node):
-                    path = evidence.get("path") if isinstance(evidence, Mapping) else None
-                    if isinstance(path, str) and not path.startswith("$repo/"):
-                        content.add(path)
-            uses = []
-            dependencies = []
-            for edge in graph.edges:
-                if edge.source_id not in {node.node_id for node in nodes}:
-                    continue
-                if edge.relation == "uses-interface":
-                    target = _rename_interface_id(edge.target_id, plan)
-                    target_owner = target.split(".interface.", 1)[0]
-                    uses.append(
-                        {
-                            "interface": (
-                                private_interfaces.get(target, target)
-                                if target_owner == module_id
-                                else target
-                            ),
-                            "version": edge.required_version,
-                        }
-                    )
-                elif edge.relation == "uses-behavior-source":
-                    target_id, target_node = source_nodes[edge.target_id]
-                    target_module = target_id.split(".source.", 1)[0]
-                    target_path = (
-                        target_node.skill_root.relative_to(root)
-                        / "blueprints"
-                        / f"{_source_slug(target_node.gateway_path.relative_to(target_node.skill_root).as_posix())}.yaml"
-                    )
-                    reason = next(
-                        (
-                            item.get("reason")
-                            for node in nodes
-                            for item in declared_behavior_evidence(node)
-                            if isinstance(item, Mapping)
-                            and item.get("source") == edge.target_id
-                        ),
-                        None,
-                    )
-                    dependencies.append(
-                        {
-                            "source": target_id,
-                            "version": edge.required_version,
-                            "blueprint": {
-                                "base": (
-                                    "module-root"
-                                    if target_module == module_id
-                                    else "repository-root"
-                                ),
-                                "path": (
-                                    target_path.relative_to(Path("skills") / module_id).as_posix()
-                                    if target_module == module_id
-                                    else target_path.as_posix()
-                                ),
-                            },
-                            "reason": reason,
-                        }
-                    )
-            # Cross-module repository sources are not represented uniformly by
-            # every legacy graph loader.  Read those declared edges directly
-            # from the captured predecessor documents so the comparison does
-            # not depend on the v4 converter's output.
-            source_nodes_by_path = {
-                candidate.gateway_path.resolve(): (target_id, candidate)
-                for target_id, candidate in source_nodes.values()
-            }
-            for node in nodes:
-                for evidence in declared_behavior_evidence(node):
-                    declared_path = evidence.get("path")
-                    if not isinstance(declared_path, str):
-                        continue
+            mapped_dependencies: list[dict[str, Any]] = []
+            for interface in source_interfaces:
+                content.update(interface.same_source_content)
+                for evidence in interface.behavior_evidence:
+                    declared_path = evidence["path"]
                     if declared_path.startswith("$repo/"):
                         mapping = (behavior_dependency_mappings or {}).get(
-                            (node.node_id, yaml.safe_dump(evidence, sort_keys=True))
+                            (
+                                interface.old_id,
+                                yaml.safe_dump(evidence, sort_keys=True),
+                            )
                         )
                         if mapping is None:
-                            if not behavior_dependency_mappings:
-                                continue
                             raise InterfaceInjectionMigrationError(
-                                f"{node.node_id}: repository behavior source "
-                                f"{declared_path!r} has no exact reviewed dependency mapping"
+                                f"{interface.old_id}: unresolved repository "
+                                f"behavior source {declared_path!r}"
                             )
-                        dependency = {
-                            "source": mapping.target["source"],
-                            "version": mapping.target["version"],
-                            "blueprint": deepcopy(mapping.target["blueprint"]),
-                            "reason": evidence.get("reason"),
-                        }
+                        mapped_dependencies.append(
+                            {
+                                "source": mapping.target["source"],
+                                "version": mapping.target["version"],
+                                "blueprint": deepcopy(mapping.target["blueprint"]),
+                                "reason": evidence["reason"],
+                            }
+                        )
                     else:
-                        source_fact = source_nodes_by_path.get(
-                            (graph.skill_root / declared_path).resolve()
-                        )
-                        if source_fact is None:
-                            continue
-                        target_id, target_node = source_fact
-                        target_path = (
-                            target_node.skill_root.relative_to(root)
-                            / "blueprints"
-                            / f"{_source_slug(target_node.gateway_path.relative_to(target_node.skill_root).as_posix())}.yaml"
-                        )
-                        target_module = target_id.split(".source.", 1)[0]
-                        dependency = {
-                            "source": target_id,
-                            "version": target_node.version,
-                            "blueprint": {
-                                "base": (
-                                    "module-root"
-                                    if target_module == module_id
-                                    else "repository-root"
-                                ),
-                                "path": (
-                                    target_path.relative_to(
-                                        Path("skills") / module_id
-                                    ).as_posix()
-                                    if target_module == module_id
-                                    else target_path.as_posix()
-                                ),
-                            },
-                            "reason": evidence.get("reason"),
-                        }
-                    if not any(
-                        item.get("source") == dependency["source"]
-                        for item in dependencies
-                    ):
-                        dependencies.append(dependency)
-            uses = [
-                yaml.safe_load(value)
-                for value in sorted(
-                    {yaml.safe_dump(item, sort_keys=True) for item in uses}
-                )
-            ]
+                        content.add(declared_path)
+
+            uses = _normalize_uses(
+                [
+                    edge
+                    for interface in source_interfaces
+                    for edge in interface.uses_interfaces
+                ],
+                migration_plan,
+            )
+            for edge in uses:
+                target = edge["interface"]
+                if target.startswith(f"{module_id}.interface."):
+                    edge["interface"] = private_interfaces.get(target, target)
+
+            dependencies = _normalize_source_dependencies(
+                [
+                    edge
+                    for interface in source_interfaces
+                    for edge in interface.source_dependencies
+                ],
+                source_targets,
+                owner_module_id=module_id,
+            )
+            dependency_values = {
+                yaml.safe_dump(item, sort_keys=True): deepcopy(item)
+                for item in (*dependencies, *mapped_dependencies)
+            }
             dependencies = [
-                yaml.safe_load(value)
-                for value in sorted(
-                    {yaml.safe_dump(item, sort_keys=True) for item in dependencies}
-                )
+                dependency_values[key] for key in sorted(dependency_values)
             ]
             semantic[source_id] = {
                 "dependencies": dependencies,
@@ -2619,16 +2846,15 @@ def _legacy_graph_predecessor_projections(
             }
             source_facts[source_id] = (old_module_id, gateway, set(content))
             platforms = [
-                deepcopy(node.declaration.get("platform_support"))
-                for node in nodes
-                if isinstance(node.declaration.get("platform_support"), Mapping)
+                deepcopy(interface.platform_support)
+                for interface in source_interfaces
+                if interface.platform_support is not None
             ]
             if platforms:
                 runtime_values = {
                     yaml.safe_dump(item, sort_keys=True): deepcopy(item)
-                    for node in nodes
-                    for item in node.declaration.get("dependencies", [])
-                    if isinstance(item, Mapping)
+                    for interface in source_interfaces
+                    for item in interface.runtime_dependencies or ()
                 }
                 runtime_sources[source_id] = {
                     "platform_support": platforms[0],
@@ -2636,16 +2862,26 @@ def _legacy_graph_predecessor_projections(
                         runtime_values[key] for key in sorted(runtime_values)
                     ],
                 }
-        for old_source_id, (source_id, node) in source_nodes.items():
-            if not old_source_id.startswith(f"{old_module_id}.source."):
-                continue
-            gateway = node.gateway_path.relative_to(graph.skill_root).as_posix()
+
+    for old_module_id, sources in sorted(typed_sources.items()):
+        module_id = _target_module_id(old_module_id, migration_plan)
+        for source in sorted(sources, key=lambda item: item.old_id):
+            source_id, _source_path, _source = source_targets[source.old_id]
+            dependencies = _normalize_source_dependencies(
+                source.dependencies,
+                source_targets,
+                owner_module_id=module_id,
+            )
             semantic[source_id] = {
-                "dependencies": [],
+                "dependencies": dependencies,
                 "uses_interfaces": [],
-                "content": [_exact_content_pattern(gateway)],
+                "content": [_exact_content_pattern(source.gateway_path)],
             }
-            source_facts[source_id] = (old_module_id, gateway, {gateway})
+            source_facts[source_id] = (
+                old_module_id,
+                source.gateway_path,
+                {source.gateway_path},
+            )
     _augment_legacy_python_edges(root, source_facts, semantic)
     return (
         dict(sorted(semantic.items())),
@@ -3881,14 +4117,41 @@ def convert_blueprint_declarations(
     behavior_dependency_mappings = _legacy_behavior_dependency_mappings(
         migration_map, reference_targets
     )
+    roots, typed_interfaces, typed_sources = _legacy_declaration_inputs(
+        declarations
+    )
+    interfaces_by_module = _legacy_module_interface_inputs(
+        roots, typed_interfaces, migration_map
+    )
+    source_targets: dict[str, tuple[str, Path, _BehavioralSourceInput]] = {}
+    for old_module_id, entries in sorted(typed_sources.items()):
+        module_id = _target_module_id(old_module_id, migration_plan)
+        for item in entries:
+            source_id = (
+                f"{module_id}.source."
+                + item.old_id.split(".source.", 1)[1]
+            )
+            target = (
+                Path("skills")
+                / module_id
+                / "blueprints"
+                / f"{_source_slug(item.gateway_path)}.yaml"
+            )
+            if item.old_id in source_targets:
+                raise InterfaceInjectionMigrationError(
+                    f"duplicate behavioral source ID {item.old_id!r}"
+                )
+            source_targets[item.old_id] = (source_id, target, item)
     (
         predecessor_semantic_edges,
         predecessor_public_graph,
         predecessor_runtime_dependencies,
-    ) = _legacy_graph_predecessor_projections(
+    ) = _legacy_predecessor_projections(
         root,
-        migration_map,
-        allowed_source_paths=allowed_source_paths,
+        interfaces_by_module,
+        typed_sources,
+        source_targets,
+        migration_plan,
         behavior_dependency_mappings=behavior_dependency_mappings,
     )
     supplemental_semantic_edges = _v4_semantic_edge_projection(reference_documents)
@@ -3921,82 +4184,7 @@ def convert_blueprint_declarations(
         deepcopy(supplemental_runtime_dependencies)
     )
 
-    roots: dict[str, tuple[Path, dict[str, Any]]] = {}
-    typed_interfaces: dict[str, list[_InterfaceInput]] = {}
-    typed_sources: dict[str, list[_BehavioralSourceInput]] = {}
-    for relative, declaration in declarations.items():
-        if len(relative.parts) < 3 or relative.parts[0] != "skills":
-            raise InterfaceInjectionMigrationError(
-                f"mapped declaration has no module owner: {relative.as_posix()}"
-            )
-        module_id = relative.parts[1]
-        if relative == Path("skills") / module_id / "blueprint.yaml":
-            schema_version = declaration.get("schema_version")
-            if schema_version not in (None, 2):
-                raise InterfaceInjectionMigrationError(
-                    f"{relative.as_posix()}: unsupported root schema version"
-                )
-            if schema_version == 2 and declaration.get("blueprint_type") != "skill":
-                raise InterfaceInjectionMigrationError(
-                    f"{relative.as_posix()}: version 2 root must be a skill"
-                )
-            if schema_version == 2 and declaration.get("id") != module_id:
-                raise InterfaceInjectionMigrationError(
-                    f"{relative.as_posix()}: root ID does not match its owner"
-                )
-            roots[module_id] = (relative, declaration)
-        elif declaration.get("schema_version") is None:
-            raise InterfaceInjectionMigrationError(
-                f"unversioned declaration must be a module root: {relative.as_posix()}"
-            )
-        elif declaration.get("schema_version") == 2:
-            blueprint_type = declaration.get("blueprint_type")
-            if blueprint_type in {"llm-interface", "machine-interface"}:
-                typed_interfaces.setdefault(module_id, []).append(
-                    _typed_interface_input(declaration)
-                )
-            elif blueprint_type == "behavior-source":
-                typed_sources.setdefault(module_id, []).append(
-                    _typed_behavioral_source_input(
-                        declaration, module_id=module_id
-                    )
-                )
-            else:
-                raise InterfaceInjectionMigrationError(
-                    f"{relative.as_posix()}: unsupported version 2 node type"
-                )
-        else:
-            raise InterfaceInjectionMigrationError(
-                f"{relative.as_posix()}: unsupported schema version"
-            )
-
-    missing_roots = sorted((set(typed_interfaces) | set(typed_sources)) - set(roots))
-    if missing_roots:
-        raise InterfaceInjectionMigrationError(
-            f"mapped sidecars have no module root: {missing_roots}"
-        )
-
     migration_findings: list[MigrationFinding] = []
-
-    source_targets: dict[str, tuple[str, Path, _BehavioralSourceInput]] = {}
-    for old_module_id, entries in sorted(typed_sources.items()):
-        module_id = _target_module_id(old_module_id, migration_plan)
-        for item in entries:
-            source_id = (
-                f"{module_id}.source."
-                + item.old_id.split(".source.", 1)[1]
-            )
-            target = (
-                Path("skills")
-                / module_id
-                / "blueprints"
-                / f"{_source_slug(item.gateway_path)}.yaml"
-            )
-            if item.old_id in source_targets:
-                raise InterfaceInjectionMigrationError(
-                    f"duplicate behavioral source ID {item.old_id!r}"
-                )
-            source_targets[item.old_id] = (source_id, target, item)
 
     documents: dict[Path, dict[str, Any]] = dict(reference_documents)
     public_exports: dict[str, object] = deepcopy(supplemental_exports)
@@ -4019,35 +4207,10 @@ def convert_blueprint_declarations(
             raise InterfaceInjectionMigrationError(
                 f"{old_module_id}: SKILL.md must be a regular file"
             )
-        interfaces: tuple[_InterfaceInput, ...]
-        if declaration.get("schema_version") is None:
-            interfaces = _unversioned_interfaces(old_module_id, declaration)
-        else:
-            interfaces = ()
-        interfaces = interfaces + tuple(typed_interfaces.get(old_module_id, ()))
+        interfaces = interfaces_by_module[old_module_id]
         default_interface = _typed_default_interface_input(
             old_module_id, declaration
         )
-        if default_interface is not None:
-            interfaces = interfaces + (default_interface,)
-        by_old_id: dict[str, _InterfaceInput] = {}
-        for interface in interfaces:
-            previous = by_old_id.get(interface.old_id)
-            if previous is not None:
-                if not _duplicate_interface_merge_is_reviewed(
-                    migration_map,
-                    module_id=old_module_id,
-                    gateway_path=interface.gateway_path,
-                ):
-                    raise InterfaceInjectionMigrationError(
-                        f"{interface.old_id}: ambiguous duplicate declarations"
-                    )
-                by_old_id[interface.old_id] = _merge_interface_inputs(
-                    previous, interface
-                )
-                continue
-            by_old_id[interface.old_id] = interface
-        interfaces = tuple(by_old_id[key] for key in sorted(by_old_id))
 
         legacy_summary = declaration.get("skill_interface")
         if legacy_summary is not None:
@@ -5491,9 +5654,9 @@ def _candidate_certifier_context(candidate_root: Path) -> tuple[Path, str, Path]
     map_path = root / "docs/plans/unified-architecture-migration-map.yaml"
     migration_plan = compile_migration_plan(load_blueprint_migration_map(map_path))
     candidates = [
-        Path("skills") / target / "_rtx" / "_audit_certifier.py"
+        Path("skills") / target / "_rtx" / "_node_certifier.py"
         for target in migration_plan.module_renames.values()
-        if (root / "skills" / target / "_rtx" / "_audit_certifier.py").is_file()
+        if (root / "skills" / target / "_rtx" / "_node_certifier.py").is_file()
     ]
     if len(candidates) != 1:
         raise InterfaceInjectionMigrationError(

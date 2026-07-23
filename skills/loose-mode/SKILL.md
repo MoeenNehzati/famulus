@@ -19,7 +19,7 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `loose-mode.interface.default` — Explore a request breadth-first, label uncertainty, and present concise strategic structure without silently leaving loose mode.

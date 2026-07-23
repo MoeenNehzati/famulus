@@ -331,7 +331,7 @@ class DispatchDependencyResolver:
     def resolve_call(self, call: DispatchCall) -> "ResolvedInvocationMetadata":
         """Resolve one declared dispatch through the canonical dispatcher checks."""
 
-        from officina.dispatcher import resolve_dispatch_metadata
+        from officina.dispatcher.core import _resolve_dispatch_metadata_for_trace
 
         kwargs = {
             "caller_skill": call.caller_skill,
@@ -341,12 +341,13 @@ class DispatchDependencyResolver:
             "repo_root": self.repo_root,
             "certification_view": self.certification_view,
         }
-        if ".interface." in call.interface:
-            kwargs["target"] = call.interface
-        else:
-            kwargs["target_skill"] = call.target_skill
-            kwargs["script_interface"] = call.interface
-        return resolve_dispatch_metadata(**kwargs)
+        if ".interface." not in call.interface:
+            raise ValueError(
+                "dispatch dependencies require a fully qualified "
+                "`<module>.interface.<name>` target"
+            )
+        kwargs["target"] = call.interface
+        return _resolve_dispatch_metadata_for_trace(**kwargs)
 
     def load_resolved_python_interface(
         self,
@@ -376,41 +377,6 @@ class DispatchDependencyResolver:
             return load_interface(entrypoint)
         finally:
             os.chdir(previous_cwd)
-
-    def load_python_interface(
-        self,
-        skill_name: str,
-        interface_name: str,
-    ) -> "PythonMachineInterface | None":
-        """Load a target PythonMachineInterface, or return None for other runtimes."""
-
-        from officina.dispatcher.core import expect_mapping, load_blueprint, resolve_machine_interface_surface
-        from officina.runtime.python_machine_interface_runner import load_interface
-
-        blueprint = load_blueprint(skill_name, repo_root=self.repo_root)
-        interface_spec, _resolved_name = resolve_machine_interface_surface(blueprint, interface_name)
-        invocation = expect_mapping(interface_spec.get("invocation"), "invocation")
-        if invocation.get("kind") != "python_machine_interface":
-            return None
-        entrypoint = invocation.get("entrypoint")
-        if not isinstance(entrypoint, str) or not entrypoint.strip():
-            return None
-
-        skill_dir = self.repo_root / "skills" / skill_name
-        previous_cwd = Path.cwd()
-        try:
-            for cached_name in list(sys.modules):
-                if cached_name == "_rtx" or cached_name.startswith("_rtx."):
-                    del sys.modules[cached_name]
-
-            skill_path = str(skill_dir)
-            sys.path[:] = [entry for entry in sys.path if entry != skill_path]
-            sys.path.insert(0, skill_path)
-            os.chdir(skill_dir)
-            return load_interface(entrypoint)
-        finally:
-            os.chdir(previous_cwd)
-
 
 class PythonMachineInterface:
     """Base class for Python bindings of dispatcher machine interfaces.
@@ -494,17 +460,14 @@ class PythonMachineInterface:
 
         from officina.dispatcher import dispatch
 
-        target_kwargs = (
-            {"target": call.interface}
-            if ".interface." in call.interface
-            else {
-                "target_skill": call.target_skill,
-                "script_interface": call.interface,
-            }
-        )
+        if ".interface." not in call.interface:
+            raise ValueError(
+                "dispatch dependencies require a fully qualified "
+                "`<module>.interface.<name>` target"
+            )
         return dispatch(
             caller_skill=call.caller_skill,
-            **target_kwargs,
+            target=call.interface,
             args=list(args or []),
             stdin=stdin,
             target_version=call.version,
@@ -541,7 +504,7 @@ class PythonArgvMachineInterface(PythonMachineInterface):
     """
 
     def parse_args(self, parser: argparse.ArgumentParser, argv: list[str]) -> list[str]:
-        """Return argv unchanged so the legacy CLI parser can handle it."""
+        """Return argv unchanged for an interface-owned CLI parser."""
 
         return argv
 

@@ -2,71 +2,23 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "pooled-review.schema.json",
   "title": "Generated Pooled Blueprint Review",
-  "description": "Expanded human-review artifact. It is not graph or certification authority.",
-  "oneOf": [
-    {"$ref": "#/definitions/legacyReview"},
-    {"$ref": "#/definitions/v4Review"}
-  ],
+  "description": "Expanded certificate-backed human-review artifact. It is not graph or certification authority.",
+  "type": "object",
+  "required": ["schema_version", "document_type", "generated_at", "root", "nodes"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 2},
+    "document_type": {"const": "pooled-blueprint-review"},
+    "generated_at": {"type": ["string", "null"]},
+    "root": {"$ref": "#/definitions/root"},
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/definitions/node"}
+    }
+  },
   "definitions": {
-    "legacyReview": {
-      "type": "object",
-      "required": ["document_type", "generated_at", "root", "nodes"],
-      "additionalProperties": false,
-      "properties": {
-        "document_type": {"const": "pooled-blueprint-review"},
-        "generated_at": {"type": "string", "minLength": 1},
-        "root": {"$ref": "#/definitions/legacyRoot"},
-        "nodes": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/legacyNode"}}
-      }
-    },
-    "legacyRoot": {
-      "type": "object",
-      "required": ["id", "blueprint_path", "artifact_graph_hash", "certified_health_hash"],
-      "additionalProperties": false,
-      "properties": {
-        "id": {"type": "string", "minLength": 1},
-        "blueprint_path": {"const": "blueprint.yaml"},
-        "artifact_graph_hash": {"$ref": "health.schema.json#/definitions/sha256"},
-        "certified_health_hash": {"$ref": "health.schema.json#/definitions/sha256"}
-      }
-    },
-    "legacyNode": {
-      "type": "object",
-      "required": ["id", "blueprint_type", "version", "blueprint_path", "binding_path", "declaration", "health"],
-      "additionalProperties": false,
-      "properties": {
-        "id": {"type": "string", "minLength": 1},
-        "blueprint_type": {"enum": ["skill", "llm-interface", "machine-interface", "behavior-source"]},
-        "version": {"type": "integer", "minimum": 1},
-        "blueprint_path": {"type": "string", "minLength": 1},
-        "binding_path": {"type": ["string", "null"]},
-        "declaration": {"type": "object"},
-        "health": {"$ref": "#/definitions/legacyHealth"}
-      }
-    },
-    "legacyHealth": {
-      "type": "object",
-      "required": ["result", "artifact_graph_hash", "certified_health_hash"],
-      "additionalProperties": false,
-      "properties": {
-        "result": {"const": "passed"},
-        "artifact_graph_hash": {"$ref": "health.schema.json#/definitions/sha256"},
-        "certified_health_hash": {"$ref": "health.schema.json#/definitions/sha256"}
-      }
-    },
-    "v4Review": {
-      "type": "object",
-      "required": ["schema_version", "document_type", "generated_at", "root", "nodes"],
-      "additionalProperties": false,
-      "properties": {
-        "schema_version": {"const": 2},
-        "document_type": {"const": "pooled-blueprint-review"},
-        "generated_at": {"type": ["string", "null"]},
-        "root": {"$ref": "#/definitions/v4Root"},
-        "nodes": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/v4Node"}}
-      }
-    },
-    "v4Root": {
+    "root": {
       "type": "object",
       "required": ["id", "blueprint_path", "node_hash", "certificate_hash"],
       "additionalProperties": false,
@@ -87,7 +39,7 @@
         "certificate_hash": {"$ref": "certificate.schema.json#/definitions/sha256"}
       }
     },
-    "v4Node": {
+    "node": {
       "type": "object",
       "required": ["id", "node_type", "version", "blueprint_path", "gateway_path", "declaration", "certificate"],
       "additionalProperties": false,
@@ -106,6 +58,6 @@
     "authority": "generated-review-only",
     "graph_input": false,
     "health_authority": false,
-    "canonical_source": "legacy health graph or version 4 graph plus current node certificates"
+    "canonical_source": "version 4 graph plus current node certificates"
   }
 }

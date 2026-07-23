@@ -3,9 +3,9 @@ content:
 dependencies:
 - blueprint:
     base: module-root
-    path: blueprints/artifact-health.yaml
-  reason: Imports node-hash and certification-basis evaluation from artifact_health.py.
-  source: common.source.artifact-health
+    path: blueprints/certification-hashing.yaml
+  reason: Imports node-hash and certification-basis evaluation from certification_hashing.py.
+  source: common.source.certification-hashing
   version: 1
 - blueprint:
     base: module-root
@@ -15,9 +15,9 @@ dependencies:
   version: 1
 - blueprint:
     base: module-root
-    path: blueprints/audit-records.yaml
-  reason: Imports certificate log parsing from audit_records.py.
-  source: common.source.audit-records
+    path: blueprints/certificate-records.yaml
+  reason: Imports certificate log parsing from certificate_records.py.
+  source: common.source.certificate-records
   version: 1
 - blueprint:
     base: module-root

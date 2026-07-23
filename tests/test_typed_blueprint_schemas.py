@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -13,13 +12,6 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
 CERTIFICATION_ROOT = REPO_ROOT / "references" / "certification"
-MACHINE_MODULE_FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "machine_modules"
-CONFORMANCE_OPERATION_FIXTURE_ROOT = (
-    REPO_ROOT / "tests" / "fixtures" / "conformance_operations"
-)
-MACHINE_MODULE_EXAMPLE_ROOT = (
-    REPO_ROOT / "docs" / "plans" / "machine-module-contract" / "examples"
-)
 
 
 def _load(name: str) -> dict:
@@ -51,26 +43,12 @@ def _empty_io() -> dict:
     return {"reads": [], "writes": [], "network": []}
 
 
-def _machine_module_fixture(name: str) -> dict:
-    return yaml.safe_load(
-        (MACHINE_MODULE_FIXTURE_ROOT / name).read_text(encoding="utf-8")
-    )
-
-
-def test_common_scopes_v4_blueprint_locators_without_changing_pre_v4() -> None:
+def test_common_scopes_v4_blueprint_locators_to_module_and_repository_roots() -> None:
     common = _load("common.schema.json")
     resolver = jsonschema.RefResolver.from_schema(common)
     definitions = common["definitions"]
-    legacy = jsonschema.Draft7Validator(
-        definitions["blueprintLocator"], resolver=resolver
-    )
     v4 = jsonschema.Draft7Validator(
         definitions["v4BlueprintLocator"], resolver=resolver
-    )
-
-    legacy.validate({"base": "skill-root", "path": ".SKILL.md.blueprint.yaml"})
-    assert list(
-        legacy.iter_errors({"base": "module-root", "path": "blueprints/root.yaml"})
     )
 
     v4.validate({"base": "module-root", "path": "blueprints/root.yaml"})
@@ -80,6 +58,97 @@ def test_common_scopes_v4_blueprint_locators_without_changing_pre_v4() -> None:
     assert list(
         v4.iter_errors({"base": "skill-root", "path": "blueprints/root.yaml"})
     )
+
+
+def test_caller_contract_scopes_relative_paths_to_module_roots() -> None:
+    contract = _load("caller-contract.schema.json")
+    resolver = jsonschema.RefResolver.from_schema(contract)
+    path_type = jsonschema.Draft7Validator(
+        contract["definitions"]["pathType"],
+        resolver=resolver,
+    )
+    value = {
+        "kind": "path",
+        "syntax": "literal",
+        "relative_to": "module-root",
+        "must_exist": True,
+        "access": "read",
+    }
+
+    path_type.validate(value)
+    value["relative_to"] = "skill-root"
+    assert list(path_type.iter_errors(value))
+
+
+def test_live_v4_schema_closure_has_no_legacy_node_schema_reference() -> None:
+    live_schemas = {
+        "schema.json",
+        "module.schema.json",
+        "behavioral-source.schema.json",
+        "common.schema.json",
+        "caller-contract.schema.json",
+        "direct-io.schema.json",
+        "certificate.schema.json",
+        "interface-projection.schema.json",
+    }
+    legacy_names = {
+        "legacy-skill.schema.json",
+        "skill.schema.json",
+        "default-" "llm" "-interface.schema.json",
+        "llm" "-interface.schema.json",
+        "machine-interface.schema.json",
+        "machine" "-module.schema.json",
+        "behavior" "-source.schema.json",
+        "health.schema.json",
+    }
+
+    references: set[str] = set()
+
+    def collect(value: object) -> None:
+        if isinstance(value, list):
+            for child in value:
+                collect(child)
+        elif isinstance(value, dict):
+            reference = value.get("$ref")
+            if isinstance(reference, str):
+                references.add(reference.split("#", 1)[0])
+            for child in value.values():
+                collect(child)
+
+    for name in live_schemas:
+        collect(_load(name))
+
+    assert not (references & legacy_names)
+
+
+def test_common_schema_contains_only_v4_shared_definitions() -> None:
+    definitions = set(_load("common.schema.json")["definitions"])
+
+    assert definitions == {
+        "behavioralSourceId",
+        "contentPatterns",
+        "contractReference",
+        "exportInterfaceId",
+        "gateway",
+        "interfaceId",
+        "interfaceUse",
+        "interfaceUseList",
+        "interfaceVersion",
+        "moduleId",
+        "pattern",
+        "platformSupport",
+        "relativePath",
+        "requirement",
+        "runtimeDependencies",
+        "runtimeDependency",
+        "runtimeDependencyKind",
+        "runtimeSystemServiceName",
+        "sourceContainment",
+        "sourceDependency",
+        "sourceInterfaceId",
+        "v4BlueprintLocator",
+        "v4FilesystemOwnershipList",
+    }
 
 
 def test_v4_requirement_grammar_accepts_names_exact_versions_and_intersections() -> None:
@@ -485,7 +554,7 @@ def test_v4_module_filesystem_authority_uses_generic_interface_readers() -> None
 
     assert _errors(document, "module.schema.json") == []
 
-    ownership["allowed_readers"] = ["other-skill.machine.read"]
+    ownership["allowed_readers"] = ["other-skill" ".machine" "." "read"]
     assert _errors(document, "module.schema.json")
 
 
@@ -503,6 +572,16 @@ def test_live_schema_routes_only_v4_nodes_after_cutover() -> None:
         "module.schema.json",
         "behavioral-source.schema.json",
     ]
+
+
+def test_dispatch_schema_accepts_live_v4_blueprints() -> None:
+    document = yaml.safe_load(
+        (REPO_ROOT / "skills" / "skill-drift" / "blueprint.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert _errors(document) == []
 
 
 def test_node_hash_policy_schema_enforces_ordered_include_exclude_rules() -> None:
@@ -561,14 +640,11 @@ def test_canonical_node_hash_policy_is_closed_and_excludes_only_reserved_outputs
             "**/.pytest_cache/**",
             "**/.cache/**",
             "**/_build/**",
-            "**/build/**",
-            "**/dist/**",
-            "**/.certificates/**",
-            "**/.last_audit.json",
-            "**/.*.health.json",
-            "**/.pooled-blueprint-review.yaml",
-        )
-    ]
+                "**/build/**",
+                "**/dist/**",
+                "**/.certificates/**",
+            )
+        ]
 
 
 def _valid_v4_certificate() -> dict:
@@ -665,511 +741,6 @@ def test_v4_certificate_keeps_runtime_claim_audits_in_versioned_checks() -> None
     assert _errors(runtime_check, "certificate.schema.json") == []
 
 
-def _machine_module_example(name: str) -> dict:
-    return yaml.safe_load(
-        (MACHINE_MODULE_EXAMPLE_ROOT / name).read_text(encoding="utf-8")
-    )
-
-
-def _conformance_operation_fixture(name: str) -> dict:
-    return yaml.safe_load(
-        (CONFORMANCE_OPERATION_FIXTURE_ROOT / name).read_text(encoding="utf-8")
-    )
-
-
-@pytest.fixture
-def health_validator() -> jsonschema.Draft7Validator:
-    return _validator("health.schema.json")
-
-
-@pytest.fixture
-def node_health() -> dict:
-    digest = "sha256:" + "a" * 64
-    return {
-        "health_schema_version": 1,
-        "record_type": "node-health",
-        "subject": {
-            "id": "demo-skill.llm.default",
-            "blueprint_type": "llm-interface",
-            "version": 1,
-            "blueprint_path": ".SKILL.md.blueprint.yaml",
-            "binding_path": "SKILL.md",
-        },
-        "certification": {"result": "passed", "certified_at": "2026-07-13T00:00:00Z"},
-        "certifier": {"interface": "skill-audit.machine.certify", "version": 1},
-        "hashes": {
-            "blueprint_file_hash": digest,
-            "blueprint_contract_hash": digest,
-            "bound_file_hash": digest,
-            "local_hash": digest,
-            "downstream_artifact_hash": digest,
-            "artifact_graph_hash": digest,
-            "downstream_health_hash": digest,
-            "certified_health_hash": digest,
-            "schema_hash": digest,
-            "policy_hash": digest,
-        },
-        "dependencies": [],
-        "checks": [{"id": "schema", "version": 1, "passed": True, "findings": []}],
-        "coverage": {},
-        "record_hash": digest,
-        "authentication": {
-            "scheme": "hmac-sha256",
-            "key_id": "sha256:" + "a" * 16,
-            "mac": "base64:" + "a" * 43 + "=",
-        },
-    }
-
-
-def test_dispatch_schema_accepts_live_v4_blueprints() -> None:
-    document = yaml.safe_load((REPO_ROOT / "skills" / "skill-drift" / "blueprint.yaml").read_text())
-    assert _errors(document) == []
-
-
-def test_live_dispatch_schema_rejects_canonical_machine_module_fixture() -> None:
-    assert _errors(_machine_module_fixture("records.valid.yaml"))
-
-
-def test_frozen_legacy_schema_retains_pre_typed_contract() -> None:
-    content = (SCHEMA_ROOT / "legacy-skill.schema.json").read_bytes()
-
-    assert hashlib.sha256(content).hexdigest() == (
-        "170c42096ad03a071b100bb08fbf31d21788ff0a062eb277328f49ece3d54554"
-    )
-
-
-def test_health_schema_fixes_certifier_interface_version() -> None:
-    certifier = _load("health.schema.json")["definitions"]["certifier"]
-
-    assert certifier["properties"]["version"] == {"const": 1}
-
-
-def test_node_health_requires_commit_backed_source(health_validator, node_health) -> None:
-    node_health["source"] = {
-        "vcs": "git",
-        "commit": "a" * 40,
-        "input_paths": ["skills/demo/SKILL.md", "skills/demo/.SKILL.md.blueprint.yaml"],
-    }
-    health_validator.validate(node_health)
-
-
-def test_node_health_rejects_missing_source(health_validator, node_health) -> None:
-    with pytest.raises(jsonschema.ValidationError):
-        health_validator.validate(node_health)
-
-
-def test_dispatch_schema_rejects_typed_skill_root_after_v4_cutover() -> None:
-    document = {
-        "schema_version": 2,
-        "blueprint_type": "skill",
-        "id": "demo-skill",
-        "category": "development-assistant",
-        "role": "automation",
-        "kind": "tool",
-        "interfaces": [
-            {
-                "interface": "demo-skill.llm.default",
-                "version": 1,
-                "blueprint": {"base": "skill-root", "path": ".SKILL.md.blueprint.yaml"},
-            }
-        ],
-    }
-    assert _errors(document)
-
-
-def test_typed_skill_root_accepts_exactly_one_default_interface_representation() -> None:
-    inline = {
-        "schema_version": 2,
-        "blueprint_type": "skill",
-        "id": "demo-skill",
-        "category": "development-assistant",
-        "role": "automation",
-        "kind": "tool",
-        "default_interface": {
-            "version": 1,
-            "description": "Primary instructions.",
-            "allow_all_skills": True,
-            "uses_interfaces": [],
-            "behavior_sources": [],
-            "direct_io": _empty_io(),
-            "owns_filesystem": [],
-        },
-        "interfaces": [],
-    }
-
-    assert _errors(inline, "v2/skill.schema.json") == []
-
-    neither = {key: value for key, value in inline.items() if key != "default_interface"}
-    assert _errors(neither, "v2/skill.schema.json")
-
-    both = dict(inline)
-    both["interfaces"] = [
-        {
-            "interface": "demo-skill.llm.default",
-            "version": 1,
-            "blueprint": {"base": "skill-root", "path": ".SKILL.md.blueprint.yaml"},
-        }
-    ]
-    assert _errors(both, "v2/skill.schema.json")
-
-
-def test_llm_schema_requires_explicit_file_binding() -> None:
-    document = {
-        "schema_version": 2,
-        "blueprint_type": "llm-interface",
-        "id": "demo-skill.llm.default",
-        "version": 1,
-        "description": "Primary instructions.",
-        "binding": {"kind": "instruction-file", "path": "SKILL.md"},
-        "allow_all_skills": True,
-        "allowed_callers": [],
-        "routing_hints": [],
-        "uses_interfaces": [],
-        "behavior_sources": [],
-        "direct_io": _empty_io(),
-        "owns_filesystem": [],
-    }
-    assert _errors(document, "v2/llm-interface.schema.json") == []
-
-    del document["binding"]
-    assert any(
-        "binding" in error
-        for error in _errors(document, "v2/llm-interface.schema.json")
-    )
-
-
-def test_default_llm_interface_must_bind_skill_md() -> None:
-    document = {
-        "schema_version": 2,
-        "blueprint_type": "llm-interface",
-        "id": "demo-skill.llm.default",
-        "version": 1,
-        "description": "Primary instructions.",
-        "binding": {"kind": "instruction-file", "path": "references/other.md"},
-        "behavior_sources": [],
-        "direct_io": _empty_io(),
-        "owns_filesystem": [],
-    }
-
-    assert _errors(document, "v2/llm-interface.schema.json")
-
-    document["id"] = "demo-skill.llm.specialized"
-    assert _errors(document, "v2/llm-interface.schema.json") == []
-
-
-def test_machine_schema_accepts_python_and_command_file_bindings_only() -> None:
-    base = {
-        "schema_version": 2,
-        "blueprint_type": "machine-interface",
-        "id": "demo-skill.machine.run",
-        "version": 1,
-        "description": "Run the operation.",
-        "usage": "run <path>",
-        "allow_all_skills": False,
-        "allowed_callers": [],
-        "platform_support": {"linux": True, "macos": True, "windows": True},
-        "dependencies": [],
-        "uses_interfaces": [],
-        "behavior_sources": [],
-        "direct_io": _empty_io(),
-        "owns_filesystem": [],
-    }
-    python_document = {
-        **base,
-        "binding": {
-            "kind": "python-entrypoint",
-            "path": "_rtx/_demo_runner.py",
-            "symbol": "Interface",
-            "args_prefix": [],
-        },
-    }
-    command_document = {
-        **base,
-        "binding": {"kind": "command-file", "path": "_cx/_demo_run.sh", "args_prefix": []},
-    }
-    inline_document = {
-        **base,
-        "binding": {"kind": "command-file", "path": "_cx/_demo_run.sh", "command": "bash -c true"},
-    }
-
-    assert _errors(python_document, "v2/machine-interface.schema.json") == []
-    assert _errors(command_document, "v2/machine-interface.schema.json") == []
-    assert _errors(inline_document, "v2/machine-interface.schema.json")
-
-
-def test_machine_bindings_reject_parent_traversal() -> None:
-    base = {
-        "schema_version": 2,
-        "blueprint_type": "machine-interface",
-        "id": "demo-skill.machine.run",
-        "version": 1,
-        "description": "Run.",
-        "usage": "run",
-        "dependencies": [],
-        "behavior_sources": [],
-        "direct_io": _empty_io(),
-        "owns_filesystem": [],
-    }
-
-    for binding in [
-        {"kind": "python-entrypoint", "path": "_rtx/../escape.py", "symbol": "Interface"},
-        {"kind": "command-file", "path": "_cx/../escape"},
-    ]:
-        assert _errors(
-            {**base, "binding": binding}, "v2/machine-interface.schema.json"
-        )
-
-
-def test_behavior_source_schema_allows_behavior_source_and_interface_edges() -> None:
-    document = {
-        "schema_version": 2,
-        "blueprint_type": "behavior-source",
-        "id": "demo-skill.source.policy",
-        "version": 1,
-        "description": "Defines policy.",
-        "binding": {"kind": "file", "path": "references/policy.md"},
-        "content": "config",
-        "format": "markdown",
-        "uses_behavior_sources": [
-            {
-                "source": "demo-skill.source.rules",
-                "version": 1,
-                "blueprint": {
-                    "base": "skill-root",
-                    "path": "references/.rules.md.blueprint.yaml",
-                },
-                "reason": "Supplies detailed rules.",
-            }
-        ],
-    }
-    assert _errors(document, "v2/behavior-source.schema.json") == []
-
-    document["uses_interfaces"] = [
-        {"interface": "other-skill.machine.run", "version": 1}
-    ]
-    assert _errors(document, "v2/behavior-source.schema.json") == []
-
-
-def _valid_skill_v3() -> dict:
-    return {
-        "schema_version": 3,
-        "node_type": "skill",
-        "id": "demo-skill",
-        "category": "development-assistant",
-        "role": "automation",
-        "kind": "tool",
-        "gateway": {"kind": "instruction-file", "path": "SKILL.md"},
-        "content": [r"SKILL\.md"],
-        "default_interface": {
-            "version": 1,
-            "description": "Primary instructions.",
-            "allow_all_skills": True,
-            "uses_interfaces": [],
-            "behavior_sources": [],
-            "direct_io": _empty_io(),
-            "owns_filesystem": [],
-        },
-        "interfaces": [],
-    }
-
-
-def test_version_three_skill_requires_uniform_node_fields() -> None:
-    document = _valid_skill_v3()
-    assert _errors(document, "skill.schema.json") == []
-    assert _errors(document)
-
-    for field in ("node_type", "gateway", "content"):
-        invalid = dict(document)
-        del invalid[field]
-        assert any(field in error for error in _errors(invalid, "skill.schema.json"))
-
-
-def test_version_three_skill_keeps_canonical_pre_v4_interface_edges() -> None:
-    schema = _load("skill.schema.json")
-
-    assert schema["properties"]["interfaces"]["items"] == {
-        "$ref": "common.schema.json#/definitions/interfaceEdge"
-    }
-    assert "definitions" not in schema
-
-
-def test_version_three_llm_source_edge_accepts_skill_root_locator() -> None:
-    document = _valid_skill_v3()
-    document["default_interface"]["behavior_sources"] = [
-        {
-            "source": "demo-skill.source.policy",
-            "version": 1,
-            "blueprint": {
-                "base": "skill-root",
-                "path": "references/.policy.md.blueprint.yaml",
-            },
-            "reason": "Supplies policy.",
-        }
-    ]
-
-    assert _errors(document, "skill.schema.json") == []
-
-
-def test_version_three_filesystem_ownership_accepts_legacy_machine_readers() -> None:
-    document = _valid_skill_v3()
-    document["default_interface"]["owns_filesystem"] = [
-        {
-            "match": "exact",
-            "path": "state.json",
-            "allowed_readers": ["other-skill.machine.read"],
-            "reason": "Shares the current state.",
-        }
-    ]
-
-    assert _errors(document, "skill.schema.json") == []
-
-    document["default_interface"]["owns_filesystem"][0]["allowed_readers"] = [
-        "other-skill.interface.read"
-    ]
-    assert _errors(document, "skill.schema.json")
-
-
-@pytest.mark.parametrize(
-    "legacy_field",
-    ["blueprint_type", "binding", "entry_point", "local_hash_inputs"],
-)
-def test_version_three_skill_rejects_replaced_aliases(legacy_field: str) -> None:
-    document = _valid_skill_v3()
-    document[legacy_field] = (
-        {} if legacy_field in {"binding", "entry_point"} else []
-    )
-    assert _errors(document, "skill.schema.json")
-
-
-def test_version_three_skill_requires_inline_default_without_default_sidecar() -> None:
-    document = _valid_skill_v3()
-    del document["default_interface"]
-    assert _errors(document, "skill.schema.json")
-
-    document = _valid_skill_v3()
-    document["interfaces"] = [
-        {
-            "interface": "demo-skill.llm.default",
-            "version": 1,
-            "blueprint": {"base": "skill-root", "path": ".SKILL.md.blueprint.yaml"},
-        }
-    ]
-    assert _errors(document, "skill.schema.json")
-
-
-def test_version_three_llm_interface_uses_gateway_and_content() -> None:
-    document = {
-        "schema_version": 3,
-        "node_type": "llm-interface",
-        "id": "demo-skill.llm.specialized",
-        "version": 1,
-        "description": "Specialized instructions.",
-        "gateway": {
-            "kind": "instruction-file",
-            "path": "llm_interfaces/specialized.md",
-        },
-        "content": [r"llm_interfaces/specialized\.md"],
-        "behavior_sources": [],
-        "direct_io": _empty_io(),
-        "owns_filesystem": [],
-    }
-    assert _errors(document, "llm-interface.schema.json") == []
-
-
-def test_version_three_machine_interface_uses_gateway_and_content() -> None:
-    document = {
-        "schema_version": 3,
-        "node_type": "machine-interface",
-        "id": "demo-skill.machine.run",
-        "version": 1,
-        "description": "Run.",
-        "gateway": {
-            "kind": "python-entrypoint",
-            "path": "_rtx/_run.py",
-            "symbol": "Interface",
-        },
-        "content": [r"_rtx/_run\.py", r"_rtx/helpers/.+\.py"],
-        "platform_support": {"linux": True, "macos": True, "windows": True},
-        "dependencies": [],
-        "behavior_sources": [],
-        "direct_io": _empty_io(),
-        "owns_filesystem": [],
-    }
-    assert _errors(document, "machine-interface.schema.json") == []
-
-
-SEMANTIC_TYPES = (
-    "policy",
-    "instructions",
-    "reference",
-    "configuration",
-    "preference",
-    "schema",
-    "template",
-    "example",
-    "checklist",
-    "dataset",
-)
-
-
-@pytest.mark.parametrize("semantic_type", SEMANTIC_TYPES)
-def test_version_three_behavior_source_uses_closed_semantic_type(
-    semantic_type: str,
-) -> None:
-    document = {
-        "schema_version": 3,
-        "node_type": "behavior-source",
-        "id": "demo-skill.source.policy",
-        "version": 1,
-        "description": "Defines policy.",
-        "gateway": {"kind": "file", "path": "references/policy.md"},
-        "content": [r"references/policy\.md"],
-        "semantic_type": semantic_type,
-        "format": "markdown",
-        "uses_behavior_sources": [],
-    }
-    assert _errors(document, "behavior-source.schema.json") == []
-
-    document["semantic_type"] = "skill"
-    assert _errors(document, "behavior-source.schema.json")
-
-
-def test_v4_gateway_rejects_target_v3_machine_modules() -> None:
-    document = _machine_module_fixture("records.valid.yaml")
-
-    assert _errors(document)
-
-
-@pytest.mark.parametrize(
-    "removed_field",
-    [
-        "calls",
-        "selector",
-        "accepts",
-        "constraints",
-        "conditional_default",
-        "profile",
-        "draft",
-        "unresolved",
-        "dispatcher_consequences",
-    ],
-)
-def test_target_v3_rejects_removed_machine_contract_structures(
-    removed_field: str,
-) -> None:
-    document = _machine_module_fixture("records.valid.yaml")
-    document["interfaces"]["inspect-records"]["contract"][removed_field] = {}
-
-    assert _errors(document)
-
-
-@pytest.mark.parametrize(
-    "name", ["machine-module.yaml", "advanced-machine-module.yaml"]
-)
-def test_target_machine_module_examples_validate(name: str) -> None:
-    assert _errors(_machine_module_example(name), "machine-module.schema.json") == []
-
-
 @pytest.mark.parametrize(
     "removed_field",
     [
@@ -1194,105 +765,6 @@ def test_v4_rejects_removed_machine_contract_structures(
     interface["contract"][removed_field] = {}
 
     assert _errors(document, "behavioral-source.schema.json")
-
-
-@pytest.mark.parametrize(
-    "name", ["interface-conformance.yaml", "advanced-interface-conformance.yaml"]
-)
-def test_target_conformance_examples_validate(name: str) -> None:
-    schema_path = SCHEMA_ROOT / "interface-conformance.schema.json"
-    assert schema_path.is_file(), "interface-conformance.schema.json is absent"
-    assert _errors(_machine_module_example(name), schema_path.name) == []
-
-
-def test_conformance_boundary_registry_validates() -> None:
-    registry = yaml.safe_load(
-        (SCHEMA_ROOT / "conformance-boundary-operations.yaml").read_text(
-            encoding="utf-8"
-        )
-    )
-
-    _validator("conformance-boundary-operations.schema.json").validate(registry)
-
-
-@pytest.mark.parametrize("fixture_name", ["valid.yaml", "invalid.yaml"])
-def test_conformance_operation_fixtures_cover_every_registered_operation(
-    fixture_name: str,
-) -> None:
-    registry = yaml.safe_load(
-        (SCHEMA_ROOT / "conformance-boundary-operations.yaml").read_text(
-            encoding="utf-8"
-        )
-    )
-    fixtures = _conformance_operation_fixture(fixture_name)
-    registered = {
-        f"{boundary}/{operation}"
-        for boundary, operations in registry["boundaries"].items()
-        for operation in operations
-    }
-
-    assert set(fixtures) == registered
-    for operation_id, fixture in fixtures.items():
-        boundary, operation = operation_id.split("/", 1)
-        specification = registry["boundaries"][boundary][operation]
-        for envelope in ("request", "success"):
-            reference = specification[f"{envelope}_schema"]
-            validator = _validator(reference["path"])
-            subschema = validator.schema
-            for component in reference["fragment"].removeprefix("#/").split("/"):
-                subschema = subschema[component]
-            errors = list(validator.evolve(schema=subschema).iter_errors(fixture[envelope]))
-            if fixture_name == "valid.yaml":
-                assert errors == [], f"{operation_id}:{envelope}: {errors}"
-            else:
-                assert errors, f"{operation_id}:{envelope} unexpectedly valid"
-
-
-def test_target_v3_rejects_command_gateways() -> None:
-    document = _machine_module_fixture("records.valid.yaml")
-    document["gateway"] = {
-        "kind": "command-file",
-        "path": "_cx/records",
-        "args_prefix": [],
-    }
-
-    assert _errors(document, "machine-module.schema.json")
-
-
-def test_target_recursive_type_branches_reject_irrelevant_fields() -> None:
-    document = _machine_module_fixture("records.valid.yaml")
-    string_type = document["interfaces"]["inspect-records"]["contract"][
-        "arguments"
-    ]["targets"]["type"]["element_type"]
-    string_type["element_type"] = {"kind": "string"}
-
-    assert _errors(document, "machine-module.schema.json")
-
-
-def test_target_unattended_interaction_rejects_interactive_fields() -> None:
-    document = _machine_module_fixture("records.valid.yaml")
-    interaction = document["interfaces"]["inspect-records"]["contract"][
-        "interaction"
-    ]
-    interaction["channel"] = "tty"
-
-    assert _errors(document, "machine-module.schema.json")
-
-
-def test_target_direct_io_rejects_literal_and_dynamic_path_together() -> None:
-    document = _machine_module_example("advanced-machine-module.yaml")
-    entry = document["interfaces"]["update-record"]["direct_io"]["reads"][0]
-    entry["path"] = "record.json"
-
-    assert _errors(document, "machine-module.schema.json")
-
-
-def test_target_helper_nested_shapes_are_closed() -> None:
-    document = _machine_module_example("advanced-machine-module.yaml")
-    helper = document["interfaces"]["inspect-account"]["helpers"][0]
-    helper["result"]["unknown"] = True
-
-    assert _errors(document, "machine-module.schema.json")
 
 
 def test_v4_recursive_type_branches_reject_irrelevant_fields() -> None:
@@ -1359,14 +831,3 @@ def test_v4_helper_nested_shapes_are_closed() -> None:
     helper["result"]["unknown"] = True
 
     assert _errors(document, "behavioral-source.schema.json")
-
-
-def test_target_long_running_conformance_case_requires_complete_cleanup_branch() -> None:
-    document = _machine_module_example("advanced-interface-conformance.yaml")
-    case = deepcopy(
-        document["exports"]["example-skill.machine.watch-records"]["cases"][0]
-    )
-    del case["cleanup"]
-    document["exports"]["example-skill.machine.watch-records"]["cases"] = [case]
-
-    assert _errors(document, "interface-conformance.schema.json")

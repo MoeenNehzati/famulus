@@ -9,9 +9,11 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from officina.common.certification_view import CertificationDecision  # noqa: E402
 import officina.runtime.python_machine_interface as python_interface  # noqa: E402
 from officina.runtime.python_machine_interface import (  # noqa: E402
     DispatchCall,
@@ -23,6 +25,182 @@ from officina.runtime.python_machine_interface_runner import (  # noqa: E402
     main,
     run_python_machine_interface,
 )
+
+
+class _PassingCertificationView:
+    def check_export(
+        self,
+        module_id: str,
+        interface_id: str,
+        interface_version: int,
+        source_node_id: str | None,
+    ) -> CertificationDecision:
+        return CertificationDecision(True, "current", "Current test certificate.")
+
+
+def _v4_runtime_contract() -> dict[str, object]:
+    return {
+        "arguments": {},
+        "preconditions": [],
+        "interaction": {"mode": "unattended"},
+        "caller_warnings": [],
+        "outputs": [
+            {
+                "id": "result",
+                "audience": "machine",
+                "description": "Result.",
+                "direct_io_ref": "stdout",
+                "type": {"kind": "string"},
+                "cardinality": {"minimum": 1, "maximum": 1},
+                "ordering": "stable",
+                "pagination": {"kind": "none"},
+                "truncation": {"kind": "none"},
+                "empty": "Never empty.",
+            }
+        ],
+        "outcomes": [
+            {
+                "id": "success",
+                "class": "success",
+                "outputs": ["result"],
+                "effects": [],
+                "caller_action": "Continue.",
+            }
+        ],
+        "execution": {
+            "state_effect": "read-only",
+            "lifecycle": "finite",
+            "consistency": {"snapshot": "One invocation."},
+            "verification": [{"method": "output-schema", "output_ref": "result"}],
+        },
+        "helpers": [],
+        "direct_io": {
+            "reads": [],
+            "writes": [
+                {
+                    "id": "stdout",
+                    "medium": "stdout",
+                    "access": "write",
+                    "content": "Result.",
+                    "formats": ["text"],
+                    "sensitivity": "public",
+                }
+            ],
+            "network": [],
+        },
+    }
+
+
+def _write_v4_runtime_module(
+    repo: Path,
+    name: str,
+    *,
+    target: str | None = None,
+    allowed_callers: tuple[str, ...] = (),
+) -> None:
+    module = repo / "skills" / name
+    runtime = module / "_rtx"
+    blueprints = module / "blueprints"
+    runtime.mkdir(parents=True)
+    blueprints.mkdir()
+    (module / "SKILL.md").write_text("Instructions.\n", encoding="utf-8")
+    (runtime / "__init__.py").write_text("", encoding="utf-8")
+    dispatch_source = ""
+    uses_interfaces: list[dict[str, object]] = []
+    if target is not None:
+        target_module = target.split(".interface.", 1)[0]
+        dispatch_source = (
+            "    dispatches = {\n"
+            "        'next': DispatchCall(\n"
+            f"            caller_skill='{name}',\n"
+            f"            target_skill='{target_module}',\n"
+            f"            interface='{target}',\n"
+            "        )\n"
+            "    }\n"
+        )
+        uses_interfaces.append({"interface": target, "version": 1})
+    (runtime / "_worker.py").write_text(
+        "from officina.runtime.python_machine_interface import (\n"
+        "    DispatchCall,\n"
+        "    PythonMachineInterface,\n"
+        ")\n"
+        "class Interface(PythonMachineInterface):\n"
+        f"{dispatch_source}"
+        "    def run(self, args):\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+    source_id = f"{name}.source.worker"
+    source_interface = f"{source_id}.interface.run"
+    (blueprints / "worker.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 4,
+                "node_type": "behavioral_source",
+                "id": source_id,
+                "version": 1,
+                "description": "Worker.",
+                "gateway": {"path": "_rtx/_worker.py", "language": "Python"},
+                "content": [r"_rtx/.*\.py"],
+                "platform_support": {
+                    "linux": True,
+                    "macos": True,
+                    "windows": True,
+                },
+                "runtime_dependencies": [],
+                "dependencies": [],
+                "uses_interfaces": uses_interfaces,
+                "interfaces": {
+                    source_interface: {
+                        "version": 1,
+                        "description": "Run.",
+                        "contract": _v4_runtime_contract(),
+                        "process_binding": {
+                            "kind": "process",
+                            "entry": "Interface",
+                            "arguments": {},
+                            "fixed": [],
+                        },
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (module / "blueprint.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 4,
+                "node_type": "module",
+                "id": name,
+                "version": 1,
+                "description": "Runtime module.",
+                "gateway": {"path": "SKILL.md", "language": "Markdown"},
+                "content": [r"SKILL\.md", r"_rtx/(?:__init__|_worker)\.py"],
+                "authority": {"owns_filesystem": []},
+                "sources": {
+                    source_id: {
+                        "blueprint": {
+                            "base": "module-root",
+                            "path": "blueprints/worker.yaml",
+                        }
+                    }
+                },
+                "exports": {
+                    f"{name}.interface.run": {
+                        "source_interface": source_interface,
+                        "access": {
+                            "allow_all_modules": False,
+                            "allowed_callers": list(allowed_callers),
+                        },
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_dispatch_call_analyzer_resolves_aliases_in_nested_imports() -> None:
@@ -272,15 +450,7 @@ def test_argv_adapter_passes_normal_args_through(
     assert capsys.readouterr().out == "--legacy-flag|value\n"
 
 
-def test_declared_dispatch_method_uses_dispatch_call(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = {}
-
-    def fake_dispatch(**kwargs):
-        captured.update(kwargs)
-        return "ok"
-
-    monkeypatch.setattr("officina.dispatcher.dispatch", fake_dispatch)
-
+def test_declared_dispatch_rejects_local_interface_alias() -> None:
     class Interface(PythonMachineInterface):
         dispatches = {
             "read-cloud": DispatchCall(
@@ -293,13 +463,11 @@ def test_declared_dispatch_method_uses_dispatch_call(monkeypatch: pytest.MonkeyP
         def run(self, args):
             return self.dispatch("read-cloud", args=["x"], stdin="payload", text=True)
 
-    assert Interface().run(None) == "ok"
-    assert captured["caller_skill"] == "demo-skill"
-    assert captured["target_skill"] == "cloud-files"
-    assert captured["script_interface"] == "read"
-    assert captured["args"] == ["x"]
-    assert captured["stdin"] == "payload"
-    assert captured["text"] is True
+    with pytest.raises(
+        ValueError,
+        match=r"fully qualified `<module>\.interface\.<name>`",
+    ):
+        Interface().run(None)
 
 
 def test_declared_dispatch_uses_generic_export_id_without_legacy_rewrite(
@@ -328,73 +496,54 @@ def test_declared_dispatch_uses_generic_export_id_without_legacy_rewrite(
     assert "target_skill" not in captured
 
 
-def test_dispatch_dependency_resolver_follows_transitive_dispatches(tmp_path: Path) -> None:
-    def write(path: Path, text: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+def test_dependency_resolver_uses_private_trace_certification_seam(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    certification_view = object()
+    sentinel = object()
+    captured = {}
 
-    write(
-        tmp_path / "skills" / "source-skill" / "blueprint.yaml",
-        "category: workflow-general-assistant\n"
-        "interfaces:\n"
-        "  machine:\n"
-        "    source:\n"
-        "      version: 1\n"
-        "      uses_interfaces:\n"
-        "        - interface: middle-skill.machine.middle\n"
-        "          version: 1\n",
+    def resolve_for_trace(**kwargs):
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(
+        "officina.dispatcher.core._resolve_dispatch_metadata_for_trace",
+        resolve_for_trace,
     )
-    write(tmp_path / "skills" / "middle-skill" / "_rtx" / "__init__.py", "")
-    write(
-        tmp_path / "skills" / "middle-skill" / "_rtx" / "_middle.py",
-        "from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface\n"
-        "\n"
-        "class Interface(PythonMachineInterface):\n"
-        "    dispatches = {\n"
-        "        'leaf': DispatchCall(\n"
-        "            caller_skill='middle-skill',\n"
-        "            target_skill='leaf-skill',\n"
-        "            interface='leaf',\n"
-        "        )\n"
-        "    }\n"
-        "    def run(self, args):\n"
-        "        return 0\n",
+    call = DispatchCall(
+        caller_skill="demo-skill",
+        target_skill="cloud-files",
+        interface="cloud-files.interface.read",
     )
-    write(
-        tmp_path / "skills" / "middle-skill" / "blueprint.yaml",
-        "category: workflow-general-assistant\n"
-        "interfaces:\n"
-        "  machine:\n"
-        "    middle:\n"
-        "      version: 1\n"
-        "      allowed_callers: [source-skill]\n"
-        "      uses_interfaces:\n"
-        "        - interface: leaf-skill.machine.leaf\n"
-        "          version: 1\n"
-        "      invocation:\n"
-        "        kind: python_machine_interface\n"
-        "        entrypoint: _rtx/_middle.py:Interface\n",
+
+    result = DispatchDependencyResolver(
+        repo_root=tmp_path,
+        certification_view=certification_view,
+    ).resolve_call(call)
+
+    assert result is sentinel
+    assert captured["target"] == "cloud-files.interface.read"
+    assert captured["certification_view"] is certification_view
+
+
+def test_dependency_resolver_collects_transitive_v4_dispatches(tmp_path: Path) -> None:
+    _write_v4_runtime_module(
+        tmp_path,
+        "source-skill",
+        target="middle-skill.interface.run",
     )
-    write(tmp_path / "skills" / "leaf-skill" / "_rtx" / "__init__.py", "")
-    write(
-        tmp_path / "skills" / "leaf-skill" / "_rtx" / "_leaf.py",
-        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
-        "\n"
-        "class Interface(PythonMachineInterface):\n"
-        "    def run(self, args):\n"
-        "        return 0\n",
+    _write_v4_runtime_module(
+        tmp_path,
+        "middle-skill",
+        target="leaf-skill.interface.run",
+        allowed_callers=("source-skill",),
     )
-    write(
-        tmp_path / "skills" / "leaf-skill" / "blueprint.yaml",
-        "category: workflow-general-assistant\n"
-        "interfaces:\n"
-        "  machine:\n"
-        "    leaf:\n"
-        "      version: 1\n"
-        "      allowed_callers: [middle-skill]\n"
-        "      invocation:\n"
-        "        kind: python_machine_interface\n"
-        "        entrypoint: _rtx/_leaf.py:Interface\n",
+    _write_v4_runtime_module(
+        tmp_path,
+        "leaf-skill",
+        allowed_callers=("middle-skill",),
     )
 
     class SourceInterface(PythonMachineInterface):
@@ -402,60 +551,38 @@ def test_dispatch_dependency_resolver_follows_transitive_dispatches(tmp_path: Pa
             "middle": DispatchCall(
                 caller_skill="source-skill",
                 target_skill="middle-skill",
-                interface="middle",
+                interface="middle-skill.interface.run",
             )
         }
 
-    dependencies = DispatchDependencyResolver(repo_root=tmp_path).collect(SourceInterface())
+    dependencies = DispatchDependencyResolver(
+        repo_root=tmp_path,
+        certification_view=_PassingCertificationView(),
+    ).collect(SourceInterface())
 
     assert [(item.key, item.resolved.target) for item in dependencies] == [
-        ("middle", "middle-skill.machine.middle"),
-        ("leaf", "leaf-skill.machine.leaf"),
+        ("middle", "middle-skill.interface.run"),
+        ("next", "leaf-skill.interface.run"),
     ]
     assert [item.depth for item in dependencies] == [0, 1]
 
 
-def test_repeated_dependency_collection_does_not_retain_file_descriptors(
+def test_repeated_v4_dependency_collection_does_not_retain_file_descriptors(
     tmp_path: Path,
 ) -> None:
     proc_fds = Path("/proc/self/fd")
     if not proc_fds.is_dir():
-        # famulus-skip: category=platform-contract; reason=FD enumeration requires procfs; alternate=metadata-only resolver tests cover deterministic closure
+        # famulus-skip: category=platform-contract; reason=FD enumeration requires procfs; alternate=metadata resolver tests cover deterministic closure
         pytest.skip("descriptor-count assertion requires /proc/self/fd")
-
-    def write(path: Path, text: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-
-    write(
-        tmp_path / "skills" / "source-skill" / "blueprint.yaml",
-        "category: workflow-general-assistant\n"
-        "interfaces:\n"
-        "  machine:\n"
-        "    source:\n"
-        "      version: 1\n"
-        "      uses_interfaces:\n"
-        "        - interface: target-skill.machine.run\n"
-        "          version: 1\n",
+    _write_v4_runtime_module(
+        tmp_path,
+        "source-skill",
+        target="target-skill.interface.run",
     )
-    write(tmp_path / "skills" / "target-skill" / "_rtx" / "__init__.py", "")
-    write(
-        tmp_path / "skills" / "target-skill" / "_rtx" / "_run.py",
-        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
-        "class Interface(PythonMachineInterface):\n"
-        "    def run(self, args): return 0\n",
-    )
-    write(
-        tmp_path / "skills" / "target-skill" / "blueprint.yaml",
-        "category: workflow-general-assistant\n"
-        "interfaces:\n"
-        "  machine:\n"
-        "    run:\n"
-        "      version: 1\n"
-        "      allowed_callers: [source-skill]\n"
-        "      invocation:\n"
-        "        kind: python_machine_interface\n"
-        "        entrypoint: _rtx/_run.py:Interface\n",
+    _write_v4_runtime_module(
+        tmp_path,
+        "target-skill",
+        allowed_callers=("source-skill",),
     )
 
     class SourceInterface(PythonMachineInterface):
@@ -463,11 +590,14 @@ def test_repeated_dependency_collection_does_not_retain_file_descriptors(
             "target": DispatchCall(
                 caller_skill="source-skill",
                 target_skill="target-skill",
-                interface="run",
+                interface="target-skill.interface.run",
             )
         }
 
-    resolver = DispatchDependencyResolver(repo_root=tmp_path)
+    resolver = DispatchDependencyResolver(
+        repo_root=tmp_path,
+        certification_view=_PassingCertificationView(),
+    )
     before = len(list(proc_fds.iterdir()))
     retained_results = [resolver.collect(SourceInterface()) for _ in range(20)]
     after = len(list(proc_fds.iterdir()))

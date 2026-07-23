@@ -13,7 +13,7 @@ interfaces:
     contract:
       arguments:
         request:
-          description: Request to certify selected skill names, exact skill-root paths,
+          description: Request to certify selected module names, exact module-root paths,
             or every observed blueprint-backed installed skill.
           required: true
           sensitivity: user-private
@@ -21,14 +21,13 @@ interfaces:
       preconditions: []
       interaction: {mode: interactive, channel: tty, unattended_outcome: review-required}
       caller_warnings:
-      - external-side-effect: Successful delegated certification may create an authentication
-          key and replace node health or pooled-review records; v4 finalization appends
-          signed certificate logs.
+      - external-side-effect: Successful delegated certification may create Ed25519
+          signing material and append signed certificate logs.
       outputs:
       - id: response
         audience: both
-        description: Per-target semantic status, stamp result, pooled status, and any
-          mechanical or post-write failure.
+        description: Per-target certificate result and any mechanical, semantic-review,
+          signing, or post-write verification failure.
         direct_io_ref: write-1
         type: {kind: string, sensitivity: derived-private}
         cardinality: {minimum: 1, maximum: 1}
@@ -37,13 +36,13 @@ interfaces:
         truncation: {kind: none}
         empty: Never empty.
       outcomes:
-      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Treat only targets reported with a current or written stamp as certified.}
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Treat only targets with listed signed certificate entries as certified.}
       - {id: review-required, class: refusal, outputs: [response], effects: [], caller_action: Review the exact blueprint closure against its bound behavior before certification.}
       - {id: failed, class: error, outputs: [response], effects: [], caller_action: Report the affected target and do not claim certification.}
       execution:
         state_effect: read-only
         lifecycle: finite
-        consistency: {live: The response reflects semantic review and commit-backed certification state observed during this invocation.}
+        consistency: {live: The response reflects semantic review and signed certificate state for the exact reviewed commit.}
         verification: [{method: output-schema, output_ref: response}]
       helpers: []
       direct_io:
@@ -52,12 +51,11 @@ interfaces:
         - {id: read-1, medium: prompt, access: read, system: agent-runtime, content: certification request and semantic attestation, formats: [text], sensitivity: user-private}
         writes:
         - {id: write-1, medium: prompt, access: write, system: agent-runtime, content: certification result, formats: [markdown], sensitivity: derived-private}
-    description: Audit exact target closures and report semantic and commit-backed
-      stamp outcomes.
+    description: Certify exact target closures and report signed certificate outcomes.
     version: 1
 node_type: behavioral_source
 schema_version: 4
 uses_interfaces:
-- interface: skill-certifier.source.rtx-audit-certifier.interface.certify
+- interface: skill-certifier.source.rtx-certifier.interface.certify
   version: 1
 version: 1

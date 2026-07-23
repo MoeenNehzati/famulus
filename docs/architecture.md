@@ -77,9 +77,9 @@ outputs are errors; an unmatched exclusion is a no-op.
 The blueprint, gateway, and transitive same-owner closure of authored contracts
 referenced by them are mandatory inputs. A cross-owner contract reference is a
 certification dependency, not a local hash input. A policy rule that excludes a
-mandatory input is an error. Certificates, certificate histories, audit
-records, health records, and pooled-review outputs are non-configurable
-forbidden inputs. Logs, caches, runtime state, and generated output are excluded
+mandatory input is an error. Certificates, certificate histories, signing
+material, and other certifier outputs are non-configurable forbidden inputs.
+Logs, caches, runtime state, and generated output are excluded
 through project policy unless a later rule deliberately re-includes an eligible
 directly owned regular file.
 
@@ -111,7 +111,7 @@ history link makes the certificate suspect.
 Certification evaluates whether gateway-language, gateway-machine,
 runtime-dependency, and platform declarations accurately describe the node's
 content and behavior. These are blueprint-correctness checks, not performance
-or availability tests of the host running the certifier. Their versioned audit
+or availability tests of the host running the certifier. Their versioned review
 results belong in `checks`; certificates contain no host-runtime
 `machine_evidence`.
 
@@ -380,8 +380,8 @@ signing core never accepts a caller-authored payload or treats a repair as
 evidence. After every repair it reloads schema, graph, ownership, dependency,
 and semantic state. Only a clean final pass is hashed, signed, and appended.
 
-Certification uses one cooperative same-user writer: the existing audit writer
-renamed to `skill-certifier`. It owns signing and certificate writes by
+Certification uses one cooperative same-user writer: the existing certificate
+writer, renamed to `skill-certifier`. It owns signing and certificate writes by
 architecture contract; `skill-drift` remains read-only and verifies with the
 public key. Every node has one append-only certificate log. Each complete entry
 contains a payload and its signature; the signature covers the payload only,

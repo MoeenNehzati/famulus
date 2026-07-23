@@ -23,15 +23,15 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `pdf-to-markdown.interface.scripts-check-marker-models` — Check whether required Marker/Surya models are downloaded and cached locally.
   - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown.interface.scripts-check-marker-models`
 - `pdf-to-markdown.interface.scripts-fetch-arxiv-source` — Download and extract the LaTeX source tarball for a paper from arXiv.
   - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown.interface.scripts-fetch-arxiv-source <arxiv-id> <output-dir>`
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `pdf-to-markdown.interface.default` — Primary LLM-facing skill instructions.

@@ -11,16 +11,16 @@ Category: productivity-general-assistant
 Skill Version: 1
 
 Uses Interfaces:
-- `email-triage.source.gateway -> email-triage.source.llm-interfaces-triage.interface.triage@2`
-- `email-triage.source.llm-interfaces-triage -> email-client.interface.default@3`
-- `email-triage.source.llm-interfaces-triage -> email-triage.source.rtx-decision-sink.interface.scripts-log-decision@1`
-- `email-triage.source.llm-interfaces-triage -> email-triage.source.rtx-failure-clearer.interface.scripts-clear-failure@1`
-- `email-triage.source.llm-interfaces-triage -> email-triage.source.rtx-failure-sentinel.interface.scripts-mark-failure@1`
-- `email-triage.source.llm-interfaces-triage -> email-triage.source.rtx-log-compactor.interface.scripts-prune-log@1`
-- `email-triage.source.llm-interfaces-triage -> email-triage.source.rtx-mail-envelope-stream.interface.fetch-filtered-envelopes@1`
-- `email-triage.source.llm-interfaces-triage -> email-triage.source.rtx-watermark-floor.interface.scripts-get-cutoff@1`
-- `email-triage.source.llm-interfaces-triage -> email-triage.source.rtx-watermark-writer.interface.scripts-update-watermark@1`
-- `email-triage.source.llm-interfaces-triage -> list-manager.interface.default@1`
+- `email-triage.source.gateway -> email-triage.source.instructions-triage.interface.triage@2`
+- `email-triage.source.instructions-triage -> email-client.interface.default@3`
+- `email-triage.source.instructions-triage -> email-triage.source.rtx-decision-sink.interface.scripts-log-decision@1`
+- `email-triage.source.instructions-triage -> email-triage.source.rtx-failure-clearer.interface.scripts-clear-failure@1`
+- `email-triage.source.instructions-triage -> email-triage.source.rtx-failure-sentinel.interface.scripts-mark-failure@1`
+- `email-triage.source.instructions-triage -> email-triage.source.rtx-log-compactor.interface.scripts-prune-log@1`
+- `email-triage.source.instructions-triage -> email-triage.source.rtx-mail-envelope-stream.interface.fetch-filtered-envelopes@1`
+- `email-triage.source.instructions-triage -> email-triage.source.rtx-watermark-floor.interface.scripts-get-cutoff@1`
+- `email-triage.source.instructions-triage -> email-triage.source.rtx-watermark-writer.interface.scripts-update-watermark@1`
+- `email-triage.source.instructions-triage -> list-manager.interface.default@1`
 - `email-triage.source.rtx-mail-envelope-stream -> email-client.interface.mail-list@1`
 
 Public Interfaces:
@@ -39,9 +39,9 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `email-triage.interface.fetch-filtered-envelopes` — Fetch email envelopes for one account through email-client and emit only envelopes strictly after the triage watermark.
   - `dispatcher --caller-skill email-triage email-triage.interface.fetch-filtered-envelopes -a <account> --after YYYY-MM-DD`
 - `email-triage.interface.scripts-clear-failure` — Clear a latched triage failure after its cause is fixed, without advancing the watermark.
@@ -61,7 +61,7 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `email-triage.interface.scripts-write-metrics` — Write metrics from a triage run (emails scanned, added to lists, skipped, deduped) to status.json for visibility and debugging.
   - `dispatcher --caller-skill email-triage email-triage.interface.scripts-write-metrics Write the triage run metrics (counts) to state/status.json with timestamps for post-run reporting.`
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `email-triage.interface.default` — Primary LLM-facing skill instructions.

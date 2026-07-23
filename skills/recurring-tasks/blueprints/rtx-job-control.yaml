@@ -203,7 +203,7 @@ interfaces:
         lifecycle: finite
         consistency: {live: Requests an immediate native scheduler run and waits for the backend command result.}
         effects:
-        - {id: start-job, direct_io_ref: write-1, action: execute, value_source: {kind: argument, argument_ref: name}, may_occur_in_outcomes: [passed, failed], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {irreversible: Work already performed by the started job cannot be recalled generically.}}
+        - {id: start-job, direct_io_ref: write-1, action: execute, value_source: {kind: argument, argument_ref: name}, may_occur_in_outcomes: [passed, failed, execution-error], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {irreversible: Work already performed by the started job cannot be recalled generically.}}
         mutation_safety:
           atomicity: {per_effect_only: One scheduler start request is issued.}
           concurrent_invocations: {unsafe: Multiple calls may overlap executions of the same job.}

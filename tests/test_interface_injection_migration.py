@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -12,7 +13,7 @@ import officina.common.interface_injection_migration as migration
 from officina.common.blueprint_graph import (
     BlueprintEdge,
     BlueprintNode,
-    MachineInterfaceExport,
+    InterfaceExport,
     RepositoryBlueprintGraph,
 )
 from officina.common.blueprint_template import load_schema, schema_validator
@@ -90,7 +91,7 @@ def _graph() -> RepositoryBlueprintGraph:
         gateway_path=Path("/repo/skills/provider-skill/_rtx/_worker.py"),
         declaration={},
     )
-    export = MachineInterfaceExport(
+    export = InterfaceExport(
         interface_id="provider-skill.machine.run",
         version=1,
         local_name="run",
@@ -104,7 +105,7 @@ def _graph() -> RepositoryBlueprintGraph:
                 "uses-interface", consumer.node_id, export.interface_id, 1
             ),
         ),
-        machine_exports={export.interface_id: export},
+        exports={export.interface_id: export},
         export_edges=(),
         helper_edges=(),
         certification_edges=(),
@@ -553,6 +554,9 @@ def test_converter_merges_v2_sidecars_by_gateway_and_resolves_sources(
     (skill / "references" / "policy.md").write_text(
         "Policy.\n", encoding="utf-8"
     )
+    (skill / "references" / "base.md").write_text(
+        "Base policy.\n", encoding="utf-8"
+    )
     declarations = {
         "blueprint.yaml": {
             "schema_version": 2,
@@ -663,6 +667,27 @@ def test_converter_merges_v2_sidecars_by_gateway_and_resolves_sources(
             "binding": {"kind": "file", "path": "references/policy.md"},
             "content": "config",
             "format": "markdown",
+            "uses_behavior_sources": [
+                {
+                    "source": "demo-skill.source.base",
+                    "version": 5,
+                    "blueprint": {
+                        "base": "skill-root",
+                        "path": "references/.base.md.blueprint.yaml",
+                    },
+                    "reason": "Supplies the base policy.",
+                }
+            ],
+        },
+        "references/.base.md.blueprint.yaml": {
+            "schema_version": 2,
+            "blueprint_type": "behavior-source",
+            "id": "demo-skill.source.base",
+            "version": 5,
+            "description": "Defines the base policy.",
+            "binding": {"kind": "file", "path": "references/base.md"},
+            "content": "config",
+            "format": "markdown",
             "uses_behavior_sources": [],
         },
     }
@@ -683,6 +708,9 @@ def test_converter_merges_v2_sidecars_by_gateway_and_resolves_sources(
     ]
     policy = conversion.documents[
         Path("skills/demo-skill/blueprints/references-policy.yaml")
+    ]
+    base_policy = conversion.documents[
+        Path("skills/demo-skill/blueprints/references-base.yaml")
     ]
     assert set(runner["interfaces"]) == {
         "demo-skill.source.rtx-runner.interface.first",
@@ -708,6 +736,104 @@ def test_converter_merges_v2_sidecars_by_gateway_and_resolves_sources(
     assert policy["id"] == "demo-skill.source.policy"
     assert policy["version"] == 4
     assert policy["description"] == "Defines policy."
+    assert policy["dependencies"] == [
+        {
+            "source": "demo-skill.source.base",
+            "version": 5,
+            "blueprint": {
+                "base": "module-root",
+                "path": "blueprints/references-base.yaml",
+            },
+            "reason": "Supplies the base policy.",
+        }
+    ]
+    assert base_policy["id"] == "demo-skill.source.base"
+    assert conversion.predecessor_public_graph_projection == {
+        "exports": {
+            "demo-skill.interface.default": {
+                "version": 1,
+                "source_interface": (
+                    "demo-skill.source.gateway.interface.default"
+                ),
+                "access": {
+                    "allow_all_modules": True,
+                    "allowed_callers": [],
+                },
+            },
+            "demo-skill.interface.first": {
+                "version": 2,
+                "source_interface": (
+                    "demo-skill.source.rtx-runner.interface.first"
+                ),
+                "access": {
+                    "allow_all_modules": False,
+                    "allowed_callers": [],
+                },
+            },
+            "demo-skill.interface.second": {
+                "version": 3,
+                "source_interface": (
+                    "demo-skill.source.rtx-runner.interface.second"
+                ),
+                "access": {
+                    "allow_all_modules": True,
+                    "allowed_callers": [],
+                },
+            },
+        }
+    }
+    assert conversion.predecessor_runtime_dependency_projection == {
+        "demo-skill.source.rtx-runner": {
+            "platform_support": {
+                "linux": True,
+                "macos": True,
+                "windows": True,
+            },
+            "runtime_dependencies": [],
+        }
+    }
+    assert conversion.predecessor_semantic_edge_projection == {
+        "demo-skill.source.gateway": {
+            "dependencies": [
+                {
+                    "source": "demo-skill.source.policy",
+                    "version": 4,
+                    "blueprint": {
+                        "base": "module-root",
+                        "path": "blueprints/references-policy.yaml",
+                    },
+                    "reason": "Supplies policy.",
+                }
+            ],
+            "uses_interfaces": [],
+            "content": [r"SKILL\.md"],
+        },
+        "demo-skill.source.policy": {
+            "dependencies": [
+                {
+                    "source": "demo-skill.source.base",
+                    "version": 5,
+                    "blueprint": {
+                        "base": "module-root",
+                        "path": "blueprints/references-base.yaml",
+                    },
+                    "reason": "Supplies the base policy.",
+                }
+            ],
+            "uses_interfaces": [],
+            "content": [r"references/policy\.md"],
+        },
+        "demo-skill.source.base": {
+            "dependencies": [],
+            "uses_interfaces": [],
+            "content": [r"references/base\.md"],
+        },
+        "demo-skill.source.rtx-runner": {
+            "dependencies": [],
+            "uses_interfaces": [],
+            "content": [r"_rtx/_runner\.py"],
+        },
+    }
 
 
 def _supplemental_module_map() -> dict[str, object]:
@@ -923,7 +1049,7 @@ def test_unexported_supplemental_modules_add_no_public_or_runtime_exports(tmp_pa
     )
 
 
-def test_cutover_keeps_reviewed_stale_list_manager_sidecar_non_live() -> None:
+def test_cutover_has_no_stale_list_manager_sidecar() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     map_document = yaml.safe_load(
         (repo_root / "docs/plans/unified-architecture-migration-map.yaml").read_text(
@@ -931,21 +1057,11 @@ def test_cutover_keeps_reviewed_stale_list_manager_sidecar_non_live() -> None:
         )
     )
 
-    stale = Path("skills/list-manager/.SKILL.md.blueprint.yaml")
     non_live = map_document["declarations"]["non_live_local_artifacts"]
-    assert non_live == [
-        {
-            "path": stale.as_posix(),
-            "state": "ignored-stale-local",
-            "disposition": "exclude",
-            "reason": (
-                "the ignored sidecar references a preference gateway and source "
-                "sidecar that do not exist and have no Git history, while the "
-                "tracked root, SKILL.md, and runtime author no such dependency"
-            ),
-        }
-    ]
-    assert (repo_root / stale).is_file()
+    assert non_live == []
+    assert not (
+        repo_root / "skills/list-manager/.SKILL.md.blueprint.yaml"
+    ).exists()
 
 
 def test_excluded_list_manager_sidecar_emits_no_fake_preference_source_or_io() -> None:
@@ -1034,7 +1150,7 @@ def test_active_mapped_input_with_unresolved_behavior_source_is_rejected(
         )
 
 
-def test_live_map_owns_cryptography_on_audit_records_source() -> None:
+def test_live_map_owns_cryptography_on_certificate_records_source() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     map_document = yaml.safe_load(
         (repo_root / "docs/plans/unified-architecture-migration-map.yaml").read_text(
@@ -1055,14 +1171,14 @@ def test_live_map_owns_cryptography_on_audit_records_source() -> None:
         ]
         if module["id"] == "common"
     )
-    audit_records = next(
+    certificate_records = next(
         source
         for source in common_module["sources"]
-        if source["id"] == "common.source.audit-records"
+        if source["id"] == "common.source.certificate-records"
     )
     assert {
         dependency["name"]
-        for dependency in audit_records["runtime_dependencies"]
+        for dependency in certificate_records["runtime_dependencies"]
         if dependency["kind"] == "python-package"
     } == {"cryptography"}
 
@@ -1144,9 +1260,9 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
     } == {"blueprint", "common", "skill-standards"}
     common = documents[Path("src/officina/common/blueprint.yaml")]
     assert set(common["exports"]) == {
-        "common.interface.artifact-health",
+        "common.interface.certification-hashing",
         "common.interface.atomic-files",
-        "common.interface.audit-records",
+        "common.interface.certificate-records",
         "common.interface.blueprint-graph",
         "common.interface.blueprint-template",
         "common.interface.certification-view",
@@ -1159,30 +1275,26 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
         "common.interface.toml-io",
     }
     expected_common_dependencies = {
-        "artifact-health": {
+        "certification-hashing": {
             "atomic-files",
-            "audit-records",
             "blueprint-graph",
-            "blueprint-template",
             "git-provenance",
             "process-binding-compiler",
         },
-        "audit-records": {"atomic-files", "secret-store"},
+        "certificate-records": {"atomic-files", "secret-store"},
         "blueprint-graph": {"blueprint-inventory"},
         "blueprint-inventory": {"atomic-files", "git-provenance"},
         "blueprint-template": set(),
         "certification-view": {
-            "artifact-health",
+            "certification-hashing",
             "atomic-files",
-            "audit-records",
+            "certificate-records",
             "blueprint-graph",
             "blueprint-template",
             "git-provenance",
         },
         "git-provenance": {"atomic-files"},
         "pooled-blueprint": {
-            "artifact-health",
-            "audit-records",
             "blueprint-graph",
             "certification-view",
         },
@@ -1232,7 +1344,7 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
         "allowed_callers": ["skill-maker", "skill-certifier", "skill-drift"],
     }
     for interface_id in (
-        "common.interface.artifact-health",
+        "common.interface.certification-hashing",
         "common.interface.certification-view",
         "common.interface.git-provenance",
         "common.interface.pooled-blueprint",
@@ -1241,7 +1353,7 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
             "allow_all_modules": False,
             "allowed_callers": ["skill-certifier", "skill-drift"],
         }
-    assert common["exports"]["common.interface.audit-records"]["access"] == {
+    assert common["exports"]["common.interface.certificate-records"]["access"] == {
         "allow_all_modules": False,
         "allowed_callers": [
             "install-assistant-tools",
@@ -1274,21 +1386,19 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
             "common.interface.blueprint-graph",
         },
         "skill-certifier": {
-            "common.interface.artifact-health",
+            "common.interface.certification-hashing",
             "common.interface.atomic-files",
-            "common.interface.audit-records",
+            "common.interface.certificate-records",
             "common.interface.blueprint-graph",
             "common.interface.certification-view",
-            "common.interface.git-provenance",
             "common.interface.pooled-blueprint",
+            "common.interface.git-provenance",
         },
         "skill-drift": {
-            "common.interface.artifact-health",
-            "common.interface.audit-records",
+            "common.interface.certification-hashing",
+            "common.interface.certificate-records",
             "common.interface.blueprint-graph",
             "common.interface.certification-view",
-            "common.interface.git-provenance",
-            "common.interface.pooled-blueprint",
         },
     }
     reviewed_source_paths = {
@@ -1299,7 +1409,7 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
             "skills/skill-maker/blueprints/rtx-blueprint-syncer.yaml"
         ),
         "skill-certifier": Path(
-            "skills/skill-certifier/blueprints/rtx-audit-certifier.yaml"
+            "skills/skill-certifier/blueprints/rtx-certifier.yaml"
         ),
         "skill-drift": Path(
             "skills/skill-drift/blueprints/rtx-check-drift-state.yaml"
@@ -1462,7 +1572,7 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
         r"schemas/types/task_entry\.json",
         r"schemas/types/triage_action\.json",
     } <= source_content["skills/list-manager/blueprints/rtx-yaml-store.yaml"]
-    assert r"references/certification\-basis\-roots\.json" in source_content[
+    assert r"references/certification\-basis\-roots\.json" not in source_content[
         "skills/skill-drift/blueprints/rtx-check-drift-state.yaml"
     ]
     assert {
@@ -1666,6 +1776,140 @@ def test_map_loader_rejects_duplicate_yaml_keys(tmp_path: Path) -> None:
         migration.load_blueprint_migration_map(path)
 
 
+def test_active_reference_check_reports_only_nonhistorical_tracked_references(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    active = repo / "src" / "active.py"
+    historical = repo / "docs" / "plans" / "history" / "old.md"
+    migration_test = repo / "tests" / "test_interface_injection_migration.py"
+    for path in (active, historical, migration_test):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    active.write_text(
+        'TARGET = "demo.machine.run"\nOWNER = "skill-audit"\n',
+        encoding="utf-8",
+    )
+    historical.write_text("demo.machine.run\n", encoding="utf-8")
+    migration_test.write_text("demo.machine.run\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    migration_map = {
+        "documents": [
+            {
+                "paths": ["docs/plans/history/**"],
+                "disposition": "preserve",
+                "execution_status": "frozen_history",
+                "target": "historical evidence",
+            }
+        ]
+    }
+
+    findings = migration.check_active_migration_references(repo, migration_map)
+
+    assert [finding.as_document() for finding in findings] == [
+        {
+            "code": "legacy-public-interface-namespace",
+            "path": "src/active.py",
+            "line": 1,
+            "reference": ".machine.",
+        },
+        {
+            "code": "legacy-certifier-name",
+            "path": "src/active.py",
+            "line": 2,
+            "reference": "skill-audit",
+        },
+    ]
+
+
+def test_active_reference_check_reports_legacy_paths_without_reading_untracked_files(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    tracked = repo / "references" / "blueprint" / "health.schema.json"
+    untracked = repo / "src" / "untracked.py"
+    tracked.parent.mkdir(parents=True)
+    untracked.parent.mkdir(parents=True)
+    tracked.write_text("{}\n", encoding="utf-8")
+    untracked.write_text('TARGET = "demo.llm.default"\n', encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "references/blueprint/health.schema.json"],
+        check=True,
+    )
+
+    findings = migration.check_active_migration_references(repo, {})
+
+    assert [finding.as_document() for finding in findings] == [
+        {
+            "code": "legacy-health-authority",
+            "path": "references/blueprint/health.schema.json",
+            "line": 0,
+            "reference": "health.schema.json",
+        }
+    ]
+
+
+def test_active_reference_check_ignores_tracked_files_deleted_from_worktree(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    retired = repo / "references" / "blueprint" / "health.schema.json"
+    retired.parent.mkdir(parents=True)
+    retired.write_text("{}\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    retired.unlink()
+
+    assert migration.check_active_migration_references(repo, {}) == ()
+
+
+def test_post_adoption_cli_checks_map_and_references_without_materializing_candidate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    map_path = repo / "docs" / "plans" / "unified-architecture-migration-map.yaml"
+    map_path.parent.mkdir(parents=True)
+    map_path.write_text(
+        yaml.safe_dump(
+            {
+                "map_version": 1,
+                "authority": {
+                    "version_contract": {"final_runtime_schema_version": 4}
+                },
+                "candidate_source": {},
+                "declarations": {"version_2": {"merge_decisions": []}},
+                "documents": [],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    script_path = (
+        Path(__file__).resolve().parents[1] / "scripts" / "migrate-blueprints-v4.py"
+    )
+    spec = importlib.util.spec_from_file_location("migrate_blueprints_v4", script_path)
+    assert spec is not None and spec.loader is not None
+    command = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(command)
+
+    before = sorted(path.relative_to(repo) for path in repo.rglob("*"))
+    status = command.main(
+        ["--check-map", "--check-active-references"],
+        repo_root=repo,
+    )
+    after = sorted(path.relative_to(repo) for path in repo.rglob("*"))
+
+    assert status == 0
+    assert before == after
+    assert capsys.readouterr().out.splitlines() == [
+        "migration_map_status=valid-post-adoption",
+        "active_reference_findings=0",
+    ]
+
+
 def test_live_cutover_inventory_is_v4_only_and_has_unique_public_ids() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     graph = migration.load_repository_blueprint_graph(repo_root)
@@ -1675,7 +1919,7 @@ def test_live_cutover_inventory_is_v4_only_and_has_unique_public_ids() -> None:
     assert len(graph.exports) == len(set(graph.exports))
 
 
-def test_live_skill_drift_preserves_gateway_parent_helpers_and_package_dependency() -> None:
+def test_live_skill_drift_retires_drift_hash_helper_and_keeps_package_dependency() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     source = yaml.safe_load(
         (
@@ -1687,7 +1931,10 @@ def test_live_skill_drift_preserves_gateway_parent_helpers_and_package_dependenc
         ).read_text(encoding="utf-8")
     )
 
-    assert r"_rtx/_drift_hashes\.py" in source["content"]
+    assert source["content"] == [r"_rtx/_check_drift_state\.py"]
+    assert not (
+        repo_root / "skills" / "skill-drift" / "_rtx" / "_drift_hashes.py"
+    ).exists()
     assert any(
         dependency["source"] == "skill-drift.source.rtx-skill-sources-init"
         for dependency in source["dependencies"]
@@ -1769,7 +2016,7 @@ def test_candidate_conversion_rejects_symlinked_parent(tmp_path: Path) -> None:
 
 
 def _write_candidate_certifier_api_fixture(root: Path) -> str:
-    certifier = root / "skills" / "skill-certifier" / "_rtx" / "_audit_certifier.py"
+    certifier = root / "skills" / "skill-certifier" / "_rtx" / "_node_certifier.py"
     certifier.parent.mkdir(parents=True)
     (root / "src" / "officina").mkdir(parents=True)
     (root / "src" / "officina" / "__init__.py").write_text("")
@@ -2139,7 +2386,7 @@ def test_candidate_inspection_rejects_dirty_execution_bytes(tmp_path: Path) -> N
     candidate = tmp_path / "candidate"
     candidate.mkdir()
     _write_candidate_certifier_api_fixture(candidate)
-    certifier = candidate / "skills/skill-certifier/_rtx/_audit_certifier.py"
+    certifier = candidate / "skills/skill-certifier/_rtx/_node_certifier.py"
     certifier.write_text(certifier.read_text() + "\nDIRTY = True\n")
 
     with pytest.raises(
@@ -2194,7 +2441,7 @@ def test_candidate_certifier_rejects_symlinked_owner_path(tmp_path: Path) -> Non
     candidate.mkdir()
     commit = _write_candidate_certifier_api_fixture(candidate)
     outside = tmp_path / "outside.py"
-    certifier = candidate / "skills/skill-certifier/_rtx/_audit_certifier.py"
+    certifier = candidate / "skills/skill-certifier/_rtx/_node_certifier.py"
     outside.write_bytes(certifier.read_bytes())
     certifier.unlink()
     certifier.symlink_to(outside)

@@ -29,9 +29,9 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `g-calendar.interface.ensure-oauth` — Check g-calendar OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill g-calendar) as part of connecting remotes.
   - `dispatcher --caller-skill g-calendar g-calendar.interface.ensure-oauth --home <dir> [--dry-run]`
   - Check OAuth status and guide setup for g-calendar.
@@ -41,7 +41,7 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
   - `dispatcher --caller-skill g-calendar g-calendar.interface.setup-oauth [--from-json /path/to/client.json]`
   - OAuth setup for Google Calendar access.
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `g-calendar.interface.default` — Primary LLM-facing skill instructions.

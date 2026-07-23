@@ -19,10 +19,6 @@ class ProcessBindingError(ValueError):
     """Raised when an export binding or caller invocation is ambiguous or invalid."""
 
 
-# Temporary pre-v4 source compatibility.
-MachineInterfaceBindingError = ProcessBindingError
-
-
 @dataclass(frozen=True)
 class ParsedCallerInvocation:
     values: Mapping[str, object]
@@ -51,17 +47,10 @@ def gateway_language_name(requirement: str) -> str:
 
 
 def _process_binding(export: InterfaceExport) -> Mapping[str, Any]:
-    if export.source_node_id is not None:
-        binding = export.declaration.get("process_binding")
-        if not isinstance(binding, Mapping) or binding.get("kind") != "process":
-            raise ProcessBindingError(
-                f"{export.interface_id}: interface is not process-bindable"
-            )
-        return binding
-    binding = export.declaration.get("invocation_binding")
-    if not isinstance(binding, Mapping):
+    binding = export.declaration.get("process_binding")
+    if not isinstance(binding, Mapping) or binding.get("kind") != "process":
         raise ProcessBindingError(
-            f"{export.interface_id}: invocation_binding must be a mapping"
+            f"{export.interface_id}: interface is not process-bindable"
         )
     return binding
 
@@ -80,34 +69,33 @@ def _arguments(export: InterfaceExport) -> dict[str, dict[str, Any]]:
                 f"{export.interface_id}: every argument must be a named mapping"
             )
         result[argument_id] = dict(declaration)
-    if export.source_node_id is not None:
-        raw_bindings = _process_binding(export).get("arguments", {})
-        if not isinstance(raw_bindings, Mapping):
+    raw_bindings = _process_binding(export).get("arguments", {})
+    if not isinstance(raw_bindings, Mapping):
+        raise ProcessBindingError(
+            f"{export.interface_id}: process_binding.arguments must be a mapping"
+        )
+    unknown = sorted(set(raw_bindings) - set(result))
+    missing = sorted(set(result) - set(raw_bindings))
+    if unknown:
+        raise ProcessBindingError(
+            f"{export.interface_id}: process binding has unknown arguments {unknown}"
+        )
+    if missing:
+        raise ProcessBindingError(
+            f"{export.interface_id}: process binding is missing arguments {missing}"
+        )
+    for argument_id, binding in raw_bindings.items():
+        if not isinstance(binding, Mapping):
             raise ProcessBindingError(
-                f"{export.interface_id}: process_binding.arguments must be a mapping"
+                f"{export.interface_id}: binding for {argument_id} must be a mapping"
             )
-        unknown = sorted(set(raw_bindings) - set(result))
-        missing = sorted(set(result) - set(raw_bindings))
-        if unknown:
-            raise ProcessBindingError(
-                f"{export.interface_id}: process binding has unknown arguments {unknown}"
-            )
-        if missing:
-            raise ProcessBindingError(
-                f"{export.interface_id}: process binding is missing arguments {missing}"
-            )
-        for argument_id, binding in raw_bindings.items():
-            if not isinstance(binding, Mapping):
-                raise ProcessBindingError(
-                    f"{export.interface_id}: binding for {argument_id} must be a mapping"
-                )
-            result[argument_id]["invocation_binding"] = dict(binding)
+        result[argument_id]["invocation_binding"] = dict(binding)
     return result
 
 
 def _fixed_bindings(export: InterfaceExport) -> list[dict[str, Any]]:
     invocation = _process_binding(export)
-    raw = invocation.get("fixed", []) if export.source_node_id is not None else invocation.get("fixed")
+    raw = invocation.get("fixed", [])
     if not isinstance(raw, list):
         raise ProcessBindingError(
             f"{export.interface_id}: process binding fixed values must be a list"
@@ -122,8 +110,6 @@ def _fixed_bindings(export: InterfaceExport) -> list[dict[str, Any]]:
 def _authored_pattern_binding(
     export: InterfaceExport,
 ) -> Mapping[str, Any] | None:
-    if export.source_node_id is None:
-        return None
     binding = _process_binding(export)
     if "patterns" not in binding:
         return None
@@ -557,7 +543,7 @@ def select_authored_argv_pattern(
         raise ProcessBindingError("patterns: expected list")
     if not patterns:
         raise ProcessBindingError(
-            "machine interface must have at least one pattern when `patterns` is declared"
+            "process binding must have at least one pattern when `patterns` is declared"
         )
     matching: Mapping[str, object] | None = None
     matching_name = ""
@@ -744,15 +730,11 @@ def _value_tokens(value: object) -> list[str]:
     return [_encode(value)]
 
 
-def _require_export_owner(module: BlueprintNode, export: InterfaceExport) -> None:
-    if export.source_node_id is None:
-        if module.node_type != "machine-module" or module.node_id != export.module_node_id:
-            raise ProcessBindingError(
-                f"{export.interface_id}: owning machine module does not match"
-            )
-    elif (
-        module.node_type != "behavioral_source"
-        or module.node_id != export.source_node_id
+def _require_export_owner(source: BlueprintNode, export: InterfaceExport) -> None:
+    if (
+        export.source_node_id is None
+        or source.node_type != "behavioral_source"
+        or source.node_id != export.source_node_id
     ):
         raise ProcessBindingError(
             f"{export.interface_id}: owning behavioral source does not match"

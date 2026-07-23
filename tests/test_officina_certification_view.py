@@ -8,17 +8,25 @@ import pytest
 import yaml
 
 import officina.common.certification_view as certification_view_module
-from officina.common.artifact_health import compute_node_hash_states
-from officina.common.audit_records import (
+from officina.common.certification_hashing import NodeHashState, compute_node_hash_states
+from officina.common.certificate_records import (
     canonical_certificate_envelope_bytes,
     certificate_entry_hash,
     load_or_create_certificate_signing_key,
     rotate_certificate_signing_key,
     sign_certificate_payload,
 )
-from officina.common.blueprint_graph import load_repository_blueprint_graph
+from officina.common.blueprint_graph import (
+    BlueprintNode,
+    RepositoryBlueprintGraph,
+    load_repository_blueprint_graph,
+)
 from officina.common.certification_view import (
+    CertificateNodeCurrentness,
+    CertificateCurrentnessReport,
     CertificateCurrentnessView,
+    RepositoryCertificationView,
+    RepositoryCertificationState,
     certificate_log_path,
     evaluate_certificate_currentness,
 )
@@ -450,22 +458,6 @@ def test_export_requires_its_exact_source_but_containment_does_not_stale_module(
     assert decision.code == "source-certification-unavailable"
 
 
-def test_legacy_export_requires_only_its_module_certificate(tmp_path: Path) -> None:
-    graph, states, commit, public_key_root, _backend, _key = _fixture(tmp_path)
-    certificate_log_path(graph.nodes["demo-skill.source.gateway"]).unlink()
-
-    report = _evaluate(tmp_path, graph, states, commit, public_key_root)
-    decision = CertificateCurrentnessView(report).check_export(
-        "demo-skill",
-        "demo-skill.machine.run",
-        1,
-        None,
-    )
-
-    assert report.nodes["demo-skill"].current
-    assert decision.certified
-
-
 def test_rotation_with_linked_new_final_entries_remains_current(tmp_path: Path) -> None:
     graph, states, commit, public_key_root, backend, old_key = _fixture(tmp_path)
     new_key = rotate_certificate_signing_key(public_key_root, secret_backend=backend)
@@ -553,3 +545,201 @@ def test_schema_rejects_invalid_historical_certificate_data(tmp_path: Path) -> N
 
     assert not status.current
     assert "invalid-certificate-schema" in status.concerns
+
+
+def test_zero_certificate_view_admits_only_exact_certifier_bootstrap_calls(
+    tmp_path: Path,
+) -> None:
+    view = RepositoryCertificationView(
+        CertificateCurrentnessReport(nodes={}),
+        repo_root=tmp_path,
+        source_commit="a" * 40,
+        bootstrap_allowed=True,
+    )
+
+    assert view.check_bootstrap(
+        caller_module_id="skill-certifier",
+        interface_id="skill-certifier.interface.certify",
+        pattern_name=None,
+        argv=(
+            "certify",
+            "skill-certifier",
+            "--reviewed-repository",
+            str(tmp_path),
+            "--reviewed-commit",
+            "a" * 40,
+        ),
+    ).certified
+    assert view.check_bootstrap(
+        caller_module_id="skill-certifier",
+        interface_id="skill-drift.interface.compute-hashes",
+        pattern_name=None,
+        argv=("compute-hashes", "--json"),
+    ).certified
+    assert view.check_bootstrap(
+        caller_module_id="skill-certifier",
+        interface_id="skill-maker.interface.sync-blueprints",
+        pattern_name="check",
+        argv=("--check",),
+    ).certified
+
+    rejected = (
+        (
+            "daily-plan",
+            "skill-certifier.interface.certify",
+            None,
+            (
+                "certify",
+                "skill-certifier",
+                "--reviewed-repository",
+                str(tmp_path),
+                "--reviewed-commit",
+                "a" * 40,
+            ),
+        ),
+        (
+            "skill-certifier",
+            "skill-certifier.interface.certify",
+            None,
+            ("certify",),
+        ),
+        (
+            "skill-certifier",
+            "skill-certifier.interface.certify",
+            None,
+            (
+                "certify",
+                "other-module",
+                "--reviewed-repository",
+                str(tmp_path),
+                "--reviewed-commit",
+                "a" * 40,
+            ),
+        ),
+        (
+            "skill-certifier",
+            "skill-maker.interface.sync-blueprints",
+            "sync",
+            (),
+        ),
+        (
+            "skill-certifier",
+            "skill-drift.interface.drift-status",
+            None,
+            ("status", "--json"),
+        ),
+        (
+            "skill-certifier",
+            "unrelated.interface.run",
+            None,
+            (),
+        ),
+    )
+    for caller, interface_id, pattern_name, argv in rejected:
+        assert not view.check_bootstrap(
+            caller_module_id=caller,
+            interface_id=interface_id,
+            pattern_name=pattern_name,
+            argv=argv,
+        ).certified
+
+
+def test_repository_view_never_bootstraps_when_initial_state_is_not_clean(
+    tmp_path: Path,
+) -> None:
+    view = RepositoryCertificationView(
+        CertificateCurrentnessReport(nodes={}),
+        repo_root=tmp_path,
+        source_commit="a" * 40,
+        bootstrap_allowed=False,
+    )
+
+    decision = view.check_bootstrap(
+        caller_module_id="skill-certifier",
+        interface_id="skill-drift.interface.compute-hashes",
+        pattern_name=None,
+        argv=("compute-hashes", "--json"),
+    )
+
+    assert not decision.certified
+    assert decision.code == "certification-unavailable"
+
+
+def test_initial_certification_can_resume_only_a_current_dependency_first_prefix(
+    tmp_path: Path,
+) -> None:
+    nodes = {
+        node_id: BlueprintNode(
+            node_id=node_id,
+            node_type="module" if node_id == "skill-certifier" else "behavioral_source",
+            version=1,
+            skill_root=tmp_path / "skills" / "skill-certifier",
+            blueprint_path=tmp_path / f"{node_id}.yaml",
+            gateway_path=None,
+            declaration={"schema_version": 4},
+        )
+        for node_id in ("dependency", "skill-certifier")
+    }
+    graph = RepositoryBlueprintGraph(
+        nodes=nodes,
+        node_edges=(),
+        exports={},
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+        module_sources={},
+        direct_file_owners={},
+    )
+    states = {
+        "dependency": NodeHashState(),
+        "skill-certifier": NodeHashState(
+            dependency_hashes=(
+                {"relation": "uses-source", "target": "dependency", "version": 1},
+            )
+        ),
+    }
+
+    def state(existing: set[str], *, current: bool = True) -> RepositoryCertificationState:
+        for node_id, node in nodes.items():
+            path = certificate_log_path(node)
+            if node_id in existing:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("{}\n", encoding="utf-8")
+            elif path.exists():
+                path.unlink()
+        report = CertificateCurrentnessReport(
+            nodes={
+                node_id: CertificateNodeCurrentness(
+                    node_id=node_id,
+                    current=current if node_id in existing else False,
+                    concerns=(
+                        ()
+                        if node_id in existing and current
+                        else ("suspect-certificate-log",)
+                        if node_id in existing
+                        else ("missing-certificate-log",)
+                    ),
+                    certificate={} if node_id in existing else None,
+                )
+                for node_id in nodes
+            }
+        )
+        return RepositoryCertificationState(
+            graph=graph,
+            states=states,
+            source_commit="a" * 40,
+            certification_basis_hash="sha256:" + "b" * 64,
+            certifier_identity={},
+            currentness=report,
+        )
+
+    assert certification_view_module._initial_certificate_state_admissible(state(set()))
+    assert certification_view_module._initial_certificate_state_admissible(
+        state({"dependency"})
+    )
+    assert not certification_view_module._initial_certificate_state_admissible(
+        state({"skill-certifier"})
+    )
+    assert not certification_view_module._initial_certificate_state_admissible(
+        state({"dependency"}, current=False)
+    )

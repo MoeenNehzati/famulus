@@ -11,12 +11,12 @@ Category: workflow-general-assistant
 Skill Version: 1
 
 Uses Interfaces:
-- `connect-google.source.gateway -> connect-google.source.llm-interfaces-connect-services.interface.connect-services@1`
-- `connect-google.source.gateway -> connect-google.source.llm-interfaces-create-client.interface.create-client@1`
+- `connect-google.source.gateway -> connect-google.source.instructions-connect-services.interface.connect-services@1`
+- `connect-google.source.gateway -> connect-google.source.instructions-create-client.interface.create-client@1`
 - `connect-google.source.gateway -> connect-google.source.rtx-client-config.interface.client-status@1`
-- `connect-google.source.llm-interfaces-connect-services -> connect-google.source.rtx-client-config.interface.client-status@1`
-- `connect-google.source.llm-interfaces-connect-services -> connect-google.source.rtx-client-config.interface.install-client@1`
-- `connect-google.source.llm-interfaces-create-client -> connect-google.source.llm-interfaces-connect-services.interface.connect-services@1`
+- `connect-google.source.instructions-connect-services -> connect-google.source.rtx-client-config.interface.client-status@1`
+- `connect-google.source.instructions-connect-services -> connect-google.source.rtx-client-config.interface.install-client@1`
+- `connect-google.source.instructions-create-client -> connect-google.source.instructions-connect-services.interface.connect-services@1`
 - `connect-google.source.rtx-client-config -> common.interface.oauth-json@1`
 
 Public Interfaces:
@@ -29,15 +29,15 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `connect-google.interface.client-status` — Report whether the canonical Google Desktop OAuth client is missing, valid, or invalid without exposing its secrets.
   - `dispatcher --caller-skill connect-google connect-google.interface.client-status [--home <dir>]`
 - `connect-google.interface.install-client` — Validate a Google Desktop OAuth client JSON and atomically install a private canonical copy.
   - `dispatcher --caller-skill connect-google connect-google.interface.install-client --from-json <client-json> [--replace] [--home <dir>]`
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `connect-google.interface.connect-services` — Install or reuse a Google Desktop OAuth client and hand selected Google services to their owning skills.
@@ -62,7 +62,7 @@ selection to its owning service skill.
 
 Never commit, publish, quote, or log the client JSON. Do not request, inspect,
 or move service access tokens, refresh tokens, account records, or user data.
-Do not invoke service machine interfaces; the service skills invoke this skill
+Do not invoke service-owned process interfaces; the service skills invoke this skill
 for client preparation and retain the entire authorization workflow.
 
 @./personal-preferences/default.md

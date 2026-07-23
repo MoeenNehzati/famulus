@@ -19,7 +19,7 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `git-workflow.interface.default` — Check branch and ownership boundaries first, then perform only explicitly authorized and exactly scoped Git mutations.

@@ -35,7 +35,7 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `technical-flow-review.interface.default` — Diagnose technical-document flow relative to its inferred profile and propose structural direction without unapproved rewriting.

@@ -4,9 +4,6 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
-from typing import Any
-
-import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = REPO_ROOT / "src"
@@ -25,36 +22,6 @@ from validators.skill_md_body import (  # noqa: E402
     hand_authored_skill_body,
     strip_fenced_code_blocks,
 )
-
-
-def _expect_mapping(value: Any) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        return {}
-    return value
-
-
-def _interface_ids(blueprint: dict[str, Any], only_visible: bool = False) -> list[str]:
-    """Return sorted list of interface IDs from blueprint.
-
-    If only_visible=True, return only interfaces that have a description (those that
-    the sync tool will expose in the generated block). Internal interfaces omit description.
-    """
-    interfaces = _expect_mapping(blueprint.get("interfaces"))
-    machine = _expect_mapping(interfaces.get("machine"))
-    result: list[str] = []
-    for name, spec in sorted(machine.items()):
-        if not isinstance(spec, dict):
-            continue
-        if only_visible:
-            desc = spec.get("description")
-            if not (isinstance(desc, str) and desc.strip()):
-                continue
-        result.append(str(name))
-    return result
-
-
 def _body_for_invocation_check(text: str) -> str:
     """Strip generated blocks and code fences before checking for invocation violations.
 
@@ -165,10 +132,12 @@ def _validate_v4(
 
 
 def validate(repo_root: Path) -> list[str]:
-    errors: list[str] = []
     skills_root = repo_root / "skills"
-    if not skills_root.is_dir():
-        return errors
+    if (
+        not skills_root.is_dir()
+        or not any(skills_root.glob("*/blueprint.yaml"))
+    ):
+        return []
 
     schema_root = repo_root / "references" / "blueprint"
     try:
@@ -178,45 +147,7 @@ def validate(repo_root: Path) -> list[str]:
         )
     except (BlueprintGraphError, BlueprintInventoryError, OSError, UnicodeError) as exc:
         return [str(exc)]
-    if any(
-        node.declaration.get("schema_version") == 4
-        for node in repository_graph.nodes.values()
-    ):
-        return _validate_v4(repository_graph, repo_root)
-
-    for blueprint_path in sorted(skills_root.glob("*/blueprint.yaml")):
-        skill_name = blueprint_path.parent.name
-        skill_md = blueprint_path.parent / "SKILL.md"
-        if not skill_md.exists():
-            continue
-
-        blueprint = yaml.safe_load(blueprint_path.read_text(encoding="utf-8")) or {}
-        if not isinstance(blueprint, dict):
-            continue
-        all_ids = _interface_ids(blueprint)
-        if not all_ids:
-            continue
-
-        # visible_ids: interfaces with a description (sync tool exposes these in the generated block)
-        visible_ids = _interface_ids(blueprint, only_visible=True)
-
-        text = skill_md.read_text(encoding="utf-8")
-
-        errors.extend(
-            _validate_skill_text(
-                skill_md,
-                skill_name,
-                text,
-                all_ids=all_ids,
-                visible_ids=visible_ids,
-                dispatcher_targets=[
-                    f"{skill_name}.machine.{interface_id}"
-                    for interface_id in visible_ids
-                ],
-            )
-        )
-
-    return errors
+    return _validate_v4(repository_graph, repo_root)
 
 
 def main() -> int:

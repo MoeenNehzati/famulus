@@ -65,7 +65,7 @@ Runs in every install, regardless of mode or which agents you want. Installs:
 - The `dispatcher` launcher — generated into the managed bin directory as
   `<bin-dir>/dispatcher` on Unix-like hosts and `<bin-dir>/dispatcher.bat` on
   Windows. Every skill's `SKILL.md` invokes its own scripts through this
-  command (`dispatcher --caller-skill <skill> <skill> <interface> ...`), so
+  command (`dispatcher --caller-skill <caller> <module>.interface.<name> ...`), so
   this is the one piece of scaffolding almost everything else structurally
   depends on.
 - The `invoke-skill` launcher — used by `recurring-tasks` scheduler jobs to
@@ -74,7 +74,7 @@ Runs in every install, regardless of mode or which agents you want. Installs:
   `<bin-dir>/invoke-skill.bat` on Windows.
 - Required third-party Python packages from
   `references/blueprint/runtime_dependencies.json`, generated from executable
-  interface dependency declarations. First-party code (`script_dispatcher`
+  behavioral-source runtime dependency declarations. First-party code (`officina`
   itself) is deliberately **not** pip-installed — it runs straight from the
   repo via a path baked into the `dispatcher` launcher at generation time, so
   there's never a second copy to drift out of sync. Unix launchers re-exec the
@@ -276,7 +276,7 @@ rather than guessing at what to remove by filename pattern.
 | Flag | Meaning |
 |---|---|
 | `--manifest FILE` | Use a manifest at a non-default path |
-| `--no-pip` | Don't uninstall the `script_dispatcher` pip package (irrelevant here since it's never pip-installed by this installer, but the flag exists for compatibility) |
+| `--no-pip` | Skip cleanup of obsolete separately installed dispatcher packages |
 | `--no-git-hooks` | Don't unset `git config core.hooksPath` |
 | `--purge` | Also remove OAuth credentials/configs under `~/.config/cloud-files` and `~/.config/g-calendar` (left alone by default) |
 
@@ -328,7 +328,7 @@ tw -h                   # Unix only
 dispatcher --help
 
 # In a repo checkout, also verify dispatcher can route every converted
-# Python machine interface to its subprocess entrypoint.
+# Python process-bound interface to its subprocess entrypoint.
 python3 -m pytest -q tests/test_dispatcher_route_smoke.py
 ```
 

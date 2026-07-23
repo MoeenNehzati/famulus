@@ -20,15 +20,15 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `bib-audit.interface.scripts-bib-similarity` — Detect duplicate and version-pair candidates in a .bib file by scoring all entry pairs.
   - `dispatcher --caller-skill bib-audit bib-audit.interface.scripts-bib-similarity <file.bib> [--threshold 0.3]`
 - `bib-audit.interface.scripts-bib-validate-bibtex` — Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects).
   - `dispatcher --caller-skill bib-audit bib-audit.interface.scripts-bib-validate-bibtex <file.bib>`
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `bib-audit.interface.default` — Primary LLM-facing skill instructions.

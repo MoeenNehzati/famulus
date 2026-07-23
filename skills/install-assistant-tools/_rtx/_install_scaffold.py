@@ -147,7 +147,7 @@ def install_certificate_signing_material(
             workflows=workflows,
         )
     try:
-        from officina.common.audit_records import (
+        from officina.common.certificate_records import (
             certificate_public_key_root,
             provision_certificate_signing_material,
         )

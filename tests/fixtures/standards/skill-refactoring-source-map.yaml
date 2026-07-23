@@ -627,32 +627,32 @@ units:
     expected: Identify repeated content or reference material and move it to top-level `references/<name>.md`.
 - source: skill-refactoring-catalog.md
   line: 43
-  text: Use an `@` include only when every route through the owning LLM interface needs
+  text: Use an `@` include only when every instruction route through the source-owned
   targets:
   - target_ref: skill-refactoring.remedies.extract-reference
     field: /steps/1/instruction
-    expected: Use an `@` include only when every route through the owning LLM interface needs the reference; otherwise name the file and its observable read condition in the selected route.
+    expected: Use an `@` include only when every instruction route through the source-owned interface needs the reference; otherwise name the file and its observable read condition in the selected route.
 - source: skill-refactoring-catalog.md
   line: 44
-  text: the reference. When only a particular route needs it, name the file in that
+  text: interface needs the reference. When only a particular route needs it, name the file in that
   targets:
   - target_ref: skill-refactoring.remedies.extract-reference
     field: /steps/1/instruction
-    expected: Use an `@` include only when every route through the owning LLM interface needs the reference; otherwise name the file and its observable read condition in the selected route.
+    expected: Use an `@` include only when every instruction route through the source-owned interface needs the reference; otherwise name the file and its observable read condition in the selected route.
 - source: skill-refactoring-catalog.md
   line: 45
   text: route's instructions, state the observable condition for reading it, and load
   targets:
   - target_ref: skill-refactoring.remedies.extract-reference
     field: /steps/1/instruction
-    expected: Use an `@` include only when every route through the owning LLM interface needs the reference; otherwise name the file and its observable read condition in the selected route.
+    expected: Use an `@` include only when every instruction route through the source-owned interface needs the reference; otherwise name the file and its observable read condition in the selected route.
 - source: skill-refactoring-catalog.md
   line: 46
   text: it only after that route is selected.
   targets:
   - target_ref: skill-refactoring.remedies.extract-reference
     field: /steps/1/instruction
-    expected: Use an `@` include only when every route through the owning LLM interface needs the reference; otherwise name the file and its observable read condition in the selected route.
+    expected: Use an `@` include only when every instruction route through the source-owned interface needs the reference; otherwise name the file and its observable read condition in the selected route.
 - source: skill-refactoring-catalog.md
   line: 47
   text: "**Preserve:** Content must be identical before and after \u2014 only the location changes."

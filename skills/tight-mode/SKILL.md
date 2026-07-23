@@ -19,7 +19,7 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `tight-mode.interface.default` — Answer under persistent tight-mode rules and stop at diagnosis when a material gap requires user agreement before repair.

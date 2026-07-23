@@ -69,14 +69,14 @@ def test_module_and_markdown_gateway_graph() -> None:
         },
         {
             "interface": (
-                "connect-google.source.llm-interfaces-connect-services"
+                "connect-google.source.instructions-connect-services"
                 ".interface.connect-services"
             ),
             "version": 1,
         },
         {
             "interface": (
-                "connect-google.source.llm-interfaces-create-client"
+                "connect-google.source.instructions-create-client"
                 ".interface.create-client"
             ),
             "version": 1,
@@ -85,7 +85,7 @@ def test_module_and_markdown_gateway_graph() -> None:
     assert create_client["uses_interfaces"] == [
         {
             "interface": (
-                "connect-google.source.llm-interfaces-connect-services"
+                "connect-google.source.instructions-connect-services"
                 ".interface.connect-services"
             ),
             "version": 1,
@@ -155,7 +155,7 @@ def test_default_router_contract() -> None:
     assert "connect-services" in text
     assert "connect" in text and "reconnect" in text
     assert "drive" in text and "calendar" in text and "gmail" in text
-    assert "do not invoke service machine interfaces" in text
+    assert "do not invoke service-owned process interfaces" in text
     assert "service skills invoke this skill" in text
     assert "never commit" in text
     assert "dispatcher " not in text
@@ -163,7 +163,7 @@ def test_default_router_contract() -> None:
 
 
 def test_create_client_route_contract() -> None:
-    text = body("llm_interfaces/create-client.md")
+    text = body("instructions/create-client.md")
     for phrase in (
         "external",
             "testing",
@@ -189,7 +189,7 @@ def test_create_client_route_contract() -> None:
 
 
 def test_connect_services_route_contract() -> None:
-    text = body("llm_interfaces/connect-services.md")
+    text = body("instructions/connect-services.md")
     for phrase in (
         "recommend all three",
         "subset",

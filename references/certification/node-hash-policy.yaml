@@ -24,9 +24,3 @@ rules:
     pattern: "**/dist/**"
   - action: exclude
     pattern: "**/.certificates/**"
-  - action: exclude
-    pattern: "**/.last_audit.json"
-  - action: exclude
-    pattern: "**/.*.health.json"
-  - action: exclude
-    pattern: "**/.pooled-blueprint-review.yaml"

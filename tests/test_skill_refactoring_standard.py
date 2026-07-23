@@ -14,7 +14,7 @@ SOURCE_MAP = FIXTURES / "skill-refactoring-source-map.yaml"
 
 SOURCE_DIGESTS = {
     "skill-smells.md": "58949df5f13f3d46af0f9c838933bb993ba8ce72f614f7ef602cd4e9445b62d9",
-    "skill-refactoring-catalog.md": "cfab6b65eda46a9cd32af6544c855475f91cdd6bc1e3b0168d160602ce0a52da",
+    "skill-refactoring-catalog.md": "4acb49a22d9788990661080810988fb3b134f83e1e055825ee32771b0fe91eab",
 }
 
 def load_module(name: str, relative_path: str):

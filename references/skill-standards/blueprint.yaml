@@ -1,7 +1,7 @@
 authority:
   owns_filesystem: []
 content:
-- llm\-interface\-design\.md
+- interface\-design\.md
 - skill\-guidelines\-semantic\-review\.md
 - skill\-guidelines\.md
 - skill\-guidelines\.standard\.yaml
@@ -16,10 +16,10 @@ id: skill-standards
 node_type: module
 schema_version: 4
 sources:
-  skill-standards.source.llm-interface-design:
+  skill-standards.source.interface-design:
     blueprint:
       base: module-root
-      path: blueprints/llm-interface-design.yaml
+      path: blueprints/interface-design.yaml
   skill-standards.source.skill-guidelines:
     blueprint:
       base: module-root

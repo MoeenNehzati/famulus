@@ -4,10 +4,10 @@
 Check naming, discovery, taxonomy, legacy compatibility, and permission semantics that require contextual judgment.
 
 ## review-blueprint
-Check graph-authority, ownership, behavior-source, hashing, and certification meaning beyond schema validity.
+Check graph authority, ownership, behavioral-source, hashing, and certification meaning beyond schema validity.
 
 ## review-interfaces
-Check whether machine and LLM interfaces describe their actual public contracts and immediate IO without leaking internals.
+Check whether source-owned interfaces describe their actual public contracts and immediate I/O without leaking internals.
 
 ## review-runtime
 Check runtime-layer boundaries, import discipline, injection lifecycle, and whether prose names public interfaces rather than private paths.

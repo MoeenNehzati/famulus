@@ -7,8 +7,6 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
-
 import pytest
 import yaml
 
@@ -27,13 +25,7 @@ RUNNER_MODULE = "officina.runtime.python_machine_interface_runner"
 
 @dataclass(frozen=True)
 class RouteSmokeCase:
-    skill: str
-    interface: str
-    canonical_target: str | None = None
-
-    @property
-    def target(self) -> str:
-        return self.canonical_target or f"{self.skill}.machine.{self.interface}"
+    target: str
 
 
 def _v4_contract() -> dict[str, object]:
@@ -100,58 +92,21 @@ def _dispatcher_env() -> dict[str, str]:
     return env
 
 
-def _runtime_invokes_python_runner(invocation: dict[str, Any]) -> bool:
-    return invocation.get("kind") == "python_machine_interface"
-
-
-def _iter_blueprints(repo_root: Path = REPO_ROOT) -> Iterable[tuple[str, dict[str, Any]]]:
-    for blueprint_path in sorted((repo_root / "skills").glob("*/blueprint.yaml")):
-        raw = yaml.safe_load(blueprint_path.read_text(encoding="utf-8")) or {}
-        if isinstance(raw, dict):
-            yield blueprint_path.parent.name, raw
-
-
 def _runner_interfaces(repo_root: Path = REPO_ROOT) -> list[RouteSmokeCase]:
-    v4_source_blueprints = tuple(
-        (repo_root / "skills").glob("*/blueprints/*.yaml")
-    )
-    if v4_source_blueprints:
-        graph = load_repository_blueprint_graph(repo_root)
-        cases: list[RouteSmokeCase] = []
-        for export_id, export in sorted(graph.exports.items()):
-            if export.source_node_id is None:
-                continue
-            source = graph.nodes[export.source_node_id]
-            gateway = source.declaration.get("gateway")
-            language = gateway.get("language") if isinstance(gateway, dict) else None
-            if (
-                isinstance(export.declaration.get("process_binding"), dict)
-                and isinstance(language, str)
-                and gateway_language_name(language) == "Python"
-            ):
-                cases.append(
-                    RouteSmokeCase(
-                        skill=export.module_node_id,
-                        interface=export.local_name,
-                        canonical_target=export_id,
-                    )
-                )
-        return cases
-
+    graph = load_repository_blueprint_graph(repo_root)
     cases: list[RouteSmokeCase] = []
-    for skill_name, blueprint in _iter_blueprints(repo_root):
-        interfaces = blueprint.get("interfaces")
-        if not isinstance(interfaces, dict):
+    for export_id, export in sorted(graph.exports.items()):
+        if export.source_node_id is None:
             continue
-        machine = interfaces.get("machine")
-        if not isinstance(machine, dict):
-            continue
-        for interface_name, interface_spec in machine.items():
-            if not isinstance(interface_name, str) or not isinstance(interface_spec, dict):
-                continue
-            runtime = interface_spec.get("invocation")
-            if isinstance(runtime, dict) and _runtime_invokes_python_runner(runtime):
-                cases.append(RouteSmokeCase(skill=skill_name, interface=interface_name))
+        source = graph.nodes[export.source_node_id]
+        gateway = source.declaration.get("gateway")
+        language = gateway.get("language") if isinstance(gateway, dict) else None
+        if (
+            isinstance(export.declaration.get("process_binding"), dict)
+            and isinstance(language, str)
+            and gateway_language_name(language) == "Python"
+        ):
+            cases.append(RouteSmokeCase(export_id))
     return cases
 
 
@@ -179,61 +134,6 @@ def test_dispatcher_module_cli_help_is_available(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert "Invoke a skill machine interface declared in blueprint.yaml." in result.stdout
     assert "--caller-skill" in result.stdout
-
-
-def test_discovers_python_machine_runner_interfaces(tmp_path: Path) -> None:
-    skill_root = tmp_path / "skills" / "demo-skill"
-    skill_root.mkdir(parents=True)
-    (skill_root / "blueprint.yaml").write_text(
-        """
-category: coding-development-assistant
-interfaces:
-  machine:
-    route-check:
-      version: 1
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/demo.py:Interface
-      patterns:
-        - min_positionals: 1
-""".lstrip(),
-        encoding="utf-8",
-    )
-
-    assert _runner_interfaces(tmp_path) == [RouteSmokeCase("demo-skill", "route-check")]
-
-
-def test_route_smoke_cases_include_all_python_machine_interfaces(tmp_path: Path) -> None:
-    skill_root = tmp_path / "skills" / "demo-skill"
-    skill_root.mkdir(parents=True)
-    (skill_root / "blueprint.yaml").write_text(
-        """
-category: coding-development-assistant
-interfaces:
-  machine:
-    route-check:
-      version: 1
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/demo.py:Interface
-      patterns:
-        - min_positionals: 1
-    requires-project:
-      version: 1
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/demo.py:Interface
-      patterns:
-        - min_positionals: 1
-          max_positionals: 1
-""".lstrip(),
-        encoding="utf-8",
-    )
-
-    assert _route_smoke_cases(tmp_path) == [
-        RouteSmokeCase("demo-skill", "route-check"),
-        RouteSmokeCase("demo-skill", "requires-project"),
-    ]
 
 
 @pytest.mark.parametrize(
@@ -322,7 +222,7 @@ def test_route_smoke_discovers_v4_python_process_exports(
     )
 
     expected = [
-        RouteSmokeCase("demo-skill", "run", "demo-skill.interface.run")
+        RouteSmokeCase("demo-skill.interface.run")
     ] if included else []
     assert _route_smoke_cases(tmp_path) == expected
 
@@ -332,6 +232,10 @@ def test_route_smoke_does_not_fall_back_when_v4_inventory_is_malformed(
 ) -> None:
     module = tmp_path / "skills" / "demo-skill"
     (module / "blueprints").mkdir(parents=True)
+    (module / "blueprint.yaml").write_text(
+        "schema_version: 4\n? [not, a, string]: invalid\n",
+        encoding="utf-8",
+    )
     (module / "blueprints" / "broken.yaml").write_text(
         "schema_version: 4\n? [not, a, string]: invalid\n",
         encoding="utf-8",

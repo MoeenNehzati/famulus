@@ -1,4 +1,4 @@
 # Skill Drift
 
-See [Audit And Drift](../../docs/audit_and_drift.md) for the shared design,
-current behavior, and known gaps for `skill-drift` and `skill-audit`.
+See [Certification and Drift](../../docs/certification_and_drift.md) for the
+shared certificate model and the read-only `skill-drift` behavior.

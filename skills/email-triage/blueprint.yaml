@@ -78,7 +78,7 @@ content:
 - _rtx/_watermark_writer\.py
 - _rtx/_write_metrics\.py
 - check\-triage\-status\.sh
-- llm_interfaces/triage\.md
+- instructions/triage\.md
 - tests/test_fetch_filtered_envelopes\.py
 - tests/test_filter_envelopes\.py
 - tests/test_llm_routing\.py
@@ -140,7 +140,7 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-triage.source.llm-interfaces-triage.interface.triage
+    source_interface: email-triage.source.instructions-triage.interface.triage
 gateway:
   language: Markdown
   path: SKILL.md
@@ -154,10 +154,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  email-triage.source.llm-interfaces-triage:
+  email-triage.source.instructions-triage:
     blueprint:
       base: module-root
-      path: blueprints/llm-interfaces-triage.yaml
+      path: blueprints/instructions-triage.yaml
   email-triage.source.rtx-decision-sink:
     blueprint:
       base: module-root

@@ -15,8 +15,8 @@ The migration starts from these live owners and changes them in place:
 | Schema primitives | `references/blueprint/common.schema.json`, `caller-contract.schema.json`, and `direct-io.schema.json` |
 | Module/source schemas | `skill.schema.json`, `machine-module.schema.json`, and `behavior-source.schema.json` |
 | Inventory and graph | `src/officina/common/blueprint_inventory.py`, `blueprint_graph.py`, and `blueprint_template.py` |
-| Hashing and provenance | `artifact_health.py`, `git_provenance.py`, `skills/skill-drift/_rtx/_drift_hashes.py`, `skills/skill-drift/_rtx/_check_drift_state.py`, and `skills/skill-drift/references/policy-hash-roots.json` |
-| Certification mechanics | `skills/skill-audit/_rtx/_audit_certifier.py`, `audit_records.py`, and `atomic_files.py` |
+| Hashing and provenance | `certification_hashing.py`, `git_provenance.py`, `skills/skill-drift/_rtx/_check_drift_state.py`, and `skills/skill-drift/references/certification-basis-roots.json` |
+| Certification mechanics | `skills/skill-certifier/_rtx/_node_certifier.py`, `certificate_records.py`, and `atomic_files.py` |
 | Status and drift | `certification_view.py`, `pooled_blueprint.py`, and `skills/skill-drift/` |
 | Interface resolution | `MachineInterfaceExport`, `resolve_machine_export()`, the existing `machine_interface_binding.py` renamed in place to `process_binding_compiler.py`, and `interface_projection.py` |
 | Execution | `ResolvedInvocation`, `src/officina/dispatcher/`, and `src/officina/runtime/` |
@@ -61,7 +61,10 @@ one signing and certificate-output owner. `skill-drift` remains read-only and
 uses the public verification key through its supported code path. The existing
 `install-assistant-tools` owner provisions the user-scoped installation on
 Linux, macOS, and Windows; no broker, service identity, second writer, special
-bootstrap, or parallel signing path is added.
+bootstrap writer, or parallel signing path is added. The canonical
+repository-backed certification view may admit only the certifier's exact
+initial certification call and its declared read-only mechanical subcalls when
+the repository has no certificate logs and the complete basis is commit-ready.
 
 Windows remains a target, not a completed certificate-write platform. The
 current `src/officina/common/atomic_files.py` fails closed off POSIX. Task 3
@@ -278,7 +281,7 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
 - `references/blueprint/pooled-review.schema.json`
 - `src/officina/common/blueprint_inventory.py`
 - `src/officina/common/blueprint_graph.py`
-- `src/officina/common/artifact_health.py`
+- `src/officina/common/certification_hashing.py`
 - `src/officina/common/git_provenance.py`
 - rename/generalize `src/officina/common/machine_interface_binding.py` to
   `src/officina/common/process_binding_compiler.py`
@@ -286,9 +289,8 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
 - `src/officina/common/certification_view.py`
 - `src/officina/common/pooled_blueprint.py`
 - `src/officina/common/blueprint_template.py`
-- `skills/skill-drift/_rtx/_drift_hashes.py`
 - `skills/skill-drift/_rtx/_check_drift_state.py`
-- `skills/skill-drift/references/policy-hash-roots.json`
+- `skills/skill-drift/references/certification-basis-roots.json`
 - `src/officina/dispatcher/`
 - `src/officina/runtime/`
 - `src/officina/blueprint_search.py` and `scripts/search_blueprints.py`
@@ -347,16 +349,16 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
 - [ ] Run:
 
   ```bash
-  python3 -m pytest -o pythonpath=src -q tests/test_blueprint_inventory.py tests/test_officina_blueprint_graph.py tests/test_officina_artifact_health.py tests/test_officina_git_provenance.py tests/test_machine_module_hashing.py tests/test_process_binding_compiler.py tests/test_interface_projection.py tests/test_officina_dispatcher.py tests/test_officina_python_machine_interface.py tests/test_dispatcher_route_smoke.py tests/test_blueprint_search.py tests/test_officina_pooled_blueprint.py
+  python3 -m pytest -o pythonpath=src -q tests/test_blueprint_inventory.py tests/test_officina_blueprint_graph.py tests/test_officina_certification_hashing.py tests/test_officina_git_provenance.py tests/test_node_certification_hashing.py tests/test_process_binding_compiler.py tests/test_interface_projection.py tests/test_officina_dispatcher.py tests/test_officina_python_machine_interface.py tests/test_dispatcher_route_smoke.py tests/test_blueprint_search.py tests/test_officina_pooled_blueprint.py
   ```
 
-## Task 3: Convert the existing audit writer into the final certifier
+## Task 3: Convert the existing writer into the final certifier
 
 **Modify now; rename only at cutover**
 
-- `skills/skill-audit/`
+- `skills/skill-certifier/`
 - `skills/skill-drift/`
-- `src/officina/common/audit_records.py`
+- `src/officina/common/certificate_records.py`
 - `src/officina/common/atomic_files.py`
 - `src/officina/common/certification_view.py`
 - certificate/drift tests identified by the map
@@ -385,7 +387,9 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   writer or platform provider file.
 - [ ] Keep runtime fail-closed for missing or suspect certification. Initial
   `skill-certifier` certification uses the same certifier path and complete
-  basis checks; add no special bootstrap, service, or second writer.
+  basis checks. Permit only its exact initial call and declared read-only
+  mechanical subcalls through the canonical certification view; add no
+  bootstrap service, alternate writer, or alternate signing path.
 - [ ] Require the certifier implementation and tracked target inputs to match
   their commits. Bind included ignored/untracked inputs by pre-certification
   digest and abort on mutation before write.
@@ -393,26 +397,26 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   Validators may report structure but cannot persist or assert admissible,
   conformant, certified, or suspect state.
 - [ ] Keep certification about blueprint correctness. When drift is detected,
-  the certifier runs its owned check scripts and LLM audit, repairs or reports
+  the certifier runs its owned check scripts and semantic review, repairs or reports
   discrepancies, and only after the final blueprint and content agree does it
   recompute hashes, reconstruct the payload, sign it, and append the record.
   Runtime performance and host availability remain ordinary test concerns and
   are not certificate evidence.
 - [ ] Do not issue intermediate certificates for legacy topology. Before
   cutover, exercise the new core against converted temporary repositories only.
-- [ ] Keep the old public audit writer unchanged through Task 4. The final
-  certificate path remains test-only and cannot write live state before the
-  atomic cutover.
+- [ ] Keep the certifier as the sole certificate writer through Task 4. The
+  final certificate path remains test-only and cannot write live state before
+  the atomic cutover.
 - [ ] Make drift a read-only consumer of the shared graph, hash, basis, and
   certificate APIs. It must not sign, repair, or recompute competing judgments.
 - [ ] Test signatures, log/history linkage, the cooperative writer contract,
   exact dependency agreement, local-input provenance,
   mutation/HEAD races, and stale basis/policy behavior using the existing
-  audit/drift test homes.
+  certifier/drift test homes.
 - [ ] Run:
 
   ```bash
-  python3 -m pytest -o pythonpath=src -q tests/test_officina_artifact_health.py tests/test_officina_atomic_files.py tests/test_officina_git_provenance.py skills/skill-audit/tests skills/skill-drift/tests
+  python3 -m pytest -o pythonpath=src -q tests/test_officina_certification_hashing.py tests/test_officina_certificate_records.py tests/test_officina_atomic_files.py tests/test_officina_git_provenance.py skills/skill-certifier/tests skills/skill-drift/tests
   ```
 
 ## Task 4: Convert mechanically, then separately certify the temporary v4 graph

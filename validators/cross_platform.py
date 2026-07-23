@@ -9,10 +9,9 @@ It currently checks:
 - no obvious Python runtime shell usage such as ``shell=True``, ``os.system``,
   or ``subprocess`` calls with literal platform-specific commands
 
-Blueprint-level portability is interface-scoped. Machine interfaces whose
-``platform_support`` enables Linux, macOS, and Windows are checked for portable
-invocation metadata. Platform-specific machine interfaces are allowed to name
-platform-specific scheduler and host tools in their own dependency metadata.
+Blueprint-level portability is source-scoped. Behavioral sources whose runtime
+dependencies apply to Linux, macOS, and Windows must use portable commands.
+Module-level suggested permissions are checked as well.
 """
 
 from __future__ import annotations
@@ -21,8 +20,6 @@ import ast
 import subprocess
 import sys
 from pathlib import Path
-
-import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SRC_ROOT = _REPO_ROOT / "src"
@@ -150,48 +147,6 @@ def _command_violations(tokens: list[str], context: str, allowed_commands: set[s
     return errors
 
 
-def _validate_blueprint(path: Path, rel_path: Path) -> list[str]:
-    errors: list[str] = []
-    try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as exc:
-        return [f"{rel_path}: failed to parse YAML: {exc}"]
-    if not isinstance(raw, dict):
-        return errors
-
-    interfaces = raw.get("interfaces") or {}
-    if isinstance(interfaces, dict):
-        machine_interfaces = interfaces.get("machine") or {}
-        if isinstance(machine_interfaces, dict):
-            for interface_name, spec in machine_interfaces.items():
-                if not isinstance(spec, dict):
-                    continue
-                if not _supports_all_platforms(spec):
-                    continue
-                invocation = spec.get("invocation") or {}
-                if not isinstance(invocation, dict):
-                    continue
-                command = invocation.get("argv")
-                if isinstance(command, list) and all(isinstance(token, str) for token in command):
-                    context = f"{rel_path}: interfaces.machine.{interface_name}.invocation.argv"
-                    for error in _command_violations(command, context):
-                        errors.append(error)
-
-    suggested = raw.get("suggested_permissions") or {}
-    if isinstance(suggested, dict):
-        bash_entries = suggested.get("bash") or []
-        if isinstance(bash_entries, list):
-            for index, entry in enumerate(bash_entries):
-                if not isinstance(entry, dict):
-                    continue
-                command = entry.get("command")
-                if isinstance(command, list) and all(isinstance(token, str) for token in command):
-                    for error in _command_violations(command, f"{rel_path}: suggested_permissions.bash[{index}].command"):
-                        errors.append(error)
-
-    return errors
-
-
 def _validate_v4_blueprints(
     graph: RepositoryBlueprintGraph,
     repo_root: Path,
@@ -199,6 +154,48 @@ def _validate_v4_blueprints(
     errors: list[str] = []
     skills_root = repo_root / "skills"
     for node in graph.nodes.values():
+        rel_path = node.blueprint_path.relative_to(repo_root)
+        if (
+            node.node_type == "module"
+            and node.skill_root.parent == skills_root
+        ):
+            authority = node.declaration.get("authority")
+            suggested = (
+                authority.get("suggested_permissions")
+                if isinstance(authority, dict)
+                else None
+            )
+            bash_entries = (
+                suggested.get("bash")
+                if isinstance(suggested, dict)
+                else None
+            )
+            if isinstance(bash_entries, list):
+                for index, entry in enumerate(bash_entries):
+                    if not isinstance(entry, dict):
+                        continue
+                    command = entry.get("command")
+                    args_prefix = entry.get("args_prefix", [])
+                    if (
+                        isinstance(command, list)
+                        and all(isinstance(token, str) for token in command)
+                        and isinstance(args_prefix, list)
+                        and all(
+                            isinstance(token, str)
+                            for token in args_prefix
+                        )
+                    ):
+                        context = (
+                            f"{rel_path}: authority.suggested_permissions."
+                            f"bash[{index}]"
+                        )
+                        errors.extend(
+                            _command_violations(
+                                [*command, *args_prefix],
+                                context,
+                            )
+                        )
+            continue
         if (
             node.node_type != "behavioral_source"
             or node.skill_root.parent != skills_root
@@ -207,7 +204,6 @@ def _validate_v4_blueprints(
         dependencies = node.declaration.get("runtime_dependencies", [])
         if not isinstance(dependencies, list):
             continue
-        rel_path = node.blueprint_path.relative_to(repo_root)
         for index, dependency in enumerate(dependencies):
             if not isinstance(dependency, dict) or dependency.get("kind") != "binary":
                 continue
@@ -223,13 +219,6 @@ def _validate_v4_blueprints(
             context = f"{rel_path}: runtime_dependencies[{index}].name"
             errors.extend(_command_violations([name], context))
     return errors
-
-
-def _supports_all_platforms(spec: dict) -> bool:
-    platforms = spec.get("platform_support")
-    if not isinstance(platforms, dict):
-        return True
-    return all(platforms.get(platform) is True for platform in ("linux", "macos", "windows"))
 
 
 def _literal_string_tokens(node: ast.AST) -> list[str] | None:
@@ -302,27 +291,37 @@ def _validate_python(path: Path, rel_path: Path) -> list[str]:
 
 def validate(repo_root: Path) -> list[str]:
     errors: list[str] = []
-    schema_root = repo_root / "references" / "blueprint"
-    try:
-        repository_graph = load_repository_blueprint_graph(
-            repo_root,
-            schema_root=schema_root if (schema_root / "module.schema.json").is_file() else None,
-        )
-    except (BlueprintGraphError, BlueprintInventoryError, OSError, UnicodeError) as exc:
-        repository_graph = None
-        errors.append(str(exc))
-    if repository_graph is not None and any(
-        node.declaration.get("schema_version") == 4
-        for node in repository_graph.nodes.values()
+    skills_root = repo_root / "skills"
+    if skills_root.is_dir() and any(
+        skills_root.glob("*/blueprint.yaml")
     ):
-        errors.extend(_validate_v4_blueprints(repository_graph, repo_root))
+        schema_root = repo_root / "references" / "blueprint"
+        try:
+            repository_graph = load_repository_blueprint_graph(
+                repo_root,
+                schema_root=(
+                    schema_root
+                    if (schema_root / "module.schema.json").is_file()
+                    else None
+                ),
+            )
+        except (
+            BlueprintGraphError,
+            BlueprintInventoryError,
+            OSError,
+            UnicodeError,
+        ) as exc:
+            errors.append(str(exc))
+        else:
+            errors.extend(
+                _validate_v4_blueprints(repository_graph, repo_root)
+            )
     for path in _iter_skill_files(repo_root):
         rel_path = path.relative_to(repo_root)
         if path.suffix in FORBIDDEN_SUFFIXES and _is_runtime_script(rel_path):
             errors.append(f"{rel_path}: shell scripts are not allowed in shared skills")
             continue
         if path.name == "blueprint.yaml":
-            errors.extend(_validate_blueprint(path, rel_path))
             continue
         if path.suffix == PYTHON_SUFFIX:
             errors.extend(_validate_python(path, rel_path))

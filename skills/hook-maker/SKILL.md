@@ -18,7 +18,7 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `hook-maker.interface.default` — Design or implement a hook from semantic purpose through explicit host bindings, adapters, registration, and golden verification.

@@ -2,7 +2,7 @@ authority:
   owns_filesystem:
   - allowed_readers: []
     match: regex
-    path: ^_build/[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}\.md$
+    path: ^_build/certificate-drift-[0-9]{8}-[0-9]{6}\.md$
     reason: Drift status is the sole writer of its generated Markdown reports.
   suggested_permissions:
     bash:
@@ -11,25 +11,21 @@ authority:
       - -m
       - officina.runtime.python_machine_interface_runner
       - _rtx/_check_drift_state.py:Interface
-      reason: Read-only skill audit status checks.
+      reason: Read certificate currentness and canonical node hashes.
     network: []
 category: skill-making-development-assistant
-description: Computes installed-skill hashes and reports whether current artifacts still
-  match their local audit or certificate state, with optional live validator and test health.
+description: Computes canonical v4 node hashes and reports whether installed modules
+  have current signed certificates.
 content:
 - README\.md
 - SKILL\.md
 - _rtx/_check_drift_state\.py
-- _rtx/_drift_hashes\.py
 - _rtx/_skill_sources/__init__\.py
 - _rtx/_skill_sources/_claude_skill_source\.py
 - _rtx/_skill_sources/_codex_skill_source\.py
 - _rtx/_skill_sources/_skill_source_common\.py
 - references/certification\-basis\-roots\.json
-- references/dependency\-explorer\.md
-- tests/test_dependency_explorer\.py
 - tests/test_drift_check\.py
-- tests/test_drift_hash\.py
 discovery:
   mechanism: skill
 exports:

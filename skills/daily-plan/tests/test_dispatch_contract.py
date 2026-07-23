@@ -23,13 +23,16 @@ class _PassingCertificationView:
         return CertificationDecision(True, "current", "Current test certificate.")
 
 
-def test_forced_orchestrate_dispatch_pattern_is_unambiguous() -> None:
+def test_forced_orchestrate_dispatch_pattern_is_unambiguous(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "officina.dispatcher.core.repository_certification_view",
+        lambda _root: _PassingCertificationView(),
+    )
     metadata = resolve_dispatch_metadata(
         caller_skill="daily-plan",
         target="daily-plan.interface.orchestrate",
         args=["--forced"],
         repo_root=REPO_ROOT,
-        certification_view=_PassingCertificationView(),
     )
 
     assert metadata.target == "daily-plan.interface.orchestrate"

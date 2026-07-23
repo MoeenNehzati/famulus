@@ -56,7 +56,7 @@ $ ./check-triage-status.sh
 
 ### Files Modified
 
-- `llm_interfaces/triage.md` — enhanced Steps 6–7 to collect and report metrics
+- `instructions/triage.md` — enhanced Steps 6–7 to collect and report metrics
 - Infrastructure runtime files updated to write and preserve metrics in state/status.json
 - `DEBUGGING.md` (NEW) — troubleshooting guide with queries and tips
 - `CHANGES.md` (NEW) — this changelog

@@ -4,9 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from officina.common.blueprint_graph import BlueprintNode, InterfaceExport, MachineInterfaceExport
+from officina.common.blueprint_graph import BlueprintNode, InterfaceExport
 from officina.common.process_binding_compiler import (
-    MachineInterfaceBindingError,
     ProcessBindingError,
     compile_gateway_invocation,
     compile_route_smoke_invocation,
@@ -51,36 +50,46 @@ def test_gateway_language_name_uses_requirement_name(
     assert gateway_language_name(requirement) == expected
 
 
-def test_legacy_machine_binding_error_is_process_binding_error_alias() -> None:
-    assert MachineInterfaceBindingError is ProcessBindingError
-
-
-def _export(arguments: dict[str, dict[str, object]], fixed: list[dict[str, object]] | None = None) -> MachineInterfaceExport:
+def _export(
+    arguments: dict[str, dict[str, object]],
+    fixed: list[dict[str, object]] | None = None,
+) -> InterfaceExport:
+    contract_arguments: dict[str, dict[str, object]] = {}
+    process_arguments: dict[str, dict[str, object]] = {}
+    for argument_id, authored in arguments.items():
+        declaration = dict(authored)
+        process_arguments[argument_id] = declaration.pop("invocation_binding")
+        contract_arguments[argument_id] = declaration
     declaration = {
-        "id": "demo-skill.machine.run",
         "version": 1,
-        "invocation_binding": {"fixed": fixed or []},
-        "contract": {"arguments": arguments},
+        "process_binding": {
+            "kind": "process",
+            "arguments": process_arguments,
+            "fixed": fixed or [],
+        },
+        "contract": {"arguments": contract_arguments},
     }
-    return MachineInterfaceExport(
-        interface_id="demo-skill.machine.run",
+    return InterfaceExport(
+        interface_id="demo-skill.interface.run",
         version=1,
         local_name="run",
-        module_node_id="demo-skill.machine-module.worker",
+        module_node_id="demo-skill",
         declaration=declaration,
+        source_node_id="demo-skill.source.worker",
+        source_interface_id="demo-skill.source.worker.interface.run",
     )
 
 
-def _module() -> BlueprintNode:
+def _source() -> BlueprintNode:
     root = Path("/repo/skills/demo-skill")
     return BlueprintNode(
-        node_id="demo-skill.machine-module.worker",
-        node_type="machine-module",
+        node_id="demo-skill.source.worker",
+        node_type="behavioral_source",
         version=1,
         skill_root=root,
-        blueprint_path=root / "_rtx" / "._worker.py.blueprint.yaml",
+        blueprint_path=root / "blueprints" / "worker.yaml",
         gateway_path=root / "_rtx" / "_worker.py",
-        declaration={"gateway": {"kind": "python-entrypoint", "args_prefix": ["gateway"]}},
+        declaration={"gateway": {"path": "_rtx/_worker.py", "language": "Python"}},
     )
 
 
@@ -545,7 +554,7 @@ def test_parse_and_compile_merges_fixed_and_public_bindings_deterministically() 
         ["one", "two", "--verbose", "--count", "2"],
         stdin_requested=False,
     )
-    plan = compile_gateway_invocation(_module(), export, parsed)
+    plan = compile_gateway_invocation(_source(), export, parsed)
 
     assert parsed.values == {"count": 2, "targets": ["one", "two"], "verbose": True}
     assert plan.argv == (
@@ -578,7 +587,7 @@ def test_defaults_and_stdin_are_kept_out_of_argv() -> None:
     )
 
     parsed = parse_caller_invocation(export, [], stdin_requested=True)
-    plan = compile_gateway_invocation(_module(), export, parsed)
+    plan = compile_gateway_invocation(_source(), export, parsed)
 
     assert parsed.values == {"mode": "safe"}
     assert plan.argv == ("--mode", "safe")
@@ -606,7 +615,7 @@ def test_parse_rejects_missing_extra_unknown_and_invalid_values(
             )
         }
     )
-    with pytest.raises(MachineInterfaceBindingError, match=message):
+    with pytest.raises(ProcessBindingError, match=message):
         parse_caller_invocation(export, argv, stdin_requested=False)
 
 
@@ -620,7 +629,7 @@ def test_binding_rejects_collisions_reserved_names_and_secret_argv() -> None:
         },
         fixed=[{"kind": "positional", "position": 0, "value": "fixed", "type": {"kind": "string"}}],
     )
-    with pytest.raises(MachineInterfaceBindingError, match="position 0 collision"):
+    with pytest.raises(ProcessBindingError, match="position 0 collision"):
         parse_caller_invocation(collision, ["caller"], stdin_requested=False)
 
     reserved = _export(
@@ -631,7 +640,7 @@ def test_binding_rejects_collisions_reserved_names_and_secret_argv() -> None:
             )
         }
     )
-    with pytest.raises(MachineInterfaceBindingError, match="dispatcher-owned option"):
+    with pytest.raises(ProcessBindingError, match="dispatcher-owned option"):
         parse_caller_invocation(reserved, ["--dry-run", "x"], stdin_requested=False)
 
     secret = _export(
@@ -643,7 +652,7 @@ def test_binding_rejects_collisions_reserved_names_and_secret_argv() -> None:
             )
         }
     )
-    with pytest.raises(MachineInterfaceBindingError, match="secret.*stdin"):
+    with pytest.raises(ProcessBindingError, match="secret.*stdin"):
         parse_caller_invocation(secret, ["--token", "hidden"], stdin_requested=False)
 
 
@@ -676,7 +685,7 @@ def test_unbounded_positional_stops_at_declared_option_and_double_dash_is_positi
 
 def test_stdin_request_requires_exactly_one_stdin_argument() -> None:
     export = _export({})
-    with pytest.raises(MachineInterfaceBindingError, match="does not declare stdin"):
+    with pytest.raises(ProcessBindingError, match="does not declare stdin"):
         parse_caller_invocation(export, [], stdin_requested=True)
 
     export = _export(
@@ -687,5 +696,5 @@ def test_stdin_request_requires_exactly_one_stdin_argument() -> None:
             )
         }
     )
-    with pytest.raises(MachineInterfaceBindingError, match="requires --stdin"):
+    with pytest.raises(ProcessBindingError, match="requires --stdin"):
         parse_caller_invocation(export, [], stdin_requested=False)

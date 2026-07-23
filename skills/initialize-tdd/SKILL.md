@@ -20,14 +20,14 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `initialize-tdd.interface.setup-compat-aliases` — Create every host compatibility alias symlink (e.g. a legacy filename some host looks for specifically) in a freshly scaffolded project directory.
   - `dispatcher --caller-skill initialize-tdd initialize-tdd.interface.setup-compat-aliases <project-dir>`
   - First positional is the scaffolded project's directory path. Discovers and runs every compat-alias helper next to this script; adding a new host's alias later needs no change here.
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `initialize-tdd.interface.default` — Create a new approval-gated TDD project scaffold from explicit project name and language inputs, verify the Python starter when selected, and never commit it.

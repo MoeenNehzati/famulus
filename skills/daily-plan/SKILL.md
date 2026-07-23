@@ -34,9 +34,9 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `daily-plan.interface.mutate-plan` — Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to a dated plan and display the refreshed result. Defaults to today when --date is omitted.
   - `dispatcher --caller-skill daily-plan daily-plan.interface.mutate-plan [--date <M-D-YY|YYYY-MM-DD>] {hide,show,keep,remove,mark-done,reject,set-deadline,add} ...`
 - `daily-plan.interface.orchestrate` — Generate today's plan (or show the existing one, refreshing its Todo/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists.
@@ -46,7 +46,7 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `daily-plan.interface.render-plan` — Extract or reassemble sections of a plan file for rendering.
   - `dispatcher --caller-skill daily-plan daily-plan.interface.render-plan <extract|reassemble> <plan-file> <dir>`
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `daily-plan.interface.default` — Primary LLM-facing skill instructions.

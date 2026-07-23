@@ -9,65 +9,65 @@
   "properties": {
     "schema_version": {
       "const": 4,
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 4}, "doc": {"authoring": ["Use unified blueprint schema version 4."]}, "related_validation_rules": ["schema-shape"]}
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": 4}, "doc": {"authoring": ["Use unified blueprint schema version 4."]}, "related_validation_rules": ["schema-shape"]}
     },
     "node_type": {
       "const": "behavioral_source",
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "behavioral_source"}, "doc": {"authoring": ["Identify this node as a behavioral source."]}, "related_validation_rules": ["schema-shape"]}
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": "behavioral_source"}, "doc": {"authoring": ["Identify this node as a behavioral source."]}, "related_validation_rules": ["schema-shape"]}
     },
     "id": {
       "$ref": "common.schema.json#/definitions/behavioralSourceId",
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "example-skill.source.gateway"}, "doc": {"authoring": ["Use <module>.source.<local-source-id>."]}, "related_validation_rules": ["canonical-id"]}
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": "example-skill.source.gateway"}, "doc": {"authoring": ["Use <module>.source.<local-source-id>."]}, "related_validation_rules": ["canonical-id"]}
     },
     "version": {
       "$ref": "common.schema.json#/definitions/interfaceVersion",
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Increment when the behavioral-source contract changes."]}, "related_validation_rules": ["version-pin"]}
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Increment when the behavioral-source contract changes."]}, "related_validation_rules": ["version-pin"]}
     },
     "description": {
       "type": "string",
       "minLength": 1,
-      "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": true, "example": "Owns the primary instructions."}, "doc": {"authoring": ["Describe this source's intrinsic behavioral role; certification requires this field."]}, "related_validation_rules": ["schema-shape"]}
+      "x-famulus": {"field_status": "optional", "template": {"include": true, "example": "Owns the primary instructions."}, "doc": {"authoring": ["Describe this source's intrinsic behavioral role; certification requires this field."]}, "related_validation_rules": ["schema-shape"]}
     },
     "gateway": {
       "$ref": "common.schema.json#/definitions/gateway",
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": {"path": "SKILL.md", "language": "Markdown"}}, "doc": {"authoring": ["Name the source's whole-file gateway and language requirement."]}, "related_validation_rules": ["gateway-file", "content-files"]}
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": {"path": "SKILL.md", "language": "Markdown"}}, "doc": {"authoring": ["Name the source's whole-file gateway and language requirement."]}, "related_validation_rules": ["gateway-file", "content-files"]}
     },
     "content": {
       "$ref": "common.schema.json#/definitions/contentPatterns",
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": ["SKILL\\.md"]}, "doc": {"authoring": ["Match every file directly owned by this source; the gateway must match. The project node-input policy selects hash inputs from that ownership scope."]}, "related_validation_rules": ["content-files", "content-exclusive"]}
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": ["SKILL\\.md"]}, "doc": {"authoring": ["Match every file directly owned by this source; the gateway must match. The project node-input policy selects hash inputs from that ownership scope."]}, "related_validation_rules": ["content-files", "content-exclusive"]}
     },
     "contract_references": {
       "type": "array",
       "uniqueItems": true,
       "items": {"$ref": "common.schema.json#/definitions/contractReference"},
-      "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Declare exact authored contract files referenced outside interface contracts."]}, "related_validation_rules": ["relationship-edge"]}
+      "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["Declare exact authored contract files referenced outside interface contracts."]}, "related_validation_rules": ["relationship-edge"]}
     },
     "platform_support": {
       "$ref": "common.schema.json#/definitions/platformSupport",
-      "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Declare source-wide platform support for the gateway implementation and every intrinsic interface; author runtime_dependencies with it."]}, "related_validation_rules": ["runtime-dependency"]}
+      "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["Declare source-wide platform support for the gateway implementation and every intrinsic interface; author runtime_dependencies with it."]}, "related_validation_rules": ["runtime-dependency"]}
     },
     "runtime_dependencies": {
       "$ref": "common.schema.json#/definitions/runtimeDependencies",
-      "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Declare source-wide runtime dependencies for the gateway implementation and every intrinsic interface; author platform_support with it."]}, "related_validation_rules": ["runtime-dependency"]}
+      "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["Declare source-wide runtime dependencies for the gateway implementation and every intrinsic interface; author platform_support with it."]}, "related_validation_rules": ["runtime-dependency"]}
     },
     "dependencies": {
       "type": "array",
       "uniqueItems": true,
       "items": {"$ref": "common.schema.json#/definitions/sourceDependency"},
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": []}, "doc": {"authoring": ["Declare direct behavioral-source dependencies with exact versions and reasons."]}, "related_validation_rules": ["behavior-source-edge", "version-pin"]}
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": []}, "doc": {"authoring": ["Declare direct behavioral-source dependencies with exact versions and reasons."]}, "related_validation_rules": ["behavioral-source-edge", "version-pin"]}
     },
     "uses_interfaces": {
       "$ref": "common.schema.json#/definitions/interfaceUseList",
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": []}, "doc": {"authoring": ["Declare every sibling private interface or module export this source uses."]}, "related_validation_rules": ["relationship-edge", "version-pin"]}
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": []}, "doc": {"authoring": ["Declare every sibling private interface or module export this source uses."]}, "related_validation_rules": ["relationship-edge", "version-pin"]}
     },
     "interfaces": {
       "type": "object",
       "propertyNames": {"$ref": "common.schema.json#/definitions/sourceInterfaceId"},
       "additionalProperties": {"$ref": "#/definitions/interface"},
-      "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": {}}, "doc": {"authoring": ["Define intrinsic interfaces keyed by their full canonical source-interface IDs."]}, "related_validation_rules": ["canonical-id", "relationship-edge"]}
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": {}}, "doc": {"authoring": ["Define intrinsic interfaces keyed by their full canonical source-interface IDs."]}, "related_validation_rules": ["canonical-id", "relationship-edge"]}
     }
   },
   "dependencies": {
@@ -89,7 +89,6 @@
     }
   },
   "x-famulus": {
-    "audit_hash": "include",
     "gateway_policy": "whole-file",
     "allowed_edge_types": ["behavioral_source", "interface"]
   }

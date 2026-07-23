@@ -1,8 +1,6 @@
 # Certification and Drift
 
-This document defines the version-4 certification contract. The schemas are
-staged before the version-4 graph and runtime cutover; the pre-v4 live schema
-route remains authoritative until that cutover.
+This document defines the live version-4 certification contract.
 
 ## Nodes and dependencies
 
@@ -41,9 +39,9 @@ other guessed defaults merely to satisfy a schema. Missing descriptions,
 contract sections, invocation details, direct-I/O facts, or compatibility
 claims are certifier findings.
 
-The certifier-owned workflow audits such a draft against the gateway and node
+The certifier-owned workflow reviews such a draft against the gateway and node
 content. It may repair the candidate blueprint, but each repair invalidates the
-previous audit snapshot. The workflow reloads the schema and graph and reruns
+previous review snapshot. The workflow reloads the schema and graph and reruns
 all checks until either the blueprint is complete and exact or it reports
 failure. The signing core accepts no caller-supplied payload and signs only the
 final reconstructed state. No `certified`, `conformant`, or draft-status field
@@ -97,14 +95,12 @@ not ordered hash rules and do not replace the project policy.
 The following inputs are forbidden regardless of project policy:
 
 - current certificates and certificate histories;
-- audit and health records;
-- pooled-review output;
-- any other reserved certification output.
+- signing material;
+- any other reserved certifier output.
 
 The canonical policy explicitly excludes logs, `log/` and `logs/`, Python
 bytecode and `__pycache__/`, `.pytest_cache/`, `.cache/`, `_build/`, `build/`,
-`dist/`, `.certificates/`, `.last_audit.json`, hidden health records, and
-`.pooled-blueprint-review.yaml`. A later include may deliberately restore an
+`dist/`, and `.certificates/`. A later include may deliberately restore an
 eligible runtime or generated regular file, but it cannot override mandatory
 closure or reserved-output safety.
 
@@ -240,8 +236,8 @@ is_current(x):
     )
 ```
 
-When drift exists, the certifier runs its owned check scripts and LLM audit.
-After each repair it discards the prior audit snapshot, reloads the blueprint
+When drift exists, the certifier runs its owned check scripts and semantic review.
+After each repair it discards the prior review snapshot, reloads the blueprint
 and graph, and reruns the checks. Only after discrepancies are resolved does it
 reconstruct the manifest, node hash, dependencies, basis hash, and checks
 internally, sign the canonical payload, append the complete signed record, and
@@ -251,12 +247,19 @@ caller-supplied certificate payload.
 
 ## Authority and security boundary
 
-The existing audit writer, migrated to `skill-certifier`, is the sole
-supported writer for blueprint repair, certificate signing, and the append-only
-certificate log. `skill-drift` is read-only and verifies through the public-key path.
+`skill-certifier` is the sole supported writer for blueprint repair,
+certificate signing, and the append-only certificate log. `skill-drift` is
+read-only and verifies through the public-key path.
 No broker, service identity, second writer, or parallel signing route is
 introduced. Atomic no-follow writes, user-only permissions, history, and
 post-write verification remain defense in depth.
+
+The dispatcher derives one repository-backed certification view. In ordinary
+operation it admits only exports whose module and implementing source have
+current certificates. With no certificate history, the same view admits only
+exact initial certification of `skill-certifier` and its declared read-only
+hash and blueprint-sync checks. Suspect state fails closed; a valid
+dependency-first partial prefix may resume through the same path.
 
 This is a cooperative same-user contract, not filesystem isolation between
 same-UID processes. A malicious process running as the same OS user may access

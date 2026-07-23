@@ -33,9 +33,9 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `math-dependency-graph.interface.scripts-build-math-dependency-graph` — Render an interactive HTML math dependency graph from canonical JSON; the saved document loads ELK and MathJax from jsDelivr when opened.
   - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.interface.scripts-build-math-dependency-graph <source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file <path>] [--refresh-macros] [--reduce-transitive-edges]`
 - `math-dependency-graph.interface.scripts-extract-mathjax-macros` — Extract MathJax macro definitions from a TeX entrypoint, recursively following \input/\include.
@@ -43,7 +43,7 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `math-dependency-graph.interface.scripts-serve-graph` — Serve graph HTML from a local directory with no-cache headers for repeated browser inspection.
   - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.interface.scripts-serve-graph [--directory <path>] [--host <host>] [--port <port>]`
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `math-dependency-graph.interface.default` — Primary LLM-facing skill instructions.

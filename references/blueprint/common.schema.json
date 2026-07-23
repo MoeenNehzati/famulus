@@ -1,35 +1,40 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "common.schema.json",
-  "title": "Typed Blueprint Common Definitions",
+  "title": "Version 4 Blueprint Common Definitions",
   "definitions": {
-    "schemaVersion": {"const": 3, "description": "Typed blueprint schema generation."},
     "requirement": {
       "type": "string",
       "pattern": "^[A-Za-z][A-Za-z0-9.+_-]*(?:(?:==|>=|>|<=|<)[A-Za-z0-9][A-Za-z0-9._-]*(?:,(?:==|>=|>|<=|<)[A-Za-z0-9][A-Za-z0-9._-]*)*)?$",
       "description": "A language or machine requirement: a name, an exact version, or a comma-separated intersection of version constraints."
     },
-    "interfaceVersion": {"type": "integer", "minimum": 1, "description": "Human-managed public contract version."},
-    "skillId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+$"},
-    "moduleId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
-    "behavioralSourceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
-    "sourceInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.interface\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
-    "exportInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*\\.interface\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "interfaceVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Human-managed interface contract version."
+    },
+    "moduleId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "behavioralSourceId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "sourceInterfaceId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*\\.interface\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "exportInterfaceId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*\\.interface\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
     "interfaceId": {
       "oneOf": [
         {"$ref": "#/definitions/sourceInterfaceId"},
         {"$ref": "#/definitions/exportInterfaceId"}
       ]
     },
-    "llmInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.llm\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
-    "machineInterfaceId": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+\\.machine\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
-    "canonicalInterfaceId": {
-      "oneOf": [
-        {"$ref": "#/definitions/llmInterfaceId"},
-        {"$ref": "#/definitions/machineInterfaceId"}
-      ]
-    },
-    "behaviorSourceId": {"type": "string", "pattern": "^(?:references|[a-z0-9]+(?:-[a-z0-9]+)+)\\.source\\.[a-z0-9]+(?:-[a-z0-9]+)*$"},
     "relativePath": {
       "type": "string",
       "minLength": 1,
@@ -43,38 +48,29 @@
       "items": {"type": "string", "minLength": 1},
       "description": "Case-sensitive Python regular expressions matched with re.fullmatch against normalized POSIX paths under the node ownership root."
     },
-    "semanticType": {
-      "type": "string",
-      "enum": [
-        "policy",
-        "instructions",
-        "reference",
-        "configuration",
-        "preference",
-        "schema",
-        "template",
-        "example",
-        "checklist",
-        "dataset"
-      ],
-      "description": "Semantic class of the complete logical artifact owned by a behavior-source node."
-    },
-    "blueprintLocator": {
-      "type": "object",
-      "required": ["base", "path"],
-      "additionalProperties": false,
-      "properties": {
-        "base": {"enum": ["skill-root", "repository-root"], "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "skill-root"}, "doc": {"authoring": ["Choose the root against which the sidecar path is resolved."]}, "related_validation_rules": ["gateway-file"]}},
-        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "llm_interfaces/.specialized.md.blueprint.yaml"}, "doc": {"authoring": ["Use the deterministic hidden sidecar path without parent traversal."]}, "related_validation_rules": ["gateway-file"]}}
-      }
-    },
     "v4BlueprintLocator": {
       "type": "object",
       "required": ["base", "path"],
       "additionalProperties": false,
       "properties": {
-        "base": {"enum": ["module-root", "repository-root"], "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "module-root"}, "doc": {"authoring": ["Choose the root against which the blueprint path is resolved."]}, "related_validation_rules": ["gateway-file"]}},
-        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "blueprints/gateway.yaml"}, "doc": {"authoring": ["Name the target blueprint without parent traversal."]}, "related_validation_rules": ["gateway-file"]}}
+        "base": {
+          "enum": ["module-root", "repository-root"],
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "module-root"},
+            "doc": {"authoring": ["Choose the root against which the blueprint path is resolved."]},
+            "related_validation_rules": ["gateway-file"]
+          }
+        },
+        "path": {
+          "$ref": "#/definitions/relativePath",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "blueprints/gateway.yaml"},
+            "doc": {"authoring": ["Name the target blueprint without parent traversal."]},
+            "related_validation_rules": ["gateway-file"]
+          }
+        }
       }
     },
     "contractReference": {
@@ -82,9 +78,34 @@
       "required": ["base", "path"],
       "additionalProperties": false,
       "properties": {
-        "base": {"enum": ["module-root", "repository-root"], "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "module-root"}, "doc": {"authoring": ["Choose the root against which the contract path is resolved."]}, "related_validation_rules": ["relationship-edge"]}},
-        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "contracts/schema.json"}, "doc": {"authoring": ["Name the authored contract path without parent traversal."]}, "related_validation_rules": ["relationship-edge"]}},
-        "fragment": {"type": "string", "pattern": "^#", "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Optionally select a JSON Pointer fragment; omit for the whole document."]}, "related_validation_rules": ["relationship-edge"]}}
+        "base": {
+          "enum": ["module-root", "repository-root"],
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "module-root"},
+            "doc": {"authoring": ["Choose the root against which the contract path is resolved."]},
+            "related_validation_rules": ["relationship-edge"]
+          }
+        },
+        "path": {
+          "$ref": "#/definitions/relativePath",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "contracts/schema.json"},
+            "doc": {"authoring": ["Name the authored contract path without parent traversal."]},
+            "related_validation_rules": ["relationship-edge"]
+          }
+        },
+        "fragment": {
+          "type": "string",
+          "pattern": "^#",
+          "x-famulus": {
+            "field_status": "optional",
+            "template": {"include": false},
+            "doc": {"authoring": ["Optionally select a JSON Pointer fragment; omit for the whole document."]},
+            "related_validation_rules": ["relationship-edge"]
+          }
+        }
       }
     },
     "sourceContainment": {
@@ -92,7 +113,15 @@
       "required": ["blueprint"],
       "additionalProperties": false,
       "properties": {
-        "blueprint": {"$ref": "#/definitions/v4BlueprintLocator", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": {"base": "module-root", "path": "blueprints/gateway.yaml"}}, "doc": {"authoring": ["Point to the contained behavioral source blueprint; its version remains source-owned."]}, "related_validation_rules": ["relationship-edge"]}}
+        "blueprint": {
+          "$ref": "#/definitions/v4BlueprintLocator",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": {"base": "module-root", "path": "blueprints/gateway.yaml"}},
+            "doc": {"authoring": ["Point to the contained behavioral source blueprint; its version remains source-owned."]},
+            "related_validation_rules": ["relationship-edge"]
+          }
+        }
       }
     },
     "sourceDependency": {
@@ -100,10 +129,43 @@
       "required": ["source", "version", "blueprint", "reason"],
       "additionalProperties": false,
       "properties": {
-        "source": {"$ref": "#/definitions/behavioralSourceId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "other-skill.source.policy"}, "doc": {"authoring": ["Name the direct behavioral-source dependency."]}, "related_validation_rules": ["behavior-source-edge"]}},
-        "version": {"$ref": "#/definitions/interfaceVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Pin the exact dependency version required by this source."]}, "related_validation_rules": ["version-pin"]}},
-        "blueprint": {"$ref": "#/definitions/v4BlueprintLocator", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": {"base": "module-root", "path": "blueprints/policy.yaml"}}, "doc": {"authoring": ["Point to the dependency's behavioral-source blueprint."]}, "related_validation_rules": ["relationship-edge"]}},
-        "reason": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Supplies policy."}, "doc": {"authoring": ["State why this source directly depends on the target."]}, "related_validation_rules": ["behavior-source-edge"]}}
+        "source": {
+          "$ref": "#/definitions/behavioralSourceId",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "other-skill.source.policy"},
+            "doc": {"authoring": ["Name the direct behavioral-source dependency."]},
+            "related_validation_rules": ["behavioral-source-edge"]
+          }
+        },
+        "version": {
+          "$ref": "#/definitions/interfaceVersion",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": 1},
+            "doc": {"authoring": ["Pin the exact dependency version required by this source."]},
+            "related_validation_rules": ["version-pin"]
+          }
+        },
+        "blueprint": {
+          "$ref": "#/definitions/v4BlueprintLocator",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": {"base": "module-root", "path": "blueprints/policy.yaml"}},
+            "doc": {"authoring": ["Point to the dependency's behavioral-source blueprint."]},
+            "related_validation_rules": ["relationship-edge"]
+          }
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "Supplies policy."},
+            "doc": {"authoring": ["State why this source directly depends on the target."]},
+            "related_validation_rules": ["behavioral-source-edge"]
+          }
+        }
       }
     },
     "interfaceUse": {
@@ -111,8 +173,24 @@
       "required": ["interface", "version"],
       "additionalProperties": false,
       "properties": {
-        "interface": {"$ref": "#/definitions/interfaceId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "other-skill.interface.read"}, "doc": {"authoring": ["Name a sibling private source interface or a module export."]}, "related_validation_rules": ["relationship-edge"]}},
-        "version": {"$ref": "#/definitions/interfaceVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Pin the exact interface version required by this source."]}, "related_validation_rules": ["version-pin"]}}
+        "interface": {
+          "$ref": "#/definitions/interfaceId",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "other-skill.interface.read"},
+            "doc": {"authoring": ["Name a sibling private source interface or a module export."]},
+            "related_validation_rules": ["relationship-edge"]
+          }
+        },
+        "version": {
+          "$ref": "#/definitions/interfaceVersion",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": 1},
+            "doc": {"authoring": ["Pin the exact interface version required by this source."]},
+            "related_validation_rules": ["version-pin"]
+          }
+        }
       }
     },
     "interfaceUseList": {
@@ -120,175 +198,209 @@
       "uniqueItems": true,
       "items": {"$ref": "#/definitions/interfaceUse"}
     },
-    "interfaceEdge": {
-      "type": "object",
-      "required": ["interface", "version", "blueprint"],
-      "additionalProperties": false,
-      "properties": {
-        "interface": {"$ref": "#/definitions/canonicalInterfaceId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "example-skill.llm.default"}, "doc": {"authoring": ["Name the canonical interface owned by this skill root."]}, "related_validation_rules": ["canonical-id", "relationship-edge"]}},
-        "version": {"$ref": "#/definitions/interfaceVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Pin the exact declared interface version."]}, "related_validation_rules": ["version-pin"]}},
-        "blueprint": {"$ref": "#/definitions/blueprintLocator", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["Point to the interface's own hidden blueprint sidecar."]}, "related_validation_rules": ["gateway-file", "relationship-edge"]}}
-      }
-    },
-    "usedInterface": {
-      "type": "object",
-      "required": ["interface", "version"],
-      "additionalProperties": false,
-      "properties": {
-        "interface": {"$ref": "#/definitions/canonicalInterfaceId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "other-skill.machine.run"}, "doc": {"authoring": ["Use the canonical interface ID, never a bare skill name or implementation path."]}, "related_validation_rules": ["canonical-id", "relationship-edge"]}},
-        "version": {"$ref": "#/definitions/interfaceVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Pin the exact version required by this consumer."]}, "related_validation_rules": ["version-pin"]}}
-      }
-    },
-    "usedInterfaceList": {
-      "type": "array",
-      "uniqueItems": true,
-      "items": {"$ref": "#/definitions/usedInterface"},
-      "description": "Version-pinned interface dependencies. Their health hashes propagate recursively."
-    },
-    "usedMachineInterfaceList": {
-      "type": "array",
-      "uniqueItems": true,
-      "items": {
-        "allOf": [
-          {"$ref": "#/definitions/usedInterface"},
-          {
-            "required": ["interface"],
-            "properties": {
-              "interface": {
-                "$ref": "#/definitions/machineInterfaceId",
-                "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "other-skill.machine.run"}, "doc": {"authoring": ["Reference only a canonical machine-interface ID."]}, "related_validation_rules": ["canonical-id", "relationship-edge"]}
-              }
-            }
-          }
-        ]
-      }
-    },
-    "behaviorSourceEdge": {
-      "type": "object",
-      "required": ["source", "version", "blueprint", "reason"],
-      "additionalProperties": false,
-      "properties": {
-        "source": {"$ref": "#/definitions/behaviorSourceId", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "example-skill.source.policy"}, "doc": {"authoring": ["Use the target behavior source's canonical ID."]}, "related_validation_rules": ["canonical-id", "behavior-source-edge"]}},
-        "version": {"$ref": "#/definitions/interfaceVersion", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": 1}, "doc": {"authoring": ["Pin the target behavior source version."]}, "related_validation_rules": ["version-pin", "behavior-source-edge"]}},
-        "blueprint": {"$ref": "#/definitions/blueprintLocator", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true}, "doc": {"authoring": ["Point to the target source's canonical hidden sidecar."]}, "related_validation_rules": ["gateway-file", "behavior-source-edge"]}},
-        "reason": {"type": "string", "minLength": 1, "description": "Why this consumer depends on the target source.", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Supplies behavior policy."}, "doc": {"authoring": ["State this consumer's local reason for using the source."]}, "related_validation_rules": ["behavior-source-edge"]}}
-      }
-    },
-    "behaviorSourceEdgeList": {
-      "type": "array",
-      "uniqueItems": true,
-      "items": {"$ref": "#/definitions/behaviorSourceEdge"}
-    },
     "gateway": {
       "type": "object",
       "required": ["path", "language"],
       "additionalProperties": false,
       "properties": {
-        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "SKILL.md"}, "doc": {"authoring": ["Name exactly one existing whole-file gateway without parent traversal."]}, "related_validation_rules": ["gateway-file"]}},
-        "language": {"$ref": "#/definitions/requirement", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Markdown"}, "doc": {"authoring": ["Declare the language or notation consumed through the gateway."]}, "related_validation_rules": ["schema-shape"]}},
-        "machines": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/definitions/requirement"}, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List alternative machine requirements known to consume the gateway."]}, "related_validation_rules": ["runtime-dependency"]}}
+        "path": {
+          "$ref": "#/definitions/relativePath",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "SKILL.md"},
+            "doc": {"authoring": ["Name exactly one existing whole-file gateway without parent traversal."]},
+            "related_validation_rules": ["gateway-file"]
+          }
+        },
+        "language": {
+          "$ref": "#/definitions/requirement",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "Markdown"},
+            "doc": {"authoring": ["Declare the language or notation consumed through the gateway."]},
+            "related_validation_rules": ["schema-shape"]
+          }
+        },
+        "machines": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/definitions/requirement"},
+          "x-famulus": {
+            "field_status": "optional",
+            "template": {"include": false},
+            "doc": {"authoring": ["List alternative machine requirements known to consume the gateway."]},
+            "related_validation_rules": ["runtime-dependency"]
+          }
+        }
       },
       "description": "A whole-file gateway plus its language and optional alternative machine requirements."
     },
-    "instructionFileGateway": {
+    "platformSupport": {
       "type": "object",
-      "required": ["kind", "path"],
+      "required": ["linux", "macos", "windows"],
       "additionalProperties": false,
       "properties": {
-        "kind": {"const": "instruction-file", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "instruction-file"}, "doc": {"authoring": ["Use instruction-file for an LLM-readable file gateway."]}, "related_validation_rules": ["gateway-file"]}},
-        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "SKILL.md"}, "doc": {"authoring": ["Name one existing instruction file; llm.default must use SKILL.md."]}, "related_validation_rules": ["gateway-file"]}}
+        "linux": {
+          "type": "boolean",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": true},
+            "doc": {"authoring": ["State whether the source supports Linux."]},
+            "related_validation_rules": ["runtime-dependency"]
+          }
+        },
+        "macos": {
+          "type": "boolean",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": true},
+            "doc": {"authoring": ["State whether the source supports macOS."]},
+            "related_validation_rules": ["runtime-dependency"]
+          }
+        },
+        "windows": {
+          "type": "boolean",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": true},
+            "doc": {"authoring": ["State whether the source supports Windows."]},
+            "related_validation_rules": ["runtime-dependency"]
+          }
+        }
       }
     },
-    "skillGateway": {
-      "type": "object",
-      "required": ["kind", "path"],
-      "additionalProperties": false,
-      "properties": {
-        "kind": {"const": "instruction-file", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "instruction-file"}, "doc": {"authoring": ["Use instruction-file for the skill root gateway."]}, "related_validation_rules": ["gateway-file"]}},
-        "path": {"const": "SKILL.md", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "SKILL.md"}, "doc": {"authoring": ["Use SKILL.md as the skill root and embedded default-interface gateway."]}, "related_validation_rules": ["gateway-file", "default-interface"]}}
-      }
+    "runtimeDependencyKind": {
+      "type": "string",
+      "enum": [
+        "python-package",
+        "binary",
+        "system-service",
+        "system-library",
+        "external-application",
+        "runtime",
+        "model-data"
+      ]
     },
-    "pythonGateway": {
-      "type": "object",
-      "required": ["kind", "path", "symbol"],
-      "additionalProperties": false,
-      "properties": {
-        "kind": {"const": "python-entrypoint", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "python-entrypoint"}, "doc": {"authoring": ["Use python-entrypoint for a dispatcher-loaded Python interface."]}, "related_validation_rules": ["gateway-kind"]}},
-        "path": {"allOf": [{"$ref": "#/definitions/relativePath"}], "type": "string", "pattern": "^_rtx/.+\\.py$", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "_rtx/_runner.py"}, "doc": {"authoring": ["Name a Python file under _rtx without parent traversal."]}, "related_validation_rules": ["gateway-kind", "gateway-file"]}},
-        "symbol": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "Interface"}, "doc": {"authoring": ["Name the exported Python interface class or callable."]}, "related_validation_rules": ["gateway-kind"]}},
-        "args_prefix": {"type": "array", "items": {"type": "string", "minLength": 1}, "default": [], "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List fixed argv elements prepended by the dispatcher."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}}
-      }
+    "runtimeSystemServiceName": {
+      "type": "string",
+      "description": "Standardized service-manager or daemon facility names for runtime dependencies.",
+      "enum": ["systemd-user", "launchd", "task-scheduler", "cron"]
     },
-    "commandFileGateway": {
+    "runtimeDependency": {
       "type": "object",
-      "required": ["kind", "path"],
+      "required": ["kind", "name", "version", "platforms", "reason"],
       "additionalProperties": false,
       "properties": {
-        "kind": {"const": "command-file", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "command-file"}, "doc": {"authoring": ["Use command-file for a tracked executable invoked without a shell string."]}, "related_validation_rules": ["gateway-kind"]}},
-        "path": {"allOf": [{"$ref": "#/definitions/relativePath"}], "type": "string", "pattern": "^_cx/.+", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "_cx/_run"}, "doc": {"authoring": ["Name a tracked executable under _cx without parent traversal."]}, "related_validation_rules": ["gateway-kind", "gateway-file"]}},
-        "args_prefix": {"type": "array", "items": {"type": "string", "minLength": 1}, "default": [], "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List fixed argv elements prepended to the direct execution."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}}
+        "kind": {
+          "$ref": "#/definitions/runtimeDependencyKind",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "python-package"},
+            "doc": {"authoring": ["Classify the runtime dependency."]},
+            "related_validation_rules": ["runtime-dependency"]
+          }
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.+\\-\\[\\]]*$",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "PyYAML"},
+            "doc": {"authoring": ["Name the package, executable, service, library, runtime, application, or model data."]},
+            "related_validation_rules": ["runtime-dependency"]
+          }
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": ">=6"},
+            "doc": {"authoring": ["State the required dependency version or constraint."]},
+            "related_validation_rules": ["runtime-dependency"]
+          }
+        },
+        "platforms": {
+          "$ref": "#/definitions/platformSupport",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": {"linux": true, "macos": true, "windows": true}},
+            "doc": {"authoring": ["State the platforms on which this dependency applies."]},
+            "related_validation_rules": ["runtime-dependency"]
+          }
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "Parses YAML blueprints."},
+            "doc": {"authoring": ["Explain why the source requires this dependency."]},
+            "related_validation_rules": ["runtime-dependency"]
+          }
+        }
       },
-      "description": "A tracked executable file invoked directly without shell-string evaluation."
+      "allOf": [
+        {
+          "if": {
+            "properties": {"kind": {"const": "system-service"}},
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "name": {"$ref": "#/definitions/runtimeSystemServiceName"}
+            }
+          }
+        }
+      ]
     },
-    "behaviorSourceGateway": {
-      "type": "object",
-      "required": ["kind", "path"],
-      "additionalProperties": false,
-      "properties": {
-        "kind": {"const": "file", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "file"}, "doc": {"authoring": ["Use file for a behavior-shaping source gateway."]}, "related_validation_rules": ["gateway-file"]}},
-        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "references/policy.md"}, "doc": {"authoring": ["Name one existing regular file without parent traversal."]}, "related_validation_rules": ["gateway-file"]}}
-      }
-    },
-    "platformSupport": {"$ref": "legacy-skill.schema.json#/definitions/platformSupport"},
     "runtimeDependencies": {
-      "allOf": [{"$ref": "legacy-skill.schema.json#/definitions/runtimeDependencies"}],
-      "description": "Runtime dependencies for one typed machine interface. Each entry's platforms map states where that dependency applies, not the complete support claim of the interface."
+      "type": "array",
+      "description": "Non-stdlib runtime dependencies for one behavioral source. Each platforms map states where the dependency applies, not the source's complete support claim.",
+      "items": {"$ref": "#/definitions/runtimeDependency"},
+      "uniqueItems": true
     },
     "pattern": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "name": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Optionally name this accepted argv pattern."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
-        "min_positionals": {"type": "integer", "minimum": 0, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Set the minimum number of positional arguments accepted."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
-        "max_positionals": {"type": "integer", "minimum": 0, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Set the maximum number of positional arguments accepted."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
-        "allow_extra_positionals": {"type": "boolean", "default": false, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Allow positional arguments beyond the declared maximum or positional patterns."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
-        "allow_stdin": {"type": "boolean", "default": false, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Allow the interface to consume standard input."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
+        "name": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["Optionally name this accepted argv pattern."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
+        "min_positionals": {"type": "integer", "minimum": 0, "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["Set the minimum number of positional arguments accepted."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
+        "max_positionals": {"type": "integer", "minimum": 0, "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["Set the maximum number of positional arguments accepted."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
+        "allow_extra_positionals": {"type": "boolean", "default": false, "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["Allow positional arguments beyond the declared maximum or positional patterns."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
+        "allow_stdin": {"type": "boolean", "default": false, "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["Allow the interface to consume standard input."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
         "positional_patterns": {
           "type": "object",
           "propertyNames": {"pattern": "^[0-9]+$"},
           "additionalProperties": {"type": "string", "minLength": 1},
-          "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Map zero-based positional indexes to their accepted regular expressions."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
+          "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["Map zero-based positional indexes to their accepted regular expressions."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
         },
         "flag_patterns": {
           "type": "object",
           "propertyNames": {"pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"},
           "additionalProperties": {"type": "string", "minLength": 1},
-          "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Map accepted short or long flags to value regular expressions."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
+          "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["Map accepted short or long flags to value regular expressions."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
         },
         "required_flags": {
           "type": "array",
           "items": {"type": "string", "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"},
-          "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List flags that every matching invocation must contain."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
+          "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["List flags that every matching invocation must contain."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
         },
         "allowed_flags": {
           "type": "array",
           "items": {"type": "string", "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"},
-          "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List the complete set of flags accepted by this pattern."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
+          "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["List the complete set of flags accepted by this pattern."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
         },
         "forbidden_flags": {
           "type": "array",
           "items": {"type": "string", "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"},
-          "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List flags explicitly rejected by this pattern."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
+          "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["List flags explicitly rejected by this pattern."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
         },
-        "notes": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Record concise semantic details not expressible by the structural fields."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}}
+        "notes": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["Record concise semantic details not expressible by the structural fields."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}}
       }
     },
-    "directIo": {
-      "$ref": "direct-io.schema.json",
-      "description": "Immediate semantic IO. This declaration is descriptive and is not proof of subsystem confinement.",
-      "x-famulus": {"audit_hash": "exclude"}
-    },
-    "filesystemOwnershipList": {"$ref": "legacy-skill.schema.json#/definitions/filesystemOwnershipList"},
     "v4FilesystemOwnershipList": {
       "type": "array",
       "uniqueItems": true,
@@ -297,35 +409,18 @@
         "required": ["match", "path", "allowed_readers"],
         "additionalProperties": false,
         "properties": {
-          "match": {"enum": ["exact", "regex"], "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "exact"}, "doc": {"authoring": ["Choose exact or regex path matching."]}, "related_validation_rules": ["filesystem-ownership"]}},
-          "path": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "state.json"}, "doc": {"authoring": ["Declare the module-owned filesystem path or pattern."]}, "related_validation_rules": ["filesystem-ownership"]}},
-          "allowed_readers": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/interfaceId"}, "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": []}, "doc": {"authoring": ["List generic interface IDs authorized to read this owned path."]}, "related_validation_rules": ["filesystem-ownership"]}},
-          "reason": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Explain the module's filesystem authority when useful."]}, "related_validation_rules": ["filesystem-ownership"]}}
+          "match": {"enum": ["exact", "regex"], "x-famulus": {"field_status": "required", "template": {"include": true, "example": "exact"}, "doc": {"authoring": ["Choose exact or regex path matching."]}, "related_validation_rules": ["filesystem-ownership"]}},
+          "path": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "required", "template": {"include": true, "example": "state.json"}, "doc": {"authoring": ["Declare the module-owned filesystem path or pattern."]}, "related_validation_rules": ["filesystem-ownership"]}},
+          "allowed_readers": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/interfaceId"}, "x-famulus": {"field_status": "required", "template": {"include": true, "example": []}, "doc": {"authoring": ["List generic interface IDs authorized to read this owned path."]}, "related_validation_rules": ["filesystem-ownership"]}},
+          "reason": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "optional", "template": {"include": false}, "doc": {"authoring": ["Explain the module's filesystem authority when useful."]}, "related_validation_rules": ["filesystem-ownership"]}}
         }
       }
-    },
-    "metadataContent": {"$ref": "legacy-skill.schema.json#/definitions/metadataContent"},
-    "metadataFormat": {"$ref": "legacy-skill.schema.json#/definitions/metadataFormat"},
-    "allowedCallers": {
-      "type": "array",
-      "items": {"$ref": "#/definitions/skillId"},
-      "uniqueItems": true,
-      "default": []
     }
   },
   "x-famulus": {
-    "sidecar_naming": {
-      "derivation": "For a gateway relative path P, place the sidecar beside P as dirname(P)/.basename(P).blueprint.yaml; omit dirname(P)/ when P has no directory component.",
-      "examples": ["llm_interfaces/.specialized.md.blueprint.yaml", "_rtx/._runner.py.blueprint.yaml"]
-    },
     "content_ownership_policy": {
-      "gateway": "For pre-v4 nodes, the gateway resolves against the node ownership root and must be a tracked regular non-symlink file included in content.",
-      "command_files": "For pre-v4 nodes, command gateways must be executable tracked regular non-symlink files under the owning _cx directory.",
-      "content": "For pre-v4 nodes, every matched content file participates in local hashing and commit readiness and has exactly one authored owner."
-    },
-    "v4_content_ownership_policy": {
       "gateway": "The whole-file gateway belongs to the authored ownership scope and mandatory certificate closure.",
-      "content": "Version-4 content patterns declare ownership only; the project node-input policy selects hash inputs from that ownership scope."
+      "content": "Content patterns declare ownership only; the project node-input policy selects hash inputs from that ownership scope."
     }
   }
 }

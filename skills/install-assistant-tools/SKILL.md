@@ -14,7 +14,7 @@ Uses Interfaces:
 - `install-assistant-tools.source.rtx-agent-launchers -> common.interface.toml-io@1`
 - `install-assistant-tools.source.rtx-config-bridge -> common.interface.codex-toml@1`
 - `install-assistant-tools.source.rtx-config-bridge -> common.interface.toml-io@1`
-- `install-assistant-tools.source.rtx-install-scaffold -> common.interface.audit-records@1`
+- `install-assistant-tools.source.rtx-install-scaffold -> common.interface.certificate-records@1`
 
 Public Interfaces:
 - `install-assistant-tools.interface.default`
@@ -26,9 +26,9 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `install-assistant-tools.interface.scripts-dev-link` — Symlink Claude/Codex config dirs to a live repo checkout, register dev-mode hooks, set git hooksPath, export $AI. Requires an explicit repo path.
   - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-dev-link --repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]`
 - `install-assistant-tools.interface.scripts-install` — Phase-1 orchestrator: asks the dev-mode question, then runs scaffold, optionally dev-link, then launchers.
@@ -38,7 +38,7 @@ Use the installed `dispatcher` command for this skill's machine interfaces:
 - `install-assistant-tools.interface.scripts-scaffold` — Install the dispatcher + invoke-skill launchers and put the bin dir on PATH. Universal floor, mode-independent.
   - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-scaffold --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]`
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `install-assistant-tools.interface.default` — Primary LLM-facing skill instructions.

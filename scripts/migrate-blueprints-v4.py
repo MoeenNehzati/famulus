@@ -13,15 +13,22 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from officina.common.interface_injection_migration import (  # noqa: E402
+    check_active_migration_references,
     InterfaceInjectionMigrationError,
     finalize_candidate_v4,
     inspect_candidate_v4,
     load_blueprint_migration_map,
     materialize_blueprint_v4_candidate,
+    validate_post_adoption_migration_map,
 )
 
 
-def main() -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    repo_root: Path = REPO_ROOT,
+) -> int:
+    root = Path(repo_root).resolve()
     parser = argparse.ArgumentParser(
         description="Validate the migration map and build an isolated v4 candidate."
     )
@@ -29,6 +36,7 @@ def main() -> int:
     mode.add_argument("--check-map", action="store_true")
     mode.add_argument("--inspect-candidate", type=Path)
     mode.add_argument("--finalize-candidate", type=Path)
+    parser.add_argument("--check-active-references", action="store_true")
     parser.add_argument("--temporary-output", action="store_true")
     parser.add_argument(
         "--diagnostic-allow-non-atomic",
@@ -37,10 +45,11 @@ def main() -> int:
     )
     parser.add_argument("--reviewed-commit")
     parser.add_argument("--certified-at")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.inspect_candidate is not None:
         if (
-            args.temporary_output
+            args.check_active_references
+            or args.temporary_output
             or args.diagnostic_allow_non_atomic
             or args.reviewed_commit
             or args.certified_at
@@ -54,7 +63,11 @@ def main() -> int:
         print(json.dumps(inspection, indent=2, sort_keys=True))
         return 3 if inspection["findings"] else 0
     if args.finalize_candidate is not None:
-        if args.temporary_output or args.diagnostic_allow_non_atomic:
+        if (
+            args.check_active_references
+            or args.temporary_output
+            or args.diagnostic_allow_non_atomic
+        ):
             parser.error(
                 "--finalize-candidate does not accept candidate-creation flags"
             )
@@ -76,6 +89,34 @@ def main() -> int:
             return 2
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0
+    if args.check_active_references:
+        if (
+            args.temporary_output
+            or args.diagnostic_allow_non_atomic
+            or args.reviewed_commit
+            or args.certified_at
+        ):
+            parser.error(
+                "--check-map --check-active-references accepts no candidate "
+                "or finalization flags"
+            )
+        try:
+            migration_map = load_blueprint_migration_map(
+                root / "docs/plans/unified-architecture-migration-map.yaml"
+            )
+            validate_post_adoption_migration_map(migration_map)
+            findings = check_active_migration_references(root, migration_map)
+        except InterfaceInjectionMigrationError as exc:
+            print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))
+            return 2
+        print("migration_map_status=valid-post-adoption")
+        print(f"active_reference_findings={len(findings)}")
+        for finding in findings:
+            print(
+                "active_reference_finding="
+                + json.dumps(finding.as_document(), sort_keys=True)
+            )
+        return 3 if findings else 0
     if (
         not args.temporary_output
         or args.reviewed_commit
@@ -84,16 +125,16 @@ def main() -> int:
         parser.error("--check-map requires only --temporary-output")
 
     migration_map = load_blueprint_migration_map(
-        REPO_ROOT / "docs/plans/unified-architecture-migration-map.yaml"
+        root / "docs/plans/unified-architecture-migration-map.yaml"
     )
     if args.diagnostic_allow_non_atomic:
         candidate = materialize_blueprint_v4_candidate(
-            REPO_ROOT,
+            root,
             migration_map,
             diagnostic_allow_non_atomic=True,
         )
     else:
-        candidate = materialize_blueprint_v4_candidate(REPO_ROOT, migration_map)
+        candidate = materialize_blueprint_v4_candidate(root, migration_map)
     print(f"candidate_root={candidate.root}")
     print(f"candidate_source_commit={candidate.source_commit}")
     print(f"candidate_legacy_commit={candidate.legacy_commit}")

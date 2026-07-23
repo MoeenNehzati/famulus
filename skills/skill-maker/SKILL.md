@@ -22,15 +22,15 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Owner-Facing Machine Interfaces:
+Dispatcher Interfaces:
 
-Use the installed `dispatcher` command for this skill's machine interfaces:
+Use the installed `dispatcher` command for these process-bound interfaces:
 - `skill-maker.interface.sync-blueprints` — Validate every skill blueprint and either check or refresh generated SKILL.md contract blocks and the runtime-dependency manifest.
   - `dispatcher --caller-skill skill-maker skill-maker.interface.sync-blueprints [--check]`
   - sync: Refresh generated files from blueprint.yaml.
   - check: Validate blueprints and fail if generated files are out of sync.
 
-Owner-Facing LLM Interfaces:
+Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `skill-maker.interface.default` — Create or edit a personal skill under the repository's canonical module, interface, validation, and Git-safety standards.
@@ -54,13 +54,13 @@ but catching this before editing avoids doing work that can't land.
 
 ## Skill-system subdirectories
 
-This skill owns the conformance infrastructure for the skill system:
+This skill owns mechanical authoring validation for the skill system:
 
 - **`validators/`** — Python validator modules (names, metadata, blueprints, boundaries, dependencies, blueprint relationships). Each exports `validate(repo_root: Path) -> list[str]` and is auto-discovered by `validators/runner.py` on every commit. See the generated `../../references/skill-standards/skill-guidelines.md` for the full validator contract and conventions.
 - **`tests/`** — behavior tests for the blueprint dispatcher and sync scripts (`test_blueprint_tools.py`).
 - **runtime syncer** — refreshes generated blueprint artifacts.
 
-To add a new conformance check: add a `.py` file to `validators/` with a `validate(repo_root)` function and a matching `tests/validate_<name>.py`. No registration needed.
+To add a mechanical check, add a `.py` file to `validators/` with a `validate(repo_root)` function and a matching `tests/validate_<name>.py`. No registration is needed.
 
 ## Referencing other skills
 
