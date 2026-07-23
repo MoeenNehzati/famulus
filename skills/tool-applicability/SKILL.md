@@ -26,7 +26,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `tool-applicability.llm.default`
+- `tool-applicability.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -34,8 +34,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `tool-applicability.interface.default` — Determine the exact role and deliverable of a candidate mathematical tool without blurring current assumptions, added hypotheses, or target strength.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

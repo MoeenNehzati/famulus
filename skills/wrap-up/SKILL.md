@@ -14,13 +14,13 @@ Category: workflow-general-assistant
 Skill Version: 1
 
 Uses Interfaces:
-- `wrap-up.llm.default -> daily-plan.llm.default@1`
-- `wrap-up.llm.default -> find-handoff-candidates.llm.default@1`
-- `wrap-up.llm.default -> list-manager.llm.default@1`
-- `wrap-up.llm.default -> prepare-handoff.llm.default@1`
+- `wrap-up.source.gateway -> daily-plan.interface.default@1`
+- `wrap-up.source.gateway -> find-handoff-candidates.interface.default@1`
+- `wrap-up.source.gateway -> list-manager.interface.default@1`
+- `wrap-up.source.gateway -> prepare-handoff.interface.default@1`
 
 Public Interfaces:
-- `wrap-up.llm.default`
+- `wrap-up.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -28,8 +28,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `wrap-up.interface.default` — Collect one consolidated user response, orchestrate declared planning and list interfaces, relay mechanical handoff candidates without transcript inspection, and summarize results.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

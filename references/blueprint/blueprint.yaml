@@ -1,0 +1,59 @@
+authority:
+  owns_filesystem: []
+content:
+- README\.md
+- behavior\-source\.schema\.json
+- behavioral\-source\.schema\.json
+- caller\-contract\.schema\.json
+- certificate\.schema\.json
+- common\.schema\.json
+- conformance\-boundary\-operations\.schema\.json
+- conformance\-boundary\-operations\.yaml
+- conformance\-operations/calendar\.schema\.json
+- conformance\-operations/clock\.schema\.json
+- conformance\-operations/common\.schema\.json
+- conformance\-operations/email\.schema\.json
+- conformance\-operations/filesystem\.schema\.json
+- conformance\-operations/helpers\.schema\.json
+- conformance\-operations/network\.schema\.json
+- conformance\-operations/subprocess\.schema\.json
+- default\-llm\-interface\.schema\.json
+- direct\-io\.schema\.json
+- health\.schema\.json
+- interface\-admissibility\-profile\.schema\.json
+- interface\-admissibility\-result\.schema\.json
+- interface\-admissibility\.profile\.yaml
+- interface\-conformance\.schema\.json
+- interface\-projection\.schema\.json
+- legacy\-skill\.schema\.json
+- llm\-interface\.schema\.json
+- machine\-interface\.schema\.json
+- machine\-module\.schema\.json
+- module\.schema\.json
+- pooled\-review\.schema\.json
+- runtime_dependencies\.json
+- schema\-meta\.json
+- schema\.annotated\-draft\.json
+- schema\.json
+- skill\.schema\.json
+- template\.yaml
+- v2/behavior\-source\.schema\.json
+- v2/common\.schema\.json
+- v2/default\-llm\-interface\.schema\.json
+- v2/llm\-interface\.schema\.json
+- v2/machine\-interface\.schema\.json
+- v2/skill\.schema\.json
+description: Owns the repository's blueprint schemas, validation profiles, templates, and schema metadata.
+exports: {}
+gateway:
+  language: JSON-Schema
+  path: schema.json
+id: blueprint
+node_type: module
+schema_version: 4
+sources:
+  blueprint.source.schema-annotated-draft:
+    blueprint:
+      base: module-root
+      path: blueprints/schema-annotated-draft.yaml
+version: 1

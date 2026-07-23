@@ -30,7 +30,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `technical-flow-review.llm.default`
+- `technical-flow-review.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -38,8 +38,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `technical-flow-review.interface.default` — Diagnose technical-document flow relative to its inferred profile and propose structural direction without unapproved rewriting.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

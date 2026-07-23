@@ -13,7 +13,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `prepare-handoff.llm.default`
+- `prepare-handoff.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
@@ -22,8 +22,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `prepare-handoff.interface.default` — Review recent work, obtain approval, encode project-local continuity, and close with exact machine-readable sentinels.
 <!-- END BLUEPRINT INTERFACES -->
 # Prepare Handoff
 

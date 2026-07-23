@@ -1,1101 +1,207 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _rtx/_yaml_store.py:Interface
+      reason: Core list operations; supports --cloud flag to handle cloud transport
+        via the shared dispatcher automatically.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _rtx/_yaml_store.py:DescribeSchemaInterface
+      reason: Read-only schema descriptor exposed through the shared Python machine-interface
+        runner.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _rtx/_list_beautify.py:BeautifyListInterface
+      reason: Pure formatter used for user-facing rendering of YAML output.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _rtx/_render_bridge.py:Interface
+      reason: Default human-facing read path for lists; supports --cloud flag for
+        cloud-backed lists.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _rtx/_legacy_importer.py:Interface
+      reason: One-time migration utility for importing legacy Markdown lists.
+    network: []
 category: productivity-general-assistant
-role: productivity
+content:
+- SKILL\.md
+- _rtx/__init__\.py
+- _rtx/_category_cache\.py
+- _rtx/_cloud_transport\.py
+- _rtx/_get_schema\.py
+- _rtx/_legacy_importer\.py
+- _rtx/_list_beautify\.py
+- _rtx/_render_bridge\.py
+- _rtx/_yaml_store\.py
+- lessons\.md
+- references/action\-structure\.md
+- references/list\-structure\.md
+- schemas/lists/default\.json
+- schemas/lists/task\-list\-personal\.json
+- schemas/lists/task\-list\.json
+- schemas/lists/todo\.json
+- schemas/lists/triage\.json
+- schemas/types/action\.json
+- schemas/types/entry\.json
+- schemas/types/task_entry\.json
+- schemas/types/triage_action\.json
+- tests/fixtures/sample\.md
+- tests/fixtures/todo_invalid_date\.yaml
+- tests/fixtures/todo_invalid_state\.yaml
+- tests/fixtures/todo_missing_deadline\.yaml
+- tests/fixtures/todo_valid\.yaml
+- tests/fixtures/triage_valid\.yaml
+- tests/test_beautify\.py
+- tests/test_category_cache\.py
+- tests/test_get_schema\.py
+- tests/test_lists\.py
+- tests/test_python_machine_interfaces\.py
+- tests/test_read_beautify\.py
+- tests/test_skill_contract\.py
+- tests/test_validation\.py
+discovery:
+  mechanism: skill
+description: Manage schema-validated local and cloud-backed personal lists through a
+  Markdown LLM gateway and bounded Python interfaces for reading, rendering, creating,
+  updating, deleting, and migrating list data.
+exports:
+  list-manager.interface.beautify-list:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: list-manager.source.rtx-list-beautify.interface.beautify-list
+  list-manager.interface.cloud-create-entry:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: list-manager.source.rtx-yaml-store.interface.cloud-create-entry
+  list-manager.interface.cloud-delete:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: list-manager.source.rtx-yaml-store.interface.cloud-delete
+  list-manager.interface.cloud-init:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: list-manager.source.rtx-yaml-store.interface.cloud-init
+  list-manager.interface.cloud-list-categories:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: list-manager.source.rtx-category-cache.interface.cloud-list-categories
+  list-manager.interface.cloud-read:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: list-manager.source.rtx-yaml-store.interface.cloud-read
+  list-manager.interface.cloud-read-beautify:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: list-manager.source.rtx-render-bridge.interface.cloud-read-beautify
+  list-manager.interface.cloud-update:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: list-manager.source.rtx-yaml-store.interface.cloud-update
+  list-manager.interface.create-entry:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: list-manager.source.rtx-yaml-store.interface.create-entry
+  list-manager.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: list-manager.source.gateway.interface.default
+  list-manager.interface.describe-schema:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: list-manager.source.rtx-yaml-store.interface.describe-schema
+  list-manager.interface.generate-id:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: list-manager.source.rtx-yaml-store.interface.generate-id
+  list-manager.interface.init-list:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: list-manager.source.rtx-yaml-store.interface.init-list
+  list-manager.interface.migrate-markdown:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: list-manager.source.rtx-legacy-importer.interface.migrate-markdown
+  list-manager.interface.read-beautify:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - daily-plan
+    source_interface: list-manager.source.rtx-render-bridge.interface.read-beautify
+  list-manager.interface.read-list:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - daily-plan
+    source_interface: list-manager.source.rtx-yaml-store.interface.read-list
+  list-manager.interface.update-list:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - daily-plan
+    source_interface: list-manager.source.rtx-yaml-store.interface.update-list
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: list-manager
 kind: state-manager
-suggested_permissions:
-  bash:
-  - command:
-    - python3
-    - -m
-    - officina.runtime.python_machine_interface_runner
-    - _rtx/_yaml_store.py:Interface
-    reason: Core list operations; supports --cloud flag to handle cloud transport
-      via the shared dispatcher automatically.
-  - command:
-    - python3
-    - -m
-    - officina.runtime.python_machine_interface_runner
-    - _rtx/_yaml_store.py:DescribeSchemaInterface
-    reason: Read-only schema descriptor exposed through the shared Python machine-interface
-      runner.
-  - command:
-    - python3
-    - -m
-    - officina.runtime.python_machine_interface_runner
-    - _rtx/_list_beautify.py:BeautifyListInterface
-    reason: Pure formatter used for user-facing rendering of YAML output.
-  - command:
-    - python3
-    - -m
-    - officina.runtime.python_machine_interface_runner
-    - _rtx/_render_bridge.py:Interface
-    reason: Default human-facing read path for lists; supports --cloud flag for cloud-backed
-      lists.
-  - command:
-    - python3
-    - -m
-    - officina.runtime.python_machine_interface_runner
-    - _rtx/_legacy_importer.py:Interface
-    reason: One-time migration utility for importing legacy Markdown lists.
-  network: []
-skill_interface:
-  inputs:
-  - Local YAML list files under /tmp after download from cloud storage.
-  - User commands such as read, update, create-entry, or init.
-  outputs:
-  - YAML data for LLM consumption.
-  - Beautified list output for user display.
-  - Updated local YAML files ready for upload.
-  side_effects:
-  - Writes the local YAML file for mutating operations.
-  - Produces stdout/stderr for orchestration and validation errors.
-interfaces:
-  machine:
-    read-list:
-      version: 1
-      description: 'Read a local YAML list file, optionally filtered (raw YAML output).
-        A filtered read preserves structure: it returns the same shape as the input
-        (full doc with categories, or a bare list) pruned to only branches containing
-        a match -- every ancestor category and parent entry of a match is kept for
-        context, and a match is never duplicated as both a nested child and an independent
-        top-level result.'
-      usage: <file> [filters]
-      allow_all_skills: false
-      allowed_callers:
-      - daily-plan
-      patterns:
-      - min_positionals: 1
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: First positional is the local YAML file; remaining positionals are
-          filters. Filtered output is a pruned tree (or pruned list, if the input
-          itself was a bare list), not a flat list of matches -- do not assume flat-list
-          shape.
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads YAML list files.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads:
-        - medium: local-filesystem
-          access: read
-          system: filesystem
-          content: list
-          format: yaml
-          path: <file>
-          sensitivity: user-private
-        writes:
-        - medium: stdout
-          access: write
-          content: list
-          format: yaml
-          sensitivity: user-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - read
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    describe-schema:
-      version: 1
-      description: Describe entry-level fields (types/required/enums) for a list schema.
-      usage: <schema> [field]
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - min_positionals: 1
-        max_positionals: 2
-        allow_stdin: false
-        notes: First positional is the schema name (todo, triage, default); optional
-          second positional is a field name, or '*'/omitted for all fields. Purely
-          local and read-only -- no cloud variant needed.
-      dependencies:
-      - kind: python-package
-        name: jsonschema
-        reason: Resolves and reports JSON Schema metadata for list entries.
-        version: ">=4"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads: []
-        writes:
-        - medium: stdout
-          access: write
-          content: metadata
-          format: json
-          sensitivity: public
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:DescribeSchemaInterface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    update-list:
-      version: 1
-      description: Update entries in a local YAML list file from a patch file (keyed
-        by id) or stdin.
-      usage: <file> --file /tmp/patch.yaml
-      allow_all_skills: false
-      allowed_callers:
-      - daily-plan
-      patterns:
-      - name: file-mode
-        min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        required_flags:
-        - --file
-        allowed_flags:
-        - --file
-        flag_patterns:
-          --file: ^.+$
-        notes: Externally supported update mode; caller prepares the patch file.
-      - name: stdin-batch
-        min_positionals: 1
-        max_positionals: 1
-        allow_stdin: true
-        forbidden_flags:
-        - --file
-        notes: Internal convenience mode for the owning skill when feeding YAML directly.
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads and writes YAML list files.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      - kind: python-package
-        name: jsonschema
-        reason: Validates list mutations before writing.
-        version: ">=4"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads:
-        - medium: local-filesystem
-          access: read
-          system: filesystem
-          content: list
-          format: yaml
-          path: <file>
-          sensitivity: user-private
-        - medium: local-filesystem
-          access: read
-          system: filesystem
-          content: patch
-          format: yaml
-          path: <patch-file>
-          sensitivity: user-private
-        - medium: stdin
-          access: read
-          content: patch
-          format: yaml
-          sensitivity: user-private
-        writes:
-        - medium: local-filesystem
-          access: write
-          system: filesystem
-          content: list
-          format: yaml
-          path: <file>
-          sensitivity: user-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - update
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    read-beautify:
-      version: 1
-      description: Read a local YAML list file and render it for display (nested bullet-list
-        markdown by default; --table for a flat GFM table, --diff for the legacy diff-fenced
-        view).
-      usage: <file> [filters] [--sort FIELD] [-D|--no-descriptions] [--markdown|--table|--diff]
-        [--no-ids] [-o FILE]
-      allow_all_skills: false
-      allowed_callers:
-      - daily-plan
-      patterns:
-      - min_positionals: 1
-        allow_extra_positionals: true
-        allow_stdin: false
-        notes: 'Read a local YAML list file and immediately return pretty output.
-          No allowed_flags restriction: --sort/-D/--markdown/--table/--diff/--no-ids/-o
-          all pass through.'
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads YAML list data before rendering.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      - kind: python-package
-        name: rich
-        reason: Renders nested list output for terminal display.
-        version: any
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads:
-        - medium: local-filesystem
-          access: read
-          system: filesystem
-          content: list
-          format: yaml
-          path: <file>
-          sensitivity: user-private
-        writes:
-        - medium: stdout
-          access: write
-          content: report
-          format: markdown
-          sensitivity: derived-private
-        - medium: local-filesystem
-          access: write
-          system: filesystem
-          content: report
-          format: markdown
-          path: <output-file>
-          sensitivity: derived-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_render_bridge.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    beautify-list:
-      version: 1
-      description: Render YAML list entries from stdin (nested bullet-list markdown
-        by default for todo/triage; --table for a flat GFM table, --diff for the legacy
-        diff-fenced view). Pass YAML via stdin using `dispatcher --stdin`.
-      usage: '[-D|--no-descriptions] [--markdown|--table|--diff] [--relative-deadlines]
-        [--ids]'
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: true
-        notes: 'Reads YAML from stdin and renders user-facing list output. No allowed_flags
-          restriction: -D/--markdown/--table/--diff/--relative-deadlines/--ids all
-          pass through.'
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads YAML list data from stdin.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      - kind: python-package
-        name: rich
-        reason: Renders nested list output for terminal display.
-        version: any
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads:
-        - medium: stdin
-          access: read
-          content: list
-          format: yaml
-          sensitivity: user-private
-        writes:
-        - medium: stdout
-          access: write
-          content: report
-          format: markdown
-          sensitivity: derived-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_list_beautify.py:BeautifyListInterface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    init-list:
-      version: 1
-      description: Create a new empty local YAML list file.
-      usage: <file> [--schema <name>]
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - min_positionals: 1
-        allow_extra_positionals: true
-        allow_stdin: false
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Writes YAML list files.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      - kind: python-package
-        name: jsonschema
-        reason: Validates initialized list data before writing.
-        version: ">=4"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads:
-        - medium: prompt
-          access: read
-          content: metadata
-          format: text
-          sensitivity: user-private
-        writes:
-        - medium: local-filesystem
-          access: write
-          system: filesystem
-          content: list
-          format: yaml
-          path: <file>
-          sensitivity: user-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - init
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    create-entry:
-      version: 1
-      description: Add entries to a local YAML list under a category path.
-      usage: <file> <category/path> --entries /tmp/entry.yaml
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - name: stdin-mode
-        min_positionals: 2
-        max_positionals: 2
-        allow_stdin: true
-        forbidden_flags:
-        - --entries
-      - name: file-mode
-        min_positionals: 2
-        max_positionals: 2
-        allow_stdin: false
-        required_flags:
-        - --entries
-        allowed_flags:
-        - --entries
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads and writes YAML list files.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      - kind: python-package
-        name: jsonschema
-        reason: Validates new entries before writing.
-        version: ">=4"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads:
-        - medium: local-filesystem
-          access: read
-          system: filesystem
-          content: list
-          format: yaml
-          path: <file>
-          sensitivity: user-private
-        - medium: local-filesystem
-          access: read
-          system: filesystem
-          content: patch
-          format: yaml
-          path: <entries-file>
-          sensitivity: user-private
-        - medium: stdin
-          access: read
-          content: patch
-          format: yaml
-          sensitivity: user-private
-        writes:
-        - medium: local-filesystem
-          access: write
-          system: filesystem
-          content: list
-          format: yaml
-          path: <file>
-          sensitivity: user-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - create-entry
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    generate-id:
-      version: 1
-      description: Generate one or more collision-free 6-char entry IDs against a
-        local list file.
-      usage: <file> [--count N]
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - min_positionals: 1
-        allow_extra_positionals: true
-        allow_stdin: false
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads YAML list files to avoid ID collisions.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads:
-        - medium: local-filesystem
-          access: read
-          system: filesystem
-          content: list
-          format: yaml
-          path: <file>
-          sensitivity: user-private
-        writes:
-        - medium: stdout
-          access: write
-          content: token
-          format: text
-          sensitivity: derived-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - gen-id
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    migrate-markdown:
-      version: 1
-      description: Migrate a legacy Markdown list to YAML format.
-      usage: <source.md> <dest.yaml> --schema <schema>
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - min_positionals: 3
-        allow_extra_positionals: true
-        allow_stdin: false
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Writes migrated YAML list files.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      - kind: python-package
-        name: jsonschema
-        reason: Validates migrated entries before writing.
-        version: ">=4"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      - kind: python-package
-        name: dateparser
-        reason: Parses natural-language legacy Markdown deadlines.
-        version: any
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads:
-        - medium: local-filesystem
-          access: read
-          system: filesystem
-          content: list
-          format: markdown
-          path: <source.md>
-          sensitivity: user-private
-        writes:
-        - medium: local-filesystem
-          access: write
-          system: filesystem
-          content: list
-          format: yaml
-          path: <dest.yaml>
-          sensitivity: user-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_legacy_importer.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    cloud-read:
-      version: 1
-      uses_interfaces:
-      - interface: cloud-files.machine.lists-read
-        version: 1
-      description: 'Read a cloud list by name (raw YAML), optionally filtered. A filtered
-        read preserves structure: same shape as the full doc, pruned to only branches
-        containing a match -- ancestor categories/parent entries are kept, and a match
-        is never duplicated as both a nested child and a top-level result.'
-      usage: <name> [filters] --cloud
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - min_positionals: 1
-        allow_extra_positionals: true
-        allow_stdin: false
-        required_flags:
-        - --cloud
-        allowed_flags:
-        - --cloud
-        - --sort
-        - -o
-        - --output
-        positional_patterns:
-          0: ^[a-zA-Z0-9_-]+$
-        notes: Read cloud list by name (raw YAML), optionally filtered. Filtered output
-          is a pruned tree, not a flat list of matches -- do not assume flat-list
-          shape.
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads YAML list data downloaded from cloud storage.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads: []
-        writes:
-        - medium: stdout
-          access: write
-          content: list
-          format: yaml
-          sensitivity: user-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - read
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    cloud-list-categories:
-      version: 1
-      uses_interfaces:
-      - interface: cloud-files.machine.lists-read
-        version: 1
-      description: Return cached cloud-list category paths, refreshing them after the local use countdown expires or on request.
-      usage: <name> --cloud [--refresh]
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        required_flags:
-        - --cloud
-        allowed_flags:
-        - --cloud
-        - --refresh
-        positional_patterns:
-          0: ^[a-zA-Z0-9_-]+$
-        notes: Returns category paths from the local cache; refreshes from cloud storage on first use, after twenty lookups, or with --refresh.
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads cloud list YAML and stores local category-cache YAML.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads:
-        - medium: local-filesystem
-          access: read
-          system: filesystem
-          content: metadata
-          format: yaml
-          path: skills/list-manager/tmp/categories.<name>.yaml
-          sensitivity: user-private
-        writes:
-        - medium: local-filesystem
-          access: write
-          system: filesystem
-          content: metadata
-          format: yaml
-          path: skills/list-manager/tmp/categories.<name>.yaml
-          sensitivity: user-private
-        - medium: stdout
-          access: write
-          content: metadata
-          format: yaml
-          sensitivity: derived-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_category_cache.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    cloud-create-entry:
-      version: 1
-      uses_interfaces:
-      - interface: cloud-files.machine.lists-read
-        version: 1
-      - interface: cloud-files.machine.lists-write
-        version: 1
-      description: Add entries to a cloud list under a category path.
-      usage: <name> <category/path> --cloud --entries /tmp/entry.yaml
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - name: stdin-mode
-        min_positionals: 2
-        max_positionals: 2
-        allow_stdin: true
-        required_flags:
-        - --cloud
-        forbidden_flags:
-        - --entries
-        positional_patterns:
-          0: ^[a-zA-Z0-9_-]+$
-          1: ^[a-zA-Z0-9_/-]+$
-      - name: file-mode
-        min_positionals: 2
-        max_positionals: 2
-        allow_stdin: false
-        required_flags:
-        - --cloud
-        - --entries
-        allowed_flags:
-        - --cloud
-        - --entries
-        positional_patterns:
-          0: ^[a-zA-Z0-9_-]+$
-          1: ^[a-zA-Z0-9_/-]+$
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads and writes YAML list data downloaded from cloud storage.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      - kind: python-package
-        name: jsonschema
-        reason: Validates new entries before upload.
-        version: ">=4"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads:
-        - medium: local-filesystem
-          access: read
-          system: filesystem
-          content: patch
-          format: yaml
-          path: <entries-file>
-          sensitivity: user-private
-        - medium: stdin
-          access: read
-          content: patch
-          format: yaml
-          sensitivity: user-private
-        writes:
-        - medium: stdout
-          access: write
-          content: response
-          format: text
-          sensitivity: derived-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - create-entry
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    cloud-update:
-      version: 1
-      uses_interfaces:
-      - interface: cloud-files.machine.lists-read
-        version: 1
-      - interface: cloud-files.machine.lists-write
-        version: 1
-      description: Update cloud-list entries from a YAML list of patch objects, each with a quoted string `id`; input is not a mapping keyed by id.
-      usage: <name> --cloud --file /tmp/patch.yaml
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - name: file-mode
-        min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        required_flags:
-        - --cloud
-        - --file
-        allowed_flags:
-        - --cloud
-        - --file
-        flag_patterns:
-          --file: ^.+$
-        positional_patterns:
-          0: ^[a-zA-Z0-9_-]+$
-        notes: Patch file must contain a YAML list of objects; quote every id string.
-      - name: stdin-mode
-        min_positionals: 1
-        max_positionals: 1
-        allow_stdin: true
-        required_flags:
-        - --cloud
-        forbidden_flags:
-        - --file
-        positional_patterns:
-          0: ^[a-zA-Z0-9_-]+$
-        notes: Stdin patch must contain a YAML list of objects; quote every id string.
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads and writes YAML list data downloaded from cloud storage.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      - kind: python-package
-        name: jsonschema
-        reason: Validates list mutations before upload.
-        version: ">=4"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads:
-        - medium: local-filesystem
-          access: read
-          system: filesystem
-          content: patch
-          format: yaml
-          path: <patch-file>
-          sensitivity: user-private
-        - medium: stdin
-          access: read
-          content: patch
-          format: yaml
-          sensitivity: user-private
-        writes:
-        - medium: stdout
-          access: write
-          content: response
-          format: text
-          sensitivity: derived-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - update
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    cloud-init:
-      version: 1
-      uses_interfaces:
-      - interface: cloud-files.machine.lists-write
-        version: 1
-      description: Create a new list in cloud storage.
-      usage: <name> --cloud --schema <schema>
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - min_positionals: 1
-        max_positionals: 1
-        allow_stdin: false
-        required_flags:
-        - --cloud
-        - --schema
-        allowed_flags:
-        - --cloud
-        - --schema
-        - --name
-        positional_patterns:
-          0: ^[a-zA-Z0-9_-]+$
-        notes: Create a new list in cloud storage.
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Writes YAML list data for upload.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      - kind: python-package
-        name: jsonschema
-        reason: Validates initialized list data before upload.
-        version: ">=4"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads:
-        - medium: prompt
-          access: read
-          content: metadata
-          format: text
-          sensitivity: user-private
-        writes:
-        - medium: stdout
-          access: write
-          content: response
-          format: text
-          sensitivity: derived-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - init
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    cloud-delete:
-      version: 1
-      uses_interfaces:
-      - interface: cloud-files.machine.lists-read
-        version: 1
-      - interface: cloud-files.machine.lists-write
-        version: 1
-      description: Delete one or more entries by id from a cloud list. Ids come after
-        --cloud.
-      usage: <name> --cloud <id> [<id>...]
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - min_positionals: 2
-        allow_extra_positionals: true
-        allow_stdin: false
-        required_flags:
-        - --cloud
-        allowed_flags:
-        - --cloud
-        positional_patterns:
-          0: ^[a-zA-Z0-9_-]+$
-          1: ^[0-9a-f]{6}$
-        notes: Delete one or more entries by ID from a cloud list.
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads and writes YAML list data downloaded from cloud storage.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads:
-        - medium: prompt
-          access: read
-          content: token
-          format: text
-          sensitivity: user-private
-        writes:
-        - medium: stdout
-          access: write
-          content: response
-          format: text
-          sensitivity: derived-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_yaml_store.py:Interface
-        args_prefix:
-        - delete
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    cloud-read-beautify:
-      version: 1
-      uses_interfaces:
-      - interface: cloud-files.machine.lists-read
-        version: 1
-      description: Read a cloud list by name and render it (nested bullet-list markdown
-        by default, id-annotated; --table for a flat GFM table, --diff for the legacy
-        diff-fenced view). Relay stdout verbatim.
-      usage: <name> [filters] --cloud
-      allow_all_skills: false
-      allowed_callers: []
-      patterns:
-      - min_positionals: 1
-        allow_extra_positionals: true
-        allow_stdin: false
-        required_flags:
-        - --cloud
-        allowed_flags:
-        - --cloud
-        - --sort
-        - -D
-        - --no-descriptions
-        - --markdown
-        - --table
-        - --diff
-        - -o
-        - --output
-        positional_patterns:
-          0: ^[a-zA-Z0-9_-]+$
-        notes: Read a cloud list by name and render it as nested bullet-list markdown
-          by default, optionally filtered.
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads YAML list data downloaded from cloud storage.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      - kind: python-package
-        name: rich
-        reason: Renders nested list output for terminal display.
-        version: any
-        platforms:
-          linux: true
-          macos: true
-          windows: true
-      direct_io:
-        reads: []
-        writes:
-        - medium: stdout
-          access: write
-          content: report
-          format: markdown
-          sensitivity: derived-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_render_bridge.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-  llm:
-    default:
-      version: 1
-      description: Primary LLM-facing skill instructions.
-      binding:
-        kind: skill_file
-        path: SKILL.md
-      direct_io:
-        reads:
-        - medium: prompt
-          access: read
-          content: document
-          format: text
-          sensitivity: user-private
-        writes:
-        - medium: prompt
-          access: write
-          content: response
-          format: markdown
-          sensitivity: derived-private
-        network: []
-      owns_filesystem: []
-      allow_all_skills: true
-      behavior_sources: []
+node_type: module
+role: productivity
+schema_version: 4
+sources:
+  list-manager.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+  list-manager.source.rtx-category-cache:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-category-cache.yaml
+  list-manager.source.rtx-init:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-init.yaml
+  list-manager.source.rtx-legacy-importer:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-legacy-importer.yaml
+  list-manager.source.rtx-list-beautify:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-list-beautify.yaml
+  list-manager.source.rtx-render-bridge:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-render-bridge.yaml
+  list-manager.source.rtx-yaml-store:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-yaml-store.yaml
+version: 1

@@ -14,49 +14,22 @@ Category: workflow-general-assistant
 Skill Version: 1
 
 Uses Interfaces:
-- `daily-plan.machine.mutate-plan -> cloud-files.machine.lists-read@1`
-- `daily-plan.machine.mutate-plan -> cloud-files.machine.lists-write@1`
-- `daily-plan.machine.mutate-plan -> cloud-files.machine.plans-delete@1`
-- `daily-plan.machine.mutate-plan -> cloud-files.machine.plans-read@1`
-- `daily-plan.machine.mutate-plan -> cloud-files.machine.plans-write@1`
-- `daily-plan.machine.mutate-plan -> g-calendar.machine.scripts-gcal@1`
-- `daily-plan.machine.mutate-plan -> get-weather.machine.scripts-weather@1`
-- `daily-plan.machine.mutate-plan -> list-manager.machine.read-beautify@1`
-- `daily-plan.machine.mutate-plan -> list-manager.machine.read-list@1`
-- `daily-plan.machine.mutate-plan -> list-manager.machine.update-list@1`
-- `daily-plan.machine.orchestrate -> cloud-files.machine.lists-read@1`
-- `daily-plan.machine.orchestrate -> cloud-files.machine.lists-write@1`
-- `daily-plan.machine.orchestrate -> cloud-files.machine.plans-delete@1`
-- `daily-plan.machine.orchestrate -> cloud-files.machine.plans-read@1`
-- `daily-plan.machine.orchestrate -> cloud-files.machine.plans-write@1`
-- `daily-plan.machine.orchestrate -> g-calendar.machine.scripts-gcal@1`
-- `daily-plan.machine.orchestrate -> get-weather.machine.scripts-weather@1`
-- `daily-plan.machine.orchestrate -> list-manager.machine.read-beautify@1`
-- `daily-plan.machine.orchestrate -> list-manager.machine.read-list@1`
-- `daily-plan.machine.orchestrate -> list-manager.machine.update-list@1`
-- `daily-plan.machine.plan-storage -> cloud-files.machine.lists-read@1`
-- `daily-plan.machine.plan-storage -> cloud-files.machine.lists-write@1`
-- `daily-plan.machine.plan-storage -> cloud-files.machine.plans-delete@1`
-- `daily-plan.machine.plan-storage -> cloud-files.machine.plans-read@1`
-- `daily-plan.machine.plan-storage -> cloud-files.machine.plans-write@1`
-- `daily-plan.machine.plan-storage -> g-calendar.machine.scripts-gcal@1`
-- `daily-plan.machine.plan-storage -> get-weather.machine.scripts-weather@1`
-- `daily-plan.machine.plan-storage -> list-manager.machine.read-beautify@1`
-- `daily-plan.machine.plan-storage -> list-manager.machine.read-list@1`
-- `daily-plan.machine.plan-storage -> list-manager.machine.update-list@1`
-- `daily-plan.machine.render-plan -> cloud-files.machine.lists-read@1`
-- `daily-plan.machine.render-plan -> cloud-files.machine.lists-write@1`
-- `daily-plan.machine.render-plan -> cloud-files.machine.plans-delete@1`
-- `daily-plan.machine.render-plan -> cloud-files.machine.plans-read@1`
-- `daily-plan.machine.render-plan -> cloud-files.machine.plans-write@1`
-- `daily-plan.machine.render-plan -> g-calendar.machine.scripts-gcal@1`
-- `daily-plan.machine.render-plan -> get-weather.machine.scripts-weather@1`
-- `daily-plan.machine.render-plan -> list-manager.machine.read-beautify@1`
-- `daily-plan.machine.render-plan -> list-manager.machine.read-list@1`
-- `daily-plan.machine.render-plan -> list-manager.machine.update-list@1`
+- `daily-plan.source.rtx-init -> cloud-files.interface.lists-read@1`
+- `daily-plan.source.rtx-init -> cloud-files.interface.lists-write@1`
+- `daily-plan.source.rtx-init -> cloud-files.interface.plans-read@1`
+- `daily-plan.source.rtx-init -> cloud-files.interface.plans-write@1`
+- `daily-plan.source.rtx-init -> common.interface.dates@1`
+- `daily-plan.source.rtx-init -> g-calendar.interface.scripts-gcal@1`
+- `daily-plan.source.rtx-init -> get-weather.interface.scripts-weather@1`
+- `daily-plan.source.rtx-init -> list-manager.interface.read-beautify@1`
+- `daily-plan.source.rtx-init -> list-manager.interface.update-list@1`
 
 Public Interfaces:
-- `daily-plan.llm.default`
+- `daily-plan.interface.default`
+- `daily-plan.interface.mutate-plan`
+- `daily-plan.interface.orchestrate`
+- `daily-plan.interface.plan-storage`
+- `daily-plan.interface.render-plan`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -64,20 +37,19 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `mutate-plan` — Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to a dated plan and display the refreshed result. Defaults to today when --date is omitted.
-  - `dispatcher --caller-skill daily-plan daily-plan.machine.mutate-plan [--date <M-D-YY|YYYY-MM-DD>] {hide,show,keep,remove,mark-done,reject,set-deadline,add} ...`
-- `orchestrate` — Generate today's plan (or show the existing one, refreshing its Todo/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists.
-  - `dispatcher --caller-skill daily-plan daily-plan.machine.orchestrate [--forced]`
-- `plan-storage` — Read, write, check existence of, or delete a plan file in cloud storage by date.
-  - `dispatcher --caller-skill daily-plan daily-plan.machine.plan-storage read|write|exists|delete <date>`
-- `render-plan` — Extract or reassemble sections of a plan file for rendering.
-  - `dispatcher --caller-skill daily-plan daily-plan.machine.render-plan <extract|reassemble> <plan-file> <dir>`
+- `daily-plan.interface.mutate-plan` — Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to a dated plan and display the refreshed result. Defaults to today when --date is omitted.
+  - `dispatcher --caller-skill daily-plan daily-plan.interface.mutate-plan [--date <M-D-YY|YYYY-MM-DD>] {hide,show,keep,remove,mark-done,reject,set-deadline,add} ...`
+- `daily-plan.interface.orchestrate` — Generate today's plan (or show the existing one, refreshing its Todo/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists.
+  - `dispatcher --caller-skill daily-plan daily-plan.interface.orchestrate [--forced]`
+- `daily-plan.interface.plan-storage` — Read, write, check existence of, or delete a plan file in cloud storage by date.
+  - `dispatcher --caller-skill daily-plan daily-plan.interface.plan-storage read|write|exists|delete <date>`
+- `daily-plan.interface.render-plan` — Extract or reassemble sections of a plan file for rendering.
+  - `dispatcher --caller-skill daily-plan daily-plan.interface.render-plan <extract|reassemble> <plan-file> <dir>`
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `daily-plan.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, invoke `orchestrate`. To force regeneration of an existing plan, pass `--forced`.
 

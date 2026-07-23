@@ -7,7 +7,9 @@ from dataclasses import dataclass
 import hashlib
 import hmac
 import json
+import os
 import secrets
+import stat
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -40,6 +42,18 @@ ED25519_PRIVATE_KEY_BYTES = 32
 
 class CertificateLogError(ValueError):
     """Raised when a signed certificate log is malformed or suspect."""
+
+
+def certificate_public_key_root(repo_root: Path) -> Path:
+    """Return the one repository-local public verification-key directory."""
+
+    return (
+        Path(repo_root).resolve()
+        / "skills"
+        / "skill-certifier"
+        / ".certificates"
+        / "public-keys"
+    )
 
 
 @dataclass(frozen=True)
@@ -315,6 +329,56 @@ def load_or_create_certificate_signing_key(
             secret_backend=secret_backend,
             allow_non_atomic=allow_non_atomic,
         )
+
+
+def provision_certificate_signing_material(
+    repo_root: Path,
+    *,
+    secret_backend: secret_store.SecretBackend | None = None,
+    allow_non_atomic: bool = False,
+) -> CertificateSigningKey:
+    """Provision and verify the cooperative certifier signing-key pair."""
+
+    root = Path(repo_root).resolve()
+    public_key_root = certificate_public_key_root(root)
+    certifier_root = root / "skills" / "skill-certifier"
+    for current in (root / "skills", certifier_root):
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError as exc:
+            raise ValueError(
+                f"certificate owner directory is missing: {current}"
+            ) from exc
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise ValueError(f"unsafe certificate owner directory: {current}")
+    for current in (certifier_root / ".certificates", public_key_root):
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            current.mkdir(mode=0o700)
+            metadata = current.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise ValueError(f"unsafe certificate key directory: {current}")
+        if os.name == "posix" and stat.S_IMODE(metadata.st_mode) & 0o077:
+            current.chmod(0o700)
+            metadata = current.lstat()
+            if stat.S_IMODE(metadata.st_mode) & 0o077:
+                raise ValueError(
+                    f"certificate key directory is not user-private: {current}"
+                )
+    created = load_or_create_certificate_signing_key(
+        public_key_root,
+        secret_backend=secret_backend,
+        allow_non_atomic=allow_non_atomic,
+    )
+    verified = load_certificate_signing_key(
+        public_key_root,
+        secret_backend=secret_backend,
+        allow_non_atomic=allow_non_atomic,
+    )
+    if verified.key_id != created.key_id:
+        raise ValueError("certificate signing material failed post-provision verification")
+    return verified
 
 
 def rotate_certificate_signing_key(

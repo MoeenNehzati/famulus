@@ -4,7 +4,11 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+import shutil
 
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from validators.cross_platform import validate  # noqa: E402
 
@@ -170,6 +174,36 @@ def test_all_platform_interface_command_is_rejected(tmp_path: Path) -> None:
     )
     errors = validate(tmp_path)
     assert any("command `launchctl` is not cross-platform" in error for error in errors)
+
+
+def test_v4_all_platform_source_dependency_is_rejected(tmp_path: Path) -> None:
+    shutil.copytree(
+        REPO_ROOT / "references" / "blueprint",
+        tmp_path / "references" / "blueprint",
+        ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),
+    )
+    skill = tmp_path / "skills" / "get-weather"
+    shutil.copytree(
+        REPO_ROOT / "skills" / "get-weather",
+        skill,
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    source_path = skill / "blueprints" / "rtx-weather-client.yaml"
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    source["runtime_dependencies"] = [
+        {
+            "kind": "binary",
+            "name": "grep",
+            "version": "any",
+            "platforms": {"linux": True, "macos": True, "windows": True},
+            "reason": "Invalid all-platform command.",
+        }
+    ]
+    source_path.write_text(yaml.safe_dump(source, sort_keys=False), encoding="utf-8")
+
+    errors = validate(tmp_path)
+
+    assert any("command `grep` is not cross-platform" in error for error in errors)
 
 
 def test_runner_reports_cross_platform_errors(tmp_path: Path) -> None:

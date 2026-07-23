@@ -208,6 +208,12 @@ def test_parse_interval_daily():
 
 # ── notify_desktop ──────────────────────────────────────────────────────────────
 
+def test_notify_desktop_uses_the_tracked_sibling_helper():
+    with tempfile.TemporaryDirectory() as directory:
+        mod = _load(Path(directory))
+        assert mod.NOTIFY_SCRIPT == SKILL_DIR / "_rtx" / "_assistant_desktop_notify.py"
+
+
 def test_notify_desktop_skips_when_script_missing():
     with tempfile.TemporaryDirectory() as d:
         mod = _load(Path(d))

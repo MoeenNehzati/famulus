@@ -1,0 +1,43 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Implements assumption-provenance and tool-version analysis that separates
+  invocation requirements from the stronger steps needed to reach the target.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: tool-applicability.source.gateway
+interfaces:
+  tool-applicability.source.gateway.interface.default:
+    contract:
+      arguments:
+        request: {description: "Applicability question identifying or supplying the current mathematical setting, target objective, and candidate theorem, framework, or method.", required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - {id: response, audience: human, description: 'Concise applicability verdict, assumption provenance, exact tool deliverable, gap from the target, weakest plausible repair, and nearby routes when useful.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty on success., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: assessed, class: success, outputs: [response], effects: [], caller_action: Use the stated verdict class and do not promote an adjacent result or speculative route to the requested target.}
+      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: "Supply the missing setting, target, candidate tool, or exact theorem version."}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {snapshot: "The verdict reflects the assumptions, target, tool version, and evidence available in this invocation."}
+        verification:
+        - {method: output-schema, output_ref: response}
+      helpers: []
+      direct_io:
+        network:
+        - {id: authoritative-source, medium: network-request, access: request, system: web, endpoint: Authoritative source selected for the candidate mathematical tool, content: Exact theorem or framework statement and hypotheses when external verification is needed., formats: [html, pdf, markdown, text], sensitivity: public, reason: Avoid treating an approximate recollection as a verified tool contract.}
+        reads:
+        - {id: request, medium: prompt, access: read, system: agent-runtime, content: "Applicability request and supplied setting, target, assumptions, and tool statement.", formats: [text, tex], sensitivity: user-private}
+        - {id: document, medium: local-filesystem, access: read, content: 'Named document sections containing established assumptions, local results, the target, or the candidate tool statement.', formats: [tex, markdown, text, pdf], sensitivity: user-private, reason: Distinguish available assumptions and local results from newly proposed hypotheses.}
+        writes:
+        - {id: response, medium: prompt, access: write, system: agent-runtime, content: Applicability diagnosis and nearest valid result., formats: [markdown, tex], sensitivity: derived-private}
+    description: Determine the exact role and deliverable of a candidate mathematical tool without blurring current assumptions, added hypotheses, or target strength.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

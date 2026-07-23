@@ -1,0 +1,58 @@
+content:
+- SKILL\.md
+- references/cross\-host\-hook\-scaffold\.md
+dependencies: []
+description: Implements cross-host hook design and changes using the live scaffold, registration paths, and host-specific golden tests.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: hook-maker.source.gateway
+interfaces:
+  hook-maker.source.gateway.interface.default:
+    contract:
+      arguments:
+        request: {description: 'Hook purpose, supported hosts, lifecycle requirements, and requested design, implementation, installation, or refactor scope.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Implementation or installation can change hook source, tests, registries, installers, and host configuration.
+      outputs:
+      - {id: response, audience: human, description: 'Cross-host design, changed-file summary, test evidence, or unresolved lifecycle or adapter gap.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: designed, class: success, outputs: [response], effects: [], caller_action: 'Review purpose, bindings, adapters, registration, and tests.'}
+      - {id: implemented, class: success, outputs: [response], effects: [hook-change, verification-run], caller_action: Review changed files and host-specific test evidence.}
+      - {id: partial, class: partial, outputs: [response], effects: [hook-change, verification-run], caller_action: Resolve the named host or test gap before installation.}
+      - {id: failed, class: error, outputs: [response], effects: [], caller_action: Supply missing host contracts or fix the reported scaffold error.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {snapshot: 'Design and edits use the live scaffold, registry, installers, and host contracts.'}
+        effects:
+        - {id: hook-change, direct_io_ref: hook-write, action: update, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [implemented, partial], confirmation_evidence: {kind: output, output_ref: response}, reversibility: {reversible: Restore the reviewed hook-related diff.}}
+        - {id: verification-run, direct_io_ref: test-command, action: execute, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [implemented, partial], confirmation_evidence: {kind: output, output_ref: response}, reversibility: {reversible: Tests are observational apart from disposable artifacts.}}
+        mutation_safety:
+          atomicity: {non_atomic: 'Source, tests, registry, installers, and configuration are separate updates.'}
+          concurrent_invocations: {unsafe: Parallel edits can conflict or leave hosts inconsistent.}
+          idempotency: {non_idempotent: Reapplying installation changes can duplicate registrations.}
+          on_uncertain_completion: {verify_then_decide: Inspect all changed paths and rerun golden tests.}
+          partial_effects_on_failure: {possible: Some files may change before a later test fails.}
+          rollback_on_failure: {available: Restore only the reviewed hook-related diff after checking overlap.}
+        verification:
+        - {method: output-schema, output_ref: response}
+        - {method: direct-io-state, direct_io_ref: hook-read}
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - {id: request, medium: prompt, access: read, system: agent-runtime, content: Cross-host hook request and constraints., formats: [text], sensitivity: user-private}
+        - {id: hook-read, medium: repository-filesystem, access: read, content: 'Hook source, scaffold, registry, installers, host contracts, and tests.', formats: [python, markdown, json, configuration], sensitivity: user-private, reason: Derive behavior from live artifacts.}
+        writes:
+        - {id: response, medium: prompt, access: write, system: agent-runtime, content: Hook design or verified implementation report., formats: [markdown], sensitivity: derived-private}
+        - {id: hook-write, medium: repository-filesystem, access: write, content: 'Hook implementation, tests, registry, installer, and host configuration changes.', formats: [python, json, configuration, text], sensitivity: user-private, reason: 'Keep purpose, bindings, adapters, and registration aligned.'}
+        - {id: test-command, medium: subprocess, access: execute, system: project test runner, content: Host-specific golden and installer-resolution tests., formats: [argv, text], sensitivity: user-private, reason: 'Verify parsing, output schemas, environment isolation, and installation.'}
+    description: Design or implement a hook from semantic purpose through explicit host bindings, adapters, registration, and golden verification.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

@@ -1,0 +1,64 @@
+content:
+- SKILL\.md
+dependencies:
+- blueprint:
+    base: repository-root
+    path: references/skill-standards/blueprints/skill-guidelines.yaml
+  reason: Defines the shared standard maintained by this skill.
+  source: skill-standards.source.skill-guidelines
+  version: 1
+description: Implements synchronized maintenance of the canonical skill standard,
+  generated Markdown view, skill-hook enforcement, and required pre-commit validation.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: update-skill-guidelines.source.gateway
+interfaces:
+  update-skill-guidelines.source.gateway.interface.default:
+    contract:
+      arguments:
+        request: {description: "Proposed skill-guideline addition, change, removal, or audit of alignment between the canonical standard and mechanical hooks.", required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: The workflow edits the canonical standard and related hooks as one change set; the required pre-commit command may regenerate and stage repository documentation.
+      outputs:
+      - {id: response, audience: human, description: 'Rules changed, hooks added or adjusted or removed, installer-path updates, and exact validation results.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: aligned, class: no-op, outputs: [response], effects: [], caller_action: Retain the current standard and hooks because the audit found no divergence.}
+      - {id: updated, class: success, outputs: [response], effects: [guideline-change, validation-run], caller_action: "Review the synchronized standard, generated view, hooks, any installer paths, and passing validation evidence."}
+      - {id: partial, class: partial, outputs: [response], effects: [guideline-change, validation-run], caller_action: "Preserve the inspected diff and repair the reported stale rule, hook, generated view, or failing check before completion."}
+      - {id: validation-failed, class: error, outputs: [response], effects: [validation-run], caller_action: Do not claim alignment; resolve the reported hook or pre-commit failure and rerun the required checks.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: "The alignment report reflects the canonical standard, generated view, hooks, affected skills, and validation results observed during this invocation."}
+        effects:
+        - {id: guideline-change, direct_io_ref: repository-write, action: update, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [updated, partial], confirmation_evidence: {kind: output, output_ref: response}, reversibility: {reversible: Restore only the reviewed guideline-and-hook change set after checking generated and staged overlap.}}
+        - {id: validation-run, direct_io_ref: validation-command, action: execute, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [updated, partial, validation-failed], confirmation_evidence: {kind: output, output_ref: response}, reversibility: {reversible: Validation is observational except for generated and staged artifacts explicitly reported by the pre-commit hook.}}
+        mutation_safety:
+          atomicity: {non_atomic: "Standard, generated view, hook scripts, affected skills, and pre-commit-generated artifacts are separate updates."}
+          concurrent_invocations: {unsafe: Concurrent edits or staging can invalidate one-to-one rule enforcement and validation evidence.}
+          idempotency: {non_idempotent: Reapplying a guideline request can duplicate rules or overwrite independently updated hook logic.}
+          on_uncertain_completion: {verify_then_decide: "Inspect the exact standard, rendered view, hooks, staged diff, and fresh pre-commit output before retrying."}
+          partial_effects_on_failure: {possible: Repository edits or generated and staged artifacts may remain when a later check fails.}
+          rollback_on_failure: {available: Restore only this invocation's files after checking the index and overlapping changes.}
+        verification:
+        - {method: output-schema, output_ref: response}
+        - {method: direct-io-state, direct_io_ref: standards-state}
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - {id: request, medium: prompt, access: read, system: agent-runtime, content: Guideline change or alignment-audit request., formats: [text], sensitivity: user-private}
+        - {id: standards-state, medium: repository-filesystem, access: read, content: 'Canonical standard YAML, generated Markdown view, every skill-hook script, pre-commit dispatcher, affected skills, current diff, and index state.', formats: [yaml, markdown, shell, python, git-metadata, text], sensitivity: user-private, reason: Map every enforceable rule to exactly one hook and verify the synchronized change set.}
+        writes:
+        - {id: response, medium: prompt, access: write, system: agent-runtime, content: "Guideline, hook, installer-path, and validation report.", formats: [markdown], sensitivity: derived-private}
+        - {id: repository-write, medium: repository-filesystem, access: write, content: 'Canonical standard, generated view, skill hooks, affected skills, installer paths, and pre-commit-generated or staged artifacts.', formats: [yaml, markdown, shell, python, git-metadata, text], sensitivity: user-private, reason: Apply the requested convention and its mechanical enforcement in one aligned change set.}
+        - {id: validation-command, medium: subprocess, access: execute, system: bash git and repository validators, content: 'Required pre-commit check plus focused generation and hook validation commands.', formats: [argv, text], sensitivity: derived-private, reason: Prove that no changed rule or hook remains stale or failing.}
+    description: Keep the canonical skill standard and mechanical hook gates in lockstep and report fresh pre-commit evidence.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

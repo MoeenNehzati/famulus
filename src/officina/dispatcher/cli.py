@@ -15,8 +15,8 @@ def parse_cli() -> argparse.Namespace:
         epilog=(
             "Examples:\n"
             "  dispatcher --dry-run --caller-skill daily-plan "
-            "list-manager.machine.read-list /tmp/todo.yaml state=incomplete\n"
-            "  dispatcher --caller-skill daily-plan list-manager.machine.update-list "
+            "list-manager.interface.read-list /tmp/todo.yaml state=incomplete\n"
+            "  dispatcher --caller-skill daily-plan list-manager.interface.update-list "
             "/tmp/todo.yaml --file /tmp/todo-updates.yaml"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -48,7 +48,11 @@ def main() -> int:
     script_interface: str | None = None
     script_args = list(args.rest)
 
-    if ".machine." in args.target_or_skill or ".llm." in args.target_or_skill:
+    if (
+        ".interface." in args.target_or_skill
+        or ".machine." in args.target_or_skill
+        or ".llm." in args.target_or_skill
+    ):
         target = args.target_or_skill
     else:
         if not script_args:

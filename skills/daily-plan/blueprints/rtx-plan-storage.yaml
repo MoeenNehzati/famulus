@@ -1,0 +1,183 @@
+content:
+- _rtx/_plan_storage\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: daily-plan.source.rtx-init
+  version: 1
+description: Implements read, write, existence, and delete operations for dated plan Markdown on the configured Google Drive remote.
+gateway:
+  language: Python
+  path: _rtx/_plan_storage.py
+id: daily-plan.source.rtx-plan-storage
+interfaces:
+  daily-plan.source.rtx-plan-storage.interface.plan-storage:
+    contract:
+      arguments:
+        operation:
+          description: Cloud-plan operation.
+          required: true
+          sensitivity: public
+          type: {kind: enum, values: [{value: read, description: Return the plan Markdown.}, {value: write, description: Store stdin as the plan.}, {value: exists, description: Report whether the plan exists.}, {value: delete, description: Delete the plan.}]}
+        date:
+          description: Plan date key accepted by the shared date normalizer.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        content:
+          description: UTF-8 plan Markdown supplied on stdin for write.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Write and delete change the dated plan in the configured Google Drive remote.
+      - rate-limited: The configured rclone remote and Google Drive service may throttle requests.
+      outputs:
+      - {id: response, audience: machine, description: Plan Markdown for read or a textual existence result., direct_io_ref: write-3, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Write and delete complete without a response body., type: {kind: string, sensitivity: user-private}}
+      outcomes:
+      - {id: read, class: success, outputs: [response], effects: [], caller_action: Consume returned Markdown; empty stdout does not distinguish an empty file from a suppressed rclone read failure.}
+      - {id: exists, class: success, outputs: [response], effects: [], caller_action: Interpret the returned existence result.}
+      - {id: absent, class: no-op, outputs: [response], effects: [], caller_action: Treat the dated plan as absent.}
+      - {id: stored, class: success, outputs: [], effects: [plan-write], caller_action: Continue after verifying remote plan state.}
+      - {id: delete-attempted, class: partial, outputs: [], effects: [plan-delete], caller_action: Verify absence explicitly because the implementation suppresses the rclone delete status.}
+      - {id: write-failed, class: error, outputs: [], effects: [], caller_action: Report the rclone write error and verify remote state before retrying.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Each operation targets current state in the configured remote.}
+        effects:
+        - {id: plan-write, direct_io_ref: write-1, action: update, value_source: {kind: argument, argument_ref: content}, may_occur_in_outcomes: [stored], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: A later write or delete can compensate but previous content is not retained.}}
+        - {id: plan-delete, direct_io_ref: write-2, action: delete, value_source: {kind: argument, argument_ref: date}, may_occur_in_outcomes: [delete-attempted], confirmation_evidence: {kind: direct-io, direct_io_ref: write-2}, reversibility: {irreversible: Deleted plan content is not retained by this interface.}}
+        mutation_safety:
+          atomicity: {per_effect_only: Each rclone operation is issued separately.}
+          concurrent_invocations: {unsafe: Concurrent operations on the same dated plan are not serialized.}
+          idempotency: {idempotent: Repeating an identical write or deleting an already absent file leaves equivalent remote state.}
+          on_uncertain_completion: {verify_then_decide: Run exists or read before retrying.}
+          partial_effects_on_failure: {possible: The remote may complete an operation before the local command reports failure.}
+          rollback_on_failure: {unavailable: Previous plan content is not retained.}
+        verification:
+        - {method: output-schema, output_ref: response}
+        - {method: direct-io-state, direct_io_ref: write-1}
+      helpers: []
+      direct_io:
+        network:
+        - access: read-write
+          auth:
+            kind: rclone-config
+            mode: uses-existing
+          content: plan
+          formats:
+          - markdown
+          id: network-1
+          medium: network-request
+          endpoint: GDrive:assistant/plans/<date>.md
+          sensitivity: user-private
+          system: google-drive
+        reads:
+        - access: read
+          auth:
+            kind: rclone-config
+            mode: uses-existing
+          content: plan
+          formats:
+          - markdown
+          id: read-1
+          medium: remote-filesystem
+          path: plans/<date>.md
+          path_match: exact
+          sensitivity: user-private
+          system: google-drive
+        - access: read
+          content: plan
+          formats:
+          - markdown
+          id: read-2
+          medium: stdin
+          sensitivity: user-private
+        writes:
+        - access: write
+          auth:
+            kind: rclone-config
+            mode: uses-existing
+          content: plan
+          formats:
+          - markdown
+          id: write-1
+          medium: remote-filesystem
+          path: plans/<date>.md
+          path_match: exact
+          sensitivity: user-private
+          system: google-drive
+        - access: delete
+          auth:
+            kind: rclone-config
+            mode: uses-existing
+          content: plan
+          formats:
+          - markdown
+          id: write-2
+          medium: remote-filesystem
+          path: plans/<date>.md
+          path_match: exact
+          sensitivity: user-private
+          system: google-drive
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-3
+          medium: stdout
+          sensitivity: derived-private
+    description: Read, write, check existence of, or delete a plan file in cloud storage
+      by date.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        max_positionals: 2
+        min_positionals: 2
+        name: read
+        positional_patterns:
+          '0': ^read$
+      - allow_stdin: true
+        max_positionals: 2
+        min_positionals: 2
+        name: write
+        positional_patterns:
+          '0': ^write$
+      - allow_stdin: false
+        max_positionals: 2
+        min_positionals: 2
+        name: exists
+        positional_patterns:
+          '0': ^exists$
+      - allow_stdin: false
+        max_positionals: 2
+        min_positionals: 2
+        name: delete
+        positional_patterns:
+          '0': ^delete$
+    usage: read|write|exists|delete <date>
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: false
+  windows: false
+runtime_dependencies:
+- kind: binary
+  name: rclone
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Reads and writes plan files in the configured GDrive remote.
+  version: any
+schema_version: 4
+uses_interfaces: []
+version: 1

@@ -1,0 +1,66 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Owns the primary email-triage instructions and routes a matching user request to the detailed triage workflow.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: email-triage.source.gateway
+interfaces:
+  email-triage.source.gateway.interface.default:
+    contract:
+      arguments:
+        request:
+          description: User request that triggered email-triage.
+          required: true
+          sensitivity: user-private
+          type: {kind: string}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - id: response
+        audience: both
+        description: Markdown response produced by following the email-triage instructions.
+        direct_io_ref: write-1
+        type: {kind: string}
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: The interface always returns a response.
+      outcomes:
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Use the response and any separately reported interface results.}
+      - {id: failed, class: error, outputs: [], effects: [], caller_action: Report the failing workflow step and preserve the current watermark.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {live: The response reflects the workflow execution performed for this invocation.}
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: message
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: response
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+    description: Primary LLM-facing skill instructions.
+    version: 2
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces:
+- interface: email-triage.source.llm-interfaces-triage.interface.triage
+  version: 2
+version: 1

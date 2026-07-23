@@ -12,6 +12,8 @@ class SkillSource:
     source: str
     package_root: Path
     skills_root: Path
+    plugin_id: str | None = None
+    plugin_version: str | None = None
 
 
 class SkillSourceDiscoveryError(ValueError):
@@ -48,12 +50,25 @@ def current_skill_source() -> SkillSource | None:
 def dedupe_skill_sources(sources: list[SkillSource]) -> list[SkillSource]:
     """Deduplicate installed roots while preserving discovery order."""
 
-    seen: set[Path] = set()
+    seen: dict[Path, SkillSource] = {}
     result: list[SkillSource] = []
     for source in sources:
         key = source.skills_root.resolve()
         if key in seen:
+            previous = seen[key]
+            if (
+                previous.plugin_id,
+                previous.plugin_version,
+            ) != (
+                source.plugin_id,
+                source.plugin_version,
+            ):
+                raise SkillSourceDiscoveryError(
+                    "installed source metadata conflict for "
+                    f"{key}: {previous.plugin_id}@{previous.plugin_version} and "
+                    f"{source.plugin_id}@{source.plugin_version}"
+                )
             continue
-        seen.add(key)
+        seen[key] = source
         result.append(source)
     return result

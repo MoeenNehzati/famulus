@@ -1,0 +1,140 @@
+content:
+- _rtx/_smtp_transport\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-email-accounts.yaml
+  reason: Imports Python source from _rtx/_email_accounts.py.
+  source: email-client.source.rtx-email-accounts
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: email-client.source.rtx-init
+  version: 1
+description: Python SMTP source that composes an RFC 822 message from caller arguments and
+  stdin, attaches local files, authenticates, and sends the message.
+gateway:
+  language: Python
+  path: _rtx/_smtp_transport.py
+id: email-client.source.rtx-smtp-transport
+interfaces:
+  email-client.source.rtx-smtp-transport.interface.send-email:
+    contract:
+      direct_io:
+        network:
+        - access: send
+          auth:
+            kind: email-account
+            mode: uses-existing
+          content: email
+          endpoint: Configured SMTP host and port for the selected account
+          formats:
+          - rfc822
+          id: network-1
+          medium: network-request
+          sensitivity: user-private
+          system: email-smtp
+        reads:
+        - access: read
+          content: email
+          formats:
+          - text
+          id: read-1
+          medium: stdin
+          sensitivity: user-private
+        - access: read
+          auth:
+            kind: keyring-entry
+            mode: uses-existing
+          content: credential
+          id: read-2
+          medium: local-system
+          sensitivity: secret
+          system: keyring
+        writes:
+        - {access: write, content: diagnostic-report, formats: [text], id: write-1, medium: stderr, sensitivity: derived-private}
+      arguments:
+        from: {description: Registered account nickname used as sender and for SMTP authentication, required: true, sensitivity: user-private, type: {kind: string, format: {named: identifier}}}
+        to: {description: One or more recipient email addresses, required: true, sensitivity: user-private, type: {kind: list, element_type: {kind: string, format: {named: email}}}}
+        subject: {description: Message subject, required: true, sensitivity: user-private, type: {kind: string}}
+        body: {description: UTF-8 plain-text message body read from stdin, required: true, sensitivity: user-private, type: {kind: string}}
+        attachments: {description: Optional local file paths with optional display-name suffixes, required: false, default: [], sensitivity: user-private, type: {kind: list, element_type: {kind: string}}}
+        in-reply-to: {description: Optional parent Message-ID for thread replies, required: false, default: '', sensitivity: user-private, type: {kind: string}}
+        references: {description: Optional References header value; defaults to in-reply-to when omitted, required: false, default: '', sensitivity: user-private, type: {kind: string}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Sends the composed message to every recipient through the live SMTP provider.
+      - may-wait: SMTP connection, authentication, attachment reads, and delivery can wait on local storage or the provider.
+      - rate-limited: Provider SMTP quotas and anti-abuse policies apply.
+      outputs:
+      - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-1, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: sent, class: success, outputs: [], effects: [message-send], caller_action: Treat the message as accepted by the SMTP server.}
+      - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: "Report the composition, attachment, credential, authentication, or SMTP error; verify uncertain provider state before retrying."}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Composes from current local inputs and sends through current SMTP provider state.}
+        effects:
+        - {id: message-send, direct_io_ref: network-1, action: send, value_source: {kind: argument, argument_ref: body}, may_occur_in_outcomes: [sent], confirmation_evidence: {kind: direct-io, direct_io_ref: network-1}, reversibility: {irreversible: A message accepted by the SMTP provider cannot be recalled by this interface.}}
+        mutation_safety:
+          atomicity: {per_effect_only: One composed message is handed to the SMTP server; downstream delivery to multiple recipients is provider-controlled.}
+          concurrent_invocations: {safe: "Independent invocations compose separate messages, though provider rate limits still apply."}
+          idempotency: {non_idempotent: Repeating a successful invocation sends a duplicate message.}
+          on_uncertain_completion: {stop: Do not automatically retry after a transport interruption because provider acceptance can be uncertain.}
+          partial_effects_on_failure: {possible: The SMTP server can accept a message before the client observes a later connection failure.}
+          rollback_on_failure: {unavailable: The interface cannot retract an accepted message.}
+        verification: [{method: direct-io-state, direct_io_ref: network-1}]
+      helpers: []
+    description: Send an email via SMTP; body comes from stdin.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: true
+        allowed_flags:
+        - --from
+        - --to
+        - --subject
+        - --attach
+        - --in-reply-to
+        - --references
+        flag_patterns:
+          --attach: ^.+$
+          --from: ^.+$
+          --in-reply-to: ^.+$
+          --references: ^.+$
+          --subject: ^.+$
+          --to: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+        required_flags:
+        - --from
+        - --to
+        - --subject
+    usage: --from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach
+      /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: keyring
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Retrieves the SMTP credential from the host credential store.
+  version: any
+schema_version: 4
+uses_interfaces:
+- interface: common.interface.secret-store
+  version: 1
+version: 1

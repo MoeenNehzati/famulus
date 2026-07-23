@@ -1,16 +1,8 @@
 examples:
-  skill_root: blueprint.yaml
-  default_llm: blueprint.yaml#default_interface
-  shared_python_interfaces:
-    - _rtx/._runner.py.first.blueprint.yaml
-    - _rtx/._runner.py.second.blueprint.yaml
-  command_interface: _cx/._command.blueprint.yaml
-  repository_behavior_source: references/.policy.md.blueprint.yaml
-generated_outputs:
-  - SKILL.md blueprint contract block
-  - SKILL.md blueprint interface block
-v4_examples:
   module: blueprint.yaml
   behavioral_sources:
     - blueprints/gateway.yaml
     - blueprints/runner.yaml
+generated_outputs:
+  - SKILL.md blueprint contract block
+  - SKILL.md blueprint interface block

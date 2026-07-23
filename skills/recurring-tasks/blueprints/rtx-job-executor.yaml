@@ -1,0 +1,135 @@
+content:
+- _rtx/_job_executor\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/jobs-config.yaml
+  reason: Loads the recurring job definition selected from the shared jobs configuration.
+  source: recurring-tasks.source.jobs-config
+  version: 1
+description: Loads one named recurring-job definition, parses its command into environment assignments and argv, executes it without a shell, and appends combined output to the job's run log.
+gateway:
+  language: Python
+  path: _rtx/_job_executor.py
+id: recurring-tasks.source.rtx-job-executor
+interfaces:
+  recurring-tasks.source.rtx-job-executor.interface.execute-job:
+    contract:
+      arguments:
+        jobs-file:
+          description: YAML file containing the recurring job definition.
+          required: true
+          sensitivity: user-private
+          direct_io_ref: jobs-file
+          type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, content_type: {kind: string, sensitivity: user-private, format: {named: yaml}}}
+        job:
+          description: Exact configured job name to load and execute.
+          required: true
+          sensitivity: user-private
+          type: {kind: string}
+      preconditions:
+      - id: jobs-readable
+        description: The selected jobs YAML file must exist and be readable.
+        check: {kind: direct-io, direct_io_ref: jobs-file, predicate: readable}
+        unmet_outcome: config-error
+        caller_action: Pass an existing readable jobs YAML file.
+      - id: job-present
+        description: The jobs file must contain the requested name with a nonempty command.
+        check: {kind: argument, argument_ref: job, predicate: present}
+        unmet_outcome: config-error
+        caller_action: Select a configured job whose command contains an executable.
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Executes the command authored in the selected job definition with inherited process environment plus its leading environment assignments.
+      - external-side-effect: Creates the per-job log directory when absent and appends combined child stdout and stderr to run.log.
+      outputs:
+      - id: diagnostic
+        audience: both
+        description: Wrapper error describing a missing job, invalid command, unreadable configuration, or failed launch.
+        direct_io_ref: stderr
+        cardinality: {minimum: 0, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: No diagnostic is emitted after a child process is successfully launched, including when that child exits nonzero.
+        type: {kind: string, sensitivity: derived-private}
+      outcomes:
+      - {id: completed, class: success, outputs: [], effects: [execute-job, append-log], caller_action: Treat the selected job as completed successfully.}
+      - {id: child-failed, class: error, outputs: [], effects: [execute-job, append-log], caller_action: Inspect the per-job run log and the returned child exit status before retrying.}
+      - {id: config-error, class: error, outputs: [diagnostic], effects: [], caller_action: "Correct the jobs file, requested name, command, executable resolution, or log path and retry."}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {snapshot: "Loads the selected job once, then executes the resulting argv with one environment snapshot."}
+        effects:
+        - id: execute-job
+          direct_io_ref: child-process
+          action: execute
+          value_source: {kind: argument, argument_ref: job}
+          may_occur_in_outcomes: [completed, child-failed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: child-process}
+          reversibility: {irreversible: Effects performed by the configured child command are outside this executor's rollback control.}
+        - id: append-log
+          direct_io_ref: job-log
+          action: append
+          value_source: {kind: direct-io, direct_io_ref: child-process}
+          may_occur_in_outcomes: [completed, child-failed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: job-log}
+          reversibility: {compensatable: Remove the appended run segment manually if its retention is not wanted.}
+        mutation_safety:
+          atomicity: {non_atomic: Child execution and log appends are not one atomic transaction.}
+          concurrent_invocations: {unsafe: Concurrent runs of the same job can interleave bytes in the shared append-only log and duplicate child effects.}
+          idempotency: {non_idempotent: Repeating a call executes the configured command again and appends another log segment.}
+          on_uncertain_completion: {verify_then_decide: Inspect the per-job log and the invoked job's own state before retrying.}
+          partial_effects_on_failure: {possible: The child can perform effects or write partial output before exiting nonzero or being interrupted.}
+          rollback_on_failure: {unavailable: The executor neither reverses child effects nor truncates the log.}
+        verification:
+        - {method: direct-io-state, direct_io_ref: job-log}
+        - {method: output-schema, output_ref: diagnostic}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: jobs-file, medium: local-filesystem, access: read, content: recurring job configuration, formats: [yaml], sensitivity: user-private, path: <jobs-file>, path_match: exact, system: filesystem}
+        - {id: process-environment, medium: local-system, access: read, content: inherited environment and executable search path, formats: [environment], sensitivity: user-private, system: host-process-environment}
+        writes:
+        - {id: child-process, medium: subprocess, access: execute, content: configured job command with environment overrides, formats: [argv], sensitivity: user-private, system: host-process-manager}
+        - {id: job-log, medium: local-filesystem, access: write, content: combined child stdout and stderr, formats: [text], sensitivity: user-private, path: logs/<job>/run.log, path_match: exact, system: filesystem}
+        - {id: stderr, medium: stderr, access: write, content: wrapper diagnostic, formats: [text], sensitivity: derived-private}
+        network: []
+    description: Execute one named recurring job from an explicit jobs file without
+      invoking a shell.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        allowed_flags:
+        - --jobs-file
+        - --job
+        flag_patterns:
+          --job: ^[a-zA-Z0-9_-]+$
+          --jobs-file: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        required_flags:
+        - --jobs-file
+        - --job
+    usage: --jobs-file FILE --job NAME
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Loads the selected recurring job from jobs.yaml.
+  version: '>=6'
+schema_version: 4
+uses_interfaces: []
+version: 1

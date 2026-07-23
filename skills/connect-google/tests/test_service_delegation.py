@@ -13,15 +13,20 @@ def load(path: Path) -> dict[str, object]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def interface_node(skill: str, canonical_id: str) -> dict[str, object]:
+def exported_interface(
+    skill: str, canonical_id: str
+) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
     root = load(SKILLS / skill / "blueprint.yaml")
-    _, kind, name = canonical_id.split(".", 2)
-    if root.get("schema_version") != 2:
-        return root["interfaces"][kind][name]
-    locator = next(
-        edge for edge in root["interfaces"] if edge["interface"] == canonical_id
-    )
-    return load(SKILLS / skill / locator["blueprint"]["path"])
+    assert root["schema_version"] == 4
+    export = root["exports"][canonical_id]
+    source_interface = export["source_interface"]
+    source_id, _, _ = source_interface.rpartition(".interface.")
+    locator = root["sources"][source_id]["blueprint"]
+    assert locator["base"] == "module-root"
+    source = load(SKILLS / skill / locator["path"])
+    assert source["id"] == source_id
+    interface = source["interfaces"][source_interface]
+    return root, source, interface
 
 
 def authored_skill(name: str) -> str:
@@ -44,28 +49,36 @@ def test_email_interfaces_are_not_exposed_to_connect_google() -> None:
         "accounts-setup-oauth",
         "live-smoke",
     ):
-        node = interface_node("email-client", f"email-client.machine.{interface}")
-        assert "connect-google" not in node.get("allowed_callers", [])
+        canonical_id = f"email-client.interface.{interface}"
+        root, _, _ = exported_interface("email-client", canonical_id)
+        access = root["exports"][canonical_id]["access"]
+        assert access["allow_all_modules"] is False
+        assert "connect-google" not in access["allowed_callers"]
 
 
-def test_google_service_llm_interfaces_delegate_to_connect_google() -> None:
+def test_google_service_gateways_delegate_to_connect_google() -> None:
     setup_interfaces = {
-        "cloud-files": "cloud-files.machine.setup-oauth",
-        "g-calendar": "g-calendar.machine.setup-oauth",
-        "email-client": "email-client.machine.accounts-setup-oauth",
+        "cloud-files": "cloud-files.interface.setup-oauth",
+        "g-calendar": "g-calendar.interface.setup-oauth",
+        "email-client": "email-client.interface.accounts-setup-oauth",
     }
     for skill, setup_interface in setup_interfaces.items():
-        node = interface_node(skill, f"{skill}.llm.default")
-        assert {"interface": "connect-google.llm.default", "version": 1} in node[
-            "uses_interfaces"
-        ]
-        assert {"interface": setup_interface, "version": 1} in node["uses_interfaces"]
+        root, gateway, _ = exported_interface(skill, f"{skill}.interface.default")
+        setup_source_interface = root["exports"][setup_interface]["source_interface"]
+        assert {
+            "interface": "connect-google.interface.default",
+            "version": 1,
+        } in gateway["uses_interfaces"]
+        assert {
+            "interface": setup_source_interface,
+            "version": 1,
+        } in gateway["uses_interfaces"]
 
 
 def test_service_guidance_has_one_google_onboarding_owner() -> None:
     for skill in ("cloud-files", "g-calendar", "email-client"):
         text = authored_skill(skill)
-        assert "connect-google.llm.default" in text
+        assert "connect-google.interface.default" in text
         assert "initial google setup" in text
         assert "reauthorization" in text
         assert "create an oauth client" not in text
@@ -76,15 +89,15 @@ def test_service_guidance_has_one_google_onboarding_owner() -> None:
 def test_service_guidance_hands_canonical_client_to_owned_setup_interface() -> None:
     expected = {
         "cloud-files": (
-            "cloud-files.machine.setup-oauth",
+            "cloud-files.interface.setup-oauth",
             "--from-json ~/.config/connect-google/client.json",
         ),
         "g-calendar": (
-            "g-calendar.machine.setup-oauth",
+            "g-calendar.interface.setup-oauth",
             "--from-json ~/.config/connect-google/client.json",
         ),
         "email-client": (
-            "email-client.machine.accounts-setup-oauth",
+            "email-client.interface.accounts-setup-oauth",
             "--client-config ~/.config/connect-google/client.json",
         ),
     }
@@ -97,15 +110,16 @@ def test_service_guidance_hands_canonical_client_to_owned_setup_interface() -> N
 def test_installer_does_not_depend_on_connect_google() -> None:
     text = authored_skill("install-assistant-tools")
     assert "phase 2" in text
-    assert "connect-google.llm.default" not in text
-    assert "connect-google.machine." not in text
+    assert "connect-google." not in text
 
 
-def test_service_setup_machine_interfaces_still_exist() -> None:
+def test_service_setup_exports_still_exist() -> None:
     expected = {
-        "cloud-files": "cloud-files.machine.setup-oauth",
-        "g-calendar": "g-calendar.machine.setup-oauth",
-        "email-client": "email-client.machine.accounts-setup-oauth",
+        "cloud-files": "cloud-files.interface.setup-oauth",
+        "g-calendar": "g-calendar.interface.setup-oauth",
+        "email-client": "email-client.interface.accounts-setup-oauth",
     }
     for skill, interface in expected.items():
-        assert interface_node(skill, interface)
+        root, source, contract = exported_interface(skill, interface)
+        assert root["exports"][interface]["source_interface"] in source["interfaces"]
+        assert contract

@@ -15,8 +15,8 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `get-weather.machine.scripts-weather`
-- `get-weather.llm.default`
+- `get-weather.interface.default`
+- `get-weather.interface.scripts-weather`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -24,14 +24,13 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `scripts-weather` — Fetch weather data for a location and date range, returning hourly forecast JSON.
-  - `dispatcher --caller-skill get-weather get-weather.machine.scripts-weather [--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]`
+- `get-weather.interface.scripts-weather` — Fetch weather data for a location and date range, returning hourly forecast JSON.
+  - `dispatcher --caller-skill get-weather get-weather.interface.scripts-weather [--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]`
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `get-weather.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

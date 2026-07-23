@@ -1,0 +1,96 @@
+content:
+- _rtx/_install_scaffold\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: install-assistant-tools.source.rtx-init
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-install-launcher-init.yaml
+  reason: Imports Python source from _rtx/_install_launcher/__init__.py.
+  source: install-assistant-tools.source.rtx-install-launcher-init
+  version: 1
+description: Installs dispatcher and invoke-skill launchers, provisions the shared certifier signing material, and ensures the installation bin directory is present in the user's shell path.
+gateway:
+  language: Python
+  path: _rtx/_install_scaffold.py
+id: install-assistant-tools.source.rtx-install-scaffold
+interfaces:
+  install-assistant-tools.source.rtx-install-scaffold.interface.scripts-scaffold:
+    contract:
+      arguments:
+        repo-root: {description: AI repository checkout containing dispatcher package and launcher sources., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        options: {description: Optional home and bin and shell paths plus dry-run choice., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Non-dry-run execution installs the dispatcher package and launchers and may update PATH in a shell startup file.
+      - external-side-effect: When the v4 cryptography dependency is present, provisioning creates or verifies the certifier's public-key files and private key in the configured user secret store.
+      outputs:
+      - {id: status, audience: both, description: Ordered scaffold actions or dry-run plan., direct_io_ref: write-2, cardinality: {minimum: 1, maximum: null}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: installed, class: success, outputs: [status], effects: [scaffold-state, certificate-signing-material], caller_action: "Verify dispatcher, invoke-skill, and the reported certificate-signing-material capability."}
+      - {id: planned, class: no-op, outputs: [status], effects: [], caller_action: Review the dry-run actions.}
+      - {id: failed, class: error, outputs: [], effects: [], caller_action: Report the failed package or launcher or shell-path action.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Repository source and target path state is observed during installation.}
+        effects:
+        - {id: scaffold-state, direct_io_ref: write-1, action: configure, value_source: {kind: argument, argument_ref: repo-root}, may_occur_in_outcomes: [installed], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Installed launchers and the managed PATH block can be removed.}}
+        - {id: certificate-signing-material, direct_io_ref: write-3, action: configure, value_source: {kind: argument, argument_ref: repo-root}, may_occur_in_outcomes: [installed], confirmation_evidence: {kind: direct-io, direct_io_ref: write-3}, reversibility: {irreversible: Removing the active private key prevents future signing and removing retained public keys invalidates historical verification.}}
+        mutation_safety:
+          atomicity: {per_effect_only: "Package installation, certificate-key provisioning, launcher writes, and shell configuration are separate effects."}
+          concurrent_invocations: {unsafe: Concurrent scaffold installers are not serialized.}
+          idempotency: {idempotent: Repeating with the same source and targets reconciles equivalent files and managed shell blocks.}
+          on_uncertain_completion: {verify_then_decide: Resolve the launcher commands and inspect the managed PATH block before retrying.}
+          partial_effects_on_failure: {possible: "Package, certificate-key, or launcher installation may complete before a later shell update fails."}
+          rollback_on_failure: {unavailable: Earlier completed effects are not rolled back automatically.}
+        verification: [{method: output-schema, output_ref: status}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - {id: read-1, medium: repository-filesystem, access: read, system: filesystem, content: dispatcher package and launcher sources, formats: [python, shell, toml], sensitivity: public, path: <repo-root>, path_match: exact}
+        writes:
+        - {id: write-1, medium: home-filesystem, access: configure, system: filesystem, content: installed package launchers and managed PATH block, formats: [python-package, shell, batch], sensitivity: user-private, path: caller-selected bin and shell startup paths}
+        - {id: write-2, medium: stdout, access: write, content: scaffold status, formats: [text], sensitivity: derived-private}
+        - {id: write-3, medium: local-filesystem, access: configure, system: filesystem, content: Ed25519 public verification files and private key selected through the configured secret store, formats: [pem, text, secret-store-entry], sensitivity: credential, path: <repo-root>/skills/skill-certifier/.certificates/public-keys}
+    description: Install the dispatcher + invoke-skill launchers and put the bin dir
+      on PATH. Universal floor, mode-independent.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --repo-root
+        - --home
+        - --bin-dir
+        - --shell-rc
+        - --dry-run
+        flag_patterns:
+          --bin-dir: ^.+$
+          --home: ^.+$
+          --repo-root: ^.+$
+          --shell-rc: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+        required_flags:
+        - --repo-root
+    usage: --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]
+    version: 2
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 4
+uses_interfaces:
+- interface: common.interface.audit-records
+  version: 1
+version: 1

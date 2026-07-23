@@ -489,20 +489,20 @@ def test_v4_module_filesystem_authority_uses_generic_interface_readers() -> None
     assert _errors(document, "module.schema.json")
 
 
-def test_staged_live_schema_keeps_v4_nodes_isolated_until_cutover() -> None:
+def test_live_schema_routes_only_v4_nodes_after_cutover() -> None:
     assert _errors(_valid_v4_module(), "module.schema.json") == []
     assert _errors(
         _valid_v4_behavioral_source(), "behavioral-source.schema.json"
     ) == []
 
-    assert _errors(_valid_v4_module())
-    assert _errors(_valid_v4_behavioral_source())
+    assert _errors(_valid_v4_module()) == []
+    assert _errors(_valid_v4_behavioral_source()) == []
 
     live_refs = [choice["$ref"] for choice in _load("schema.json")["oneOf"]]
-    assert "machine-module.schema.json" in live_refs
-    assert "behavior-source.schema.json" in live_refs
-    assert "module.schema.json" not in live_refs
-    assert "behavioral-source.schema.json" not in live_refs
+    assert live_refs == [
+        "module.schema.json",
+        "behavioral-source.schema.json",
+    ]
 
 
 def test_node_hash_policy_schema_enforces_ordered_include_exclude_rules() -> None:
@@ -721,13 +721,13 @@ def node_health() -> dict:
     }
 
 
-def test_dispatch_schema_still_accepts_live_legacy_blueprints() -> None:
+def test_dispatch_schema_accepts_live_v4_blueprints() -> None:
     document = yaml.safe_load((REPO_ROOT / "skills" / "skill-drift" / "blueprint.yaml").read_text())
     assert _errors(document) == []
 
 
-def test_live_dispatch_schema_accepts_canonical_machine_module_fixture() -> None:
-    assert _errors(_machine_module_fixture("records.valid.yaml")) == []
+def test_live_dispatch_schema_rejects_canonical_machine_module_fixture() -> None:
+    assert _errors(_machine_module_fixture("records.valid.yaml"))
 
 
 def test_frozen_legacy_schema_retains_pre_typed_contract() -> None:
@@ -758,7 +758,7 @@ def test_node_health_rejects_missing_source(health_validator, node_health) -> No
         health_validator.validate(node_health)
 
 
-def test_dispatch_schema_accepts_typed_skill_root() -> None:
+def test_dispatch_schema_rejects_typed_skill_root_after_v4_cutover() -> None:
     document = {
         "schema_version": 2,
         "blueprint_type": "skill",
@@ -774,7 +774,7 @@ def test_dispatch_schema_accepts_typed_skill_root() -> None:
             }
         ],
     }
-    assert _errors(document) == []
+    assert _errors(document)
 
 
 def test_typed_skill_root_accepts_exactly_one_default_interface_representation() -> None:
@@ -976,7 +976,7 @@ def _valid_skill_v3() -> dict:
 def test_version_three_skill_requires_uniform_node_fields() -> None:
     document = _valid_skill_v3()
     assert _errors(document, "skill.schema.json") == []
-    assert _errors(document) == []
+    assert _errors(document)
 
     for field in ("node_type", "gateway", "content"):
         invalid = dict(document)
@@ -1134,10 +1134,10 @@ def test_version_three_behavior_source_uses_closed_semantic_type(
     assert _errors(document, "behavior-source.schema.json")
 
 
-def test_target_v3_selects_machine_modules() -> None:
+def test_v4_gateway_rejects_target_v3_machine_modules() -> None:
     document = _machine_module_fixture("records.valid.yaml")
 
-    assert _errors(document) == []
+    assert _errors(document)
 
 
 @pytest.mark.parametrize(

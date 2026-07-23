@@ -13,7 +13,9 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `bib-audit.llm.default`
+- `bib-audit.interface.default`
+- `bib-audit.interface.scripts-bib-similarity`
+- `bib-audit.interface.scripts-bib-validate-bibtex`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -21,16 +23,15 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `scripts-bib-similarity` — Detect duplicate and version-pair candidates in a .bib file by scoring all entry pairs.
-  - `dispatcher --caller-skill bib-audit bib-audit.machine.scripts-bib-similarity <file.bib> [--threshold 0.3]`
-- `scripts-bib-validate-bibtex` — Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects).
-  - `dispatcher --caller-skill bib-audit bib-audit.machine.scripts-bib-validate-bibtex <file.bib>`
+- `bib-audit.interface.scripts-bib-similarity` — Detect duplicate and version-pair candidates in a .bib file by scoring all entry pairs.
+  - `dispatcher --caller-skill bib-audit bib-audit.interface.scripts-bib-similarity <file.bib> [--threshold 0.3]`
+- `bib-audit.interface.scripts-bib-validate-bibtex` — Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects).
+  - `dispatcher --caller-skill bib-audit bib-audit.interface.scripts-bib-validate-bibtex <file.bib>`
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `bib-audit.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Bibliography Audit
 

@@ -1,0 +1,76 @@
+content:
+- SKILL\.md
+dependencies: []
+description: LLM-facing routing and safety instructions for account configuration, IMAP
+  reads, attachment handling, SMTP sends, OAuth setup, and live checks.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: email-client.source.gateway
+interfaces:
+  email-client.source.gateway.interface.default:
+    contract:
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: email
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: response
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+      arguments: {}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Routed account changes, attachment downloads, OAuth setup,
+          smoke self-sends, and email sends may change local or remote state; the gateway
+          must use the matching bounded interface.
+      outputs:
+      - id: response
+        audience: human
+        description: A response that routes the requested email operation through the
+          declared account, IMAP, SMTP, OAuth, or smoke-check interface.
+        direct_io_ref: write-1
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: The response is nonempty on successful handling.
+        type: {kind: string, sensitivity: derived-private, description: Markdown response}
+      outcomes:
+      - id: success
+        class: success
+        outputs: [response]
+        effects: []
+        caller_action: Present the response to the user.
+      - id: blocked
+        class: refusal
+        outputs: [response]
+        effects: []
+        caller_action: Resolve the missing account, credential, consent, or required message detail before retrying.
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {live: The response is based on the prompt and any interface results obtained during this invocation.}
+        verification: [{method: direct-io-state, direct_io_ref: write-1}]
+      helpers: []
+    description: Primary LLM-facing skill instructions.
+    version: 3
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces:
+- interface: connect-google.interface.default
+  version: 1
+- interface: email-client.source.rtx-email-accounts.interface.accounts-setup-oauth
+  version: 1
+version: 1

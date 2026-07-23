@@ -1,0 +1,97 @@
+content:
+- _rtx/_phase_entry\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-agent-launchers.yaml
+  reason: Imports Python source from _rtx/_agent_launchers.py.
+  source: install-assistant-tools.source.rtx-agent-launchers
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-config-bridge.yaml
+  reason: Imports Python source from _rtx/_config_bridge.py.
+  source: install-assistant-tools.source.rtx-config-bridge
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: install-assistant-tools.source.rtx-init
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-install-scaffold.yaml
+  reason: Imports Python source from _rtx/_install_scaffold.py.
+  source: install-assistant-tools.source.rtx-install-scaffold
+  version: 1
+description: Runs the phase-one installer sequence after obtaining the development-mode choice from the caller.
+gateway:
+  language: Python
+  path: _rtx/_phase_entry.py
+id: install-assistant-tools.source.rtx-phase-entry
+interfaces:
+  install-assistant-tools.source.rtx-phase-entry.interface.scripts-install:
+    contract:
+      arguments:
+        options: {description: Development-mode selection and optional repository and agent and host target paths plus dry-run and interaction choices., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: mode-required}
+      caller_warnings:
+      - external-side-effect: Non-dry-run execution can install launchers and bridge live development configuration across multiple installer phases.
+      outputs:
+      - {id: status, audience: both, description: Development-mode decision and ordered phase results., direct_io_ref: write-2, cardinality: {minimum: 1, maximum: null}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: installed, class: success, outputs: [status], effects: [installation-state], caller_action: Review every reported phase and verify installed commands.}
+      - {id: mode-required, class: refusal, outputs: [], effects: [], caller_action: Pass an explicit development-mode choice for non-interactive execution.}
+      - {id: failed, class: partial, outputs: [status], effects: [installation-state], caller_action: Report the failed phase and preserve the evidence for earlier completed phases.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {per_source: Scaffold and bridge and launcher phases observe target state when each phase runs.}
+        effects:
+        - {id: installation-state, direct_io_ref: write-1, action: configure, value_source: {kind: argument, argument_ref: options}, may_occur_in_outcomes: [installed, failed], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: The companion uninstaller can remove managed installation artifacts.}}
+        mutation_safety:
+          atomicity: {non_atomic: The ordered installer phases commit separate effects.}
+          concurrent_invocations: {unsafe: Concurrent phase-one installations are not serialized.}
+          idempotency: {idempotent: Repeating the same resolved choices reconciles managed targets.}
+          on_uncertain_completion: {verify_then_decide: Inspect phase output and target files before retrying.}
+          partial_effects_on_failure: {possible: Scaffold or bridge effects can remain when a later phase fails.}
+          rollback_on_failure: {unavailable: Earlier phases are not automatically undone.}
+        verification: [{method: output-schema, output_ref: status}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - {id: read-1, medium: prompt, access: read, content: development-mode choice, formats: [text], sensitivity: user-private}
+        writes:
+        - {id: write-1, medium: home-filesystem, access: configure, system: filesystem, content: managed assistant installation state, formats: [files, symlinks, shell, git-config], sensitivity: user-private, path: caller-selected installation targets}
+        - {id: write-2, medium: stdout, access: write, content: phase status, formats: [text], sensitivity: derived-private}
+    description: 'Phase-1 orchestrator: asks the dev-mode question, then runs scaffold,
+      optionally dev-link, then launchers.'
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - name: owner
+    usage: '[--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path
+      DIR] [--agents LIST] [--default-llm {claude,codex}] [--home DIR] [--bin-dir
+      DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]'
+    version: 2
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: binary
+  name: git
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Configures repository hook settings during development installs.
+  version: any
+schema_version: 4
+uses_interfaces: []
+version: 1

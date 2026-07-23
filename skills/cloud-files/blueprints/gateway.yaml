@@ -1,0 +1,69 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Owns the LLM-facing cloud-files instructions and routes storage requests to caller-scoped machine interfaces.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: cloud-files.source.gateway
+interfaces:
+  cloud-files.source.gateway.interface.default:
+    contract:
+      arguments:
+        request:
+          description: User request for cloud-file setup or storage guidance.
+          required: true
+          sensitivity: user-private
+          type: {kind: string}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Storage workflows may create, replace, or delete remote files through separately declared interfaces.
+      outputs:
+      - id: response
+        audience: both
+        description: Markdown response describing or reporting the requested cloud-files workflow.
+        direct_io_ref: write-1
+        type: {kind: string}
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: The interface always returns a response.
+      outcomes:
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Use the response and any separately returned file content.}
+      - {id: failed, class: error, outputs: [response], effects: [], caller_action: Report the setup or storage failure.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {live: The response reflects the workflow state observed during this invocation.}
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: document
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: response
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+    description: Primary LLM-facing skill instructions.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces:
+- interface: cloud-files.source.rtx-oauth-bootstrap.interface.setup-oauth
+  version: 1
+- interface: connect-google.interface.default
+  version: 1
+version: 1

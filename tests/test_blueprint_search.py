@@ -63,6 +63,48 @@ def _write_v4_blueprints(root: Path) -> None:
     )
 
 
+def _write_v4_module(
+    root: Path,
+    relative_root: str,
+    module_id: str,
+    source_name: str,
+) -> None:
+    module_root = root / relative_root
+    source_id = f"{module_id}.source.{source_name}"
+    module_root.mkdir(parents=True)
+    (module_root / "blueprint.yaml").write_text(
+        dedent(
+            f"""
+            schema_version: 4
+            node_type: module
+            id: {module_id}
+            version: 1
+            sources:
+              {source_id}:
+                blueprint:
+                  base: module-root
+                  path: blueprints/{source_name}.yaml
+            exports: {{}}
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+    source = module_root / "blueprints" / f"{source_name}.yaml"
+    source.parent.mkdir()
+    source.write_text(
+        dedent(
+            f"""
+            schema_version: 4
+            node_type: behavioral_source
+            id: {source_id}
+            version: 1
+            interfaces: {{}}
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+
 def test_iter_blueprints_yields_sorted_skill_records(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path,
@@ -97,6 +139,72 @@ def test_iter_blueprints_yields_sorted_skill_records(tmp_path: Path) -> None:
     assert [record.skill for record in records] == ["alpha", "zeta"]
     assert records[0].path == "skills/alpha/blueprint.yaml"
     assert records[0].data["category"] == "development-assistant"
+
+
+def test_v4_search_discovers_repository_modules_outside_skills(tmp_path: Path) -> None:
+    (tmp_path / "skills").mkdir()
+    _write_v4_module(
+        tmp_path,
+        "references/blueprint",
+        "blueprint",
+        "schema-annotated-draft",
+    )
+    _write_v4_module(
+        tmp_path,
+        "references/skill-standards",
+        "skill-standards",
+        "skill-guidelines",
+    )
+    _write_v4_module(
+        tmp_path,
+        "src/officina/common",
+        "common",
+        "blueprint-graph",
+    )
+
+    rows = search_blueprints(tmp_path)
+
+    assert {
+        (row["module"], row["id"], row["node_type"], row["path"])
+        for row in rows
+    } == {
+        (
+            "blueprint",
+            "blueprint",
+            "module",
+            "references/blueprint/blueprint.yaml",
+        ),
+        (
+            "blueprint",
+            "blueprint.source.schema-annotated-draft",
+            "behavioral_source",
+            "references/blueprint/blueprints/schema-annotated-draft.yaml",
+        ),
+        (
+            "skill-standards",
+            "skill-standards",
+            "module",
+            "references/skill-standards/blueprint.yaml",
+        ),
+        (
+            "skill-standards",
+            "skill-standards.source.skill-guidelines",
+            "behavioral_source",
+            "references/skill-standards/blueprints/skill-guidelines.yaml",
+        ),
+        (
+            "common",
+            "common",
+            "module",
+            "src/officina/common/blueprint.yaml",
+        ),
+        (
+            "common",
+            "common.source.blueprint-graph",
+            "behavioral_source",
+            "src/officina/common/blueprints/blueprint-graph.yaml",
+        ),
+    }
 
 
 def test_v4_search_discovers_modules_and_direct_source_blueprints(tmp_path: Path) -> None:

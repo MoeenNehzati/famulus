@@ -16,43 +16,49 @@ from unittest import mock
 
 import yaml
 
+from officina.common.certification_view import CertificationDecision
+from officina.common.blueprint_graph import (
+    authored_node_input_paths,
+    load_repository_blueprint_graph,
+)
+from officina.dispatcher.core import InvocationError, resolve_dispatch_metadata
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint" / "template.yaml"
 DISPATCHER_SRC = REPO_ROOT / "script_dispatcher" / "src"
 
 
+class PassingCertificationView:
+    def check_export(
+        self,
+        module_id: str,
+        interface_id: str,
+        interface_version: int,
+        source_node_id: str | None,
+    ) -> CertificationDecision:
+        return CertificationDecision(True, "test-certified", "accepted by test fixture")
+
+    def certificate_for(self, node_id: str) -> None:
+        return None
+
+
 def typed_sidecars_untracked_until_commit() -> tuple[str, ...]:
-    skills = Path("skills")
-    audit = skills / "-".join(("skill", "audit"))
-    drift = skills / "-".join(("skill", "drift"))
-    connect = skills / "connect-google"
-    return (
-        (audit / ".SKILL.md.blueprint.yaml").as_posix(),
-        (audit / "_rtx" / "._audit_certifier.py.blueprint.yaml").as_posix(),
-        (drift / ".SKILL.md.blueprint.yaml").as_posix(),
-        (
-            drift
-            / "_rtx"
-            / "._check_drift_state.py.compute-hashes.blueprint.yaml"
-        ).as_posix(),
-        (
-            drift
-            / "_rtx"
-            / "._check_drift_state.py.drift-status.blueprint.yaml"
-        ).as_posix(),
-        (connect / "blueprint.yaml").as_posix(),
-        (connect / "llm_interfaces" / ".create-client.md.blueprint.yaml").as_posix(),
-        (connect / "llm_interfaces" / ".connect-services.md.blueprint.yaml").as_posix(),
-        (connect / "_rtx" / "._client_config.py.client-status.blueprint.yaml").as_posix(),
-        (connect / "_rtx" / "._client_config.py.install-client.blueprint.yaml").as_posix(),
-        (connect / "personal-preferences" / ".default.md.blueprint.yaml").as_posix(),
-        (connect / "personal-preferences" / ".create-client.md.blueprint.yaml").as_posix(),
-        (connect / "personal-preferences" / ".connect-services.md.blueprint.yaml").as_posix(),
-        (skills / "cloud-files" / "blueprint.yaml").as_posix(),
-        (skills / "g-calendar" / "blueprint.yaml").as_posix(),
-        (skills / "email-client" / "blueprint.yaml").as_posix(),
+    head_paths = set(
+        subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", "-z", "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=True,
+        ).stdout.decode("utf-8").rstrip("\0").split("\0")
     )
+    graph = load_repository_blueprint_graph(REPO_ROOT)
+    candidates = {
+        path.relative_to(REPO_ROOT).as_posix()
+        for node in graph.nodes.values()
+        for path in authored_node_input_paths(node, REPO_ROOT)
+    }
+    return tuple(sorted(candidates - head_paths))
 
 
 def default_llm_interface() -> dict:
@@ -216,16 +222,12 @@ class SkillBlueprintToolTests(unittest.TestCase):
     def test_blueprint_template_is_schema_family_artifact_manifest(self) -> None:
         self.assertTrue(BLUEPRINT_TEMPLATE.exists(), "reference blueprint template is missing")
         manifest = yaml.safe_load(BLUEPRINT_TEMPLATE.read_text(encoding="utf-8"))
-        self.assertEqual(manifest["examples"]["skill_root"], "blueprint.yaml")
+        self.assertEqual(manifest["examples"]["module"], "blueprint.yaml")
         self.assertEqual(
-            manifest["examples"]["default_llm"],
-            "blueprint.yaml#default_interface",
-        )
-        self.assertEqual(
-            manifest["examples"]["shared_python_interfaces"],
+            manifest["examples"]["behavioral_sources"],
             [
-                "_rtx/._runner.py.first.blueprint.yaml",
-                "_rtx/._runner.py.second.blueprint.yaml",
+                "blueprints/gateway.yaml",
+                "blueprints/runner.yaml",
             ],
         )
         self.assertIn("SKILL.md blueprint contract block", manifest["generated_outputs"])
@@ -263,12 +265,14 @@ class SkillBlueprintToolTests(unittest.TestCase):
                 env=env,
                 check=True,
             )
-            subprocess.run(
-                ["git", "add", "--", *typed_sidecars_untracked_until_commit()],
-                cwd=REPO_ROOT,
-                env=env,
-                check=True,
-            )
+            untracked_sources = typed_sidecars_untracked_until_commit()
+            if untracked_sources:
+                subprocess.run(
+                    ["git", "add", "--", *untracked_sources],
+                    cwd=REPO_ROOT,
+                    env=env,
+                    check=True,
+                )
             result = subprocess.run(
                 [sys.executable, "skills/skill-maker/validators/blueprints.py"],
                 cwd=REPO_ROOT,
@@ -844,19 +848,18 @@ class SkillBlueprintToolTests(unittest.TestCase):
         result = self.run_cmd("skills/skill-maker/validators/boundaries.py")
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
 
-    def test_dispatcher_allows_declared_export(self) -> None:
-        result = self.run_dispatcher_cmd(
-            "--dry-run",
-            "--caller-skill",
-            "daily-plan",
-            "list-manager",
-            "update-list",
-            "/tmp/todo.yaml",
-            "--file",
-            "/tmp/todo-updates.yaml",
-        )
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-        payload = json.loads(result.stdout)
+    def test_dispatcher_allows_certified_declared_export(self) -> None:
+        payload = resolve_dispatch_metadata(
+            caller_skill="daily-plan",
+            target="list-manager.interface.update-list",
+            args=[
+                "/tmp/todo.yaml",
+                "--file",
+                "/tmp/todo-updates.yaml",
+            ],
+            repo_root=REPO_ROOT,
+            certification_view=PassingCertificationView(),
+        ).as_payload()
         self.assertEqual(payload["cwd"], str(REPO_ROOT / "skills" / "list-manager"))
         self.assertEqual(
             payload["command"],
@@ -872,6 +875,19 @@ class SkillBlueprintToolTests(unittest.TestCase):
             ],
         )
 
+    def test_dispatcher_cli_keeps_v4_export_closed_before_certification(self) -> None:
+        result = self.run_dispatcher_cmd(
+            "--dry-run",
+            "--caller-skill",
+            "daily-plan",
+            "list-manager.interface.update-list",
+            "/tmp/todo.yaml",
+            "--file",
+            "/tmp/todo-updates.yaml",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("certification rejected", result.stderr)
+
     def test_dispatcher_requires_caller_skill(self) -> None:
         result = self.run_dispatcher_cmd(
             "--dry-run",
@@ -885,113 +901,83 @@ class SkillBlueprintToolTests(unittest.TestCase):
 
     def test_dispatcher_rejects_private_interface_for_dependency(self) -> None:
         """Test that internal-only interfaces cannot be used by dependent skills."""
-        result = self.run_dispatcher_cmd(
-            "--dry-run",
-            "--caller-skill",
-            "daily-plan",
-            "list-manager",
-            "migrate-markdown",  # This is internal-only
-            "/tmp/input.md",
-            "/tmp/output.yaml",
-            "todo",
-        )
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("internal-only", result.stderr)
+        with self.assertRaisesRegex(InvocationError, "does not declare use"):
+            resolve_dispatch_metadata(
+                caller_skill="daily-plan",
+                target="list-manager.interface.migrate-markdown",
+                args=["/tmp/input.md", "/tmp/output.yaml", "todo"],
+                repo_root=REPO_ROOT,
+                certification_view=PassingCertificationView(),
+            )
 
-    def test_dispatcher_allows_private_interface_for_owner(self) -> None:
-        """Test that the owning skill can use non-exported interfaces."""
-        result = self.run_dispatcher_cmd(
-            "--dry-run",
-            "--caller-skill",
-            "list-manager",
-            "list-manager",
-            "update-list",
-            "/tmp/todo.yaml",
-            "--file",
-            "/tmp/updates.yaml",
-        )
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-        payload = json.loads(result.stdout)
+    def test_dispatcher_allows_certified_private_interface_for_owner(self) -> None:
+        payload = resolve_dispatch_metadata(
+            caller_skill="list-manager",
+            target="list-manager.interface.update-list",
+            args=["/tmp/todo.yaml", "--file", "/tmp/updates.yaml"],
+            repo_root=REPO_ROOT,
+            certification_view=PassingCertificationView(),
+        ).as_payload()
         self.assertIn("pattern", payload)
 
-    def test_dispatcher_enforces_required_flags(self) -> None:
-        """Test that if a pattern requires flags, they must be present."""
-        # update-list file-mode requires --file flag.
-        # Calling with --file flag should work:
-        result = self.run_dispatcher_cmd(
-            "--dry-run",
-            "--caller-skill",
-            "daily-plan",
-            "list-manager",
-            "update-list",
-            "/tmp/todo.yaml",
-            "--file",
-            "/tmp/updates.yaml",
+    def test_dispatcher_enforces_required_flags_for_certified_export(self) -> None:
+        resolve_dispatch_metadata(
+            caller_skill="daily-plan",
+            target="list-manager.interface.update-list",
+            args=["/tmp/todo.yaml", "--file", "/tmp/updates.yaml"],
+            repo_root=REPO_ROOT,
+            certification_view=PassingCertificationView(),
         )
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-
-        # Calling with both --file and a forbidden flag should fail:
-        result = self.run_dispatcher_cmd(
-            "--dry-run",
-            "--caller-skill",
-            "daily-plan",
-            "list-manager",
-            "update-list",
-            "/tmp/todo.yaml",
-            "--file",
-            "/tmp/updates.yaml",
-            "--stdin",  # stdin-batch forbids --file
-        )
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("does not match any declared pattern", result.stderr)
+        with self.assertRaisesRegex(
+            InvocationError, "does not match any declared pattern"
+        ):
+            resolve_dispatch_metadata(
+                caller_skill="daily-plan",
+                target="list-manager.interface.update-list",
+                args=[
+                    "/tmp/todo.yaml",
+                    "--file",
+                    "/tmp/updates.yaml",
+                    "--stdin",
+                ],
+                repo_root=REPO_ROOT,
+                certification_view=PassingCertificationView(),
+            )
 
     def test_dispatcher_rejects_unexpected_flag(self) -> None:
-        result = self.run_dispatcher_cmd(
-            "--dry-run",
-            "--caller-skill",
-            "daily-plan",
-            "list-manager",
-            "update-list",
-            "/tmp/todo.yaml",
-            "--file",
-            "/tmp/todo-updates.yaml",
-            "--bogus",
-            "/tmp/value",
-        )
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("does not match any declared pattern", result.stderr)
+        with self.assertRaisesRegex(
+            InvocationError, "does not match any declared pattern"
+        ):
+            resolve_dispatch_metadata(
+                caller_skill="daily-plan",
+                target="list-manager.interface.update-list",
+                args=[
+                    "/tmp/todo.yaml",
+                    "--file",
+                    "/tmp/todo-updates.yaml",
+                    "--bogus",
+                    "/tmp/value",
+                ],
+                repo_root=REPO_ROOT,
+                certification_view=PassingCertificationView(),
+            )
 
     def test_dispatcher_rejects_stdin_when_pattern_disallows_it(self) -> None:
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "script_dispatcher.cli",
-                "--dry-run",
-                "--stdin",
-                "--caller-skill",
-                "daily-plan",
-                "list-manager",
-                "update-list",
-                "/tmp/todo.yaml",
-                "--file",
-                "/tmp/todo-updates.yaml",
-            ],
-            cwd=REPO_ROOT,
-            env={
-                **os.environ,
-                "AI": str(REPO_ROOT),
-                "PYTHONPATH": str(DISPATCHER_SRC)
-                if not os.environ.get("PYTHONPATH")
-                else f"{DISPATCHER_SRC}:{os.environ['PYTHONPATH']}",
-            },
-            input="x",
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("does not match any declared pattern", result.stderr)
+        with self.assertRaisesRegex(
+            InvocationError, "does not match any declared pattern"
+        ):
+            resolve_dispatch_metadata(
+                caller_skill="daily-plan",
+                target="list-manager.interface.update-list",
+                args=[
+                    "/tmp/todo.yaml",
+                    "--file",
+                    "/tmp/todo-updates.yaml",
+                ],
+                stdin_requested=True,
+                repo_root=REPO_ROOT,
+                certification_view=PassingCertificationView(),
+            )
 
     def test_contract_block_is_injected_after_frontmatter(self) -> None:
         sync_module = load_module("sync_skill_blueprints", REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py")
@@ -1082,6 +1068,52 @@ class SkillBlueprintToolTests(unittest.TestCase):
         self.assertIn("`read-data` — Read an input file.", block)
         self.assertIn("dispatcher --caller-skill demo-skill demo-skill.machine.read-data <path>", block)
 
+    def test_v4_generation_uses_repository_graph_exports_and_source_requirements(
+        self,
+    ) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_v4_generation",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        blueprints = sync_module.load_blueprints()
+        blueprint = blueprints["list-manager"]
+
+        self.assertIsNotNone(blueprint.repository_graph)
+        contract = sync_module.generated_contract_block(
+            blueprint.name,
+            blueprint.data,
+            blueprint.repository_graph,
+        )
+        self.assertIn("Skill Version: 1", contract)
+        self.assertIn("`list-manager.interface.update-list`", contract)
+        owner_block = sync_module.generated_interface_block(
+            blueprint.name,
+            blueprint.data,
+            blueprint.repository_graph,
+        )
+        self.assertIn(
+            "dispatcher --caller-skill list-manager "
+            "list-manager.interface.update-list",
+            owner_block,
+        )
+
+        manifest = sync_module.generated_runtime_dependencies_manifest(blueprints)
+        update = manifest["skills"]["list-manager"]["interfaces"]["update-list"]
+        self.assertEqual(update["id"], "list-manager.interface.update-list")
+        self.assertIn(
+            "PyYAML",
+            {dependency["name"] for dependency in update["dependencies"]},
+        )
+        certify = manifest["skills"]["skill-certifier"]["interfaces"]["certify"]
+        self.assertIn(
+            "cryptography",
+            {dependency["name"] for dependency in certify["dependencies"]},
+        )
+        self.assertNotIn(
+            "cryptography",
+            {dependency["name"] for dependency in update["dependencies"]},
+        )
+
     def test_consumer_local_blocks_use_root_and_named_gateway_placement(self) -> None:
         sync_module = load_module(
             "sync_skill_blueprints_consumer_blocks",
@@ -1147,6 +1179,96 @@ class SkillBlueprintToolTests(unittest.TestCase):
             self.assertTrue(named_text.startswith(sync_module.USED_INTERFACES_START))
             self.assertEqual(first[root_gateway], second[root_gateway])
             self.assertEqual(first[named_gateway], second[named_gateway])
+
+    def test_v4_consumer_projection_uses_behavioral_source_gateways(self) -> None:
+        sync_module = load_module(
+            "sync_skill_blueprints_v4_consumer_blocks",
+            REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            skill = Path(temp) / "demo-skill"
+            named_dir = skill / "llm_interfaces"
+            named_dir.mkdir(parents=True)
+            root_gateway = skill / "SKILL.md"
+            named_gateway = named_dir / "coach.md"
+            root_gateway.write_text(
+                "---\nname: demo-skill\n---\n"
+                f"{sync_module.CONTRACT_START}\nContract\n"
+                f"{sync_module.CONTRACT_END}\n"
+                f"{sync_module.INTERFACES_START}\nOwner\n"
+                f"{sync_module.INTERFACES_END}\nBody.\n",
+                encoding="utf-8",
+            )
+            named_gateway.write_text("Named body.\n", encoding="utf-8")
+            graph = SimpleNamespace(
+                nodes={
+                    "demo-skill.source.gateway": SimpleNamespace(
+                        node_type="behavioral_source",
+                        gateway_path=root_gateway,
+                        skill_root=skill,
+                        declaration={"gateway": {"language": "Markdown"}},
+                    ),
+                    "demo-skill.source.coach": SimpleNamespace(
+                        node_type="behavioral_source",
+                        gateway_path=named_gateway,
+                        skill_root=skill,
+                        declaration={"gateway": {"language": "Markdown"}},
+                    ),
+                }
+            )
+            projected = SimpleNamespace(
+                document={
+                    "schema_version": 2,
+                    "consumer": "demo-skill.source.gateway",
+                    "interfaces": {
+                        "provider.interface.run": {
+                            "id": "provider.interface.run"
+                        }
+                    },
+                    "helper_interfaces": {},
+                    "definitions": {},
+                }
+            )
+            with mock.patch.object(
+                sync_module,
+                "project_consumer_interfaces",
+                return_value=projected,
+            ) as project:
+                planned = sync_module.plan_projected_consumer_interface_updates(
+                    graph,
+                    SimpleNamespace(),
+                )
+
+            self.assertEqual(project.call_count, 2)
+            self.assertLess(
+                planned[root_gateway].index(sync_module.CONTRACT_END),
+                planned[root_gateway].index(sync_module.USED_INTERFACES_START),
+            )
+            self.assertTrue(
+                planned[named_gateway].startswith(sync_module.USED_INTERFACES_START)
+            )
+            shared = SimpleNamespace(
+                nodes={
+                    "demo-skill.source.one": SimpleNamespace(
+                        node_type="behavioral_source",
+                        gateway_path=named_gateway,
+                        skill_root=skill,
+                    ),
+                    "demo-skill.source.two": SimpleNamespace(
+                        node_type="behavioral_source",
+                        gateway_path=named_gateway,
+                        skill_root=skill,
+                    ),
+                }
+            )
+            with self.assertRaises(sync_module.BlueprintError):
+                sync_module.plan_consumer_interface_updates(
+                    shared,
+                    {
+                        "demo-skill.source.one": projected,
+                        "demo-skill.source.two": projected,
+                    },
+                )
 
     def test_consumer_local_block_removes_stale_and_rejects_conflicting_markers(self) -> None:
         sync_module = load_module(

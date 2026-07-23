@@ -1,0 +1,13 @@
+content:
+- _rtx/__init__\.py
+description: Marks the graph runtime directory as a Python package and exposes no callable interface.
+dependencies: []
+gateway:
+  language: Python
+  path: _rtx/__init__.py
+id: math-dependency-graph.source.rtx-init
+interfaces: {}
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

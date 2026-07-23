@@ -203,6 +203,47 @@ def test_blueprint_generic_platform_prose_is_still_rejected(tmp_path: Path) -> N
     assert "Linux-specific" in errors[0]
 
 
+def test_v4_blueprint_metadata_does_not_mask_owned_content(
+    tmp_path: Path,
+) -> None:
+    d = tmp_path / "skills" / "a-skill"
+    runtime = d / "_rtx"
+    runtime.mkdir(parents=True)
+    (d / "SKILL.md").write_text("Host-neutral instructions.\n", encoding="utf-8")
+    (runtime / "_claude_parser.py").write_text(
+        "# Host-specific implementation.\n",
+        encoding="utf-8",
+    )
+    (runtime / "shared.py").write_text(
+        "# Calls Claude directly from shared code.\n",
+        encoding="utf-8",
+    )
+    (d / "blueprint.yaml").write_text(
+        "schema_version: 4\n"
+        "node_type: module\n"
+        "id: a-skill\n"
+        "version: 1\n"
+        "gateway:\n"
+        "  path: SKILL.md\n"
+        "  language: Markdown\n"
+        "content:\n"
+        "  - SKILL\\.md\n"
+        "  - _rtx/_claude_parser\\.py\n"
+        "  - _rtx/shared\\.py\n"
+        "authority:\n"
+        "  owns_filesystem: []\n"
+        "sources: {}\n"
+        "exports: {}\n",
+        encoding="utf-8",
+    )
+
+    errors = validate(tmp_path)
+
+    assert len(errors) == 1
+    assert "skills/a-skill/_rtx/shared.py" in errors[0]
+    assert "Calls Claude directly" in errors[0]
+
+
 def test_blueprint_reference_docs_can_define_platform_metadata(tmp_path: Path) -> None:
     refs = tmp_path / "references" / "blueprint"
     refs.mkdir(parents=True)

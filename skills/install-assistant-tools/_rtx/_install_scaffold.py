@@ -44,14 +44,50 @@ DEFAULT_PIP_INSTALL_TIMEOUT_SECONDS = 60
 
 
 def required_python_packages(repo_root: Path) -> list[str]:
-    packages: set[str] = set()
+    packages: dict[str, tuple[str, set[str]]] = {}
     manifest = repo_root / RUNTIME_DEPENDENCIES_MANIFEST
     if manifest.exists():
         data = json.loads(manifest.read_text(encoding="utf-8"))
-        manifest_packages = data.get("all", {}).get("python-package", [])
-        if isinstance(manifest_packages, list):
-            packages.update(package for package in manifest_packages if isinstance(package, str) and package)
-    return sorted(packages, key=str.lower)
+        skills = data.get("skills", {})
+        if isinstance(skills, dict):
+            for skill in skills.values():
+                interfaces = (
+                    skill.get("interfaces", {})
+                    if isinstance(skill, dict)
+                    else {}
+                )
+                if not isinstance(interfaces, dict):
+                    continue
+                for interface in interfaces.values():
+                    dependencies = (
+                        interface.get("dependencies", [])
+                        if isinstance(interface, dict)
+                        else []
+                    )
+                    if not isinstance(dependencies, list):
+                        continue
+                    for dependency in dependencies:
+                        if (
+                            not isinstance(dependency, dict)
+                            or dependency.get("kind") != "python-package"
+                        ):
+                            continue
+                        name = dependency.get("name")
+                        version = dependency.get("version", "any")
+                        if not isinstance(name, str) or not name:
+                            continue
+                        key = name.casefold()
+                        display, versions = packages.setdefault(
+                            key,
+                            (name, set()),
+                        )
+                        if isinstance(version, str) and version and version != "any":
+                            versions.add(version)
+    requirements = [
+        display + ",".join(sorted(versions))
+        for display, versions in packages.values()
+    ]
+    return sorted(requirements, key=str.lower)
 
 
 def pip_install_timeout_seconds() -> int:
@@ -93,6 +129,46 @@ def install_python_packages(repo_root: Path, dry_run: bool) -> None:
                 log(f"  WARN: failed to install {package}: {result.stderr.strip()}")
         except subprocess.TimeoutExpired:
             log(f"  WARN: timed out installing {package} after {timeout}s")
+
+
+def install_certificate_signing_material(
+    repo_root: Path,
+    dry_run: bool,
+) -> LauncherInstallResult:
+    """Provision the existing certifier key lifecycle as one required capability."""
+
+    workflows = ("v4 certification", "certificate verification")
+    if dry_run:
+        log("  (dry-run) Would provision certificate signing material")
+        return LauncherInstallResult(
+            name="certificate-signing-material",
+            required=True,
+            status="would-install",
+            workflows=workflows,
+        )
+    try:
+        from officina.common.audit_records import (
+            certificate_public_key_root,
+            provision_certificate_signing_material,
+        )
+
+        provision_certificate_signing_material(repo_root)
+        path = certificate_public_key_root(repo_root)
+    except Exception as exc:
+        return LauncherInstallResult(
+            name="certificate-signing-material",
+            required=True,
+            status="failed",
+            workflows=workflows,
+            reason=str(exc),
+        )
+    return LauncherInstallResult(
+        name="certificate-signing-material",
+        required=True,
+        status="installed",
+        workflows=workflows,
+        path=path,
+    )
 
 
 def report_capabilities(results: list[LauncherInstallResult]) -> int:
@@ -178,6 +254,13 @@ def run(
         launcher_installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run, manifest),
         launcher_installer.install_invoke_skill_launcher(bin_dir, dry_run, manifest),
     ]
+    if any(
+        package.lower() == "cryptography"
+        for package in required_python_packages(repo_root)
+    ):
+        capability_results.append(
+            install_certificate_signing_material(repo_root, dry_run)
+        )
 
     if sys.platform == "win32":
         ensure_path_windows(bin_dir, dry_run, manifest)

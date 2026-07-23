@@ -9,8 +9,8 @@ authority:
   checkpoint:
     kind: task_4_source_base
     branch: master
-    commit: d662313920c29d8aa7c7fd6ff7fa191f54eb62e6
-    relation_to_origin: "ahead 19 at Task 4 capture"
+    commit: 924fda935b558c858611a72a5381d7eb4f19bb29
+    relation_to_origin: "ahead 20 at Task 4 correction capture"
     detached_head: false
     initial_dirty_paths: []
     unrelated_dirty_paths: []
@@ -28,50 +28,71 @@ execution_status_contract:
   predecessor_rule: proposed artifacts in a frozen or deferred plan are not authorized by this migration and require fresh functional-predecessor dispositions when rebased
 
 candidate_source:
-  local_includes:
-    - scripts/migrate-blueprints-v4.py
+  local_includes: []
   authorized_overlay:
     - {path: docs/architecture.md, state: modified}
+    - {path: docs/certification_and_drift.md, state: modified}
     - {path: docs/plans/unified-architecture-migration-map.yaml, state: modified}
     - {path: docs/plans/unified-architecture-migration.md, state: modified}
     - {path: references/blueprint/behavioral-source.schema.json, state: modified}
-    - {path: references/blueprint/caller-contract.schema.json, state: modified}
     - {path: references/blueprint/common.schema.json, state: modified}
-    - {path: references/blueprint/direct-io.schema.json, state: modified}
-    - {path: references/blueprint/machine-module.schema.json, state: modified}
-    - {path: references/blueprint/module.schema.json, state: modified}
-    - {path: scripts/migrate-blueprints-v4.py, state: added}
-    - {path: skills/skill-audit/SKILL.md, state: modified}
+    - {path: skills/bib-audit/blueprint.yaml, state: modified}
+    - {path: skills/cloud-files/blueprint.yaml, state: modified}
+    - {path: skills/connect-google/_rtx/._client_config.py.client-status.blueprint.yaml, state: modified}
+    - {path: skills/connect-google/_rtx/._client_config.py.install-client.blueprint.yaml, state: modified}
+    - {path: skills/connect-google/tests/test_connect_google_llm_routing.py, state: modified}
+    - {path: skills/daily-plan/blueprint.yaml, state: modified}
+    - {path: skills/email-client/blueprint.yaml, state: modified}
+    - {path: skills/email-triage/_rtx/._decision_sink.py.blueprint.yaml, state: modified}
+    - {path: skills/email-triage/_rtx/._envelope_gate.py.blueprint.yaml, state: modified}
+    - {path: skills/email-triage/_rtx/._mail_envelope_stream.py.blueprint.yaml, state: modified}
+    - {path: skills/email-triage/_rtx/._write_metrics.py.blueprint.yaml, state: modified}
+    - {path: skills/g-calendar/blueprint.yaml, state: modified}
+    - {path: skills/get-weather/blueprint.yaml, state: modified}
+    - {path: skills/hook-maker/blueprint.yaml, state: modified}
+    - {path: skills/initialize-tdd/blueprint.yaml, state: modified}
+    - {path: skills/install-assistant-tools/blueprint.yaml, state: modified}
+    - {path: skills/list-manager/blueprint.yaml, state: modified}
+    - {path: skills/math-dependency-graph/blueprint.yaml, state: modified}
+    - {path: skills/pdf-to-markdown/blueprint.yaml, state: modified}
+    - {path: skills/recurring-tasks/_rtx/_healthcheck_probe.py, state: modified}
+    - {path: skills/recurring-tasks/blueprint.yaml, state: modified}
+    - {path: skills/recurring-tasks/tests/test_healthcheck.py, state: modified}
+    - {path: skills/skill-audit/_rtx/._audit_certifier.py.blueprint.yaml, state: modified}
     - {path: skills/skill-audit/_rtx/_audit_certifier.py, state: modified}
     - {path: skills/skill-audit/tests/test_audit_certifier.py, state: modified}
+    - {path: skills/skill-drift/_rtx/._check_drift_state.py.compute-hashes.blueprint.yaml, state: modified}
+    - {path: skills/skill-drift/_rtx/._check_drift_state.py.drift-status.blueprint.yaml, state: modified}
     - {path: skills/skill-drift/references/certification-basis-roots.json, state: modified}
-    - {path: skills/skill-drift/tests/test_drift_check.py, state: modified}
-    - {path: skills/list-manager/blueprint.yaml, state: modified}
-    - {path: skills/skill-maker/validators/dispatch_caller_skill.py, state: modified}
+    - {path: skills/skill-maker/blueprint.yaml, state: modified}
+    - {path: skills/technical-flow-review/blueprint.yaml, state: modified}
+    - {path: src/officina/common/__init__.py, state: modified}
     - {path: src/officina/common/artifact_health.py, state: modified}
     - {path: src/officina/common/blueprint_graph.py, state: modified}
-    - {path: src/officina/common/blueprint_inventory.py, state: modified}
-    - {path: src/officina/common/git_provenance.py, state: modified}
+    - {path: src/officina/common/certification_view.py, state: modified}
     - {path: src/officina/common/interface_injection_migration.py, state: modified}
+    - {path: src/officina/common/interface_projection.py, state: modified}
     - {path: src/officina/common/process_binding_compiler.py, state: modified}
     - {path: src/officina/dispatcher/core.py, state: modified}
     - {path: src/officina/runtime/python_machine_interface.py, state: modified}
-    - {path: tests/test_blueprint_inventory.py, state: modified}
-    - {path: tests/test_dispatcher_route_smoke.py, state: modified}
     - {path: tests/test_interface_injection_migration.py, state: modified}
     - {path: tests/test_interface_projection.py, state: modified}
     - {path: tests/test_machine_module_dispatcher.py, state: modified}
     - {path: tests/test_machine_module_hashing.py, state: modified}
     - {path: tests/test_officina_artifact_health.py, state: modified}
+    - {path: tests/test_officina_atomic_files.py, state: modified}
     - {path: tests/test_officina_blueprint_graph.py, state: modified}
     - {path: tests/test_officina_certification_view.py, state: modified}
-    - {path: tests/test_officina_git_provenance.py, state: modified}
-    - {path: tests/test_officina_python_machine_interface.py, state: modified}
+    - {path: tests/test_officina_pooled_blueprint.py, state: modified}
     - {path: tests/test_process_binding_compiler.py, state: modified}
-    - {path: tests/test_typed_blueprint_schemas.py, state: modified}
-    - {path: tests/v4_certification_fixtures.py, state: modified}
   module_rename_literal_files:
     - skills/skill-drift/references/certification-basis-roots.json
+  public_id_literal_files:
+    - skills/connect-google/SKILL.md
+    - skills/connect-google/llm_interfaces/connect-services.md
+    - skills/connect-google/llm_interfaces/create-client.md
+    - skills/connect-google/tests/test_connect_google_llm_routing.py
+    - skills/connect-google/tests/test_service_delegation.py
 
 superseded_execution_sequences:
   - path: docs/plans/migrate_audit_to_certification.md
@@ -139,7 +160,7 @@ coverage_contract:
     duplicate_names: distinct pointers remain distinct covered units
     pointer_encoding: RFC 6901; escape tilde as ~0 and slash as ~1
     observed_schema_files: 37
-    observed_field_occurrences: 1429
+    observed_field_occurrences: 1444
     schema_paths:
       include:
         - references/blueprint/**/*.schema.json
@@ -173,6 +194,27 @@ declarations:
       collision_behavior: reject; never add a suffix silently
   mechanical_conversion:
     principle: preserve authored facts exactly and leave unauthored semantic facts absent for certifier-owned completion; never create permissive defaults
+    reviewed_generated_field_ignores:
+      - path: skills/daily-plan/blueprint.yaml
+        field: uses_interfaces
+        interface_ids:
+          - daily-plan.machine.orchestrate
+          - daily-plan.machine.plan-storage
+          - daily-plan.machine.render-plan
+          - daily-plan.machine.mutate-plan
+        exact_value:
+          - cloud-files.machine.lists-read@1
+          - cloud-files.machine.lists-write@1
+          - cloud-files.machine.plans-delete@1
+          - cloud-files.machine.plans-read@1
+          - cloud-files.machine.plans-write@1
+          - g-calendar.machine.scripts-gcal@1
+          - get-weather.machine.scripts-weather@1
+          - list-manager.machine.read-beautify@1
+          - list-manager.machine.read-list@1
+          - list-manager.machine.update-list@1
+        disposition: ignore
+        reason: These string shorthands were generated into the Task 4 overlay despite being invalid under the legacy schema; the reviewed direct interface ledger is declared separately on daily-plan.source.rtx-init.
     node_defaults:
       schema_version: 4
       new_module_version: 1
@@ -221,6 +263,13 @@ declarations:
       import_search_roots:
         default: [module-root]
         by_gateway:
+          skills/install-assistant-tools/_rtx/_agent_launchers.py: [gateway-parent, module-root]
+          skills/install-assistant-tools/_rtx/_install_scaffold.py: [gateway-parent, module-root]
+          skills/install-assistant-tools/_rtx/_phase_entry.py: [gateway-parent, module-root]
+          skills/recurring-tasks/_rtx/_healthcheck_probe.py: [gateway-parent, module-root]
+          skills/recurring-tasks/_rtx/_job_control.py: [gateway-parent, module-root]
+          skills/recurring-tasks/_rtx/_setup_runner.py: [gateway-parent, module-root]
+          skills/recurring-tasks/_rtx/_unit_writer.py: [gateway-parent, module-root]
           skills/skill-drift/_rtx/_check_drift_state.py: [gateway-parent, module-root]
     direct_io_mapping:
       entry_id: derive deterministically as read-<one-based-index>, write-<one-based-index>, or network-<one-based-index> within each interface
@@ -267,11 +316,191 @@ declarations:
           gateway: _rtx/_job_control.py
           runtime_dependencies: set-union
           reason: the shared job-control source exposes selectors with operation-specific dependency statements; the source-wide union preserves all authored requirements and reasons
-        - module: skill-drift
-          gateway: _rtx/_check_drift_state.py
-          runtime_dependencies: set-union
-          reason: compute-hashes and drift-status author identical package requirements but distinct cryptography rationales; the source-wide union preserves both authored records without weakening general equality
-    reference_modules:
+    supplemental_modules:
+      - root: src/officina/common
+        id: common
+        gateway: {path: __init__.py, language: Python}
+        content: [__init__.py, artifact_health.py, atomic_files.py, audit_records.py, blueprint_graph.py, blueprint_inventory.py, blueprint_template.py, certification_view.py, codex_toml.py, dates.py, git_provenance.py, oauth_json.py, pooled_blueprint.py, process_binding_compiler.py, secret_store.py, toml_io.py]
+        exports:
+          common.interface.artifact-health:
+            source_interface: common.source.artifact-health.interface.python-api
+            access: {allow_all_modules: false, allowed_callers: [skill-certifier, skill-drift]}
+          common.interface.atomic-files:
+            source_interface: common.source.atomic-files.interface.python-api
+            access: {allow_all_modules: false, allowed_callers: [skill-maker, skill-certifier]}
+          common.interface.audit-records:
+            source_interface: common.source.audit-records.interface.python-api
+            access: {allow_all_modules: false, allowed_callers: [install-assistant-tools, skill-certifier, skill-drift]}
+          common.interface.blueprint-graph:
+            source_interface: common.source.blueprint-graph.interface.python-api
+            access: {allow_all_modules: false, allowed_callers: [skill-maker, skill-certifier, skill-drift]}
+          common.interface.blueprint-template:
+            source_interface: common.source.blueprint-template.interface.python-api
+            access: {allow_all_modules: false, allowed_callers: [regenerate-blueprints]}
+          common.interface.certification-view:
+            source_interface: common.source.certification-view.interface.python-api
+            access: {allow_all_modules: false, allowed_callers: [skill-certifier, skill-drift]}
+          common.interface.codex-toml:
+            source_interface: common.source.codex-toml.interface.python-api
+            access: {allow_all_modules: false, allowed_callers: [install-assistant-tools]}
+          common.interface.dates:
+            source_interface: common.source.dates.interface.python-api
+            access: {allow_all_modules: false, allowed_callers: [daily-plan]}
+          common.interface.git-provenance:
+            source_interface: common.source.git-provenance.interface.python-api
+            access: {allow_all_modules: false, allowed_callers: [skill-certifier, skill-drift]}
+          common.interface.oauth-json:
+            source_interface: common.source.oauth-json.interface.python-api
+            access: {allow_all_modules: false, allowed_callers: [cloud-files, connect-google, g-calendar]}
+          common.interface.pooled-blueprint:
+            source_interface: common.source.pooled-blueprint.interface.python-api
+            access: {allow_all_modules: false, allowed_callers: [skill-certifier, skill-drift]}
+          common.interface.secret-store:
+            source_interface: common.source.secret-store.interface.python-api
+            access: {allow_all_modules: false, allowed_callers: [email-client]}
+          common.interface.toml-io:
+            source_interface: common.source.toml-io.interface.python-api
+            access: {allow_all_modules: false, allowed_callers: [install-assistant-tools]}
+        sources:
+          - id: common.source.artifact-health
+            version: 1
+            blueprint: blueprints/artifact-health.yaml
+            gateway: {path: artifact_health.py, language: Python}
+            legacy: {path: $repo/src/officina/common/artifact_health.py, content: code, format: python}
+            dependencies:
+              - {source: common.source.atomic-files, version: 1, blueprint: {base: module-root, path: blueprints/atomic-files.yaml}, reason: Imports atomic file reads and errors from atomic_files.py.}
+              - {source: common.source.audit-records, version: 1, blueprint: {base: module-root, path: blueprints/audit-records.yaml}, reason: Imports record authentication helpers from audit_records.py.}
+              - {source: common.source.blueprint-graph, version: 1, blueprint: {base: module-root, path: blueprints/blueprint-graph.yaml}, reason: Imports graph types and resolved content paths from blueprint_graph.py.}
+              - {source: common.source.blueprint-template, version: 1, blueprint: {base: module-root, path: blueprints/blueprint-template.yaml}, reason: Imports schema loading and validation from blueprint_template.py.}
+              - {source: common.source.git-provenance, version: 1, blueprint: {base: module-root, path: blueprints/git-provenance.yaml}, reason: Imports Git snapshot and file provenance from git_provenance.py.}
+              - {source: common.source.process-binding-compiler, version: 1, blueprint: {base: module-root, path: blueprints/process-binding-compiler.yaml}, reason: Imports gateway requirement parsing from process_binding_compiler.py.}
+            interfaces:
+              common.source.artifact-health.interface.python-api: {version: 1, description: Computes deterministic graph health and certification hashes for Python callers.}
+          - id: common.source.atomic-files
+            version: 1
+            blueprint: blueprints/atomic-files.yaml
+            gateway: {path: atomic_files.py, language: Python}
+            legacy: {path: $repo/src/officina/common/atomic_files.py, content: code, format: python}
+            interfaces:
+              common.source.atomic-files.interface.python-api: {version: 1, description: Provides atomic file operations to Python callers.}
+          - id: common.source.audit-records
+            version: 1
+            blueprint: blueprints/audit-records.yaml
+            gateway: {path: audit_records.py, language: Python}
+            legacy: {path: $repo/src/officina/common/audit_records.py, content: code, format: python}
+            dependencies:
+              - {source: common.source.atomic-files, version: 1, blueprint: {base: module-root, path: blueprints/atomic-files.yaml}, reason: Imports confined atomic record operations from atomic_files.py.}
+              - {source: common.source.secret-store, version: 1, blueprint: {base: module-root, path: blueprints/secret-store.yaml}, reason: Imports certification key storage from secret_store.py.}
+            runtime_dependencies:
+              - {kind: python-package, name: cryptography, version: '>=44.0.1', platforms: {linux: true, macos: true, windows: true}, reason: Implements the Ed25519 key and signature primitives imported by audit_records.py.}
+            interfaces:
+              common.source.audit-records.interface.python-api: {version: 1, description: "Reads, authenticates, signs, and writes certification records for Python callers."}
+          - id: common.source.blueprint-graph
+            version: 1
+            blueprint: blueprints/blueprint-graph.yaml
+            gateway: {path: blueprint_graph.py, language: Python}
+            legacy: {path: $repo/src/officina/common/blueprint_graph.py, content: code, format: python}
+            dependencies:
+              - {source: common.source.blueprint-inventory, version: 1, blueprint: {base: module-root, path: blueprints/blueprint-inventory.yaml}, reason: Imports strict blueprint discovery and JSON value types from blueprint_inventory.py.}
+            interfaces:
+              common.source.blueprint-graph.interface.python-api: {version: 1, description: Loads and validates repository blueprint graphs for Python callers.}
+          - id: common.source.blueprint-inventory
+            version: 1
+            blueprint: blueprints/blueprint-inventory.yaml
+            gateway: {path: blueprint_inventory.py, language: Python}
+            legacy: {path: $repo/src/officina/common/blueprint_inventory.py, content: code, format: python}
+            dependencies:
+              - {source: common.source.atomic-files, version: 1, blueprint: {base: module-root, path: blueprints/atomic-files.yaml}, reason: Imports descriptor-safe regular-file reads from atomic_files.py.}
+              - {source: common.source.git-provenance, version: 1, blueprint: {base: module-root, path: blueprints/git-provenance.yaml}, reason: Imports ignored-path discovery from git_provenance.py.}
+          - id: common.source.blueprint-template
+            version: 1
+            blueprint: blueprints/blueprint-template.yaml
+            gateway: {path: blueprint_template.py, language: Python}
+            legacy: {path: $repo/src/officina/common/blueprint_template.py, content: code, format: python}
+            interfaces:
+              common.source.blueprint-template.interface.python-api: {version: 1, description: Loads blueprint schemas and regenerates annotated blueprint YAML for Python callers.}
+          - id: common.source.certification-view
+            version: 1
+            blueprint: blueprints/certification-view.yaml
+            gateway: {path: certification_view.py, language: Python}
+            legacy: {path: $repo/src/officina/common/certification_view.py, content: code, format: python}
+            dependencies:
+              - {source: common.source.artifact-health, version: 1, blueprint: {base: module-root, path: blueprints/artifact-health.yaml}, reason: Imports node-hash and certification-basis evaluation from artifact_health.py.}
+              - {source: common.source.atomic-files, version: 1, blueprint: {base: module-root, path: blueprints/atomic-files.yaml}, reason: Imports descriptor-safe certificate reads from atomic_files.py.}
+              - {source: common.source.audit-records, version: 1, blueprint: {base: module-root, path: blueprints/audit-records.yaml}, reason: Imports certificate log parsing from audit_records.py.}
+              - {source: common.source.blueprint-graph, version: 1, blueprint: {base: module-root, path: blueprints/blueprint-graph.yaml}, reason: Imports graph node and repository graph types from blueprint_graph.py.}
+              - {source: common.source.blueprint-template, version: 1, blueprint: {base: module-root, path: blueprints/blueprint-template.yaml}, reason: Imports schema loading and validation from blueprint_template.py.}
+              - {source: common.source.git-provenance, version: 1, blueprint: {base: module-root, path: blueprints/git-provenance.yaml}, reason: Imports snapshot capture and commit readiness from git_provenance.py.}
+            interfaces:
+              common.source.certification-view.interface.python-api: {version: 1, description: Evaluates current certificate state and export certification for Python callers.}
+          - id: common.source.codex-toml
+            version: 1
+            blueprint: blueprints/codex-toml.yaml
+            gateway: {path: codex_toml.py, language: Python}
+            legacy: {path: $repo/src/officina/common/codex_toml.py, content: code, format: python}
+            interfaces:
+              common.source.codex-toml.interface.python-api: {version: 1, description: Provides Codex TOML operations to Python callers.}
+          - id: common.source.dates
+            version: 1
+            blueprint: blueprints/dates.yaml
+            gateway: {path: dates.py, language: Python}
+            legacy: {path: $repo/src/officina/common/dates.py, content: code, format: python}
+            interfaces:
+              common.source.dates.interface.python-api: {version: 1, description: Provides canonical date operations to Python callers.}
+          - id: common.source.git-provenance
+            version: 1
+            blueprint: blueprints/git-provenance.yaml
+            gateway: {path: git_provenance.py, language: Python}
+            legacy: {path: $repo/src/officina/common/git_provenance.py, content: code, format: python}
+            dependencies:
+              - {source: common.source.atomic-files, version: 1, blueprint: {base: module-root, path: blueprints/atomic-files.yaml}, reason: Imports confined file reads and atomic source-overlay writes from atomic_files.py.}
+            interfaces:
+              common.source.git-provenance.interface.python-api: {version: 1, description: "Captures Git snapshots, file provenance, and commit readiness for Python callers."}
+          - id: common.source.oauth-json
+            version: 1
+            blueprint: blueprints/oauth-json.yaml
+            gateway: {path: oauth_json.py, language: Python}
+            legacy: {path: $repo/src/officina/common/oauth_json.py, content: code, format: python}
+            uses_interfaces:
+              - {interface: common.source.atomic-files.interface.python-api, version: 1}
+            interfaces:
+              common.source.oauth-json.interface.python-api: {version: 1, description: Writes confined OAuth client JSON for Python callers.}
+          - id: common.source.pooled-blueprint
+            version: 1
+            blueprint: blueprints/pooled-blueprint.yaml
+            gateway: {path: pooled_blueprint.py, language: Python}
+            legacy: {path: $repo/src/officina/common/pooled_blueprint.py, content: code, format: python}
+            dependencies:
+              - {source: common.source.artifact-health, version: 1, blueprint: {base: module-root, path: blueprints/artifact-health.yaml}, reason: Imports graph-health report and owner helpers from artifact_health.py.}
+              - {source: common.source.audit-records, version: 1, blueprint: {base: module-root, path: blueprints/audit-records.yaml}, reason: Imports record authentication helpers from audit_records.py.}
+              - {source: common.source.blueprint-graph, version: 1, blueprint: {base: module-root, path: blueprints/blueprint-graph.yaml}, reason: Imports repository and skill graph types from blueprint_graph.py.}
+              - {source: common.source.certification-view, version: 1, blueprint: {base: module-root, path: blueprints/certification-view.yaml}, reason: Imports the certification view protocol from certification_view.py.}
+            interfaces:
+              common.source.pooled-blueprint.interface.python-api: {version: 1, description: Builds and validates pooled blueprint review records for Python callers.}
+          - id: common.source.process-binding-compiler
+            version: 1
+            blueprint: blueprints/process-binding-compiler.yaml
+            gateway: {path: process_binding_compiler.py, language: Python}
+            legacy: {path: $repo/src/officina/common/process_binding_compiler.py, content: code, format: python}
+            dependencies:
+              - {source: common.source.blueprint-graph, version: 1, blueprint: {base: module-root, path: blueprints/blueprint-graph.yaml}, reason: Imports blueprint node and export types from blueprint_graph.py.}
+          - id: common.source.secret-store
+            version: 1
+            blueprint: blueprints/secret-store.yaml
+            gateway: {path: secret_store.py, language: Python}
+            legacy: {path: $repo/src/officina/common/secret_store.py, content: code, format: python}
+            platform_support: {linux: true, macos: true, windows: true}
+            runtime_dependencies:
+              - {kind: python-package, name: keyring, version: any, platforms: {linux: true, macos: true, windows: true}, reason: Provides the system credential-store API imported by secret_store.py.}
+            interfaces:
+              common.source.secret-store.interface.python-api: {version: 1, description: Provides secret-store operations to Python callers.}
+          - id: common.source.toml-io
+            version: 1
+            blueprint: blueprints/toml-io.yaml
+            gateway: {path: toml_io.py, language: Python}
+            legacy: {path: $repo/src/officina/common/toml_io.py, content: code, format: python}
+            interfaces:
+              common.source.toml-io.interface.python-api: {version: 1, description: Provides TOML file operations to Python callers.}
       - root: references/skill-standards
         id: skill-standards
         gateway: {path: skill-guidelines.standard.yaml, language: YAML}
@@ -281,6 +510,12 @@ declarations:
             blueprint: blueprints/skill-guidelines.yaml
             gateway: {path: skill-guidelines.md, language: Markdown}
             legacy: {path: $repo/references/skill-standards/skill-guidelines.md, content: skill, format: markdown}
+            content: [skill-guidelines.md, skill-guidelines.standard.yaml]
+            dependencies:
+              - source: skill-standards.source.llm-interface-design
+                version: 1
+                blueprint: {base: module-root, path: blueprints/llm-interface-design.yaml}
+                reason: Routes the LLM-interface section to its detailed same-module standard.
           - id: skill-standards.source.llm-interface-design
             version: 1
             blueprint: blueprints/llm-interface-design.yaml
@@ -291,6 +526,9 @@ declarations:
             blueprint: blueprints/skill-refactoring.yaml
             gateway: {path: skill-refactoring.md, language: Markdown}
             legacy: {path: $repo/references/skill-standards/skill-refactoring.md, content: skill, format: markdown}
+            content: [skill-refactoring.md, skill-refactoring.standard.yaml]
+            contract_references:
+              - {base: repository-root, path: references/blueprint/schema.json}
       - root: references/blueprint
         id: blueprint
         gateway: {path: schema.json, language: JSON-Schema}
@@ -300,6 +538,110 @@ declarations:
             blueprint: blueprints/schema-annotated-draft.yaml
             gateway: {path: schema.annotated-draft.json, language: JSON-Schema}
             legacy: {path: $repo/references/blueprint/schema.annotated-draft.json, content: blueprint, format: json}
+    reviewed_interface_uses:
+      - {consumer: connect-google.source.rtx-client-config, interface: common.interface.oauth-json, version: 1, python_import: officina.common.oauth_json}
+      - {consumer: cloud-files.source.rtx-oauth-bootstrap, interface: common.interface.oauth-json, version: 1, python_import: officina.common.oauth_json}
+      - {consumer: g-calendar.source.rtx-oauth-bootstrap, interface: common.interface.oauth-json, version: 1, python_import: officina.common.oauth_json}
+      - {consumer: regenerate-blueprints.source.rtx-blueprint-regenerator, interface: common.interface.blueprint-template, version: 1, python_import: officina.common.blueprint_template}
+      - {consumer: skill-maker.source.rtx-blueprint-syncer, interface: common.interface.atomic-files, version: 1, python_import: officina.common.atomic_files}
+      - {consumer: skill-maker.source.rtx-blueprint-syncer, interface: common.interface.blueprint-graph, version: 1, python_import: officina.common.blueprint_graph}
+      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.atomic-files, version: 1, python_import: officina.common.atomic_files}
+      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.artifact-health, version: 1, python_import: officina.common.artifact_health}
+      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.audit-records, version: 1, python_import: officina.common.audit_records}
+      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.blueprint-graph, version: 1, python_import: officina.common.blueprint_graph}
+      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.certification-view, version: 1, python_import: officina.common.certification_view}
+      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.git-provenance, version: 1, python_import: officina.common.git_provenance}
+      - {consumer: skill-certifier.source.rtx-audit-certifier, interface: common.interface.pooled-blueprint, version: 1, python_import: officina.common.pooled_blueprint}
+      - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.artifact-health, version: 1, python_import: officina.common.artifact_health}
+      - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.audit-records, version: 1, python_import: officina.common.audit_records}
+      - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.blueprint-graph, version: 1, python_import: officina.common.blueprint_graph}
+      - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.certification-view, version: 1, python_import: officina.common.certification_view}
+      - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.git-provenance, version: 1, python_import: officina.common.git_provenance}
+      - {consumer: skill-drift.source.rtx-check-drift-state, interface: common.interface.pooled-blueprint, version: 1, python_import: officina.common.pooled_blueprint}
+      - {consumer: daily-plan.source.rtx-init, interface: common.interface.dates, version: 1, python_import: officina.common.dates}
+      - {consumer: install-assistant-tools.source.rtx-config-bridge, interface: common.interface.codex-toml, version: 1, python_import: officina.common.codex_toml}
+      - {consumer: install-assistant-tools.source.rtx-config-bridge, interface: common.interface.toml-io, version: 1, python_import: officina.common.toml_io}
+      - {consumer: install-assistant-tools.source.rtx-agent-launchers, interface: common.interface.toml-io, version: 1, python_import: officina.common.toml_io}
+      - {consumer: install-assistant-tools.source.rtx-install-scaffold, interface: common.interface.audit-records, version: 1, python_import: officina.common.audit_records}
+      - {consumer: email-client.source.rtx-smtp-transport, interface: common.interface.secret-store, version: 1, python_import: officina.common.secret_store}
+      - {consumer: email-client.source.rtx-init, interface: common.interface.secret-store, version: 1, python_import: officina.common.secret_store}
+      - {consumer: email-client.source.rtx-email-accounts, interface: common.interface.secret-store, version: 1, python_import: officina.common.secret_store}
+      - {consumer: email-client.source.rtx-imap-gateway, interface: common.interface.secret-store, version: 1, python_import: officina.common.secret_store}
+    reviewed_source_facts:
+      - source: daily-plan.source.rtx-init
+        uses_interfaces:
+          - {interface: cloud-files.interface.lists-read, version: 1}
+          - {interface: cloud-files.interface.lists-write, version: 1}
+          - {interface: cloud-files.interface.plans-read, version: 1}
+          - {interface: cloud-files.interface.plans-write, version: 1}
+          - {interface: g-calendar.interface.scripts-gcal, version: 1}
+          - {interface: get-weather.interface.scripts-weather, version: 1}
+          - {interface: list-manager.interface.read-beautify, version: 1}
+          - {interface: list-manager.interface.update-list, version: 1}
+      - source: list-manager.source.rtx-init
+        uses_interfaces:
+          - {interface: cloud-files.interface.lists-read, version: 1}
+          - {interface: cloud-files.interface.lists-write, version: 1}
+      - source: cloud-files.source.rtx-ensure-oauth
+        dependencies:
+          - {source: cloud-files.source.rtx-oauth-bootstrap, version: 1, reason: Executes the sibling OAuth bootstrap gateway when credentials are absent.}
+      - source: g-calendar.source.rtx-ensure-oauth
+        dependencies:
+          - {source: g-calendar.source.rtx-oauth-bootstrap, version: 1, reason: Executes the sibling OAuth bootstrap gateway when credentials are absent.}
+      - source: email-client.source.rtx-imap-gateway
+        dependencies:
+          - {source: email-client.source.rtx-email-accounts, version: 1, reason: Executes the sibling account gateway to resolve the selected account.}
+      - source: list-manager.source.rtx-render-bridge
+        dependencies:
+          - {source: list-manager.source.rtx-list-beautify, version: 1, reason: Executes the list beautifier gateway to render YAML as Markdown.}
+          - {source: list-manager.source.rtx-yaml-store, version: 1, reason: Executes the YAML store gateway to read list content.}
+      - source: recurring-tasks.source.rtx-setup-runner
+        dependencies:
+          - {source: recurring-tasks.source.rtx-healthcheck-probe, version: 1, reason: Installs a cron entry that executes the healthcheck probe gateway.}
+      - source: recurring-tasks.source.jobs-config
+        create:
+          version: 1
+          blueprint: blueprints/jobs-config.yaml
+          gateway: {path: jobs.yaml, language: YAML}
+        content: [jobs.yaml]
+      - source: recurring-tasks.source.rtx-job-executor
+        create:
+          version: 1
+          blueprint: blueprints/rtx-job-executor.yaml
+          gateway: {path: _rtx/_job_executor.py, language: Python}
+          platform_support: {linux: true, macos: true, windows: true}
+          runtime_dependencies:
+            - {kind: python-package, name: PyYAML, version: ">=6", platforms: {linux: true, macos: true, windows: true}, reason: Loads the selected recurring job from jobs.yaml.}
+          interfaces:
+            recurring-tasks.source.rtx-job-executor.interface.execute-job:
+              version: 1
+              description: Execute one named recurring job from an explicit jobs file without invoking a shell.
+              usage: --jobs-file FILE --job NAME
+              process_binding:
+                kind: process
+                entry: Interface
+                patterns:
+                  - {min_positionals: 0, max_positionals: 0, allow_stdin: false, required_flags: [--jobs-file, --job], allowed_flags: [--jobs-file, --job], flag_patterns: {--jobs-file: '^.+$', --job: '^[a-zA-Z0-9_-]+$'}}
+              contract:
+                direct_io: {reads: [], writes: [], network: []}
+        content: [_rtx/_job_executor.py]
+        dependencies:
+          - {source: recurring-tasks.source.jobs-config, version: 1, reason: Loads the recurring job definition selected from the shared jobs configuration.}
+      - source: recurring-tasks.source.rtx-healthcheck-probe
+        dependencies:
+          - {source: recurring-tasks.source.jobs-config, version: 1, reason: Reads enabled job definitions from the shared jobs configuration.}
+      - source: recurring-tasks.source.rtx-job-control
+        dependencies:
+          - {source: recurring-tasks.source.jobs-config, version: 1, reason: Reads and mutates the shared jobs configuration.}
+      - source: recurring-tasks.source.rtx-init
+        dependencies:
+          - {source: recurring-tasks.source.jobs-config, version: 1, reason: Owns the live-probe helper that reads and temporarily rewrites the shared jobs configuration.}
+      - source: recurring-tasks.source.rtx-unit-writer
+        dependencies:
+          - {source: recurring-tasks.source.jobs-config, version: 1, reason: Reads the shared jobs configuration while generating scheduler entries.}
+      - source: recurring-tasks.source.rtx-schedule-backend-init
+        dependencies:
+          - {source: recurring-tasks.source.rtx-job-executor, version: 1, reason: Generates native scheduler commands that execute the private job-executor process interface.}
     legacy_behavior_source_dependencies:
       - consumer: regenerate-blueprints.machine.regenerate-blueprint
         authored:
@@ -982,6 +1324,10 @@ generated_artifacts:
     current_owner: [src/officina/common/blueprint_template.py, regenerate-blueprints]
     disposition: move
     target: regenerated v4 authoring views
+  - paths: [graphs/graph_specs.py, graphs/skill-taxonomy.svg]
+    current_owner: graphs/render-graphs.py
+    disposition: move
+    target: rename the skill-audit taxonomy node and edges to skill-certifier and rerender the existing SVG
   - paths:
       include: [docs/user/*.md, docs/contributors/*.md]
       exclude: []
@@ -1330,6 +1676,12 @@ functional_predecessors:
   - proposed: src/officina/common/process_binding_compiler.py
     disposition: rename
     predecessor: src/officina/common/machine_interface_binding.py
+  - proposed: src/officina/common/blueprint.yaml
+    disposition: derive
+    predecessor: src/officina/common/__init__.py plus the thirteen restricted-export and two private helper submodules declared under declarations.mechanical_conversion.supplemental_modules
+  - proposed: "src/officina/common/blueprints/*.yaml"
+    disposition: derive
+    predecessor: the same-stem helper submodule under src/officina/common; each generated behavioral source remains bound to exactly that file
   - proposed: skills/skill-certifier/
     disposition: rename
     predecessor: skills/skill-audit/

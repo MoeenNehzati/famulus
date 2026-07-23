@@ -29,7 +29,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator, Sequence
+from typing import Any, Iterator, Mapping, Sequence
 
 import jsonschema
 import yaml
@@ -39,7 +39,12 @@ if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
 from _drift_hashes import entries_for_path, hash_interface, hash_skill
-from _skill_sources import SkillSource, SkillSourceDiscoveryError, observed_skill_sources
+from _skill_sources import (
+    SkillSource,
+    SkillSourceDiscoveryError,
+    dedupe_skill_sources,
+    observed_skill_sources,
+)
 from officina.common.artifact_health import (
     CANONICAL_GRAPH_SCHEMA_INPUTS,
     CANONICAL_NODE_HASH_POLICY,
@@ -60,6 +65,7 @@ from officina.common.artifact_health import (
 from officina.common.audit_records import (
     HMAC_KEY_BYTES,
     RECORD_DIGEST_FIELD,
+    certificate_public_key_root,
     record_digest_matches,
 )
 from officina.common.blueprint_graph import (
@@ -93,28 +99,27 @@ class DriftCheckError(RuntimeError):
     """Raised when a requested skill cannot be checked."""
 
 
-def _check_v4_repository(
+def _v4_repository_state(
     repo_root: Path,
     *,
-    target_node_ids: Sequence[str],
-    public_key_root: Path,
     allow_non_atomic: bool = False,
-) -> CertificateCurrentnessReport:
-    """Private Task-3 public-key-only status path for converted repositories."""
+) -> tuple[
+    RepositoryBlueprintGraph,
+    dict[str, NodeHashState],
+    str,
+    str,
+    Path,
+    dict[str, object],
+]:
+    """Derive the one shared v4 graph and hash state for drift consumers."""
 
     root = Path(repo_root).resolve()
     schema_root = root / "references" / "blueprint"
-    graph = load_repository_blueprint_graph(
-        root,
-        schema_root=schema_root,
-    )
+    graph = load_repository_blueprint_graph(root, schema_root=schema_root)
     if not isinstance(graph, RepositoryBlueprintGraph) or any(
         node.declaration.get("schema_version") != 4 for node in graph.nodes.values()
     ):
-        raise DriftCheckError("private v4 drift accepts only all-v4 repositories")
-    unknown = sorted(set(target_node_ids) - set(graph.nodes))
-    if unknown:
-        raise DriftCheckError("unknown exact v4 drift target: " + ", ".join(unknown))
+        raise DriftCheckError("v4 drift accepts only all-v4 repositories")
     snapshot = capture_git_snapshot(root)
     if snapshot is None or snapshot.repo_root != root:
         raise DriftCheckError("v4 drift requires the exact Git repository root")
@@ -135,9 +140,52 @@ def _check_v4_repository(
             certification_basis_paths=basis_paths,
             allow_non_atomic=allow_non_atomic,
         )
-        certifier_identity = derive_certifier_identity(graph, states, snapshot.commit)
+        certifier_identity = derive_certifier_identity(
+            graph,
+            states,
+            snapshot.commit,
+        )
     except ArtifactHealthError as exc:
         raise DriftCheckError(str(exc)) from exc
+    return (
+        graph,
+        states,
+        snapshot.commit,
+        basis_hash,
+        schema_root,
+        certifier_identity,
+    )
+
+
+@dataclass(frozen=True)
+class _V4DerivedState:
+    graph: RepositoryBlueprintGraph
+    states: dict[str, NodeHashState]
+    basis_hash: str
+    currentness: CertificateCurrentnessReport
+
+
+def _derive_v4_repository_state(
+    repo_root: Path,
+    *,
+    target_node_ids: Sequence[str],
+    public_key_root: Path,
+    allow_non_atomic: bool = False,
+) -> _V4DerivedState:
+    """Derive hashes and certificate currentness once for public v4 status."""
+
+    root = Path(repo_root).resolve()
+    (
+        graph,
+        states,
+        source_commit,
+        basis_hash,
+        schema_root,
+        certifier_identity,
+    ) = _v4_repository_state(root, allow_non_atomic=allow_non_atomic)
+    unknown = sorted(set(target_node_ids) - set(graph.nodes))
+    if unknown:
+        raise DriftCheckError("unknown exact v4 drift target: " + ", ".join(unknown))
     checks_by_node = {
         node_id: expected_certifier_checks() for node_id in graph.nodes
     }
@@ -146,15 +194,37 @@ def _check_v4_repository(
         states,
         repo_root=root,
         public_key_root=public_key_root,
-        source_commit=snapshot.commit,
+        source_commit=source_commit,
         certifier_identity=certifier_identity,
         checks_by_node=checks_by_node,
         schema_root=schema_root,
         allow_non_atomic=allow_non_atomic,
     )
-    return CertificateCurrentnessReport(
-        nodes={node_id: report.nodes[node_id] for node_id in target_node_ids}
+    return _V4DerivedState(
+        graph=graph,
+        states=states,
+        basis_hash=basis_hash,
+        currentness=CertificateCurrentnessReport(
+            nodes={node_id: report.nodes[node_id] for node_id in target_node_ids}
+        ),
     )
+
+
+def _check_v4_repository(
+    repo_root: Path,
+    *,
+    target_node_ids: Sequence[str],
+    public_key_root: Path,
+    allow_non_atomic: bool = False,
+) -> CertificateCurrentnessReport:
+    """Return public-key-only status for exact v4 nodes."""
+
+    return _derive_v4_repository_state(
+        repo_root,
+        target_node_ids=target_node_ids,
+        public_key_root=public_key_root,
+        allow_non_atomic=allow_non_atomic,
+    ).currentness
 
 
 class PooledReviewSnapshotError(DriftCheckError):
@@ -902,7 +972,7 @@ def check_typed_skill(
             key_path = (
                 source.package_root
                 / "skills"
-                / "skill-audit"
+                / "skill-certifier"
                 / ".health-authentication-key"
             )
             try:
@@ -1055,10 +1125,100 @@ def check_skill(
 ) -> SkillDriftReport:
     skill_dir = skill_dir_for(source.skills_root, skill_name)
     try:
-        typed = load_blueprint(skill_dir).get("schema_version") == 2
+        schema_version = load_blueprint(skill_dir).get("schema_version")
     except DriftCheckError:
-        typed = False
-    if typed:
+        schema_version = None
+    if schema_version == 4:
+        graph = load_repository_blueprint_graph(
+            source.package_root,
+            schema_root=source.package_root / "references" / "blueprint",
+        )
+        target_root = skill_dir.resolve()
+        target_node_ids = tuple(
+            sorted(
+                node_id
+                for node_id, node in graph.nodes.items()
+                if node.skill_root.resolve() == target_root
+            )
+        )
+        if not target_node_ids:
+            raise DriftCheckError(
+                f"{skill_name}: no v4 nodes are owned by the requested module"
+            )
+        derived = _derive_v4_repository_state(
+            source.package_root,
+            target_node_ids=target_node_ids,
+            public_key_root=certificate_public_key_root(source.package_root),
+        )
+        graph = derived.graph
+        states = derived.states
+        basis_hash = derived.basis_hash
+        certificate_report = derived.currentness
+        current_hashes = {
+            "certification_basis": basis_hash,
+            "nodes": {
+                node_id: {
+                    "node_type": graph.nodes[node_id].node_type,
+                    "node_hash": states[node_id].node_hash,
+                    "dependencies": list(states[node_id].dependency_hashes),
+                }
+                for node_id in target_node_ids
+            },
+        }
+        recorded_nodes: dict[str, dict[str, object]] = {}
+        concerns: list[Concern] = []
+        timestamp: str | None = None
+        for node_id in target_node_ids:
+            status = certificate_report.nodes[node_id]
+            for concern in status.concerns:
+                concerns.append(
+                    Concern(
+                        concern,
+                        f"{node_id}: {concern}",
+                        key=node_id,
+                    )
+                )
+            payload = (
+                status.certificate.get("payload")
+                if isinstance(status.certificate, Mapping)
+                else None
+            )
+            if isinstance(payload, Mapping):
+                node_hash = payload.get("node_hash")
+                if isinstance(node_hash, str):
+                    recorded_nodes[node_id] = {"node_hash": node_hash}
+                if timestamp is None and isinstance(payload.get("certified_at"), str):
+                    timestamp = payload["certified_at"]
+        module_nodes = [
+            node_id
+            for node_id in target_node_ids
+            if graph.nodes[node_id].node_type == "module"
+        ]
+        record_node_id = module_nodes[0] if module_nodes else target_node_ids[0]
+        return SkillDriftReport(
+            skill=skill_name,
+            derived_status=(
+                "audit-current" if certificate_report.current else "audit-stale"
+            ),
+            concerns=concerns,
+            record_path=certificate_log_path(graph.nodes[record_node_id]),
+            current_hashes=current_hashes,
+            recorded_hashes={"nodes": recorded_nodes},
+            source=source.source,
+            package_root=source.package_root,
+            skills_root=source.skills_root,
+            timestamp=timestamp,
+            health_checks=(
+                health_checks_for_skill(
+                    source,
+                    skill_name,
+                    validator_health=validator_health,
+                )
+                if with_test_validate
+                else None
+            ),
+        )
+    if schema_version == 2:
         return check_typed_skill(
             source,
             skill_name,
@@ -1386,9 +1546,32 @@ def requested_skill_sources(args: argparse.Namespace) -> list[SkillSource]:
         repo_root = args.repo_root.resolve()
         return [SkillSource(source="override", package_root=repo_root, skills_root=repo_root / "skills")]
     try:
-        return observed_skill_sources()
+        sources = observed_skill_sources()
     except SkillSourceDiscoveryError as exc:
         raise DriftCheckError(str(exc)) from exc
+    for source in sources:
+        if source.plugin_id is None:
+            continue
+        try:
+            graph = load_repository_blueprint_graph(
+                source.package_root,
+                schema_root=source.package_root / "references" / "blueprint",
+            )
+            if not graph.nodes or any(
+                node.declaration.get("schema_version") != 4
+                for node in graph.nodes.values()
+            ):
+                raise DriftCheckError("installed blueprint graph is not all-v4")
+        except (OSError, TypeError, ValueError, DriftCheckError) as exc:
+            raise DriftCheckError(
+                "unsupported active plugin "
+                f"{json.dumps(source.plugin_id)} version "
+                f"{json.dumps(source.plugin_version)} at "
+                f"{source.package_root}: {exc}; repair installed_plugins.json or "
+                "pass --skill-root, --skills-root, or --repo-root for the exact "
+                "intended installation"
+            ) from exc
+    return sources
 
 
 def requested_scopes(args: argparse.Namespace) -> tuple[RequestedScope, ...]:
@@ -1405,6 +1588,9 @@ def requested_scopes(args: argparse.Namespace) -> tuple[RequestedScope, ...]:
             scopes.append(RequestedScope(source_for_skill_root(root), (root.name,)))
         else:
             named_requests.append(requested)
+
+    if args.skills and not named_requests:
+        return tuple(scopes)
 
     for source in requested_skill_sources(args):
         if named_requests:
@@ -1497,6 +1683,44 @@ def hash_reports_for_scopes(
 def hash_report_for_skill(source: SkillSource, skill_name: str) -> SkillHashReport:
     skill_dir = skill_dir_for(source.skills_root, skill_name)
     blueprint = load_blueprint(skill_dir)
+    if blueprint.get("schema_version") == 4:
+        (
+            graph,
+            states,
+            _commit,
+            basis_hash,
+            _schema_root,
+            _certifier_identity,
+        ) = _v4_repository_state(source.package_root)
+        target_root = skill_dir.resolve()
+        target_node_ids = tuple(
+            sorted(
+                node_id
+                for node_id, node in graph.nodes.items()
+                if node.skill_root.resolve() == target_root
+            )
+        )
+        if not target_node_ids:
+            raise DriftCheckError(
+                f"{skill_name}: no v4 nodes are owned by the requested module"
+            )
+        return SkillHashReport(
+            skill=skill_name,
+            source=source.source,
+            package_root=source.package_root,
+            skills_root=source.skills_root,
+            hashes={
+                "certification_basis": basis_hash,
+                "nodes": {
+                    node_id: {
+                        "node_type": graph.nodes[node_id].node_type,
+                        "node_hash": states[node_id].node_hash,
+                        "dependencies": list(states[node_id].dependency_hashes),
+                    }
+                    for node_id in target_node_ids
+                },
+            },
+        )
     if blueprint.get("schema_version") == 2:
         return typed_hash_report_for_skill(source, skill_name)
     return SkillHashReport(
@@ -1530,7 +1754,7 @@ def typed_hash_report_for_skill(source: SkillSource, skill_name: str) -> SkillHa
             key_path = (
                 source.package_root
                 / "skills"
-                / "skill-audit"
+                / "skill-certifier"
                 / ".health-authentication-key"
             )
             try:
@@ -1556,7 +1780,7 @@ def typed_hash_report_for_skill(source: SkillSource, skill_name: str) -> SkillHa
                 checks_by_node={},
                 schema_root=schema_root,
                 certifier={
-                    "interface": "skill-audit.machine.certify",
+                    "interface": "skill-certifier.interface.certify",
                     "version": 1,
                 },
             )

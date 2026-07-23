@@ -24,6 +24,18 @@ from pathlib import Path
 
 import yaml
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_SRC_ROOT = _REPO_ROOT / "src"
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+
+from officina.common.blueprint_graph import (  # noqa: E402
+    BlueprintGraphError,
+    RepositoryBlueprintGraph,
+    load_repository_blueprint_graph,
+)
+from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
+
 
 FORBIDDEN_SUFFIXES = {".sh", ".bash", ".bat", ".cmd", ".ps1"}
 FORBIDDEN_COMMANDS = {
@@ -180,6 +192,39 @@ def _validate_blueprint(path: Path, rel_path: Path) -> list[str]:
     return errors
 
 
+def _validate_v4_blueprints(
+    graph: RepositoryBlueprintGraph,
+    repo_root: Path,
+) -> list[str]:
+    errors: list[str] = []
+    skills_root = repo_root / "skills"
+    for node in graph.nodes.values():
+        if (
+            node.node_type != "behavioral_source"
+            or node.skill_root.parent != skills_root
+        ):
+            continue
+        dependencies = node.declaration.get("runtime_dependencies", [])
+        if not isinstance(dependencies, list):
+            continue
+        rel_path = node.blueprint_path.relative_to(repo_root)
+        for index, dependency in enumerate(dependencies):
+            if not isinstance(dependency, dict) or dependency.get("kind") != "binary":
+                continue
+            name = dependency.get("name")
+            platforms = dependency.get("platforms")
+            if not isinstance(name, str) or not isinstance(platforms, dict):
+                continue
+            if not all(
+                platforms.get(platform) is True
+                for platform in ("linux", "macos", "windows")
+            ):
+                continue
+            context = f"{rel_path}: runtime_dependencies[{index}].name"
+            errors.extend(_command_violations([name], context))
+    return errors
+
+
 def _supports_all_platforms(spec: dict) -> bool:
     platforms = spec.get("platform_support")
     if not isinstance(platforms, dict):
@@ -257,6 +302,20 @@ def _validate_python(path: Path, rel_path: Path) -> list[str]:
 
 def validate(repo_root: Path) -> list[str]:
     errors: list[str] = []
+    schema_root = repo_root / "references" / "blueprint"
+    try:
+        repository_graph = load_repository_blueprint_graph(
+            repo_root,
+            schema_root=schema_root if (schema_root / "module.schema.json").is_file() else None,
+        )
+    except (BlueprintGraphError, BlueprintInventoryError, OSError, UnicodeError) as exc:
+        repository_graph = None
+        errors.append(str(exc))
+    if repository_graph is not None and any(
+        node.declaration.get("schema_version") == 4
+        for node in repository_graph.nodes.values()
+    ):
+        errors.extend(_validate_v4_blueprints(repository_graph, repo_root))
     for path in _iter_skill_files(repo_root):
         rel_path = path.relative_to(repo_root)
         if path.suffix in FORBIDDEN_SUFFIXES and _is_runtime_script(rel_path):

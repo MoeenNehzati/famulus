@@ -1,0 +1,58 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Implements workspace-first LaTeX Workshop configuration discovery, recipe reconstruction, fallback compilation, and output-directory-aware troubleshooting.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: latex-workshop.source.gateway
+interfaces:
+  latex-workshop.source.gateway.interface.default:
+    contract:
+      arguments:
+        request: {description: 'Target TeX document and request to compile, rebuild, or troubleshoot using effective LaTeX Workshop behavior.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Compilation executes the configured recipe or latexmk fallback and writes artifacts in the resolved output directory.
+      outputs:
+      - {id: response, audience: human, description: 'Build result or diagnosis, effective configuration source, artifact location, and fallback assumptions.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: diagnosed, class: success, outputs: [response], effects: [], caller_action: Review the effective settings and reported issue.}
+      - {id: built, class: success, outputs: [response], effects: [build-run, artifact-update], caller_action: Inspect the reported artifacts in the resolved output directory.}
+      - {id: build-failed, class: partial, outputs: [response], effects: [build-run, artifact-update], caller_action: Fix the first reported error before retrying.}
+      - {id: unavailable, class: error, outputs: [response], effects: [], caller_action: Supply a valid target or configure the required build tool.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {snapshot: The recipe and output location are resolved immediately before compilation.}
+        effects:
+        - {id: build-run, direct_io_ref: build-command, action: execute, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [built, build-failed], confirmation_evidence: {kind: output, output_ref: response}, reversibility: {reversible: The build can be rerun after correcting inputs.}}
+        - {id: artifact-update, direct_io_ref: artifact-write, action: update, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [built, build-failed], confirmation_evidence: {kind: output, output_ref: response}, reversibility: {reversible: Generated artifacts can be rebuilt or removed.}}
+        mutation_safety:
+          atomicity: {non_atomic: A recipe can write several artifacts before success or failure.}
+          concurrent_invocations: {unsafe: Concurrent builds sharing an output directory can race on auxiliary files.}
+          idempotency: {non_idempotent: Repeated builds update generated files and reference state.}
+          on_uncertain_completion: {verify_then_decide: Inspect the process result and resolved artifacts before rerunning.}
+          partial_effects_on_failure: {possible: Failed compilation commonly leaves logs and auxiliary files.}
+          rollback_on_failure: {unavailable: Preserve logs and rebuild; no automatic rollback is performed.}
+        verification:
+        - {method: output-schema, output_ref: response}
+        - {method: direct-io-state, direct_io_ref: artifact-read}
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - {id: request, medium: prompt, access: read, system: agent-runtime, content: LaTeX Workshop build or troubleshooting request., formats: [text], sensitivity: user-private}
+        - {id: latex-inputs, medium: local-filesystem, access: read, content: 'TeX sources, workspace files, build scripts, and workspace or user VS Code settings.', formats: [tex, json, shell, makefile, text], sensitivity: user-private, reason: 'Resolve recipe, arguments, and output directory.'}
+        - {id: artifact-read, medium: local-filesystem, access: read, content: 'PDF, log, auxiliary, and bibliography artifacts in the resolved output directory.', formats: [pdf, log, text, binary], sensitivity: user-private, reason: Diagnose and verify the build.}
+        writes:
+        - {id: response, medium: prompt, access: write, system: agent-runtime, content: Build diagnosis and verified result., formats: [markdown], sensitivity: derived-private}
+        - {id: build-command, medium: subprocess, access: execute, system: configured LaTeX Workshop recipe or latexmk, content: Reconstructed build command., formats: [argv, text], sensitivity: user-private, reason: Compile with effective behavior.}
+        - {id: artifact-write, medium: local-filesystem, access: write, content: 'PDF, log, auxiliary, and bibliography build artifacts.', formats: [pdf, log, text, binary], sensitivity: user-private, reason: Materialize outputs in the resolved directory.}
+    description: Resolve effective settings, execute the matching build, inspect the correct artifacts, and report the source of truth.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

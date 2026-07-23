@@ -1,0 +1,100 @@
+content:
+- toml_io\.py
+dependencies: []
+description: Centralizes UTF-8 TOML filename validation, text-file opening with post-write parse validation, string serialization, key-value rendering, and profile-config discovery.
+gateway:
+  language: Python
+  path: toml_io.py
+id: common.source.toml-io
+interfaces:
+  common.source.toml-io.interface.python-api:
+    contract:
+      arguments:
+        operation:
+          description: TOML helper to call.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - {value: open, description: Open one validated TOML filename under a base directory.}
+            - {value: validate, description: Parse one UTF-8 TOML file.}
+            - {value: toml-string, description: Serialize a scalar string.}
+            - {value: key-value, description: Render one scalar TOML assignment.}
+            - {value: profile-filename, description: Return <agent>.config.toml.}
+            - {value: iter-profile-configs, description: Yield sorted profile TOML files in a directory.}
+        base-or-path:
+          description: Base directory for open and discovery, or TOML file path for validate.
+          required: false
+          sensitivity: user-private
+          direct_io_ref: toml-files
+          type: {kind: path, syntax: literal, relative_to: caller-cwd, must_exist: false, access: read-write}
+        name:
+          description: Single .toml filename for open, agent name for profile-filename, or key for key-value.
+          required: false
+          sensitivity: user-private
+          type: {kind: string}
+        value:
+          description: Scalar string or Path serialized by toml-string or key-value.
+          required: false
+          sensitivity: user-private
+          type: {kind: string}
+        mode:
+          description: UTF-8 text mode accepted by builtins.open; binary modes are rejected.
+          required: false
+          default: r
+          sensitivity: public
+          type: {kind: string}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Closing a write-capable TomlFile validates the resulting file but does not roll back invalid content.
+      outputs:
+      - id: result
+        audience: machine
+        description: Context manager, rendered text, filename, discovered paths, or successful validation according to operation.
+        direct_io_ref: return-value
+        cardinality: {minimum: 0, maximum: null}
+        ordering: sorted
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Validation returns no value and discovery may yield no files.
+        type: {kind: string, sensitivity: user-private, description: Operation-specific Python return value.}
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [toml-file-state], caller_action: Consume the returned value or continue after successful close-time validation.}
+      - {id: invalid, class: refusal, outputs: [], effects: [], caller_action: Correct the filename and mode and key and agent name or TOML syntax.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: File operations and directory iteration observe state at call or iteration time.}
+        effects:
+        - id: toml-file-state
+          direct_io_ref: toml-files
+          action: update
+          value_source: {kind: argument, argument_ref: value}
+          may_occur_in_outcomes: [completed, invalid]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: toml-files}
+          reversibility: {irreversible: Invalid write content is not automatically restored after close-time parse failure.}
+        mutation_safety:
+          atomicity: {non_atomic: Writes use ordinary UTF-8 text file handles.}
+          concurrent_invocations: {unsafe: No file locking or writer serialization is provided.}
+          idempotency: {non_idempotent: Append and update modes can produce different state when repeated.}
+          on_uncertain_completion: {verify_then_decide: Parse and inspect the target file before retrying.}
+          partial_effects_on_failure: {possible: A file can contain written bytes even when close-time TOML validation raises.}
+          rollback_on_failure: {unavailable: No backup is retained.}
+        verification:
+        - {method: direct-io-state, direct_io_ref: toml-files}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: toml-files, medium: local-filesystem, access: read, content: UTF-8 TOML files and directory entries, formats: [toml], sensitivity: user-private, path: caller-selected base or file path}
+        writes:
+        - {id: toml-files, medium: local-filesystem, access: read-write, content: UTF-8 TOML file content, formats: [toml], sensitivity: user-private, path: caller-selected base and validated filename}
+        - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [text, path-list], sensitivity: user-private}
+        network: []
+    description: Provides TOML file operations to Python callers.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

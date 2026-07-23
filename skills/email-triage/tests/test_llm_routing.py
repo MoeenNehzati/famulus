@@ -10,32 +10,56 @@ def _load_yaml(path: Path) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
+def _source_for_interface(
+    root: dict, source_interface: str
+) -> tuple[dict, dict]:
+    source_id, _, _ = source_interface.rpartition(".interface.")
+    locator = root["sources"][source_id]["blueprint"]
+    assert locator["base"] == "module-root"
+    source = _load_yaml(SKILL_ROOT / locator["path"])
+    assert source["id"] == source_id
+    return source, source["interfaces"][source_interface]
+
+
+def _source_for_export(root: dict, export_id: str) -> tuple[dict, dict]:
+    source_interface = root["exports"][export_id]["source_interface"]
+    return _source_for_interface(root, source_interface)
+
+
 def test_default_interface_routes_only_to_triage_v2() -> None:
     root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
-    default = _load_yaml(SKILL_ROOT / ".SKILL.md.blueprint.yaml")
+    default, default_interface = _source_for_export(
+        root, "email-triage.interface.default"
+    )
 
-    llm_interfaces = [
-        (entry["interface"], entry["version"])
-        for entry in root["interfaces"]
-        if ".llm." in entry["interface"]
+    markdown_interfaces = []
+    for export_id, export in root["exports"].items():
+        source, interface = _source_for_interface(root, export["source_interface"])
+        if source["gateway"]["language"] == "Markdown":
+            markdown_interfaces.append((export_id, interface["version"]))
+    assert markdown_interfaces == [
+        ("email-triage.interface.default", 2),
+        ("email-triage.interface.triage", 2),
     ]
-    assert llm_interfaces == [
-        ("email-triage.llm.default", 2),
-        ("email-triage.llm.triage", 2),
-    ]
-    assert default["version"] == 2
+    assert default_interface["version"] == 2
     assert default["uses_interfaces"] == [
-        {"interface": "email-triage.llm.triage", "version": 2}
+        {
+            "interface": (
+                "email-triage.source.llm-interfaces-triage.interface.triage"
+            ),
+            "version": 2,
+        }
     ]
 
     body = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
     authored = body.split("<!-- END BLUEPRINT INTERFACES -->", 1)[1]
-    assert "email-triage.llm.triage" in authored
+    assert "email-triage.interface.triage" in authored
     assert "update-personal-preferences" not in authored
     assert "choose" not in authored.lower()
 
 
 def test_preference_management_files_are_removed() -> None:
+    root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
     removed = [
         SKILL_ROOT / "llm_interfaces" / "update-personal-preferences.md",
         SKILL_ROOT / "llm_interfaces" / ".update-personal-preferences.md.blueprint.yaml",
@@ -44,6 +68,7 @@ def test_preference_management_files_are_removed() -> None:
     ]
 
     assert [path for path in removed if path.exists()] == []
+    assert all("personal-preferences" not in source for source in root["sources"])
 
 
 def test_frontmatter_discovers_only_email_triage_requests() -> None:
@@ -59,15 +84,16 @@ def test_frontmatter_discovers_only_email_triage_requests() -> None:
 
 
 def test_triage_contract_has_no_preference_source_or_read() -> None:
-    triage = _load_yaml(
-        SKILL_ROOT / "llm_interfaces" / ".triage.md.blueprint.yaml"
+    root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
+    triage_source, triage = _source_for_export(
+        root, "email-triage.interface.triage"
     )
 
     assert triage["version"] == 2
-    assert triage["behavior_sources"] == []
+    assert triage_source["dependencies"] == []
     assert all(
         entry.get("path") != "references/personal-preferences.md"
-        for entry in triage["direct_io"]["reads"]
+        for entry in triage["contract"]["direct_io"]["reads"]
     )
 
 
@@ -85,11 +111,11 @@ def test_canonical_triage_workflow_is_retained() -> None:
         "## Step 5",
         "## Step 6",
         "## Step 7",
-        "email-triage.machine.fetch-filtered-envelopes",
-        "email-client.llm.default`'s `mail-read` interface",
-        "email-triage.machine.scripts-log-decision",
-        "email-triage.machine.scripts-mark-failure",
-        "email-triage.machine.scripts-update-watermark",
+        "email-triage.interface.fetch-filtered-envelopes",
+        "email-client.interface.default`'s `mail-read` interface",
+        "email-triage.interface.scripts-log-decision",
+        "email-triage.interface.scripts-mark-failure",
+        "email-triage.interface.scripts-update-watermark",
     ):
         assert marker in body
 
@@ -99,6 +125,6 @@ def test_triage_uses_mail_read_interface_without_raw_invocation_template() -> No
         encoding="utf-8"
     )
 
-    assert "Use `email-client.llm.default`'s `mail-read` interface" in body
+    assert "Use `email-client.interface.default`'s `mail-read` interface" in body
     assert "mail-read -a" not in body
     assert "<account> <ID>" not in body

@@ -43,6 +43,66 @@ def test_standards_validate_and_generated_views_are_fresh():
         document = yaml.safe_load(standard.read_text()); rendered = renderer.render_document(document)
         assert rendered == renderer.render_document(document) == view.read_text()
 
+def test_skill_guidelines_make_v4_the_only_live_blueprint_authoring_family():
+    document = yaml.safe_load(GUIDELINES.read_text())
+    families = {family["id"]: family for family in document["standards"]}
+    live = families["skill-guidelines.module-behavioral-source-v4"]
+    assert "sole live blueprint and interface authoring authority" in live["summary"]
+    assert "Task 6 migration input" in live["summary"]
+
+    serialized = yaml.safe_dump(live, sort_keys=False)
+    statements = "\n".join(
+        assertion["statement"]
+        for rule in live["children"]
+        for assertion in rule["assertions"]
+    )
+    assert "uses `SKILL.md` as its module gateway" in statements
+    assert "project node-input policy selects certification hash inputs" in statements
+    for required in (
+        "schema_version: 4",
+        "node_type: module",
+        "node_type: behavioral_source",
+        "discovery",
+        "gateway",
+        "content",
+        "sources",
+        "exports",
+        "source_interface",
+        "dependencies",
+        "uses_interfaces",
+        "interfaces",
+        ".interface.",
+        "blueprints/",
+    ):
+        assert required in serialized
+
+    legacy_markers = re.compile(
+        r"machine-interface|llm-interface|machine-module|behavior-source|"
+        r"\.machine\.|\.llm\.|default_interface|blueprint_type|"
+        r"hidden sidecar|machine sidecar|LLM sidecar|"
+        r"schema version [23]|schema-version-[23]|version 3"
+    )
+    for family in document["standards"]:
+        if family["id"] == live["id"]:
+            continue
+        if legacy_markers.search(yaml.safe_dump(family, sort_keys=False)):
+            assert "Task 6 migration input" in family.get("summary", ""), family["id"]
+
+    rendered = GUIDELINES_VIEW.read_text()
+    assert rendered.index("## Version 4 modules and behavioral sources") < rendered.index(
+        "## 1. Skill identity and contract come first"
+    )
+
+def test_skill_hooks_describe_the_live_v4_guideline_contract():
+    blueprint_hook = (ROOT / ".githooks/skill/check-blueprints").read_text()
+    assert "v4 module/source" in blueprint_hook
+    assert "v3" not in blueprint_hook
+    assert "machine-module" not in blueprint_hook
+
+    dependency_hook = (ROOT / ".githooks/skill/check-dependencies").read_text()
+    assert "source `uses_interfaces`" in dependency_hook
+    assert "depends_on" not in dependency_hook
+
 def test_render_mode_is_schema_checked_and_defaults_to_semantic():
     guidelines = yaml.safe_load(GUIDELINES.read_text())
     assert guidelines["render_mode"] == "source-faithful"

@@ -1,114 +1,90 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _rtx/_graph_builder.py:Interface
+      reason: Render math dependency graph HTML from canonical JSON.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _rtx/_tex_macro_reader.py:Interface
+      reason: Extract MathJax macro definitions from TeX sources.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _rtx/_graph_server.py:Interface
+      reason: Serve graph HTML locally for inspection.
+    network: []
 category: research-assistant
-role: math-reasoning
+description: Extracts a direct dependency graph from mathematical LaTeX, renders canonical graph JSON as interactive HTML, and serves the result locally for inspection.
+content:
+- SKILL\.md
+- _rtx/__init__\.py
+- _rtx/_graph_builder\.py
+- _rtx/_graph_server\.py
+- _rtx/_tex_macro_reader\.py
+- tests/fixtures/macro\-paper/defs\.tex
+- tests/fixtures/macro\-paper/graph\.json
+- tests/fixtures/macro\-paper/localbold\.cls
+- tests/fixtures/macro\-paper/main\.tex
+- tests/fixtures/macro\-paper/nested/more\.tex
+- tests/test_mathjax_macros\.py
+discovery:
+  mechanism: skill
+exports:
+  math-dependency-graph.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: math-dependency-graph.source.gateway.interface.default
+  math-dependency-graph.interface.scripts-build-math-dependency-graph:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: math-dependency-graph.source.rtx-graph-builder.interface.scripts-build-math-dependency-graph
+  math-dependency-graph.interface.scripts-extract-mathjax-macros:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: math-dependency-graph.source.rtx-tex-macro-reader.interface.scripts-extract-mathjax-macros
+  math-dependency-graph.interface.scripts-serve-graph:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: math-dependency-graph.source.rtx-graph-server.interface.scripts-serve-graph
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: math-dependency-graph
 kind: renderer
-suggested_permissions:
-  bash:
-  - command:
-    - python3
-    - -m
-    - officina.runtime.python_machine_interface_runner
-    - _rtx/_graph_builder.py:Interface
-    reason: Render math dependency graph HTML from canonical JSON.
-  - command:
-    - python3
-    - -m
-    - officina.runtime.python_machine_interface_runner
-    - _rtx/_tex_macro_reader.py:Interface
-    reason: Extract MathJax macro definitions from TeX sources.
-  - command:
-    - python3
-    - -m
-    - officina.runtime.python_machine_interface_runner
-    - _rtx/_graph_server.py:Interface
-    reason: Serve graph HTML locally for inspection.
-  network: []
-skill_interface:
-  inputs:
-  - User requests that match the SKILL.md description for this skill.
-  outputs:
-  - Responses, artifacts, or side effects described by this skill's workflow.
-  side_effects:
-  - May invoke local scripts or dependencies as described in SKILL.md.
-interfaces:
-  machine:
-    scripts-build-math-dependency-graph:
-      version: 1
-      description: Render an interactive standalone HTML math dependency graph from
-        canonical JSON.
-      usage: <source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file
-        <path>] [--refresh-macros] [--reduce-transitive-edges]
-      patterns:
-      - name: owner
-        allow_extra_positionals: true
-      dependencies: []
-      direct_io:
-        reads: []
-        writes: []
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_graph_builder.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    scripts-extract-mathjax-macros:
-      version: 1
-      description: Extract MathJax macro definitions from a TeX entrypoint, recursively
-        following \input/\include.
-      usage: <entrypoint.tex> [--out <path>]
-      patterns:
-      - name: owner
-        allow_extra_positionals: true
-      dependencies: []
-      direct_io:
-        reads: []
-        writes: []
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_tex_macro_reader.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-    scripts-serve-graph:
-      version: 1
-      description: Serve graph HTML from a local directory with no-cache headers for
-        repeated browser inspection.
-      usage: '[--directory <path>] [--host <host>] [--port <port>]'
-      patterns:
-      - name: owner
-        allow_extra_positionals: true
-      dependencies: []
-      direct_io:
-        reads: []
-        writes: []
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_graph_server.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: true
-        windows: true
-  llm:
-    default:
-      version: 1
-      description: Primary LLM-facing skill instructions.
-      binding:
-        kind: skill_file
-        path: SKILL.md
-      direct_io:
-        reads: []
-        writes: []
-        network: []
-      owns_filesystem: []
-      allow_all_skills: true
-      behavior_sources: []
+node_type: module
+role: math-reasoning
+schema_version: 4
+sources:
+  math-dependency-graph.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+  math-dependency-graph.source.rtx-graph-builder:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-graph-builder.yaml
+  math-dependency-graph.source.rtx-graph-server:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-graph-server.yaml
+  math-dependency-graph.source.rtx-init:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-init.yaml
+  math-dependency-graph.source.rtx-tex-macro-reader:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-tex-macro-reader.yaml
+version: 1

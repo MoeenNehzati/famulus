@@ -9,14 +9,28 @@ SKILL_DIR = REPO_ROOT / "skills" / "recurring-tasks"
 
 
 def test_recurring_tasks_blueprint_has_no_shell_runtime_interfaces():
-    blueprint = yaml.safe_load((SKILL_DIR / "blueprint.yaml").read_text(encoding="utf-8"))
-    machine = blueprint["interfaces"]["machine"]
+    module = yaml.safe_load((SKILL_DIR / "blueprint.yaml").read_text(encoding="utf-8"))
+    process_exports = {}
+    for export_id, export in module["exports"].items():
+        source_interface = export["source_interface"]
+        source_id = source_interface.partition(".interface.")[0]
+        source_path = module["sources"][source_id]["blueprint"]["path"]
+        source = yaml.safe_load((SKILL_DIR / source_path).read_text(encoding="utf-8"))
+        interface = source["interfaces"][source_interface]
+        binding = interface.get("process_binding")
+        if binding is not None:
+            process_exports[export_id] = (source, binding)
 
-    assert "scripts-invoke-agent" not in machine
-    for name, spec in machine.items():
-        runtime = spec["invocation"]
-        assert runtime["kind"] == "python_machine_interface", name
-        assert not any(str(value).endswith(".sh") for value in runtime.values())
+    assert "recurring-tasks.interface.scripts-invoke-agent" not in module["exports"]
+    assert process_exports
+    for export_id, (source, binding) in process_exports.items():
+        assert source["gateway"]["language"] == "Python", export_id
+        assert binding["kind"] == "process", export_id
+        assert not source["gateway"]["path"].endswith(".sh"), export_id
+        assert not any(
+            str(value).endswith(".sh")
+            for value in binding.values()
+        ), export_id
 
 
 def test_recurring_tasks_runtime_tree_has_no_posix_shell_files():

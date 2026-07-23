@@ -1,0 +1,102 @@
+content:
+- pooled_blueprint\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/artifact-health.yaml
+  reason: Imports graph-health report and owner helpers from artifact_health.py.
+  source: common.source.artifact-health
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/audit-records.yaml
+  reason: Imports record authentication helpers from audit_records.py.
+  source: common.source.audit-records
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/blueprint-graph.yaml
+  reason: Imports repository and skill graph types from blueprint_graph.py.
+  source: common.source.blueprint-graph
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/certification-view.yaml
+  reason: Imports the certification view protocol from certification_view.py.
+  source: common.source.certification-view
+  version: 1
+description: Renders deterministic pooled blueprint review documents from graph declarations and admitted certificates, authenticates pre-v4 pooled-review health, and verifies review and health snapshots without granting graph authority.
+gateway:
+  language: Python
+  path: pooled_blueprint.py
+id: common.source.pooled-blueprint
+interfaces:
+  common.source.pooled-blueprint.interface.python-api:
+    contract:
+      arguments:
+        operation:
+          description: Pooled-review operation to perform.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - {value: review-path, description: Derive the pooled review or pooled review health path under a module root.}
+            - {value: render-review, description: Render a deterministic legacy or v4 pooled review from graph declarations and admitted records.}
+            - {value: certify-review, description: Build authenticated pre-v4 health for one stable pooled review snapshot.}
+            - {value: check-review, description: "Validate pooled review and health snapshots against the exact graph, records, schemas, and root health."}
+        review-path:
+          description: Pooled review file read by certification or checking operations.
+          required: false
+          sensitivity: user-private
+          direct_io_ref: review-file
+          type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, content_type: {kind: string, sensitivity: user-private, format: {named: yaml}}}
+        health-path:
+          description: Pooled review health JSON read by the check operation.
+          required: false
+          sensitivity: user-private
+          direct_io_ref: health-file
+          type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, content_type: {kind: string, sensitivity: user-private, format: {named: json}}}
+        inputs:
+          description: Operation-specific skill or repository graph, records, certification view, root ID, root report, authentication key, timestamp, schema root, or certifier identity.
+          required: false
+          sensitivity: secret
+          type: {kind: string, description: Operation-specific Python values supplied by the caller.}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - id: result
+        audience: machine
+        description: Derived path, rendered YAML text, authenticated pooled-review health record, or structured pooled-review health decision.
+        direct_io_ref: return-value
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Rendered reviews and authenticated records are nonempty; a health decision always contains a boolean and concern tuple.
+        type: {kind: string, sensitivity: user-private, description: "Operation-specific Python Path, YAML string, mapping, or PooledReviewHealth value."}
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [], caller_action: "Use the result only as a review projection or health decision, never as graph authority."}
+      - {id: invalid-review, class: error, outputs: [], effects: [], caller_action: "Reject unstable files, invalid schemas or authentication, mismatched graph records, missing certificates, and paths outside the owning module."}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {snapshot: File-checking operations hold and revalidate stable no-follow snapshots; rendering uses the supplied graph and admitted certificate state.}
+        verification:
+        - {method: output-schema, output_ref: result}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: review-file, medium: local-filesystem, access: read, content: pooled blueprint review snapshot, formats: [yaml], sensitivity: user-private, path: <review-path>, path_match: exact, system: filesystem}
+        - {id: health-file, medium: local-filesystem, access: read, content: authenticated pooled review health snapshot, formats: [json], sensitivity: user-private, path: <health-path>, path_match: exact, system: filesystem}
+        - {id: schema-files, medium: repository-filesystem, access: read, content: pooled review and health JSON Schemas plus local referenced schemas, formats: [json-schema], sensitivity: public, path: "<schema-root>/*.schema.json", path_match: glob}
+        writes:
+        - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [python-object, yaml], sensitivity: user-private}
+        network: []
+    description: Builds and validates pooled blueprint review records for Python callers.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

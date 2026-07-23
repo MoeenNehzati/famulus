@@ -13,10 +13,11 @@ Version 4 has two authored node types:
 - A `behavioral_source` owns one whole-file gateway, its content selection,
   intrinsic interface contracts, source dependencies, and interface uses.
 
-The blueprint graph derives certification dependencies from containment,
-source use, private-interface use, module-export use, and cross-owner contract
-references. An edge records the target node and its exact version. A node's
-local hash does not recursively include dependency bytes; certificates record
+The blueprint graph derives certification dependencies from source use,
+private-interface use, module-export use, and cross-owner contract references.
+Containment assigns ownership but adds no certification edge. An edge records
+the target node and its exact version. A node's local hash does not recursively
+include dependency bytes; certificates record
 the direct dependency node hashes separately.
 
 Every authored node has one blueprint. Every behavioral source has one
@@ -167,10 +168,16 @@ value is valid base64. `certified_at` is informational and never establishes
 currentness.
 
 Each dependency entry contains `relation`, `target`, `version`, and
-`node_hash`. Relations are `contains-source`, `uses-source`,
+`node_hash`. Derived relations are `uses-source`,
 `uses-private-interface`, `uses-export`, or
 `references-cross-owner-contract`. The payload contains no separate
 dependency-certificate hash.
+
+Containment assigns ownership but creates no certification dependency. A
+`uses-export` dependency targets the exact behavioral source implementing the
+export. Runtime admission separately requires the current exporting-module
+certificate, so boundary identity and access remain protected without making
+every consumer depend on every source in that module.
 
 The certifier identity contains its exported interface and version, its node
 hash, and its source commit. `certification_basis_hash` is the single digest

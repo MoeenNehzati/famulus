@@ -1,0 +1,154 @@
+content:
+- _rtx/_oauth_bootstrap\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: g-calendar.source.rtx-init
+  version: 1
+description: Runs the installed-app OAuth browser flow and writes regenerated Google Calendar credentials to the canonical private file.
+gateway:
+  language: Python
+  path: _rtx/_oauth_bootstrap.py
+id: g-calendar.source.rtx-oauth-bootstrap
+interfaces:
+  g-calendar.source.rtx-oauth-bootstrap.interface.setup-oauth:
+    contract:
+      arguments:
+        from-json: {description: Optional OAuth client JSON path; defaults to the canonical g-calendar client file., required: false, sensitivity: secret, direct_io_ref: read-2, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, content_type: {kind: string, sensitivity: secret, format: {named: json}}}}
+        client-id: {description: OAuth client identifier used only with client-secret when no file is supplied., required: false, sensitivity: credential, type: {kind: string, sensitivity: credential}}
+        client-secret: {description: OAuth client secret used only with client-id when no file is supplied., required: false, sensitivity: secret, type: {kind: string, sensitivity: secret}}
+        port: {description: Localhost callback port., required: false, default: 8765, sensitivity: public, type: {kind: integer, minimum: 1, maximum: 65535}}
+      preconditions: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: authorization-required}
+      caller_warnings:
+      - external-side-effect: Opens a browser, binds one localhost callback port, and replaces stored Calendar credentials after verification.
+      outputs:
+      - {id: status, audience: both, description: Browser-authorization guidance and saved-credentials confirmation., direct_io_ref: write-2, cardinality: {minimum: 1, maximum: null}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty on success., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: configured, class: success, outputs: [status], effects: [credentials], caller_action: Continue with calendar operations.}
+      - {id: authorization-required, class: refusal, outputs: [], effects: [], caller_action: Complete the browser consent flow in an interactive session.}
+      - {id: failed, class: error, outputs: [], effects: [], caller_action: Preserve existing credentials and report the authorization or token or verification error.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Authorization and token exchange and Calendar verification use live Google service state.}
+        effects:
+        - {id: credentials, direct_io_ref: write-1, action: update, value_source: {kind: direct-io, direct_io_ref: network-2}, may_occur_in_outcomes: [configured], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Reauthorization can replace credentials; prior credentials are not retained.}}
+        mutation_safety:
+          atomicity: {atomic: Verified credential JSON is replaced through the shared secure atomic writer.}
+          concurrent_invocations: {unsafe: Concurrent browser flows and credential writers are not serialized.}
+          idempotency: {non_idempotent: Reauthorization can issue a new refresh token.}
+          on_uncertain_completion: {verify_then_decide: Check the credential file and run a Calendar request before retrying.}
+          partial_effects_on_failure: {possible: OAuth consent may complete remotely even when local persistence fails.}
+          rollback_on_failure: {unavailable: Remote grants are not revoked automatically.}
+        verification:
+        - {method: direct-io-state, direct_io_ref: write-1}
+      helpers: []
+      direct_io:
+        network:
+        - access: request
+          auth:
+            kind: google-calendar-oauth
+            mode: creates
+          content: credential
+          formats:
+          - json
+          id: network-1
+          medium: network-request
+          endpoint: https://accounts.google.com/o/oauth2/v2/auth
+          sensitivity: secret
+          system: oauth
+        - access: request
+          auth: {kind: google-calendar-oauth, mode: creates}
+          content: credential
+          endpoint: https://oauth2.googleapis.com/token
+          formats: [json]
+          id: network-2
+          medium: network-request
+          sensitivity: secret
+          system: oauth
+        - access: request
+          auth: {kind: google-calendar-oauth, mode: creates}
+          content: credential verification
+          endpoint: https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1
+          formats: [json]
+          id: network-3
+          medium: network-request
+          sensitivity: secret
+          system: google-calendar
+        reads:
+        - access: read
+          content: credential
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: $home/.config/g-calendar/client.json
+          path_match: exact
+          sensitivity: secret
+          system: filesystem
+        - access: read
+          content: credential
+          formats:
+          - json
+          id: read-2
+          medium: local-filesystem
+          path: <client-json>
+          path_match: exact
+          sensitivity: secret
+          system: filesystem
+        writes:
+        - access: write
+          auth:
+            kind: google-calendar-oauth
+            mode: creates
+          content: credential
+          formats:
+          - json
+          id: write-1
+          medium: local-filesystem
+          path: $home/.config/g-calendar/credentials.json
+          path_match: exact
+          sensitivity: secret
+          system: filesystem
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+    description: Run the OAuth setup flow to generate or refresh Google Calendar credentials.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        allowed_flags:
+        - --client-id
+        - --client-secret
+        - --from-json
+        - --port
+        flag_patterns:
+          --client-id: ^.+$
+          --client-secret: ^.+$
+          --from-json: ^.+$
+          --port: ^\d+$
+        max_positionals: 0
+        min_positionals: 0
+        notes: OAuth setup for Google Calendar access.
+    usage: '[--from-json /path/to/client.json]'
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 4
+uses_interfaces:
+- interface: common.interface.oauth-json
+  version: 1
+version: 1

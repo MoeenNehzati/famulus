@@ -1,0 +1,63 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Implements document-profile inspection, reliable field inference, clarification, canonical block proposal, and approval-gated TeX insertion.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: make-tex-docstring.source.gateway
+interfaces:
+  make-tex-docstring.source.gateway.interface.default:
+    contract:
+      arguments:
+        request: {description: 'Target TeX document or supplied content plus the request to inspect, create, standardize, or insert its profile comment.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: approval-required}
+      caller_warnings:
+      - external-side-effect: Inserting or revising the profile block changes the TeX source and occurs only after explicit user approval.
+      outputs:
+      - {id: response, audience: human, description: 'Existing-docstring assessment, missing fields, canonical proposed block, approval request, or verified insertion result.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: already-suitable, class: no-op, outputs: [response], effects: [], caller_action: Preserve the existing suitable profile block.}
+      - {id: proposed, class: success, outputs: [response], effects: [], caller_action: Review the canonical block and approve insertion if desired.}
+      - {id: approval-required, class: refusal, outputs: [response], effects: [], caller_action: Supply unresolved fields or explicitly approve insertion or revision.}
+      - {id: inserted, class: success, outputs: [response], effects: [profile-update], caller_action: Review the top-of-document block and file verification.}
+      - {id: failed, class: error, outputs: [response], effects: [], caller_action: Correct the target or unresolved profile information before retrying.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {snapshot: Inference and insertion use the target document and canonical standard read during this invocation.}
+        effects:
+        - id: profile-update
+          direct_io_ref: tex-write
+          action: update
+          value_source: {kind: argument, argument_ref: request}
+          may_occur_in_outcomes: [inserted]
+          confirmation_evidence: {kind: output, output_ref: response}
+          reversibility: {reversible: Remove or restore the reviewed top-of-document comment block.}
+        mutation_safety:
+          atomicity: {atomic: The approved source edit is one coherent file update.}
+          concurrent_invocations: {unsafe: Concurrent edits to the same TeX source can overwrite one another.}
+          idempotency: {idempotent: A suitable existing canonical block produces no additional insertion.}
+          on_uncertain_completion: {verify_then_decide: Re-read the top of the target file before retrying.}
+          partial_effects_on_failure: {impossible: The intended update is one file edit and success is checked by reading it back.}
+          rollback_on_failure: {available: Restore the prior reviewed file content if the edit is incorrect.}
+        verification:
+        - {method: output-schema, output_ref: response}
+        - {method: direct-io-state, direct_io_ref: tex-read}
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - {id: request, medium: prompt, access: read, system: agent-runtime, content: TeX profile request and conversation evidence., formats: [text], sensitivity: user-private}
+        - {id: tex-read, medium: local-filesystem, access: read, content: Target TeX source and existing top-of-document comments., formats: [tex, text], sensitivity: user-private, reason: Detect a suitable profile and infer only supported fields.}
+        - {id: profile-standard, medium: repository-filesystem, access: read, path: references/document-standards/document-profile.md, path_match: exact, content: 'Canonical profile fields, TeX template, and inference rules.', formats: [markdown], sensitivity: public, reason: Produce the shared canonical block.}
+        writes:
+        - {id: response, medium: prompt, access: write, system: agent-runtime, content: 'Profile assessment, canonical block, and insertion result.', formats: [markdown, tex], sensitivity: derived-private}
+        - {id: tex-write, medium: local-filesystem, access: write, content: User-approved canonical top-of-document TeX profile comment., formats: [tex, text], sensitivity: user-private, reason: Insert or revise the profile only after approval.}
+    description: Inspect a TeX document against the canonical profile standard, infer cautiously, and gate any edit on approval.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

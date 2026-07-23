@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from officina.common.audit_records import (
     canonical_certificate_payload_bytes,
     canonical_health_record_bytes,
     certificate_entry_hash,
+    certificate_public_key_root,
     compute_record_digest,
     load_active_certificate_key_id,
     load_certificate_public_key,
@@ -25,6 +27,7 @@ from officina.common.audit_records import (
     load_or_create_certificate_signing_key,
     load_or_create_hmac_key,
     parse_certificate_log,
+    provision_certificate_signing_material,
     record_authentication_matches,
     record_digest_matches,
     rotate_certificate_signing_key,
@@ -354,6 +357,39 @@ def test_ed25519_key_lifecycle_uses_secret_store_and_windows_safe_public_filenam
     assert load_certificate_public_key(public_key_root, created.key_id) is not None
     assert len(backend.values) == 1
     assert next(iter(backend.values.values())).startswith("base64:")
+
+
+def test_certificate_signing_material_provisioning_is_idempotent_and_verified(
+    tmp_path: Path,
+) -> None:
+    skills_root = tmp_path / "skills"
+    certifier_root = skills_root / "skill-certifier"
+    certifier_root.mkdir(parents=True)
+    if os.name == "posix":
+        skills_root.chmod(0o755)
+        certifier_root.chmod(0o755)
+    backend = MemorySecretBackend()
+
+    first = provision_certificate_signing_material(
+        tmp_path,
+        secret_backend=backend,
+    )
+    second = provision_certificate_signing_material(
+        tmp_path,
+        secret_backend=backend,
+    )
+
+    assert second.key_id == first.key_id
+    public_key_root = certificate_public_key_root(tmp_path)
+    assert load_active_certificate_key_id(public_key_root) == first.key_id
+    assert load_certificate_signing_key(
+        public_key_root,
+        secret_backend=backend,
+    ).key_id == first.key_id
+    if os.name == "posix":
+        assert public_key_root.stat().st_mode & 0o077 == 0
+        assert stat.S_IMODE(skills_root.stat().st_mode) == 0o755
+        assert stat.S_IMODE(certifier_root.stat().st_mode) == 0o755
 
 
 def test_ed25519_sign_verify_detects_payload_tamper_and_wrong_key(tmp_path: Path) -> None:

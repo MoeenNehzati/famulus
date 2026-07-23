@@ -8,14 +8,31 @@ description: Use when reading, listing, searching, or sending email for the user
 
 Category: productivity-general-assistant
 
-Skill Version: 3
+Skill Version: 1
 
 Uses Interfaces:
-- `email-client.llm.default -> connect-google.llm.default@1`
-- `email-client.llm.default -> email-client.machine.accounts-setup-oauth@1`
+- `email-client.source.gateway -> connect-google.interface.default@1`
+- `email-client.source.gateway -> email-client.source.rtx-email-accounts.interface.accounts-setup-oauth@1`
+- `email-client.source.rtx-email-accounts -> common.interface.secret-store@1`
+- `email-client.source.rtx-imap-gateway -> common.interface.secret-store@1`
+- `email-client.source.rtx-init -> common.interface.secret-store@1`
+- `email-client.source.rtx-smtp-transport -> common.interface.secret-store@1`
 
 Public Interfaces:
-- `email-client.llm.default`
+- `email-client.interface.accounts-add`
+- `email-client.interface.accounts-list`
+- `email-client.interface.accounts-remove`
+- `email-client.interface.accounts-set-password`
+- `email-client.interface.accounts-setup-oauth`
+- `email-client.interface.accounts-update`
+- `email-client.interface.default`
+- `email-client.interface.live-smoke`
+- `email-client.interface.mail-attachments`
+- `email-client.interface.mail-folders`
+- `email-client.interface.mail-list`
+- `email-client.interface.mail-read`
+- `email-client.interface.mail-save-attachments`
+- `email-client.interface.send-email`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -23,38 +40,37 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `accounts-add` — Register a new account nickname. Gmail IMAP/SMTP settings are the default; pass explicit host/port flags for other providers. App-password auth is the default; use --auth gmail-oauth for Gmail OAuth.
-  - `dispatcher --caller-skill email-client email-client.machine.accounts-add --nickname <nick> --email <addr> [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls] [--auth app-password|gmail-oauth]`
-- `accounts-list` — List registered account nicknames with their email/display name (no secrets).
-  - `dispatcher --caller-skill email-client email-client.machine.accounts-list`
-- `accounts-remove` — Remove an account nickname from the registry; optionally purge its stored credentials too.
-  - `dispatcher --caller-skill email-client email-client.machine.accounts-remove --nickname <nick> [--purge-credentials]`
-- `accounts-set-password` — Store the IMAP or SMTP credential for an account in the host credential store. The secret is read from stdin, never a CLI argument.
-  - `dispatcher --caller-skill email-client email-client.machine.accounts-set-password --nickname <nick> --purpose imap|smtp`
-- `accounts-setup-oauth` — Complete Gmail OAuth setup for an account using a Google desktop OAuth client JSON file. Stores refresh token and client secret in the host credential store.
-  - `dispatcher --caller-skill email-client email-client.machine.accounts-setup-oauth --nickname <nick> --client-config <path> [--no-open-browser]`
-- `accounts-update` — Update fields on an existing account nickname.
-  - `dispatcher --caller-skill email-client email-client.machine.accounts-update --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--auth app-password|gmail-oauth]`
-- `live-smoke` — Run explicit live provider smoke checks for one account. --imap and --smtp-auth authenticate without sending; --send-self sends a test email to the account's own address.
-  - `dispatcher --caller-skill email-client email-client.machine.live-smoke -a <nickname> [--imap] [--smtp-auth] [--send-self] [--body <text>]`
-- `mail-attachments` — List attachment metadata for one or more emails as JSON. Returns one record per requested UID with attachment entries containing filename, content_type, size_bytes, size_human, and disposition.
-  - `dispatcher --caller-skill email-client email-client.machine.mail-attachments -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...]`
-- `mail-folders` — List IMAP folders for an account (JSON).
-  - `dispatcher --caller-skill email-client email-client.machine.mail-folders -a <nickname>`
-- `mail-list` — List email envelopes for an account as JSON (fields: id, flags, subject, from, date, message_id). --folder accepts aliases inbox|sent|drafts|trash|all or any literal IMAP folder name (default inbox). --after narrows server-side by day (IMAP SINCE). Filters are key=value (exact, comma-separated=OR) or key~=value (regex, case-insensitive) over id/subject/from/date/message_id/flags, ANDed across distinct keys, applied client-side after fetch. Unfiltered + undated scans the whole folder (slow on large mailboxes) — pair filters with --after.
-  - `dispatcher --caller-skill email-client email-client.machine.mail-list -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] [--after YYYY-MM-DD] [key=value|key~=value ...] [--limit N]`
-- `mail-read` — Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/ Date/Message-ID, then In-Reply-To/References only if the message is a reply, then an Attachments section (none or one line per attachment with filename, MIME type, and size), then a blank line, then the decoded body (text/plain preferred; falls back to HTML with tags stripped).
-  - `dispatcher --caller-skill email-client email-client.machine.mail-read -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>`
-- `mail-save-attachments` — Save attachments from one or more emails into a directory. Use --all to save every attachment, or repeat --name to save only selected filenames. Returns JSON describing the saved files.
-  - `dispatcher --caller-skill email-client email-client.machine.mail-save-attachments -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...] --out <dir> (--all | --name <filename> [--name <filename> ...])`
-- `send-email` — Send an email via SMTP; body comes from stdin.
-  - `dispatcher --caller-skill email-client email-client.machine.send-email --from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]`
+- `email-client.interface.accounts-add` — Register a new account nickname. Gmail IMAP/SMTP settings are the default; pass explicit host/port flags for other providers. App-password auth is the default; use --auth gmail-oauth for Gmail OAuth.
+  - `dispatcher --caller-skill email-client email-client.interface.accounts-add --nickname <nick> --email <addr> [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls] [--auth app-password|gmail-oauth]`
+- `email-client.interface.accounts-list` — List registered account nicknames with their email/display name (no secrets).
+  - `dispatcher --caller-skill email-client email-client.interface.accounts-list`
+- `email-client.interface.accounts-remove` — Remove an account nickname from the registry; optionally purge its stored credentials too.
+  - `dispatcher --caller-skill email-client email-client.interface.accounts-remove --nickname <nick> [--purge-credentials]`
+- `email-client.interface.accounts-set-password` — Store the IMAP or SMTP credential for an account in the host credential store. The secret is read from stdin, never a CLI argument.
+  - `dispatcher --caller-skill email-client email-client.interface.accounts-set-password --nickname <nick> --purpose imap|smtp`
+- `email-client.interface.accounts-setup-oauth` — Complete Gmail OAuth setup for an account using a Google desktop OAuth client JSON file. Prints the authorization URL and completion status, stores refresh-token and client-secret keys, and persists Gmail OAuth metadata in accounts.json.
+  - `dispatcher --caller-skill email-client email-client.interface.accounts-setup-oauth --nickname <nick> --client-config <path> [--no-open-browser]`
+- `email-client.interface.accounts-update` — Update fields on an existing account nickname.
+  - `dispatcher --caller-skill email-client email-client.interface.accounts-update --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--auth app-password|gmail-oauth]`
+- `email-client.interface.live-smoke` — Run explicit live provider smoke checks for one account. --imap and --smtp-auth authenticate without sending; --send-self sends a test email to the account's own address.
+  - `dispatcher --caller-skill email-client email-client.interface.live-smoke -a <nickname> [--imap] [--smtp-auth] [--send-self] [--body <text>]`
+- `email-client.interface.mail-attachments` — List attachment metadata for one or more emails as JSON. Returns one record per requested UID with attachment entries containing filename, content_type, size_bytes, size_human, and disposition.
+  - `dispatcher --caller-skill email-client email-client.interface.mail-attachments -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...]`
+- `email-client.interface.mail-folders` — List IMAP folders for an account (JSON).
+  - `dispatcher --caller-skill email-client email-client.interface.mail-folders -a <nickname>`
+- `email-client.interface.mail-list` — List email envelopes for an account as JSON (fields: id, flags, subject, from, date, message_id). --folder accepts aliases inbox|sent|drafts|trash|all or any literal IMAP folder name (default inbox). --after narrows server-side by day (IMAP SINCE). Filters are key=value (exact, comma-separated=OR) or key~=value (regex, case-insensitive) over id/subject/from/date/message_id/flags, ANDed across distinct keys, applied client-side after fetch. Unfiltered + undated scans the whole folder (slow on large mailboxes) — pair filters with --after.
+  - `dispatcher --caller-skill email-client email-client.interface.mail-list -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] [--after YYYY-MM-DD] [key=value|key~=value ...] [--limit N]`
+- `email-client.interface.mail-read` — Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/ Date/Message-ID, then In-Reply-To/References only if the message is a reply, then an Attachments section (none or one line per attachment with filename, MIME type, and size), then a blank line, then the decoded body (text/plain preferred; falls back to HTML with tags stripped).
+  - `dispatcher --caller-skill email-client email-client.interface.mail-read -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid>`
+- `email-client.interface.mail-save-attachments` — Save attachments from one or more emails into a directory. Use --all to save every attachment, or repeat --name to save only selected filenames. Returns JSON describing the saved files.
+  - `dispatcher --caller-skill email-client email-client.interface.mail-save-attachments -a <nickname> [--folder inbox|sent|drafts|trash|all|<literal>] <uid> [<uid> ...] --out <dir> (--all | --name <filename> [--name <filename> ...])`
+- `email-client.interface.send-email` — Send an email via SMTP; body comes from stdin.
+  - `dispatcher --caller-skill email-client email-client.interface.send-email --from <nickname> --to <addr> [--to <addr>...] --subject <subject> [--attach /path[:DisplayName]] [--in-reply-to <msg-id>] [--references <refs>]`
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `email-client.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Email
 
@@ -156,9 +172,9 @@ secrets, and OAuth refresh tokens are never stored there; they stay in the host
 credential store.
 
 For initial Google setup or Gmail OAuth reauthorization, use
-`connect-google.llm.default` to prepare the shared Desktop client, then return
+`connect-google.interface.default` to prepare the shared Desktop client, then return
 here. Select or register the Gmail nickname, then invoke
-`email-client.machine.accounts-setup-oauth` with that nickname and
+`email-client.interface.accounts-setup-oauth` with that nickname and
 `--client-config ~/.config/connect-google/client.json`. email-client alone
 lists, registers, updates, authorizes, and verifies Gmail accounts. Keep
 non-Google account and app-password setup here as well.

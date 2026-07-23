@@ -13,7 +13,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `loose-mode.llm.default`
+- `loose-mode.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
@@ -22,8 +22,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `loose-mode.interface.default` — Explore a request breadth-first, label uncertainty, and present concise strategic structure without silently leaving loose mode.
 <!-- END BLUEPRINT INTERFACES -->
 ## Core principle
 

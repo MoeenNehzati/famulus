@@ -1,0 +1,142 @@
+content:
+- _rtx/_mail_envelope_stream\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-envelope-gate.yaml
+  reason: Imports Python source from _rtx/_envelope_gate.py.
+  source: email-triage.source.rtx-envelope-gate
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: email-triage.source.rtx-init
+  version: 1
+description: Calls email-client for account envelopes and emits only records newer than the exact triage watermark.
+gateway:
+  language: Python
+  path: _rtx/_mail_envelope_stream.py
+id: email-triage.source.rtx-mail-envelope-stream
+interfaces:
+  email-triage.source.rtx-mail-envelope-stream.interface.fetch-filtered-envelopes:
+    contract:
+      arguments:
+        account: {description: Configured email-client account nickname, required: true, sensitivity: user-private, type: {kind: string}}
+        after: {description: Coarse date cutoff passed to email-client mail-list, required: true, sensitivity: derived-private, type: {kind: date, date_formats: [YYYY-MM-DD]}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - rate-limited: The delegated email-client mail-list request may be subject to provider limits.
+      outputs:
+      - {id: filtered-envelopes, audience: machine, description: Envelopes newer than the exact watermark or a no-new-email message, direct_io_ref: write-1, type: {kind: string}, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: A no-new-email message is emitted when no envelopes remain.}
+      - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-3, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: fetched, class: success, outputs: [filtered-envelopes, diagnostic], effects: [update-status], caller_action: Process only the returned envelopes.}
+      - {id: mail-list-failed, class: error, outputs: [diagnostic], effects: [], caller_action: Report the delegated failure and preserve the watermark.}
+      - {id: invalid-response, class: error, outputs: [diagnostic], effects: [], caller_action: Report invalid email-client JSON and preserve the watermark.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Delegates a live envelope listing and filters it against the current exact watermark.}
+        effects:
+        - {id: update-status, direct_io_ref: write-2, action: update, value_source: {kind: direct-io, direct_io_ref: write-2}, may_occur_in_outcomes: [fetched], confirmation_evidence: {kind: direct-io, direct_io_ref: write-2}, reversibility: {reversible: A later successful run may replace warning or stale-error status.}}
+        mutation_safety:
+          atomicity: {per_effect_only: At most one status document is rewritten while filtering.}
+          concurrent_invocations: {unsafe: Concurrent triage runs can overwrite shared status state.}
+          idempotency: {non_idempotent: Delegated mailbox state and fallback time can change between calls.}
+          on_uncertain_completion: {verify_then_decide: Inspect status and preserve the watermark before retrying.}
+          partial_effects_on_failure: {possible: Status may change after a successful delegated fetch but before output completes.}
+          rollback_on_failure: {unavailable: The prior status document is not retained.}
+        verification: [{method: output-schema, output_ref: filtered-envelopes}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: watermark
+          formats:
+          - text
+          id: read-1
+          medium: local-filesystem
+          path: state/last_run
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: diagnostic-report
+          formats:
+          - json
+          id: read-2
+          medium: local-filesystem
+          path: state/status.json
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        writes:
+        - access: write
+          content: email
+          formats:
+          - json
+          - text
+          id: write-1
+          medium: stdout
+          sensitivity: user-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - json
+          id: write-2
+          medium: local-filesystem
+          path: state/status.json
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - {access: write, content: diagnostic-report, formats: [text], id: write-3, medium: stderr, sensitivity: derived-private}
+    description: Fetch email envelopes for one account through email-client and emit
+      only envelopes strictly after the triage watermark.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - -a
+        - --after
+        flag_patterns:
+          --after: ^.+$
+          -a: ^.+$
+        forbidden_flags:
+        - --account
+        max_positionals: 0
+        min_positionals: 0
+        name: short-account
+        required_flags:
+        - -a
+        - --after
+      - allowed_flags:
+        - --account
+        - --after
+        flag_patterns:
+          --account: ^.+$
+          --after: ^.+$
+        forbidden_flags:
+        - -a
+        max_positionals: 0
+        min_positionals: 0
+        name: long-account
+        required_flags:
+        - --account
+        - --after
+    usage: -a <account> --after YYYY-MM-DD
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 4
+uses_interfaces:
+- interface: email-client.interface.mail-list
+  version: 1
+version: 1

@@ -15,7 +15,9 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `pdf-to-markdown.llm.default`
+- `pdf-to-markdown.interface.default`
+- `pdf-to-markdown.interface.scripts-check-marker-models`
+- `pdf-to-markdown.interface.scripts-fetch-arxiv-source`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
@@ -24,16 +26,15 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `scripts-check-marker-models` — Check whether required Marker/Surya models are downloaded and cached locally.
-  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown.machine.scripts-check-marker-models`
-- `scripts-fetch-arxiv-source` — Download and extract the LaTeX source tarball for a paper from arXiv.
-  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown.machine.scripts-fetch-arxiv-source <arxiv-id> <output-dir>`
+- `pdf-to-markdown.interface.scripts-check-marker-models` — Check whether required Marker/Surya models are downloaded and cached locally.
+  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown.interface.scripts-check-marker-models`
+- `pdf-to-markdown.interface.scripts-fetch-arxiv-source` — Download and extract the LaTeX source tarball for a paper from arXiv.
+  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown.interface.scripts-fetch-arxiv-source <arxiv-id> <output-dir>`
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `pdf-to-markdown.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # PDF to Markdown
 

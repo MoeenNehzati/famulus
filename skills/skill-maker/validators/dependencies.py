@@ -14,8 +14,11 @@ if str(_SRC_ROOT) not in sys.path:
 
 from officina.common.blueprint_graph import (  # noqa: E402
     BlueprintGraphError,
+    RepositoryBlueprintGraph,
+    load_repository_blueprint_graph,
     load_skill_blueprint_graph,
 )
+from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
 
 # Skill names that are allowed to reference ../../.githooks/ in addition to ../references and ../../tools
 _EXTENDED_PARENT_EXCEPTIONS = {"update-skill-guidelines"}
@@ -104,6 +107,25 @@ def _load_blueprint_used_skills(path: Path) -> list[str]:
     return sorted(used)
 
 
+def _v4_module_used_modules(
+    graph: RepositoryBlueprintGraph,
+    module_id: str,
+) -> list[str]:
+    used: set[str] = set()
+    for source_id in graph.module_sources.get(module_id, ()):
+        source = graph.nodes[source_id]
+        for entry in source.declaration.get("uses_interfaces", []) or []:
+            if not isinstance(entry, dict):
+                continue
+            target_id = entry.get("interface")
+            if not isinstance(target_id, str):
+                continue
+            export = graph.exports.get(target_id)
+            if export is not None and export.module_node_id != module_id:
+                used.add(export.module_node_id)
+    return sorted(used)
+
+
 def _validate_typed_body_interfaces(
     graph: object,
     known_skill_names: set[str],
@@ -171,10 +193,28 @@ def validate(repo_root: Path) -> list[str]:
     if not skills_root.is_dir():
         return errors
 
+    schema_root = repo_root / "references" / "blueprint"
+    try:
+        candidate_graph = load_repository_blueprint_graph(
+            repo_root,
+            schema_root=schema_root if (schema_root / "module.schema.json").is_file() else None,
+        )
+    except (BlueprintGraphError, BlueprintInventoryError, OSError, UnicodeError) as exc:
+        return [str(exc)]
+    repository_graph = (
+        candidate_graph
+        if any(
+            node.declaration.get("schema_version") == 4
+            for node in candidate_graph.nodes.values()
+        )
+        else None
+    )
+
     # Collect all known skill names from local skill directories and interface uses.
     skill_name_set: set[str] = {p.name for p in skills_root.iterdir() if p.is_dir()}
-    for blueprint in skills_root.glob("*/blueprint.yaml"):
-        skill_name_set.update(_load_blueprint_used_skills(blueprint))
+    if repository_graph is None:
+        for blueprint in skills_root.glob("*/blueprint.yaml"):
+            skill_name_set.update(_load_blueprint_used_skills(blueprint))
     skill_names = sorted(skill_name_set)
 
     skill_files = sorted(skills_root.glob("*/SKILL.md"))
@@ -196,7 +236,7 @@ def validate(repo_root: Path) -> list[str]:
             raw_blueprint = yaml.safe_load(blueprint_file.read_text(encoding="utf-8")) or {}
         except (OSError, yaml.YAMLError):
             raw_blueprint = {}
-        if isinstance(raw_blueprint, dict) and (
+        if repository_graph is None and isinstance(raw_blueprint, dict) and (
             raw_blueprint.get("schema_version") == 2 or "blueprint_type" in raw_blueprint
         ):
             try:
@@ -214,7 +254,17 @@ def validate(repo_root: Path) -> list[str]:
                 f"declare cross-skill use through blueprint.yaml `uses_interfaces`"
             )
 
-        blueprint_uses = _load_blueprint_used_skills(blueprint_file) if blueprint_file.exists() else []
+        if repository_graph is not None:
+            blueprint_uses = _v4_module_used_modules(
+                repository_graph,
+                skill_name,
+            )
+        else:
+            blueprint_uses = (
+                _load_blueprint_used_skills(blueprint_file)
+                if blueprint_file.exists()
+                else []
+            )
 
         # Extract exact skill-name mentions in body
         body = _strip_frontmatter_and_deps(text)
@@ -223,9 +273,14 @@ def validate(repo_root: Path) -> list[str]:
         undeclared_mentions = sorted(set(body_mentions) - set(blueprint_uses))
 
         if undeclared_mentions:
+            declaration_location = (
+                "source uses_interfaces"
+                if repository_graph is not None
+                else "interfaces.*.*.uses_interfaces"
+            )
             errors.append(
                 f"{skill_file}: exact skill-name mentions in SKILL.md body are not declared "
-                f"through {blueprint_file}:interfaces.*.*.uses_interfaces: {undeclared_mentions}"
+                f"through {blueprint_file}:{declaration_location}: {undeclared_mentions}"
             )
 
     return errors

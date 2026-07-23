@@ -1,0 +1,13 @@
+content:
+- personal\-preferences/connect\-services\.md
+dependencies: []
+description: Optional user preferences for client installation and service selection.
+gateway:
+  language: Markdown
+  path: personal-preferences/connect-services.md
+id: connect-google.source.personal-preferences-connect-services
+interfaces: {}
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

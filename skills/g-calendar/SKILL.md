@@ -16,11 +16,15 @@ Category: productivity-general-assistant
 Skill Version: 1
 
 Uses Interfaces:
-- `g-calendar.llm.default -> connect-google.llm.default@1`
-- `g-calendar.llm.default -> g-calendar.machine.setup-oauth@1`
+- `g-calendar.source.gateway -> connect-google.interface.default@1`
+- `g-calendar.source.gateway -> g-calendar.source.rtx-oauth-bootstrap.interface.setup-oauth@1`
+- `g-calendar.source.rtx-oauth-bootstrap -> common.interface.oauth-json@1`
 
 Public Interfaces:
-- `g-calendar.llm.default`
+- `g-calendar.interface.default`
+- `g-calendar.interface.ensure-oauth`
+- `g-calendar.interface.scripts-gcal`
+- `g-calendar.interface.setup-oauth`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -28,20 +32,19 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `ensure-oauth` — Check g-calendar OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill g-calendar) as part of connecting remotes.
-  - `dispatcher --caller-skill g-calendar g-calendar.machine.ensure-oauth --home <dir> [--dry-run]`
+- `g-calendar.interface.ensure-oauth` — Check g-calendar OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill g-calendar) as part of connecting remotes.
+  - `dispatcher --caller-skill g-calendar g-calendar.interface.ensure-oauth --home <dir> [--dry-run]`
   - Check OAuth status and guide setup for g-calendar.
-- `scripts-gcal` — Query or modify Google Calendar events via the Python calendar CLI (agenda, search, create, update, delete, etc.).
-  - `dispatcher --caller-skill g-calendar g-calendar.machine.scripts-gcal <command> [options]`
-- `setup-oauth` — Run the OAuth setup flow to generate or refresh Google Calendar credentials.
-  - `dispatcher --caller-skill g-calendar g-calendar.machine.setup-oauth [--from-json /path/to/client.json]`
+- `g-calendar.interface.scripts-gcal` — Query or modify Google Calendar events via the Python calendar CLI (agenda, search, create, update, delete, etc.).
+  - `dispatcher --caller-skill g-calendar g-calendar.interface.scripts-gcal <command> [options]`
+- `g-calendar.interface.setup-oauth` — Run the OAuth setup flow to generate or refresh Google Calendar credentials.
+  - `dispatcher --caller-skill g-calendar g-calendar.interface.setup-oauth [--from-json /path/to/client.json]`
   - OAuth setup for Google Calendar access.
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `g-calendar.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 
@@ -194,9 +197,9 @@ Working Calendar credentials live at
 a non-mutating Calendar request succeeds.
 
 For initial Google setup or reauthorization after `invalid_grant` or
-`invalid_client`, use `connect-google.llm.default` to prepare the shared Desktop
+`invalid_client`, use `connect-google.interface.default` to prepare the shared Desktop
 client, then return here for Calendar authorization. This skill invokes its own
-`g-calendar.machine.setup-oauth` interface with
+`g-calendar.interface.setup-oauth` interface with
 `--from-json ~/.config/connect-google/client.json` and owns Calendar credentials
 and verification. Do not
 duplicate the Cloud Console procedure here.

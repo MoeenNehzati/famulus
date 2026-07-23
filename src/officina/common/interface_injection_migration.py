@@ -213,6 +213,7 @@ class CompiledMigrationPlan:
     module_renames: Mapping[str, str]
     local_source_includes: tuple[Path, ...]
     literal_rewrite_paths: tuple[Path, ...] = ()
+    public_id_literal_paths: tuple[Path, ...] = ()
     authorized_overlay: Mapping[Path, str] = field(default_factory=dict)
 
 
@@ -366,6 +367,130 @@ def _read_mapping(path: Path) -> dict[str, Any]:
     return value
 
 
+def _reviewed_generated_field_ignore_entries(
+    migration_map: Mapping[str, Any] | None,
+) -> tuple[Mapping[str, Any], ...]:
+    declarations = (
+        migration_map.get("declarations")
+        if isinstance(migration_map, Mapping)
+        else None
+    )
+    mechanical = (
+        declarations.get("mechanical_conversion")
+        if isinstance(declarations, Mapping)
+        else None
+    )
+    entries = (
+        mechanical.get("reviewed_generated_field_ignores", [])
+        if isinstance(mechanical, Mapping)
+        else []
+    )
+    if not isinstance(entries, list):
+        raise InterfaceInjectionMigrationError(
+            "reviewed_generated_field_ignores must be a list"
+        )
+    validated: list[Mapping[str, Any]] = []
+    for index, entry in enumerate(entries):
+        context = f"reviewed_generated_field_ignores[{index}]"
+        if not isinstance(entry, Mapping):
+            raise InterfaceInjectionMigrationError(
+                f"{context}: invalid reviewed generated-field ignore"
+            )
+        entry_path = _require_relative_path(entry.get("path"), context)
+        parts = PurePosixPath(entry_path).parts
+        if (
+            len(parts) != 3
+            or parts[0] != "skills"
+            or not parts[1]
+            or parts[2] != "blueprint.yaml"
+        ):
+            raise InterfaceInjectionMigrationError(
+                f"{context}: invalid reviewed generated-field ignore path"
+            )
+        module_id = parts[1]
+        interface_ids = entry.get("interface_ids")
+        exact_value = entry.get("exact_value")
+        if (
+            entry.get("disposition") != "ignore"
+            or entry.get("field") != "uses_interfaces"
+            or not isinstance(interface_ids, list)
+            or not interface_ids
+            or not all(isinstance(value, str) and value for value in interface_ids)
+            or len(set(interface_ids)) != len(interface_ids)
+            or not isinstance(exact_value, list)
+            or not exact_value
+            or not all(isinstance(value, str) and value for value in exact_value)
+        ):
+            raise InterfaceInjectionMigrationError(
+                f"{context}: invalid reviewed generated-field ignore"
+            )
+        allowed_prefixes = (f"{module_id}.machine.", f"{module_id}.llm.")
+        for interface_id in interface_ids:
+            if not interface_id.startswith(allowed_prefixes):
+                raise InterfaceInjectionMigrationError(
+                    f"{context}: ignored interface {interface_id!r} does not "
+                    f"belong to {module_id}"
+                )
+        validated.append(entry)
+    return tuple(validated)
+
+
+def _validate_reviewed_generated_field_ignore_consumption(
+    paths: Sequence[Path],
+    migration_map: Mapping[str, Any] | None,
+) -> None:
+    path_counts = Counter(path.as_posix() for path in paths)
+    for entry in _reviewed_generated_field_ignore_entries(migration_map):
+        if path_counts.get(str(entry["path"]), 0) != 1:
+            raise InterfaceInjectionMigrationError(
+                f"{entry['path']}: reviewed generated-field ignore was not "
+                "consumed exactly once"
+            )
+
+
+def _apply_reviewed_generated_field_ignores(
+    path: Path,
+    declaration: Mapping[str, Any],
+    migration_map: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    cleaned = deepcopy(dict(declaration))
+    entries = _reviewed_generated_field_ignore_entries(migration_map)
+    if cleaned.get("schema_version") == 4:
+        return cleaned
+    for entry in entries:
+        if entry["path"] != path.as_posix():
+            continue
+        field = str(entry["field"])
+        interface_ids = entry["interface_ids"]
+        exact_value = entry["exact_value"]
+        interfaces = cleaned.get("interfaces")
+        if not isinstance(interfaces, dict):
+            raise InterfaceInjectionMigrationError(
+                f"{path.as_posix()}: reviewed generated-field ignore is unresolved"
+            )
+        for interface_id in interface_ids:
+            marker = ".machine." if ".machine." in interface_id else ".llm."
+            if marker not in interface_id:
+                raise InterfaceInjectionMigrationError(
+                    f"{path.as_posix()}: invalid ignored interface ID {interface_id!r}"
+                )
+            _, local_name = interface_id.split(marker, 1)
+            family = marker.strip(".")
+            family_declarations = interfaces.get(family)
+            item = (
+                family_declarations.get(local_name)
+                if isinstance(family_declarations, dict)
+                else None
+            )
+            if not isinstance(item, dict) or item.get(field) != exact_value:
+                raise InterfaceInjectionMigrationError(
+                    f"{path.as_posix()}: reviewed generated-field ignore does not "
+                    f"match {interface_id}.{field}"
+                )
+            item[field] = []
+    return cleaned
+
+
 def compile_migration_plan(migration_map: Mapping[str, Any]) -> CompiledMigrationPlan:
     """Compile the map facts used by path and public-ID conversion."""
 
@@ -421,6 +546,7 @@ def compile_migration_plan(migration_map: Mapping[str, Any]) -> CompiledMigratio
     unknown = set(source_policy) - {
         "local_includes",
         "module_rename_literal_files",
+        "public_id_literal_files",
         "authorized_overlay",
     }
     if unknown:
@@ -457,6 +583,23 @@ def compile_migration_plan(migration_map: Mapping[str, Any]) -> CompiledMigratio
         raise InterfaceInjectionMigrationError(
             "candidate_source.module_rename_literal_files contains duplicates"
         )
+    raw_public_id_paths = source_policy.get("public_id_literal_files", [])
+    if not isinstance(raw_public_id_paths, list):
+        raise InterfaceInjectionMigrationError(
+            "candidate_source.public_id_literal_files must be a list"
+        )
+    public_id_paths = tuple(
+        Path(
+            _require_relative_path(
+                value, "candidate_source.public_id_literal_files"
+            )
+        )
+        for value in raw_public_id_paths
+    )
+    if len(public_id_paths) != len(set(public_id_paths)):
+        raise InterfaceInjectionMigrationError(
+            "candidate_source.public_id_literal_files contains duplicates"
+        )
     raw_overlay = source_policy.get("authorized_overlay", [])
     if not isinstance(raw_overlay, list):
         raise InterfaceInjectionMigrationError(
@@ -487,6 +630,7 @@ def compile_migration_plan(migration_map: Mapping[str, Any]) -> CompiledMigratio
         dict(sorted(renames.items())),
         tuple(sorted(includes)),
         tuple(sorted(literal_paths)),
+        tuple(sorted(public_id_paths)),
         dict(sorted(overlay.items())),
     )
 
@@ -746,8 +890,12 @@ def _unversioned_interfaces(
             uses = item.get("uses_interfaces", [])
             ownership = item.get("owns_filesystem", [])
             callers = item.get("allowed_callers", [])
-            if not isinstance(uses, list) or not all(isinstance(edge, dict) for edge in uses):
-                raise InterfaceInjectionMigrationError(f"{old_id}: invalid uses_interfaces")
+            if not isinstance(uses, list) or not all(
+                isinstance(edge, dict) for edge in uses
+            ):
+                raise InterfaceInjectionMigrationError(
+                    f"{old_id}: invalid uses_interfaces"
+                )
             if not isinstance(ownership, list) or not all(
                 isinstance(entry, dict) for entry in ownership
             ):
@@ -1299,6 +1447,34 @@ _PYTHON_PACKAGE_SUPPORT_POLICY = {
     "import_search_roots": {
         "default": ["module-root"],
         "by_gateway": {
+            "skills/install-assistant-tools/_rtx/_agent_launchers.py": [
+                "gateway-parent",
+                "module-root",
+            ],
+            "skills/install-assistant-tools/_rtx/_install_scaffold.py": [
+                "gateway-parent",
+                "module-root",
+            ],
+            "skills/install-assistant-tools/_rtx/_phase_entry.py": [
+                "gateway-parent",
+                "module-root",
+            ],
+            "skills/recurring-tasks/_rtx/_healthcheck_probe.py": [
+                "gateway-parent",
+                "module-root",
+            ],
+            "skills/recurring-tasks/_rtx/_job_control.py": [
+                "gateway-parent",
+                "module-root",
+            ],
+            "skills/recurring-tasks/_rtx/_setup_runner.py": [
+                "gateway-parent",
+                "module-root",
+            ],
+            "skills/recurring-tasks/_rtx/_unit_writer.py": [
+                "gateway-parent",
+                "module-root",
+            ],
             "skills/skill-drift/_rtx/_check_drift_state.py": [
                 "gateway-parent",
                 "module-root",
@@ -1821,22 +1997,29 @@ def _reference_module_documents(
     dict[str, _ReferenceSourceTarget],
 ]:
     raw_modules = _mechanical_conversion_section(migration_map).get(
-        "reference_modules", []
+        "supplemental_modules", []
     )
     if not isinstance(raw_modules, list):
-        raise InterfaceInjectionMigrationError("reference_modules must be a list")
+        raise InterfaceInjectionMigrationError("supplemental_modules must be a list")
     documents: dict[Path, dict[str, Any]] = {}
     targets: dict[str, _ReferenceSourceTarget] = {}
     seen_roots: set[Path] = set()
     for module in raw_modules:
-        if not isinstance(module, dict) or set(module) != {
+        required_module_fields = {
             "root",
             "id",
             "gateway",
             "sources",
-        }:
+        }
+        if (
+            not isinstance(module, dict)
+            or not required_module_fields.issubset(module)
+            or not set(module).issubset(
+                required_module_fields | {"content", "exports"}
+            )
+        ):
             raise InterfaceInjectionMigrationError(
-                "reference module must contain exactly root, id, gateway, and sources"
+                "supplemental module has missing or unmapped fields"
             )
         raw_root = _require_relative_path(module.get("root"), "reference module root")
         module_root = Path(raw_root)
@@ -1892,15 +2075,29 @@ def _reference_module_documents(
         module_sources: dict[str, Any] = {}
         source_gateway_paths: set[str] = set()
         for raw_source in raw_sources:
-            if not isinstance(raw_source, dict) or set(raw_source) != {
+            required_source_fields = {
                 "id",
                 "version",
                 "blueprint",
                 "gateway",
                 "legacy",
-            }:
+            }
+            allowed_source_fields = required_source_fields | {
+                "content",
+                "dependencies",
+                "uses_interfaces",
+                "interfaces",
+                "contract_references",
+                "platform_support",
+                "runtime_dependencies",
+            }
+            if (
+                not isinstance(raw_source, dict)
+                or not required_source_fields.issubset(raw_source)
+                or not set(raw_source).issubset(allowed_source_fields)
+            ):
                 raise InterfaceInjectionMigrationError(
-                    f"{module_id}: reference source has unmapped fields"
+                    f"{module_id}: supplemental source has unmapped fields"
                 )
             source_id = raw_source.get("id")
             version = raw_source.get("version")
@@ -1975,6 +2172,22 @@ def _reference_module_documents(
                 raise InterfaceInjectionMigrationError(
                     f"{source_id}: reference source legacy identity does not preserve its path"
                 )
+            raw_content = raw_source.get("content", [source_gateway_path])
+            if not isinstance(raw_content, list) or not raw_content:
+                raise InterfaceInjectionMigrationError(
+                    f"{source_id}: supplemental source content must be nonempty"
+                )
+            source_content: list[str] = []
+            for index, value in enumerate(raw_content):
+                relative = _require_relative_path(
+                    value, f"{source_id}.content[{index}]"
+                )
+                path = repo_root / module_root / relative
+                if path.is_symlink() or not path.is_file():
+                    raise InterfaceInjectionMigrationError(
+                        f"{source_id}: explicit content is not a regular file: {relative}"
+                    )
+                source_content.append(_exact_content_pattern(relative))
             source_document = {
                 "schema_version": 4,
                 "node_type": "behavioral_source",
@@ -1984,11 +2197,23 @@ def _reference_module_documents(
                     "path": source_gateway_path,
                     "language": source_language,
                 },
-                "content": [_exact_content_pattern(source_gateway_path)],
-                "dependencies": [],
-                "uses_interfaces": [],
-                "interfaces": {},
+                "content": sorted(set(source_content)),
+                "dependencies": deepcopy(raw_source.get("dependencies", [])),
+                "uses_interfaces": deepcopy(raw_source.get("uses_interfaces", [])),
+                "interfaces": deepcopy(raw_source.get("interfaces", {})),
             }
+            if "contract_references" in raw_source:
+                source_document["contract_references"] = deepcopy(
+                    raw_source["contract_references"]
+                )
+            if "platform_support" in raw_source:
+                source_document["platform_support"] = deepcopy(
+                    raw_source["platform_support"]
+                )
+            if "runtime_dependencies" in raw_source:
+                source_document["runtime_dependencies"] = deepcopy(
+                    raw_source["runtime_dependencies"]
+                )
             documents[target_path] = source_document
             module_sources[source_id] = {
                 "blueprint": {
@@ -2006,20 +2231,45 @@ def _reference_module_documents(
                 gateway_language=source_language,
                 legacy=deepcopy(legacy),
             )
+        raw_module_content = module.get("content")
+        if raw_module_content is None:
+            module_content = _regular_module_content(
+                repo_root / module_root,
+                excluded_blueprints,
+                allowed_source_paths,
+            )
+        else:
+            if not isinstance(raw_module_content, list) or not raw_module_content:
+                raise InterfaceInjectionMigrationError(
+                    f"{module_id}: explicit supplemental module content must be nonempty"
+                )
+            normalized_content: list[str] = []
+            for index, value in enumerate(raw_module_content):
+                relative = _require_relative_path(
+                    value, f"{module_id}.content[{index}]"
+                )
+                path = repo_root / module_root / relative
+                if path.is_symlink() or not path.is_file():
+                    raise InterfaceInjectionMigrationError(
+                        f"{module_id}: explicit content is not a regular file: {relative}"
+                    )
+                normalized_content.append(_exact_content_pattern(relative))
+            module_content = sorted(set(normalized_content))
+        exports = module.get("exports", {})
+        if not isinstance(exports, dict):
+            raise InterfaceInjectionMigrationError(
+                f"{module_id}: supplemental module exports must be a mapping"
+            )
         documents[target_module_path] = {
             "schema_version": 4,
             "node_type": "module",
             "id": module_id,
             "version": 1,
             "gateway": {"path": gateway_path, "language": language},
-            "content": _regular_module_content(
-                repo_root / module_root,
-                excluded_blueprints,
-                allowed_source_paths,
-            ),
+            "content": module_content,
             "authority": {"owns_filesystem": []},
             "sources": dict(sorted(module_sources.items())),
-            "exports": {},
+            "exports": deepcopy(exports),
         }
     return documents, targets
 
@@ -2228,22 +2478,6 @@ def _legacy_graph_predecessor_projections(
                     path = evidence.get("path") if isinstance(evidence, Mapping) else None
                     if isinstance(path, str) and not path.startswith("$repo/"):
                         content.add(path)
-            roots_policy = _PYTHON_PACKAGE_SUPPORT_POLICY["import_search_roots"]
-            labels = roots_policy["by_gateway"].get(
-                f"skills/{old_module_id}/{gateway}", roots_policy["default"]
-            )
-            if "gateway-parent" in labels:
-                parent = graph.skill_root / PurePosixPath(gateway).parent
-                content.update(
-                    path.relative_to(graph.skill_root).as_posix()
-                    for path in sorted(parent.glob("*.py"))
-                    if path.is_file()
-                    and not path.is_symlink()
-                    and (
-                        allowed_source_paths is None
-                        or path.resolve() in allowed_source_paths
-                    )
-                )
             uses = []
             dependencies = []
             for edge in graph.edges:
@@ -2644,6 +2878,7 @@ def _add_python_package_support_sources(
     *,
     import_search_roots: Mapping[str, Any],
     allowed_source_paths: set[Path] | None,
+    fixed_source_ids: set[str] | None = None,
 ) -> None:
     """Give imported package initializers/helpers one source and exact dependencies."""
 
@@ -2700,51 +2935,6 @@ def _add_python_package_support_sources(
                     anchors.append(anchor)
             return tuple(anchors)
 
-        for source_id, (_source_path, source) in sorted(current_sources.items()):
-            gateway = source.get("gateway")
-            gateway_path = gateway.get("path") if isinstance(gateway, dict) else None
-            language = gateway.get("language") if isinstance(gateway, dict) else None
-            if (
-                not isinstance(gateway_path, str)
-                or not isinstance(language, str)
-                or re.split(r"(?:==|>=|>|<=|<)", language, maxsplit=1)[0]
-                != "Python"
-            ):
-                continue
-            anchors = search_anchors(gateway_path)
-            if PurePosixPath(gateway_path).parent not in anchors:
-                continue
-            content = source.get("content")
-            if not isinstance(content, list):
-                raise InterfaceInjectionMigrationError(
-                    f"{source_id}: content must be a list"
-                )
-            claimed = {
-                candidate_gateway
-                for _other_id, (_path, other) in current_sources.items()
-                for candidate_gateway in [
-                    other.get("gateway", {}).get("path")
-                    if isinstance(other.get("gateway"), dict)
-                    else None
-                ]
-                if isinstance(candidate_gateway, str)
-            }
-            physical_parent = repo_root / module_root / PurePosixPath(gateway_path).parent
-            for candidate in sorted(physical_parent.glob("*.py")):
-                relative = candidate.relative_to(repo_root / module_root).as_posix()
-                if (
-                    candidate.is_file()
-                    and not candidate.is_symlink()
-                    and relative not in claimed
-                    and (
-                        allowed_source_paths is None
-                        or candidate.resolve() in allowed_source_paths
-                    )
-                ):
-                    pattern = _exact_content_pattern(relative)
-                    if pattern not in content:
-                        content.append(pattern)
-            content.sort()
         package_initializers: set[str] = set()
         package_roots: set[PurePosixPath] = set()
         for _source_id, (_source_path, source) in current_sources.items():
@@ -3027,6 +3217,19 @@ def _add_python_package_support_sources(
         for (source_id, target_id), imported_paths in sorted(imported_targets.items()):
             _source_path, source = current_sources[source_id]
             target_path, target = current_sources[target_id]
+            uses = source.get("uses_interfaces")
+            target_interfaces = target.get("interfaces")
+            if isinstance(uses, list) and isinstance(target_interfaces, Mapping):
+                covered_by_private_interface = any(
+                    isinstance(use, Mapping)
+                    and isinstance(interface_id := use.get("interface"), str)
+                    and interface_id in target_interfaces
+                    and isinstance(target_interface := target_interfaces[interface_id], Mapping)
+                    and use.get("version") == target_interface.get("version")
+                    for use in uses
+                )
+                if covered_by_private_interface:
+                    continue
             dependencies = source["dependencies"]
             if any(
                 isinstance(dependency, dict)
@@ -3086,6 +3289,527 @@ def _rewrite_same_module_uses_to_private(
                 edge["interface"] = private_id
 
 
+def _apply_reviewed_source_facts(
+    repo_root: Path,
+    documents: dict[Path, dict[str, Any]],
+    migration_map: Mapping[str, Any] | None,
+    public_exports: Mapping[str, object],
+    dependency_projection: dict[str, object],
+    runtime_projection: dict[str, object],
+    predecessor_semantic_edges: dict[str, object],
+    predecessor_runtime_projection: dict[str, object],
+    *,
+    allowed_source_paths: set[Path] | None,
+) -> None:
+    """Apply exact reviewed facts that legacy declarations cannot represent."""
+
+    raw_entries = _mechanical_conversion_section(migration_map).get(
+        "reviewed_source_facts", []
+    )
+    if not isinstance(raw_entries, list):
+        raise InterfaceInjectionMigrationError(
+            "reviewed_source_facts must be a list"
+        )
+
+    modules: dict[str, tuple[Path, dict[str, Any]]] = {}
+    for path, document in documents.items():
+        module_id = document.get("id")
+        if document.get("node_type") == "module" and isinstance(module_id, str):
+            modules[module_id] = (path, document)
+
+    def source_index() -> dict[
+        str, tuple[Path, dict[str, Any], Path, dict[str, Any]]
+    ]:
+        indexed: dict[
+            str, tuple[Path, dict[str, Any], Path, dict[str, Any]]
+        ] = {}
+        for module_path, module in modules.values():
+            declared = module.get("sources")
+            if not isinstance(declared, Mapping):
+                continue
+            for source_id, reference in declared.items():
+                locator = (
+                    reference.get("blueprint")
+                    if isinstance(reference, Mapping)
+                    else None
+                )
+                relative = (
+                    locator.get("path") if isinstance(locator, Mapping) else None
+                )
+                if (
+                    isinstance(source_id, str)
+                    and isinstance(relative, str)
+                    and locator.get("base") == "module-root"
+                ):
+                    source_path = module_path.parent / relative
+                    source = documents.get(source_path)
+                    if isinstance(source, dict):
+                        indexed[source_id] = (
+                            module_path,
+                            module,
+                            source_path,
+                            source,
+                        )
+        return indexed
+
+    seen_sources: set[str] = set()
+    for index, entry in enumerate(raw_entries):
+        if not isinstance(entry, Mapping) or not set(entry).issubset(
+            {"source", "create", "content", "dependencies", "uses_interfaces"}
+        ):
+            raise InterfaceInjectionMigrationError(
+                f"reviewed_source_facts[{index}] is invalid"
+            )
+        source_id = entry.get("source")
+        if (
+            not isinstance(source_id, str)
+            or ".source." not in source_id
+            or source_id in seen_sources
+        ):
+            raise InterfaceInjectionMigrationError(
+                f"reviewed_source_facts[{index}] has an invalid source"
+            )
+        seen_sources.add(source_id)
+        create = entry.get("create")
+        if create is None:
+            continue
+        if not isinstance(create, Mapping) or not {
+            "version",
+            "blueprint",
+            "gateway",
+        }.issubset(create) or not set(create).issubset(
+            {
+                "version",
+                "blueprint",
+                "gateway",
+                "platform_support",
+                "runtime_dependencies",
+                "interfaces",
+            }
+        ):
+            raise InterfaceInjectionMigrationError(
+                f"{source_id}: reviewed source creation is invalid"
+            )
+        module_id = source_id.split(".source.", 1)[0]
+        module_record = modules.get(module_id)
+        if module_record is None:
+            raise InterfaceInjectionMigrationError(
+                f"{source_id}: reviewed source module is unresolved"
+            )
+        module_path, module = module_record
+        blueprint = _require_relative_path(
+            create.get("blueprint"), f"{source_id}.create.blueprint"
+        )
+        source_path = module_path.parent / blueprint
+        if (
+            Path(blueprint).parent != Path("blueprints")
+            or Path(blueprint).suffix != ".yaml"
+            or source_path in documents
+        ):
+            raise InterfaceInjectionMigrationError(
+                f"{source_id}: reviewed source blueprint is invalid"
+            )
+        gateway = create.get("gateway")
+        if not isinstance(gateway, Mapping) or set(gateway) != {
+            "path",
+            "language",
+        }:
+            raise InterfaceInjectionMigrationError(
+                f"{source_id}: reviewed source gateway is invalid"
+            )
+        gateway_path = _require_relative_path(
+            gateway.get("path"), f"{source_id}.create.gateway.path"
+        )
+        gateway_file = repo_root / module_path.parent / gateway_path
+        if (
+            gateway_file.is_symlink()
+            or not gateway_file.is_file()
+            or (
+                allowed_source_paths is not None
+                and gateway_file.resolve() not in allowed_source_paths
+            )
+        ):
+            raise InterfaceInjectionMigrationError(
+                f"{source_id}: reviewed source gateway is not tracked"
+            )
+        version = create.get("version")
+        language = gateway.get("language")
+        if (
+            not isinstance(version, int)
+            or isinstance(version, bool)
+            or version < 1
+            or not isinstance(language, str)
+            or not language
+        ):
+            raise InterfaceInjectionMigrationError(
+                f"{source_id}: reviewed source identity is invalid"
+            )
+        source: dict[str, Any] = {
+            "schema_version": 4,
+            "node_type": "behavioral_source",
+            "id": source_id,
+            "version": version,
+            "gateway": {"path": gateway_path, "language": language},
+            "content": [],
+            "dependencies": [],
+            "uses_interfaces": [],
+            "interfaces": deepcopy(create.get("interfaces", {})),
+        }
+        for field in ("platform_support", "runtime_dependencies"):
+            if field in create:
+                source[field] = deepcopy(create[field])
+        documents[source_path] = source
+        declared_sources = module.get("sources")
+        if not isinstance(declared_sources, dict) or source_id in declared_sources:
+            raise InterfaceInjectionMigrationError(
+                f"{source_id}: reviewed source collides with an existing source"
+            )
+        declared_sources[source_id] = {
+            "blueprint": {
+                "base": "module-root",
+                "path": blueprint,
+            }
+        }
+        declared_sources.update(dict(sorted(declared_sources.items())))
+
+    indexed = source_index()
+    for index, entry in enumerate(raw_entries):
+        source_id = entry["source"]
+        record = indexed.get(source_id)
+        if record is None:
+            raise InterfaceInjectionMigrationError(
+                f"{source_id}: reviewed source is unresolved"
+            )
+        module_path, module, _source_path, source = record
+        content = entry.get("content", [])
+        dependencies = entry.get("dependencies", [])
+        uses_interfaces = entry.get("uses_interfaces", [])
+        if (
+            not isinstance(content, list)
+            or not isinstance(dependencies, list)
+            or not isinstance(uses_interfaces, list)
+        ):
+            raise InterfaceInjectionMigrationError(
+                f"reviewed_source_facts[{index}] has invalid fact lists"
+            )
+        source_content = source.get("content")
+        if not isinstance(source_content, list):
+            raise InterfaceInjectionMigrationError(
+                f"{source_id}: content must be a list"
+            )
+        for content_index, raw_path in enumerate(content):
+            relative = _require_relative_path(
+                raw_path, f"{source_id}.content[{content_index}]"
+            )
+            physical = repo_root / module_path.parent / relative
+            if (
+                physical.is_symlink()
+                or not physical.is_file()
+                or (
+                    allowed_source_paths is not None
+                    and physical.resolve() not in allowed_source_paths
+                )
+            ):
+                raise InterfaceInjectionMigrationError(
+                    f"{source_id}: reviewed content is not tracked: {relative}"
+                )
+            pattern = _exact_content_pattern(relative)
+            for other_id, (
+                other_module_path,
+                _other_module,
+                _other_path,
+                other,
+            ) in indexed.items():
+                if other_id == source_id or other_module_path != module_path:
+                    continue
+                other_content = other.get("content")
+                if not isinstance(other_content, list) or pattern not in other_content:
+                    continue
+                other_gateway = other.get("gateway")
+                if (
+                    isinstance(other_gateway, Mapping)
+                    and other_gateway.get("path") == relative
+                ):
+                    raise InterfaceInjectionMigrationError(
+                        f"{source_id}: reviewed content is another source gateway"
+                    )
+                other_content.remove(pattern)
+            if pattern not in source_content:
+                source_content.append(pattern)
+        source_content.sort()
+
+        source_dependencies = source.get("dependencies")
+        if not isinstance(source_dependencies, list):
+            raise InterfaceInjectionMigrationError(
+                f"{source_id}: dependencies must be a list"
+            )
+        for dependency_index, raw_dependency in enumerate(dependencies):
+            if not isinstance(raw_dependency, Mapping) or set(raw_dependency) != {
+                "source",
+                "version",
+                "reason",
+            }:
+                raise InterfaceInjectionMigrationError(
+                    f"{source_id}.dependencies[{dependency_index}] is invalid"
+                )
+            target_id = raw_dependency.get("source")
+            target = indexed.get(target_id) if isinstance(target_id, str) else None
+            if target is None or raw_dependency.get("version") != target[3].get(
+                "version"
+            ):
+                raise InterfaceInjectionMigrationError(
+                    f"{source_id}: reviewed dependency is unresolved"
+                )
+            reason = raw_dependency.get("reason")
+            if not isinstance(reason, str) or not reason:
+                raise InterfaceInjectionMigrationError(
+                    f"{source_id}: reviewed dependency has no reason"
+                )
+            target_module_path, _target_module, target_path, _target_source = target
+            same_module = target_module_path == module_path
+            dependency = {
+                "source": target_id,
+                "version": raw_dependency["version"],
+                "blueprint": {
+                    "base": "module-root" if same_module else "repository-root",
+                    "path": (
+                        target_path.relative_to(module_path.parent).as_posix()
+                        if same_module
+                        else target_path.as_posix()
+                    ),
+                },
+                "reason": reason,
+            }
+            if not any(
+                isinstance(existing, Mapping)
+                and existing.get("source") == target_id
+                for existing in source_dependencies
+            ):
+                source_dependencies.append(dependency)
+        source_dependencies.sort(
+            key=lambda value: (
+                str(value.get("source")),
+                str(value.get("reason")),
+            )
+        )
+
+        source_uses = source.get("uses_interfaces")
+        if not isinstance(source_uses, list):
+            raise InterfaceInjectionMigrationError(
+                f"{source_id}: uses_interfaces must be a list"
+            )
+        for use_index, use in enumerate(uses_interfaces):
+            if not isinstance(use, Mapping) or set(use) != {
+                "interface",
+                "version",
+            }:
+                raise InterfaceInjectionMigrationError(
+                    f"{source_id}.uses_interfaces[{use_index}] is invalid"
+                )
+            interface_id = use.get("interface")
+            export = (
+                public_exports.get(interface_id)
+                if isinstance(interface_id, str)
+                else None
+            )
+            if not isinstance(export, Mapping) or export.get("version") != use.get(
+                "version"
+            ):
+                raise InterfaceInjectionMigrationError(
+                    f"{source_id}: reviewed interface use is unresolved"
+                )
+            normalized_use = dict(use)
+            if normalized_use not in source_uses:
+                source_uses.append(normalized_use)
+        source_uses.sort(
+            key=lambda value: (
+                str(value.get("interface")),
+                value.get("version", 0),
+            )
+        )
+
+        semantic = predecessor_semantic_edges.setdefault(
+            source_id,
+            {
+                "dependencies": [],
+                "uses_interfaces": [],
+                "content": [],
+            },
+        )
+        if not isinstance(semantic, dict):
+            raise InterfaceInjectionMigrationError(
+                f"{source_id}: predecessor semantic facts are invalid"
+            )
+        semantic["dependencies"] = deepcopy(source_dependencies)
+        semantic["uses_interfaces"] = deepcopy(source_uses)
+        semantic["content"] = deepcopy(source_content)
+        if source_dependencies:
+            dependency_projection[source_id] = deepcopy(source_dependencies)
+        else:
+            dependency_projection.pop(source_id, None)
+        if "platform_support" in source or "runtime_dependencies" in source:
+            runtime = {
+                "platform_support": deepcopy(source.get("platform_support")),
+                "runtime_dependencies": deepcopy(
+                    source.get("runtime_dependencies", [])
+                ),
+            }
+            runtime_projection[source_id] = deepcopy(runtime)
+            predecessor_runtime_projection[source_id] = deepcopy(runtime)
+
+
+def _apply_reviewed_interface_uses(
+    repo_root: Path,
+    documents: Mapping[Path, dict[str, Any]],
+    migration_map: Mapping[str, Any] | None,
+    public_exports: Mapping[str, object],
+    predecessor_semantic_edges: dict[str, object],
+) -> None:
+    """Add only map-reviewed interface uses proven by exact Python imports."""
+
+    raw_entries = _mechanical_conversion_section(migration_map).get(
+        "reviewed_interface_uses", []
+    )
+    if not isinstance(raw_entries, list):
+        raise InterfaceInjectionMigrationError(
+            "reviewed_interface_uses must be a list"
+        )
+    migration_plan = (
+        compile_migration_plan(migration_map) if migration_map is not None else None
+    )
+    predecessor_module_ids = {
+        target: source
+        for source, target in (
+            migration_plan.module_renames.items() if migration_plan is not None else ()
+        )
+    }
+    sources: dict[str, tuple[Path, dict[str, Any]]] = {}
+    for module_path, module in documents.items():
+        if module.get("node_type") != "module":
+            continue
+        module_root = module_path.parent
+        declared_sources = module.get("sources")
+        if not isinstance(declared_sources, Mapping):
+            continue
+        for source_id, reference in declared_sources.items():
+            locator = reference.get("blueprint") if isinstance(reference, Mapping) else None
+            path = locator.get("path") if isinstance(locator, Mapping) else None
+            if (
+                not isinstance(source_id, str)
+                or locator.get("base") != "module-root"
+                or not isinstance(path, str)
+            ):
+                continue
+            source = documents.get(module_root / path)
+            if isinstance(source, dict):
+                physical_module_root = module_root
+                predecessor_id = predecessor_module_ids.get(module.get("id"))
+                if predecessor_id is not None:
+                    physical_module_root = module_root.with_name(predecessor_id)
+                sources[source_id] = (physical_module_root, source)
+
+    seen: set[tuple[str, str]] = set()
+    for index, entry in enumerate(raw_entries):
+        if not isinstance(entry, Mapping) or set(entry) != {
+            "consumer",
+            "interface",
+            "version",
+            "python_import",
+        }:
+            raise InterfaceInjectionMigrationError(
+                f"reviewed_interface_uses[{index}] is invalid"
+            )
+        consumer = entry.get("consumer")
+        interface_id = entry.get("interface")
+        version = entry.get("version")
+        python_import = entry.get("python_import")
+        if (
+            not isinstance(consumer, str)
+            or not isinstance(interface_id, str)
+            or not isinstance(version, int)
+            or isinstance(version, bool)
+            or not isinstance(python_import, str)
+            or not python_import
+            or (consumer, interface_id) in seen
+        ):
+            raise InterfaceInjectionMigrationError(
+                f"reviewed_interface_uses[{index}] is invalid"
+            )
+        seen.add((consumer, interface_id))
+        record = sources.get(consumer)
+        if record is None:
+            raise InterfaceInjectionMigrationError(
+                f"{consumer}: reviewed interface-use source is unresolved"
+            )
+        export = public_exports.get(interface_id)
+        if not isinstance(export, Mapping) or export.get("version") != version:
+            raise InterfaceInjectionMigrationError(
+                f"{consumer}: reviewed interface {interface_id!r} is unresolved"
+            )
+        module_root, source = record
+        patterns = source.get("content")
+        if not isinstance(patterns, list):
+            raise InterfaceInjectionMigrationError(
+                f"{consumer}: source content must be a list"
+            )
+        imports: set[str] = set()
+        physical_root = repo_root / module_root
+        for path in sorted(physical_root.rglob("*.py")):
+            if path.is_symlink() or not path.is_file():
+                continue
+            relative = path.relative_to(physical_root).as_posix()
+            if not any(
+                isinstance(pattern, str)
+                and re.fullmatch(pattern, relative) is not None
+                for pattern in patterns
+            ):
+                continue
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
+            except (OSError, UnicodeError, SyntaxError) as exc:
+                raise InterfaceInjectionMigrationError(
+                    f"{consumer}: cannot inspect Python imports: {exc}"
+                ) from exc
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imports.update(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    imports.add(node.module)
+                    imports.update(
+                        f"{node.module}.{alias.name}"
+                        for alias in node.names
+                        if alias.name != "*"
+                    )
+        if python_import not in imports:
+            raise InterfaceInjectionMigrationError(
+                f"{consumer}: reviewed import {python_import!r} is not present"
+            )
+        use = {"interface": interface_id, "version": version}
+        uses = source.get("uses_interfaces")
+        if not isinstance(uses, list):
+            raise InterfaceInjectionMigrationError(
+                f"{consumer}: uses_interfaces must be a list"
+            )
+        if use not in uses:
+            uses.append(use)
+            uses.sort(key=lambda value: (str(value.get("interface")), value.get("version", 0)))
+        projection = predecessor_semantic_edges.get(consumer)
+        if not isinstance(projection, dict):
+            raise InterfaceInjectionMigrationError(
+                f"{consumer}: predecessor semantic projection is unresolved"
+            )
+        projected_uses = projection.get("uses_interfaces")
+        if not isinstance(projected_uses, list):
+            raise InterfaceInjectionMigrationError(
+                f"{consumer}: predecessor interface uses are invalid"
+            )
+        if use not in projected_uses:
+            projected_uses.append(deepcopy(use))
+            projected_uses.sort(
+                key=lambda value: (str(value.get("interface")), value.get("version", 0))
+            )
+
+
 def convert_blueprint_declarations(
     repo_root: Path,
     mapped_paths: Sequence[Path],
@@ -3114,6 +3838,9 @@ def convert_blueprint_declarations(
     relative_paths = tuple(Path(path) for path in mapped_paths)
     if len(set(relative_paths)) != len(relative_paths):
         raise InterfaceInjectionMigrationError("mapped blueprint paths contain duplicates")
+    _validate_reviewed_generated_field_ignore_consumption(
+        relative_paths, migration_map
+    )
     declarations: dict[Path, dict[str, Any]] = {}
     for relative in relative_paths:
         _require_relative_path(relative.as_posix(), "mapped blueprint")
@@ -3122,7 +3849,9 @@ def convert_blueprint_declarations(
             raise InterfaceInjectionMigrationError(
                 f"mapped blueprint is not a regular file: {relative.as_posix()}"
             )
-        declarations[relative] = _read_mapping(path)
+        declarations[relative] = _apply_reviewed_generated_field_ignores(
+            relative, _read_mapping(path), migration_map
+        )
     versions = {declaration.get("schema_version") for declaration in declarations.values()}
     if versions == {4}:
         public, runtime, behavioral = _v4_document_projections(declarations)
@@ -3161,6 +3890,35 @@ def convert_blueprint_declarations(
         migration_map,
         allowed_source_paths=allowed_source_paths,
         behavior_dependency_mappings=behavior_dependency_mappings,
+    )
+    supplemental_semantic_edges = _v4_semantic_edge_projection(reference_documents)
+    overlap = set(predecessor_semantic_edges) & set(supplemental_semantic_edges)
+    if overlap:
+        raise InterfaceInjectionMigrationError(
+            f"supplemental source IDs collide with legacy sources: {sorted(overlap)}"
+        )
+    predecessor_semantic_edges.update(supplemental_semantic_edges)
+    (
+        supplemental_public_graph,
+        supplemental_runtime_dependencies,
+        supplemental_behavioral_dependencies,
+    ) = _v4_document_projections(reference_documents)
+    predecessor_exports = predecessor_public_graph.get("exports")
+    supplemental_exports = supplemental_public_graph.get("exports")
+    if not isinstance(predecessor_exports, dict) or not isinstance(
+        supplemental_exports, dict
+    ):
+        raise InterfaceInjectionMigrationError(
+            "supplemental public graph projection is invalid"
+        )
+    duplicate_exports = set(predecessor_exports) & set(supplemental_exports)
+    if duplicate_exports:
+        raise InterfaceInjectionMigrationError(
+            f"supplemental exports collide with legacy exports: {sorted(duplicate_exports)}"
+        )
+    predecessor_exports.update(deepcopy(supplemental_exports))
+    predecessor_runtime_dependencies.update(
+        deepcopy(supplemental_runtime_dependencies)
     )
 
     roots: dict[str, tuple[Path, dict[str, Any]]] = {}
@@ -3241,8 +3999,8 @@ def convert_blueprint_declarations(
             source_targets[item.old_id] = (source_id, target, item)
 
     documents: dict[Path, dict[str, Any]] = dict(reference_documents)
-    public_exports: dict[str, object] = {}
-    runtime_sources: dict[str, object] = {}
+    public_exports: dict[str, object] = deepcopy(supplemental_exports)
+    runtime_sources: dict[str, object] = deepcopy(supplemental_runtime_dependencies)
     behavioral_dependencies: dict[str, object] = {
         str(document["id"]): deepcopy(document["dependencies"])
         for document in reference_documents.values()
@@ -3250,6 +4008,7 @@ def convert_blueprint_declarations(
         and isinstance(document.get("dependencies"), list)
         and document["dependencies"]
     }
+    behavioral_dependencies.update(deepcopy(supplemental_behavioral_dependencies))
     consumed_behavior_mappings: set[tuple[str, str]] = set()
     for old_module_id, (root_path, declaration) in sorted(roots.items()):
         module_id = _target_module_id(old_module_id, migration_plan)
@@ -3663,6 +4422,25 @@ def convert_blueprint_declarations(
             .get("import_search_roots", {})
         ),
         allowed_source_paths=allowed_source_paths,
+        fixed_source_ids=set(reference_targets),
+    )
+    _apply_reviewed_source_facts(
+        root,
+        documents,
+        migration_map,
+        public_exports,
+        behavioral_dependencies,
+        runtime_sources,
+        predecessor_semantic_edges,
+        predecessor_runtime_dependencies,
+        allowed_source_paths=allowed_source_paths,
+    )
+    _apply_reviewed_interface_uses(
+        root,
+        documents,
+        migration_map,
+        public_exports,
+        predecessor_semantic_edges,
     )
 
     return BlueprintDeclarationConversion(
@@ -4012,6 +4790,75 @@ def _apply_candidate_module_literal_renames(
                 relative,
                 (json.dumps(rewritten, indent=2) + "\n").encode("utf-8"),
                 context="module rename literal",
+            )
+            changed.append(relative)
+    return tuple(changed)
+
+
+def _reviewed_public_id_renames(
+    migration_map: Mapping[str, Any],
+    migration_plan: CompiledMigrationPlan,
+) -> dict[str, str]:
+    public_ids = migration_map.get("public_ids")
+    if not isinstance(public_ids, Mapping):
+        raise InterfaceInjectionMigrationError("migration map requires public_ids")
+    machine = public_ids.get("machine_ids")
+    llm = public_ids.get("llm_ids")
+    machine_ids = machine.get("ids") if isinstance(machine, Mapping) else None
+    default_modules = llm.get("default_modules") if isinstance(llm, Mapping) else None
+    named_llm = llm.get("named") if isinstance(llm, Mapping) else None
+    if not all(
+        isinstance(value, list)
+        for value in (machine_ids, default_modules, named_llm)
+    ):
+        raise InterfaceInjectionMigrationError("public ID inventory is incomplete")
+    old_ids = [
+        *(value for value in machine_ids if isinstance(value, str)),
+        *(f"{value}.llm.default" for value in default_modules if isinstance(value, str)),
+        *(value for value in named_llm if isinstance(value, str)),
+    ]
+    if len(old_ids) != len(set(old_ids)):
+        raise InterfaceInjectionMigrationError(
+            "public ID inventory contains duplicates"
+        )
+    return {
+        old_id: _rename_interface_id(old_id, migration_plan)
+        for old_id in sorted(old_ids)
+    }
+
+
+def _apply_candidate_public_id_literal_renames(
+    candidate_root: Path,
+    migration_map: Mapping[str, Any],
+    migration_plan: CompiledMigrationPlan,
+) -> tuple[Path, ...]:
+    """Rewrite reviewed public-ID literals in explicitly named UTF-8 files."""
+
+    replacements = _reviewed_public_id_renames(migration_map, migration_plan)
+    changed: list[Path] = []
+    for relative in migration_plan.public_id_literal_paths:
+        target = _ensure_real_parent(
+            candidate_root, relative, context="public ID literal"
+        )
+        if target.is_symlink() or not target.is_file():
+            raise InterfaceInjectionMigrationError(
+                f"public ID literal file is unavailable: {relative.as_posix()}"
+            )
+        try:
+            original = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise InterfaceInjectionMigrationError(
+                f"invalid public ID literal file: {relative.as_posix()}"
+            ) from exc
+        rewritten = original
+        for source, destination in replacements.items():
+            rewritten = rewritten.replace(source, destination)
+        if rewritten != original:
+            _atomic_candidate_write(
+                candidate_root,
+                relative,
+                rewritten.encode("utf-8"),
+                context="public ID literal",
             )
             changed.append(relative)
     return tuple(changed)
@@ -5146,6 +5993,9 @@ def _materialize_blueprint_v4_candidate(
     literal_changes = _apply_candidate_module_literal_renames(
         candidate_root, migration_plan
     )
+    public_id_literal_changes = _apply_candidate_public_id_literal_renames(
+        candidate_root, candidate_map, migration_plan
+    )
 
     caller_changes = _apply_candidate_caller_renames(
         candidate_root, candidate_map, migration_plan
@@ -5169,6 +6019,12 @@ def _materialize_blueprint_v4_candidate(
         raise InterfaceInjectionMigrationError(
             f"candidate caller migration is not idempotent: {second_caller_changes}"
         )
+    if _apply_candidate_public_id_literal_renames(
+        candidate_root, candidate_map, migration_plan
+    ):
+        raise InterfaceInjectionMigrationError(
+            "candidate public ID literal migration is not idempotent"
+        )
 
     try:
         final_commit = _candidate_commit(
@@ -5178,6 +6034,7 @@ def _materialize_blueprint_v4_candidate(
                 *first_changes,
                 *caller_changes,
                 *literal_changes,
+                *public_id_literal_changes,
                 *(path for pair in module_renames for path in pair),
             ),
         )
@@ -5194,7 +6051,12 @@ def _materialize_blueprint_v4_candidate(
         candidate_root=candidate_root,
         source_overlay_commit=source_overlay_commit,
         final_commit=final_commit,
-        exact_paths=(*caller_changes, *first_changes, *literal_changes),
+        exact_paths=(
+            *caller_changes,
+            *first_changes,
+            *literal_changes,
+            *public_id_literal_changes,
+        ),
         migration_plan=migration_plan,
     )
     cutover_paths = tuple(
@@ -5257,21 +6119,7 @@ def _materialize_blueprint_v4_candidate(
         )
     inspection = {
         **inspection,
-        "findings": [
-            *(
-                {
-                    "code": finding.code,
-                    "subject_id": finding.source_path.parts[1],
-                    "blueprint_path": finding.source_path.as_posix(),
-                    "field": finding.field,
-                    "message": finding.message,
-                    "target_id": finding.target_id,
-                    "claim": finding.claim,
-                }
-                for finding in conversion.findings
-            ),
-            *certifier_findings,
-        ],
+        "findings": certifier_findings,
         "review_context": review_context,
     }
     return BlueprintV4Candidate(

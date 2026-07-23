@@ -16,7 +16,7 @@ class Interface(PythonMachineInterface):
         "mail-list": DispatchCall(
             caller_skill="email-triage",
             target_skill="email-client",
-            interface="mail-list",
+            interface="email-client.interface.mail-list",
         )
     }
 

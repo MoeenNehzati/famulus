@@ -1,0 +1,63 @@
+content:
+- SKILL\.md
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/personal-preferences-default.yaml
+  reason: Apply the user's optional routing preferences.
+  source: connect-google.source.personal-preferences-default
+  version: 1
+description: Selects client creation or service connection based on the canonical client-status check and optional user routing preferences.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: connect-google.source.gateway
+interfaces:
+  connect-google.source.gateway.interface.default:
+    contract:
+      arguments:
+        request: {description: User request to prepare Google authentication or connect one or more supported services., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: clarification-required}
+      caller_warnings:
+      - external-side-effect: Delegated service owners may open browser authorization and write private OAuth configuration.
+      outputs:
+      - {id: response, audience: human, description: The selected Google onboarding route and its result or next required action., direct_io_ref: write-1, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Continue with the connected service.}
+      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: Identify the target services or supply the local Desktop-client JSON path.}
+      - {id: failed, class: error, outputs: [], effects: [], caller_action: Report the failing owner skill and retain the private client file.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {per_source: Client status and delegated service results are observed at invocation time.}
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: config
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          reason: Determine whether the user has a client JSON and which services
+            they want.
+          sensitivity: user-private
+          system: agent-runtime
+        writes:
+        - {id: write-1, medium: prompt, access: write, system: agent-runtime, content: onboarding response, formats: [markdown], sensitivity: derived-private}
+    description: Route Google OAuth-client preparation according to whether a valid
+      Desktop client is already installed.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces:
+- interface: connect-google.source.rtx-client-config.interface.client-status
+  version: 1
+- interface: connect-google.source.llm-interfaces-connect-services.interface.connect-services
+  version: 1
+- interface: connect-google.source.llm-interfaces-create-client.interface.create-client
+  version: 1
+version: 1

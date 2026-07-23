@@ -1,0 +1,102 @@
+content:
+- SKILL\.md
+- test/test_biblatex\.bib
+- test/test_modification\.bib
+- test/test_modification\.tex
+- test/test_multifile_main\.tex
+- test/test_multifile_section\.tex
+- test/test_natbib\.bib
+- test/test_natbib_commands\.tex
+dependencies: []
+description: Directs conservative bibliography auditing, backend-specific validation, external metadata review, duplicate analysis, and approval-gated corrections.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: bib-audit.source.gateway
+interfaces:
+  bib-audit.source.gateway.interface.default:
+    contract:
+      arguments:
+        request:
+          description: Bibliography audit request with the required bibliography file and any optional project files or style preferences.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      preconditions: []
+      interaction:
+        mode: interactive
+        channel: tty
+        unattended_outcome: clarification-required
+      caller_warnings:
+      - external-side-effect: Approved transformations can rewrite bibliography entries and project citation commands; audit-only requests do not modify files.
+      outputs:
+      - id: response
+        audience: human
+        description: Structured bibliography audit, clarification request, or approved-change report.
+        direct_io_ref: write-1
+        type:
+          kind: string
+          sensitivity: derived-private
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Never empty.
+      outcomes:
+      - id: audited
+        class: success
+        outputs: [response]
+        effects: []
+        caller_action: Present the report and its prioritized suggested actions.
+      - id: transformed
+        class: success
+        outputs: [response]
+        effects: []
+        caller_action: Present the diff, change log, and any key or merge maps for the approved changes.
+      - id: clarification-required
+        class: refusal
+        outputs: [response]
+        effects: []
+        caller_action: Supply the missing backend, project context, or transformation approval.
+      - id: failed
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Report the failed validation or lookup without treating unverified entries as fabricated.
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency:
+          snapshot: The response reflects the bibliography and project context inspected during this run.
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: bibliography-audit-request
+          formats: [text]
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: bibliography-audit-response
+          formats: [markdown]
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+    description: Primary LLM-facing skill instructions.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

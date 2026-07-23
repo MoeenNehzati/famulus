@@ -31,7 +31,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `make-tex-docstring.llm.default`
+- `make-tex-docstring.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -39,8 +39,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `make-tex-docstring.interface.default` — Inspect a TeX document against the canonical profile standard, infer cautiously, and gate any edit on approval.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

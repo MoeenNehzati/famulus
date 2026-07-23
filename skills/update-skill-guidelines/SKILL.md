@@ -13,7 +13,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `update-skill-guidelines.llm.default`
+- `update-skill-guidelines.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -21,8 +21,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `update-skill-guidelines.interface.default` — Keep the canonical skill standard and mechanical hook gates in lockstep and report fresh pre-commit evidence.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

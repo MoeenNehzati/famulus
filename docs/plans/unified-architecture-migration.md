@@ -456,6 +456,10 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   authority, installed-source classes, generated artifacts, mapped v4 search
   semantics, and validator/hook coverage. Retire authored conformance fields
   only after their substantive-rule dispositions are complete.
+- [ ] Treat containment as ownership-only in certification. Project each
+  exported-interface use to its exact implementing behavioral source, while
+  runtime admission separately requires the exporting module certificate.
+  Unrelated source drift in a module must not invalidate an export consumer.
 - [ ] Generalize the existing inventory's canonical marker walk so v4 modules
   may be rooted outside `skills/*` without becoming autodiscoverable. Materialize
   the two map-declared reference modules in place, follow only their contained

@@ -1,0 +1,55 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Owns the LLM-facing instructions for managing and diagnosing recurring assistant jobs.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: recurring-tasks.source.gateway
+interfaces:
+  recurring-tasks.source.gateway.interface.default:
+    contract:
+      arguments:
+        request:
+          description: User request to define, manage, inspect, or diagnose recurring jobs.
+          required: true
+          sensitivity: user-private
+          type: {kind: string}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Management workflows can change jobs.yaml and host scheduler state through separately declared interfaces.
+      outputs:
+      - id: response
+        audience: both
+        description: Markdown guidance or operation result produced by the skill workflow.
+        direct_io_ref: write-1
+        type: {kind: string}
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: The interface always returns a response.
+      outcomes:
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Use the reported result.}
+      - {id: failed, class: error, outputs: [response], effects: [], caller_action: Report the failed scheduler operation without claiming success.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {live: The response reflects scheduler state observed during this invocation.}
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - {id: read-1, medium: prompt, access: read, content: request, formats: [text], sensitivity: user-private}
+        writes:
+        - {id: write-1, medium: prompt, access: write, content: response, formats: [markdown], sensitivity: derived-private}
+    description: Primary LLM-facing skill instructions.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces:
+- interface: install-assistant-tools.interface.default
+  version: 2
+version: 1

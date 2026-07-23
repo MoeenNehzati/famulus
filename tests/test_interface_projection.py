@@ -25,7 +25,11 @@ class _PassingView:
         self.checked: list[str] = []
 
     def check_export(
-        self, module_id: str, interface_id: str, interface_version: int
+        self,
+        module_id: str,
+        interface_id: str,
+        interface_version: int,
+        source_node_id: str | None,
     ) -> CertificationDecision:
         self.checked.append(interface_id)
         return CertificationDecision(True, "current", "Current.")

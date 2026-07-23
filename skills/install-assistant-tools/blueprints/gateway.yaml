@@ -1,0 +1,41 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Guides the user through selecting installer mode and delegates the requested installation phase to the Python interfaces.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: install-assistant-tools.source.gateway
+interfaces:
+  install-assistant-tools.source.gateway.interface.default:
+    contract:
+      arguments:
+        request: {description: User request to install or update or repair or propagate the assistant tools., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: clarification-required}
+      caller_warnings:
+      - external-side-effect: Approved installer phases may create launchers, configuration links, shell startup blocks, and Git hook settings.
+      outputs:
+      - {id: response, audience: human, description: Installation choices and approval request or final phase result., direct_io_ref: write-1, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Review the reported installed paths and any follow-up instructions.}
+      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: Supply the missing mode and host or target choice.}
+      - {id: failed, class: error, outputs: [], effects: [], caller_action: Report the failed installer phase without claiming later phases completed.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {per_source: Installer phase results reflect the state observed by each delegated interface.}
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - {id: read-1, medium: prompt, access: read, content: installation request, formats: [text], sensitivity: user-private}
+        writes:
+        - {id: write-1, medium: prompt, access: write, content: installation response, formats: [markdown], sensitivity: derived-private}
+    description: Primary LLM-facing skill instructions.
+    version: 2
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

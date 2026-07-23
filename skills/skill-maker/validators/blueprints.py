@@ -19,9 +19,11 @@ if str(_SRC_ROOT) not in sys.path:
 from officina.common.blueprint_graph import (  # noqa: E402
     BlueprintNode,
     BlueprintGraphError,
+    RepositoryBlueprintGraph,
     SkillBlueprintGraph,
     authored_node_input_paths,
     expanded_legacy_blueprint,
+    load_repository_blueprint_graph,
     load_validated_skill_blueprint_graph,
     load_skill_blueprint_graph,
     relationship_target_types,
@@ -29,6 +31,7 @@ from officina.common.blueprint_graph import (  # noqa: E402
     typed_declaration_schema_errors,
     validate_runtime_file_path,
 )
+from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
 
 try:
     import jsonschema
@@ -64,14 +67,15 @@ _UniqueKeyLoader.add_constructor(
 )
 
 
-def _load_schema() -> dict[str, Any] | None:
-    if not _SCHEMA_PATH.exists():
+def _load_schema(schema_path: Path | None = None) -> dict[str, Any] | None:
+    selected_path = schema_path or _SCHEMA_PATH
+    if not selected_path.exists():
         return None
-    return json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    return json.loads(selected_path.read_text(encoding="utf-8"))
 
 
 def _is_typed_blueprint(blueprint: dict[str, Any]) -> bool:
-    return blueprint.get("schema_version") in {2, 3} or any(
+    return blueprint.get("schema_version") in {2, 3, 4} or any(
         key in blueprint for key in ("blueprint_type", "node_type")
     )
 
@@ -80,8 +84,11 @@ def _validate_blueprint_schema(
     blueprint_path: Path,
     blueprint: dict[str, Any],
     schema: dict[str, Any],
+    *,
+    schema_root: Path | None = None,
 ) -> list[str]:
     """Run jsonschema validation; return error strings."""
+    selected_schema_root = schema_root or _SCHEMA_PATH.parent
     if _is_typed_blueprint(blueprint):
         try:
             return [
@@ -89,7 +96,7 @@ def _validate_blueprint_schema(
                 for error in typed_declaration_schema_errors(
                     blueprint_path,
                     blueprint,
-                    _SCHEMA_PATH.parent,
+                    selected_schema_root,
                 )
             ]
         except (BlueprintGraphError, OSError, json.JSONDecodeError) as exc:
@@ -100,9 +107,8 @@ def _validate_blueprint_schema(
             f"{blueprint_path}: cannot validate blueprint schema because required "
             "Python package `jsonschema` is not installed"
         ]
-    schema_root = _SCHEMA_PATH.parent
     store: dict[str, dict[str, Any]] = {}
-    for child in schema_root.glob("*.schema.json"):
+    for child in selected_schema_root.glob("*.schema.json"):
         document = json.loads(child.read_text(encoding="utf-8"))
         store[child.name] = document
         store[child.resolve().as_uri()] = document
@@ -111,7 +117,7 @@ def _validate_blueprint_schema(
             store[schema_id] = document
     selected_schema = store.get("legacy-skill.schema.json", schema)
     resolver = jsonschema.RefResolver(
-        base_uri=schema_root.resolve().as_uri() + "/",
+        base_uri=selected_schema_root.resolve().as_uri() + "/",
         referrer=selected_schema,
         store=store,
     )
@@ -228,7 +234,7 @@ def _git_tracked_files(
 
 
 def _validate_typed_source_files(
-    graph: SkillBlueprintGraph,
+    graph: SkillBlueprintGraph | RepositoryBlueprintGraph,
     repo_root: Path,
     tracked_files: dict[str, tuple[tuple[str, str], ...]],
 ) -> list[str]:
@@ -237,7 +243,7 @@ def _validate_typed_source_files(
     errors: list[str] = []
     for node in graph.nodes.values():
         try:
-            paths = authored_node_input_paths(node)
+            paths = authored_node_input_paths(node, repo_root)
         except BlueprintGraphError as exc:
             errors.append(str(exc))
             continue
@@ -834,6 +840,10 @@ def validate(repo_root: Path) -> list[str]:
     loaded_graphs: list[SkillBlueprintGraph] = []
     legacy_blueprints: dict[Path, dict[str, Any]] = {}
     tracked_files = _git_tracked_files(repo_root)
+    repository_graph: RepositoryBlueprintGraph | None = None
+    repo_schema_path = repo_root / "references" / "blueprint" / "schema.json"
+    schema_path = repo_schema_path if repo_schema_path.is_file() else _SCHEMA_PATH
+    schema_root = schema_path.parent
 
     try:
         if not skills_root.is_dir():
@@ -847,12 +857,37 @@ def validate(repo_root: Path) -> list[str]:
         errors.append(f"{blueprint_template}: missing blueprint template reference file")
 
     try:
-        schema = _load_schema()
+        schema = _load_schema(schema_path)
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        errors.append(f"{_SCHEMA_PATH}: cannot load blueprint schema: {exc}")
+        errors.append(f"{schema_path}: cannot load blueprint schema: {exc}")
         schema = None
     if schema is None:
-        errors.append(f"{_SCHEMA_PATH}: missing blueprint schema file")
+        errors.append(f"{schema_path}: missing blueprint schema file")
+    elif skills_root.is_dir():
+        try:
+            candidate_graph = load_repository_blueprint_graph(
+                repo_root,
+                schema_root=schema_root,
+            )
+        except BlueprintInventoryError as exc:
+            errors.extend(
+                f"{repo_root / issue.relative_path}: {issue.message}"
+                for issue in exc.issues
+            )
+        except (
+            BlueprintGraphError,
+            OSError,
+            UnicodeError,
+            json.JSONDecodeError,
+            yaml.YAMLError,
+        ) as exc:
+            errors.append(str(exc))
+        else:
+            if any(
+                node.declaration.get("schema_version") == 4
+                for node in candidate_graph.nodes.values()
+            ):
+                repository_graph = candidate_graph
 
     for skill_dir in skill_dirs:
         skill_file = skill_dir / "SKILL.md"
@@ -873,13 +908,30 @@ def validate(repo_root: Path) -> list[str]:
 
         is_typed = isinstance(blueprint, dict) and _is_typed_blueprint(blueprint)
         if schema is not None and isinstance(blueprint, dict) and not is_typed:
-            errors.extend(_validate_blueprint_schema(blueprint_path, blueprint, schema))
+            errors.extend(
+                _validate_blueprint_schema(
+                    blueprint_path,
+                    blueprint,
+                    schema,
+                    schema_root=schema_root,
+                )
+            )
 
-        if is_typed and schema is not None:
+        if (
+            is_typed
+            and schema is not None
+            and isinstance(blueprint, dict)
+            and blueprint.get("schema_version") == 4
+        ):
+            if repository_graph is None:
+                errors.append(
+                    f"{blueprint_path}: v4 repository graph did not load"
+                )
+        elif is_typed and schema is not None:
             try:
                 graph = load_validated_skill_blueprint_graph(
                     skill_dir,
-                    _SCHEMA_PATH.parent,
+                    schema_root,
                 )
             except (
                 BlueprintGraphError,
@@ -905,13 +957,14 @@ def validate(repo_root: Path) -> list[str]:
             if not is_typed:
                 loaded_blueprints[blueprint_path] = blueprint
                 legacy_blueprints[blueprint_path] = blueprint
-            semantic_blueprint = loaded_blueprints.get(blueprint_path, blueprint)
-            errors.extend(_validate_category_hierarchy(blueprint_path, semantic_blueprint))
-            errors.extend(_validate_interface_cross_fields(blueprint_path, semantic_blueprint))
-            errors.extend(
-                _validate_direct_io_content_granularity(blueprint_path, semantic_blueprint)
-            )
-            errors.extend(_validate_direct_io_path_patterns(blueprint_path, semantic_blueprint))
+            if blueprint.get("schema_version") != 4:
+                semantic_blueprint = loaded_blueprints.get(blueprint_path, blueprint)
+                errors.extend(_validate_category_hierarchy(blueprint_path, semantic_blueprint))
+                errors.extend(_validate_interface_cross_fields(blueprint_path, semantic_blueprint))
+                errors.extend(
+                    _validate_direct_io_content_granularity(blueprint_path, semantic_blueprint)
+                )
+                errors.extend(_validate_direct_io_path_patterns(blueprint_path, semantic_blueprint))
 
         # ── SKILL.md marker checks ────────────────────────────────────────────
         try:
@@ -941,6 +994,20 @@ def validate(repo_root: Path) -> list[str]:
     if errors:
         return errors
 
+    if repository_graph is not None:
+        if tracked_files is None:
+            errors.append("v4 source validation requires a Git worktree")
+        else:
+            errors.extend(
+                _validate_typed_source_files(
+                    repository_graph,
+                    repo_root,
+                    tracked_files,
+                )
+            )
+        if errors:
+            return errors
+
     errors.extend(
         _validate_filesystem_ownership(
             loaded_blueprints,
@@ -956,12 +1023,16 @@ def validate(repo_root: Path) -> list[str]:
     errors.extend(_validate_interface_uses(loaded_blueprints))
     if errors:
         return errors
-    if not loaded_blueprints:
+    if not loaded_blueprints and repository_graph is None:
         return errors
 
     # ── Sync drift check ─────────────────────────────────────────────────────
+    repo_sync_script = (
+        repo_root / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
+    )
+    sync_script = repo_sync_script if repo_sync_script.is_file() else _SYNC_SCRIPT
     result = subprocess.run(
-        [sys.executable, str(_SYNC_SCRIPT), "--check"],
+        [sys.executable, str(sync_script), "--check"],
         cwd=repo_root,
         capture_output=True,
         text=True,

@@ -12,6 +12,23 @@ def load(relative: str) -> dict[str, object]:
     return yaml.safe_load((SKILL_ROOT / relative).read_text(encoding="utf-8"))
 
 
+def source(root: dict[str, object], source_id: str) -> dict[str, object]:
+    locator = root["sources"][source_id]["blueprint"]
+    assert locator["base"] == "module-root"
+    node = load(locator["path"])
+    assert node["id"] == source_id
+    return node
+
+
+def exported_source(
+    root: dict[str, object], export_id: str
+) -> tuple[dict[str, object], dict[str, object]]:
+    source_interface = root["exports"][export_id]["source_interface"]
+    source_id, _, _ = source_interface.rpartition(".interface.")
+    node = source(root, source_id)
+    return node, node["interfaces"][source_interface]
+
+
 def body(relative: str) -> str:
     text = (SKILL_ROOT / relative).read_text(encoding="utf-8")
     for block in ("CONTRACT", "INTERFACES"):
@@ -24,59 +41,108 @@ def body(relative: str) -> str:
     return text.lower()
 
 
-def test_root_and_llm_interface_graph() -> None:
+def test_module_and_markdown_gateway_graph() -> None:
     root = load("blueprint.yaml")
-    default = root["default_interface"]
-    create_client = load("llm_interfaces/.create-client.md.blueprint.yaml")
-    connect_services = load("llm_interfaces/.connect-services.md.blueprint.yaml")
+    default, default_interface = exported_source(
+        root, "connect-google.interface.default"
+    )
+    create_client, create_client_interface = exported_source(
+        root, "connect-google.interface.create-client"
+    )
+    connect_services, connect_services_interface = exported_source(
+        root, "connect-google.interface.connect-services"
+    )
 
+    assert root["schema_version"] == 4
+    assert root["node_type"] == "module"
     assert root["id"] == "connect-google"
     assert root["category"] == "workflow-general-assistant"
     assert root["role"] == "integration"
     assert root["kind"] == "setup"
     assert not (SKILL_ROOT / ".SKILL.md.blueprint.yaml").exists()
     assert default["uses_interfaces"] == [
-        {"interface": "connect-google.machine.client-status", "version": 1},
-        {"interface": "connect-google.llm.create-client", "version": 1},
-        {"interface": "connect-google.llm.connect-services", "version": 1},
+        {
+            "interface": (
+                "connect-google.source.rtx-client-config.interface.client-status"
+            ),
+            "version": 1,
+        },
+        {
+            "interface": (
+                "connect-google.source.llm-interfaces-connect-services"
+                ".interface.connect-services"
+            ),
+            "version": 1,
+        },
+        {
+            "interface": (
+                "connect-google.source.llm-interfaces-create-client"
+                ".interface.create-client"
+            ),
+            "version": 1,
+        },
     ]
     assert create_client["uses_interfaces"] == [
-        {"interface": "connect-google.llm.connect-services", "version": 1}
+        {
+            "interface": (
+                "connect-google.source.llm-interfaces-connect-services"
+                ".interface.connect-services"
+            ),
+            "version": 1,
+        }
     ]
     assert connect_services["uses_interfaces"] == [
         {"interface": name, "version": 1}
         for name in (
-            "connect-google.machine.client-status",
-            "connect-google.machine.install-client",
+            "connect-google.source.rtx-client-config.interface.client-status",
+            "connect-google.source.rtx-client-config.interface.install-client",
         )
     ]
 
-    interface_ids = {edge["interface"] for edge in root["interfaces"]}
+    interface_ids = set(root["exports"])
     assert interface_ids == {
-        "connect-google.llm.create-client",
-        "connect-google.llm.connect-services",
-        "connect-google.machine.client-status",
-        "connect-google.machine.install-client",
+        "connect-google.interface.default",
+        "connect-google.interface.create-client",
+        "connect-google.interface.connect-services",
+        "connect-google.interface.client-status",
+        "connect-google.interface.install-client",
     }
+    assert default_interface["version"] == 1
+    assert create_client_interface["version"] == 1
+    assert connect_services_interface["version"] == 1
 
     for node in (default, create_client, connect_services):
         for edge in node.get("uses_interfaces", []):
             assert not edge["interface"].startswith(
-                ("cloud-files.machine.", "g-calendar.machine.", "email-client.machine.")
+                ("cloud-files.", "g-calendar.", "email-client.")
             )
 
 
 def test_client_status_declares_every_google_client_path_it_reads() -> None:
-    node = load("_rtx/._client_config.py.client-status.blueprint.yaml")
+    root = load("blueprint.yaml")
+    _, node = exported_source(root, "connect-google.interface.client-status")
 
     declared_paths = {
-        entry["path"] for entry in node["direct_io"]["reads"]
+        entry["path"] for entry in node["contract"]["direct_io"]["reads"]
     }
 
     assert declared_paths == {
         "$HOME/.config/connect-google/client.json",
         "$HOME/.config/cloud-files/client.json",
         "$HOME/.config/g-calendar/client.json",
+    }
+    assert node["process_binding"]["patterns"][0]["flag_patterns"] == {
+        "--home": "^.+$"
+    }
+
+
+def test_install_client_patterns_require_values_for_value_bearing_flags() -> None:
+    root = load("blueprint.yaml")
+    _, node = exported_source(root, "connect-google.interface.install-client")
+
+    assert node["process_binding"]["patterns"][0]["flag_patterns"] == {
+        "--from-json": "^.+$",
+        "--home": "^.+$",
     }
 
 

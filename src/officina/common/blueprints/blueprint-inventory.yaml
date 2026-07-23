@@ -1,0 +1,25 @@
+content:
+- blueprint_inventory\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/atomic-files.yaml
+  reason: Imports descriptor-safe regular-file reads from atomic_files.py.
+  source: common.source.atomic-files
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/git-provenance.yaml
+  reason: Imports ignored-path discovery from git_provenance.py.
+  source: common.source.git-provenance
+  version: 1
+description: Discovers canonical module blueprints and their owned behavioral-source sidecars without following symlinks, normalizes YAML into JSON-compatible declarations, and reports duplicate, malformed, or misplaced blueprint files.
+gateway:
+  language: Python
+  path: blueprint_inventory.py
+id: common.source.blueprint-inventory
+interfaces: {}
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

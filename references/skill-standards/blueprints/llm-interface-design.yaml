@@ -1,0 +1,13 @@
+content:
+- llm\-interface\-design\.md
+dependencies: []
+description: Defines the repository's detailed design standard for LLM-facing interfaces.
+gateway:
+  language: Markdown
+  path: llm-interface-design.md
+id: skill-standards.source.llm-interface-design
+interfaces: {}
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

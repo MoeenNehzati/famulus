@@ -1,0 +1,13 @@
+content:
+- personal\-preferences/default\.md
+dependencies: []
+description: Optional user preferences for default Google connection routing.
+gateway:
+  language: Markdown
+  path: personal-preferences/default.md
+id: connect-google.source.personal-preferences-default
+interfaces: {}
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

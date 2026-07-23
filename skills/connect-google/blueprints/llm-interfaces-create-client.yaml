@@ -1,0 +1,57 @@
+content:
+- llm_interfaces/create\-client\.md
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/personal-preferences-create-client.yaml
+  reason: Apply the user's optional Google Cloud setup preferences.
+  source: connect-google.source.personal-preferences-create-client
+  version: 1
+description: Provides privacy-preserving Google Cloud Console guidance for creating and downloading a Desktop OAuth client JSON.
+gateway:
+  language: Markdown
+  path: llm_interfaces/create-client.md
+id: connect-google.source.llm-interfaces-create-client
+interfaces:
+  connect-google.source.llm-interfaces-create-client.interface.create-client:
+    contract:
+      arguments:
+        services: {description: Supported Google services whose required APIs and scopes should be considered., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: clarification-required}
+      caller_warnings:
+      - external-side-effect: The user creates a Google Cloud project and OAuth client in Google-owned web consoles.
+      outputs:
+      - {id: response, audience: human, description: Stepwise Google Cloud console guidance and private-download handling instructions., direct_io_ref: write-1, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Keep the downloaded client JSON private and return its local path when ready.}
+      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: Identify the Google services to prepare.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {live: Guidance follows the user's current progress through the Google Cloud console.}
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: config
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          reason: Learn which Google services the user wants to configure.
+          sensitivity: user-private
+          system: agent-runtime
+        writes:
+        - {id: write-1, medium: prompt, access: write, system: agent-runtime, content: Google Cloud setup guidance, formats: [markdown], sensitivity: derived-private}
+    description: Guide a user through creating and privately downloading a Google
+      Desktop OAuth client for selected Famulus services.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces:
+- interface: connect-google.source.llm-interfaces-connect-services.interface.connect-services
+  version: 1
+version: 1

@@ -33,6 +33,37 @@ def _copy_schema_bundle(repo_root: Path) -> Path:
     return schema_root
 
 
+def _copy_v4_validator_fixture(repo_root: Path) -> Path:
+    schema_root = repo_root / "references" / "blueprint"
+    shutil.copytree(
+        REPO_ROOT / "references" / "blueprint",
+        schema_root,
+        ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),
+    )
+    shutil.copytree(
+        REPO_ROOT / "skills" / "get-weather",
+        repo_root / "skills" / "get-weather",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    sync_script = (
+        repo_root
+        / "skills"
+        / "skill-maker"
+        / "_rtx"
+        / "_blueprint_syncer.py"
+    )
+    sync_script.parent.mkdir(parents=True)
+    sync_script.write_text(
+        "import sys\n"
+        "print('mirror-sync-script-used', file=sys.stderr)\n"
+        "raise SystemExit(1)\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "init", "-q"], cwd=repo_root, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo_root, check=True)
+    return schema_root
+
+
 def _write_typed_command_source(repo_root: Path) -> tuple[Path, Path]:
     _make_template(repo_root)
     skill = repo_root / "skills" / "my-skill"
@@ -202,6 +233,29 @@ def test_no_skills_passes(tmp_path: Path) -> None:
     (tmp_path / "skills").mkdir()
     _make_template(tmp_path)
     assert _mod.validate(tmp_path) == []
+
+
+def test_v4_validation_uses_schema_bundle_from_supplied_repo_root(
+    tmp_path: Path,
+) -> None:
+    schema_root = _copy_v4_validator_fixture(tmp_path)
+    (schema_root / "module.schema.json").write_text("{", encoding="utf-8")
+
+    errors = _mod.validate(tmp_path)
+
+    assert any(
+        str(schema_root / "module.schema.json") in error
+        and "cannot load schema" in error
+        for error in errors
+    )
+
+
+def test_v4_validation_runs_syncer_from_supplied_repo_root(tmp_path: Path) -> None:
+    _copy_v4_validator_fixture(tmp_path)
+
+    errors = _mod.validate(tmp_path)
+
+    assert "mirror-sync-script-used" in errors
 
 
 def test_skill_without_blueprint_flagged(tmp_path: Path) -> None:

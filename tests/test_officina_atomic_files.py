@@ -571,24 +571,6 @@ def test_runtime_missing_unlink_is_normalized_and_cleanup_is_retried(
     assert _temp_entries(tmp_path, target.name) == []
 
 
-def test_atomic_interfaces_are_exported_from_common_package() -> None:
-    assert atomic_files.AtomicWriteError is AtomicWriteError
-
-    from officina.common import AtomicWriteError as exported_error
-    from officina.common import atomic_append_bytes as exported_append
-    from officina.common import (
-        atomic_compare_and_append_bytes as exported_compare_append,
-    )
-    from officina.common import atomic_create_bytes as exported_create
-    from officina.common import atomic_replace_bytes as exported_replace
-
-    assert exported_error is AtomicWriteError
-    assert exported_append is atomic_append_bytes
-    assert exported_compare_append is atomic_compare_and_append_bytes
-    assert exported_create is atomic_create_bytes
-    assert exported_replace is atomic_replace_bytes
-
-
 def test_secure_append_creates_then_appends_complete_framed_records(tmp_path: Path) -> None:
     target = tmp_path / "certificates" / "demo-skill.jsonl"
     target.parent.mkdir()

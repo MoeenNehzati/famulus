@@ -25,7 +25,10 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `math-dependency-graph.llm.default`
+- `math-dependency-graph.interface.default`
+- `math-dependency-graph.interface.scripts-build-math-dependency-graph`
+- `math-dependency-graph.interface.scripts-extract-mathjax-macros`
+- `math-dependency-graph.interface.scripts-serve-graph`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -33,18 +36,17 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `scripts-build-math-dependency-graph` — Render an interactive standalone HTML math dependency graph from canonical JSON.
-  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.machine.scripts-build-math-dependency-graph <source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file <path>] [--refresh-macros] [--reduce-transitive-edges]`
-- `scripts-extract-mathjax-macros` — Extract MathJax macro definitions from a TeX entrypoint, recursively following \input/\include.
-  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.machine.scripts-extract-mathjax-macros <entrypoint.tex> [--out <path>]`
-- `scripts-serve-graph` — Serve graph HTML from a local directory with no-cache headers for repeated browser inspection.
-  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.machine.scripts-serve-graph [--directory <path>] [--host <host>] [--port <port>]`
+- `math-dependency-graph.interface.scripts-build-math-dependency-graph` — Render an interactive HTML math dependency graph from canonical JSON; the saved document loads ELK and MathJax from jsDelivr when opened.
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.interface.scripts-build-math-dependency-graph <source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file <path>] [--refresh-macros] [--reduce-transitive-edges]`
+- `math-dependency-graph.interface.scripts-extract-mathjax-macros` — Extract MathJax macro definitions from a TeX entrypoint, recursively following \input/\include.
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.interface.scripts-extract-mathjax-macros <entrypoint.tex> [--out <path>]`
+- `math-dependency-graph.interface.scripts-serve-graph` — Serve graph HTML from a local directory with no-cache headers for repeated browser inspection.
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph.interface.scripts-serve-graph [--directory <path>] [--host <host>] [--port <port>]`
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `math-dependency-graph.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

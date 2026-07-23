@@ -15,6 +15,7 @@ from officina.common.blueprint_graph import (
     MachineInterfaceExport,
     RepositoryBlueprintGraph,
 )
+from officina.common.blueprint_template import load_schema, schema_validator
 from officina.common.interface_injection_migration import (
     InterfaceInjectionMigrationError,
     build_interface_injection_migration_report,
@@ -32,6 +33,34 @@ _EXACT_PYTHON_PACKAGE_SUPPORT_POLICY = {
     "import_search_roots": {
         "default": ["module-root"],
         "by_gateway": {
+            "skills/install-assistant-tools/_rtx/_agent_launchers.py": [
+                "gateway-parent",
+                "module-root",
+            ],
+            "skills/install-assistant-tools/_rtx/_install_scaffold.py": [
+                "gateway-parent",
+                "module-root",
+            ],
+            "skills/install-assistant-tools/_rtx/_phase_entry.py": [
+                "gateway-parent",
+                "module-root",
+            ],
+            "skills/recurring-tasks/_rtx/_healthcheck_probe.py": [
+                "gateway-parent",
+                "module-root",
+            ],
+            "skills/recurring-tasks/_rtx/_job_control.py": [
+                "gateway-parent",
+                "module-root",
+            ],
+            "skills/recurring-tasks/_rtx/_setup_runner.py": [
+                "gateway-parent",
+                "module-root",
+            ],
+            "skills/recurring-tasks/_rtx/_unit_writer.py": [
+                "gateway-parent",
+                "module-root",
+            ],
             "skills/skill-drift/_rtx/_check_drift_state.py": [
                 "gateway-parent",
                 "module-root",
@@ -138,6 +167,169 @@ def test_conversion_exposes_only_planned_declaration_paths() -> None:
         Path("skills/demo/blueprint.yaml"),
         Path("skills/demo/blueprints/run.yaml"),
     )
+
+
+def test_unversioned_converter_rejects_version_pinned_interface_id_shorthand() -> None:
+    declaration = {
+        "interfaces": {
+            "machine": {
+                "run": {
+                    "version": 1,
+                    "uses_interfaces": ["provider-skill.machine.read@2"],
+                    "direct_io": {"reads": [], "writes": [], "network": []},
+                    "invocation": {
+                        "kind": "python_machine_interface",
+                        "entrypoint": "_rtx/_runner.py:Interface",
+                        "behavior_sources": [],
+                    },
+                }
+            },
+            "llm": {},
+        }
+    }
+
+    with pytest.raises(
+        InterfaceInjectionMigrationError, match="invalid uses_interfaces"
+    ):
+        migration._unversioned_interfaces("demo-skill", declaration)
+
+
+def test_converter_drops_only_exact_map_reviewed_generated_uses_overlay() -> None:
+    path = Path("skills/daily-plan/blueprint.yaml")
+    declaration = {
+        "interfaces": {
+            "machine": {
+                "orchestrate": {
+                    "uses_interfaces": ["provider-skill.machine.read@1"]
+                }
+            }
+        }
+    }
+    migration_map = {
+        "declarations": {
+            "mechanical_conversion": {
+                "reviewed_generated_field_ignores": [
+                    {
+                        "path": path.as_posix(),
+                        "field": "uses_interfaces",
+                        "interface_ids": ["daily-plan.machine.orchestrate"],
+                        "exact_value": ["provider-skill.machine.read@1"],
+                        "disposition": "ignore",
+                    }
+                ]
+            }
+        }
+    }
+
+    cleaned = migration._apply_reviewed_generated_field_ignores(
+        path, declaration, migration_map
+    )
+
+    assert cleaned["interfaces"]["machine"]["orchestrate"]["uses_interfaces"] == []
+    assert declaration["interfaces"]["machine"]["orchestrate"]["uses_interfaces"] == [
+        "provider-skill.machine.read@1"
+    ]
+    v4_module = {"schema_version": 4, "node_type": "module"}
+    assert migration._apply_reviewed_generated_field_ignores(
+        path, v4_module, migration_map
+    ) == v4_module
+    migration_map["declarations"]["mechanical_conversion"][
+        "reviewed_generated_field_ignores"
+    ][0]["exact_value"] = ["different.machine.edge@1"]
+    with pytest.raises(
+        InterfaceInjectionMigrationError,
+        match="reviewed generated-field ignore does not match",
+    ):
+        migration._apply_reviewed_generated_field_ignores(
+            path, declaration, migration_map
+        )
+    malformed = deepcopy(migration_map)
+    malformed["declarations"]["mechanical_conversion"][
+        "reviewed_generated_field_ignores"
+    ][0]["path"] = "skills/other-skill/blueprint.yaml"
+    malformed["declarations"]["mechanical_conversion"][
+        "reviewed_generated_field_ignores"
+    ][0]["exact_value"] = []
+    with pytest.raises(
+        InterfaceInjectionMigrationError,
+        match="invalid reviewed generated-field ignore",
+    ):
+        migration._apply_reviewed_generated_field_ignores(
+            path, declaration, malformed
+        )
+    wrong_owner = deepcopy(migration_map)
+    wrong_owner["declarations"]["mechanical_conversion"][
+        "reviewed_generated_field_ignores"
+    ][0]["interface_ids"] = ["other-skill.machine.orchestrate"]
+    with pytest.raises(
+        InterfaceInjectionMigrationError,
+        match="does not belong to daily-plan",
+    ):
+        migration._apply_reviewed_generated_field_ignores(
+            path, declaration, wrong_owner
+        )
+    with pytest.raises(
+        InterfaceInjectionMigrationError,
+        match="reviewed generated-field ignore was not consumed exactly once",
+    ):
+        migration._validate_reviewed_generated_field_ignore_consumption(
+            [Path("skills/other-skill/blueprint.yaml")], migration_map
+        )
+    migration._validate_reviewed_generated_field_ignore_consumption(
+        [path], migration_map
+    )
+
+
+def test_live_repository_uses_one_v4_module_source_cutover() -> None:
+    root = Path(__file__).resolve().parents[1]
+    module = yaml.safe_load(
+        (root / "skills" / "daily-plan" / "blueprint.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    daily_init = yaml.safe_load(
+        (
+            root
+            / "skills"
+            / "daily-plan"
+            / "blueprints"
+            / "rtx-init.yaml"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert (module["schema_version"], module["node_type"]) == (4, "module")
+    assert daily_init["uses_interfaces"] == [
+        {"interface": "cloud-files.interface.lists-read", "version": 1},
+        {"interface": "cloud-files.interface.lists-write", "version": 1},
+        {"interface": "cloud-files.interface.plans-read", "version": 1},
+        {"interface": "cloud-files.interface.plans-write", "version": 1},
+        {"interface": "common.interface.dates", "version": 1},
+        {"interface": "g-calendar.interface.scripts-gcal", "version": 1},
+        {"interface": "get-weather.interface.scripts-weather", "version": 1},
+        {"interface": "list-manager.interface.read-beautify", "version": 1},
+        {"interface": "list-manager.interface.update-list", "version": 1},
+    ]
+    for source_name in (
+        "rtx-plan-orchestrate",
+        "rtx-plan-storage",
+        "rtx-render-plan",
+        "rtx-state-patch",
+    ):
+        source = yaml.safe_load(
+            (
+                root
+                / "skills"
+                / "daily-plan"
+                / "blueprints"
+                / f"{source_name}.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        assert source["uses_interfaces"] == []
+    assert not (root / "skills" / "skill-audit" / "SKILL.md").exists()
+    assert not (
+        root / "skills" / "skill-audit" / "_rtx" / "_audit_certifier.py"
+    ).exists()
+    assert (root / "skills" / "skill-certifier" / "SKILL.md").is_file()
 
 
 def test_converter_preserves_authored_evidence_without_inventing_semantics(
@@ -343,6 +535,9 @@ def test_converter_preserves_authored_evidence_without_inventing_semantics(
             "version": 1,
         }
     ]
+    assert conversion.predecessor_semantic_edge_projection[
+        "demo-skill.source.rtx-runner"
+    ]["uses_interfaces"] == source["uses_interfaces"]
 
 
 def test_converter_merges_v2_sidecars_by_gateway_and_resolves_sources(
@@ -515,14 +710,14 @@ def test_converter_merges_v2_sidecars_by_gateway_and_resolves_sources(
     assert policy["description"] == "Defines policy."
 
 
-def _reference_module_map() -> dict[str, object]:
+def _supplemental_module_map() -> dict[str, object]:
     return {
         "declarations": {
             "mechanical_conversion": {
                 "python_package_support": dict(
                     _EXACT_PYTHON_PACKAGE_SUPPORT_POLICY
                 ),
-                "reference_modules": [
+                "supplemental_modules": [
                     {
                         "root": "references/standards",
                         "id": "standards",
@@ -569,7 +764,7 @@ def _reference_module_map() -> dict[str, object]:
     }
 
 
-def _write_reference_module_conversion_fixture(tmp_path: Path) -> tuple[Path, str]:
+def _write_supplemental_module_conversion_fixture(tmp_path: Path) -> tuple[Path, str]:
     reference_root = tmp_path / "references" / "standards"
     reference_root.mkdir(parents=True)
     (reference_root / "index.yaml").write_text("version: 1\n", encoding="utf-8")
@@ -612,13 +807,13 @@ def _write_reference_module_conversion_fixture(tmp_path: Path) -> tuple[Path, st
     return declaration, policy_text
 
 
-def test_converter_materializes_map_declared_reference_modules(tmp_path: Path) -> None:
-    declaration, _ = _write_reference_module_conversion_fixture(tmp_path)
+def test_converter_materializes_map_declared_supplemental_modules(tmp_path: Path) -> None:
+    declaration, _ = _write_supplemental_module_conversion_fixture(tmp_path)
 
     conversion = migration.convert_blueprint_declarations(
         tmp_path,
         [declaration.relative_to(tmp_path)],
-        migration_map=_reference_module_map(),
+        migration_map=_supplemental_module_map(),
     )
 
     module = conversion.documents[Path("references/standards/blueprint.yaml")]
@@ -659,12 +854,12 @@ def test_converter_materializes_map_declared_reference_modules(tmp_path: Path) -
 def test_converter_maps_exact_legacy_behavior_dependency_without_moving_content(
     tmp_path: Path,
 ) -> None:
-    declaration, policy_text = _write_reference_module_conversion_fixture(tmp_path)
+    declaration, policy_text = _write_supplemental_module_conversion_fixture(tmp_path)
 
     conversion = migration.convert_blueprint_declarations(
         tmp_path,
         [declaration.relative_to(tmp_path)],
-        migration_map=_reference_module_map(),
+        migration_map=_supplemental_module_map(),
     )
 
     consumer = conversion.documents[
@@ -693,11 +888,11 @@ def test_converter_maps_exact_legacy_behavior_dependency_without_moving_content(
 def test_emitted_v4_mutation_cannot_mutate_legacy_dependency_expectations(
     tmp_path: Path,
 ) -> None:
-    declaration, _ = _write_reference_module_conversion_fixture(tmp_path)
+    declaration, _ = _write_supplemental_module_conversion_fixture(tmp_path)
     conversion = migration.convert_blueprint_declarations(
         tmp_path,
         [declaration.relative_to(tmp_path)],
-        migration_map=_reference_module_map(),
+        migration_map=_supplemental_module_map(),
     )
     expected = deepcopy(conversion.behavioral_source_dependency_projection)
 
@@ -709,13 +904,13 @@ def test_emitted_v4_mutation_cannot_mutate_legacy_dependency_expectations(
     assert conversion.behavioral_source_dependency_projection == expected
 
 
-def test_reference_modules_add_no_public_or_runtime_exports(tmp_path: Path) -> None:
-    declaration, _ = _write_reference_module_conversion_fixture(tmp_path)
+def test_unexported_supplemental_modules_add_no_public_or_runtime_exports(tmp_path: Path) -> None:
+    declaration, _ = _write_supplemental_module_conversion_fixture(tmp_path)
 
     conversion = migration.convert_blueprint_declarations(
         tmp_path,
         [declaration.relative_to(tmp_path)],
-        migration_map=_reference_module_map(),
+        migration_map=_supplemental_module_map(),
     )
 
     assert Path("references/standards/blueprint.yaml") in conversion.documents
@@ -728,7 +923,7 @@ def test_reference_modules_add_no_public_or_runtime_exports(tmp_path: Path) -> N
     )
 
 
-def test_live_map_excludes_only_reviewed_stale_list_manager_sidecar() -> None:
+def test_cutover_keeps_reviewed_stale_list_manager_sidecar_non_live() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     map_document = yaml.safe_load(
         (repo_root / "docs/plans/unified-architecture-migration-map.yaml").read_text(
@@ -736,42 +931,36 @@ def test_live_map_excludes_only_reviewed_stale_list_manager_sidecar() -> None:
         )
     )
 
-    validation = migration.validate_blueprint_migration_map(repo_root, map_document)
-
     stale = Path("skills/list-manager/.SKILL.md.blueprint.yaml")
-    assert stale not in validation.mapped_declaration_paths
-    assert validation.non_live_local_paths == (stale,)
+    non_live = map_document["declarations"]["non_live_local_artifacts"]
+    assert non_live == [
+        {
+            "path": stale.as_posix(),
+            "state": "ignored-stale-local",
+            "disposition": "exclude",
+            "reason": (
+                "the ignored sidecar references a preference gateway and source "
+                "sidecar that do not exist and have no Git history, while the "
+                "tracked root, SKILL.md, and runtime author no such dependency"
+            ),
+        }
+    ]
+    assert (repo_root / stale).is_file()
 
 
 def test_excluded_list_manager_sidecar_emits_no_fake_preference_source_or_io() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    live_map = yaml.safe_load(
-        (repo_root / "docs/plans/unified-architecture-migration-map.yaml").read_text(
+    module = yaml.safe_load(
+        (repo_root / "skills/list-manager/blueprint.yaml").read_text(
             encoding="utf-8"
         )
     )
-    conversion_map = {
-        "declarations": {
-                "mechanical_conversion": {
-                    "python_package_support": dict(
-                        _EXACT_PYTHON_PACKAGE_SUPPORT_POLICY
-                    ),
-                    "shared_gateway_merge": live_map["declarations"]
-                ["mechanical_conversion"]["shared_gateway_merge"]
-            },
-            "version_2": {"merge_decisions": []},
-        }
-    }
-    conversion = migration.convert_blueprint_declarations(
-        repo_root,
-        [Path("skills/list-manager/blueprint.yaml")],
-        migration_map=conversion_map,
+    gateway = yaml.safe_load(
+        (
+            repo_root / "skills/list-manager/blueprints/gateway.yaml"
+        ).read_text(encoding="utf-8")
     )
 
-    module = conversion.documents[Path("skills/list-manager/blueprint.yaml")]
-    gateway = conversion.documents[
-        Path("skills/list-manager/blueprints/gateway.yaml")
-    ]
     interface = gateway["interfaces"][
         "list-manager.source.gateway.interface.default"
     ]
@@ -845,7 +1034,7 @@ def test_active_mapped_input_with_unresolved_behavior_source_is_rejected(
         )
 
 
-def test_live_map_reviews_skill_drift_shared_dependency_reason_union() -> None:
+def test_live_map_owns_cryptography_on_audit_records_source() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     map_document = yaml.safe_load(
         (repo_root / "docs/plans/unified-architecture-migration-map.yaml").read_text(
@@ -856,12 +1045,26 @@ def test_live_map_reviews_skill_drift_shared_dependency_reason_union() -> None:
         "shared_gateway_merge"
     ]["reviewed_conflicts"]
 
-    assert any(
-        conflict.get("module") == "skill-drift"
-        and conflict.get("gateway") == "_rtx/_check_drift_state.py"
-        and conflict.get("runtime_dependencies") == "set-union"
-        for conflict in conflicts
+    assert not any(
+        conflict.get("module") == "skill-drift" for conflict in conflicts
     )
+    common_module = next(
+        module
+        for module in map_document["declarations"]["mechanical_conversion"][
+            "supplemental_modules"
+        ]
+        if module["id"] == "common"
+    )
+    audit_records = next(
+        source
+        for source in common_module["sources"]
+        if source["id"] == "common.source.audit-records"
+    )
+    assert {
+        dependency["name"]
+        for dependency in audit_records["runtime_dependencies"]
+        if dependency["kind"] == "python-package"
+    } == {"cryptography"}
 
 
 def test_live_map_authors_exact_python_package_support_policy() -> None:
@@ -899,56 +1102,495 @@ def test_converter_rejects_unsupported_python_package_support_policy(
         )
 
 
-def test_live_map_converts_every_declaration_without_collisions() -> None:
+def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     map_document = yaml.safe_load(
         (repo_root / "docs/plans/unified-architecture-migration-map.yaml").read_text(
             encoding="utf-8"
         )
     )
-    declarations = map_document["declarations"]
-    mapped = [
-        Path(path)
-        for path in (
-            declarations["unversioned"]["paths"]
-            + declarations["version_2"]["paths"]
-        )
-    ]
-
-    conversion = migration.convert_blueprint_declarations(
-        repo_root, mapped, migration_map=map_document
-    )
+    live_paths = []
+    for pattern in (
+        "skills/*/blueprint.yaml",
+        "skills/*/blueprints/*.yaml",
+        "src/officina/common/blueprint.yaml",
+        "src/officina/common/blueprints/*.yaml",
+        "references/blueprint/blueprint.yaml",
+        "references/blueprint/blueprints/*.yaml",
+        "references/skill-standards/blueprint.yaml",
+        "references/skill-standards/blueprints/*.yaml",
+    ):
+        live_paths.extend(repo_root.glob(pattern))
+    documents = {
+        path.relative_to(repo_root): yaml.safe_load(path.read_text(encoding="utf-8"))
+        for path in live_paths
+    }
 
     modules = [
         document
-        for document in conversion.documents.values()
+        for document in documents.values()
         if document["node_type"] == "module"
     ]
     assert len(modules) == (
         len(map_document["public_ids"]["llm_ids"]["default_modules"])
         + len(
             map_document["declarations"]["mechanical_conversion"][
-                "reference_modules"
+                "supplemental_modules"
             ]
         )
     )
     assert {
         document["id"] for document in modules if "discovery" not in document
-    } == {"blueprint", "skill-standards"}
-    assert all(document["schema_version"] == 4 for document in conversion.documents.values())
-    assert Path("skills/skill-certifier/blueprint.yaml") in conversion.documents
-    assert set(conversion.removed_paths) == set(mapped)
-    unresolved_skill_interfaces = [
-        finding
-        for finding in conversion.findings
-        if finding.field.startswith("skill_interface.")
+    } == {"blueprint", "common", "skill-standards"}
+    common = documents[Path("src/officina/common/blueprint.yaml")]
+    assert set(common["exports"]) == {
+        "common.interface.artifact-health",
+        "common.interface.atomic-files",
+        "common.interface.audit-records",
+        "common.interface.blueprint-graph",
+        "common.interface.blueprint-template",
+        "common.interface.certification-view",
+        "common.interface.codex-toml",
+        "common.interface.dates",
+        "common.interface.git-provenance",
+        "common.interface.oauth-json",
+        "common.interface.pooled-blueprint",
+        "common.interface.secret-store",
+        "common.interface.toml-io",
+    }
+    expected_common_dependencies = {
+        "artifact-health": {
+            "atomic-files",
+            "audit-records",
+            "blueprint-graph",
+            "blueprint-template",
+            "git-provenance",
+            "process-binding-compiler",
+        },
+        "audit-records": {"atomic-files", "secret-store"},
+        "blueprint-graph": {"blueprint-inventory"},
+        "blueprint-inventory": {"atomic-files", "git-provenance"},
+        "blueprint-template": set(),
+        "certification-view": {
+            "artifact-health",
+            "atomic-files",
+            "audit-records",
+            "blueprint-graph",
+            "blueprint-template",
+            "git-provenance",
+        },
+        "git-provenance": {"atomic-files"},
+        "pooled-blueprint": {
+            "artifact-health",
+            "audit-records",
+            "blueprint-graph",
+            "certification-view",
+        },
+        "process-binding-compiler": {"blueprint-graph"},
+    }
+    expected_common_sources = set(expected_common_dependencies) | {
+        "atomic-files",
+        "codex-toml",
+        "dates",
+        "oauth-json",
+        "secret-store",
+        "toml-io",
+    }
+    assert {
+        source_id.removeprefix("common.source.")
+        for source_id in common["sources"]
+    } == expected_common_sources
+    for source_name, expected_dependencies in expected_common_dependencies.items():
+        source = documents[
+            Path(f"src/officina/common/blueprints/{source_name}.yaml")
+        ]
+        assert {
+            dependency["source"].removeprefix("common.source.")
+            for dependency in source["dependencies"]
+        } == expected_dependencies
+    for private_source in ("blueprint-inventory", "process-binding-compiler"):
+        assert documents[
+            Path(f"src/officina/common/blueprints/{private_source}.yaml")
+        ]["interfaces"] == {}
+    expected_export_sources = {
+        interface_id: (
+            f"common.source.{interface_id.removeprefix('common.interface.')}"
+            ".interface.python-api"
+        )
+        for interface_id in common["exports"]
+    }
+    assert {
+        interface_id: export["source_interface"]
+        for interface_id, export in common["exports"].items()
+    } == expected_export_sources
+    assert common["exports"]["common.interface.blueprint-template"]["access"] == {
+        "allow_all_modules": False,
+        "allowed_callers": ["regenerate-blueprints"],
+    }
+    assert common["exports"]["common.interface.blueprint-graph"]["access"] == {
+        "allow_all_modules": False,
+        "allowed_callers": ["skill-maker", "skill-certifier", "skill-drift"],
+    }
+    for interface_id in (
+        "common.interface.artifact-health",
+        "common.interface.certification-view",
+        "common.interface.git-provenance",
+        "common.interface.pooled-blueprint",
+    ):
+        assert common["exports"][interface_id]["access"] == {
+            "allow_all_modules": False,
+            "allowed_callers": ["skill-certifier", "skill-drift"],
+        }
+    assert common["exports"]["common.interface.audit-records"]["access"] == {
+        "allow_all_modules": False,
+        "allowed_callers": [
+            "install-assistant-tools",
+            "skill-certifier",
+            "skill-drift",
+        ],
+    }
+    common_oauth = documents[
+        Path("src/officina/common/blueprints/oauth-json.yaml")
     ]
-    assert len({finding.source_path for finding in unresolved_skill_interfaces}) == 34
-    assert all(finding.code == "NEEDS_CONTEXT" for finding in unresolved_skill_interfaces)
-    assert all(
-        finding.target_id and finding.claim
-        for finding in unresolved_skill_interfaces
+    assert common_oauth["dependencies"] == []
+    assert common_oauth["uses_interfaces"] == [
+        {
+            "interface": "common.source.atomic-files.interface.python-api",
+            "version": 1,
+        }
+    ]
+    connect_google = documents[
+        Path("skills/connect-google/blueprints/rtx-client-config.yaml")
+    ]
+    assert {tuple(sorted(use.items())) for use in connect_google["uses_interfaces"]} >= {
+        tuple(sorted({"interface": "common.interface.oauth-json", "version": 1}.items()))
+    }
+    reviewed_common_uses = {
+        "regenerate-blueprints": {
+            "common.interface.blueprint-template",
+        },
+        "skill-maker": {
+            "common.interface.atomic-files",
+            "common.interface.blueprint-graph",
+        },
+        "skill-certifier": {
+            "common.interface.artifact-health",
+            "common.interface.atomic-files",
+            "common.interface.audit-records",
+            "common.interface.blueprint-graph",
+            "common.interface.certification-view",
+            "common.interface.git-provenance",
+            "common.interface.pooled-blueprint",
+        },
+        "skill-drift": {
+            "common.interface.artifact-health",
+            "common.interface.audit-records",
+            "common.interface.blueprint-graph",
+            "common.interface.certification-view",
+            "common.interface.git-provenance",
+            "common.interface.pooled-blueprint",
+        },
+    }
+    reviewed_source_paths = {
+        "regenerate-blueprints": Path(
+            "skills/regenerate-blueprints/blueprints/rtx-blueprint-regenerator.yaml"
+        ),
+        "skill-maker": Path(
+            "skills/skill-maker/blueprints/rtx-blueprint-syncer.yaml"
+        ),
+        "skill-certifier": Path(
+            "skills/skill-certifier/blueprints/rtx-audit-certifier.yaml"
+        ),
+        "skill-drift": Path(
+            "skills/skill-drift/blueprints/rtx-check-drift-state.yaml"
+        ),
+    }
+    for consumer, expected_uses in reviewed_common_uses.items():
+        source = documents[reviewed_source_paths[consumer]]
+        assert {
+            use["interface"]
+            for use in source["uses_interfaces"]
+            if use["interface"].startswith("common.interface.")
+        } == expected_uses
+    daily_plan_uses = sorted(
+        (
+            {"interface": interface, "version": 1}
+            for interface in (
+            "cloud-files.interface.plans-read",
+            "cloud-files.interface.plans-write",
+            "cloud-files.interface.lists-read",
+            "cloud-files.interface.lists-write",
+            "g-calendar.interface.scripts-gcal",
+            "get-weather.interface.scripts-weather",
+            "list-manager.interface.read-beautify",
+            "list-manager.interface.update-list",
+            )
+        ),
+        key=lambda item: item["interface"],
     )
+    daily_init = documents[
+        Path("skills/daily-plan/blueprints/rtx-init.yaml")
+    ]
+    assert r"_rtx/_day_model\.py" in daily_init["content"]
+    assert [
+        use
+        for use in daily_init["uses_interfaces"]
+        if not use["interface"].startswith("common.")
+    ] == daily_plan_uses
+    assert {"interface": "common.interface.dates", "version": 1} in daily_init[
+        "uses_interfaces"
+    ]
+    for source_name in (
+        "rtx-plan-orchestrate",
+        "rtx-state-patch",
+        "rtx-plan-storage",
+        "rtx-render-plan",
+    ):
+        assert documents[
+            Path(f"skills/daily-plan/blueprints/{source_name}.yaml")
+        ]["uses_interfaces"] == []
+    daily_render = documents[
+        Path("skills/daily-plan/blueprints/rtx-render-plan.yaml")
+    ]
+    assert daily_render["interfaces"][
+        "daily-plan.source.rtx-render-plan.interface.render-plan"
+    ]["process_binding"]["patterns"] == [
+        {
+            "min_positionals": 3,
+            "max_positionals": 3,
+            "allow_stdin": False,
+            "positional_patterns": {"0": "^(extract|reassemble)$"},
+        }
+    ]
+    list_init = documents[
+        Path("skills/list-manager/blueprints/rtx-init.yaml")
+    ]
+    assert r"_rtx/_cloud_transport\.py" in list_init["content"]
+    assert list_init["uses_interfaces"] == [
+        {"interface": "cloud-files.interface.lists-read", "version": 1},
+        {"interface": "cloud-files.interface.lists-write", "version": 1},
+    ]
+    for source_name in ("rtx-category-cache", "rtx-render-bridge", "rtx-yaml-store"):
+        assert documents[
+            Path(f"skills/list-manager/blueprints/{source_name}.yaml")
+        ]["uses_interfaces"] == []
+
+    def dependency_targets(path: str) -> set[str]:
+        return {
+            dependency["source"]
+            for dependency in documents[Path(path)]["dependencies"]
+        }
+
+    exact_local_dependencies = {
+        "skills/recurring-tasks/blueprints/rtx-healthcheck-probe.yaml": {
+            "recurring-tasks.source.rtx-schedule-backend-init",
+        },
+        "skills/recurring-tasks/blueprints/rtx-job-control.yaml": {
+            "recurring-tasks.source.rtx-schedule-backend-init",
+        },
+        "skills/recurring-tasks/blueprints/rtx-unit-writer.yaml": {
+            "recurring-tasks.source.rtx-schedule-backend-init",
+        },
+        "skills/recurring-tasks/blueprints/rtx-setup-runner.yaml": {
+            "recurring-tasks.source.rtx-ensure-agent-env",
+            "recurring-tasks.source.rtx-healthcheck-probe",
+            "recurring-tasks.source.rtx-schedule-backend-init",
+            "recurring-tasks.source.rtx-unit-writer",
+        },
+        "skills/install-assistant-tools/blueprints/rtx-agent-launchers.yaml": {
+            "install-assistant-tools.source.rtx-install-launcher-init",
+        },
+        "skills/install-assistant-tools/blueprints/rtx-install-scaffold.yaml": {
+            "install-assistant-tools.source.rtx-install-launcher-init",
+        },
+        "skills/install-assistant-tools/blueprints/rtx-phase-entry.yaml": {
+            "install-assistant-tools.source.rtx-agent-launchers",
+            "install-assistant-tools.source.rtx-config-bridge",
+            "install-assistant-tools.source.rtx-install-scaffold",
+        },
+        "skills/g-calendar/blueprints/rtx-ensure-oauth.yaml": {
+            "g-calendar.source.rtx-oauth-bootstrap",
+        },
+        "skills/cloud-files/blueprints/rtx-ensure-oauth.yaml": {
+            "cloud-files.source.rtx-oauth-bootstrap",
+        },
+        "skills/email-client/blueprints/rtx-imap-gateway.yaml": {
+            "email-client.source.rtx-email-accounts",
+        },
+        "skills/list-manager/blueprints/rtx-render-bridge.yaml": {
+            "list-manager.source.rtx-list-beautify",
+            "list-manager.source.rtx-yaml-store",
+        },
+    }
+    for path, targets in exact_local_dependencies.items():
+        assert dependency_targets(path) >= targets
+
+    source_content = {
+        path: set(documents[Path(path)]["content"])
+        for path in (
+            "skills/hook-maker/blueprints/gateway.yaml",
+            "skills/initialize-tdd/blueprints/gateway.yaml",
+            "skills/initialize-tdd/blueprints/rtx-host-links.yaml",
+            "skills/list-manager/blueprints/rtx-yaml-store.yaml",
+            "skills/skill-drift/blueprints/rtx-check-drift-state.yaml",
+            "skills/install-assistant-tools/blueprints/rtx-agent-launchers.yaml",
+            "skills/technical-flow-review/blueprints/gateway.yaml",
+            "skills/skill-maker/blueprints/rtx-blueprint-syncer.yaml",
+            "skills/bib-audit/blueprints/gateway.yaml",
+        )
+    }
+    assert r"references/cross\-host\-hook\-scaffold\.md" in source_content[
+        "skills/hook-maker/blueprints/gateway.yaml"
+    ]
+    assert {
+        r"assets/common/AGENTS\.md",
+        r"assets/common/README\.md",
+        r"assets/python/pyproject\.toml",
+        r"assets/python/src/project/logger\.py",
+    } <= source_content["skills/initialize-tdd/blueprints/gateway.yaml"]
+    assert r"_rtx/_claude_compat_symlink\.py" in source_content[
+        "skills/initialize-tdd/blueprints/rtx-host-links.yaml"
+    ]
+    assert {
+        r"schemas/lists/default\.json",
+        r"schemas/lists/task\-list\.json",
+        r"schemas/lists/task\-list\-personal\.json",
+        r"schemas/lists/todo\.json",
+        r"schemas/lists/triage\.json",
+        r"schemas/types/action\.json",
+        r"schemas/types/entry\.json",
+        r"schemas/types/task_entry\.json",
+        r"schemas/types/triage_action\.json",
+    } <= source_content["skills/list-manager/blueprints/rtx-yaml-store.yaml"]
+    assert r"references/certification\-basis\-roots\.json" in source_content[
+        "skills/skill-drift/blueprints/rtx-check-drift-state.yaml"
+    ]
+    assert {
+        r"bin/_agent_launch\.py",
+        "bin/assistant",
+        r"bin/assistant\.bat",
+        "bin/collab",
+        r"bin/collab\.bat",
+        "bin/coauthor",
+        r"bin/coauthor\.bat",
+        r"bin/tmux\-workspace",
+    } <= source_content[
+        "skills/install-assistant-tools/blueprints/rtx-agent-launchers.yaml"
+    ]
+    assert {
+        r"references/audience\-familiarity\.md",
+        r"references/document\-types/journal\-article/general\.md",
+        r"references/document\-types/research\-presentation/math\.md",
+    } <= source_content["skills/technical-flow-review/blueprints/gateway.yaml"]
+    assert r"tests/test_blueprint_tools\.py" in source_content[
+        "skills/skill-maker/blueprints/rtx-blueprint-syncer.yaml"
+    ]
+    assert {
+        r"test/test_biblatex\.bib",
+        r"test/test_modification\.bib",
+        r"test/test_modification\.tex",
+        r"test/test_multifile_main\.tex",
+        r"test/test_multifile_section\.tex",
+        r"test/test_natbib\.bib",
+        r"test/test_natbib_commands\.tex",
+    } <= source_content["skills/bib-audit/blueprints/gateway.yaml"]
+
+    jobs_config = documents[
+        Path("skills/recurring-tasks/blueprints/jobs-config.yaml")
+    ]
+    assert jobs_config["content"] == [r"jobs\.yaml"]
+    assert r"jobs\.yaml" in documents[
+        Path("skills/recurring-tasks/blueprint.yaml")
+    ]["content"]
+    for source_name in (
+        "rtx-healthcheck-probe",
+        "rtx-init",
+        "rtx-job-control",
+        "rtx-job-executor",
+        "rtx-unit-writer",
+    ):
+        assert "recurring-tasks.source.jobs-config" in dependency_targets(
+            f"skills/recurring-tasks/blueprints/{source_name}.yaml"
+        )
+    job_executor = documents[
+        Path("skills/recurring-tasks/blueprints/rtx-job-executor.yaml")
+    ]
+    assert job_executor["content"] == [r"_rtx/_job_executor\.py"]
+    assert job_executor["platform_support"] == {
+        "linux": True,
+        "macos": True,
+        "windows": True,
+    }
+    assert {
+        dependency["name"] for dependency in job_executor["runtime_dependencies"]
+    } == {"PyYAML"}
+    private_executor = (
+        "recurring-tasks.source.rtx-job-executor.interface.execute-job"
+    )
+    assert private_executor in job_executor["interfaces"]
+    assert all(
+        export["source_interface"] != private_executor
+        for export in documents[
+            Path("skills/recurring-tasks/blueprint.yaml")
+        ]["exports"].values()
+    )
+    schedule_backend = documents[
+        Path("skills/recurring-tasks/blueprints/rtx-schedule-backend-init.yaml")
+    ]
+    assert "recurring-tasks.source.rtx-job-executor" in {
+        dependency["source"] for dependency in schedule_backend["dependencies"]
+    }
+    assert r"_rtx/_job_executor\.py" not in documents[
+        Path("skills/recurring-tasks/blueprints/rtx-init.yaml")
+    ]["content"]
+
+    standards = {
+        path: set(documents[Path(path)]["content"])
+        for path in (
+            "references/skill-standards/blueprints/skill-guidelines.yaml",
+            "references/skill-standards/blueprints/skill-refactoring.yaml",
+        )
+    }
+    assert standards[
+        "references/skill-standards/blueprints/skill-guidelines.yaml"
+    ] == {r"skill\-guidelines\.md", r"skill\-guidelines\.standard\.yaml"}
+    assert standards[
+        "references/skill-standards/blueprints/skill-refactoring.yaml"
+    ] == {r"skill\-refactoring\.md", r"skill\-refactoring\.standard\.yaml"}
+    secret_store = documents[
+        Path("src/officina/common/blueprints/secret-store.yaml")
+    ]
+    assert secret_store["platform_support"] == {
+        "linux": True,
+        "macos": True,
+        "windows": True,
+    }
+    assert {
+        dependency["name"] for dependency in secret_store["runtime_dependencies"]
+    } == {"keyring"}
+    source_validator = schema_validator(
+        load_schema(repo_root / "references/blueprint/behavioral-source.schema.json")
+    )
+    for document in (
+        jobs_config,
+        job_executor,
+        secret_store,
+        documents[
+            Path("references/skill-standards/blueprints/skill-guidelines.yaml")
+        ],
+        documents[
+            Path("references/skill-standards/blueprints/skill-refactoring.yaml")
+        ],
+    ):
+        source_validator.validate(document)
+    assert all(
+        dependency.get("source") != "common"
+        for document in documents.values()
+        if document["node_type"] == "behavioral_source"
+        for dependency in document["dependencies"]
+    )
+    assert all(document["schema_version"] == 4 for document in documents.values())
+    assert Path("skills/skill-certifier/blueprint.yaml") in documents
 
 
 def test_converter_excludes_blueprint_and_transient_files_from_module_content(
@@ -1024,44 +1666,27 @@ def test_map_loader_rejects_duplicate_yaml_keys(tmp_path: Path) -> None:
         migration.load_blueprint_migration_map(path)
 
 
-def test_live_map_field_coverage_and_public_id_inventory_are_exact() -> None:
+def test_live_cutover_inventory_is_v4_only_and_has_unique_public_ids() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    map_document = migration.load_blueprint_migration_map(
-        repo_root / "docs/plans/unified-architecture-migration-map.yaml"
-    )
+    graph = migration.load_repository_blueprint_graph(repo_root)
 
-    validation = migration.validate_blueprint_migration_map(repo_root, map_document)
-
-    assert validation.schema_file_count == map_document["coverage_contract"][
-        "field_enumeration"
-    ]["observed_schema_files"]
-    assert validation.field_occurrence_count == map_document["coverage_contract"][
-        "field_enumeration"
-    ]["observed_field_occurrences"]
-    assert validation.public_id_count == (
-        len(map_document["public_ids"]["machine_ids"]["ids"])
-        + len(map_document["public_ids"]["llm_ids"]["default_modules"])
-        + len(map_document["public_ids"]["llm_ids"]["named"])
-        + len(map_document["public_ids"]["behavior_source_ids"]["ids"])
-    )
+    assert len(graph.nodes) == 170
+    assert all(node.declaration["schema_version"] == 4 for node in graph.nodes.values())
+    assert len(graph.exports) == len(set(graph.exports))
 
 
 def test_live_skill_drift_preserves_gateway_parent_helpers_and_package_dependency() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    migration_map = migration.load_blueprint_migration_map(
-        repo_root / "docs/plans/unified-architecture-migration-map.yaml"
+    source = yaml.safe_load(
+        (
+            repo_root
+            / "skills"
+            / "skill-drift"
+            / "blueprints"
+            / "rtx-check-drift-state.yaml"
+        ).read_text(encoding="utf-8")
     )
-    validation = migration.validate_blueprint_migration_map(repo_root, migration_map)
 
-    conversion = migration.convert_blueprint_declarations(
-        repo_root,
-        validation.mapped_declaration_paths,
-        migration_map=migration_map,
-    )
-
-    source = conversion.documents[
-        Path("skills/skill-drift/blueprints/rtx-check-drift-state.yaml")
-    ]
     assert r"_rtx/_drift_hashes\.py" in source["content"]
     assert any(
         dependency["source"] == "skill-drift.source.rtx-skill-sources-init"

@@ -205,7 +205,12 @@ def _certify(
     module_id: str,
     export: InterfaceExport,
 ) -> None:
-    decision = certification.check_export(module_id, export.interface_id, export.version)
+    decision = certification.check_export(
+        module_id,
+        export.interface_id,
+        export.version,
+        export.source_node_id,
+    )
     if not decision.certified:
         raise InterfaceProjectionError(
             f"{export.interface_id}: certification rejected [{decision.code}]: {decision.message}"
@@ -429,7 +434,12 @@ def _project_v4_consumer_interfaces(
         module, source, declaration, source_interface_id = resolved_parts(
             interface_id, version
         )
-        decision = certification.check_export(module.node_id, interface_id, version)
+        decision = certification.check_export(
+            module.node_id,
+            interface_id,
+            version,
+            source.node_id,
+        )
         if not decision.certified:
             raise InterfaceProjectionError(
                 f"{interface_id}: certification rejected [{decision.code}]: {decision.message}"

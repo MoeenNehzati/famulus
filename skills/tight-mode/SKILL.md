@@ -13,7 +13,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `tight-mode.llm.default`
+- `tight-mode.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
@@ -22,8 +22,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `tight-mode.interface.default` — Answer under persistent tight-mode rules and stop at diagnosis when a material gap requires user agreement before repair.
 <!-- END BLUEPRINT INTERFACES -->
 ## Core principle
 

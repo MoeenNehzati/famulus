@@ -1,377 +1,98 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _rtx/_plan_orchestrate.py:Interface
+      reason: Main orchestration script for plan generation via dispatcher.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _rtx/_render_plan.py:Interface
+      reason: Plan rendering helper for display formatting.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _rtx/_state_patch.py:Interface
+      reason: Apply plan-local or master-list-backed mutations and show the refreshed
+        plan.
+    network: []
 category: workflow-general-assistant
-role: productivity
+description: Builds, persists, refreshes, renders, and mutates a daily plan from calendar, weather, todo, and triage data.
+content:
+- SKILL\.md
+- _rtx/__init__\.py
+- _rtx/_day_model\.py
+- _rtx/_plan_orchestrate\.py
+- _rtx/_plan_storage\.py
+- _rtx/_render_plan\.py
+- _rtx/_state_patch\.py
+- tests/test_dispatch_contract\.py
+- tests/test_plan_runtime\.py
+discovery:
+  mechanism: skill
+exports:
+  daily-plan.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: daily-plan.source.gateway.interface.default
+  daily-plan.interface.mutate-plan:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: daily-plan.source.rtx-state-patch.interface.mutate-plan
+  daily-plan.interface.orchestrate:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: daily-plan.source.rtx-plan-orchestrate.interface.orchestrate
+  daily-plan.interface.plan-storage:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: daily-plan.source.rtx-plan-storage.interface.plan-storage
+  daily-plan.interface.render-plan:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: daily-plan.source.rtx-render-plan.interface.render-plan
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: daily-plan
 kind: planner
-suggested_permissions:
-  bash:
-  - command:
-    - python3
-    - -m
-    - officina.runtime.python_machine_interface_runner
-    - _rtx/_plan_orchestrate.py:Interface
-    reason: Main orchestration script for plan generation via dispatcher.
-  - command:
-    - python3
-    - -m
-    - officina.runtime.python_machine_interface_runner
-    - _rtx/_render_plan.py:Interface
-    reason: Plan rendering helper for display formatting.
-  - command:
-    - python3
-    - -m
-    - officina.runtime.python_machine_interface_runner
-    - _rtx/_state_patch.py:Interface
-    reason: Apply plan-local or master-list-backed mutations and show the refreshed
-      plan.
-  network: []
-skill_interface:
-  inputs:
-  - User requests to plan today.
-  - Calendar, todo, and weather data.
-  outputs:
-  - Persisted daily plan file.
-  - Display-ready plan content.
-  side_effects:
-  - Writes plan file to cloud storage.
-  - May update todo list via list-manager.
-interfaces:
-  machine:
-    orchestrate:
-      version: 1
-      uses_interfaces:
-      - interface: cloud-files.machine.plans-read
-        version: 1
-      - interface: cloud-files.machine.plans-write
-        version: 1
-      - interface: cloud-files.machine.plans-delete
-        version: 1
-      - interface: cloud-files.machine.lists-read
-        version: 1
-      - interface: cloud-files.machine.lists-write
-        version: 1
-      - interface: g-calendar.machine.scripts-gcal
-        version: 1
-      - interface: get-weather.machine.scripts-weather
-        version: 1
-      - interface: list-manager.machine.read-list
-        version: 1
-      - interface: list-manager.machine.read-beautify
-        version: 1
-      - interface: list-manager.machine.update-list
-        version: 1
-      description: Generate today's plan (or show the existing one, refreshing its
-        Todo/Triage blocks from current list state). Pass --forced to regenerate even
-        if a plan already exists.
-      usage: '[--forced]'
-      allow_all_skills: false
-      patterns:
-      - min_positionals: 0
-        max_positionals: 0
-        allow_stdin: false
-        allowed_flags: []
-      - min_positionals: 0
-        max_positionals: 0
-        allow_stdin: false
-        required_flags:
-        - --forced
-        allowed_flags:
-        - --forced
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads and writes YAML plan/list data through plan_runtime.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: false
-          windows: false
-      direct_io:
-        reads: []
-        writes:
-        - medium: stdout
-          access: write
-          content: plan
-          format: markdown
-          sensitivity: user-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_plan_orchestrate.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: false
-        windows: false
-    plan-storage:
-      version: 1
-      uses_interfaces:
-      - interface: cloud-files.machine.plans-read
-        version: 1
-      - interface: cloud-files.machine.plans-write
-        version: 1
-      - interface: cloud-files.machine.plans-delete
-        version: 1
-      - interface: cloud-files.machine.lists-read
-        version: 1
-      - interface: cloud-files.machine.lists-write
-        version: 1
-      - interface: g-calendar.machine.scripts-gcal
-        version: 1
-      - interface: get-weather.machine.scripts-weather
-        version: 1
-      - interface: list-manager.machine.read-list
-        version: 1
-      - interface: list-manager.machine.read-beautify
-        version: 1
-      - interface: list-manager.machine.update-list
-        version: 1
-      description: Read, write, check existence of, or delete a plan file in cloud
-        storage by date.
-      usage: read|write|exists|delete <date>
-      allow_all_skills: false
-      patterns:
-      - name: read
-        min_positionals: 2
-        max_positionals: 2
-        allow_stdin: false
-      - name: write
-        min_positionals: 2
-        max_positionals: 2
-        allow_stdin: true
-      - name: exists
-        min_positionals: 2
-        max_positionals: 2
-        allow_stdin: false
-      - name: delete
-        min_positionals: 2
-        max_positionals: 2
-        allow_stdin: false
-      dependencies:
-      - kind: binary
-        name: rclone
-        reason: Reads and writes plan files in the configured GDrive remote.
-        version: any
-        platforms:
-          linux: true
-          macos: false
-          windows: false
-      direct_io:
-        reads:
-        - medium: remote-filesystem
-          access: read
-          system: google-drive
-          content: plan
-          format: markdown
-          path: plans/<date>.md
-          auth:
-            kind: rclone-config
-            mode: uses-existing
-          sensitivity: user-private
-        - medium: stdin
-          access: read
-          content: plan
-          format: markdown
-          sensitivity: user-private
-        writes:
-        - medium: remote-filesystem
-          access: write
-          system: google-drive
-          content: plan
-          format: markdown
-          path: plans/<date>.md
-          auth:
-            kind: rclone-config
-            mode: uses-existing
-          sensitivity: user-private
-        - medium: remote-filesystem
-          access: delete
-          system: google-drive
-          content: plan
-          format: markdown
-          path: plans/<date>.md
-          auth:
-            kind: rclone-config
-            mode: uses-existing
-          sensitivity: user-private
-        - medium: stdout
-          access: write
-          content: response
-          format: text
-          sensitivity: derived-private
-        network:
-        - medium: network-request
-          access: read-write
-          system: google-drive
-          content: plan
-          format: markdown
-          auth:
-            kind: rclone-config
-            mode: uses-existing
-          sensitivity: user-private
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_plan_storage.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: false
-        windows: false
-    render-plan:
-      version: 1
-      uses_interfaces:
-      - interface: cloud-files.machine.plans-read
-        version: 1
-      - interface: cloud-files.machine.plans-write
-        version: 1
-      - interface: cloud-files.machine.plans-delete
-        version: 1
-      - interface: cloud-files.machine.lists-read
-        version: 1
-      - interface: cloud-files.machine.lists-write
-        version: 1
-      - interface: g-calendar.machine.scripts-gcal
-        version: 1
-      - interface: get-weather.machine.scripts-weather
-        version: 1
-      - interface: list-manager.machine.read-list
-        version: 1
-      - interface: list-manager.machine.read-beautify
-        version: 1
-      - interface: list-manager.machine.update-list
-        version: 1
-      description: Extract or reassemble sections of a plan file for rendering.
-      usage: <extract|reassemble> <plan-file> <dir>
-      allow_all_skills: false
-      patterns:
-      - min_positionals: 0
-        allow_extra_positionals: true
-        allow_stdin: true
-      dependencies: []
-      direct_io:
-        reads:
-        - medium: local-filesystem
-          access: read
-          system: filesystem
-          content: plan
-          format: markdown
-          path: <plan-file>
-          sensitivity: user-private
-        - medium: local-filesystem
-          access: read
-          system: filesystem
-          content: plan
-          format: markdown
-          path: <dir>
-          sensitivity: user-private
-        writes:
-        - medium: local-filesystem
-          access: write
-          system: filesystem
-          content: plan
-          format: markdown
-          path: <dir>
-          sensitivity: user-private
-        - medium: stdout
-          access: write
-          content: plan
-          format: markdown
-          sensitivity: user-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_render_plan.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: false
-        windows: false
-    mutate-plan:
-      version: 1
-      uses_interfaces:
-      - interface: cloud-files.machine.plans-read
-        version: 1
-      - interface: cloud-files.machine.plans-write
-        version: 1
-      - interface: cloud-files.machine.plans-delete
-        version: 1
-      - interface: cloud-files.machine.lists-read
-        version: 1
-      - interface: cloud-files.machine.lists-write
-        version: 1
-      - interface: g-calendar.machine.scripts-gcal
-        version: 1
-      - interface: get-weather.machine.scripts-weather
-        version: 1
-      - interface: list-manager.machine.read-list
-        version: 1
-      - interface: list-manager.machine.read-beautify
-        version: 1
-      - interface: list-manager.machine.update-list
-        version: 1
-      description: Apply a mutation (hide, show, keep, remove, mark-done, reject,
-        set-deadline, add) to a dated plan and display the refreshed result. Defaults
-        to today when --date is omitted.
-      usage: '[--date <M-D-YY|YYYY-MM-DD>] {hide,show,keep,remove,mark-done,reject,set-deadline,add}
-        ...'
-      allow_all_skills: false
-      patterns:
-      - min_positionals: 1
-        allow_extra_positionals: true
-        allow_stdin: false
-        allowed_flags:
-        - --date
-        flag_patterns:
-          --date: ^(\d{1,2}-\d{1,2}-\d{2}|\d{4}-\d{2}-\d{2})$
-      dependencies:
-      - kind: python-package
-        name: PyYAML
-        reason: Reads and writes YAML plan/list data through plan_runtime.
-        version: ">=6"
-        platforms:
-          linux: true
-          macos: false
-          windows: false
-      direct_io:
-        reads: []
-        writes:
-        - medium: stdout
-          access: write
-          content: plan
-          format: markdown
-          sensitivity: user-private
-        network: []
-      owns_filesystem: []
-      invocation:
-        kind: python_machine_interface
-        entrypoint: _rtx/_state_patch.py:Interface
-        behavior_sources: []
-      platform_support:
-        linux: true
-        macos: false
-        windows: false
-  llm:
-    default:
-      version: 1
-      description: Primary LLM-facing skill instructions.
-      binding:
-        kind: skill_file
-        path: SKILL.md
-      direct_io:
-        reads:
-        - medium: prompt
-          access: read
-          content: plan-request
-          format: text
-          sensitivity: user-private
-        writes:
-        - medium: prompt
-          access: write
-          content: plan
-          format: markdown
-          sensitivity: derived-private
-        network: []
-      owns_filesystem: []
-      allow_all_skills: true
-      behavior_sources: []
+node_type: module
+role: productivity
+schema_version: 4
+sources:
+  daily-plan.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+  daily-plan.source.rtx-init:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-init.yaml
+  daily-plan.source.rtx-plan-orchestrate:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-plan-orchestrate.yaml
+  daily-plan.source.rtx-plan-storage:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-plan-storage.yaml
+  daily-plan.source.rtx-render-plan:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-render-plan.yaml
+  daily-plan.source.rtx-state-patch:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-state-patch.yaml
+version: 1

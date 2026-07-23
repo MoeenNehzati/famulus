@@ -1,0 +1,64 @@
+content:
+- dates\.py
+dependencies: []
+description: Implements the repository's unpadded M-D-YY storage-key formatting, parsing, normalization, and current-date lookup.
+gateway:
+  language: Python
+  path: dates.py
+id: common.source.dates
+interfaces:
+  common.source.dates.interface.python-api:
+    contract:
+      arguments:
+        operation:
+          description: Date helper to call.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - {value: format, description: Format a date or datetime as M-D-YY.}
+            - {value: parse, description: Parse an M-D-YY key into a date in the 2000s.}
+            - {value: normalize, description: Normalize M-D-YY or ISO YYYY-MM-DD text to M-D-YY.}
+            - {value: today, description: Return the host's current local date as M-D-YY.}
+        value:
+          description: Date, datetime, or date string accepted by the selected operation; omitted for today.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, description: Python date or datetime object for format and otherwise text.}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - id: result
+        audience: machine
+        description: Canonical M-D-YY text or a parsed Python date, according to operation.
+        direct_io_ref: return-value
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty on success.
+        type: {kind: string, sensitivity: user-private, description: Canonical date key or Python date value.}
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [], caller_action: Use the canonical key or parsed date.}
+      - {id: invalid-date, class: error, outputs: [], effects: [], caller_action: Supply a real calendar date in M-D-YY or ISO YYYY-MM-DD form.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {snapshot: The today operation samples the host local date once; other operations are deterministic.}
+        verification:
+        - {method: output-schema, output_ref: result}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: system-date, medium: local-system, access: read, content: host local calendar date, formats: [date], sensitivity: public, reason: Read only by the today operation.}
+        writes:
+        - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [date, text], sensitivity: user-private}
+        network: []
+    description: Provides canonical date operations to Python callers.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

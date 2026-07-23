@@ -10,12 +10,12 @@ from officina.dispatcher.core import InvocationError, resolve_dispatch_metadata
 
 
 class _PassingCertificationView:
-    def check_export(self, module_id: str, interface_id: str, interface_version: int) -> CertificationDecision:
+    def check_export(self, module_id: str, interface_id: str, interface_version: int, source_node_id: str | None) -> CertificationDecision:
         return CertificationDecision(True, "current", "Current test certificate.")
 
 
 class _FailingCertificationView:
-    def check_export(self, module_id: str, interface_id: str, interface_version: int) -> CertificationDecision:
+    def check_export(self, module_id: str, interface_id: str, interface_version: int, source_node_id: str | None) -> CertificationDecision:
         return CertificationDecision(False, "node-hash-mismatch", "The module changed.")
 
 

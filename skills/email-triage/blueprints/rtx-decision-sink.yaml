@@ -1,0 +1,79 @@
+content:
+- _rtx/_decision_sink\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: email-triage.source.rtx-init
+  version: 1
+description: Appends one timestamped email-classification decision to the skill-local triage log.
+gateway:
+  language: Python
+  path: _rtx/_decision_sink.py
+id: email-triage.source.rtx-decision-sink
+interfaces:
+  email-triage.source.rtx-decision-sink.interface.scripts-log-decision:
+    contract:
+      arguments:
+        account: {description: Email account nickname, required: true, sensitivity: user-private, type: {kind: string}}
+        message-id: {description: Provider message identifier, required: true, sensitivity: user-private, type: {kind: string}}
+        sender: {description: Sender displayed for the decision, required: true, sensitivity: user-private, type: {kind: string}}
+        subject: {description: Message subject displayed for the decision, required: true, sensitivity: user-private, type: {kind: string}}
+        decision: {description: Classification label selected by the triage workflow, required: true, sensitivity: derived-private, type: {kind: enum, values: [{value: SKIP, description: Subject-only skip.}, {value: NO_ACTION, description: Read with no action.}, {value: TODO, description: Directed action.}, {value: POTENTIAL, description: Optional action.}, {value: DEDUP, description: Existing destination item.}]}}
+        reason: {description: One-sentence classification rationale, required: true, sensitivity: derived-private, type: {kind: string}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs: []
+      outcomes:
+      - {id: logged, class: success, outputs: [], effects: [append-decision], caller_action: Continue triage processing.}
+      - {id: failed, class: error, outputs: [], effects: [], caller_action: Report that the audit decision was not recorded.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Appends after the current end of triage.log.}
+        effects:
+        - {id: append-decision, direct_io_ref: write-1, action: append, value_source: {kind: argument, argument_ref: decision}, may_occur_in_outcomes: [logged], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Remove the appended line manually if it was recorded incorrectly.}}
+        mutation_safety:
+          atomicity: {per_effect_only: One formatted decision line is appended per invocation.}
+          concurrent_invocations: {unsafe: Concurrent appends are not explicitly serialized.}
+          idempotency: {non_idempotent: Repeating a call appends a duplicate decision.}
+          on_uncertain_completion: {verify_then_decide: Inspect the end of triage.log before retrying.}
+          partial_effects_on_failure: {possible: A partial line may remain after an interrupted append.}
+          rollback_on_failure: {unavailable: The interface does not edit prior log content on failure.}
+        verification: [{method: direct-io-state, direct_io_ref: write-1}]
+      helpers: []
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - access: write
+          content: decision
+          formats:
+          - text
+          id: write-1
+          medium: local-filesystem
+          path: triage.log
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+    description: Append a triage classification decision for one email to triage.log.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - max_positionals: 6
+        min_positionals: 6
+        name: owner
+    usage: <account> <id> <from> <subject> <DECISION> <reason>
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 4
+uses_interfaces: []
+version: 1

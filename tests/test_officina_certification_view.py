@@ -320,7 +320,12 @@ def test_certificate_currentness_accepts_exact_recursive_state_and_adapter(tmp_p
 
     assert all(status.current for status in report.nodes.values())
     assert view.certificate_for("demo-skill") is not None
-    assert view.check_export("demo-skill", "demo-skill.interface.run", 1).certified
+    assert view.check_export(
+        "demo-skill",
+        "demo-skill.interface.run",
+        1,
+        "demo-skill.source.gateway",
+    ).certified
 
 
 def test_certificate_currentness_propagates_explicit_non_atomic_fallback(
@@ -387,7 +392,18 @@ def test_certificate_currentness_propagates_explicit_non_atomic_fallback(
         ("source_commit", "d" * 40, "source-commit-mismatch"),
         ("input_manifest", [], "input-manifest-mismatch"),
         ("node_hash", "sha256:" + "d" * 64, "node-hash-mismatch"),
-        ("dependencies", [], "dependency-mismatch"),
+        (
+            "dependencies",
+            [
+                {
+                    "relation": "contains-source",
+                    "target": "demo-skill.source.gateway",
+                    "version": 1,
+                    "node_hash": "sha256:" + "d" * 64,
+                }
+            ],
+            "dependency-mismatch",
+        ),
         ("certification_basis_hash", "sha256:" + "d" * 64, "certification-basis-mismatch"),
         ("certifier", {**CERTIFIER, "version": 2}, "certifier-mismatch"),
         ("checks", [], "checks-mismatch"),
@@ -414,14 +430,40 @@ def test_certificate_currentness_rejects_each_mismatched_projection(
     assert concern in status.concerns
 
 
-def test_dependency_must_itself_be_current(tmp_path: Path) -> None:
+def test_export_requires_its_exact_source_but_containment_does_not_stale_module(
+    tmp_path: Path,
+) -> None:
     graph, states, commit, public_key_root, _backend, _key = _fixture(tmp_path)
     certificate_log_path(graph.nodes["demo-skill.source.gateway"]).unlink()
 
     report = _evaluate(tmp_path, graph, states, commit, public_key_root)
+    decision = CertificateCurrentnessView(report).check_export(
+        "demo-skill",
+        "demo-skill.interface.run",
+        1,
+        "demo-skill.source.gateway",
+    )
 
     assert "missing-certificate-log" in report.nodes["demo-skill.source.gateway"].concerns
-    assert "dependency-not-current:demo-skill.source.gateway" in report.nodes["demo-skill"].concerns
+    assert report.nodes["demo-skill"].current
+    assert not decision.certified
+    assert decision.code == "source-certification-unavailable"
+
+
+def test_legacy_export_requires_only_its_module_certificate(tmp_path: Path) -> None:
+    graph, states, commit, public_key_root, _backend, _key = _fixture(tmp_path)
+    certificate_log_path(graph.nodes["demo-skill.source.gateway"]).unlink()
+
+    report = _evaluate(tmp_path, graph, states, commit, public_key_root)
+    decision = CertificateCurrentnessView(report).check_export(
+        "demo-skill",
+        "demo-skill.machine.run",
+        1,
+        None,
+    )
+
+    assert report.nodes["demo-skill"].current
+    assert decision.certified
 
 
 def test_rotation_with_linked_new_final_entries_remains_current(tmp_path: Path) -> None:

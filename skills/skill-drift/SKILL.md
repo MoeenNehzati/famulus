@@ -10,12 +10,18 @@ Category: skill-making-development-assistant
 
 Skill Version: 1
 
-Uses Interfaces: none
+Uses Interfaces:
+- `skill-drift.source.rtx-check-drift-state -> common.interface.artifact-health@1`
+- `skill-drift.source.rtx-check-drift-state -> common.interface.audit-records@1`
+- `skill-drift.source.rtx-check-drift-state -> common.interface.blueprint-graph@1`
+- `skill-drift.source.rtx-check-drift-state -> common.interface.certification-view@1`
+- `skill-drift.source.rtx-check-drift-state -> common.interface.git-provenance@1`
+- `skill-drift.source.rtx-check-drift-state -> common.interface.pooled-blueprint@1`
 
 Public Interfaces:
-- `skill-drift.machine.compute-hashes`
-- `skill-drift.machine.drift-status`
-- `skill-drift.llm.default`
+- `skill-drift.interface.compute-hashes`
+- `skill-drift.interface.default`
+- `skill-drift.interface.drift-status`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -23,16 +29,15 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `compute-hashes` — Compute target-relative legacy hashes or graph-native typed hashes for selected names, one exact skill root, or all observed blueprint-backed skills.
-  - `dispatcher --caller-skill skill-drift skill-drift.machine.compute-hashes compute-hashes [target ...] [--json]`
-- `drift-status` — Read derived audit status for selected installed names, one exact skill root and its reachable graph, or all observed installed skills.
-  - `dispatcher --caller-skill skill-drift skill-drift.machine.drift-status status [target ...] [--json] [--with-test-validate]`
+- `skill-drift.interface.compute-hashes` — Compute target-relative legacy hashes or graph-native typed hashes for selected names, one exact skill root, or all observed blueprint-backed skills.
+  - `dispatcher --caller-skill skill-drift skill-drift.interface.compute-hashes compute-hashes [target ...] [--json]`
+- `skill-drift.interface.drift-status` — Read derived audit status for selected installed names, one exact skill root and its reachable graph, or all observed installed skills.
+  - `dispatcher --caller-skill skill-drift skill-drift.interface.drift-status status [target ...] [--json] [--with-test-validate]`
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Instructions for exact-target, target-relative skill drift and hash checks.
-  - binding: skill file `SKILL.md`
+- `skill-drift.interface.default` — Instructions for exact-target, target-relative skill drift and hash checks.
 <!-- END BLUEPRINT INTERFACES -->
 Use the exported status machine interface to read installed skill drift state.
 Use the exported hash-computation machine interface when another skill needs the

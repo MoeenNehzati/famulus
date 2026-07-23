@@ -1,0 +1,43 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Implements the persistent certainty-first response policy, evidence
+  labels, edge-case checks, and agreement gate between diagnosis and repair.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: tight-mode.source.gateway
+interfaces:
+  tight-mode.source.gateway.interface.default:
+    contract:
+      arguments:
+        request: {description: Question or task to answer under rigorous tight-mode verification and uncertainty-labeling rules., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: diagnosis-only}
+      caller_warnings: []
+      outputs:
+      - {id: response, audience: human, description: 'Short decisive answer with justified claims, checked edge cases, and explicit Verified, Likely, Speculative, Gap, or Needs hypothesis labels where useful.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty on success., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: answered, class: success, outputs: [response], effects: [], caller_action: Use only claims carrying the certainty justified by the presented evidence.}
+      - {id: diagnosis-only, class: success, outputs: [response], effects: [], caller_action: Confirm the diagnosed gap or bug before requesting a detailed repair.}
+      - {id: insufficient-evidence, class: refusal, outputs: [response], effects: [], caller_action: "Supply the missing evidence, hypothesis, or context needed for verification."}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {snapshot: "The answer reflects evidence and preconditions checked for the current request while tight mode remains active in conversation state."}
+        verification:
+        - {method: output-schema, output_ref: response}
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - {id: request, medium: prompt, access: read, system: agent-runtime, content: "Tight-mode request, conversation context, and supplied evidence.", formats: [text], sensitivity: user-private}
+        - {id: evidence, medium: local-filesystem, access: read, content: "Named mathematical, code, configuration, test, or documentation evidence required to verify the request.", formats: [text, markdown, tex, code, json, yaml, log], sensitivity: user-private, reason: Justify nontrivial claims and check relevant failure cases.}
+        writes:
+        - {id: response, medium: prompt, access: write, system: agent-runtime, content: Rigor-first diagnosis or answer with calibrated status labels., formats: [markdown], sensitivity: derived-private}
+    description: Answer under persistent tight-mode rules and stop at diagnosis when a material gap requires user agreement before repair.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

@@ -1,0 +1,251 @@
+content:
+- _rtx/_ensure_oauth\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: cloud-files.source.rtx-init
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-oauth-bootstrap.yaml
+  reason: Executes the sibling OAuth bootstrap gateway when credentials are absent.
+  source: cloud-files.source.rtx-oauth-bootstrap
+  version: 1
+description: Checks cloud-files OAuth readiness and writes the non-secret cloud-files service configuration.
+gateway:
+  language: Python
+  path: _rtx/_ensure_oauth.py
+id: cloud-files.source.rtx-ensure-oauth
+interfaces:
+  cloud-files.source.rtx-ensure-oauth.interface.ensure-oauth:
+    contract:
+      arguments:
+        home: {description: Home directory whose cloud-files configuration is checked, required: true, sensitivity: user-private, type: {kind: string}}
+        dry-run: {description: Report the action without launching authorization or writing credentials, required: false, default: false, sensitivity: public, type: {kind: flag}}
+      preconditions: []
+      interaction: {mode: interactive, channel: stdin, unattended_outcome: needs-client-json}
+      caller_warnings:
+      - external-side-effect: When client.json is available, the interface may launch browser authorization and replace cloud-files credentials.
+      outputs:
+      - {id: status, audience: both, description: Setup guidance followed by the final cloud-files OAuth status, direct_io_ref: write-1, type: {kind: string}, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: A final status line is always printed.}
+      outcomes:
+      - {id: configured, class: success, outputs: [status], effects: [store-credentials], caller_action: Continue with Drive operations.}
+      - {id: already-configured, class: no-op, outputs: [status], effects: [], caller_action: Continue with Drive operations.}
+      - {id: needs-client-json, class: refusal, outputs: [status], effects: [], caller_action: Install a Desktop OAuth client JSON and rerun.}
+      - {id: skipped, class: refusal, outputs: [status], effects: [], caller_action: Continue without cloud-files authorization.}
+      - {id: failed, class: error, outputs: [status], effects: [], caller_action: Report the authorization failure and keep prior credentials unchanged.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: "Checks current local credential files and, when needed, performs a live Google OAuth flow."}
+        effects:
+        - {id: store-credentials, direct_io_ref: write-2, action: update, value_source: {kind: direct-io, direct_io_ref: write-2}, may_occur_in_outcomes: [configured], confirmation_evidence: {kind: direct-io, direct_io_ref: write-2}, reversibility: {compensatable: Restore a previously retained credentials file.}}
+        mutation_safety:
+          atomicity: {per_effect_only: Verified credentials are written as one file after authorization succeeds.}
+          concurrent_invocations: {unsafe: Concurrent authorization flows can race when replacing the credentials file.}
+          idempotency: {non_idempotent: Reauthorization issues a fresh OAuth grant and may replace the refresh token.}
+          on_uncertain_completion: {verify_then_decide: Check the credentials file and Drive access before rerunning authorization.}
+          partial_effects_on_failure: {possible: Browser authorization can succeed before credential persistence fails.}
+          rollback_on_failure: {unavailable: The wrapper does not restore a prior credentials file automatically.}
+        verification: [{method: output-schema, output_ref: status}]
+      helpers: []
+      direct_io:
+        network:
+        - access: request
+          auth:
+            kind: google-drive-oauth
+            mode: checks
+          content: credential
+          endpoint: https://accounts.google.com/o/oauth2/v2/auth
+          formats:
+          - text
+          id: network-1
+          medium: network-request
+          sensitivity: secret
+          system: oauth
+        - access: request
+          auth: {kind: google-drive-oauth, mode: checks}
+          content: credential
+          endpoint: https://oauth2.googleapis.com/token
+          formats: [json]
+          id: network-2
+          medium: network-request
+          sensitivity: secret
+          system: oauth
+        - access: request
+          auth: {kind: google-drive-oauth, mode: checks}
+          content: account
+          endpoint: https://www.googleapis.com/drive/v3/about?fields=user
+          formats: [json]
+          id: network-3
+          medium: network-request
+          sensitivity: user-private
+          system: google-drive
+        reads:
+        - access: read
+          content: config
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: $home/.config/cloud-files/config.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          auth:
+            kind: google-drive-oauth
+            mode: checks
+          content: credential
+          formats:
+          - json
+          id: read-2
+          medium: local-filesystem
+          path: $home/.config/cloud-files/credentials.json
+          path_match: exact
+          sensitivity: secret
+          system: filesystem
+        writes:
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          auth: {kind: google-drive-oauth, mode: creates}
+          content: credential
+          formats: [json]
+          id: write-2
+          medium: local-filesystem
+          path: $home/.config/cloud-files/credentials.json
+          path_match: exact
+          sensitivity: secret
+          system: filesystem
+    description: Check cloud-files OAuth status; print setup guidance or launch browser
+      authorization as needed. Relocated from install-assistant-tools — invoke directly
+      (caller-skill cloud-files) as part of connecting remotes.
+    process_binding:
+      args_prefix:
+      - ensure-oauth
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        allowed_flags:
+        - --home
+        - --dry-run
+        flag_patterns:
+          --home: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        notes: Check OAuth status and guide setup for cloud-files.
+        required_flags:
+        - --home
+    usage: --home <dir> [--dry-run]
+    version: 1
+  cloud-files.source.rtx-ensure-oauth.interface.write-config:
+    contract:
+      arguments:
+        home: {description: Home directory under which cloud-files config is written, required: true, sensitivity: user-private, type: {kind: string}}
+        remote-llm-root: {description: Relative Drive folder used as the LLM root, required: false, default: assistant/, sensitivity: user-private, type: {kind: string}}
+        dry-run: {description: Report the target without changing config.json, required: false, default: false, sensitivity: public, type: {kind: flag}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: A non-dry-run call creates or replaces cloud-files config.json while preserving selected existing settings.
+      outputs:
+      - {id: status, audience: both, description: Dry-run message naming the config path that would be written., direct_io_ref: write-2, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Printed only for a successful dry-run preview., type: {kind: string, sensitivity: derived-private}}
+      - {id: diagnostic, audience: both, description: Invalid-root diagnostic emitted on stderr., direct_io_ref: write-3, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Printed only when root normalization fails., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: configured, class: success, outputs: [], effects: [write-config], caller_action: Use the configured Drive root.}
+      - {id: previewed, class: no-op, outputs: [status], effects: [], caller_action: Review the dry-run target and rerun without --dry-run to apply it.}
+      - {id: invalid-root, class: error, outputs: [diagnostic], effects: [], caller_action: Supply a relative root without parent-directory segments.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Reads the current config before replacing it with normalized settings.}
+        effects:
+        - {id: write-config, direct_io_ref: write-1, action: update, value_source: {kind: argument, argument_ref: remote-llm-root}, may_occur_in_outcomes: [configured], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Restore a previously retained config.json.}}
+        mutation_safety:
+          atomicity: {per_effect_only: One config file is rewritten after input normalization.}
+          concurrent_invocations: {unsafe: Concurrent writers can overwrite one another's preserved settings.}
+          idempotency: {idempotent: Repeating the same options converges to the same configuration values.}
+          on_uncertain_completion: {verify_then_decide: Read config.json before deciding whether to retry.}
+          partial_effects_on_failure: {possible: A direct file write can be interrupted after truncation.}
+          rollback_on_failure: {unavailable: The interface does not retain an automatic backup.}
+        verification:
+        - {method: direct-io-state, direct_io_ref: write-1}
+        - {method: output-schema, output_ref: status}
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: config
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: <home>/.config/cloud-files/config.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: config
+          formats:
+          - json
+          id: write-1
+          medium: local-filesystem
+          path: $home/.config/cloud-files/config.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: response
+          formats: [text]
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats: [text]
+          id: write-3
+          medium: stderr
+          sensitivity: derived-private
+    description: Write ~/.config/cloud-files/config.json with the given remote LLM
+      root. Relocated from install-assistant-tools.
+    process_binding:
+      args_prefix:
+      - write-config
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        allowed_flags:
+        - --home
+        - --remote-llm-root
+        - --dry-run
+        flag_patterns:
+          --home: ^.+$
+          --remote-llm-root: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        notes: Write cloud-files config.json.
+        required_flags:
+        - --home
+    usage: --home <dir> [--remote-llm-root <path>] [--dry-run]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 4
+uses_interfaces: []
+version: 1

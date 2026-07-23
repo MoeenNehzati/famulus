@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import shutil
 
 import yaml
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 _VALIDATOR = (
-    Path(__file__).resolve().parents[1]
+    _REPO_ROOT
     / "skills" / "skill-maker" / "validators" / "dependencies.py"
 )
 _spec = importlib.util.spec_from_file_location("dependencies", _VALIDATOR)
@@ -16,7 +18,28 @@ _spec.loader.exec_module(_mod)
 
 
 def _write_blueprint(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(value, sort_keys=False))
+
+
+def _copy_v4_schema_bundle(repo_root: Path) -> None:
+    shutil.copytree(
+        _REPO_ROOT / "references" / "blueprint",
+        repo_root / "references" / "blueprint",
+        ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),
+    )
+
+
+def _copy_v4_loose_mode(repo_root: Path, name: str) -> Path:
+    target = repo_root / "skills" / name
+    shutil.copytree(_REPO_ROOT / "skills" / "loose-mode", target)
+    for path in target.rglob("*"):
+        if path.is_file():
+            path.write_text(
+                path.read_text(encoding="utf-8").replace("loose-mode", name),
+                encoding="utf-8",
+            )
+    return target
 
 
 def _skill(
@@ -228,5 +251,52 @@ def test_typed_machine_interface_declares_skill_mentions(tmp_path: Path) -> None
         },
     )
     (tmp_path / "skills" / "other-skill").mkdir(parents=True)
+
+    assert _mod.validate(tmp_path) == []
+
+
+def test_v4_skill_body_uses_module_aggregate_interface_dependencies(
+    tmp_path: Path,
+) -> None:
+    _copy_v4_schema_bundle(tmp_path)
+    _copy_v4_loose_mode(tmp_path, "other-skill")
+    consumer = _copy_v4_loose_mode(tmp_path, "my-skill")
+    (consumer / "SKILL.md").write_text(
+        "---\nname: my-skill\n---\n"
+        "<!-- BEGIN BLUEPRINT CONTRACT -->\ncontract\n"
+        "<!-- END BLUEPRINT CONTRACT -->\n"
+        "Use other-skill for this.\n",
+        encoding="utf-8",
+    )
+    (consumer / "_rtx").mkdir()
+    (consumer / "_rtx" / "_worker.py").write_text(
+        "class Interface: pass\n",
+        encoding="utf-8",
+    )
+    module = yaml.safe_load((consumer / "blueprint.yaml").read_text(encoding="utf-8"))
+    module["content"].append(r"_rtx/_worker\.py")
+    module["sources"]["my-skill.source.worker"] = {
+        "blueprint": {
+            "base": "module-root",
+            "path": "blueprints/rtx-worker.yaml",
+        }
+    }
+    _write_blueprint(consumer / "blueprint.yaml", module)
+    _write_blueprint(
+        consumer / "blueprints" / "rtx-worker.yaml",
+        {
+            "schema_version": 4,
+            "node_type": "behavioral_source",
+            "id": "my-skill.source.worker",
+            "version": 1,
+            "gateway": {"path": "_rtx/_worker.py", "language": "Python"},
+            "content": [r"_rtx/_worker\.py"],
+            "dependencies": [],
+            "uses_interfaces": [
+                {"interface": "other-skill.interface.default", "version": 1}
+            ],
+            "interfaces": {},
+        },
+    )
 
     assert _mod.validate(tmp_path) == []

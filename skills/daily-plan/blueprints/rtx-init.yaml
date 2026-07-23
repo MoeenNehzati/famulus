@@ -1,0 +1,32 @@
+content:
+- _rtx/__init__\.py
+- _rtx/_day_model\.py
+description: Marks the daily-plan runtime directory as a Python package and exposes no callable interface.
+dependencies: []
+gateway:
+  language: Python
+  path: _rtx/__init__.py
+id: daily-plan.source.rtx-init
+interfaces: {}
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces:
+- interface: cloud-files.interface.lists-read
+  version: 1
+- interface: cloud-files.interface.lists-write
+  version: 1
+- interface: cloud-files.interface.plans-read
+  version: 1
+- interface: cloud-files.interface.plans-write
+  version: 1
+- interface: common.interface.dates
+  version: 1
+- interface: g-calendar.interface.scripts-gcal
+  version: 1
+- interface: get-weather.interface.scripts-weather
+  version: 1
+- interface: list-manager.interface.read-beautify
+  version: 1
+- interface: list-manager.interface.update-list
+  version: 1
+version: 1

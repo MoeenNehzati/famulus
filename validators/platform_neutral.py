@@ -15,8 +15,11 @@ naming any platform itself.
 This lets a module hold real per-platform logic without a blanket per-skill
 exemption: put platform-specific parts in a file named after that platform
 (plus the __init__.py that wires them together), keep everything else
-(SKILL.md, blueprint.yaml, first-party shared packages, and any
-generically-named script) free of platform references.
+(SKILL.md, first-party shared packages, and any generically-named script) free
+of platform references. Schema-v4 blueprint files are descriptive graph
+artifacts rather than module content; once the canonical graph validates them,
+this text guard scans their owned files instead of their declaration metadata.
+Legacy blueprint files retain the line-level checks below.
 """
 from __future__ import annotations
 
@@ -24,6 +27,17 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_SRC_ROOT = _REPO_ROOT / "src"
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+
+from officina.common.blueprint_graph import (  # noqa: E402
+    BlueprintGraphError,
+    load_repository_blueprint_graph,
+)
+from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
 
 _PLATFORM_GROUPS: dict[str, tuple[set[str], re.Pattern[str]]] = {
     "claude": ({"claude"}, re.compile(r"(?i:(\.claude|claude))")),
@@ -101,12 +115,42 @@ def _tracked_files(repo_root: Path) -> set[Path] | None:
     return {repo_root / p for p in result.stdout.splitlines()}
 
 
-def _iter_files(repo_root: Path):
+def _v4_blueprint_paths(repo_root: Path) -> frozenset[Path]:
+    """Return blueprint files validated as part of the canonical v4 graph."""
+
+    schema_root = repo_root / "references" / "blueprint"
+    try:
+        graph = load_repository_blueprint_graph(
+            repo_root,
+            schema_root=(
+                schema_root
+                if (schema_root / "module.schema.json").is_file()
+                else None
+            ),
+        )
+    except (
+        BlueprintGraphError,
+        BlueprintInventoryError,
+        OSError,
+        UnicodeError,
+    ):
+        return frozenset()
+    return frozenset(
+        node.blueprint_path.resolve()
+        for node in graph.nodes.values()
+        if node.declaration.get("schema_version") == 4
+    )
+
+
+def _iter_files(repo_root: Path, *, excluded_blueprints: frozenset[Path]):
     tracked = _tracked_files(repo_root)
     for root_name in _CHECK_ROOTS:
         root = repo_root / root_name
         if root.is_file():
-            if tracked is None or root in tracked:
+            if (
+                root.resolve() not in excluded_blueprints
+                and (tracked is None or root in tracked)
+            ):
                 yield root
             continue
         if not root.is_dir():
@@ -122,13 +166,17 @@ def _iter_files(repo_root: Path):
             rel_path = child.relative_to(repo_root)
             if any(rel_path == ep or ep in rel_path.parents for ep in _EXCLUDED_PATHS):
                 continue
+            if child.resolve() in excluded_blueprints:
+                continue
             yield child
 
 
 def validate(repo_root: Path) -> list[str]:
     """Return error strings for every platform-specific reference found in shared content."""
+    repo_root = repo_root.resolve()
+    v4_blueprints = _v4_blueprint_paths(repo_root)
     errors: list[str] = []
-    for path in _iter_files(repo_root):
+    for path in _iter_files(repo_root, excluded_blueprints=v4_blueprints):
         pattern = _forbidden_pattern_for(path)
         if pattern is None:
             continue

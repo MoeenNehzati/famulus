@@ -30,7 +30,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `notation-review.llm.default`
+- `notation-review.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -38,8 +38,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `notation-review.interface.default` — Diagnose notation at the requested scope and propose a light, coherent scheme without changing the document.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

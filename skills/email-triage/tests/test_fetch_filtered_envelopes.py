@@ -13,7 +13,7 @@ import yaml
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 REPO_SRC = SKILL_ROOT.parents[1] / "src"
 RUNTIME_PATH = SKILL_ROOT / "_rtx" / "_mail_envelope_stream.py"
-SIDECAR_PATH = SKILL_ROOT / "_rtx" / "._mail_envelope_stream.py.blueprint.yaml"
+BLUEPRINT_PATH = SKILL_ROOT / "blueprints" / "rtx-mail-envelope-stream.yaml"
 
 
 def _load_runtime():
@@ -160,40 +160,50 @@ def test_composite_non_list_json_does_not_emit_raw_payload(capsys) -> None:
 
 
 def test_composite_declares_typed_dispatch_boundary() -> None:
-    assert SIDECAR_PATH.is_file(), "composite machine sidecar is missing"
-    sidecar = yaml.safe_load(SIDECAR_PATH.read_text(encoding="utf-8"))
+    assert BLUEPRINT_PATH.is_file(), "composite behavioral-source blueprint is missing"
+    source = yaml.safe_load(BLUEPRINT_PATH.read_text(encoding="utf-8"))
     root = yaml.safe_load((SKILL_ROOT / "blueprint.yaml").read_text(encoding="utf-8"))
     module = _load_runtime()
+    source_interface = (
+        "email-triage.source.rtx-mail-envelope-stream"
+        ".interface.fetch-filtered-envelopes"
+    )
+    interface = source["interfaces"][source_interface]
 
     call = module.Interface.dispatches["mail-list"]
     assert (call.caller_skill, call.target_skill, call.interface) == (
         "email-triage",
         "email-client",
-        "mail-list",
+        "email-client.interface.mail-list",
     )
-    assert sidecar["id"] == "email-triage.machine.fetch-filtered-envelopes"
-    assert sidecar["binding"] == {
-        "kind": "python-entrypoint",
+    assert source["id"] == "email-triage.source.rtx-mail-envelope-stream"
+    assert source["gateway"] == {
+        "language": "Python",
         "path": "_rtx/_mail_envelope_stream.py",
-        "symbol": "Interface",
     }
-    assert sidecar["uses_interfaces"] == [
-        {"interface": "email-client.machine.mail-list", "version": 1}
+    assert interface["process_binding"]["kind"] == "process"
+    assert interface["process_binding"]["entry"] == "Interface"
+    assert source["uses_interfaces"] == [
+        {"interface": "email-client.interface.mail-list", "version": 1}
     ]
-    assert sidecar["platform_support"] == {
+    assert source["platform_support"] == {
         "linux": True,
         "macos": True,
         "windows": True,
     }
-    assert sidecar["direct_io"]["writes"][0]["medium"] == "stdout"
-    assert sidecar["owns_filesystem"] == []
-    assert any(
-        entry["interface"] == "email-triage.machine.fetch-filtered-envelopes"
-        and entry["blueprint"]["path"] == "_rtx/._mail_envelope_stream.py.blueprint.yaml"
-        for entry in root["interfaces"]
-    )
+    assert interface["contract"]["direct_io"]["writes"][0]["medium"] == "stdout"
+    assert root["authority"]["owns_filesystem"] == []
+    assert root["sources"][source["id"]]["blueprint"] == {
+        "base": "module-root",
+        "path": "blueprints/rtx-mail-envelope-stream.yaml",
+    }
+    assert root["exports"]["email-triage.interface.fetch-filtered-envelopes"][
+        "source_interface"
+    ] == source_interface
 
     email_client = yaml.safe_load(
         (SKILL_ROOT.parent / "email-client" / "blueprint.yaml").read_text(encoding="utf-8")
     )
-    assert "email-triage" in email_client["interfaces"]["machine"]["mail-list"]["allowed_callers"]
+    assert "email-triage" in email_client["exports"][
+        "email-client.interface.mail-list"
+    ]["access"]["allowed_callers"]

@@ -1,0 +1,17 @@
+content:
+- skill\-refactoring\.md
+- skill\-refactoring\.standard\.yaml
+contract_references:
+- base: repository-root
+  path: references/blueprint/schema.json
+dependencies: []
+description: Defines diagnostic signals and behavior-preserving refactoring procedures for existing skills.
+gateway:
+  language: Markdown
+  path: skill-refactoring.md
+id: skill-standards.source.skill-refactoring
+interfaces: {}
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

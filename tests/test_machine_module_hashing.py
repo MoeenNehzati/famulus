@@ -350,14 +350,73 @@ def test_dependency_change_does_not_recursively_change_consumer_local_hash(
     first = _states(root, policy)
     consumer_id = "consumer-skill.source.gateway"
 
-    (root / "skills" / "provider-skill" / "README.md").write_text(
-        "Changed module notes.\n", encoding="utf-8"
+    (root / "skills" / "provider-skill" / "_rtx" / "worker.py").write_text(
+        "print('changed')\n", encoding="utf-8"
     )
     second = _states(root, policy)
 
     assert second[consumer_id].node_hash == first[consumer_id].node_hash
     assert second[consumer_id].dependency_hashes != first[consumer_id].dependency_hashes
-    assert second["provider-skill"].node_hash != first["provider-skill"].node_hash
+    assert (
+        second["provider-skill.source.gateway"].node_hash
+        != first["provider-skill.source.gateway"].node_hash
+    )
+    assert second["provider-skill"].node_hash == first["provider-skill"].node_hash
+
+
+def test_repository_root_contract_reference_targets_exact_file_owner(
+    tmp_path: Path,
+) -> None:
+    root, policy = _repository(tmp_path)
+    shared_contract = root / "skills" / "provider-skill" / "shared.schema.json"
+    shared_contract.write_text(
+        '{"$ref": "nested/child.schema.json"}\n', encoding="utf-8"
+    )
+    child_contract = (
+        root / "skills" / "provider-skill" / "nested" / "child.schema.json"
+    )
+    child_contract.parent.mkdir()
+    child_contract.write_text(
+        '{"$ref": "../sibling.schema.json"}\n', encoding="utf-8"
+    )
+    sibling_contract = root / "skills" / "provider-skill" / "sibling.schema.json"
+    sibling_contract.write_text('{"type": "string"}\n', encoding="utf-8")
+    owner_id = _add_contract_source(
+        root,
+        "provider-skill",
+        "shared-contract",
+        "shared.schema.json",
+        content_paths=("nested/child.schema.json", "sibling.schema.json"),
+    )
+    consumer_path = (
+        root / "skills" / "consumer-skill" / "blueprints" / "gateway.yaml"
+    )
+    consumer = yaml.safe_load(consumer_path.read_text(encoding="utf-8"))
+    consumer["contract_references"] = [
+        {
+            "base": "repository-root",
+            "path": "skills/provider-skill/shared.schema.json",
+        }
+    ]
+    _write_yaml(consumer_path, consumer)
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "add shared contract")
+
+    states = _states(root, policy)
+    consumer_state = states["consumer-skill.source.gateway"]
+
+    assert {
+        (item["relation"], item["target"])
+        for item in consumer_state.dependency_hashes
+    } >= {("references-cross-owner-contract", owner_id)}
+    assert {
+        "skills/provider-skill/shared.schema.json",
+        "skills/provider-skill/nested/child.schema.json",
+        "skills/provider-skill/sibling.schema.json",
+    } <= {item["path"] for item in states[owner_id].input_manifest}
+    assert "skills/provider-skill/shared.schema.json" not in {
+        item["path"] for item in consumer_state.input_manifest
+    }
 
 
 def test_policy_last_match_wins_and_reserved_outputs_fail_closed(tmp_path: Path) -> None:
@@ -427,17 +486,18 @@ def test_route_smoke_paths_map_to_input_dependency_or_basis(tmp_path: Path) -> N
     basis_path = root / "src" / "officina" / "runtime" / "support.py"
     basis_path.parent.mkdir(parents=True)
     basis_path.write_text("VALUE = 1\n", encoding="utf-8")
+    provider_path = root / "skills" / "provider-skill" / "_rtx" / "worker.py"
 
     mappings = map_route_smoke_dependencies(
         graph,
         states,
         source_node_id="consumer-skill.source.gateway",
         loaded_paths=[
-            root / "skills" / "provider-skill" / "_rtx" / "worker.py",
+            provider_path,
             basis_path,
             root / "skills" / "consumer-skill" / "_rtx" / "worker.py",
         ],
-        certification_basis_paths=[basis_path],
+        certification_basis_paths=[basis_path, provider_path],
         repo_root=root,
     )
 

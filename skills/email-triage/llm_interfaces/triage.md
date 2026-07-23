@@ -2,13 +2,13 @@
 
 Scans emails received since the last triage run. Extracts action items and routes them to the right list. Never adds events to the calendar automatically — the user decides.
 
-Use `email-client.llm.default` to read and send email. Use `list-manager.llm.default` to read and update destination lists.
+Use `email-client.interface.default` to read and send email. Use `list-manager.interface.default` to read and update destination lists.
 
-**IMPORTANT: Never ask the user for a lookback period or watermark date. The date always comes from the `email-triage.machine.scripts-get-cutoff` interface. If that interface emits a warning or fails, report it to the user — but do not ask them to supply a date instead.**
+**IMPORTANT: Never ask the user for a lookback period or watermark date. The date always comes from the `email-triage.interface.scripts-get-cutoff` interface. If that interface emits a warning or fails, report it to the user — but do not ask them to supply a date instead.**
 
-**Decision logging:** After every classification, invoke the `email-triage.machine.scripts-log-decision` interface:
+**Decision logging:** After every classification, invoke the `email-triage.interface.scripts-log-decision` interface:
 
-`email-triage.machine.scripts-log-decision <account> <id> "<from>" "<subject>" <DECISION> "<reason>"`
+`email-triage.interface.scripts-log-decision <account> <id> "<from>" "<subject>" <DECISION> "<reason>"`
 
 `DECISION` values: `SKIP` (subject-only skip) · `NO_ACTION` (body read, nothing to do) · `TODO` (added to todo) · `POTENTIAL` (added to triage) · `DEDUP` (already exists in destination)
 `reason` = one sentence explaining the classification. Log: `triage.log`
@@ -21,19 +21,19 @@ Use `email-client.llm.default` to read and send email. Use `list-manager.llm.def
 
 ## Step 1 — Fetch new envelopes (run in parallel per account)
 
-First, call `email-client.llm.default`'s `accounts-list` to get the configured account nicknames —
+First, call `email-client.interface.default`'s `accounts-list` to get the configured account nicknames —
 do not assume or hardcode which ones exist. Triage every account it returns.
 
 Two interface calls per account:
 
-1. `email-triage.machine.scripts-get-cutoff` — the coarse lookback date (day-level; IMAP can't filter finer than a day). Its own call — the date is short, fine to see.
-2. `email-triage.machine.fetch-filtered-envelopes` with the account and that cutoff date. This composite interface fetches through the declared mail-list boundary and applies the exact watermark filter internally. Only its filtered result enters your context; never fetch unfiltered envelopes separately.
+1. `email-triage.interface.scripts-get-cutoff` — the coarse lookback date (day-level; IMAP can't filter finer than a day). Its own call — the date is short, fine to see.
+2. `email-triage.interface.fetch-filtered-envelopes` with the account and that cutoff date. This composite interface fetches through the declared mail-list boundary and applies the exact watermark filter internally. Only its filtered result enters your context; never fetch unfiltered envelopes separately.
 
 Run this per account returned by `accounts-list`, in parallel across accounts.
 
-Reading always goes through `email-client.llm.default`'s `mail-list`/`mail-read` interfaces — never call an IMAP CLI directly.
+Reading always goes through `email-client.interface.default`'s `mail-list`/`mail-read` interfaces — never call an IMAP CLI directly.
 
-If `email-triage.machine.fetch-filtered-envelopes` prints `(no new emails for …)`, skip that account in later steps. If stderr contains a `WARNING:` line, include it in the Step 6 report.
+If `email-triage.interface.fetch-filtered-envelopes` prints `(no new emails for …)`, skip that account in later steps. If stderr contains a `WARNING:` line, include it in the Step 6 report.
 
 Each envelope is JSON: `id`, `flags` (IMAP flags — absence of `\Seen` means unread, `\Answered` means replied), `subject`, `from`, `date`, `message_id`.
 
@@ -45,7 +45,7 @@ Each envelope is JSON: `id`, `flags` (IMAP flags — absence of `\Seen` means un
 
 ## Step 3 — Read email bodies in batches
 
-Use `email-client.llm.default`'s `mail-read` interface for each filtered email.
+Use `email-client.interface.default`'s `mail-read` interface for each filtered email.
 Batch up to 10 interface calls in parallel. Classify each email by sender type
 and targeting:
 
@@ -67,22 +67,22 @@ and targeting:
 
 **Follow-up commitments** (any type): if a prior reply contains an explicit promise (e.g. "I'll send you X in July"), add to `todo` regardless of type.
 
-**Log every email read at this step** — one `email-triage.machine.scripts-log-decision` call per email with its classification (`NO_ACTION`, `TODO`, `POTENTIAL`) and one sentence why. Log `NO_ACTION` even when nothing is added.
+**Log every email read at this step** — one `email-triage.interface.scripts-log-decision` call per email with its classification (`NO_ACTION`, `TODO`, `POTENTIAL`) and one sentence why. Log `NO_ACTION` even when nothing is added.
 
 ---
 
-## Step 4 — Read both destination lists via `list-manager.llm.default`
+## Step 4 — Read both destination lists via `list-manager.interface.default`
 
-Invoke `list-manager.llm.default` to read `todo` and `triage`.
+Invoke `list-manager.interface.default` to read `todo` and `triage`.
 
 ---
 
 ## Step 5 — Add action items, deduplicating
 
-Every item sent to `list-manager.llm.default` must be concrete enough for the list
+Every item sent to `list-manager.interface.default` must be concrete enough for the list
 skill to infer title, optional description, and optional deadline. Do not
 manually format list storage lines here; pass the freeform action content and
-destination list to `list-manager.llm.default`.
+destination list to `list-manager.interface.default`.
 
 For every item added to `triage`, include the source email id in the description
 so the originating message can be found again later.
@@ -99,7 +99,7 @@ so the originating message can be found again later.
 
 If deadline or date is unknown, omit rather than guess.
 
-**Dedup:** before adding to `triage`, scan for a case-insensitive substring match on the key noun (sender name, event name, program name). If a match exists in any state (`[ ]`, `[+]`, or `[-]`), skip — the item has already been triaged. Log with `DEDUP` and note the matched item. Use `list-manager.llm.default` to add new items.
+**Dedup:** before adding to `triage`, scan for a case-insensitive substring match on the key noun (sender name, event name, program name). If a match exists in any state (`[ ]`, `[+]`, or `[-]`), skip — the item has already been triaged. Log with `DEDUP` and note the matched item. Use `list-manager.interface.default` to add new items.
 
 ---
 
@@ -124,10 +124,10 @@ Include these counts in your summary, then pass them to the metrics interface.
 
 ## Step 7 — Record metrics, update watermark, and prune log
 
-If any `list-manager.llm.default` add/update in Step 5 failed (e.g. a validation error), invoke `email-triage.machine.scripts-mark-failure "<reason>"` and stop — do not call `email-triage.machine.scripts-update-watermark`. This keeps next run's lookback window covering the emails that didn't get filed, and surfaces the failure as a desktop notification via the scheduled health check.
+If any `list-manager.interface.default` add/update in Step 5 failed (e.g. a validation error), invoke `email-triage.interface.scripts-mark-failure "<reason>"` and stop — do not call `email-triage.interface.scripts-update-watermark`. This keeps next run's lookback window covering the emails that didn't get filed, and surfaces the failure as a desktop notification via the scheduled health check.
 
 After the failure's cause has been fixed, an operator may invoke
-`email-triage.machine.scripts-clear-failure "<recovery reason>"` before starting
+`email-triage.interface.scripts-clear-failure "<recovery reason>"` before starting
 a fresh triage run. This clears only the latched error; it never advances the
 watermark. Never clear a failure automatically in the same run that recorded
 it.

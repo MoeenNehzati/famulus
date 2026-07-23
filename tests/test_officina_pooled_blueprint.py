@@ -1192,14 +1192,8 @@ def test_v4_pooled_review_is_deterministic_and_certificate_backed(
     assert first == second
     assert document["schema_version"] == 2
     assert document["document_type"] == "pooled-blueprint-review"
-    assert [node["id"] for node in document["nodes"]] == [
-        "demo-skill",
-        "demo-skill.source.gateway",
-    ]
-    assert [node["node_type"] for node in document["nodes"]] == [
-        "module",
-        "behavioral_source",
-    ]
+    assert [node["id"] for node in document["nodes"]] == ["demo-skill"]
+    assert [node["node_type"] for node in document["nodes"]] == ["module"]
     assert document["root"]["node_hash"] == node_hashes["demo-skill"]
     assert all(node["certificate"]["status"] == "current" for node in document["nodes"])
     assert "health" not in first
@@ -1223,7 +1217,7 @@ def test_v4_pooled_review_validates_against_normative_schema(tmp_path: Path) -> 
 
 def test_v4_pooled_review_rejects_missing_certificate(tmp_path: Path) -> None:
     graph, node_hashes, records = _v4_fixture(tmp_path)
-    records.pop("demo-skill.source.gateway")
+    records.pop("demo-skill")
 
     with pytest.raises(PooledReviewValidationError, match="requires a current certificate"):
         render_pooled_review(

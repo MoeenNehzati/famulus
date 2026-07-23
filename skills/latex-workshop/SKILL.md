@@ -13,7 +13,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `latex-workshop.llm.default`
+- `latex-workshop.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -21,8 +21,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `latex-workshop.interface.default` — Resolve effective settings, execute the matching build, inspect the correct artifacts, and report the source of truth.
 <!-- END BLUEPRINT INTERFACES -->
 Skill: latex-workshop
 

@@ -1,0 +1,111 @@
+content:
+- _rtx/_render_plan\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: daily-plan.source.rtx-init
+  version: 1
+description: Extracts named marker blocks from a plan into files or reassembles a plan using edited block files.
+gateway:
+  language: Python
+  path: _rtx/_render_plan.py
+id: daily-plan.source.rtx-render-plan
+interfaces:
+  daily-plan.source.rtx-render-plan.interface.render-plan:
+    contract:
+      arguments:
+        operation: {description: Extract render blocks or reassemble a display plan., required: true, sensitivity: public, type: {kind: enum, values: [{value: extract, description: Write extracted render blocks beneath dir.}, {value: reassemble, description: Reassemble plan content from dir.}]}}
+        plan-file: {description: Source plan Markdown file., required: true, sensitivity: user-private, direct_io_ref: read-1, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, content_type: {kind: string, sensitivity: user-private}}}
+        dir: {description: Directory used for extracted render blocks., required: true, sensitivity: user-private, direct_io_ref: read-2, type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: false, access: read-write}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Extract writes intermediate Markdown files beneath dir.
+      outputs:
+      - {id: plan, audience: machine, description: Reassembled plan Markdown written to stdout., direct_io_ref: write-2, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Extract writes files and may produce no stdout., type: {kind: string, sensitivity: user-private}}
+      - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-3, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: extracted, class: success, outputs: [], effects: [render-files], caller_action: Use the extracted files for rendering.}
+      - {id: reassembled, class: success, outputs: [plan], effects: [], caller_action: Consume the returned plan Markdown.}
+      - {id: invalid, class: error, outputs: [diagnostic], effects: [], caller_action: Correct the operation and plan path or render directory.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {snapshot: Reassembly uses the files read during this invocation.}
+        effects:
+        - {id: render-files, direct_io_ref: write-1, action: update, value_source: {kind: argument, argument_ref: plan-file}, may_occur_in_outcomes: [extracted], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: The caller can remove or regenerate the extracted files.}}
+        mutation_safety:
+          atomicity: {per_effect_only: Extracted files are written individually.}
+          concurrent_invocations: {unsafe: Concurrent extraction into one directory is not serialized.}
+          idempotency: {idempotent: Repeating extraction with unchanged input produces equivalent files.}
+          on_uncertain_completion: {verify_then_decide: Inspect the render directory before retrying.}
+          partial_effects_on_failure: {possible: Some extracted files may exist when a later write fails.}
+          rollback_on_failure: {unavailable: Partial files are not removed automatically.}
+        verification:
+        - {method: output-schema, output_ref: plan}
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: plan
+          formats:
+          - markdown
+          id: read-1
+          medium: local-filesystem
+          path: <plan-file>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: plan
+          formats:
+          - markdown
+          id: read-2
+          medium: local-filesystem
+          path: <dir>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: plan
+          formats:
+          - markdown
+          id: write-1
+          medium: local-filesystem
+          path: <dir>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: plan
+          formats:
+          - markdown
+          id: write-2
+          medium: stdout
+          sensitivity: user-private
+        - {access: write, content: diagnostic-report, formats: [text], id: write-3, medium: stderr, sensitivity: derived-private}
+    description: Extract or reassemble sections of a plan file for rendering.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        max_positionals: 3
+        min_positionals: 3
+        positional_patterns:
+          '0': ^(extract|reassemble)$
+    usage: <extract|reassemble> <plan-file> <dir>
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: false
+  windows: false
+runtime_dependencies: []
+schema_version: 4
+uses_interfaces: []
+version: 1

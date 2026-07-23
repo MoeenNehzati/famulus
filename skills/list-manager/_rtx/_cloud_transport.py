@@ -23,12 +23,12 @@ DISPATCHES = {
     "cloud-files-lists-read": DispatchCall(
         caller_skill="list-manager",
         target_skill="cloud-files",
-        interface="lists-read",
+        interface="cloud-files.interface.lists-read",
     ),
     "cloud-files-lists-write": DispatchCall(
         caller_skill="list-manager",
         target_skill="cloud-files",
-        interface="lists-write",
+        interface="cloud-files.interface.lists-write",
     ),
 }
 

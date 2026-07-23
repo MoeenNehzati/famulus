@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import shutil
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 _VALIDATOR = (
-    Path(__file__).resolve().parents[1]
+    _REPO_ROOT
     / "skills" / "skill-maker" / "validators" / "skill_md_dispatch.py"
 )
 _spec = importlib.util.spec_from_file_location("skill_md_dispatch", _VALIDATOR)
@@ -157,3 +159,33 @@ def test_body_referencing_interface_name_passes(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert _mod.validate(tmp_path) == []
+
+
+def test_v4_machine_export_requires_generic_dispatcher_command(tmp_path: Path) -> None:
+    shutil.copytree(
+        _REPO_ROOT / "references" / "blueprint",
+        tmp_path / "references" / "blueprint",
+        ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),
+    )
+    skill = tmp_path / "skills" / "get-weather"
+    shutil.copytree(
+        _REPO_ROOT / "skills" / "get-weather",
+        skill,
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    skill_md = skill / "SKILL.md"
+    skill_md.write_text(
+        skill_md.read_text(encoding="utf-8").replace(
+            "get-weather.interface.scripts-weather",
+            "get-weather.interface.wrong",
+        ),
+        encoding="utf-8",
+    )
+
+    errors = _mod.validate(tmp_path)
+
+    assert any(
+        "get-weather.interface.scripts-weather" in error
+        and "missing dispatcher command" in error
+        for error in errors
+    )

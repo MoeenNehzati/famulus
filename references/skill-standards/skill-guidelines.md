@@ -10,7 +10,27 @@ Source-faithful repository standards for skill identity, interfaces, runtime bou
 boundary: identity, interfaces, allowed dependencies, runtime ownership, and
 import discipline. They are structural requirements, not style preferences.
 
+## Version 4 modules and behavioral sources
+
+This family is the sole live blueprint and interface authoring authority. Any pre-v4 machine-module, machine-interface, llm-interface, behavior-source, hidden-sidecar, or `.machine.`/`.llm.` material retained elsewhere in this standard is Task 6 migration input only and must not guide new or edited declarations.
+
+Every new or edited blueprint uses `schema_version: 4` and exactly one live `node_type`: `node_type: module` or `node_type: behavioral_source`. A skill is an autodiscoverable module, expressed by `discovery: {mechanism: skill}`, and uses `SKILL.md` as its module gateway; `skill` is not a node type or schema family.
+
+A module is declared by `blueprint.yaml`. Each contained behavioral source is declared under `blueprints/`, for example `blueprints/gateway.yaml`. Do not author hidden blueprint sidecars.
+
+Every node declares one whole-file `gateway` with `path` and `language`, plus optional alternative `machines`. `content` contains case-sensitive regular expressions for the files the node owns; the gateway must be included. The project node-input policy selects certification hash inputs from that ownership; `content` is not a second hash policy. Gateway fragments, symbols, and pre-v4 gateway kinds do not belong in version 4 gateway declarations.
+
+A module declares `authority`, `sources`, and `exports`. `sources` maps each contained source ID to its blueprint locator. `exports` maps a public `<module>.interface.<name>` ID to one `source_interface` and its module-level access policy. The module does not copy the source interface version, contract, or process binding.
+
+A behavioral source declares `dependencies`, `uses_interfaces`, and `interfaces`. `dependencies` names direct behavioral-source dependencies with exact versions, locators, and reasons. `uses_interfaces` names exact versions of sibling private interfaces or module exports. `interfaces` defines source-owned contracts under `<module>.source.<source>.interface.<name>`; each interface owns its version, description, semantic contract, and optional process binding.
+
+Cross-module interface use goes through the callee module's `exports` and is authorized by that export's `access`. A source may use an unexported source interface only inside its own module. Interfaces are source-owned contracts and module exports are their public relation; neither machine nor LLM is an interface node type or ID namespace.
+
+The v4 module/source graph is authored authority. Generated `SKILL.md` contract blocks, interface views, runtime-dependency manifests, certification records, and other projections must be derived from that graph and must not become a parallel declaration source.
+
 ## 1. Skill identity and contract come first
+
+Naming and frontmatter rules remain current. The pre-v4 blueprint and interface clauses preserved in this family are Task 6 migration input only and are superseded by the version 4 family above.
 
 **1. Skill identity and contract come first** — every skill has a stable
 dash-separated name and declares its dependency and interface contract before
@@ -89,6 +109,8 @@ only demonstrates deterministic filenames and generated outputs.
 
 ## Blueprint authoring notes
 
+Task 6 migration input only. The preserved pre-v4 field and sidecar notes below are not live authoring guidance.
+
 **Blueprint authoring notes**
 
 - `category`: required single string from the typed enum in
@@ -143,6 +165,8 @@ they do not receive a second health identity. Do not hand-author health files.
 
 ## Canonical interface names
 
+Task 6 migration input only. The preserved `.machine.` and `.llm.` namespaces below are not live version 4 interface names.
+
 **Canonical interface names**
 
 Every blueprint interface has a canonical fully qualified name:
@@ -196,7 +220,7 @@ dispatcher imports and CLI dispatch from skill runtime code, and
 
 ## Machine modules and exports (version 3)
 
-This family is the target version 3 authority and supersedes the imported singular machine-interface guidance below for new declarations.
+Task 6 migration input only. This preserved version 3 family is not live authoring authority.
 
 A `machine-module` is one implementation and certification node and may contain multiple nested, independently callable exports. The module ID is not callable, and sibling exports are not implicitly visible.
 
@@ -233,6 +257,8 @@ Version 3 uses only direct module `behavior_sources`. Behavior-source inheritanc
 A machine export must be structurally admissible before repository indexing. Public dispatch and LLM injection additionally require a current certificate for the selected export and pinned admissibility profile; schema acceptance alone is not certification.
 
 ## Machine interfaces
+
+Task 6 migration input only. These preserved machine-interface and hidden-sidecar rules are not live authoring guidance.
 
 **Machine interfaces**
 
@@ -455,6 +481,8 @@ reintroduce grouped parent interfaces with hidden subinterface ids.
 
 ## LLM interfaces
 
+Task 6 migration input only. These preserved llm-interface and hidden-sidecar rules are not live authoring guidance.
+
 **LLM interfaces**
 
 An `llm-interface` is not callable through the dispatcher. It documents a
@@ -515,6 +543,8 @@ This defines `example-skill.llm.default` and binds `SKILL.md` without a
 workflow; for larger skills it may route to named LLM interfaces.
 
 ## Dispatcher role
+
+Task 6 migration input only. The preserved `.machine.` resolution examples below are not the live version 4 dispatcher contract.
 
 **Dispatcher role**
 
@@ -686,6 +716,8 @@ validation after writes. This rule is enforced by
 
 ## Subprocess text boundaries
 
+The text-boundary rule remains current. Its preserved reference to machine-interface calls is Task 6 migration input only.
+
 **Subprocess text boundaries**
 
 Production Python code that asks `subprocess` for text must set both
@@ -783,6 +815,8 @@ interpret output. Implementation internals belong in tool/script docs, not
 
 ## 7. The canonical blueprint graph owns all interface definitions
 
+The graph-authority principle remains current. Its preserved machine/LLM sidecar examples are Task 6 migration input only and are superseded by the version 4 module/source family.
+
 **7. The canonical blueprint graph owns all interface definitions** — the root
 owns skill-level facts and points to neighbors; every subordinate blueprint
 owns its own facts and points to its direct neighbors. A node never repeats a
@@ -820,6 +854,8 @@ confirmation before committing. Once confirmed, stage the changed files,
 commit, and push to `origin`.
 
 ## 9. Skills are components in an evolving system — design accordingly.
+
+The system-design principle remains current. Its preserved machine-interface, llm-interface, and default-interface clauses are Task 6 migration input only.
 
 **9. Skills are components in an evolving system — design accordingly.**
 

@@ -28,10 +28,6 @@ from officina.common.artifact_health import (
     health_path_for_node,
 )
 from officina.common.audit_records import attach_record_digest
-from officina.common.blueprint_graph import (
-    load_repository_blueprint_graphs,
-    resolve_repository_skill_graph,
-)
 from officina.common.pooled_blueprint import (
     certify_pooled_review,
     pooled_review_health_path,
@@ -95,7 +91,7 @@ def materialize_canonical_policy_basis(repo: Path) -> Path:
     source_manifest = source_root / relative_manifest
     manifest = json.loads(source_manifest.read_text(encoding="utf-8"))
     assert isinstance(manifest, list)
-    write(repo / relative_manifest, source_manifest.read_text(encoding="utf-8"))
+    write_json(repo / relative_manifest, manifest)
     for pattern in manifest:
         assert isinstance(pattern, str)
         matches = (
@@ -236,12 +232,12 @@ def inline_typed_default(skill: Path) -> None:
 
 
 def write_typed_health(repo: Path, skill_name: str = "demo-skill") -> None:
-    graph = resolve_repository_skill_graph(
-        load_repository_blueprint_graphs(repo),
-        skill_name,
+    graph = checker.load_validated_skill_blueprint_graph(
+        repo / "skills" / skill_name,
+        repo / "references" / "blueprint",
     )
     key = b"k" * 32
-    key_path = repo / "skills" / "skill-audit" / ".health-authentication-key"
+    key_path = repo / "skills" / "skill-certifier" / ".health-authentication-key"
     key_path.parent.mkdir(parents=True, exist_ok=True)
     key_path.write_bytes(key)
     records = certify_graph(
@@ -408,7 +404,7 @@ def test_typed_drift_does_not_create_missing_authentication_key(tmp_path: Path) 
     assert report.derived_status == "audit-stale"
     assert "missing-authentication-key" in concern_kinds(report)
     assert not (
-        tmp_path / "skills" / "skill-audit" / ".health-authentication-key"
+        tmp_path / "skills" / "skill-certifier" / ".health-authentication-key"
     ).exists()
 
 
@@ -570,15 +566,15 @@ def test_extra_recorded_hash_is_stale(tmp_path: Path) -> None:
     )
 
 
-def test_policy_hash_changes_when_skill_audit_changes(tmp_path: Path) -> None:
+def test_policy_hash_changes_when_skill_certifier_changes(tmp_path: Path) -> None:
     materialize_canonical_policy_basis(tmp_path)
     write(tmp_path / "references" / "skill-standards" / "skill-guidelines.standard.yaml", "guidelines\n")
     write(tmp_path / "references" / "blueprint" / "schema.json", "{}\n")
     write(tmp_path / "references" / "blueprint" / "template.yaml", "template\n")
-    write(tmp_path / "skills" / "skill-audit" / "_rtx" / "_audit_certifier.py", "one\n")
+    write(tmp_path / "skills" / "skill-certifier" / "_rtx" / "_audit_certifier.py", "one\n")
 
     first = checker.compute_policy_hash(tmp_path)
-    write(tmp_path / "skills" / "skill-audit" / "_rtx" / "_audit_certifier.py", "two\n")
+    write(tmp_path / "skills" / "skill-certifier" / "_rtx" / "_audit_certifier.py", "two\n")
     second = checker.compute_policy_hash(tmp_path)
 
     assert first != second
@@ -697,7 +693,7 @@ def test_committed_shared_trust_boundary_change_invalidates_current_record(
     write_typed_health(tmp_path)
 
     before = checker.check_typed_skill(source_for(tmp_path), "demo-skill")
-    assert before.derived_status == "audit-current"
+    assert before.derived_status == "audit-current", before.concerns
 
     write(module, "two\n")
     subprocess.run(
@@ -1016,9 +1012,161 @@ def test_installed_sources_use_only_claude_registry_named_plugin_versions(
 
     sources = checker.observed_skill_sources()
 
-    assert [(source.source, source.skills_root) for source in sources] == [
-        ("claude", (active / "skills").resolve())
+    assert [
+        (source.source, source.skills_root, source.plugin_id, source.plugin_version)
+        for source in sources
+    ] == [
+        ("claude", (active / "skills").resolve(), "demo@market", "2.0")
     ]
+
+
+def test_installed_source_deduplication_rejects_conflicting_plugin_identity(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "plugin" / "skills"
+    root.mkdir(parents=True)
+    first = checker.SkillSource(
+        source="claude",
+        package_root=root.parent,
+        skills_root=root,
+        plugin_id="first@market",
+        plugin_version="1",
+    )
+    second = checker.SkillSource(
+        source="claude",
+        package_root=root.parent,
+        skills_root=root,
+        plugin_id="second@market",
+        plugin_version="2",
+    )
+
+    with pytest.raises(checker.SkillSourceDiscoveryError, match="metadata conflict"):
+        checker.dedupe_skill_sources([first, second])
+
+
+def test_active_claude_plugin_with_malformed_version_metadata_fails_with_exact_remediation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    claude_home = tmp_path / "claude-home"
+    active = claude_home / "plugins" / "cache" / "market" / "demo" / "unknown"
+    make_skill(active, "active-skill")
+    write_json(
+        claude_home / "plugins" / "installed_plugins.json",
+        {
+            "version": 2,
+            "plugins": {
+                "demo@market": [
+                    {"version": 7, "scope": "user", "installPath": str(active)}
+                ]
+            },
+        },
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+
+    with pytest.raises(checker.SkillSourceDiscoveryError) as captured:
+        checker.observed_skill_sources()
+
+    message = str(captured.value)
+    assert "demo@market" in message
+    assert '"version": 7' in message
+    assert "repair installed_plugins.json or pass --skill-root, --skills-root, or --repo-root" in message
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["status", "--all", "--json"],
+        ["compute-hashes", "--json"],
+    ],
+)
+def test_active_plugin_legacy_blueprint_never_reaches_legacy_execution(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+    command: list[str],
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    claude_home = tmp_path / "claude-home"
+    active = claude_home / "plugins" / "cache" / "market" / "demo" / "7"
+    make_skill(active, "active-skill")
+    write_json(
+        claude_home / "plugins" / "installed_plugins.json",
+        {
+            "version": 2,
+            "plugins": {
+                "demo@market": [
+                    {
+                        "version": "7",
+                        "scope": "user",
+                        "installPath": str(active),
+                    }
+                ]
+            },
+        },
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setattr(
+        checker,
+        "compute_audit_hashes",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("active plugin reached legacy execution")
+        ),
+    )
+
+    exit_code = checker.main(command)
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert 'plugin "demo@market" version "7"' in captured.err
+    assert str(active) in captured.err
+    assert (
+        "repair installed_plugins.json or pass --skill-root, --skills-root, "
+        "or --repo-root"
+    ) in captured.err
+
+
+def test_active_v4_plugin_ignores_stale_cached_legacy_version(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    claude_home = tmp_path / "claude-home"
+    active = claude_home / "plugins" / "cache" / "market" / "demo" / "2"
+    stale = claude_home / "plugins" / "cache" / "market" / "demo" / "1"
+    _v4_certified_fixture(active)
+    make_skill(stale, "stale-skill")
+    write_json(
+        claude_home / "plugins" / "installed_plugins.json",
+        {
+            "version": 2,
+            "plugins": {
+                "demo@market": [
+                    {
+                        "version": "2",
+                        "scope": "user",
+                        "installPath": str(active),
+                    }
+                ]
+            },
+        },
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+
+    exit_code = checker.main(["compute-hashes", "--json"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    observed = {report["skill"] for report in payload["skills"]}
+    assert "demo-skill" in observed
+    assert "stale-skill" not in observed
+    assert "stale-skill" not in captured.out
 
 
 def test_malformed_claude_plugin_registry_fails_with_remediation(
@@ -1219,7 +1367,7 @@ def test_target_schema_file_symlink_is_rejected(tmp_path: Path, capsys) -> None:
 def test_target_health_key_symlink_is_rejected(tmp_path: Path, capsys) -> None:
     skill = make_typed_skill(tmp_path, "demo-skill")
     write_typed_health(tmp_path, "demo-skill")
-    key = tmp_path / "skills" / "skill-audit" / ".health-authentication-key"
+    key = tmp_path / "skills" / "skill-certifier" / ".health-authentication-key"
     outside = tmp_path.parent / f"{tmp_path.name}-outside-health-key"
     outside.write_bytes(b"x" * 32)
     key.unlink()
@@ -1440,44 +1588,59 @@ def test_compute_hashes_json_reports_current_hashes_without_reading_record(tmp_p
     assert not (tmp_path / "skills" / "demo-skill" / ".last_audit.json").exists()
 
 
-def test_task_7_machine_sidecars_are_consistently_windows_unsupported() -> None:
-    sidecars = [
-        MODULE_PATH.parent / "._check_drift_state.py.compute-hashes.blueprint.yaml",
-        MODULE_PATH.parent / "._check_drift_state.py.drift-status.blueprint.yaml",
-    ]
-
-    for sidecar in sidecars:
-        declaration = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
-        assert declaration["platform_support"]["windows"] is False
-        assert declaration["dependencies"]
-        assert all(
-            dependency["platforms"]["windows"] is False
-            for dependency in declaration["dependencies"]
-        )
+def test_v4_drift_source_is_consistently_windows_unsupported() -> None:
+    source = MODULE_PATH.parents[1] / "blueprints" / "rtx-check-drift-state.yaml"
+    declaration = yaml.safe_load(source.read_text(encoding="utf-8"))
+    assert declaration["platform_support"]["windows"] is False
+    assert declaration["runtime_dependencies"]
+    assert all(
+        dependency["platforms"]["windows"] is False
+        for dependency in declaration["runtime_dependencies"]
+    )
 
 
-def test_drift_status_sidecar_declares_timestamped_report_writer() -> None:
-    sidecar = MODULE_PATH.parent / "._check_drift_state.py.drift-status.blueprint.yaml"
-    declaration = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+def test_v4_drift_source_declares_timestamped_report_writer() -> None:
+    source = MODULE_PATH.parents[1] / "blueprints" / "rtx-check-drift-state.yaml"
+    declaration = yaml.safe_load(source.read_text(encoding="utf-8"))
+    assert "cryptography" not in {
+        dependency["name"] for dependency in declaration["runtime_dependencies"]
+        if dependency["kind"] == "python-package"
+    }
+    audit_records = (
+        MODULE_PATH.parents[3]
+        / "src"
+        / "officina"
+        / "common"
+        / "blueprints"
+        / "audit-records.yaml"
+    )
+    common_declaration = yaml.safe_load(audit_records.read_text(encoding="utf-8"))
     assert "cryptography" in {
-        dependency["name"] for dependency in declaration["dependencies"]
+        dependency["name"]
+        for dependency in common_declaration["runtime_dependencies"]
         if dependency["kind"] == "python-package"
     }
 
-    assert declaration["direct_io"]["writes"] == [
-        {
-            "medium": "local-filesystem",
-            "access": "write",
-            "system": "filesystem",
-            "content": "drift-report",
-            "format": "markdown",
-            "path": "_build/*.md",
-            "path_match": "glob",
-            "sensitivity": "derived-private",
-            "reason": "Write the timestamped human-readable drift report.",
-        }
+    interface = declaration["interfaces"][
+        "skill-drift.source.rtx-check-drift-state.interface.drift-status"
     ]
-    assert declaration["owns_filesystem"] == [
+    assert interface["contract"]["direct_io"]["writes"][0] == {
+        "id": "write-1",
+        "medium": "local-filesystem",
+        "access": "write",
+        "system": "filesystem",
+        "content": "drift-report",
+        "formats": ["markdown"],
+        "path": "_build/*.md",
+        "path_match": "glob",
+        "sensitivity": "derived-private",
+        "reason": "Write the timestamped human-readable drift report.",
+    }
+    assert declaration["platform_support"]["windows"] is False
+    module = yaml.safe_load(
+        (MODULE_PATH.parents[1] / "blueprint.yaml").read_text(encoding="utf-8")
+    )
+    assert module["authority"]["owns_filesystem"] == [
         {
             "match": "regex",
             "path": (
@@ -1555,6 +1718,34 @@ def test_private_v4_drift_is_public_key_only_read_only_and_exact(tmp_path: Path)
     assert "load_or_create_certificate_signing_key" not in source
     assert "sign_certificate_payload" not in source
     assert "rotate_certificate_signing_key" not in source
+
+
+def test_public_v4_status_and_hash_routes_use_certificate_state(
+    tmp_path: Path,
+) -> None:
+    graph = _v4_certified_fixture(tmp_path)
+    public_key_root = checker.certificate_public_key_root(tmp_path)
+    public_key_root.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(tmp_path / "public-keys", public_key_root)
+    source = source_for(tmp_path)
+
+    status = checker.check_skill(source, "demo-skill")
+    hashes = checker.hash_report_for_skill(source, "demo-skill")
+
+    owned = {
+        node_id
+        for node_id, node in graph.nodes.items()
+        if node.skill_root == tmp_path / "skills" / "demo-skill"
+    }
+    assert status.derived_status == "audit-current"
+    assert status.concerns == []
+    assert set(status.current_hashes["nodes"]) == owned
+    assert set(status.recorded_hashes["nodes"]) == owned
+    assert set(hashes.hashes["nodes"]) == owned
+    assert all(
+        value["node_hash"].startswith("sha256:")
+        for value in hashes.hashes["nodes"].values()
+    )
 
 
 def test_private_v4_drift_propagates_explicit_non_atomic_fallback(

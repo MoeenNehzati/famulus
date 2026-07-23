@@ -1,0 +1,31 @@
+authority:
+  owns_filesystem: []
+content:
+- llm\-interface\-design\.md
+- skill\-guidelines\-semantic\-review\.md
+- skill\-guidelines\.md
+- skill\-guidelines\.standard\.yaml
+- skill\-refactoring\.md
+- skill\-refactoring\.standard\.yaml
+description: Owns the canonical authored and structured standards for skill design and refactoring.
+exports: {}
+gateway:
+  language: YAML
+  path: skill-guidelines.standard.yaml
+id: skill-standards
+node_type: module
+schema_version: 4
+sources:
+  skill-standards.source.llm-interface-design:
+    blueprint:
+      base: module-root
+      path: blueprints/llm-interface-design.yaml
+  skill-standards.source.skill-guidelines:
+    blueprint:
+      base: module-root
+      path: blueprints/skill-guidelines.yaml
+  skill-standards.source.skill-refactoring:
+    blueprint:
+      base: module-root
+      path: blueprints/skill-refactoring.yaml
+version: 1

@@ -17,19 +17,27 @@ Category: productivity-general-assistant
 Skill Version: 1
 
 Uses Interfaces:
-- `list-manager.machine.cloud-create-entry -> cloud-files.machine.lists-read@1`
-- `list-manager.machine.cloud-create-entry -> cloud-files.machine.lists-write@1`
-- `list-manager.machine.cloud-delete -> cloud-files.machine.lists-read@1`
-- `list-manager.machine.cloud-delete -> cloud-files.machine.lists-write@1`
-- `list-manager.machine.cloud-init -> cloud-files.machine.lists-write@1`
-- `list-manager.machine.cloud-list-categories -> cloud-files.machine.lists-read@1`
-- `list-manager.machine.cloud-read -> cloud-files.machine.lists-read@1`
-- `list-manager.machine.cloud-read-beautify -> cloud-files.machine.lists-read@1`
-- `list-manager.machine.cloud-update -> cloud-files.machine.lists-read@1`
-- `list-manager.machine.cloud-update -> cloud-files.machine.lists-write@1`
+- `list-manager.source.rtx-init -> cloud-files.interface.lists-read@1`
+- `list-manager.source.rtx-init -> cloud-files.interface.lists-write@1`
 
 Public Interfaces:
-- `list-manager.llm.default`
+- `list-manager.interface.beautify-list`
+- `list-manager.interface.cloud-create-entry`
+- `list-manager.interface.cloud-delete`
+- `list-manager.interface.cloud-init`
+- `list-manager.interface.cloud-list-categories`
+- `list-manager.interface.cloud-read`
+- `list-manager.interface.cloud-read-beautify`
+- `list-manager.interface.cloud-update`
+- `list-manager.interface.create-entry`
+- `list-manager.interface.default`
+- `list-manager.interface.describe-schema`
+- `list-manager.interface.generate-id`
+- `list-manager.interface.init-list`
+- `list-manager.interface.migrate-markdown`
+- `list-manager.interface.read-beautify`
+- `list-manager.interface.read-list`
+- `list-manager.interface.update-list`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -37,57 +45,56 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `beautify-list` — Render YAML list entries from stdin (nested bullet-list markdown by default for todo/triage; --table for a flat GFM table, --diff for the legacy diff-fenced view). Pass YAML via stdin using `dispatcher --stdin`.
-  - `dispatcher --caller-skill list-manager list-manager.machine.beautify-list [-D|--no-descriptions] [--markdown|--table|--diff] [--relative-deadlines] [--ids]`
+- `list-manager.interface.beautify-list` — Render YAML list entries from stdin (nested bullet-list markdown by default for todo/triage; --table for a flat GFM table, --diff for the legacy diff-fenced view). Pass YAML via stdin using `dispatcher --stdin`.
+  - `dispatcher --caller-skill list-manager list-manager.interface.beautify-list [-D|--no-descriptions] [--markdown|--table|--diff] [--relative-deadlines] [--ids]`
   - Reads YAML from stdin and renders user-facing list output. No allowed_flags restriction: -D/--markdown/--table/--diff/--relative-deadlines/--ids all pass through.
-- `cloud-create-entry` — Add entries to a cloud list under a category path.
-  - `dispatcher --caller-skill list-manager list-manager.machine.cloud-create-entry <name> <category/path> --cloud --entries /tmp/entry.yaml`
-- `cloud-delete` — Delete one or more entries by id from a cloud list. Ids come after --cloud.
-  - `dispatcher --caller-skill list-manager list-manager.machine.cloud-delete <name> --cloud <id> [<id>...]`
+- `list-manager.interface.cloud-create-entry` — Add entries to a cloud list under a category path.
+  - `dispatcher --caller-skill list-manager list-manager.interface.cloud-create-entry <name> <category/path> --cloud --entries /tmp/entry.yaml`
+- `list-manager.interface.cloud-delete` — Delete one or more entries by id from a cloud list. Ids come after --cloud.
+  - `dispatcher --caller-skill list-manager list-manager.interface.cloud-delete <name> --cloud <id> [<id>...]`
   - Delete one or more entries by ID from a cloud list.
-- `cloud-init` — Create a new list in cloud storage.
-  - `dispatcher --caller-skill list-manager list-manager.machine.cloud-init <name> --cloud --schema <schema>`
+- `list-manager.interface.cloud-init` — Create a new list in cloud storage.
+  - `dispatcher --caller-skill list-manager list-manager.interface.cloud-init <name> --cloud --schema <schema>`
   - Create a new list in cloud storage.
-- `cloud-list-categories` — Return cached cloud-list category paths, refreshing them after the local use countdown expires or on request.
-  - `dispatcher --caller-skill list-manager list-manager.machine.cloud-list-categories <name> --cloud [--refresh]`
+- `list-manager.interface.cloud-list-categories` — Return cached cloud-list category paths, refreshing them after the local use countdown expires or on request.
+  - `dispatcher --caller-skill list-manager list-manager.interface.cloud-list-categories <name> --cloud [--refresh]`
   - Returns category paths from the local cache; refreshes from cloud storage on first use, after twenty lookups, or with --refresh.
-- `cloud-read` — Read a cloud list by name (raw YAML), optionally filtered. A filtered read preserves structure: same shape as the full doc, pruned to only branches containing a match -- ancestor categories/parent entries are kept, and a match is never duplicated as both a nested child and a top-level result.
-  - `dispatcher --caller-skill list-manager list-manager.machine.cloud-read <name> [filters] --cloud`
+- `list-manager.interface.cloud-read` — Read a cloud list by name (raw YAML), optionally filtered. A filtered read preserves structure: same shape as the full doc, pruned to only branches containing a match -- ancestor categories/parent entries are kept, and a match is never duplicated as both a nested child and a top-level result.
+  - `dispatcher --caller-skill list-manager list-manager.interface.cloud-read <name> [filters] --cloud`
   - Read cloud list by name (raw YAML), optionally filtered. Filtered output is a pruned tree, not a flat list of matches -- do not assume flat-list shape.
-- `cloud-read-beautify` — Read a cloud list by name and render it (nested bullet-list markdown by default, id-annotated; --table for a flat GFM table, --diff for the legacy diff-fenced view). Relay stdout verbatim.
-  - `dispatcher --caller-skill list-manager list-manager.machine.cloud-read-beautify <name> [filters] --cloud`
+- `list-manager.interface.cloud-read-beautify` — Read a cloud list by name and render it (nested bullet-list markdown by default, id-annotated; --table for a flat GFM table, --diff for the legacy diff-fenced view), writing stdout or an optional output file.
+  - `dispatcher --caller-skill list-manager list-manager.interface.cloud-read-beautify <name> [filters] --cloud [-o FILE]`
   - Read a cloud list by name and render it as nested bullet-list markdown by default, optionally filtered.
-- `cloud-update` — Update cloud-list entries from a YAML list of patch objects, each with a quoted string `id`; input is not a mapping keyed by id.
-  - `dispatcher --caller-skill list-manager list-manager.machine.cloud-update <name> --cloud --file /tmp/patch.yaml`
+- `list-manager.interface.cloud-update` — Update cloud-list entries from a YAML list of patch objects, each with a quoted string `id`; input is not a mapping keyed by id.
+  - `dispatcher --caller-skill list-manager list-manager.interface.cloud-update <name> --cloud --file /tmp/patch.yaml`
   - file-mode: Patch file must contain a YAML list of objects; quote every id string.
   - stdin-mode: Stdin patch must contain a YAML list of objects; quote every id string.
-- `create-entry` — Add entries to a local YAML list under a category path.
-  - `dispatcher --caller-skill list-manager list-manager.machine.create-entry <file> <category/path> --entries /tmp/entry.yaml`
-- `describe-schema` — Describe entry-level fields (types/required/enums) for a list schema.
-  - `dispatcher --caller-skill list-manager list-manager.machine.describe-schema <schema> [field]`
+- `list-manager.interface.create-entry` — Add entries to a local YAML list under a category path.
+  - `dispatcher --caller-skill list-manager list-manager.interface.create-entry <file> <category/path> --entries /tmp/entry.yaml`
+- `list-manager.interface.describe-schema` — Describe entry-level fields (types/required/enums) for a list schema.
+  - `dispatcher --caller-skill list-manager list-manager.interface.describe-schema <schema> [field]`
   - First positional is the schema name (todo, triage, default); optional second positional is a field name, or '*'/omitted for all fields. Purely local and read-only -- no cloud variant needed.
-- `generate-id` — Generate one or more collision-free 6-char entry IDs against a local list file.
-  - `dispatcher --caller-skill list-manager list-manager.machine.generate-id <file> [--count N]`
-- `init-list` — Create a new empty local YAML list file.
-  - `dispatcher --caller-skill list-manager list-manager.machine.init-list <file> [--schema <name>]`
-- `migrate-markdown` — Migrate a legacy Markdown list to YAML format.
-  - `dispatcher --caller-skill list-manager list-manager.machine.migrate-markdown <source.md> <dest.yaml> --schema <schema>`
-- `read-beautify` — Read a local YAML list file and render it for display (nested bullet-list markdown by default; --table for a flat GFM table, --diff for the legacy diff-fenced view).
-  - `dispatcher --caller-skill list-manager list-manager.machine.read-beautify <file> [filters] [--sort FIELD] [-D|--no-descriptions] [--markdown|--table|--diff] [--no-ids] [-o FILE]`
+- `list-manager.interface.generate-id` — Generate one or more collision-free 6-char entry IDs against a local list file.
+  - `dispatcher --caller-skill list-manager list-manager.interface.generate-id <file> [--count N]`
+- `list-manager.interface.init-list` — Create a new empty local YAML list file.
+  - `dispatcher --caller-skill list-manager list-manager.interface.init-list <file> [--schema <name>]`
+- `list-manager.interface.migrate-markdown` — Migrate a legacy Markdown list to YAML format.
+  - `dispatcher --caller-skill list-manager list-manager.interface.migrate-markdown <source.md> <dest.yaml> --schema <schema>`
+- `list-manager.interface.read-beautify` — Read a local YAML list file and render it for display (nested bullet-list markdown by default; --table for a flat GFM table, --diff for the legacy diff-fenced view).
+  - `dispatcher --caller-skill list-manager list-manager.interface.read-beautify <file> [filters] [--sort FIELD] [-D|--no-descriptions] [--markdown|--table|--diff] [--no-ids] [-o FILE]`
   - Read a local YAML list file and immediately return pretty output. No allowed_flags restriction: --sort/-D/--markdown/--table/--diff/--no-ids/-o all pass through.
-- `read-list` — Read a local YAML list file, optionally filtered (raw YAML output). A filtered read preserves structure: it returns the same shape as the input (full doc with categories, or a bare list) pruned to only branches containing a match -- every ancestor category and parent entry of a match is kept for context, and a match is never duplicated as both a nested child and an independent top-level result.
-  - `dispatcher --caller-skill list-manager list-manager.machine.read-list <file> [filters]`
+- `list-manager.interface.read-list` — Read a local YAML list file, optionally filtered (raw YAML output). A filtered read preserves structure: it returns the same shape as the input (full doc with categories, or a bare list) pruned to only branches containing a match -- every ancestor category and parent entry of a match is kept for context, and a match is never duplicated as both a nested child and an independent top-level result.
+  - `dispatcher --caller-skill list-manager list-manager.interface.read-list <file> [filters]`
   - First positional is the local YAML file; remaining positionals are filters. Filtered output is a pruned tree (or pruned list, if the input itself was a bare list), not a flat list of matches -- do not assume flat-list shape.
-- `update-list` — Update entries in a local YAML list file from a patch file (keyed by id) or stdin.
-  - `dispatcher --caller-skill list-manager list-manager.machine.update-list <file> --file /tmp/patch.yaml`
+- `list-manager.interface.update-list` — Update entries in a local YAML list file from a patch file (keyed by id) or stdin.
+  - `dispatcher --caller-skill list-manager list-manager.interface.update-list <file> --file /tmp/patch.yaml`
   - file-mode: Externally supported update mode; caller prepares the patch file.
   - stdin-batch: Internal convenience mode for the owning skill when feeding YAML directly.
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `list-manager.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

@@ -119,6 +119,27 @@ def _fixed_bindings(export: InterfaceExport) -> list[dict[str, Any]]:
     return [dict(entry) for entry in raw]
 
 
+def _authored_pattern_binding(
+    export: InterfaceExport,
+) -> Mapping[str, Any] | None:
+    if export.source_node_id is None:
+        return None
+    binding = _process_binding(export)
+    if "patterns" not in binding:
+        return None
+    raw_arguments = binding.get("arguments", {})
+    raw_fixed = binding.get("fixed", [])
+    if not isinstance(raw_arguments, Mapping) or not isinstance(raw_fixed, list):
+        raise ProcessBindingError(
+            f"{export.interface_id}: invalid authored process-binding layout"
+        )
+    if raw_arguments or raw_fixed:
+        raise ProcessBindingError(
+            f"{export.interface_id}: authored patterns cannot mix with explicit bindings"
+        )
+    return binding
+
+
 def _arity(binding: Mapping[str, Any], context: str) -> tuple[int, int | None]:
     raw = binding.get("arity")
     if not isinstance(raw, Mapping):
@@ -571,18 +592,17 @@ def parse_caller_invocation(
 ) -> ParsedCallerInvocation:
     """Parse only the caller-visible argument tail for one export."""
 
-    arguments, fixed = _validate_layout(export)
-    process_binding = _process_binding(export)
-    if export.source_node_id is not None and "patterns" in process_binding:
+    process_binding = _authored_pattern_binding(export)
+    if process_binding is not None:
         _pattern, pattern_name = select_authored_argv_pattern(
             process_binding["patterns"],
             argv,
             stdin_requested=stdin_requested,
         )
-        if not arguments and not fixed:
-            return ParsedCallerInvocation(
-                {}, stdin_requested, tuple(argv), pattern_name
-            )
+        return ParsedCallerInvocation(
+            {}, stdin_requested, tuple(argv), pattern_name
+        )
+    arguments, fixed = _validate_layout(export)
     positional = sorted(
         (
             (declaration["invocation_binding"]["position"], argument_id, declaration)
@@ -780,8 +800,11 @@ def compile_route_smoke_invocation(
     """Compile the shared smoke route without requiring normal caller arguments."""
 
     _require_export_owner(module, export)
-    _argument_declarations, fixed = _validate_layout(export)
     argv, entry = _process_prefix_and_entry(export)
+    if _authored_pattern_binding(export) is not None:
+        argv.append("--route-smoke")
+        return CompiledInvocationPlan(tuple(argv), None, entry)
+    _argument_declarations, fixed = _validate_layout(export)
     argv.extend(_fixed_argv(fixed))
     argv.append("--route-smoke")
     return CompiledInvocationPlan(tuple(argv), None, entry)
@@ -795,15 +818,9 @@ def compile_gateway_invocation(
     """Compile a parsed call to deterministic argv without gateway prefixes."""
 
     _require_export_owner(module, export)
-    arguments, fixed = _validate_layout(export)
     if parsed.raw_argv is not None:
-        process_binding = _process_binding(export)
-        if (
-            export.source_node_id is None
-            or "patterns" not in process_binding
-            or arguments
-            or fixed
-        ):
+        process_binding = _authored_pattern_binding(export)
+        if process_binding is None:
             raise ProcessBindingError(
                 f"{export.interface_id}: raw argv requires an authored process-binding pattern"
             )
@@ -818,6 +835,7 @@ def compile_gateway_invocation(
         return CompiledInvocationPlan(
             tuple(argv), stdin_argument_id, entry, parsed.pattern_name
         )
+    arguments, fixed = _validate_layout(export)
     positionals: list[tuple[int, list[str]]] = []
     fixed_named: list[tuple[str, list[str]]] = []
     for binding in fixed:

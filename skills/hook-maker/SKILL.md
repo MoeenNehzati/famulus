@@ -13,7 +13,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `hook-maker.llm.default`
+- `hook-maker.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -21,8 +21,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `hook-maker.interface.default` — Design or implement a hook from semantic purpose through explicit host bindings, adapters, registration, and golden verification.
 <!-- END BLUEPRINT INTERFACES -->
 ## Core rule
 

@@ -1,0 +1,73 @@
+content:
+- oauth_json\.py
+dependencies: []
+description: Serializes a mapping as private indented JSON and replaces one OAuth client file using the secure atomic-files helper on POSIX or a restrictive temporary file elsewhere.
+gateway:
+  language: Python
+  path: oauth_json.py
+id: common.source.oauth-json
+interfaces:
+  common.source.oauth-json.interface.python-api:
+    contract:
+      arguments:
+        path:
+          description: OAuth JSON destination; its parent directories are created when absent.
+          required: true
+          sensitivity: credential
+          direct_io_ref: oauth-file
+          type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: false, access: write, content_type: {kind: string, sensitivity: credential, format: {named: json}}}
+        payload:
+          description: Mapping serialized as indented UTF-8 JSON with a trailing newline.
+          required: true
+          sensitivity: credential
+          type: {kind: string, sensitivity: credential, description: Python mapping with JSON-serializable values.}
+      preconditions:
+      - id: destination-not-symlink
+        description: The final destination must not be a symbolic link.
+        check: {kind: direct-io, direct_io_ref: oauth-file, predicate: writable}
+        unmet_outcome: rejected
+        caller_action: Choose a normal file path in a caller-controlled configuration directory.
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Creates parent directories and replaces the credential file with mode 0600 where supported.
+      outputs: []
+      outcomes:
+      - {id: completed, class: success, outputs: [], effects: [oauth-file-state], caller_action: Continue with the service-specific OAuth flow.}
+      - {id: rejected, class: refusal, outputs: [], effects: [], caller_action: Remove the unsafe symlink or select a safe destination.}
+      - {id: write-failed, class: error, outputs: [], effects: [], caller_action: Inspect the OAuthJsonError and filesystem permissions before retrying.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: The implementation rechecks the destination before replacement.}
+        effects:
+        - id: oauth-file-state
+          direct_io_ref: oauth-file
+          action: update
+          value_source: {kind: argument, argument_ref: payload}
+          may_occur_in_outcomes: [completed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: oauth-file}
+          reversibility: {irreversible: The previous credential JSON is replaced without a retained backup.}
+        mutation_safety:
+          atomicity: {atomic: The final file replacement is atomic on supported POSIX and Windows filesystems.}
+          concurrent_invocations: {unsafe: Concurrent writers are not serialized and the last replacement wins.}
+          idempotency: {idempotent: Repeating the same path and payload leaves equivalent JSON content.}
+          on_uncertain_completion: {verify_then_decide: Read and validate the destination JSON before retrying.}
+          partial_effects_on_failure: {possible: Parent directories may remain even if file replacement fails.}
+          rollback_on_failure: {unavailable: No prior file backup is retained.}
+        verification:
+        - {method: direct-io-state, direct_io_ref: oauth-file}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: oauth-file, medium: local-filesystem, access: read, content: existing destination type and final JSON state, formats: [json], sensitivity: credential, path: <path>}
+        writes:
+        - {id: oauth-file, medium: local-filesystem, access: write, content: OAuth Desktop client JSON, formats: [json], sensitivity: credential, path: <path>}
+        network: []
+    description: Writes confined OAuth client JSON for Python callers.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces:
+- interface: common.source.atomic-files.interface.python-api
+  version: 1
+version: 1

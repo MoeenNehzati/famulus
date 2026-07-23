@@ -6,17 +6,17 @@ shape and field-level authoring rules. See
 contributor overview and [`docs/certification_and_drift.md`](../../docs/certification_and_drift.md)
 for the version-4 input and certificate contract.
 
-## Staged version-4 contracts
+## Live version-4 contracts
 
-Version 4 is staged for an atomic graph cutover. Validate candidates directly
-against their concrete schema:
+Version 4 is the live blueprint family. Validate each document against its
+concrete schema:
 
 - `module.schema.json`: discovery, filesystem authority, contained behavioral
   sources, and exported interfaces
 - `behavioral-source.schema.json`: a whole-file gateway, owned content,
   dependencies, used interfaces, and intrinsic interface contracts
-- `caller-contract.schema.json`: the unchanged live pre-v4 caller contract plus
-  v4-scoped semantic contract and process-binding definitions
+- `caller-contract.schema.json`: the shared semantic contract and
+  process-binding definitions
 - `direct-io.schema.json`: direct resource interactions used by semantic
   contracts
 - `certificate.schema.json`: the signed current-certificate and history-entry
@@ -24,19 +24,16 @@ against their concrete schema:
 - `common.schema.json`: shared identifiers, locators, gateways, requirements,
   ownership, and relationship shapes
 
-`schema.json` deliberately remains the live pre-v4 dispatcher until Task 5.
-It must reject direct version-4 module and behavioral-source documents during
-staging. The exact predecessor files `machine-module.schema.json` and
-`behavior-source.schema.json` stay on that live route through Task 4;
-`module.schema.json` and `behavioral-source.schema.json` are direct-tested
-candidates only. Task 5 replaces the predecessors and routing atomically.
-Other pre-v4 schema files and `v2/` remain migration inputs; do not extend them
-with version-4 behavior.
+`schema.json` is the live dispatcher and accepts only version-4 modules and
+behavioral sources. `schema.annotated-draft.json` is the matching authoring
+entry point; it delegates field-level guidance to those same two concrete
+schemas. Pre-v4 schema files, including `machine-module.schema.json`,
+`behavior-source.schema.json`, and `v2/`, remain migration inputs for Task 6;
+do not extend them with version-4 behavior.
 
-`template.yaml` is the schema-family artifact manifest. Its existing
-`examples` and `generated_outputs` describe the live family. `v4_examples`
-names the staged module root and behavioral-source sidecars without switching
-the live generator.
+`template.yaml` is the schema-family artifact manifest. Its `examples` name
+the live module root and ordinary behavioral-source blueprints under
+`blueprints/`; `generated_outputs` names the derived `SKILL.md` blocks.
 
 ## Version-4 authoring contract
 
@@ -98,10 +95,8 @@ and platform declarations for blueprint correctness. The resulting versioned
 audit records belong in `checks`; certificates do not record host-runtime
 evidence or performance observations.
 
-`schema-meta.json` defines the annotation protocol and staged relationship
-matrix. `interface-projection.schema.json`, `pooled-review.schema.json`, and
-their producers remain pre-v4 until they can move atomically with the version-4
-graph in Task 2. `health.schema.json` likewise remains a pre-v4 migration input;
+`schema-meta.json` defines the annotation protocol and relationship matrix.
+Pre-v4 projection, pooled-review, and health schemas remain migration inputs;
 new version-4 certification records use `certificate.schema.json`.
 
 `legacy-skill.schema.json` is an exact migration snapshot of the former

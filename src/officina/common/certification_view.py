@@ -66,6 +66,7 @@ class CertificationView(Protocol):
         module_id: str,
         interface_id: str,
         interface_version: int,
+        source_node_id: str | None,
     ) -> CertificationDecision: ...
 
     def certificate_for(self, node_id: str) -> CurrentCertificate | None: ...
@@ -118,6 +119,7 @@ class CertificateRecordView:
         module_id: str,
         interface_id: str,
         interface_version: int,
+        source_node_id: str | None,
     ) -> CertificationDecision:
         del interface_version
         certificate = self.certificate_for(module_id)
@@ -127,6 +129,14 @@ class CertificateRecordView:
                 "certification-unavailable",
                 f"{module_id}: no current certificate for {interface_id}",
             )
+        if source_node_id is not None:
+            source_certificate = self.certificate_for(source_node_id)
+            if source_certificate is None:
+                return CertificationDecision(
+                    False,
+                    "source-certification-unavailable",
+                    f"{source_node_id}: no current certificate for {interface_id}",
+                )
         return CertificationDecision(True, "current", "Current certificate.")
 
 
@@ -384,8 +394,14 @@ class CertificateCurrentnessView:
         module_id: str,
         interface_id: str,
         interface_version: int,
+        source_node_id: str | None,
     ) -> CertificationDecision:
-        return self._record_view.check_export(module_id, interface_id, interface_version)
+        return self._record_view.check_export(
+            module_id,
+            interface_id,
+            interface_version,
+            source_node_id,
+        )
 
 
 class RejectingCertificationView:
@@ -396,7 +412,9 @@ class RejectingCertificationView:
         module_id: str,
         interface_id: str,
         interface_version: int,
+        source_node_id: str | None,
     ) -> CertificationDecision:
+        del module_id, interface_id, interface_version, source_node_id
         return CertificationDecision(
             False,
             "certification-unavailable",

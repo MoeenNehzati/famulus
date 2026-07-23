@@ -28,7 +28,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--repo-root",
         type=Path,
         default=REPO_ROOT,
-        help="Repository root containing skills/ (default: inferred from this script).",
+        help=(
+            "Repository root containing canonical modules "
+            "(default: inferred from this script)."
+        ),
     )
     parser.add_argument(
         "--query-file",

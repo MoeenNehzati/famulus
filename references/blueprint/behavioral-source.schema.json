@@ -39,6 +39,12 @@
       "uniqueItems": true,
       "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": ["SKILL\\.md"]}, "doc": {"authoring": ["Match every file directly owned by this source; the gateway must match. The project node-input policy selects hash inputs from that ownership scope."]}, "related_validation_rules": ["content-files", "content-exclusive"]}
     },
+    "contract_references": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "common.schema.json#/definitions/contractReference"},
+      "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Declare exact authored contract files referenced outside interface contracts."]}, "related_validation_rules": ["relationship-edge"]}
+    },
     "platform_support": {
       "$ref": "common.schema.json#/definitions/platformSupport",
       "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Declare source-wide platform support for the gateway implementation and every intrinsic interface; author runtime_dependencies with it."]}, "related_validation_rules": ["runtime-dependency"]}

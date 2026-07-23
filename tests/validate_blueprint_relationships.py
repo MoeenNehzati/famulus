@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import shutil
 
 import yaml
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 _VALIDATOR = (
-    Path(__file__).resolve().parents[1]
+    _REPO_ROOT
     / "skills" / "skill-maker" / "validators" / "blueprint_relationships.py"
 )
 _spec = importlib.util.spec_from_file_location("blueprint_relationships", _VALIDATOR)
@@ -18,6 +20,18 @@ _spec.loader.exec_module(_mod)
 def _write_blueprint(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.dump(data))
+
+
+def _copy_v4_loose_mode(repo_root: Path) -> None:
+    shutil.copytree(
+        _REPO_ROOT / "references" / "blueprint",
+        repo_root / "references" / "blueprint",
+        ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),
+    )
+    shutil.copytree(
+        _REPO_ROOT / "skills" / "loose-mode",
+        repo_root / "skills" / "loose-mode",
+    )
 
 
 def _machine_interface(version: int = 1, **extra: object) -> dict:
@@ -248,6 +262,12 @@ def test_typed_graph_relationships_use_the_same_access_rules(tmp_path: Path) -> 
         "consumer-skill",
         uses=["producer-skill.machine.run"],
     )
+
+    assert _mod.validate(tmp_path) == []
+
+
+def test_v4_repository_relationships_use_the_repository_graph(tmp_path: Path) -> None:
+    _copy_v4_loose_mode(tmp_path)
 
     assert _mod.validate(tmp_path) == []
 

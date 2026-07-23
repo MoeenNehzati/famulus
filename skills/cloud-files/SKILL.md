@@ -15,11 +15,21 @@ Category: system-assistant
 Skill Version: 1
 
 Uses Interfaces:
-- `cloud-files.llm.default -> cloud-files.machine.setup-oauth@1`
-- `cloud-files.llm.default -> connect-google.llm.default@1`
+- `cloud-files.source.gateway -> cloud-files.source.rtx-oauth-bootstrap.interface.setup-oauth@1`
+- `cloud-files.source.gateway -> connect-google.interface.default@1`
+- `cloud-files.source.rtx-oauth-bootstrap -> common.interface.oauth-json@1`
 
 Public Interfaces:
-- `cloud-files.llm.default`
+- `cloud-files.interface.default`
+- `cloud-files.interface.ensure-oauth`
+- `cloud-files.interface.lists-delete`
+- `cloud-files.interface.lists-read`
+- `cloud-files.interface.lists-write`
+- `cloud-files.interface.plans-delete`
+- `cloud-files.interface.plans-read`
+- `cloud-files.interface.plans-write`
+- `cloud-files.interface.setup-oauth`
+- `cloud-files.interface.write-config`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -27,39 +37,38 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `ensure-oauth` — Check cloud-files OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill cloud-files) as part of connecting remotes.
-  - `dispatcher --caller-skill cloud-files cloud-files.machine.ensure-oauth ensure-oauth --home <dir> [--dry-run]`
+- `cloud-files.interface.ensure-oauth` — Check cloud-files OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill cloud-files) as part of connecting remotes.
+  - `dispatcher --caller-skill cloud-files cloud-files.interface.ensure-oauth --home <dir> [--dry-run]`
   - Check OAuth status and guide setup for cloud-files.
-- `lists-delete` — Delete a file from cloud storage under the lists/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files.machine.lists-delete lists/<path>`
+- `cloud-files.interface.lists-delete` — Delete a file from cloud storage under the lists/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files.interface.lists-delete lists/<path>`
   - Delete list files from cloud storage. Restricted to lists/ directory.
-- `lists-read` — Read a file from cloud storage under the lists/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files.machine.lists-read lists/<path>`
+- `cloud-files.interface.lists-read` — Read a file from cloud storage under the lists/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files.interface.lists-read lists/<path>`
   - Read list files from cloud storage. Restricted to lists/ directory.
-- `lists-write` — Write content (from stdin) to a file in cloud storage under the lists/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files.machine.lists-write lists/<path>`
+- `cloud-files.interface.lists-write` — Write content (from stdin) to a file in cloud storage under the lists/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files.interface.lists-write lists/<path>`
   - Write list files to cloud storage. Restricted to lists/ directory.
-- `plans-delete` — Delete a file from cloud storage under the plans/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files.machine.plans-delete plans/<path>`
+- `cloud-files.interface.plans-delete` — Delete a file from cloud storage under the plans/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files.interface.plans-delete plans/<path>`
   - Delete plan files from cloud storage. Restricted to plans/ directory.
-- `plans-read` — Read a file from cloud storage under the plans/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files.machine.plans-read plans/<path>`
+- `cloud-files.interface.plans-read` — Read a file from cloud storage under the plans/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files.interface.plans-read plans/<path>`
   - Read plan files from cloud storage. Restricted to plans/ directory.
-- `plans-write` — Write content (from stdin) to a file in cloud storage under the plans/ directory.
-  - `dispatcher --caller-skill cloud-files cloud-files.machine.plans-write plans/<path>`
+- `cloud-files.interface.plans-write` — Write content (from stdin) to a file in cloud storage under the plans/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files.interface.plans-write plans/<path>`
   - Write plan files to cloud storage. Restricted to plans/ directory.
-- `setup-oauth` — Run one-time OAuth2 setup for Google Drive access.
-  - `dispatcher --caller-skill cloud-files cloud-files.machine.setup-oauth [--from-json <client_json_path>] [--client-id <id> --client-secret <secret>] [--port <port>]`
+- `cloud-files.interface.setup-oauth` — Run one-time OAuth2 setup for Google Drive access.
+  - `dispatcher --caller-skill cloud-files cloud-files.interface.setup-oauth [--from-json <client_json_path>] [--client-id <id> --client-secret <secret>] [--port <port>]`
   - OAuth setup for Google Drive access.
-- `write-config` — Write ~/.config/cloud-files/config.json with the given remote LLM root. Relocated from install-assistant-tools.
-  - `dispatcher --caller-skill cloud-files cloud-files.machine.write-config write-config --home <dir> [--remote-llm-root <path>] [--dry-run]`
+- `cloud-files.interface.write-config` — Write ~/.config/cloud-files/config.json with the given remote LLM root. Relocated from install-assistant-tools.
+  - `dispatcher --caller-skill cloud-files cloud-files.interface.write-config --home <dir> [--remote-llm-root <path>] [--dry-run]`
   - Write cloud-files config.json.
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `cloud-files.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 
@@ -74,9 +83,9 @@ Install-time config lives at `~/.config/cloud-files/config.json`.
 OAuth credentials live at `~/.config/cloud-files/credentials.json`.
 
 For initial Google setup or reauthorization, use
-`connect-google.llm.default` to install or reuse the shared Desktop OAuth
+`connect-google.interface.default` to install or reuse the shared Desktop OAuth
 client, then return here for Drive authorization. This skill invokes its own
-`cloud-files.machine.setup-oauth` interface with
+`cloud-files.interface.setup-oauth` interface with
 `--from-json ~/.config/connect-google/client.json` and owns Drive credentials,
 verification, and failures.
 

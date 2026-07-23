@@ -1,0 +1,306 @@
+content:
+- _rtx/_gcal_client\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: g-calendar.source.rtx-init
+  version: 1
+description: Implements the agenda, search, list, create, update, and delete operations of the Google Calendar command interface.
+gateway:
+  language: Python
+  path: _rtx/_gcal_client.py
+id: g-calendar.source.rtx-gcal-client
+interfaces:
+  g-calendar.source.rtx-gcal-client.interface.scripts-gcal:
+    contract:
+      arguments:
+        command:
+          description: Calendar CLI command and its command-specific options.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: enum
+            values:
+            - {value: token, description: Mint and print an access token.}
+            - {value: calendars, description: List accessible calendars.}
+            - {value: create-calendar, description: Create a calendar.}
+            - {value: agenda, description: List events in a time range.}
+            - {value: search, description: Search events.}
+            - {value: get, description: Fetch one event.}
+            - {value: create, description: Create an event.}
+            - {value: update, description: Patch an event.}
+            - {value: delete, description: Delete an event.}
+            - {value: move, description: Move an event between calendars.}
+        options: {description: Command-specific calendar and event and query and date-time and content options., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Create-calendar, create, update, delete, and move change Google Calendar state.
+      - rate-limited: Google Calendar and OAuth token endpoints enforce service quotas.
+      outputs:
+      - {id: result, audience: both, description: Requested calendar rows and event detail and access token or mutation confirmation., direct_io_ref: write-2, cardinality: {minimum: 1, maximum: null}, ordering: stable, pagination: {kind: none}, truncation: {kind: bounded, limit: 50}, empty: Agenda and search print '(no events)' when empty., type: {kind: string, sensitivity: user-private}}
+      - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-3, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: queried, class: success, outputs: [result], effects: [], caller_action: Consume the returned calendar information.}
+      - {id: mutated, class: success, outputs: [result], effects: [calendar-state], caller_action: Record the returned event or calendar identifier.}
+      - {id: deleted, class: success, outputs: [result], effects: [calendar-delete], caller_action: Record the deletion confirmation.}
+      - {id: failed, class: error, outputs: [diagnostic], effects: [], caller_action: Report the API error and do not infer remote state.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: OAuth and Calendar API requests operate on current service state.}
+        effects:
+        - {id: calendar-state, direct_io_ref: write-1, action: update, value_source: {kind: argument, argument_ref: options}, may_occur_in_outcomes: [mutated], confirmation_evidence: {kind: output, output_ref: result}, reversibility: {compensatable: A later update or move or delete may compensate; previous event fields are not retained.}}
+        - {id: calendar-delete, direct_io_ref: write-1, action: delete, value_source: {kind: argument, argument_ref: options}, may_occur_in_outcomes: [deleted], confirmation_evidence: {kind: output, output_ref: result}, reversibility: {irreversible: Deleted event content is not retained by this interface.}}
+        mutation_safety:
+          atomicity: {per_effect_only: Each Calendar API request is one remote effect.}
+          concurrent_invocations: {unsafe: Concurrent mutations of the same resource are not serialized.}
+          idempotency: {non_idempotent: Repeating create can create duplicates.}
+          on_uncertain_completion: {verify_then_decide: Query the event or calendar before retrying a mutation.}
+          partial_effects_on_failure: {possible: A remote mutation may complete before a local network error is reported.}
+          rollback_on_failure: {unavailable: The CLI does not retain prior remote values.}
+        verification: [{method: output-schema, output_ref: result}]
+      helpers: []
+      direct_io:
+        network:
+        - access: request
+          auth:
+            kind: google-calendar-oauth
+            mode: uses-existing
+          content: event
+          formats:
+          - json
+          id: network-1
+          medium: network-request
+          endpoint: https://www.googleapis.com/calendar/v3
+          sensitivity: user-private
+          system: google-calendar
+        - access: request
+          auth: {kind: google-calendar-oauth, mode: uses-existing}
+          content: credential
+          endpoint: https://oauth2.googleapis.com/token
+          formats: [json]
+          id: network-2
+          medium: network-request
+          sensitivity: secret
+          system: oauth
+        reads:
+        - access: read
+          auth:
+            kind: google-calendar-oauth
+            mode: uses-existing
+          content: event
+          formats:
+          - json
+          id: read-1
+          medium: network-request
+          sensitivity: user-private
+          system: google-calendar
+        - access: read
+          auth:
+            kind: google-calendar-oauth
+            mode: uses-existing
+          content: credential
+          formats:
+          - json
+          id: read-2
+          medium: local-filesystem
+          path: $home/.config/g-calendar/credentials.json
+          path_match: exact
+          sensitivity: secret
+          system: filesystem
+        writes:
+        - access: write
+          auth:
+            kind: google-calendar-oauth
+            mode: uses-existing
+          content: event
+          formats:
+          - json
+          id: write-1
+          medium: network-request
+          sensitivity: user-private
+          system: google-calendar
+        - access: write
+          content: event
+          formats:
+          - text
+          id: write-2
+          medium: stdout
+          sensitivity: user-private
+        - {access: write, content: diagnostic-report, formats: [text], id: write-3, medium: stderr, sensitivity: derived-private}
+    description: Query or modify Google Calendar events via the Python calendar CLI
+      (agenda, search, create, update, delete, etc.).
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        max_positionals: 1
+        min_positionals: 1
+        name: token-or-calendars
+        positional_patterns:
+          '0': ^(token|calendars)$
+      - allow_stdin: false
+        allowed_flags:
+        - --summary
+        - --description
+        - --color-id
+        - --timezone
+        flag_patterns:
+          --color-id: ^.*$
+          --description: ^.*$
+          --summary: ^.+$
+          --timezone: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: create-calendar
+        positional_patterns:
+          '0': ^create-calendar$
+        required_flags:
+        - --summary
+      - allow_stdin: false
+        allowed_flags:
+        - --calendar
+        - --from
+        - --to
+        - --days
+        - --all-calendars
+        flag_patterns:
+          --calendar: ^.+$
+          --days: ^.+$
+          --from: ^.+$
+          --to: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: agenda
+        positional_patterns:
+          '0': ^agenda$
+      - allow_stdin: false
+        allowed_flags:
+        - --calendar
+        - --from
+        - --to
+        - --days
+        - --all-calendars
+        flag_patterns:
+          --calendar: ^.+$
+          --days: ^.+$
+          --from: ^.+$
+          --to: ^.+$
+        max_positionals: 2
+        min_positionals: 2
+        name: search
+        positional_patterns:
+          '0': ^search$
+      - allow_stdin: false
+        allowed_flags:
+        - --calendar
+        - --event-id
+        flag_patterns:
+          --calendar: ^.+$
+          --event-id: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: get
+        positional_patterns:
+          '0': ^get$
+        required_flags:
+        - --event-id
+      - allow_stdin: false
+        allowed_flags:
+        - --calendar
+        - --summary
+        - --start
+        - --end
+        - --description
+        - --location
+        - --all-day
+        - --timezone
+        flag_patterns:
+          --calendar: ^.+$
+          --description: ^.*$
+          --end: ^.+$
+          --location: ^.*$
+          --start: ^.+$
+          --summary: ^.+$
+          --timezone: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: create
+        positional_patterns:
+          '0': ^create$
+        required_flags:
+        - --summary
+        - --start
+        - --end
+      - allow_stdin: false
+        allowed_flags:
+        - --calendar
+        - --event-id
+        - --summary
+        - --description
+        - --location
+        - --start
+        - --end
+        - --timezone
+        flag_patterns:
+          --calendar: ^.+$
+          --description: ^.*$
+          --end: ^.+$
+          --event-id: ^.+$
+          --location: ^.*$
+          --start: ^.+$
+          --summary: ^.*$
+          --timezone: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: update
+        positional_patterns:
+          '0': ^update$
+        required_flags:
+        - --event-id
+      - allow_stdin: false
+        allowed_flags:
+        - --calendar
+        - --event-id
+        flag_patterns:
+          --calendar: ^.+$
+          --event-id: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: delete
+        positional_patterns:
+          '0': ^delete$
+        required_flags:
+        - --event-id
+      - allow_stdin: false
+        allowed_flags:
+        - --event-id
+        - --from
+        - --to
+        flag_patterns:
+          --event-id: ^.+$
+          --from: ^.+$
+          --to: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: move
+        positional_patterns:
+          '0': ^move$
+        required_flags:
+        - --event-id
+        - --to
+    usage: <command> [options]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 4
+uses_interfaces: []
+version: 1

@@ -1,64 +1,99 @@
-schema_version: 2
-blueprint_type: skill
-id: connect-google
+authority:
+  owns_filesystem:
+  - allowed_readers:
+    - cloud-files.interface.setup-oauth
+    - connect-google.interface.client-status
+    - email-client.interface.accounts-setup-oauth
+    - g-calendar.interface.setup-oauth
+    match: exact
+    path: $HOME/.config/connect-google/client.json
+    reason: This interface is the only writer of the shared OAuth client; service
+      setup interfaces may read it for authorization.
 category: workflow-general-assistant
-role: integration
+description: Prepares a shared Google Desktop OAuth client and routes service-specific connection setup without exposing client credentials in prompts.
+content:
+- SKILL\.md
+- _rtx/__init__\.py
+- _rtx/_client_config\.py
+- llm_interfaces/connect\-services\.md
+- llm_interfaces/create\-client\.md
+- personal\-preferences/connect\-services\.md
+- personal\-preferences/create\-client\.md
+- personal\-preferences/default\.md
+- tests/test_client_config\.py
+- tests/test_connect_google_llm_routing\.py
+- tests/test_service_delegation\.py
+discovery:
+  mechanism: skill
+exports:
+  connect-google.interface.client-status:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - connect-google
+    source_interface: connect-google.source.rtx-client-config.interface.client-status
+  connect-google.interface.connect-services:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - connect-google
+    source_interface: connect-google.source.llm-interfaces-connect-services.interface.connect-services
+  connect-google.interface.create-client:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - connect-google
+    source_interface: connect-google.source.llm-interfaces-create-client.interface.create-client
+  connect-google.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: connect-google.source.gateway.interface.default
+  connect-google.interface.install-client:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - connect-google
+    source_interface: connect-google.source.rtx-client-config.interface.install-client
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: connect-google
 kind: setup
-skill_interface:
-  inputs:
-  - A request to prepare or reuse a Google Desktop OAuth client.
-  outputs:
-  - A privately installed canonical client and service-owned authorization handoffs.
-  side_effects:
-  - May install or replace the canonical OAuth client after confirmation.
-default_interface:
-  version: 1
-  description: Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
-  allow_all_skills: true
-  uses_interfaces:
-  - interface: connect-google.machine.client-status
-    version: 1
-  - interface: connect-google.llm.create-client
-    version: 1
-  - interface: connect-google.llm.connect-services
-    version: 1
-  behavior_sources:
-  - source: connect-google.source.personal-preferences-default
-    version: 1
+node_type: module
+role: integration
+schema_version: 4
+sources:
+  connect-google.source.gateway:
     blueprint:
-      base: skill-root
-      path: personal-preferences/.default.md.blueprint.yaml
-    reason: Apply the user's optional routing preferences.
-  direct_io:
-    reads:
-    - medium: prompt
-      access: read
-      system: agent-runtime
-      content: config
-      format: text
-      sensitivity: user-private
-      reason: Determine whether the user has a client JSON and which services they want.
-    writes: []
-    network: []
-  owns_filesystem: []
-interfaces:
-- interface: connect-google.llm.create-client
-  version: 1
-  blueprint:
-    base: skill-root
-    path: llm_interfaces/.create-client.md.blueprint.yaml
-- interface: connect-google.llm.connect-services
-  version: 1
-  blueprint:
-    base: skill-root
-    path: llm_interfaces/.connect-services.md.blueprint.yaml
-- interface: connect-google.machine.client-status
-  version: 1
-  blueprint:
-    base: skill-root
-    path: _rtx/._client_config.py.client-status.blueprint.yaml
-- interface: connect-google.machine.install-client
-  version: 1
-  blueprint:
-    base: skill-root
-    path: _rtx/._client_config.py.install-client.blueprint.yaml
+      base: module-root
+      path: blueprints/gateway.yaml
+  connect-google.source.llm-interfaces-connect-services:
+    blueprint:
+      base: module-root
+      path: blueprints/llm-interfaces-connect-services.yaml
+  connect-google.source.llm-interfaces-create-client:
+    blueprint:
+      base: module-root
+      path: blueprints/llm-interfaces-create-client.yaml
+  connect-google.source.personal-preferences-connect-services:
+    blueprint:
+      base: module-root
+      path: blueprints/personal-preferences-connect-services.yaml
+  connect-google.source.personal-preferences-create-client:
+    blueprint:
+      base: module-root
+      path: blueprints/personal-preferences-create-client.yaml
+  connect-google.source.personal-preferences-default:
+    blueprint:
+      base: module-root
+      path: blueprints/personal-preferences-default.yaml
+  connect-google.source.rtx-client-config:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-client-config.yaml
+  connect-google.source.rtx-init:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-init.yaml
+version: 1

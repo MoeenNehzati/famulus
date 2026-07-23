@@ -13,7 +13,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `git-workflow.llm.default`
+- `git-workflow.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
@@ -22,8 +22,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `git-workflow.interface.default` — Check branch and ownership boundaries first, then perform only explicitly authorized and exactly scoped Git mutations.
 <!-- END BLUEPRINT INTERFACES -->
 ## Branch safety (always check first)
 

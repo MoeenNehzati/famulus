@@ -10,10 +10,13 @@ Category: skill-making-development-assistant
 
 Skill Version: 1
 
-Uses Interfaces: none
+Uses Interfaces:
+- `skill-maker.source.rtx-blueprint-syncer -> common.interface.atomic-files@1`
+- `skill-maker.source.rtx-blueprint-syncer -> common.interface.blueprint-graph@1`
 
 Public Interfaces:
-- `skill-maker.llm.default`
+- `skill-maker.interface.default`
+- `skill-maker.interface.sync-blueprints`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
@@ -22,16 +25,15 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `sync-blueprints` — Validate skill blueprints and optionally refresh generated artifacts.
-  - `dispatcher --caller-skill skill-maker skill-maker.machine.sync-blueprints [--check]`
+- `skill-maker.interface.sync-blueprints` — Validate every skill blueprint and either check or refresh generated SKILL.md contract blocks and the runtime-dependency manifest.
+  - `dispatcher --caller-skill skill-maker skill-maker.interface.sync-blueprints [--check]`
   - sync: Refresh generated files from blueprint.yaml.
   - check: Validate blueprints and fail if generated files are out of sync.
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `skill-maker.interface.default` — Create or edit a personal skill under the repository's canonical module, interface, validation, and Git-safety standards.
 <!-- END BLUEPRINT INTERFACES -->
 ## Research option when creating a skill
 

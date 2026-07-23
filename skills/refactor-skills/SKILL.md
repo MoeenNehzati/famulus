@@ -13,7 +13,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `refactor-skills.llm.default`
+- `refactor-skills.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
@@ -22,8 +22,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `refactor-skills.interface.default` — Characterize and audit a skill, obtain approval for an ordered plan, then apply and verify one behavior-preserving move at a time.
 <!-- END BLUEPRINT INTERFACES -->
 **Skills are software modules. Refactoring a skill follows standard software refactoring discipline** — the same principles Fowler describes for code apply directly: behavior preservation is non-negotiable, moves are small and verified one at a time, and the safety net (characterization) comes before the first change.
 

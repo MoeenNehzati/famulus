@@ -15,6 +15,10 @@ import yaml
 from officina.common.blueprint_graph import load_repository_blueprint_graph
 from officina.common.blueprint_inventory import BlueprintInventoryError
 from officina.common.process_binding_compiler import gateway_language_name
+from officina.runtime.python_machine_interface import (
+    PythonRouteSmokeTraceError,
+    trace_python_route_smoke_dependencies,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -345,23 +349,29 @@ def test_live_blueprints_have_runner_interfaces_to_smoke_or_skip() -> None:
     assert _runner_interfaces()
 
 
-def test_python_machine_runner_interfaces_accept_route_smoke(tmp_path: Path) -> None:
+def test_python_machine_runner_interfaces_accept_route_smoke() -> None:
     cases = _route_smoke_cases()
     if not cases:
         # famulus-skip: category=empty-contract; reason=no python_machine_interface interfaces exist; alternate=route-smoke extraction unit tests cover case selection
         pytest.skip("no python_machine_interface machine interfaces currently exist")
 
+    graph = load_repository_blueprint_graph(REPO_ROOT)
     failures: list[str] = []
     for case in cases:
-        result = _run_dispatcher(
-            ["--caller-skill", case.skill, case.target, "--route-smoke"],
-            cwd=tmp_path,
-        )
-        if result.returncode != 0:
+        export = graph.exports[case.target]
+        source = graph.nodes[export.source_node_id]
+        gateway = source.declaration["gateway"]
+        binding = export.declaration["process_binding"]
+        entrypoint = f"{gateway['path']}:{binding['entry']}"
+        try:
+            trace_python_route_smoke_dependencies(
+                source.skill_root,
+                REPO_ROOT,
+                entrypoint,
+            )
+        except PythonRouteSmokeTraceError as exc:
             failures.append(
-                f"{case.target} exited {result.returncode}\n"
-                f"stdout:\n{result.stdout}\n"
-                f"stderr:\n{result.stderr}"
+                f"{case.target} failed its certification route-smoke trace:\n{exc}"
             )
 
     assert not failures, "\n\n".join(failures)

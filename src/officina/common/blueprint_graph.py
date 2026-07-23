@@ -2130,9 +2130,6 @@ def _load_v4_repository_blueprint_graph(
                     "contains-source", module_id, source_id, source.version, source.blueprint_path
                 )
             )
-            certification_edges.append(
-                CertificationEdge("contains-source", module_id, source_id, source.version)
-            )
 
     for source_id, source in sorted(sources.items()):
         raw_dependencies = source.declaration.get("dependencies", [])
@@ -2232,11 +2229,7 @@ def _load_v4_repository_blueprint_graph(
                         f"by {target_id}"
                     )
                 relation = "uses-export"
-                target_node_id = (
-                    export.source_node_id
-                    if caller_module == export.module_node_id
-                    else export.module_node_id
-                )
+                target_node_id = export.source_node_id
                 assert target_node_id is not None
                 target_module = modules[export.module_node_id]
                 _require_platform_compatibility(

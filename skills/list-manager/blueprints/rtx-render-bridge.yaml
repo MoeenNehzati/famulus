@@ -1,0 +1,250 @@
+content:
+- _rtx/_render_bridge\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: list-manager.source.rtx-init
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-list-beautify.yaml
+  reason: Executes the list beautifier gateway to render YAML as Markdown.
+  source: list-manager.source.rtx-list-beautify
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-yaml-store.yaml
+  reason: Executes the YAML store gateway to read list content.
+  source: list-manager.source.rtx-yaml-store
+  version: 1
+description: Python orchestration source that reads a local or cloud-backed YAML list and
+  passes it through the list renderer.
+gateway:
+  language: Python
+  path: _rtx/_render_bridge.py
+id: list-manager.source.rtx-render-bridge
+interfaces:
+  list-manager.source.rtx-render-bridge.interface.cloud-read-beautify:
+    contract:
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - access: write
+          content: report
+          formats:
+          - markdown
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: report
+          formats:
+          - markdown
+          id: write-2
+          medium: local-filesystem
+          path: <output-file>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - {access: write, content: diagnostic-report, formats: [text], id: write-3, medium: stderr, sensitivity: derived-private}
+      arguments:
+        name: {description: Cloud list name to download and render, required: true, sensitivity: user-private, type: {kind: string, format: {named: identifier}}}
+        filters: {description: Optional exact or regular-expression entry filters, required: false, default: [], sensitivity: user-private, type: {kind: list, element_type: {kind: string}}}
+        output: {description: Optional output file for the rendered report, required: false, sensitivity: user-private, direct_io_ref: write-2, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: false, access: write, content_type: {kind: string}}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - may-wait: Downloads the cloud list before rendering it.
+      - rate-limited: Cloud reads consume Google Drive API quota through cloud-files.
+      - external-side-effect: Supplying an output path writes the rendered report to that file instead of stdout.
+      outputs:
+      - id: rendered
+        audience: human
+        description: Rendered Markdown view of the selected cloud list entries written to stdout.
+        direct_io_ref: write-1
+        type: {kind: string, sensitivity: derived-private, description: Markdown list rendering}
+        cardinality: {minimum: 0, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Stdout is empty when the rendering is redirected to an output file.
+      - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-3, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: displayed, class: success, outputs: [rendered, diagnostic], effects: [], caller_action: Relay stdout verbatim.}
+      - {id: written, class: success, outputs: [diagnostic], effects: [report-file], caller_action: Consume the requested output file; stdout is intentionally empty.}
+      - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: "Report the cloud-read, filtering, or rendering error."}
+      - {id: write-failed, class: partial, outputs: [diagnostic], effects: [report-file], caller_action: Inspect the output path for truncation or partial content before retrying.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Downloads current remote content once and renders that snapshot.}
+        effects:
+        - {id: report-file, direct_io_ref: write-2, action: update, value_source: {kind: direct-io, direct_io_ref: write-2}, may_occur_in_outcomes: [written, write-failed], confirmation_evidence: {kind: direct-io, direct_io_ref: write-2}, reversibility: {irreversible: Existing output-file bytes are not retained if the report replaces or truncates them.}}
+        mutation_safety:
+          atomicity: {non_atomic: The output file is opened directly and written without atomic replacement.}
+          concurrent_invocations: {unsafe: Concurrent writers to the same output path are not serialized.}
+          idempotency: {idempotent: Repeating with unchanged cloud content and rendering options writes equivalent report content.}
+          on_uncertain_completion: {verify_then_decide: Inspect the output file before retrying after interruption or write failure.}
+          partial_effects_on_failure: {possible: Opening the output path can truncate an existing file before a later write failure.}
+          rollback_on_failure: {unavailable: Previous output-file bytes are not retained.}
+        verification:
+        - {method: output-schema, output_ref: rendered}
+        - {method: direct-io-state, direct_io_ref: write-2}
+      helpers: []
+    description: Read a cloud list by name and render it (nested bullet-list markdown
+      by default, id-annotated; --table for a flat GFM table, --diff for the legacy
+      diff-fenced view), writing stdout or an optional output file.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        allow_stdin: false
+        allowed_flags:
+        - --cloud
+        - --sort
+        - -D
+        - --no-descriptions
+        - --markdown
+        - --table
+        - --diff
+        - -o
+        - --output
+        min_positionals: 1
+        notes: Read a cloud list by name and render it as nested bullet-list markdown
+          by default, optionally filtered.
+        positional_patterns:
+          '0': ^[a-zA-Z0-9_-]+$
+        required_flags:
+        - --cloud
+    usage: <name> [filters] --cloud [-o FILE]
+    version: 1
+  list-manager.source.rtx-render-bridge.interface.read-beautify:
+    contract:
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: list
+          formats:
+          - yaml
+          id: read-1
+          medium: local-filesystem
+          path: <file>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: report
+          formats:
+          - markdown
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: report
+          formats:
+          - markdown
+          id: write-2
+          medium: local-filesystem
+          path: <output-file>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - {access: write, content: diagnostic-report, formats: [text], id: write-3, medium: stderr, sensitivity: derived-private}
+      arguments:
+        file: {description: Local YAML list file to read and render, required: true, sensitivity: user-private, direct_io_ref: read-1, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, content_type: {kind: string, format: {named: yaml}}}}
+        filters: {description: Optional exact or regular-expression entry filters, required: false, default: [], sensitivity: user-private, type: {kind: list, element_type: {kind: string}}}
+        output: {description: Optional output file for the rendered report, required: false, sensitivity: user-private, direct_io_ref: write-2, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: false, access: write, content_type: {kind: string}}}
+      preconditions:
+      - {id: readable-list, description: The input list file must exist and be readable, check: {kind: direct-io, direct_io_ref: read-1, predicate: readable}, unmet_outcome: error, caller_action: Supply a readable YAML list file.}
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Supplying an output path writes the rendered report to that file instead of stdout.
+      outputs:
+      - id: rendered
+        audience: human
+        description: Rendered Markdown view written to stdout or the selected output file.
+        direct_io_ref: write-1
+        type: {kind: string, sensitivity: derived-private, description: Markdown list rendering}
+        cardinality: {minimum: 0, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Stdout is empty when the rendering is redirected to an output file.
+      - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-3, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: displayed, class: success, outputs: [rendered, diagnostic], effects: [], caller_action: Relay stdout.}
+      - {id: written, class: success, outputs: [diagnostic], effects: [report-file], caller_action: Consume the requested output file; stdout is intentionally empty.}
+      - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: "Correct the input file, filter, sort, or rendering option and retry."}
+      - {id: write-failed, class: partial, outputs: [diagnostic], effects: [report-file], caller_action: Inspect the output path for truncation or partial content before retrying.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {snapshot: Reads the local list once before rendering it.}
+        effects:
+        - {id: report-file, direct_io_ref: write-2, action: update, value_source: {kind: direct-io, direct_io_ref: write-2}, may_occur_in_outcomes: [written, write-failed], confirmation_evidence: {kind: direct-io, direct_io_ref: write-2}, reversibility: {irreversible: Existing output-file bytes are not retained if the report replaces or truncates them.}}
+        mutation_safety:
+          atomicity: {non_atomic: The output file is opened directly and written without atomic replacement.}
+          concurrent_invocations: {unsafe: Concurrent writers to the same output path are not serialized.}
+          idempotency: {idempotent: Repeating with unchanged input and rendering options writes equivalent report content.}
+          on_uncertain_completion: {verify_then_decide: Inspect the output file before retrying after interruption or write failure.}
+          partial_effects_on_failure: {possible: Opening the output path can truncate an existing file before a later write failure.}
+          rollback_on_failure: {unavailable: Previous output-file bytes are not retained.}
+        verification:
+        - {method: output-schema, output_ref: rendered}
+        - {method: direct-io-state, direct_io_ref: write-2}
+      helpers: []
+    description: Read a local YAML list file and render it for display (nested bullet-list
+      markdown by default; --table for a flat GFM table, --diff for the legacy diff-fenced
+      view).
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        allow_stdin: false
+        min_positionals: 1
+        notes: 'Read a local YAML list file and immediately return pretty output.
+          No allowed_flags restriction: --sort/-D/--markdown/--table/--diff/--no-ids/-o
+          all pass through.'
+    usage: <file> [filters] [--sort FIELD] [-D|--no-descriptions] [--markdown|--table|--diff]
+      [--no-ids] [-o FILE]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Reads YAML list data before rendering.
+  version: '>=6'
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Reads YAML list data downloaded from cloud storage.
+  version: '>=6'
+- kind: python-package
+  name: rich
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Renders nested list output for terminal display.
+  version: any
+schema_version: 4
+uses_interfaces: []
+version: 1

@@ -1,0 +1,59 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Implements repository safety checks and explicitly approved index, commit, and remote publication changes.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: git-workflow.source.gateway
+interfaces:
+  git-workflow.source.gateway.interface.default:
+    contract:
+      arguments:
+        request: {description: 'Repository task and any explicit authorization to stage, commit, amend, restore, stash, or push selected changes.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: approval-required}
+      caller_warnings:
+      - external-side-effect: Git mutations require exact scope and explicit authorization; publishing can affect collaborators.
+      outputs:
+      - {id: response, audience: human, description: 'Branch and dirty-state diagnosis, scoped action result, or exact approval still required.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: inspected, class: success, outputs: [response], effects: [], caller_action: 'Review branch safety, ownership, and proposed scope.'}
+      - {id: approval-required, class: refusal, outputs: [response], effects: [], caller_action: Authorize the exact Git mutation.}
+      - {id: local-changed, class: success, outputs: [response], effects: [git-change], caller_action: 'Verify index, commit, refs, and remaining dirty state.'}
+      - {id: published, class: success, outputs: [response], effects: [git-change, remote-push], caller_action: Verify the remote branch and commit evidence.}
+      - {id: failed, class: error, outputs: [response], effects: [], caller_action: Preserve unrelated state and resolve the reported failure.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: 'Branch, index, worktree, refs, and remotes are checked at each operation.'}
+        effects:
+        - {id: git-change, direct_io_ref: git-write, action: update, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [local-changed, published], confirmation_evidence: {kind: output, output_ref: response}, reversibility: {compensatable: Recovery depends on the exact action and current repository state.}}
+        - {id: remote-push, direct_io_ref: git-remote, action: send, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [published], confirmation_evidence: {kind: output, output_ref: response}, reversibility: {compensatable: Remote publication needs a coordinated follow-up; it is not automatically rolled back.}}
+        mutation_safety:
+          atomicity: {per_effect_only: A multi-command workflow is not one transaction.}
+          concurrent_invocations: {unsafe: Concurrent index or ref changes can invalidate scope and evidence.}
+          idempotency: {non_idempotent: Repeating Git mutations can create different state or fail.}
+          on_uncertain_completion: {verify_then_decide: 'Re-read status, refs, commit identity, and remote evidence.'}
+          partial_effects_on_failure: {possible: An earlier Git command may succeed before a later one fails.}
+          rollback_on_failure: {unavailable: Inspect and ask before any compensating action.}
+        verification:
+        - {method: output-schema, output_ref: response}
+        - {method: direct-io-state, direct_io_ref: git-read}
+      helpers: []
+      direct_io:
+        network:
+        - {id: git-remote, medium: network, access: upload, system: git, endpoint: Configured repository remote, content: Approved commits and branch ref updates., formats: [git-pack, git-refs], sensitivity: user-private, reason: Publish exact approved state.}
+        reads:
+        - {id: request, medium: prompt, access: read, system: agent-runtime, content: Git task and authorization boundaries., formats: [text], sensitivity: user-private}
+        - {id: git-read, medium: repository-filesystem, access: read, content: 'Symbolic HEAD, status, diffs, index, refs, commits, and remotes.', formats: [git-metadata, text], sensitivity: user-private, reason: Establish safety and verify actions.}
+        writes:
+        - {id: response, medium: prompt, access: write, system: agent-runtime, content: Git diagnosis or verified result., formats: [markdown], sensitivity: derived-private}
+        - {id: git-write, medium: repository-filesystem, access: configure, content: 'Approved index, object, ref, stash, or worktree metadata changes.', formats: [git-metadata], sensitivity: user-private, reason: Perform only authorized Git operations.}
+        - {id: git-command, medium: subprocess, access: execute, system: git, content: Git inspection or authorized mutation commands., formats: [argv, text], sensitivity: user-private, reason: Operate under branch and scope gates.}
+    description: Check branch and ownership boundaries first, then perform only explicitly authorized and exactly scoped Git mutations.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

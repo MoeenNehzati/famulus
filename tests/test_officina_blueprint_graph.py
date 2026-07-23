@@ -440,24 +440,19 @@ def test_v4_repository_graph_uses_one_generic_export_and_direct_ownership(
         "provider-skill.source.gateway",
         "provider-skill.source.worker",
     }
-    assert {
+    certification_edges = {
         (edge.relation, edge.source_node_id, edge.target_node_id)
         for edge in graph.certification_edges
-    } >= {
-        (
-            "contains-source",
-            "provider-skill",
-            "provider-skill.source.gateway",
-        ),
-        (
-            "contains-source",
-            "provider-skill",
-            "provider-skill.source.worker",
-        ),
+    }
+    assert not any(
+        relation == "contains-source"
+        for relation, _source, _target in certification_edges
+    )
+    assert certification_edges >= {
         (
             "uses-export",
             "consumer-skill.source.gateway",
-            "provider-skill",
+            "provider-skill.source.worker",
         ),
     }
     assert all(isinstance(edge, CertificationEdge) for edge in graph.certification_edges)
@@ -511,6 +506,31 @@ def test_v4_repository_graph_validates_claimed_v4_documents_before_filtering(
 
     with pytest.raises(BlueprintGraphError, match="unsupported typed node type"):
         load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+
+
+def test_v4_process_pattern_accepts_short_flags(tmp_path: Path) -> None:
+    _write_v4_module(tmp_path, "provider-skill", allow_callers=[])
+    source_path = tmp_path / "skills" / "provider-skill" / "blueprints" / "worker.yaml"
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    interface = source["interfaces"][
+        "provider-skill.source.worker.interface.run"
+    ]
+    interface["process_binding"]["patterns"] = [
+        {
+            "min_positionals": 0,
+            "max_positionals": 0,
+            "required_flags": ["-a"],
+            "allowed_flags": ["-a"],
+            "flag_patterns": {"-a": "^.+$"},
+        }
+    ]
+    _write_yaml(source_path, source)
+
+    graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+
+    assert graph.nodes["provider-skill.source.worker"].declaration["interfaces"][
+        "provider-skill.source.worker.interface.run"
+    ]["process_binding"]["patterns"][0]["required_flags"] == ["-a"]
 
 
 def test_v4_repository_graph_enforces_export_authorization_and_private_ownership(

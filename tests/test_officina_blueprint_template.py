@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from copy import deepcopy
@@ -222,25 +221,47 @@ def test_refresh_preserves_extra_valid_fields_at_the_end() -> None:
     assert refreshed.rstrip().endswith("extra: kept")
 
 
-def test_live_schema_template_renders_parseable_yaml() -> None:
-    schema = load_schema(Path("references/blueprint/schema.json"))
+def test_live_module_template_renders_parseable_v4_yaml() -> None:
+    schema = load_schema(Path("references/blueprint/module.schema.json"))
 
     text = render_blueprint_template(schema)
 
     loaded = yaml.safe_load(text)
-    assert loaded["category"]
-    assert loaded["interfaces"]["llm"]["default"]["version"] == 1
+    assert loaded["schema_version"] == 4
+    assert loaded["node_type"] == "module"
+    schema_validator(load_schema(Path("references/blueprint/schema.json"))).validate(
+        loaded
+    )
 
 
-def test_generated_templates_validate_against_live_and_annotated_schemas() -> None:
-    for path in [
-        Path("references/blueprint/schema.json"),
+def test_generated_v4_templates_validate_against_live_authoring_schemas() -> None:
+    for path in (
+        Path("references/blueprint/module.schema.json"),
+        Path("references/blueprint/behavioral-source.schema.json"),
         Path("references/blueprint/schema.annotated-draft.json"),
-    ]:
+    ):
         schema = load_schema(path)
         for doc_mode in ["full", "compact"]:
             text = render_blueprint_template(schema, doc_mode=doc_mode)
             schema_validator(schema).validate(yaml.safe_load(text))
+
+
+def test_annotated_authoring_schema_routes_only_live_v4_nodes() -> None:
+    schema = load_schema(Path("references/blueprint/schema.annotated-draft.json"))
+
+    assert [branch["$ref"] for branch in schema["oneOf"]] == [
+        "module.schema.json",
+        "behavioral-source.schema.json",
+    ]
+    assert list(
+        schema_validator(schema).iter_errors(
+            {
+                "schema_version": 3,
+                "node_type": "skill",
+                "id": "example-skill",
+            }
+        )
+    )
 
 
 def test_each_typed_schema_generates_a_valid_authoring_template() -> None:
@@ -258,30 +279,21 @@ def test_each_typed_schema_generates_a_valid_authoring_template() -> None:
         schema_validator(schema).validate(yaml.safe_load(rendered))
 
 
-def test_committed_typed_skill_template_matches_schema_generated_values() -> None:
+def test_committed_template_describes_the_live_v4_layout() -> None:
     committed = yaml.safe_load(Path("references/blueprint/template.yaml").read_text())
 
     assert committed["examples"] == {
-        "skill_root": "blueprint.yaml",
-        "default_llm": "blueprint.yaml#default_interface",
-        "shared_python_interfaces": [
-            "_rtx/._runner.py.first.blueprint.yaml",
-            "_rtx/._runner.py.second.blueprint.yaml",
-        ],
-        "command_interface": "_cx/._command.blueprint.yaml",
-        "repository_behavior_source": "references/.policy.md.blueprint.yaml",
-    }
-    assert committed["generated_outputs"] == [
-        "SKILL.md blueprint contract block",
-        "SKILL.md blueprint interface block",
-    ]
-    assert committed["v4_examples"] == {
         "module": "blueprint.yaml",
         "behavioral_sources": [
             "blueprints/gateway.yaml",
             "blueprints/runner.yaml",
         ],
     }
+    assert committed["generated_outputs"] == [
+        "SKILL.md blueprint contract block",
+        "SKILL.md blueprint interface block",
+    ]
+    assert set(committed) == {"examples", "generated_outputs"}
 
 
 def test_schema_family_examples_create_complete_valid_documents(tmp_path: Path) -> None:
@@ -291,59 +303,84 @@ def test_schema_family_examples_create_complete_valid_documents(tmp_path: Path) 
 
     schemas = {
         name: load_schema(Path("references/blueprint") / name)
-        for name in [
-            "skill.schema.json",
-            "llm-interface.schema.json",
-            "machine-interface.schema.json",
-            "v2/behavior-source.schema.json",
-        ]
+        for name in ["module.schema.json", "behavioral-source.schema.json"]
     }
-    root = yaml.safe_load(render_blueprint_template(schemas["skill.schema.json"]))
-    first = yaml.safe_load(render_blueprint_template(schemas["machine-interface.schema.json"]))
-    second = deepcopy(first)
-    command = deepcopy(first)
-    source = {
-        "schema_version": 2,
-        "blueprint_type": "behavior-source",
-        "id": "references.source.policy",
-        "version": 1,
-        "description": "Defines shared policy.",
-        "binding": {"kind": "file", "path": "references/policy.md"},
-        "content": "config",
-        "format": "markdown",
-        "uses_behavior_sources": [],
-    }
+    root = yaml.safe_load(render_blueprint_template(schemas["module.schema.json"]))
+    gateway = yaml.safe_load(
+        render_blueprint_template(schemas["behavioral-source.schema.json"])
+    )
+    runner = yaml.safe_load(
+        render_blueprint_template(schemas["behavioral-source.schema.json"])
+    )
 
-    root["id"] = "example-skill"
-    root["default_interface"]["behavior_sources"] = [{
-        "source": "references.source.policy",
-        "version": 1,
-        "blueprint": {"base": "repository-root", "path": examples["repository_behavior_source"]},
-        "reason": "Supplies shared policy.",
-    }]
-    root["interfaces"] = [
-        {"interface": "example-skill.machine.first", "version": 1, "blueprint": {"base": "skill-root", "path": examples["shared_python_interfaces"][0]}},
-        {"interface": "example-skill.machine.second", "version": 1, "blueprint": {"base": "skill-root", "path": examples["shared_python_interfaces"][1]}},
-        {"interface": "example-skill.machine.command", "version": 1, "blueprint": {"base": "skill-root", "path": examples["command_interface"]}},
-    ]
-    for document, name in [(first, "first"), (second, "second")]:
-        document["id"] = f"example-skill.machine.{name}"
-        document["gateway"] = {
-            "kind": "python-entrypoint",
-            "path": "_rtx/_runner.py",
-            "symbol": "Interface",
-            "args_prefix": [],
+    root.update(
+        {
+            "id": "example-skill",
+            "content": ["SKILL\\.md", "_rtx/_runner\\.py"],
+            "sources": {
+                "example-skill.source.gateway": {
+                    "blueprint": {
+                        "base": "module-root",
+                        "path": examples["behavioral_sources"][0],
+                    }
+                },
+                "example-skill.source.runner": {
+                    "blueprint": {
+                        "base": "module-root",
+                        "path": examples["behavioral_sources"][1],
+                    }
+                },
+            },
+            "exports": {
+                "example-skill.interface.default": {
+                    "source_interface": (
+                        "example-skill.source.gateway.interface.default"
+                    ),
+                    "access": {
+                        "allow_all_modules": True,
+                        "allowed_callers": [],
+                    },
+                },
+                "example-skill.interface.run": {
+                    "source_interface": "example-skill.source.runner.interface.run",
+                    "access": {
+                        "allow_all_modules": False,
+                        "allowed_callers": [],
+                    },
+                },
+            },
         }
-        document["usage"] = ""
-    command["id"] = "example-skill.machine.command"
-    command["gateway"] = {"kind": "command-file", "path": "_cx/_command", "args_prefix": []}
-    command["usage"] = ""
+    )
+    gateway.update(
+        {
+            "id": "example-skill.source.gateway",
+            "interfaces": {
+                "example-skill.source.gateway.interface.default": {"version": 1}
+            },
+        }
+    )
+    runner.update(
+        {
+            "id": "example-skill.source.runner",
+            "gateway": {"path": "_rtx/_runner.py", "language": "Python>=3.11"},
+            "content": ["_rtx/_runner\\.py"],
+            "interfaces": {
+                "example-skill.source.runner.interface.run": {"version": 1}
+            },
+        }
+    )
     documents = [
-        (schemas["skill.schema.json"], root, skill / examples["skill_root"]),
-        (schemas["machine-interface.schema.json"], first, skill / examples["shared_python_interfaces"][0]),
-        (schemas["machine-interface.schema.json"], second, skill / examples["shared_python_interfaces"][1]),
-        (schemas["machine-interface.schema.json"], command, skill / examples["command_interface"]),
-        (schemas["v2/behavior-source.schema.json"], source, references / ".policy.md.blueprint.yaml"),
+        (schemas["module.schema.json"], root, skill / examples["module"]),
+        (
+            schemas["behavioral-source.schema.json"],
+            gateway,
+            skill / examples["behavioral_sources"][0],
+        ),
+        (
+            schemas["behavioral-source.schema.json"],
+            runner,
+            skill / examples["behavioral_sources"][1],
+        ),
     ]
     for schema, document, path in documents:
         schema_validator(schema).validate(document)
@@ -364,16 +401,9 @@ def test_schema_family_examples_create_complete_valid_documents(tmp_path: Path) 
         "Hand-authored instructions.\n",
         encoding="utf-8",
     )
-    runner = skill / "_rtx" / "_runner.py"
-    runner.parent.mkdir(parents=True, exist_ok=True)
-    runner.write_text("class Interface: pass\n", encoding="utf-8")
-    command_path = skill / "_cx" / "_command"
-    command_path.parent.mkdir(parents=True, exist_ok=True)
-    command_path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    command_path.chmod(0o755)
-    policy = references / "policy.md"
-    policy.parent.mkdir(parents=True, exist_ok=True)
-    policy.write_text("Generated policy fixture.\n", encoding="utf-8")
+    runner_path = skill / "_rtx" / "_runner.py"
+    runner_path.parent.mkdir(parents=True, exist_ok=True)
+    runner_path.write_text("class Interface: pass\n", encoding="utf-8")
     source_schema_root = Path("references/blueprint")
     fixture_schema_root = references / "blueprint"
     for source_path in [
@@ -397,11 +427,16 @@ def test_schema_family_examples_create_complete_valid_documents(tmp_path: Path) 
     ]
     assert "<!-- BEGIN BLUEPRINT CONTRACT -->" in skill_md.read_text(encoding="utf-8")
     assert "<!-- BEGIN BLUEPRINT INTERFACES -->" in skill_md.read_text(encoding="utf-8")
-    assert os.access(command_path, os.X_OK)
     tracked = subprocess.run(
         ["git", "ls-files"], cwd=tmp_path, check=True, capture_output=True, text=True
     ).stdout.splitlines()
-    assert {"skills/example-skill/SKILL.md", "skills/example-skill/_cx/_command"} <= set(tracked)
+    assert {
+        "skills/example-skill/SKILL.md",
+        "skills/example-skill/blueprint.yaml",
+        "skills/example-skill/blueprints/gateway.yaml",
+        "skills/example-skill/blueprints/runner.yaml",
+        "skills/example-skill/_rtx/_runner.py",
+    } <= set(tracked)
 
     assert all(path.is_file() for _, _, path in documents)
 

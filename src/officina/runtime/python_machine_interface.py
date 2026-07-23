@@ -174,7 +174,7 @@ collect_loaded_paths()
 from officina.common.certification_view import CertificationDecision
 
 class TraceCertificationView:
-    def check_export(self, module_id, interface_id, interface_version):
+    def check_export(self, module_id, interface_id, interface_version, source_node_id):
         return CertificationDecision(True, "route-smoke-trace", "Trace-only certification view.")
 
     def certificate_for(self, node_id):

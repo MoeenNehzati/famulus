@@ -1,0 +1,178 @@
+authority:
+  owns_filesystem: []
+content:
+- __init__\.py
+- artifact_health\.py
+- atomic_files\.py
+- audit_records\.py
+- blueprint_graph\.py
+- blueprint_inventory\.py
+- blueprint_template\.py
+- certification_view\.py
+- codex_toml\.py
+- dates\.py
+- git_provenance\.py
+- oauth_json\.py
+- pooled_blueprint\.py
+- process_binding_compiler\.py
+- secret_store\.py
+- toml_io\.py
+description: Shared, narrowly exported Python helpers for secure file updates, project date keys, OAuth JSON, credential storage, and controlled TOML access.
+exports:
+  common.interface.artifact-health:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - skill-certifier
+      - skill-drift
+    source_interface: common.source.artifact-health.interface.python-api
+  common.interface.atomic-files:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - skill-maker
+      - skill-certifier
+    source_interface: common.source.atomic-files.interface.python-api
+  common.interface.audit-records:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+      - skill-certifier
+      - skill-drift
+    source_interface: common.source.audit-records.interface.python-api
+  common.interface.blueprint-graph:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - skill-maker
+      - skill-certifier
+      - skill-drift
+    source_interface: common.source.blueprint-graph.interface.python-api
+  common.interface.blueprint-template:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - regenerate-blueprints
+    source_interface: common.source.blueprint-template.interface.python-api
+  common.interface.certification-view:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - skill-certifier
+      - skill-drift
+    source_interface: common.source.certification-view.interface.python-api
+  common.interface.codex-toml:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+    source_interface: common.source.codex-toml.interface.python-api
+  common.interface.dates:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - daily-plan
+    source_interface: common.source.dates.interface.python-api
+  common.interface.git-provenance:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - skill-certifier
+      - skill-drift
+    source_interface: common.source.git-provenance.interface.python-api
+  common.interface.oauth-json:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+      - connect-google
+      - g-calendar
+    source_interface: common.source.oauth-json.interface.python-api
+  common.interface.pooled-blueprint:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - skill-certifier
+      - skill-drift
+    source_interface: common.source.pooled-blueprint.interface.python-api
+  common.interface.secret-store:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - email-client
+    source_interface: common.source.secret-store.interface.python-api
+  common.interface.toml-io:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+    source_interface: common.source.toml-io.interface.python-api
+gateway:
+  language: Python
+  path: __init__.py
+id: common
+node_type: module
+schema_version: 4
+sources:
+  common.source.artifact-health:
+    blueprint:
+      base: module-root
+      path: blueprints/artifact-health.yaml
+  common.source.atomic-files:
+    blueprint:
+      base: module-root
+      path: blueprints/atomic-files.yaml
+  common.source.audit-records:
+    blueprint:
+      base: module-root
+      path: blueprints/audit-records.yaml
+  common.source.blueprint-graph:
+    blueprint:
+      base: module-root
+      path: blueprints/blueprint-graph.yaml
+  common.source.blueprint-inventory:
+    blueprint:
+      base: module-root
+      path: blueprints/blueprint-inventory.yaml
+  common.source.blueprint-template:
+    blueprint:
+      base: module-root
+      path: blueprints/blueprint-template.yaml
+  common.source.certification-view:
+    blueprint:
+      base: module-root
+      path: blueprints/certification-view.yaml
+  common.source.codex-toml:
+    blueprint:
+      base: module-root
+      path: blueprints/codex-toml.yaml
+  common.source.dates:
+    blueprint:
+      base: module-root
+      path: blueprints/dates.yaml
+  common.source.git-provenance:
+    blueprint:
+      base: module-root
+      path: blueprints/git-provenance.yaml
+  common.source.oauth-json:
+    blueprint:
+      base: module-root
+      path: blueprints/oauth-json.yaml
+  common.source.pooled-blueprint:
+    blueprint:
+      base: module-root
+      path: blueprints/pooled-blueprint.yaml
+  common.source.process-binding-compiler:
+    blueprint:
+      base: module-root
+      path: blueprints/process-binding-compiler.yaml
+  common.source.secret-store:
+    blueprint:
+      base: module-root
+      path: blueprints/secret-store.yaml
+  common.source.toml-io:
+    blueprint:
+      base: module-root
+      path: blueprints/toml-io.yaml
+version: 1

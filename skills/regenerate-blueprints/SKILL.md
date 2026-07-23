@@ -10,11 +10,12 @@ Category: skill-making-development-assistant
 
 Skill Version: 1
 
-Uses Interfaces: none
+Uses Interfaces:
+- `regenerate-blueprints.source.rtx-blueprint-regenerator -> common.interface.blueprint-template@1`
 
 Public Interfaces:
-- `regenerate-blueprints.machine.regenerate-blueprint`
-- `regenerate-blueprints.llm.default`
+- `regenerate-blueprints.interface.default`
+- `regenerate-blueprints.interface.regenerate-blueprint`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -22,14 +23,13 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `regenerate-blueprint` — Generate a refreshed blueprint YAML for one existing skill under /tmp.
-  - `dispatcher --caller-skill regenerate-blueprints regenerate-blueprints.machine.regenerate-blueprint <skill-name>`
+- `regenerate-blueprints.interface.regenerate-blueprint` — Generate a refreshed blueprint YAML for one existing skill under /tmp.
+  - `dispatcher --caller-skill regenerate-blueprints regenerate-blueprints.interface.regenerate-blueprint <skill-name>`
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `regenerate-blueprints.interface.default` — Regenerate one existing skill blueprint into /tmp, report its path or validation failure, and never modify the source blueprint.
 <!-- END BLUEPRINT INTERFACES -->
 ## Purpose
 

@@ -11,15 +11,20 @@ Category: workflow-general-assistant
 Skill Version: 1
 
 Uses Interfaces:
-- `connect-google.llm.connect-services -> connect-google.machine.client-status@1`
-- `connect-google.llm.connect-services -> connect-google.machine.install-client@1`
-- `connect-google.llm.create-client -> connect-google.llm.connect-services@1`
-- `connect-google.llm.default -> connect-google.llm.connect-services@1`
-- `connect-google.llm.default -> connect-google.llm.create-client@1`
-- `connect-google.llm.default -> connect-google.machine.client-status@1`
+- `connect-google.source.gateway -> connect-google.source.llm-interfaces-connect-services.interface.connect-services@1`
+- `connect-google.source.gateway -> connect-google.source.llm-interfaces-create-client.interface.create-client@1`
+- `connect-google.source.gateway -> connect-google.source.rtx-client-config.interface.client-status@1`
+- `connect-google.source.llm-interfaces-connect-services -> connect-google.source.rtx-client-config.interface.client-status@1`
+- `connect-google.source.llm-interfaces-connect-services -> connect-google.source.rtx-client-config.interface.install-client@1`
+- `connect-google.source.llm-interfaces-create-client -> connect-google.source.llm-interfaces-connect-services.interface.connect-services@1`
+- `connect-google.source.rtx-client-config -> common.interface.oauth-json@1`
 
 Public Interfaces:
-- `connect-google.llm.default`
+- `connect-google.interface.client-status`
+- `connect-google.interface.connect-services`
+- `connect-google.interface.create-client`
+- `connect-google.interface.default`
+- `connect-google.interface.install-client`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -27,32 +32,29 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `client-status` — Report whether the canonical Google Desktop OAuth client is missing, valid, or invalid without exposing its secrets.
-  - `dispatcher --caller-skill connect-google connect-google.machine.client-status [--home <dir>]`
-- `install-client` — Validate a Google Desktop OAuth client JSON and atomically install a private canonical copy.
-  - `dispatcher --caller-skill connect-google connect-google.machine.install-client --from-json <client-json> [--replace] [--home <dir>]`
+- `connect-google.interface.client-status` — Report whether the canonical Google Desktop OAuth client is missing, valid, or invalid without exposing its secrets.
+  - `dispatcher --caller-skill connect-google connect-google.interface.client-status [--home <dir>]`
+- `connect-google.interface.install-client` — Validate a Google Desktop OAuth client JSON and atomically install a private canonical copy.
+  - `dispatcher --caller-skill connect-google connect-google.interface.install-client --from-json <client-json> [--replace] [--home <dir>]`
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `connect-services` — Install or reuse a Google Desktop OAuth client and hand selected Google services to their owning skills.
-  - binding: relative markdown path `llm_interfaces/connect-services.md`
-- `create-client` — Guide a user through creating and privately downloading a Google Desktop OAuth client for selected Famulus services.
-  - binding: relative markdown path `llm_interfaces/create-client.md`
-- `default` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
-  - binding: skill file `SKILL.md`
+- `connect-google.interface.connect-services` — Install or reuse a Google Desktop OAuth client and hand selected Google services to their owning skills.
+- `connect-google.interface.create-client` — Guide a user through creating and privately downloading a Google Desktop OAuth client for selected Famulus services.
+- `connect-google.interface.default` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
 <!-- END BLUEPRINT INTERFACES -->
 Skill: connect-google
 
 This is the shared router for Google OAuth-client preparation.
 
-1. Use `connect-google.machine.client-status` before asking the user for a file.
-2. If the stored client is valid, use `connect-google.llm.connect-services`.
+1. Use `connect-google.interface.client-status` before asking the user for a file.
+2. If the stored client is valid, use `connect-google.interface.connect-services`.
 3. If no valid client is installed, ask whether the user already has a Google
    Desktop OAuth client JSON. If status reports legacy candidates, ask before
    importing one; when candidates differ, ask which one to use. A confirmed or
-   supplied file routes to `connect-google.llm.connect-services`; otherwise
-   route to `connect-google.llm.create-client`.
+   supplied file routes to `connect-google.interface.connect-services`; otherwise
+   route to `connect-google.interface.create-client`.
 
 Apply the same route to initial setup and reconnect requests. Recommend Drive,
 Calendar, and Gmail while allowing the user to choose a subset, then hand each

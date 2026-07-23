@@ -22,8 +22,98 @@ standards:
 
       import discipline. They are structural requirements, not style preferences.'
 - kind: family
+  id: skill-guidelines.module-behavioral-source-v4
+  title: Version 4 modules and behavioral sources
+  summary: This family is the sole live blueprint and interface authoring authority.
+    Any pre-v4 machine-module, machine-interface, llm-interface, behavior-source,
+    hidden-sidecar, or `.machine.`/`.llm.` material retained elsewhere in this
+    standard is Task 6 migration input only and must not guide new or edited
+    declarations.
+  children:
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v4.node-kinds
+    assertions:
+    - id: unified-types
+      modality: required
+      statement: 'Every new or edited blueprint uses `schema_version: 4` and exactly
+        one live `node_type`: `node_type: module` or `node_type: behavioral_source`.
+        A skill is an autodiscoverable module, expressed by `discovery: {mechanism:
+        skill}`, and uses `SKILL.md` as its module gateway; `skill` is not a node
+        type or schema family.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v4.layout
+    assertions:
+    - id: canonical-files
+      modality: required
+      statement: 'A module is declared by `blueprint.yaml`. Each contained behavioral
+        source is declared under `blueprints/`, for example
+        `blueprints/gateway.yaml`. Do not author hidden blueprint sidecars.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v4.gateway-content
+    assertions:
+    - id: whole-file-gateway
+      modality: required
+      statement: 'Every node declares one whole-file `gateway` with `path` and
+        `language`, plus optional alternative `machines`. `content` contains
+        case-sensitive regular expressions for the files the node owns; the gateway
+        must be included. The project node-input policy selects certification hash
+        inputs from that ownership; `content` is not a second hash policy. Gateway
+        fragments, symbols, and pre-v4 gateway kinds do not belong in version 4
+        gateway declarations.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v4.module-contract
+    assertions:
+    - id: containment-and-exports
+      modality: required
+      statement: 'A module declares `authority`, `sources`, and `exports`. `sources`
+        maps each contained source ID to its blueprint locator. `exports` maps a
+        public `<module>.interface.<name>` ID to one `source_interface` and its
+        module-level access policy. The module does not copy the source interface
+        version, contract, or process binding.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v4.source-contract
+    assertions:
+    - id: source-owned-interfaces
+      modality: required
+      statement: 'A behavioral source declares `dependencies`, `uses_interfaces`,
+        and `interfaces`. `dependencies` names direct behavioral-source dependencies
+        with exact versions, locators, and reasons. `uses_interfaces` names exact
+        versions of sibling private interfaces or module exports. `interfaces`
+        defines source-owned contracts under
+        `<module>.source.<source>.interface.<name>`; each interface owns its version,
+        description, semantic contract, and optional process binding.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v4.authorization
+    assertions:
+    - id: cross-module-exports
+      modality: required
+      statement: 'Cross-module interface use goes through the callee module''s
+        `exports` and is authorized by that export''s `access`. A source may use an
+        unexported source interface only inside its own module. Interfaces are
+        source-owned contracts and module exports are their public relation; neither
+        machine nor LLM is an interface node type or ID namespace.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v4.derived-artifacts
+    assertions:
+    - id: graph-authority
+      modality: required
+      statement: 'The v4 module/source graph is authored authority. Generated
+        `SKILL.md` contract blocks, interface views, runtime-dependency manifests,
+        certification records, and other projections must be derived from that graph
+        and must not become a parallel declaration source.'
+      atomicity: pending
+- kind: family
   id: skill-guidelines.identity-contract
   title: 1. Skill identity and contract come first
+  summary: Naming and frontmatter rules remain current. The pre-v4 blueprint and
+    interface clauses preserved in this family are Task 6 migration input only and
+    are superseded by the version 4 family above.
   children:
   - kind: guidance
     id: skill-guidelines.identity-contract.guidance-001
@@ -187,6 +277,8 @@ standards:
 - kind: family
   id: skill-guidelines.blueprint-authoring-notes
   title: Blueprint authoring notes
+  summary: Task 6 migration input only. The preserved pre-v4 field and sidecar
+    notes below are not live authoring guidance.
   children:
   - kind: guidance
     id: skill-guidelines.blueprint-authoring-notes.guidance-001
@@ -291,6 +383,8 @@ standards:
 - kind: family
   id: skill-guidelines.canonical-interface-names
   title: Canonical interface names
+  summary: Task 6 migration input only. The preserved `.machine.` and `.llm.`
+    namespaces below are not live version 4 interface names.
   children:
   - kind: guidance
     id: skill-guidelines.canonical-interface-names.guidance-001
@@ -372,7 +466,8 @@ standards:
 - kind: family
   id: skill-guidelines.machine-modules-v3
   title: Machine modules and exports (version 3)
-  summary: This family is the target version 3 authority and supersedes the imported singular machine-interface guidance below for new declarations.
+  summary: Task 6 migration input only. This preserved version 3 family is not
+    live authoring authority.
   children:
   - kind: rule
     id: skill-guidelines.machine-modules-v3.module-boundary
@@ -466,6 +561,8 @@ standards:
 - kind: family
   id: skill-guidelines.machine-interfaces
   title: Machine interfaces
+  summary: Task 6 migration input only. These preserved machine-interface and
+    hidden-sidecar rules are not live authoring guidance.
   children:
   - kind: guidance
     id: skill-guidelines.machine-interfaces.guidance-001
@@ -855,6 +952,8 @@ standards:
 - kind: family
   id: skill-guidelines.llm-interfaces
   title: LLM interfaces
+  summary: Task 6 migration input only. These preserved llm-interface and
+    hidden-sidecar rules are not live authoring guidance.
   children:
   - kind: guidance
     id: skill-guidelines.llm-interfaces.guidance-001
@@ -953,6 +1052,8 @@ standards:
 - kind: family
   id: skill-guidelines.dispatcher-role
   title: Dispatcher role
+  summary: Task 6 migration input only. The preserved `.machine.` resolution
+    examples below are not the live version 4 dispatcher contract.
   children:
   - kind: guidance
     id: skill-guidelines.dispatcher-role.guidance-001
@@ -1274,6 +1375,8 @@ standards:
 - kind: family
   id: skill-guidelines.subprocess-text-boundaries
   title: Subprocess text boundaries
+  summary: The text-boundary rule remains current. Its preserved reference to
+    machine-interface calls is Task 6 migration input only.
   children:
   - kind: guidance
     id: skill-guidelines.subprocess-text-boundaries.guidance-001
@@ -1424,6 +1527,9 @@ standards:
 - kind: family
   id: skill-guidelines.canonical-blueprint-ownership
   title: 7. The canonical blueprint graph owns all interface definitions
+  summary: The graph-authority principle remains current. Its preserved
+    machine/LLM sidecar examples are Task 6 migration input only and are superseded
+    by the version 4 module/source family.
   children:
   - kind: rule
     id: skill-guidelines.canonical-blueprint-ownership.requirement-001
@@ -1483,6 +1589,9 @@ standards:
 - kind: family
   id: skill-guidelines.system-evolution
   title: "9. Skills are components in an evolving system \u2014 design accordingly."
+  summary: The system-design principle remains current. Its preserved
+    machine-interface, llm-interface, and default-interface clauses are Task 6
+    migration input only.
   children:
   - kind: guidance
     id: skill-guidelines.system-evolution.guidance-001
@@ -1775,6 +1884,16 @@ artifacts:
     - test
   artifact.schema-schema:
     path: references/blueprint/schema.json
+    format: json
+    roles:
+    - schema
+  artifact.module-schema-schema:
+    path: references/blueprint/module.schema.json
+    format: json
+    roles:
+    - schema
+  artifact.behavioral-source-v4-schema-schema:
+    path: references/blueprint/behavioral-source.schema.json
     format: json
     roles:
     - schema

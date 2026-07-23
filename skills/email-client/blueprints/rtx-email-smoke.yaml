@@ -1,0 +1,188 @@
+content:
+- _rtx/_email_smoke\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-email-accounts.yaml
+  reason: Imports Python source from _rtx/_email_accounts.py.
+  source: email-client.source.rtx-email-accounts
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-imap-gateway.yaml
+  reason: Imports Python source from _rtx/_imap_gateway.py.
+  source: email-client.source.rtx-imap-gateway
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: email-client.source.rtx-init
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-smtp-transport.yaml
+  reason: Imports Python source from _rtx/_smtp_transport.py.
+  source: email-client.source.rtx-smtp-transport
+  version: 1
+description: Python source for explicit live IMAP authentication, SMTP authentication, and
+  optional self-send smoke checks against a registered account.
+gateway:
+  language: Python
+  path: _rtx/_email_smoke.py
+id: email-client.source.rtx-email-smoke
+interfaces:
+  email-client.source.rtx-email-smoke.interface.live-smoke:
+    contract:
+      direct_io:
+        network:
+        - access: request
+          auth:
+            kind: email-account
+            mode: checks
+          content: email-account
+          endpoint: Configured IMAP host and port for the selected account
+          id: network-1
+          medium: network-request
+          sensitivity: user-private
+          system: email-imap
+        - access: request
+          auth:
+            kind: email-account
+            mode: checks
+          content: email-account
+          endpoint: Configured SMTP host and port for the selected account
+          id: network-2
+          medium: network-request
+          sensitivity: user-private
+          system: email-smtp
+        - access: send
+          auth:
+            kind: email-account
+            mode: uses-existing
+          content: email
+          endpoint: Configured SMTP host and port for the selected account
+          formats:
+          - rfc822
+          id: network-3
+          medium: network-request
+          sensitivity: user-private
+          system: email-smtp
+        reads:
+        - access: read
+          auth:
+            kind: keyring-entry
+            mode: uses-existing
+          content: credential
+          id: read-1
+          medium: local-system
+          sensitivity: secret
+          system: keyring
+        writes:
+        - access: write
+          content: report
+          formats:
+          - text
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+      arguments:
+        account: {description: Registered account nickname to check, required: true, sensitivity: user-private, type: {kind: string, format: {named: identifier}}}
+        imap: {description: Authenticate to IMAP and run NOOP, required: false, default: false, sensitivity: public, type: {kind: flag}}
+        smtp-auth: {description: Authenticate to SMTP and run NOOP, required: false, default: false, sensitivity: public, type: {kind: flag}}
+        send-self: {description: Send a smoke-test message to the account's own address, required: false, default: false, sensitivity: public, type: {kind: flag}}
+        body: {description: Optional self-send message body, required: false, default: '', sensitivity: user-private, type: {kind: string}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - may-wait: Each selected check opens and authenticates a live provider connection.
+      - external-side-effect: The send-self option sends a real email to the account's own address.
+      - rate-limited: Provider IMAP and SMTP quotas and anti-abuse policies apply.
+      outputs:
+      - id: report
+        audience: machine
+        description: JSON result describing success or failure for every selected smoke check.
+        direct_io_ref: write-1
+        type: {kind: string, sensitivity: derived-private, format: {named: json}}
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: The report is always a nonempty JSON object, including on failure.
+      outcomes:
+      - {id: checked, class: success, outputs: [report], effects: [], caller_action: Treat only checks with ok true as verified.}
+      - {id: sent-and-checked, class: success, outputs: [report], effects: [smoke-send], caller_action: Treat the self-send as submitted and inspect the per-check report.}
+      - {id: error, class: error, outputs: [report], effects: [], caller_action: "Resolve the reported selection, account, credential, authentication, or provider error before retrying."}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Runs the selected checks against current provider authentication and connection state.}
+        effects:
+        - {id: smoke-send, direct_io_ref: network-3, action: send, value_source: {kind: argument, argument_ref: body}, may_occur_in_outcomes: [sent-and-checked], confirmation_evidence: {kind: output, output_ref: report}, reversibility: {irreversible: A smoke message accepted by SMTP cannot be recalled by this interface.}}
+        mutation_safety:
+          atomicity: {non_atomic: Selected checks run sequentially and a self-send can succeed before a later observation or output failure.}
+          concurrent_invocations: {safe: "Independent smoke invocations use separate connections, subject to provider limits."}
+          idempotency: {non_idempotent: Repeating send-self creates another email; authentication-only checks are observational.}
+          on_uncertain_completion: {verify_then_decide: Inspect the JSON report and mailbox before repeating a self-send.}
+          partial_effects_on_failure: {possible: Earlier checks or the self-send can succeed before a later selected check fails.}
+          rollback_on_failure: {unavailable: The interface cannot undo provider authentication checks or retract a sent message.}
+        verification: [{method: output-schema, output_ref: report}]
+      helpers: []
+    description: Run explicit live provider smoke checks for one account. --imap and
+      --smtp-auth authenticate without sending; --send-self sends a test email to
+      the account's own address.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - -a
+        - --imap
+        - --smtp-auth
+        - --send-self
+        - --body
+        flag_patterns:
+          --body: ^.+$
+          -a: ^.+$
+        forbidden_flags:
+        - --account
+        max_positionals: 0
+        min_positionals: 0
+        name: short-account
+        required_flags:
+        - -a
+      - allowed_flags:
+        - --account
+        - --imap
+        - --smtp-auth
+        - --send-self
+        - --body
+        flag_patterns:
+          --account: ^.+$
+          --body: ^.+$
+        forbidden_flags:
+        - -a
+        max_positionals: 0
+        min_positionals: 0
+        name: long-account
+        required_flags:
+        - --account
+    usage: -a <nickname> [--imap] [--smtp-auth] [--send-self] [--body <text>]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: keyring
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Reads account credentials from the host credential store during live checks.
+  version: any
+schema_version: 4
+uses_interfaces: []
+version: 1

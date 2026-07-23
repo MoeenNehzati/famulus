@@ -1,0 +1,84 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Defines the caller rules for relaying mechanically selected handoff candidates without opening, summarizing, or re-judging their transcripts.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: find-handoff-candidates.source.gateway
+interfaces:
+  find-handoff-candidates.source.gateway.interface.default:
+    contract:
+      arguments:
+        request:
+          description: Request to identify unhandled work sessions or recalibrate the mechanical gap thresholds.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      preconditions: []
+      interaction:
+        mode: unattended
+      caller_warnings: []
+      outputs:
+      - id: response
+        audience: human
+        description: Verbatim candidate records or calibration guidance derived from the selected machine interface.
+        direct_io_ref: write-1
+        type:
+          kind: string
+          sensitivity: derived-private
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: A response is returned even when no sessions meet the threshold.
+      outcomes:
+      - id: completed
+        class: success
+        outputs: [response]
+        effects: []
+        caller_action: Relay the machine result without opening or re-evaluating any flagged transcript.
+      - id: failed
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Report the scan or calibration failure without inspecting session content manually.
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency:
+          per_source: Candidate selection reflects the transcript files and thresholds observed by each configured parser during the invocation.
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: handoff-scan-request
+          formats: [text]
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: handoff-candidate-response
+          formats: [markdown]
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+    description: Primary LLM-facing skill instructions.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces:
+- interface: prepare-handoff.interface.default
+  version: 1
+version: 1

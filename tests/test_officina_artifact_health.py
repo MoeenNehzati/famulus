@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 import subprocess
 
 import pytest
 import yaml
 
-import officina.common as common
 import officina.common.artifact_health as artifact_health
 from officina.common.artifact_health import (
     ArtifactHealthError,
@@ -340,6 +340,49 @@ def test_canonical_basis_includes_nested_dispatcher_python_package() -> None:
     assert (
         repo_root / "src" / "officina" / "dispatcher" / "platforms" / "__init__.py"
     ) in paths
+
+
+def test_canonical_basis_includes_every_v4_validator_implementation() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    paths = set(resolve_certification_basis_paths(repo_root))
+
+    expected = {
+        *repo_root.glob("validators/*.py"),
+        *repo_root.glob("skills/skill-maker/validators/*.py"),
+    }
+    assert expected
+    assert expected <= paths
+
+
+def test_canonical_basis_includes_v4_blueprint_sync_implementation() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    paths = set(resolve_certification_basis_paths(repo_root))
+
+    assert (
+        repo_root / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
+    ) in paths
+
+
+def test_canonical_basis_uses_reviewed_files_not_broad_common_or_runtime_globs() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    manifest = json.loads(
+        (
+            repo_root
+            / "skills"
+            / "skill-drift"
+            / "references"
+            / "certification-basis-roots.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert "src/officina/common/*.py" not in manifest
+    assert "src/officina/*.py" not in manifest
+    assert "src/officina/common/oauth_json.py" not in manifest
+    assert "src/officina/common/atomic_files.py" in manifest
+    assert "skills/skill-certifier/blueprints/*.yaml" in manifest
+    assert "skills/skill-drift/blueprints/*.yaml" in manifest
 
 
 def test_v4_basis_rejects_deleted_tracked_literal_member(tmp_path: Path) -> None:
@@ -1180,16 +1223,6 @@ def test_unreadable_checked_child_does_not_refresh_unchanged_parents(
         assert status.concerns == ("downstream-unhealthy",)
         assert status.expected_certified_health_hash == status.recorded_certified_health_hash
         assert not node_requires_refresh(status)
-
-
-def test_task5_interfaces_are_exported_from_common() -> None:
-    assert common.NodeHashState is NodeHashState
-    assert common.normalize_node_checks is normalize_node_checks
-    assert common.local_input_paths_for_node is local_input_paths_for_node
-    assert common.build_node_health_record is build_node_health_record
-    assert common.compute_node_hash_states is compute_node_hash_states
-    assert common.node_requires_refresh is node_requires_refresh
-    assert "deprecated" in (certify_graph.__doc__ or "").lower()
 
 
 def test_health_sidecar_names_follow_blueprint_sidecars(tmp_path: Path) -> None:

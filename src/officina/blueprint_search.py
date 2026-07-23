@@ -100,37 +100,42 @@ def iter_blueprints(
 ) -> Iterator[BlueprintRecord]:
     """Yield parsed blueprint records sorted by repository-relative path.
 
-    V4 discovery includes ``skills/*/blueprint.yaml`` and direct
-    ``skills/*/blueprints/*.yaml`` sources. Pre-v4 search keeps its root-only
-    surface until the live cutover. Hidden module directories are skipped by
-    default.
+    V4 discovery projects the repository inventory's canonical module markers
+    and direct ``blueprints/*.yaml`` behavioral sources, regardless of where
+    their module roots live. Pre-v4 search retains its ``skills/*`` root-only
+    surface. Hidden module directories are skipped by default.
     """
 
     root = Path(repo_root)
-    skills_dir = root / "skills"
-    if not skills_dir.exists():
-        raise BlueprintSearchError(f"{skills_dir}: missing skills directory")
-
     try:
         documents = tuple(iter_inventory_blueprints(root))
     except BlueprintInventoryError as exc:
         raise BlueprintSearchError(str(exc)) from exc
     for document in documents:
         relative = document.relative_path
-        if len(relative.parts) < 3 or relative.parts[0] != "skills":
-            continue
-        module = relative.parts[1]
+        is_v4 = document.declaration.get("schema_version") == 4
+        module = document.owner_root.name
         if module.startswith(".") and not include_hidden:
             continue
-        is_root = len(relative.parts) == 3 and relative.name == "blueprint.yaml"
-        is_v4_source = (
-            len(relative.parts) == 4
-            and relative.parts[2] == "blueprints"
-            and relative.suffix == ".yaml"
-            and document.declaration.get("schema_version") == 4
-            and document.node_type == "behavioral_source"
+
+        is_module = (
+            is_v4
+            and document.node_type == "module"
+            and document.path == document.owner_root / "blueprint.yaml"
         )
-        if not is_root and not is_v4_source:
+        is_v4_source = (
+            is_v4
+            and document.node_type == "behavioral_source"
+            and document.path.parent == document.owner_root / "blueprints"
+            and relative.suffix == ".yaml"
+        )
+        is_legacy_skill_root = (
+            not is_v4
+            and len(relative.parts) == 3
+            and relative.parts[0] == "skills"
+            and relative.name == "blueprint.yaml"
+        )
+        if not (is_module or is_v4_source or is_legacy_skill_root):
             continue
         yield BlueprintRecord(
             module=module,
@@ -303,10 +308,10 @@ def search_blueprints(
     repo_root: Path | str,
     query: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Discover, filter, and transform skill blueprints.
+    """Discover, filter, and transform repository blueprints.
 
     Args:
-        repo_root: Repository root containing ``skills/``.
+        repo_root: Repository root containing canonical module blueprints.
         query: Plain mapping with optional ``filter``, ``select``, ``comments``,
             ``explain``, and ``include_hidden`` keys.
 

@@ -1,0 +1,151 @@
+content:
+- _rtx/_handoff_scan\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: find-handoff-candidates.source.rtx-init
+  version: 1
+description: Scans configured session transcripts mechanically for exact handoff sentinels and reports sessions whose post-handoff conversation gap meets the selected threshold.
+gateway:
+  language: Python
+  path: _rtx/_handoff_scan.py
+id: find-handoff-candidates.source.rtx-handoff-scan
+interfaces:
+  find-handoff-candidates.source.rtx-handoff-scan.interface.scan:
+    contract:
+      arguments:
+        min-gap-chars:
+          description: Optional shared net-character threshold overriding every parser-specific default.
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            minimum: 0
+            unit: count
+        days:
+          description: Trailing calendar-day window ending today; ignored when date is supplied.
+          required: false
+          default: 2
+          sensitivity: public
+          type:
+            kind: integer
+            minimum: 0
+            unit: days
+        date:
+          description: Optional exact local calendar date replacing the trailing-day window.
+          required: false
+          sensitivity: public
+          type:
+            kind: date
+            date_formats: [YYYY-MM-DD]
+      preconditions: []
+      interaction:
+        mode: unattended
+      caller_warnings: []
+      outputs:
+      - id: candidates
+        audience: machine
+        description: One JSON array of threshold-qualified session records sorted by descending last-activity timestamp.
+        direct_io_ref: write-1
+        type:
+          kind: string
+          sensitivity: derived-private
+          format:
+            named: json
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: sorted
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: An empty JSON array is emitted when no session meets its threshold.
+      outcomes:
+      - id: completed
+        class: success
+        outputs: [candidates]
+        effects: []
+        caller_action: Relay every returned record verbatim, including records whose handoff_status is complete.
+      - id: failed
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Report the scan failure without opening transcripts for manual judgment.
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency:
+          best_effort: Missing transcript roots and files that fail during scanning are skipped; returned records reflect successfully parsed files.
+        verification:
+        - method: output-schema
+          output_ref: candidates
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: session-transcript
+          formats: [jsonl]
+          id: read-1
+          medium: home-filesystem
+          path: <configured-project-session-home>/projects/**/*.jsonl
+          path_match: glob
+          sensitivity: user-private
+          system: session-store
+        - access: read
+          content: session-transcript
+          formats: [jsonl]
+          id: read-2
+          medium: home-filesystem
+          path: <configured-rollout-session-home>/sessions/**/*.jsonl
+          path_match: glob
+          sensitivity: user-private
+          system: session-store
+        writes:
+        - access: write
+          content: handoff-candidate-report
+          formats: [json]
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+    description: 'Scan session transcripts across every configured host (default:
+      trailing 2 days), and report sessions whose conversation since their last completed
+      handoff exceeds a per-host threshold, using mechanical extraction only (no LLM
+      judgment).'
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        allowed_flags:
+        - --min-gap-chars
+        - --days
+        - --date
+        flag_patterns:
+          --date: ^\d{4}-\d{2}-\d{2}$
+          --days: ^[0-9]+$
+          --min-gap-chars: ^[0-9]+$
+        max_positionals: 0
+        min_positionals: 0
+        notes: No positionals. --min-gap-chars overrides every host's built-in default
+          threshold (each host is calibrated separately, since they differ by roughly
+          an order of magnitude in bytes per unit of work) with a single shared value.
+          --days (default 2) scans the trailing N days ending today, inclusive; --date
+          pins to one exact day instead (mutually exclusive with --days; mainly useful
+          for backtesting/calibration). Output is a JSON array; each entry's handoff_status
+          is one of none, started, complete -- a complete entry can still be flagged
+          if gap_net_chars (conversation since that completion) exceeds the threshold.
+    usage: '[--min-gap-chars N] [--days N | --date YYYY-MM-DD]'
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 4
+uses_interfaces: []
+version: 1

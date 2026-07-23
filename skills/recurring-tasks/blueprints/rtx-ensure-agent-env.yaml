@@ -1,0 +1,106 @@
+content:
+- _rtx/_ensure_agent_env\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: recurring-tasks.source.rtx-init
+  version: 1
+description: Writes the recurring-job agent command environment and, on the real Linux home, updates the live systemd user manager.
+gateway:
+  language: Python
+  path: _rtx/_ensure_agent_env.py
+id: recurring-tasks.source.rtx-ensure-agent-env
+interfaces:
+  recurring-tasks.source.rtx-ensure-agent-env.interface.scripts-ensure-agent-env:
+    contract:
+      arguments:
+        repo-root: {description: Repository root retained for setup-call compatibility, required: true, sensitivity: user-private, type: {kind: string}}
+        home: {description: Home directory under which environment.d is written, required: true, sensitivity: user-private, type: {kind: string}}
+        bin-dir: {description: Assistant launcher directory retained for setup-call compatibility, required: true, sensitivity: user-private, type: {kind: string}}
+        dry-run: {description: Print the target file without changing host state, required: false, default: false, sensitivity: public, type: {kind: flag}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Writes an environment.d file and may update the live systemd user-manager environment for the real home.
+      outputs:
+      - {id: result, audience: both, description: Applied or dry-run environment setup message, direct_io_ref: write-3, type: {kind: string}, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: A successful real-home write can complete without printing a message.}
+      outcomes:
+      - {id: ensured, class: success, outputs: [result], effects: [write-environment, update-user-manager], caller_action: Continue recurring-task setup.}
+      - {id: previewed, class: no-op, outputs: [result], effects: [], caller_action: Review the target and rerun without --dry-run.}
+      - {id: unsupported, class: no-op, outputs: [result], effects: [], caller_action: Use the host-specific scheduler environment mechanism instead.}
+      - {id: failed, class: error, outputs: [], effects: [], caller_action: Report the filesystem failure and stop setup.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Compares the selected home with the current user home before touching the live user manager.}
+        effects:
+        - {id: write-environment, direct_io_ref: write-1, action: configure, value_source: {kind: direct-io, direct_io_ref: write-1}, may_occur_in_outcomes: [ensured], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {reversible: Delete or restore the environment.d file.}}
+        - {id: update-user-manager, direct_io_ref: write-2, action: configure, value_source: {kind: direct-io, direct_io_ref: write-2}, may_occur_in_outcomes: [ensured], confirmation_evidence: {kind: direct-io, direct_io_ref: write-2}, reversibility: {reversible: Replace or unset the systemd user-manager variable.}}
+        mutation_safety:
+          atomicity: {non_atomic: The file write and live manager update are separate effects.}
+          concurrent_invocations: {unsafe: Concurrent writes can race on the environment file.}
+          idempotency: {idempotent: Repeating the same home writes the same template and manager value.}
+          on_uncertain_completion: {verify_then_decide: Inspect the file and systemd user environment before retrying.}
+          partial_effects_on_failure: {possible: The file can be written when the live manager update is unavailable.}
+          rollback_on_failure: {unavailable: The interface does not restore prior file or manager state.}
+        verification: [{method: output-schema, output_ref: result}]
+      helpers: []
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - {access: configure, content: config, formats: [text], id: write-1, medium: local-filesystem, path: $home/.config/environment.d/20-ai-agent.conf, path_match: exact, sensitivity: user-private, system: filesystem}
+        - {access: configure, content: config, formats: [text], id: write-2, medium: local-system, sensitivity: user-private, system: systemd-user}
+        - {access: write, content: response, formats: [text], id: write-3, medium: stdout, sensitivity: derived-private}
+    description: Idempotently ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE
+      is in place. Also run automatically by scripts-setup.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --repo-root
+        - --home
+        - --bin-dir
+        - --dry-run
+        flag_patterns:
+          --bin-dir: ^.+$
+          --home: ^.+$
+          --repo-root: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+        required_flags:
+        - --repo-root
+        - --home
+        - --bin-dir
+    usage: --repo-root DIR --home DIR --bin-dir DIR [--dry-run]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: false
+  windows: false
+runtime_dependencies:
+- kind: binary
+  name: systemctl
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Publishes recurring-task environment variables to the user manager when
+    available.
+  version: any
+- kind: system-service
+  name: systemd-user
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Owns the user manager environment updated for recurring-task jobs.
+  version: any
+schema_version: 4
+uses_interfaces: []
+version: 1

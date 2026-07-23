@@ -66,43 +66,43 @@ DISPATCHES = {
     "cloud-plans-read": DispatchCall(
         caller_skill="daily-plan",
         target_skill="cloud-files",
-        interface="plans-read",
+        interface="cloud-files.interface.plans-read",
     ),
     "cloud-plans-write": DispatchCall(
         caller_skill="daily-plan",
         target_skill="cloud-files",
-        interface="plans-write",
+        interface="cloud-files.interface.plans-write",
     ),
     "cloud-lists-read": DispatchCall(
         caller_skill="daily-plan",
         target_skill="cloud-files",
-        interface="lists-read",
+        interface="cloud-files.interface.lists-read",
     ),
     "cloud-lists-write": DispatchCall(
         caller_skill="daily-plan",
         target_skill="cloud-files",
-        interface="lists-write",
+        interface="cloud-files.interface.lists-write",
     ),
     "calendar-agenda": DispatchCall(
         caller_skill="daily-plan",
         target_skill="g-calendar",
-        interface="scripts-gcal",
+        interface="g-calendar.interface.scripts-gcal",
     ),
     "weather": DispatchCall(
         caller_skill="daily-plan",
         target_skill="get-weather",
-        interface="scripts-weather",
+        interface="get-weather.interface.scripts-weather",
         smoke_args=(),
     ),
     "list-read-beautify": DispatchCall(
         caller_skill="daily-plan",
         target_skill="list-manager",
-        interface="read-beautify",
+        interface="list-manager.interface.read-beautify",
     ),
     "list-update": DispatchCall(
         caller_skill="daily-plan",
         target_skill="list-manager",
-        interface="update-list",
+        interface="list-manager.interface.update-list",
     ),
 }
 

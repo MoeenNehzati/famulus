@@ -33,6 +33,6 @@ user.
 
 Keep the downloaded JSON private. Never commit it, paste its contents into chat,
 or put it in an issue. Once the user gives the local file path, continue in
-`connect-google.llm.connect-services` without restarting the workflow.
+`connect-google.interface.connect-services` without restarting the workflow.
 
 @../personal-preferences/create-client.md

@@ -1,21 +1,14 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "schema.json",
-  "title": "Famulus Blueprint Compatibility Schema",
-  "description": "Canonical gateway for legacy, read-only version-2, and current version-3 blueprint nodes.",
+  "title": "Famulus Blueprint Schema",
+  "description": "Canonical runtime gateway for version-4 modules and behavioral sources.",
   "oneOf": [
-    {"$ref": "legacy-skill.schema.json"},
-    {"$ref": "v2/skill.schema.json"},
-    {"$ref": "v2/llm-interface.schema.json"},
-    {"$ref": "v2/machine-interface.schema.json"},
-    {"$ref": "v2/behavior-source.schema.json"},
-    {"$ref": "skill.schema.json"},
-    {"$ref": "llm-interface.schema.json"},
-    {"$ref": "machine-module.schema.json"},
-    {"$ref": "behavior-source.schema.json"}
+    {"$ref": "module.schema.json"},
+    {"$ref": "behavioral-source.schema.json"}
   ],
   "x-famulus": {
-    "authoring": "Author schema version 3 and select the node schema with node_type. Legacy and version-2 documents are read-only migration inputs.",
+    "authoring": "Author schema version 4 and select the module or behavioral_source node schema with node_type. Older formats are migration inputs only.",
     "validation_rules": [
       "typed-blueprints-bind-regular-files",
       "typed-edges-resolve-and-pin-versions",

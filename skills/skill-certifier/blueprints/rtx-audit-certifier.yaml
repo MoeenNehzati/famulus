@@ -1,0 +1,321 @@
+content:
+- _rtx/_audit_certifier\.py
+dependencies: []
+description: Implements public exact-target audit certification plus private v4
+  migration-candidate completeness inspection, protected-projection checking, commit
+  reconstruction, and append-only Ed25519 certificate generation.
+gateway:
+  language: Python
+  path: _rtx/_audit_certifier.py
+id: skill-certifier.source.rtx-audit-certifier
+interfaces:
+  skill-certifier.source.rtx-audit-certifier.interface.certify:
+    contract:
+      arguments:
+        targets:
+          description: Optional installed skill names or exact path-like skill roots;
+            omission certifies every observed blueprint-backed installed skill.
+          required: false
+          default: []
+          sensitivity: user-private
+          type: {kind: list, element_type: {kind: string, sensitivity: user-private}}
+        json:
+          description: Emit one machine-readable JSON document instead of the Markdown table.
+          required: false
+          default: false
+          sensitivity: public
+          type: {kind: flag}
+        reviewed-repository:
+          description: Exact repository root whose v4 blueprints the invoking LLM reviewed.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        reviewed-commit:
+          description: Exact commit attested by the invoking LLM after semantic review; required with reviewed-repository for v4 targets.
+          required: false
+          sensitivity: public
+          type: {kind: string, sensitivity: public}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Runs the repository blueprint sync check and structural
+          validators before processing targets, then may create local signing material
+          and append certificate records for commit-backed inputs.
+      - external-side-effect: For v4 targets, creates or reuses the certifier signing key and appends signed records to each affected node's certificate history.
+      - external-side-effect: V4 finalization requires an explicit repository-bound reviewed commit from the LLM audit workflow; the machine finalizer never substitutes HEAD for missing review attestation.
+      outputs:
+      - id: certification-report
+        audience: both
+        description: JSON or Markdown containing mechanical evidence and per-target semantic,
+          stamp, node, and pooled-review results.
+        direct_io_ref: write-5
+        type: {kind: string, sensitivity: derived-private, description: "JSON when --json is present, otherwise a Markdown audit table"}
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty after the mechanical gate completes.
+      - id: error
+        audience: human
+        description: Mechanical-gate or invocation-wide certification failure written to stderr.
+        direct_io_ref: write-6
+        type: {kind: string, sensitivity: derived-private}
+        cardinality: {minimum: 0, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Empty when the invocation reaches normal per-target reporting.
+      outcomes:
+      - {id: certified, class: success, outputs: [certification-report], effects: [authentication-key, node-health, pooled-review, certificate-signing-material, certificate-history], caller_action: Treat only targets whose report says the stamp or certificate was written or reused as current.}
+      - {id: semantic-only, class: no-op, outputs: [certification-report], effects: [], caller_action: "Preserve the semantic result but do not claim a new stamp for dirty, uncommitted, or policy-unready inputs."}
+      - {id: partial, class: partial, outputs: [certification-report], effects: [authentication-key, node-health, pooled-review, certificate-signing-material, certificate-history], caller_action: Keep earlier valid writes and report each failed or unstamped target separately.}
+      - {id: failed, class: error, outputs: [error], effects: [], caller_action: Resolve the mechanical or invocation failure and do not claim certification.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {per_source: "Each target is resolved, checked, stamped when eligible, and post-write verified independently against its captured repository state."}
+        effects:
+        - id: authentication-key
+          direct_io_ref: write-1
+          action: create
+          value_source: {kind: direct-io, direct_io_ref: write-1}
+          may_occur_in_outcomes: [certified, partial]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}
+          reversibility: {irreversible: Removing or changing the key invalidates authentication of records signed with it.}
+        - id: node-health
+          direct_io_ref: write-2
+          action: update
+          value_source: {kind: direct-io, direct_io_ref: read-1}
+          may_occur_in_outcomes: [certified, partial]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: write-2}
+          reversibility: {reversible: Derived local health records can be removed and regenerated from unchanged committed inputs.}
+        - id: pooled-review
+          direct_io_ref: write-4
+          action: update
+          value_source: {kind: direct-io, direct_io_ref: read-1}
+          may_occur_in_outcomes: [certified, partial]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: write-4}
+          reversibility: {reversible: The derived pooled review can be removed and regenerated from current node health.}
+        - id: certificate-signing-material
+          direct_io_ref: write-8
+          action: configure
+          value_source: {kind: direct-io, direct_io_ref: write-8}
+          may_occur_in_outcomes: [certified, partial]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: write-8}
+          reversibility: {irreversible: Removing retained keys prevents signing or historical verification.}
+        - id: certificate-history
+          direct_io_ref: write-9
+          action: append
+          value_source: {kind: direct-io, direct_io_ref: read-1}
+          may_occur_in_outcomes: [certified, partial]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: write-9}
+          reversibility: {irreversible: Certificate history is append-only and is not rewritten or truncated.}
+        mutation_safety:
+          atomicity: {per_effect_only: "Keys, node records, and pooled artifacts use bounded atomic replacement, but multi-node and multi-target certification is incremental rather than transactional."}
+          concurrent_invocations: {unsafe: The public audit-record path does not serialize concurrent certifier invocations across the whole target graph.}
+          idempotency: {idempotent: Unchanged already-healthy committed nodes are reused instead of rewritten.}
+          on_uncertain_completion: {verify_then_decide: Run exact-target drift status and inspect the per-node stamp result before retrying.}
+          partial_effects_on_failure: {possible: "Earlier target or child-node records remain valid when a later target, pool write, or post-write check fails."}
+          rollback_on_failure: {unavailable: Successful earlier atomic writes are intentionally retained rather than rolled back.}
+        verification:
+        - {method: output-schema, output_ref: certification-report}
+        - {method: direct-io-state, direct_io_ref: write-2}
+        - {method: direct-io-state, direct_io_ref: write-4}
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: blueprint
+          formats:
+          - yaml
+          - markdown
+          id: read-1
+          medium: local-filesystem
+          path: $target/blueprint-closure
+          path_match: glob
+          reason: Load the exact target graph and declared behavior sources for semantic
+            and health checks.
+          sensitivity: public
+          system: filesystem
+        - access: read
+          content: config
+          formats:
+          - json
+          - yaml
+          id: read-2
+          medium: local-filesystem
+          path: references/blueprint
+          path_match: exact
+          reason: Hash and validate the audit policy and health schema inputs.
+          sensitivity: public
+          system: filesystem
+        - access: read
+          content: repository
+          id: read-3
+          medium: local-system
+          path: $target/repository
+          path_match: exact
+          reason: Check repository identity, HEAD stability, tracked state, and committed
+            input hashes.
+          sensitivity: derived-private
+          system: git
+        - access: read
+          content: authentication key, existing node health, and pooled review state
+          formats: [text, json, yaml]
+          id: read-4
+          medium: local-filesystem
+          path: $target/**/{.health-authentication-key,.last_audit.json,.*.health.json,.pooled-blueprint-review.yaml}
+          path_match: glob
+          reason: Reuse authenticated current nodes, derive pooled state, and verify writes.
+          sensitivity: secret
+          system: filesystem
+        writes:
+        - access: write
+          content: credential
+          formats:
+          - text
+          id: write-1
+          medium: local-filesystem
+          path: skills/skill-certifier/.health-authentication-key
+          path_match: exact
+          reason: Create or reuse the bounded local HMAC key used to authenticate
+            health records.
+          sensitivity: secret
+          system: filesystem
+        - access: write
+          content: audit-record
+          formats:
+          - json
+          id: write-2
+          medium: local-filesystem
+          path: $target/**/.last_audit.json
+          path_match: glob
+          reason: Atomically write commit-backed legacy and typed node health records.
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: certification report
+          formats: [json, markdown]
+          id: write-5
+          medium: stdout
+          reason: Return mechanical evidence and per-target certification outcomes.
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: error
+          formats: [text]
+          id: write-6
+          medium: stderr
+          reason: Report an invocation-wide mechanical or certification error.
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: credential
+          formats: [pem, text, secret-store-entry]
+          id: write-8
+          medium: local-filesystem
+          path: skills/skill-certifier/.certificates/public-keys
+          path_match: exact
+          reason: Create or reuse retained Ed25519 verification material and the active-key selector while storing the private key through the configured secret backend.
+          sensitivity: credential
+          system: filesystem
+        - access: write
+          content: certificate history
+          formats: [jsonl]
+          id: write-9
+          medium: local-filesystem
+          path: $target/.certificates/*.jsonl
+          path_match: glob
+          reason: Append one complete signed v4 certificate record and verify the resulting history.
+          sensitivity: derived-private
+          system: filesystem
+        - access: execute
+          content: blueprint sync check, repository validators, hash computation, and drift verification
+          id: write-7
+          medium: subprocess
+          path: $repo/validators/runner.py
+          path_match: exact
+          reason: Enforce the mechanical gate and call the declared sync, hash, and drift interfaces around record writes.
+          sensitivity: derived-private
+          system: python
+        - access: write
+          content: audit-record
+          formats:
+          - json
+          id: write-3
+          medium: local-filesystem
+          path: $target/**/.*.health.json
+          path_match: glob
+          reason: Atomically write authenticated node and pooled-review health records.
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: generated-artifact
+          formats:
+          - yaml
+          id: write-4
+          medium: local-filesystem
+          path: $target/.pooled-blueprint-review.yaml
+          path_match: exact
+          reason: Atomically write the generated pooled blueprint review after graph
+            health succeeds.
+          sensitivity: derived-private
+          system: filesystem
+    description: Audit exact target closures and incrementally write commit-backed
+      node health records.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        allow_stdin: false
+        allowed_flags:
+        - --json
+        - --reviewed-repository
+        - --reviewed-commit
+        flag_patterns:
+          --reviewed-repository: ^.+$
+          --reviewed-commit: ^[0-9a-fA-F]{40,64}$
+        min_positionals: 1
+        positional_patterns:
+          '0': ^certify$
+    usage: certify [target ...] [--reviewed-repository ROOT --reviewed-commit COMMIT] [--json]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: false
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: false
+  reason: Parses skill blueprint files during semantic exactness checks.
+  version: any
+schema_version: 4
+uses_interfaces:
+- interface: common.interface.artifact-health
+  version: 1
+- interface: common.interface.atomic-files
+  version: 1
+- interface: common.interface.audit-records
+  version: 1
+- interface: common.interface.blueprint-graph
+  version: 1
+- interface: common.interface.certification-view
+  version: 1
+- interface: common.interface.git-provenance
+  version: 1
+- interface: common.interface.pooled-blueprint
+  version: 1
+- interface: skill-drift.interface.compute-hashes
+  version: 1
+- interface: skill-drift.interface.drift-status
+  version: 1
+- interface: skill-maker.interface.sync-blueprints
+  version: 1
+version: 1

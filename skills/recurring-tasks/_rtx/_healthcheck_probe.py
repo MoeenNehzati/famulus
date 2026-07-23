@@ -24,7 +24,7 @@ LOG_DIR = SKILL_DIR / "logs"
 HEALTHCHECK_LOG = LOG_DIR / "healthcheck" / "run.log"
 
 
-NOTIFY_SCRIPT = Path(__file__).parent / "assistant_desktop_notify.py"
+NOTIFY_SCRIPT = Path(__file__).parent / "_assistant_desktop_notify.py"
 
 
 def notify_desktop(title: str, body: str, urgency: str = "normal") -> None:

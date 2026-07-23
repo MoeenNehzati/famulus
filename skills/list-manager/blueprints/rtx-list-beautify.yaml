@@ -1,0 +1,108 @@
+content:
+- _rtx/_list_beautify\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: list-manager.source.rtx-init
+  version: 1
+description: Python source that renders YAML list data from stdin as human-readable
+  Markdown, a table, a diff fence, or terminal-rich output.
+gateway:
+  language: Python
+  path: _rtx/_list_beautify.py
+id: list-manager.source.rtx-list-beautify
+interfaces:
+  list-manager.source.rtx-list-beautify.interface.beautify-list:
+    contract:
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: list
+          formats:
+          - yaml
+          id: read-1
+          medium: stdin
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: report
+          formats:
+          - markdown
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+      arguments:
+        input: {description: YAML list document or entry sequence to render, required: true, sensitivity: user-private, type: {kind: string, format: {named: yaml}}}
+        no-descriptions: {description: Hide entry descriptions, required: false, default: false, sensitivity: public, type: {kind: flag}}
+        markdown: {description: Render nested bullet-list Markdown, required: false, default: false, sensitivity: public, type: {kind: flag}}
+        table: {description: Render a flat GitHub-Flavored Markdown table, required: false, default: false, sensitivity: public, type: {kind: flag}}
+        diff: {description: Render the legacy diff-fenced view, required: false, default: false, sensitivity: public, type: {kind: flag}}
+        relative-deadlines: {description: Render relative deadline labels, required: false, default: false, sensitivity: public, type: {kind: flag}}
+        ids: {description: Append stable entry IDs to rendered rows, required: false, default: false, sensitivity: public, type: {kind: flag}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - id: rendered
+        audience: human
+        description: Human-readable rendering of the supplied YAML list.
+        direct_io_ref: write-1
+        type: {kind: string, sensitivity: derived-private, description: Markdown or terminal-oriented list rendering}
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Empty input renders an empty-list representation.
+      outcomes:
+      - {id: success, class: success, outputs: [rendered], effects: [], caller_action: Relay the rendering without reformatting when it is intended for the user.}
+      - {id: error, class: error, outputs: [], effects: [], caller_action: Correct malformed YAML or incompatible rendering options before retrying.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {snapshot: Rendering uses only the YAML supplied on stdin for this invocation.}
+        verification: [{method: output-schema, output_ref: rendered}]
+      helpers: []
+    description: Render YAML list entries from stdin (nested bullet-list markdown
+      by default for todo/triage; --table for a flat GFM table, --diff for the legacy
+      diff-fenced view). Pass YAML via stdin using `dispatcher --stdin`.
+    process_binding:
+      entry: BeautifyListInterface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        allow_stdin: true
+        min_positionals: 0
+        notes: 'Reads YAML from stdin and renders user-facing list output. No allowed_flags
+          restriction: -D/--markdown/--table/--diff/--relative-deadlines/--ids all
+          pass through.'
+    usage: '[-D|--no-descriptions] [--markdown|--table|--diff] [--relative-deadlines]
+      [--ids]'
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Reads YAML list data from stdin.
+  version: '>=6'
+- kind: python-package
+  name: rich
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Renders nested list output for terminal display.
+  version: any
+schema_version: 4
+uses_interfaces: []
+version: 1

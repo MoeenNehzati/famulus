@@ -1,0 +1,58 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Defines the LLM-facing rules for selecting exact-target status or hash
+  checks and for keeping audit-currentness separate from optional live health results.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: skill-drift.source.gateway
+interfaces:
+  skill-drift.source.gateway.interface.default:
+    contract:
+      arguments:
+        request:
+          description: Request to inspect installed skill drift state or compute current
+            target-relative hashes.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Human-readable status mode writes a timestamped Markdown
+          report; optional health mode executes repository validators and target tests.
+      outputs:
+      - id: response
+        audience: both
+        description: Exact drift or hash result with audit and optional health signals
+          kept separate.
+        direct_io_ref: write-1
+        type: {kind: string, sensitivity: derived-private}
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty.
+      outcomes:
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Report the generated result without rewriting records or reinterpreting health failures as audit drift.}
+      - {id: failed, class: error, outputs: [response], effects: [], caller_action: "Report the target-resolution, safe-read, hashing, or status error."}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {snapshot: "The response reflects installed files, records, and optional health checks observed during this invocation."}
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - {id: read-1, medium: prompt, access: read, system: agent-runtime, content: drift or hash request, formats: [text], sensitivity: user-private}
+        writes:
+        - {id: write-1, medium: prompt, access: write, system: agent-runtime, content: drift or hash result, formats: [markdown], sensitivity: derived-private}
+    description: Instructions for exact-target, target-relative skill drift and hash
+      checks.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

@@ -1,0 +1,378 @@
+content:
+- _rtx/_check_drift_state\.py
+- _rtx/_drift_hashes\.py
+- references/certification\-basis\-roots\.json
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-skill-sources-init.yaml
+  reason: Imports Python source from _rtx/_skill_sources/__init__.py.
+  source: skill-drift.source.rtx-skill-sources-init
+  version: 1
+description: Resolves exact or installed skill targets, computes legacy or graph-native
+  hashes from descriptor-safe file snapshots, evaluates local audit or certificate
+  currentness, and optionally runs validators/tests and saves a Markdown status report.
+gateway:
+  language: Python
+  path: _rtx/_check_drift_state.py
+id: skill-drift.source.rtx-check-drift-state
+interfaces:
+  skill-drift.source.rtx-check-drift-state.interface.compute-hashes:
+    contract:
+      arguments:
+        targets:
+          description: Optional installed skill names or path-like exact skill roots;
+            omission scans every observed blueprint-backed skill.
+          required: false
+          default: []
+          sensitivity: user-private
+          type: {kind: list, element_type: {kind: string, sensitivity: user-private}}
+        json:
+          description: Emit one machine-readable JSON document instead of Markdown.
+          required: false
+          default: false
+          sensitivity: public
+          type: {kind: flag}
+        skill-root:
+          description: Exact installed skill root to hash instead of discovering installed copies.
+          required: false
+          sensitivity: user-private
+          direct_io_ref: read-1
+          type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - id: hash-report
+        audience: both
+        description: Deterministically ordered JSON or Markdown containing per-target
+          current hashes and any target-specific failures.
+        direct_io_ref: write-1
+        type: {kind: string, sensitivity: derived-private, description: "JSON when --json is present, otherwise Markdown"}
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: sorted
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty when at least one installed skill root resolves.
+      - id: error
+        audience: human
+        description: Target-resolution or per-target hash failures written to stderr.
+        direct_io_ref: write-2
+        type: {kind: string, sensitivity: derived-private}
+        cardinality: {minimum: 0, maximum: null}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Empty when every requested target hashes successfully.
+      outcomes:
+      - {id: computed, class: success, outputs: [hash-report], effects: [], caller_action: Consume the returned hashes without reading audit records directly.}
+      - {id: partial, class: partial, outputs: [hash-report, error], effects: [], caller_action: Use successful target hashes and report each failed target; the process exits nonzero.}
+      - {id: failed, class: error, outputs: [error], effects: [], caller_action: "Correct target discovery, blueprint, schema, or safe-read failures before retrying."}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {snapshot: Hashes are computed from target files and local certification state read during this invocation.}
+        verification: [{method: output-schema, output_ref: hash-report}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: selected skill blueprint graph, bound files, policies, schemas, and local certification records
+          formats: [yaml, json, markdown, python, text]
+          id: read-1
+          medium: local-filesystem
+          path: $target/blueprint-closure
+          path_match: glob
+          reason: Compute target-relative legacy or graph-native hashes without importing target code.
+          sensitivity: derived-private
+          system: filesystem
+        - access: read
+          content: installed skill roots and active plugin registry
+          formats: [json, directory]
+          id: read-2
+          medium: home-filesystem
+          path: $HOME/{.codex/skills,.claude/skills,.claude/plugins/installed_plugins.json}
+          path_match: glob
+          reason: Resolve installed copies when exact overrides are not supplied.
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: repository identity and committed source state
+          id: read-3
+          medium: local-system
+          path: $target/repository
+          path_match: exact
+          reason: Derive commit-backed graph and certificate currentness inputs.
+          sensitivity: derived-private
+          system: git
+        writes:
+        - access: write
+          content: hash report
+          formats: [json, markdown]
+          id: write-1
+          medium: stdout
+          reason: Return the requested current hash payload or human-readable report.
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: error
+          formats: [text]
+          id: write-2
+          medium: stderr
+          reason: Report target-specific or invocation-wide hashing failures.
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: descriptor-safe schema and pooled-review snapshots
+          formats: [json, yaml]
+          id: write-3
+          medium: temporary-filesystem
+          path: $tmp/skill-drift-*
+          path_match: glob
+          reason: Validate copied target metadata without following target symlinks; temporary directories are removed on exit.
+          sensitivity: derived-private
+          system: filesystem
+    description: Compute target-relative legacy hashes or graph-native typed hashes
+      for selected names, one exact skill root, or all observed blueprint-backed skills.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        allow_stdin: false
+        allowed_flags:
+        - --json
+        - --skill-root
+        flag_patterns:
+          --skill-root: ^.+$
+        min_positionals: 1
+        positional_patterns:
+          '0': ^compute-hashes$
+    usage: compute-hashes [target ...] [--json]
+    version: 1
+  skill-drift.source.rtx-check-drift-state.interface.drift-status:
+    contract:
+      arguments:
+        targets:
+          description: Optional installed skill names or path-like exact skill roots;
+            omission scans every observed installed skill.
+          required: false
+          default: []
+          sensitivity: user-private
+          type: {kind: list, element_type: {kind: string, sensitivity: user-private}}
+        all:
+          description: Check all observed installed skills and reject combination with named targets.
+          required: false
+          default: false
+          sensitivity: public
+          type: {kind: flag}
+        json:
+          description: Emit one JSON document and suppress the saved Markdown report.
+          required: false
+          default: false
+          sensitivity: public
+          type: {kind: flag}
+        with-test-validate:
+          description: Run repository validators once per source and each selected skill's
+            pytest suite as a separate health signal.
+          required: false
+          default: false
+          sensitivity: public
+          type: {kind: flag}
+        skill-root:
+          description: Exact installed skill root to inspect instead of discovering installed copies.
+          required: false
+          sensitivity: user-private
+          direct_io_ref: read-1
+          type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Non-JSON mode writes a timestamped Markdown report below
+          skill-drift/_build; --with-test-validate executes local validators and tests.
+      outputs:
+      - id: status-report
+        audience: both
+        description: JSON or Markdown containing audit currentness, concerns, and optional
+          health and combined attention status for each selected skill.
+        direct_io_ref: write-2
+        type: {kind: string, sensitivity: derived-private, description: "JSON when --json is present, otherwise Markdown plus the saved-report path"}
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: sorted
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty when at least one installed skill root resolves.
+      - id: error
+        audience: human
+        description: Invocation-wide target, discovery, descriptor-safety, schema, or record error.
+        direct_io_ref: write-3
+        type: {kind: string, sensitivity: derived-private}
+        cardinality: {minimum: 0, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Empty on success.
+      outcomes:
+      - {id: reported, class: success, outputs: [status-report], effects: [markdown-report], caller_action: Keep audit and optional health signals separate and relay the exact result.}
+      - {id: reported-json, class: success, outputs: [status-report], effects: [], caller_action: Consume the JSON result; no Markdown report was written.}
+      - {id: failed, class: error, outputs: [error], effects: [], caller_action: Report the error without rewriting or certifying any record.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {snapshot: "Status reflects target files, records, and optional health commands observed during this invocation."}
+        effects:
+        - id: markdown-report
+          direct_io_ref: write-1
+          action: create
+          value_source: {kind: output, output_ref: status-report}
+          may_occur_in_outcomes: [reported]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}
+          reversibility: {reversible: The derived local report can be deleted without changing audit state.}
+        mutation_safety:
+          atomicity: {non_atomic: The report directory and timestamped report are written directly.}
+          concurrent_invocations: {unsafe: Invocations in the same second can target the same report path.}
+          idempotency: {non_idempotent: Repeated non-JSON invocations normally create timestamp-named reports.}
+          on_uncertain_completion: {verify_then_decide: Inspect the reported _build path before rerunning.}
+          partial_effects_on_failure: {possible: Optional validators or tests can run before a later target fails; report-directory creation can precede a write error.}
+          rollback_on_failure: {unavailable: The checker does not remove report artifacts created before failure.}
+        verification:
+        - {method: output-schema, output_ref: status-report}
+        - {method: direct-io-state, direct_io_ref: write-1}
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: selected skill blueprint graph, bound files, policies, schemas, and local audit or certificate records
+          formats: [yaml, json, markdown, python, text]
+          id: read-1
+          medium: local-filesystem
+          path: $target/blueprint-closure
+          path_match: glob
+          reason: Compare current target state with authenticated local audit or certificate state.
+          sensitivity: derived-private
+          system: filesystem
+        - access: read
+          content: installed skill roots and active plugin registry
+          formats: [json, directory]
+          id: read-2
+          medium: home-filesystem
+          path: $HOME/{.codex/skills,.claude/skills,.claude/plugins/installed_plugins.json}
+          path_match: glob
+          reason: Resolve installed copies when exact overrides are not supplied.
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: repository identity and committed source state
+          id: read-3
+          medium: local-system
+          path: $target/repository
+          path_match: exact
+          reason: Evaluate commit-backed graph and certificate currentness inputs.
+          sensitivity: derived-private
+          system: git
+        writes:
+        - access: write
+          content: drift-report
+          formats:
+          - markdown
+          id: write-1
+          medium: local-filesystem
+          path: _build/*.md
+          path_match: glob
+          reason: Write the timestamped human-readable drift report.
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: status report
+          formats: [json, markdown]
+          id: write-2
+          medium: stdout
+          reason: Return the exact selected-skill status result and, in human mode, the saved-report path.
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: error
+          formats: [text]
+          id: write-3
+          medium: stderr
+          reason: Report invocation-wide status failures.
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: execute
+          content: optional repository validators and selected skill pytest suites
+          id: write-4
+          medium: subprocess
+          path: $repo/{validators/runner.py,skills/*/tests}
+          path_match: glob
+          reason: Produce the separate health signal only when --with-test-validate is requested.
+          sensitivity: derived-private
+          system: python
+        - access: write
+          content: descriptor-safe schema and pooled-review snapshots
+          formats: [json, yaml]
+          id: write-5
+          medium: temporary-filesystem
+          path: $tmp/skill-drift-*
+          path_match: glob
+          reason: Validate copied target metadata without following target symlinks; temporary directories are removed on exit.
+          sensitivity: derived-private
+          system: filesystem
+    description: Read derived audit status for selected installed names, one exact
+      skill root and its reachable graph, or all observed installed skills.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        allow_stdin: false
+        allowed_flags:
+        - --json
+        - --with-test-validate
+        - --all
+        - --skill-root
+        flag_patterns:
+          --skill-root: ^.+$
+        min_positionals: 1
+        positional_patterns:
+          '0': ^status$
+    usage: status [target ...] [--json] [--with-test-validate]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: false
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: false
+  reason: Parses typed and legacy blueprint declarations.
+  version: any
+- kind: python-package
+  name: jsonschema
+  platforms:
+    linux: true
+    macos: true
+    windows: false
+  reason: Validates typed health records against target schema snapshots.
+  version: any
+schema_version: 4
+uses_interfaces:
+- interface: common.interface.artifact-health
+  version: 1
+- interface: common.interface.audit-records
+  version: 1
+- interface: common.interface.blueprint-graph
+  version: 1
+- interface: common.interface.certification-view
+  version: 1
+- interface: common.interface.git-provenance
+  version: 1
+- interface: common.interface.pooled-blueprint
+  version: 1
+version: 1

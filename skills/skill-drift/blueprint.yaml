@@ -1,42 +1,72 @@
-schema_version: 2
-blueprint_type: skill
-id: skill-drift
+authority:
+  owns_filesystem:
+  - allowed_readers: []
+    match: regex
+    path: ^_build/[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}\.md$
+    reason: Drift status is the sole writer of its generated Markdown reports.
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _rtx/_check_drift_state.py:Interface
+      reason: Read-only skill audit status checks.
+    network: []
 category: skill-making-development-assistant
-role: meta-skill
+description: Computes installed-skill hashes and reports whether current artifacts still
+  match their local audit or certificate state, with optional live validator and test health.
+content:
+- README\.md
+- SKILL\.md
+- _rtx/_check_drift_state\.py
+- _rtx/_drift_hashes\.py
+- _rtx/_skill_sources/__init__\.py
+- _rtx/_skill_sources/_claude_skill_source\.py
+- _rtx/_skill_sources/_codex_skill_source\.py
+- _rtx/_skill_sources/_skill_source_common\.py
+- references/certification\-basis\-roots\.json
+- references/dependency\-explorer\.md
+- tests/test_dependency_explorer\.py
+- tests/test_drift_check\.py
+- tests/test_drift_hash\.py
+discovery:
+  mechanism: skill
+exports:
+  skill-drift.interface.compute-hashes:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: skill-drift.source.rtx-check-drift-state.interface.compute-hashes
+  skill-drift.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: skill-drift.source.gateway.interface.default
+  skill-drift.interface.drift-status:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: skill-drift.source.rtx-check-drift-state.interface.drift-status
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: skill-drift
 kind: diagnostic
-suggested_permissions:
-  bash:
-  - command:
-    - python3
-    - -m
-    - officina.runtime.python_machine_interface_runner
-    - _rtx/_check_drift_state.py:Interface
-    reason: Read-only skill audit status checks.
-  network: []
-skill_interface:
-  inputs:
-  - User request to read or check skill audit state.
-  - User or skill request to compute current audit hashes.
-  - Optional target skill names.
-  outputs:
-  - Drift reports comparing recorded health with current recursive graph health for typed skills.
-  - Current audit hash payloads for installed blueprint-backed skills.
-  side_effects:
-  - Writes timestamped Markdown reports under _build/.
-  - Does not write audit or health records.
-interfaces:
-- interface: skill-drift.llm.default
-  version: 1
-  blueprint:
-    base: skill-root
-    path: .SKILL.md.blueprint.yaml
-- interface: skill-drift.machine.compute-hashes
-  version: 1
-  blueprint:
-    base: skill-root
-    path: _rtx/._check_drift_state.py.compute-hashes.blueprint.yaml
-- interface: skill-drift.machine.drift-status
-  version: 1
-  blueprint:
-    base: skill-root
-    path: _rtx/._check_drift_state.py.drift-status.blueprint.yaml
+node_type: module
+role: meta-skill
+schema_version: 4
+sources:
+  skill-drift.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+  skill-drift.source.rtx-check-drift-state:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-check-drift-state.yaml
+  skill-drift.source.rtx-skill-sources-init:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-skill-sources-init.yaml
+version: 1

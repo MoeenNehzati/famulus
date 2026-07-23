@@ -1,0 +1,77 @@
+content:
+- _rtx/_failure_sentinel\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: email-triage.source.rtx-init
+  version: 1
+description: Latches a failed triage-run status that prevents later watermark advancement.
+gateway:
+  language: Python
+  path: _rtx/_failure_sentinel.py
+id: email-triage.source.rtx-failure-sentinel
+interfaces:
+  email-triage.source.rtx-failure-sentinel.interface.scripts-mark-failure:
+    contract:
+      arguments:
+        reason: {description: Failure reason stored for the operator and watermark guard, required: false, default: triage run failed (no reason given), sensitivity: derived-private, type: {kind: string}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Replaces status.json with an error latch that blocks watermark advancement.
+      outputs:
+      - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-2, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: marked, class: success, outputs: [diagnostic], effects: [mark-failed], caller_action: Stop the run without advancing the watermark.}
+      - {id: failed, class: error, outputs: [], effects: [], caller_action: Report that failure state could not be persisted and do not advance the watermark.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Replaces the current triage status with the supplied failure reason.}
+        effects:
+        - {id: mark-failed, direct_io_ref: write-1, action: update, value_source: {kind: argument, argument_ref: reason}, may_occur_in_outcomes: [marked], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Invoke the separate failure-clearer after correcting the underlying problem.}}
+        mutation_safety:
+          atomicity: {per_effect_only: One status document is rewritten.}
+          concurrent_invocations: {unsafe: Concurrent status writers can overwrite one another.}
+          idempotency: {idempotent: Repeating the same reason converges to the same error document.}
+          on_uncertain_completion: {verify_then_decide: Read status.json before deciding whether to retry.}
+          partial_effects_on_failure: {possible: A direct write can leave malformed status after interruption.}
+          rollback_on_failure: {unavailable: No prior status backup is retained.}
+        verification: [{method: direct-io-state, direct_io_ref: write-1}]
+      helpers: []
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - access: write
+          content: diagnostic-report
+          formats:
+          - json
+          id: write-1
+          medium: local-filesystem
+          path: state/status.json
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - {access: write, content: diagnostic-report, formats: [text], id: write-2, medium: stderr, sensitivity: derived-private}
+    description: Record that this triage run failed, so update-watermark refuses to
+      advance and the scheduled health check reports it.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        name: owner
+    usage: <reason>
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 4
+uses_interfaces: []
+version: 1

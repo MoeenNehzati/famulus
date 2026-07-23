@@ -8,12 +8,20 @@ description: Install or update the assistant, collab, coauthor, and tw/tmux-work
 
 Category: skill-making-development-assistant
 
-Skill Version: 2
+Skill Version: 1
 
-Uses Interfaces: none
+Uses Interfaces:
+- `install-assistant-tools.source.rtx-agent-launchers -> common.interface.toml-io@1`
+- `install-assistant-tools.source.rtx-config-bridge -> common.interface.codex-toml@1`
+- `install-assistant-tools.source.rtx-config-bridge -> common.interface.toml-io@1`
+- `install-assistant-tools.source.rtx-install-scaffold -> common.interface.audit-records@1`
 
 Public Interfaces:
-- `install-assistant-tools.llm.default`
+- `install-assistant-tools.interface.default`
+- `install-assistant-tools.interface.scripts-dev-link`
+- `install-assistant-tools.interface.scripts-install`
+- `install-assistant-tools.interface.scripts-launchers`
+- `install-assistant-tools.interface.scripts-scaffold`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -21,20 +29,19 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `scripts-dev-link` — Symlink Claude/Codex config dirs to a live repo checkout, register dev-mode hooks, set git hooksPath, export $AI. Requires an explicit repo path.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.machine.scripts-dev-link --repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]`
-- `scripts-install` — Phase-1 orchestrator: asks the dev-mode question, then runs scaffold, optionally dev-link, then launchers.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.machine.scripts-install [--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path DIR] [--agents LIST] [--default-llm {claude,codex}] [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]`
-- `scripts-launchers` — Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT for the given agents.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.machine.scripts-launchers --repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--dry-run]`
-- `scripts-scaffold` — Install the dispatcher + invoke-skill launchers and put the bin dir on PATH. Universal floor, mode-independent.
-  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.machine.scripts-scaffold --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]`
+- `install-assistant-tools.interface.scripts-dev-link` — Symlink Claude/Codex config dirs to a live repo checkout, register dev-mode hooks, set git hooksPath, export $AI. Requires an explicit repo path.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-dev-link --repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]`
+- `install-assistant-tools.interface.scripts-install` — Phase-1 orchestrator: asks the dev-mode question, then runs scaffold, optionally dev-link, then launchers.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-install [--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path DIR] [--agents LIST] [--default-llm {claude,codex}] [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]`
+- `install-assistant-tools.interface.scripts-launchers` — Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT for the given agents.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-launchers --repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--dry-run]`
+- `install-assistant-tools.interface.scripts-scaffold` — Install the dispatcher + invoke-skill launchers and put the bin dir on PATH. Universal floor, mode-independent.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools.interface.scripts-scaffold --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]`
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `install-assistant-tools.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Install Assistant Tools
 

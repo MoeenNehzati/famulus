@@ -1,0 +1,39 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Defines the LLM workflow for extracting a notation-faithful direct mathematical dependency graph and producing its canonical artifacts.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: math-dependency-graph.source.gateway
+interfaces:
+  math-dependency-graph.source.gateway.interface.default:
+    contract:
+      arguments:
+        request: {description: User request and source document for extracting or rendering a mathematical dependency graph., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - {id: response, audience: human, description: Graph-analysis result and artifact locations or requested review findings., direct_io_ref: write-1, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty on success., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Review the graph artifacts and unresolved evidence gaps.}
+      - {id: invalid-source, class: error, outputs: [], effects: [], caller_action: Correct the source document or canonical graph input before retrying.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {snapshot: The result is derived from the source content supplied for this run.}
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - {id: read-1, medium: prompt, access: read, content: graph request and source context, formats: [text], sensitivity: user-private}
+        writes:
+        - {id: write-1, medium: prompt, access: write, content: graph analysis response, formats: [markdown], sensitivity: derived-private}
+    description: Primary LLM-facing skill instructions.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

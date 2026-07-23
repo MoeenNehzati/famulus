@@ -261,11 +261,15 @@ including identity/version, invocation, inputs/outputs, preconditions/outcomes,
 effects, lifecycle, and interface-specific machine capabilities as applicable.
 
 Caller authorization is not part of a source-owned interface contract.
-Cross-module authorization belongs only to the module export; same-module
-source dependencies are declared by the calling source. One common interface
-contract describes inputs, outputs, preconditions, outcomes, effects, and
-lifecycle across gateway languages. An optional gateway binding describes only
-how those contract values map onto the gateway's invocation mechanics.
+Cross-module authorization belongs only to the module export. A language-native
+call across modules therefore declares a use of the target module's export; the
+graph resolves that use to the exact implementing behavioral source. A source
+may separately declare an exact source dependency for authored behavior-shaping
+content that it reads but does not invoke. That dependency grants no interface
+access or privilege. One common interface contract describes inputs, outputs,
+preconditions, outcomes, effects, and lifecycle across gateway languages. An
+optional gateway binding describes only how those contract values map onto the
+gateway's invocation mechanics.
 
 Gateway language, machine compatibility, and interface binding are orthogonal.
 The initial structured binding is the existing process binding for argv/stdin,
@@ -281,10 +285,11 @@ constraints, resolved definitions, and projection-size limits remain explicit
 contract and graph facts; a generic interface namespace does not erase them.
 
 Behavioral sources within the same module may interact through their internal
-gateways and interfaces. Behavioral sources belonging to different modules may
-interact only through interfaces exported by their respective module gateways.
-Direct cross-module access to another module's behavioral source or private
-content is forbidden.
+gateways and interfaces. Famulus-mediated interaction across modules must use
+an interface exported by the target module gateway, including when the physical
+mechanism is a language-native import. An authored non-invocation reference may
+instead create an exact cross-module source dependency, but does not bypass
+module authority or expose the target source as a public Famulus interface.
 
 The interaction path for an exported call is:
 
@@ -335,20 +340,20 @@ The certification graph is the following acyclic projection of that repository
 graph:
 
 ```text
-module --certification-depends-on--> each contained behavioral_source
 behavioral_source --uses-source--> behavioral_source
 behavioral_source --uses-private-interface--> sibling behavioral_source
-behavioral_source --uses-export--> exporting module
+behavioral_source --uses-export--> implementing behavioral_source
 node --references-cross-owner-contract--> owning node
 ```
 
-Containment itself is not bidirectional certification dependence: a behavioral
-source does not depend on its parent module merely because it operates under
-the module's authority. Module certification checks that authority and depends
-on the contained sources. A public export binding is covered by the module's
-dependency on its implementing source. Mutual uses that would cycle through
-modules or sources are invalid in the certification graph and must be rejected
-before certification.
+Containment is ownership-only and adds no certification edge in either
+direction. A public export is admitted only when both descriptive faces are
+current: the exporting module certificate covers the boundary identity,
+binding, and access declaration, while the exact implementing behavioral-source
+certificate covers the behavior. The consumer's `uses-export` dependency lands
+on that implementing source, so unrelated source drift in the exporting module
+does not invalidate the consumer. Mutual source uses that create a certification
+cycle remain invalid and must be rejected before certification.
 
 Derived analysis overlays, including `implicit_dependence` from logical-resource
 flow, do not affect certification currentness unless an approved contract

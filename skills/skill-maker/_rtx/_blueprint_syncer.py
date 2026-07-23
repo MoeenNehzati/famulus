@@ -35,8 +35,15 @@ if str(SRC_ROOT) not in sys.path:
 
 from officina.runtime.python_machine_interface import PythonMachineInterface
 from officina.runtime.python_machine_interface_runner import run_python_machine_interface
-from officina.common.blueprint_graph import expanded_legacy_blueprint, load_skill_blueprint_graph
+from officina.common.blueprint_graph import (
+    RepositoryBlueprintGraph,
+    expanded_legacy_blueprint,
+    load_repository_blueprint_graph,
+    load_skill_blueprint_graph,
+)
 from officina.common.atomic_files import atomic_replace_bytes
+from officina.common.certification_view import CertificationView
+from officina.common.interface_projection import project_consumer_interfaces
 
 SKILLS_ROOT = REPO_ROOT / "skills"
 CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
@@ -76,6 +83,7 @@ class SkillBlueprint:
     name: str
     path: Path
     data: dict[str, Any]
+    repository_graph: RepositoryBlueprintGraph | None = None
 
 
 class BlueprintError(Exception):
@@ -95,9 +103,45 @@ def normalized_categories(data: dict[str, Any], context: str) -> list[str]:
 
 def load_blueprints() -> dict[str, SkillBlueprint]:
     blueprints: dict[str, SkillBlueprint] = {}
-    for path in sorted(SKILLS_ROOT.glob("*/blueprint.yaml")):
+    paths = sorted(SKILLS_ROOT.glob("*/blueprint.yaml"))
+    try:
+        loaded = {
+            path: yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            for path in paths
+        }
+    except (OSError, UnicodeError, yaml.YAMLError) as exc:
+        raise BlueprintError(f"cannot inspect blueprint inventory: {exc}") from exc
+    if any(
+        isinstance(raw, dict) and raw.get("schema_version") == 4
+        for raw in loaded.values()
+    ):
+        if not all(
+            isinstance(raw, dict) and raw.get("schema_version") == 4
+            for raw in loaded.values()
+        ):
+            raise BlueprintError("v4 authoring does not support a mixed skill inventory")
+        try:
+            graph = load_repository_blueprint_graph(
+                SKILLS_ROOT.parent,
+                schema_root=BLUEPRINT_SCHEMA_ROOT,
+            )
+        except (OSError, ValueError) as exc:
+            raise BlueprintError(str(exc)) from exc
+        for path, raw in loaded.items():
+            skill_name = path.parent.name
+            module = graph.nodes.get(skill_name)
+            if module is None or module.node_type != "module":
+                raise BlueprintError(f"{path}: repository graph has no matching module")
+            blueprints[skill_name] = SkillBlueprint(
+                skill_name,
+                path,
+                dict(module.declaration),
+                graph,
+            )
+        return blueprints
+
+    for path, raw in loaded.items():
         skill_name = path.parent.name
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         if not isinstance(raw, dict):
             raise BlueprintError(f"{path}: top level must be a mapping")
         if raw.get("schema_version") == 2 or "blueprint_type" in raw:
@@ -481,6 +525,14 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
     errors: list[str] = []
     for name, blueprint in blueprints.items():
         data = blueprint.data
+        if data.get("schema_version") == 4:
+            if data.get("node_type") != "module":
+                errors.append(f"{blueprint.path}: v4 skill root must be a module")
+            if data.get("id") != name:
+                errors.append(f"{blueprint.path}: module id must match its directory")
+            if blueprint.repository_graph is None:
+                errors.append(f"{blueprint.path}: v4 repository graph is missing")
+            continue
         try:
             normalized_categories(data, str(blueprint.path))
         except BlueprintError as exc:
@@ -604,7 +656,12 @@ def validate_blueprints(blueprints: dict[str, SkillBlueprint]) -> list[str]:
                     f"{blueprint.path}: interfaces.llm.default.binding must be "
                     "`{kind: skill_file, path: SKILL.md}`"
                 )
-    errors.extend(validate_interface_uses(blueprints))
+    legacy_blueprints = {
+        name: blueprint
+        for name, blueprint in blueprints.items()
+        if blueprint.data.get("schema_version") != 4
+    }
+    errors.extend(validate_interface_uses(legacy_blueprints))
     return errors
 
 
@@ -657,23 +714,46 @@ def owner_interfaces(
     return result
 
 
-def generated_contract_block(skill_name: str, data: dict[str, Any]) -> str:
+def generated_contract_block(
+    skill_name: str,
+    data: dict[str, Any],
+    repository_graph: RepositoryBlueprintGraph | None = None,
+) -> str:
     categories = normalized_categories(data, "generated_contract_block")
-    version = default_llm_version(data, "generated_contract_block") or 1
-    machine, llm = normalized_interface_maps(data, "interfaces")
     uses: list[str] = []
-    for namespace, specs in (("machine", machine), ("llm", llm)):
-        for interface_name, spec in sorted(specs.items()):
-            if not isinstance(spec, dict):
-                continue
-            for entry in spec.get("uses_interfaces", []) or []:
+    if data.get("schema_version") == 4:
+        if repository_graph is None:
+            raise BlueprintError("v4 contract generation requires repository graph")
+        version = data.get("version")
+        if not isinstance(version, int) or version < 1:
+            raise BlueprintError(f"{skill_name}: v4 module version must be positive")
+        for source_id in repository_graph.module_sources.get(skill_name, ()):
+            source = repository_graph.nodes[source_id]
+            for entry in source.declaration.get("uses_interfaces", []) or []:
                 if isinstance(entry, dict) and isinstance(entry.get("interface"), str):
                     pinned = entry.get("version")
-                    if isinstance(pinned, int):
-                        uses.append(f"{skill_name}.{namespace}.{interface_name} -> {entry['interface']}@{pinned}")
-                    else:
-                        uses.append(f"{skill_name}.{namespace}.{interface_name} -> {entry['interface']}")
-    exports = exported_interfaces(skill_name, data)
+                    suffix = f"@{pinned}" if isinstance(pinned, int) else ""
+                    uses.append(f"{source_id} -> {entry['interface']}{suffix}")
+        exports = sorted(
+            export_id
+            for export_id, export in repository_graph.exports.items()
+            if export.module_node_id == skill_name
+        )
+    else:
+        version = default_llm_version(data, "generated_contract_block") or 1
+        machine, llm = normalized_interface_maps(data, "interfaces")
+        for namespace, specs in (("machine", machine), ("llm", llm)):
+            for interface_name, spec in sorted(specs.items()):
+                if not isinstance(spec, dict):
+                    continue
+                for entry in spec.get("uses_interfaces", []) or []:
+                    if isinstance(entry, dict) and isinstance(entry.get("interface"), str):
+                        pinned = entry.get("version")
+                        if isinstance(pinned, int):
+                            uses.append(f"{skill_name}.{namespace}.{interface_name} -> {entry['interface']}@{pinned}")
+                        else:
+                            uses.append(f"{skill_name}.{namespace}.{interface_name} -> {entry['interface']}")
+        exports = exported_interfaces(skill_name, data)
 
     lines = [
         CONTRACT_START,
@@ -704,15 +784,52 @@ def generated_contract_block(skill_name: str, data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def generated_interface_block(skill_name: str, data: dict[str, Any]) -> str:
-    machine_interfaces = owner_interfaces(data)
-    _machine, llm_interfaces = normalized_interface_maps(data, "interfaces")
-    visible_machine = [entry for entry in machine_interfaces if entry[1]]
-    visible_llm = [
-        (name, spec)
-        for name, spec in sorted(llm_interfaces.items())
-        if isinstance(spec, dict) and isinstance(spec.get("description"), str) and spec["description"].strip()
-    ]
+def generated_interface_block(
+    skill_name: str,
+    data: dict[str, Any],
+    repository_graph: RepositoryBlueprintGraph | None = None,
+) -> str:
+    is_v4 = data.get("schema_version") == 4
+    if is_v4:
+        if repository_graph is None:
+            raise BlueprintError("v4 interface generation requires repository graph")
+        visible_machine = []
+        visible_llm = []
+        for export_id, export in sorted(repository_graph.exports.items()):
+            if export.module_node_id != skill_name:
+                continue
+            spec = export.declaration
+            description = spec.get("description")
+            binding = spec.get("process_binding")
+            if isinstance(binding, dict):
+                patterns = binding.get("patterns") or []
+                notes = [
+                    (pattern.get("name"), pattern.get("notes"))
+                    for pattern in patterns
+                    if isinstance(pattern, dict)
+                    and (pattern.get("name") or pattern.get("notes"))
+                ]
+                visible_machine.append(
+                    (
+                        export_id,
+                        description.strip()
+                        if isinstance(description, str) and description.strip()
+                        else None,
+                        spec.get("usage") if isinstance(spec.get("usage"), str) else None,
+                        notes,
+                    )
+                )
+            elif isinstance(description, str) and description.strip():
+                visible_llm.append((export_id, spec))
+    else:
+        visible_machine = owner_interfaces(data)
+        _machine, llm_interfaces = normalized_interface_maps(data, "interfaces")
+        visible_machine = [entry for entry in visible_machine if entry[1]]
+        visible_llm = [
+            (name, spec)
+            for name, spec in sorted(llm_interfaces.items())
+            if isinstance(spec, dict) and isinstance(spec.get("description"), str) and spec["description"].strip()
+        ]
     if not visible_machine and not visible_llm:
         return ""
 
@@ -730,8 +847,13 @@ def generated_interface_block(skill_name: str, data: dict[str, Any]) -> str:
         for interface_name, description, usage, pattern_notes in visible_machine:
             lines.append(f"- `{interface_name}` — {description}")
             args = f" {usage}" if usage else ("" if usage == "" else " ...")
+            target = (
+                interface_name
+                if is_v4
+                else f"{skill_name}.machine.{interface_name}"
+            )
             lines.append(
-                f"  - `dispatcher --caller-skill {skill_name} {skill_name}.machine.{interface_name}{args}`"
+                f"  - `dispatcher --caller-skill {skill_name} {target}{args}`"
             )
             for pat_name, pat_notes in pattern_notes:
                 if pat_name and pat_notes:
@@ -876,7 +998,10 @@ def plan_consumer_interface_updates(
     owners: dict[Path, str] = {}
     for consumer_id, projection in sorted(projections.items()):
         node = repository_graph.nodes.get(consumer_id)
-        if node is None or node.node_type != "llm-interface":
+        if node is None or node.node_type not in {
+            "llm-interface",
+            "behavioral_source",
+        }:
             raise BlueprintError(f"unknown LLM consumer {consumer_id!r}")
         gateway = node.gateway_path
         if gateway is None:
@@ -903,9 +1028,35 @@ def plan_consumer_interface_updates(
         planned[absolute] = sync_used_interfaces_block(
             current,
             block,
-            root_consumer=consumer_id.endswith(".llm.default"),
+            root_consumer=(
+                consumer_id.endswith(".llm.default")
+                if node.node_type == "llm-interface"
+                else absolute == (node.skill_root / "SKILL.md").resolve(strict=False)
+            ),
         )
     return planned
+
+
+def plan_projected_consumer_interface_updates(
+    repository_graph: RepositoryBlueprintGraph,
+    certification: CertificationView,
+) -> dict[Path, str]:
+    """Project every v4 Markdown gateway from the shared graph before writing."""
+
+    projections = {}
+    for node_id, node in sorted(repository_graph.nodes.items()):
+        if node.node_type != "behavioral_source":
+            continue
+        gateway = node.declaration.get("gateway")
+        language = gateway.get("language") if isinstance(gateway, dict) else None
+        if not isinstance(language, str) or not language.startswith("Markdown"):
+            continue
+        projections[node_id] = project_consumer_interfaces(
+            repository_graph,
+            node_id,
+            certification,
+        )
+    return plan_consumer_interface_updates(repository_graph, projections)
 
 
 def apply_consumer_interface_updates(planned: Mapping[Path, str]) -> None:
@@ -963,8 +1114,22 @@ def strip_legacy_contract_metadata(text: str) -> str:
 def sync_skill(blueprint: SkillBlueprint, check_only: bool) -> list[str]:
     data = blueprint.data
     skill_dir = blueprint.path.parent
-    expected_skill = sync_contract_block(skill_dir / "SKILL.md", generated_contract_block(blueprint.name, data))
-    expected_skill = sync_interface_block(expected_skill, generated_interface_block(blueprint.name, data))
+    expected_skill = sync_contract_block(
+        skill_dir / "SKILL.md",
+        generated_contract_block(
+            blueprint.name,
+            data,
+            blueprint.repository_graph,
+        ),
+    )
+    expected_skill = sync_interface_block(
+        expected_skill,
+        generated_interface_block(
+            blueprint.name,
+            data,
+            blueprint.repository_graph,
+        ),
+    )
 
     errors: list[str] = []
 
@@ -984,14 +1149,109 @@ def generated_runtime_dependencies_manifest(blueprints: dict[str, SkillBlueprint
     skills: dict[str, Any] = {}
     all_dependencies: dict[str, set[str]] = {kind: set() for kind in RUNTIME_DEPENDENCY_KINDS}
 
+    def reachable_runtime_dependencies(
+        graph: RepositoryBlueprintGraph,
+        source_node_id: str,
+    ) -> list[dict[str, Any]]:
+        runtime_relations = {
+            "uses-source",
+            "uses-private-interface",
+            "uses-export",
+        }
+        interface_owners = {
+            interface_id: node_id
+            for node_id, node in graph.nodes.items()
+            for interface_id in (
+                node.declaration.get("interfaces", {})
+                if isinstance(node.declaration.get("interfaces"), dict)
+                else {}
+            )
+        }
+        adjacency: dict[str, set[str]] = {}
+        for edge in graph.node_edges:
+            if edge.relation not in runtime_relations:
+                continue
+            target_node_id = edge.target_id
+            if edge.relation == "uses-export":
+                export = graph.exports.get(edge.target_id)
+                target_node_id = (
+                    export.source_node_id if export is not None else None
+                )
+            elif edge.relation == "uses-private-interface":
+                target_node_id = interface_owners.get(edge.target_id)
+            if not isinstance(target_node_id, str):
+                raise BlueprintError(
+                    f"{edge.source_id}: unresolved runtime dependency {edge.target_id}"
+                )
+            adjacency.setdefault(edge.source_id, set()).add(target_node_id)
+        pending = [source_node_id]
+        visited: set[str] = set()
+        records: dict[str, dict[str, Any]] = {}
+        while pending:
+            node_id = pending.pop()
+            if node_id in visited:
+                continue
+            visited.add(node_id)
+            node = graph.nodes.get(node_id)
+            if node is None:
+                raise BlueprintError(
+                    f"{source_node_id}: missing runtime dependency node {node_id}"
+                )
+            raw_dependencies = node.declaration.get("runtime_dependencies", [])
+            if isinstance(raw_dependencies, list):
+                for dependency in raw_dependencies:
+                    if not isinstance(dependency, dict):
+                        continue
+                    key = json.dumps(
+                        dependency,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    records[key] = dict(dependency)
+            pending.extend(sorted(adjacency.get(node_id, ()), reverse=True))
+        return [records[key] for key in sorted(records)]
+
     for skill_name, blueprint in sorted(blueprints.items()):
         generated_interfaces: dict[str, Any] = {}
 
-        machine_interfaces, _ = normalized_interface_maps(blueprint.data, str(blueprint.path))
-        interface_items = [
-            (interface_name, f"{skill_name}.machine.{interface_name}", interface_spec)
-            for interface_name, interface_spec in sorted(machine_interfaces.items())
-        ]
+        if blueprint.data.get("schema_version") == 4:
+            graph = blueprint.repository_graph
+            if graph is None:
+                raise BlueprintError(
+                    f"{blueprint.path}: v4 dependency generation requires repository graph"
+                )
+            interface_items = []
+            for export_id, export in sorted(graph.exports.items()):
+                if export.module_node_id != skill_name:
+                    continue
+                interface_spec = export.declaration
+                if not isinstance(interface_spec.get("process_binding"), dict):
+                    continue
+                source = (
+                    graph.nodes.get(export.source_node_id)
+                    if export.source_node_id is not None
+                    else None
+                )
+                enriched = {
+                    **interface_spec,
+                    "dependencies": (
+                        reachable_runtime_dependencies(graph, source.node_id)
+                        if source is not None
+                        else []
+                    ),
+                }
+                interface_items.append(
+                    (export.local_name, export_id, enriched)
+                )
+        else:
+            machine_interfaces, _ = normalized_interface_maps(
+                blueprint.data, str(blueprint.path)
+            )
+            interface_items = [
+                (interface_name, f"{skill_name}.machine.{interface_name}", interface_spec)
+                for interface_name, interface_spec in sorted(machine_interfaces.items())
+            ]
 
         for interface_name, interface_id_value, interface_spec in interface_items:
             if not isinstance(interface_spec, dict):

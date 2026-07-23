@@ -15,9 +15,11 @@ from officina.common.blueprint_graph import (  # noqa: E402
     BlueprintNode,
     SkillBlueprintGraph,
     edge_key,
+    load_repository_blueprint_graph,
     graph_contract_errors,
     load_repository_blueprint_graphs,
 )
+from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
 
 
 def _edge_context(edge: BlueprintEdge, nodes: dict[str, BlueprintNode]) -> str:
@@ -92,6 +94,20 @@ def validate(repo_root: Path) -> list[str]:
     skills_root = repo_root / "skills"
     if not skills_root.is_dir():
         return []
+    schema_root = repo_root / "references" / "blueprint"
+    try:
+        repository_graph = load_repository_blueprint_graph(
+            repo_root,
+            schema_root=schema_root if (schema_root / "module.schema.json").is_file() else None,
+        )
+    except (BlueprintGraphError, BlueprintInventoryError, OSError, UnicodeError) as exc:
+        return [str(exc)]
+    if any(
+        node.declaration.get("schema_version") == 4
+        for node in repository_graph.nodes.values()
+    ):
+        return []
+
     try:
         graphs = load_repository_blueprint_graphs(repo_root)
     except BlueprintGraphError as exc:

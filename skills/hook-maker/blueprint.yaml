@@ -1,33 +1,32 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash: []
+    network: []
 category: skill-making-development-assistant
-role: meta-skill
+content:
+- SKILL\.md
+- references/cross\-host\-hook\-scaffold\.md
+description: Designs and implements cross-host assistant hooks by separating semantic purpose, lifecycle binding, and host-specific adapters.
+discovery:
+  mechanism: skill
+exports:
+  hook-maker.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: hook-maker.source.gateway.interface.default
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: hook-maker
 kind: generator
-suggested_permissions:
-  bash: []
-  network: []
-skill_interface:
-  inputs:
-  - User requests to design, create, install, debug, or refactor cross-host assistant
-    hooks.
-  - Existing host hook configs, installer code, hook modules, and tests when present.
-  outputs:
-  - A host-aware hook design, scaffold, patch, or review that separates purpose, lifecycle
-    binding, and output adapter.
-  side_effects:
-  - May create or modify hook modules, host registration code, and tests when the
-    user asks for implementation.
-interfaces:
-  machine: {}
-  llm:
-    default:
-      version: 1
-      description: Primary LLM-facing skill instructions.
-      binding:
-        kind: skill_file
-        path: SKILL.md
-      direct_io:
-        reads: []
-        writes: []
-        network: []
-      owns_filesystem: []
-      allow_all_skills: true
-      behavior_sources: []
+node_type: module
+role: meta-skill
+schema_version: 4
+sources:
+  hook-maker.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+version: 1

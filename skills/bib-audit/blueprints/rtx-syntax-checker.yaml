@@ -1,0 +1,116 @@
+content:
+- _rtx/_syntax_checker\.py
+dependencies: []
+description: Parses a BibTeX or natbib bibliography and reports syntax, required-field, duplicate-key, and field-format issues without modifying the file.
+gateway:
+  language: Python
+  path: _rtx/_syntax_checker.py
+id: bib-audit.source.rtx-syntax-checker
+interfaces:
+  bib-audit.source.rtx-syntax-checker.interface.scripts-bib-validate-bibtex:
+    contract:
+      arguments:
+        bibfile:
+          description: BibTeX or natbib bibliography file to validate.
+          required: true
+          sensitivity: user-private
+          direct_io_ref: read-1
+          type:
+            kind: file
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: true
+            access: read
+            content_type:
+              kind: string
+              description: BibTeX bibliography text.
+      preconditions: []
+      interaction:
+        mode: unattended
+      caller_warnings: []
+      outputs:
+      - id: validation-report
+        audience: machine
+        description: One JSON document with parse errors, per-entry issues, and ERROR, WARNING, and INFO counts.
+        direct_io_ref: write-1
+        type:
+          kind: string
+          sensitivity: derived-private
+          format:
+            named: json
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: A JSON report is emitted even when the bibliography has no issues.
+      outcomes:
+      - id: completed
+        class: success
+        outputs: [validation-report]
+        effects: []
+        caller_action: Read parse_errors before entries and report all ERROR and WARNING issues.
+      - id: failed
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Report the parse or file-access failure and do not claim validation succeeded.
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency:
+          snapshot: The report is derived from the bibliography content read during this invocation.
+        verification:
+        - method: output-schema
+          output_ref: validation-report
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: bibliography
+          formats: [bibtex]
+          id: read-1
+          medium: local-filesystem
+          path: <bibfile>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: bibliography-validation-report
+          formats: [json]
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+    description: Validate a BibTeX/natbib .bib file for syntax errors and missing
+      required fields (not for biblatex projects).
+    process_binding:
+      entry: ValidateBibtexInterface
+      kind: process
+      patterns:
+      - max_positionals: 1
+        min_positionals: 1
+        name: owner
+    usage: <file.bib>
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: bibtexparser
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Parses BibTeX entries more accurately than the fallback parser.
+  version: any
+schema_version: 4
+uses_interfaces: []
+version: 1

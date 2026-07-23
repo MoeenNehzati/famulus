@@ -11,10 +11,20 @@ Category: system-assistant
 Skill Version: 1
 
 Uses Interfaces:
-- `recurring-tasks.llm.default -> install-assistant-tools.llm.default@2`
+- `recurring-tasks.source.gateway -> install-assistant-tools.interface.default@2`
 
 Public Interfaces:
-- `recurring-tasks.llm.default`
+- `recurring-tasks.interface.default`
+- `recurring-tasks.interface.scripts-disable`
+- `recurring-tasks.interface.scripts-enable`
+- `recurring-tasks.interface.scripts-ensure-agent-env`
+- `recurring-tasks.interface.scripts-healthcheck`
+- `recurring-tasks.interface.scripts-job-utils`
+- `recurring-tasks.interface.scripts-setup`
+- `recurring-tasks.interface.scripts-status`
+- `recurring-tasks.interface.scripts-sync`
+- `recurring-tasks.interface.scripts-test`
+- `recurring-tasks.interface.scripts-view-logs`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
@@ -23,30 +33,31 @@ Public Interfaces:
 Owner-Facing Machine Interfaces:
 
 Use the installed `dispatcher` command for this skill's machine interfaces:
-- `scripts-disable` — Disable a job by setting enabled: false in jobs.yaml and syncing native scheduler entries.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-disable <name>`
-- `scripts-enable` — Enable a job by setting enabled: true in jobs.yaml and syncing native scheduler entries.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-enable <name>`
-- `scripts-ensure-agent-env` — Idempotently ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE is in place. Also run automatically by scripts-setup.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-ensure-agent-env --repo-root DIR --home DIR --bin-dir DIR [--dry-run]`
-- `scripts-healthcheck` — Run pre-flight and per-job health checks for all enabled recurring tasks; sends a desktop notification on failure.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-healthcheck`
-- `scripts-setup` — Verify prerequisites, sync native scheduler entries from jobs.yaml, install recurring health checks, and list active timers/tasks.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-setup [--migrate-cron]`
-- `scripts-status` — List active recurring scheduler entries, next fire times, and service status.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-status`
-- `scripts-sync` — Regenerate native scheduler entries from jobs.yaml.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-sync`
-- `scripts-test` — Trigger a job immediately through the native scheduler, show output and status.
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-test <name>`
-- `scripts-view-logs` — Tail the run log for a job (default 50 lines).
-  - `dispatcher --caller-skill recurring-tasks recurring-tasks.machine.scripts-view-logs <job-name> [--lines N]`
+- `recurring-tasks.interface.scripts-disable` — Disable a job by setting enabled: false in jobs.yaml and syncing native scheduler entries.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-disable <name>`
+- `recurring-tasks.interface.scripts-enable` — Enable a job by setting enabled: true in jobs.yaml and syncing native scheduler entries.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-enable <name>`
+- `recurring-tasks.interface.scripts-ensure-agent-env` — Idempotently ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE is in place. Also run automatically by scripts-setup.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-ensure-agent-env --repo-root DIR --home DIR --bin-dir DIR [--dry-run]`
+- `recurring-tasks.interface.scripts-healthcheck` — Run pre-flight and per-job health checks for all enabled recurring tasks; sends a desktop notification on failure.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-healthcheck`
+- `recurring-tasks.interface.scripts-job-utils` — Validate the legacy no-argument compatibility surface without changing job state.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-job-utils ...`
+- `recurring-tasks.interface.scripts-setup` — Verify prerequisites, sync native scheduler entries from jobs.yaml, install recurring health checks, and list active timers/tasks.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-setup [--migrate-cron]`
+- `recurring-tasks.interface.scripts-status` — List active recurring scheduler entries, next fire times, and service status.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-status`
+- `recurring-tasks.interface.scripts-sync` — Regenerate native scheduler entries from jobs.yaml.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-sync`
+- `recurring-tasks.interface.scripts-test` — Trigger a job immediately through the native scheduler, show output and status.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-test <name>`
+- `recurring-tasks.interface.scripts-view-logs` — Tail the run log for a job (default 50 lines).
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-view-logs <job-name> [--lines N]`
 
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `recurring-tasks.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 
 # Recurring Tasks

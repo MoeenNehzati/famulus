@@ -1,0 +1,52 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Implements the staged end-of-day orchestration across daily planning,
+  list mutation, mechanical handoff-candidate scanning, and deduplicated triage capture.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: wrap-up.source.gateway
+interfaces:
+  wrap-up.source.gateway.interface.default:
+    contract:
+      arguments:
+        request: {description: "End-of-day wrap-up request and, after the consolidated prompt, the user's completion, unplanned-work, calendar-note, and new-item answers.", required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: response-required}
+      caller_warnings:
+      - external-side-effect: After the user answers the consolidated prompt, delegated daily-plan and list-manager interfaces may update plan, todo, and triage state.
+      outputs:
+      - {id: response, audience: human, description: 'Numbered incomplete actions and consolidated questions, or a brief final summary of plan, list, and triage results.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: response-required, class: refusal, outputs: [response], effects: [], caller_action: "Answer all completion, unplanned-work, calendar-note, new-item, and commit-reminder questions before updates continue."}
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: "Review the concise summary of checked actions, unmatched todo items, new list items, and any added triage count."}
+      - {id: completed-without-plan, class: success, outputs: [response], effects: [], caller_action: Review list and handoff-triage results; no daily-plan state was available to update.}
+      - {id: partial, class: partial, outputs: [response], effects: [], caller_action: "Preserve successful delegated updates and resolve the specifically reported plan, list, or scan failure without guessing."}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {per_source: "The final summary reflects each delegated daily-plan, list-manager, and handoff-scan result at the time that source is invoked."}
+        verification:
+        - {method: output-schema, output_ref: response}
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - {id: request, medium: prompt, access: read, system: agent-runtime, content: Wrap-up request and the user's consolidated answers., formats: [text], sensitivity: user-private}
+        writes:
+        - {id: response, medium: prompt, access: write, system: agent-runtime, content: Consolidated wrap-up questions or final orchestration summary., formats: [markdown], sensitivity: derived-private}
+    description: Collect one consolidated user response, orchestrate declared planning and list interfaces, relay mechanical handoff candidates without transcript inspection, and summarize results.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces:
+- interface: daily-plan.interface.default
+  version: 1
+- interface: find-handoff-candidates.interface.default
+  version: 1
+- interface: list-manager.interface.default
+  version: 1
+- interface: prepare-handoff.interface.default
+  version: 1
+version: 1

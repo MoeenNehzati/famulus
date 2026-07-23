@@ -25,7 +25,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `proof-audit.llm.default`
+- `proof-audit.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
@@ -34,8 +34,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `proof-audit.interface.default` — Audit a proof in its document context and diagnose the first material issue without silently rewriting the argument.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

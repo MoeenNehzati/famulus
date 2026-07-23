@@ -1,0 +1,180 @@
+content:
+- _rtx/_ensure_oauth\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: g-calendar.source.rtx-init
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-oauth-bootstrap.yaml
+  reason: Executes the sibling OAuth bootstrap gateway when credentials are absent.
+  source: g-calendar.source.rtx-oauth-bootstrap
+  version: 1
+description: Checks calendar credential status and either reports readiness, prints setup guidance, or launches delegated setup when authorized.
+gateway:
+  language: Python
+  path: _rtx/_ensure_oauth.py
+id: g-calendar.source.rtx-ensure-oauth
+interfaces:
+  g-calendar.source.rtx-ensure-oauth.interface.ensure-oauth:
+    contract:
+      arguments:
+        home: {description: Home directory used to resolve g-calendar client and credentials files., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        dry-run: {description: Report the action without launching authorization., required: false, default: false, sensitivity: public, type: {kind: flag}}
+      preconditions: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: needs-client}
+      caller_warnings:
+      - external-side-effect: When a client is present and dry-run is false, the interface may launch browser authorization through the OAuth bootstrap.
+      outputs:
+      - {id: status, audience: both, description: Human-readable guidance and final OAuth status., direct_io_ref: write-1, cardinality: {minimum: 1, maximum: null}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: already-configured, class: no-op, outputs: [status], effects: [], caller_action: Continue with calendar operations.}
+      - {id: configured, class: success, outputs: [status], effects: [store-credentials], caller_action: Continue with calendar operations.}
+      - {id: would-run, class: no-op, outputs: [status], effects: [], caller_action: Rerun without --dry-run to launch authorization.}
+      - {id: needs-client, class: refusal, outputs: [status], effects: [], caller_action: Install a Desktop OAuth client JSON before retrying.}
+      - {id: skipped, class: refusal, outputs: [status], effects: [], caller_action: Continue without Calendar authorization.}
+      - {id: failed, class: error, outputs: [status], effects: [], caller_action: Report the bootstrap failure and preserve existing credentials.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Credential and client-file existence are checked during this invocation.}
+        effects:
+        - {id: store-credentials, direct_io_ref: write-2, action: update, value_source: {kind: direct-io, direct_io_ref: network-2}, may_occur_in_outcomes: [configured], confirmation_evidence: {kind: direct-io, direct_io_ref: write-2}, reversibility: {compensatable: Reauthorization can replace credentials; prior credentials are not retained.}}
+        mutation_safety:
+          atomicity: {atomic: The delegated bootstrap atomically replaces verified credential JSON.}
+          concurrent_invocations: {unsafe: Concurrent browser flows and credential writers are not serialized.}
+          idempotency: {non_idempotent: Reauthorization can issue a new refresh token.}
+          on_uncertain_completion: {verify_then_decide: Check the credential file and run a Calendar request before retrying.}
+          partial_effects_on_failure: {possible: OAuth consent may complete remotely even when local credential persistence fails.}
+          rollback_on_failure: {unavailable: Remote grants are not revoked automatically.}
+        verification:
+        - {method: output-schema, output_ref: status}
+        - {method: direct-io-state, direct_io_ref: write-2}
+      helpers: []
+      direct_io:
+        network:
+        - access: request
+          auth:
+            kind: google-calendar-oauth
+            mode: creates
+          content: credential
+          formats:
+          - json
+          id: network-1
+          medium: network-request
+          endpoint: https://accounts.google.com/o/oauth2/v2/auth
+          sensitivity: secret
+          system: oauth
+        - access: request
+          auth: {kind: google-calendar-oauth, mode: creates}
+          content: credential
+          endpoint: https://oauth2.googleapis.com/token
+          formats: [json]
+          id: network-2
+          medium: network-request
+          sensitivity: secret
+          system: oauth
+        - access: request
+          auth: {kind: google-calendar-oauth, mode: creates}
+          content: credential verification
+          endpoint: https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1
+          formats: [json]
+          id: network-3
+          medium: network-request
+          sensitivity: secret
+          system: google-calendar
+        - access: request
+          content: authorization callback
+          endpoint: http://localhost:8765
+          formats: [http]
+          id: network-4
+          medium: network-request
+          sensitivity: secret
+          system: localhost-callback
+        reads:
+        - access: read
+          auth:
+            kind: google-calendar-oauth
+            mode: checks
+          content: credential
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: <home>/.config/g-calendar/credentials.json
+          path_match: exact
+          sensitivity: secret
+          system: filesystem
+        - access: read
+          content: credential
+          formats:
+          - json
+          id: read-2
+          medium: local-filesystem
+          path: <home>/.config/g-calendar/client.json
+          path_match: exact
+          sensitivity: secret
+          system: filesystem
+        - access: read
+          content: credential
+          formats:
+          - json
+          id: read-3
+          medium: local-filesystem
+          path: $home/.config/g-calendar/client.json
+          path_match: exact
+          sensitivity: secret
+          system: filesystem
+        writes:
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          auth:
+            kind: google-calendar-oauth
+            mode: creates
+          content: credential
+          formats:
+          - json
+          id: write-2
+          medium: local-filesystem
+          path: $home/.config/g-calendar/credentials.json
+          path_match: exact
+          sensitivity: secret
+          system: filesystem
+    description: Check g-calendar OAuth status; print setup guidance or launch browser
+      authorization as needed. Relocated from install-assistant-tools — invoke directly
+      (caller-skill g-calendar) as part of connecting remotes.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        allowed_flags:
+        - --home
+        - --dry-run
+        flag_patterns:
+          --home: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        notes: Check OAuth status and guide setup for g-calendar.
+        required_flags:
+        - --home
+    usage: --home <dir> [--dry-run]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 4
+uses_interfaces: []
+version: 1

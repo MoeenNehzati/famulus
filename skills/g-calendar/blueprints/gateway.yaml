@@ -1,0 +1,57 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Interprets calendar requests, invokes the calendar client, and routes missing OAuth setup through connect-google and the local bootstrap interface.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: g-calendar.source.gateway
+interfaces:
+  g-calendar.source.gateway.interface.default:
+    contract:
+      arguments:
+        request: {description: User calendar request including relevant calendar and event and date or time details., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: clarification-required}
+      caller_warnings:
+      - external-side-effect: Create, update, move, and delete requests change Google Calendar after the required user details are known.
+      outputs:
+      - {id: response, audience: human, description: Calendar information and mutation confirmation or OAuth setup guidance., direct_io_ref: write-1, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Present the calendar result and identify any changed event.}
+      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: Supply the missing event identity and calendar and time or mutation detail.}
+      - {id: failed, class: error, outputs: [], effects: [], caller_action: Report the calendar or OAuth failure without inventing event state.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {per_source: Calendar and OAuth state are observed by the delegated interfaces at invocation time.}
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: document
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: response
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+    description: Primary LLM-facing skill instructions.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces:
+- interface: connect-google.interface.default
+  version: 1
+- interface: g-calendar.source.rtx-oauth-bootstrap.interface.setup-oauth
+  version: 1
+version: 1

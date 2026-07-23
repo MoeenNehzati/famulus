@@ -1,0 +1,13 @@
+content:
+- personal\-preferences/create\-client\.md
+dependencies: []
+description: Optional user preferences for Google Cloud client creation guidance.
+gateway:
+  language: Markdown
+  path: personal-preferences/create-client.md
+id: connect-google.source.personal-preferences-create-client
+interfaces: {}
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

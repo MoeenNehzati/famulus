@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
 import _install_scaffold as scaffold
+import officina.common.audit_records as audit_records
 from _install_launcher._base_launcher import LauncherInstallerBase
 
 
@@ -18,7 +19,22 @@ def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[s
         json.dumps(
             {
                 "version": 1,
-                "skills": {},
+                "skills": {
+                    "fixture": {
+                        "interfaces": {
+                            "run": {
+                                "dependencies": [
+                                    {
+                                        "kind": "python-package",
+                                        "name": package,
+                                        "version": "any",
+                                    }
+                                    for package in python_packages
+                                ]
+                            }
+                        }
+                    }
+                },
                 "all": {"python-package": python_packages, "binary": ["rg"]},
             }
         ),
@@ -171,6 +187,16 @@ def test_run_installs_python_packages_from_runtime_dependency_manifest(tmp_path,
         scaffold.subprocess, "run",
         lambda cmd, **kw: (calls.append(cmd), type("R", (), {"returncode": 0, "stderr": ""})())[1],
     )
+    monkeypatch.setattr(
+        scaffold,
+        "install_certificate_signing_material",
+        lambda repo_root, dry_run: scaffold.LauncherInstallResult(
+            name="certificate-signing-material",
+            required=True,
+            status="installed",
+            workflows=("v4 certification", "certificate verification"),
+        ),
+    )
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     write_runtime_dependencies_manifest(repo_root, ["PyYAML", "jsonschema", "cryptography"])
@@ -185,6 +211,109 @@ def test_run_installs_python_packages_from_runtime_dependency_manifest(tmp_path,
     assert any("jsonschema" in cmd for cmd in installed)
     assert any("cryptography" in cmd for cmd in installed)
     assert not any(" rg " in f" {cmd} " for cmd in installed)
+
+
+def test_required_python_packages_preserve_declared_versions(tmp_path):
+    repo_root = tmp_path / "repo"
+    manifest = repo_root / scaffold.RUNTIME_DEPENDENCIES_MANIFEST
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "skills": {
+                    "skill-certifier": {
+                        "interfaces": {
+                            "certify": {
+                                "dependencies": [
+                                    {
+                                        "kind": "python-package",
+                                        "name": "cryptography",
+                                        "version": ">=44.0.1",
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                },
+                "all": {"python-package": ["cryptography"], "binary": []},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert scaffold.required_python_packages(repo_root) == [
+        "cryptography>=44.0.1"
+    ]
+
+
+def test_certificate_signing_material_capability_uses_shared_owner(
+    tmp_path,
+    monkeypatch,
+):
+    calls = []
+    public_key_root = tmp_path / "repo" / "keys"
+    monkeypatch.setattr(
+        audit_records,
+        "provision_certificate_signing_material",
+        lambda repo_root: calls.append(repo_root),
+    )
+    monkeypatch.setattr(
+        audit_records,
+        "certificate_public_key_root",
+        lambda repo_root: public_key_root,
+    )
+
+    result = scaffold.install_certificate_signing_material(
+        tmp_path / "repo",
+        dry_run=False,
+    )
+
+    assert calls == [tmp_path / "repo"]
+    assert result.status == "installed"
+    assert result.path == public_key_root
+
+
+def test_certificate_signing_material_capability_fails_closed(
+    tmp_path,
+    monkeypatch,
+):
+    def fail(_repo_root):
+        raise ValueError("verification failed")
+
+    monkeypatch.setattr(
+        audit_records,
+        "provision_certificate_signing_material",
+        fail,
+    )
+
+    result = scaffold.install_certificate_signing_material(
+        tmp_path / "repo",
+        dry_run=False,
+    )
+
+    assert result.blocks_install()
+    assert result.reason == "verification failed"
+
+
+def test_certificate_signing_material_dry_run_does_not_write(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        audit_records,
+        "provision_certificate_signing_material",
+        lambda _repo_root: (_ for _ in ()).throw(
+            AssertionError("dry-run wrote signing material")
+        ),
+    )
+
+    result = scaffold.install_certificate_signing_material(
+        tmp_path / "repo",
+        dry_run=True,
+    )
+
+    assert result.status == "would-install"
 
 
 def test_python_package_install_timeout_warns_and_continues(tmp_path, monkeypatch, capsys):

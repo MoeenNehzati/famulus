@@ -1,0 +1,131 @@
+content:
+- _rtx/_reference_pairs\.py
+dependencies: []
+description: Parses bibliography entries and ranks every pair by shared identifiers and weighted title, author, year, and venue similarity.
+gateway:
+  language: Python
+  path: _rtx/_reference_pairs.py
+id: bib-audit.source.rtx-reference-pairs
+interfaces:
+  bib-audit.source.rtx-reference-pairs.interface.scripts-bib-similarity:
+    contract:
+      arguments:
+        bibfile:
+          description: BibTeX bibliography file whose entries are compared pairwise.
+          required: true
+          sensitivity: user-private
+          direct_io_ref: read-1
+          type:
+            kind: file
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: true
+            access: read
+            content_type:
+              kind: string
+              description: BibTeX bibliography text.
+        threshold:
+          description: Minimum weighted similarity score included in the candidate list.
+          required: false
+          default: 0.3
+          sensitivity: public
+          type:
+            kind: number
+            minimum: 0
+            maximum: 1
+      preconditions: []
+      interaction:
+        mode: unattended
+      caller_warnings: []
+      outputs:
+      - id: candidates
+        audience: machine
+        description: One JSON document containing entry count, threshold, and candidate pairs sorted by descending score.
+        direct_io_ref: write-1
+        type:
+          kind: string
+          sensitivity: derived-private
+          format:
+            named: json
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: The JSON document is emitted even when its pairs array is empty.
+      - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-2, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - id: completed
+        class: success
+        outputs: [candidates, diagnostic]
+        effects: []
+        caller_action: Treat the ranked pairs as candidates for review, not automatic duplicate verdicts.
+      - id: failed
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Report the parse or file-access failure and do not infer pair results.
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency:
+          snapshot: All pair scores are derived from one read of the bibliography during this invocation.
+        verification:
+        - method: output-schema
+          output_ref: candidates
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: bibliography
+          formats: [bibtex]
+          id: read-1
+          medium: local-filesystem
+          path: <bibfile>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: duplicate-candidate-report
+          formats: [json]
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+        - {access: write, content: diagnostic-report, formats: [text], id: write-2, medium: stderr, sensitivity: derived-private}
+    description: Detect duplicate and version-pair candidates in a .bib file by scoring
+      all entry pairs.
+    process_binding:
+      entry: SimilarityInterface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --threshold
+        flag_patterns:
+          --threshold: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: owner
+    usage: <file.bib> [--threshold 0.3]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: bibtexparser
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Parses BibTeX entries more accurately than the fallback parser.
+  version: any
+schema_version: 4
+uses_interfaces: []
+version: 1

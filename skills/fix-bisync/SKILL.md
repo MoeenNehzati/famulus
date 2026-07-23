@@ -14,7 +14,7 @@ Skill Version: 1
 Uses Interfaces: none
 
 Public Interfaces:
-- `fix-bisync.llm.default`
+- `fix-bisync.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -22,8 +22,7 @@ Public Interfaces:
 Owner-Facing LLM Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `default` — Primary LLM-facing skill instructions.
-  - binding: skill file `SKILL.md`
+- `fix-bisync.interface.default` — Diagnose a live bisync job and gate preventive edits and repair execution on explicit user choice.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

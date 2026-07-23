@@ -77,6 +77,16 @@
         "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "blueprints/gateway.yaml"}, "doc": {"authoring": ["Name the target blueprint without parent traversal."]}, "related_validation_rules": ["gateway-file"]}}
       }
     },
+    "contractReference": {
+      "type": "object",
+      "required": ["base", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "base": {"enum": ["module-root", "repository-root"], "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "module-root"}, "doc": {"authoring": ["Choose the root against which the contract path is resolved."]}, "related_validation_rules": ["relationship-edge"]}},
+        "path": {"$ref": "#/definitions/relativePath", "x-famulus": {"field_status": "required", "audit_hash": "include", "template": {"include": true, "example": "contracts/schema.json"}, "doc": {"authoring": ["Name the authored contract path without parent traversal."]}, "related_validation_rules": ["relationship-edge"]}},
+        "fragment": {"type": "string", "pattern": "^#", "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Optionally select a JSON Pointer fragment; omit for the whole document."]}, "related_validation_rules": ["relationship-edge"]}}
+      }
+    },
     "sourceContainment": {
       "type": "object",
       "required": ["blueprint"],
@@ -234,7 +244,45 @@
       "allOf": [{"$ref": "legacy-skill.schema.json#/definitions/runtimeDependencies"}],
       "description": "Runtime dependencies for one typed machine interface. Each entry's platforms map states where that dependency applies, not the complete support claim of the interface."
     },
-    "pattern": {"$ref": "legacy-skill.schema.json#/definitions/pattern"},
+    "pattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Optionally name this accepted argv pattern."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
+        "min_positionals": {"type": "integer", "minimum": 0, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Set the minimum number of positional arguments accepted."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
+        "max_positionals": {"type": "integer", "minimum": 0, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Set the maximum number of positional arguments accepted."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
+        "allow_extra_positionals": {"type": "boolean", "default": false, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Allow positional arguments beyond the declared maximum or positional patterns."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
+        "allow_stdin": {"type": "boolean", "default": false, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Allow the interface to consume standard input."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}},
+        "positional_patterns": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[0-9]+$"},
+          "additionalProperties": {"type": "string", "minLength": 1},
+          "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Map zero-based positional indexes to their accepted regular expressions."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
+        },
+        "flag_patterns": {
+          "type": "object",
+          "propertyNames": {"pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"},
+          "additionalProperties": {"type": "string", "minLength": 1},
+          "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Map accepted short or long flags to value regular expressions."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
+        },
+        "required_flags": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"},
+          "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List flags that every matching invocation must contain."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
+        },
+        "allowed_flags": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"},
+          "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List the complete set of flags accepted by this pattern."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
+        },
+        "forbidden_flags": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$"},
+          "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["List flags explicitly rejected by this pattern."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}
+        },
+        "notes": {"type": "string", "minLength": 1, "x-famulus": {"field_status": "optional", "audit_hash": "include", "template": {"include": false}, "doc": {"authoring": ["Record concise semantic details not expressible by the structural fields."]}, "related_validation_rules": ["dispatcher-argv-pattern"]}}
+      }
+    },
     "directIo": {
       "$ref": "direct-io.schema.json",
       "description": "Immediate semantic IO. This declaration is descriptive and is not proof of subsystem confinement.",

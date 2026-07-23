@@ -260,10 +260,6 @@ def map_route_smoke_dependencies(
             mapping = RouteSmokeDependencyMapping(
                 relative, "direct-input", source_node_id
             )
-        elif absolute in basis:
-            mapping = RouteSmokeDependencyMapping(
-                relative, "certification-basis", None
-            )
         else:
             direct_owner = graph.direct_file_owners.get(absolute)
             candidates = {
@@ -273,16 +269,25 @@ def map_route_smoke_dependencies(
             }
             if direct_owner in candidates:
                 candidates = {direct_owner}
-            if len(candidates) != 1:
+            if len(candidates) == 1:
+                mapping = RouteSmokeDependencyMapping(
+                    relative,
+                    "certification-dependency",
+                    next(iter(candidates)),
+                )
+            elif candidates:
+                raise ArtifactHealthError(
+                    f"unmapped route-smoke dependency {relative}: ambiguous authority"
+                )
+            elif absolute in basis:
+                mapping = RouteSmokeDependencyMapping(
+                    relative, "certification-basis", None
+                )
+            else:
                 detail = "no authority" if not candidates else "ambiguous authority"
                 raise ArtifactHealthError(
                     f"unmapped route-smoke dependency {relative}: {detail}"
                 )
-            mapping = RouteSmokeDependencyMapping(
-                relative,
-                "certification-dependency",
-                next(iter(candidates)),
-            )
         mappings[relative] = mapping
     return tuple(mappings[path] for path in sorted(mappings))
 
@@ -682,6 +687,8 @@ def _reference_candidates(value: object) -> tuple[tuple[str, str], ...]:
             if isinstance(path, str) and isinstance(fragment, str) and fragment.startswith("#"):
                 found.add((path, fragment))
             for key, child in current.items():
+                if key == "contract_references":
+                    continue
                 if (
                     key in {"schema", "format"}
                     and isinstance(child, str)
@@ -699,9 +706,9 @@ def _reference_candidates(value: object) -> tuple[tuple[str, str], ...]:
 
 def _resolve_reference_path(owner_root: Path, base: Path, locator: str) -> Path:
     relative = Path(locator)
-    if relative.is_absolute() or ".." in relative.parts:
+    if relative.is_absolute():
         raise ArtifactHealthError(
-            f"reference path {locator!r} must remain under the module owner root"
+            f"reference path {locator!r} must be relative to its locator base"
         )
     candidate = Path(os.path.abspath(base / relative))
     owner = Path(os.path.abspath(owner_root))
@@ -709,7 +716,7 @@ def _resolve_reference_path(owner_root: Path, base: Path, locator: str) -> Path:
         candidate.relative_to(owner)
     except ValueError as exc:
         raise ArtifactHealthError(
-            f"reference path {locator!r} escapes the module owner root"
+            f"reference path {locator!r} escapes its confinement root"
         ) from exc
     return _validated_owned_input(owner, candidate)
 
@@ -749,15 +756,24 @@ def _recursive_contract_references(
 ) -> tuple[_ContractReference, ...]:
     """Resolve the complete confined file closure of authored contract locators."""
 
-    pending: list[tuple[Path, str, str]] = [
-        (owner_root, path, fragment) for path, fragment in seeds
-    ]
+    return _recursive_contract_references_from_roots(
+        (owner_root, owner_root, path, fragment)
+        for path, fragment in seeds
+    )
+
+
+def _recursive_contract_references_from_roots(
+    seeds: Iterable[tuple[Path, Path, str, str]],
+) -> tuple[_ContractReference, ...]:
+    """Resolve contract closures with an explicit confinement and locator base."""
+
+    pending = list(seeds)
     entries: dict[str, _ContractReference] = {}
     parsed_paths: set[Path] = set()
     while pending:
-        base, locator_path, fragment = pending.pop(0)
-        path = _resolve_reference_path(owner_root, base, locator_path)
-        relative = path.relative_to(owner_root).as_posix()
+        confined_root, base, locator_path, fragment = pending.pop(0)
+        path = _resolve_reference_path(confined_root, base, locator_path)
+        relative = path.relative_to(confined_root).as_posix()
         locator = f"{relative}{fragment}"
         payload = path.read_bytes()
         document = _parse_reference_document(path, payload)
@@ -767,7 +783,9 @@ def _recursive_contract_references(
             continue
         parsed_paths.add(path)
         for child_path, child_fragment in _reference_candidates(document):
-            pending.append((path.parent, child_path, child_fragment))
+            pending.append(
+                (confined_root, path.parent, child_path, child_fragment)
+            )
         if isinstance(document, (Mapping, list)):
             refs: list[str] = []
 
@@ -791,9 +809,12 @@ def _recursive_contract_references(
                     raise ArtifactHealthError(
                         f"{path}: external reference URI is unsupported: {ref}"
                     )
-                pending.append(
-                    (path.parent, path_text, f"#{ref_fragment}" if separator else "#")
-                )
+                pending.append((
+                    confined_root,
+                    path.parent,
+                    path_text,
+                    f"#{ref_fragment}" if separator else "#",
+                ))
     return tuple(entries[locator] for locator in sorted(entries))
 
 
@@ -1135,9 +1156,35 @@ def _v4_node_input_manifests(
         node_id: set() for node_id in graph.nodes
     }
     for node_id, node in sorted(graph.nodes.items()):
-        references = _recursive_contract_references(
-            node.skill_root,
-            _reference_candidates(node.declaration),
+        references = list(_recursive_contract_references(
+            node.skill_root, _reference_candidates(node.declaration)
+        ))
+        structured = node.declaration.get("contract_references", [])
+        if not isinstance(structured, list):
+            raise ArtifactHealthError(
+                f"{node.blueprint_path}: contract_references must be a list"
+            )
+        structured_seeds: list[tuple[Path, Path, str, str]] = []
+        for index, locator in enumerate(structured):
+            if not isinstance(locator, Mapping):
+                raise ArtifactHealthError(
+                    f"{node.blueprint_path}: contract_references[{index}] must be a mapping"
+                )
+            base_name = locator.get("base")
+            path = locator.get("path")
+            fragment = locator.get("fragment", "#")
+            if (
+                base_name not in {"module-root", "repository-root"}
+                or not isinstance(path, str)
+                or not isinstance(fragment, str)
+            ):
+                raise ArtifactHealthError(
+                    f"{node.blueprint_path}: invalid contract_references[{index}]"
+                )
+            confined = node.skill_root if base_name == "module-root" else root
+            structured_seeds.append((confined, confined, path, fragment))
+        references.extend(
+            _recursive_contract_references_from_roots(structured_seeds)
         )
         for reference in references:
             canonical_reference = Path(os.path.abspath(reference.path))

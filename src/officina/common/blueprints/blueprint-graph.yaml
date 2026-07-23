@@ -1,0 +1,80 @@
+content:
+- blueprint_graph\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/blueprint-inventory.yaml
+  reason: Imports strict blueprint discovery and JSON value types from blueprint_inventory.py.
+  source: common.source.blueprint-inventory
+  version: 1
+description: Loads legacy or typed blueprint nodes into validated skill and repository graphs, enforces ownership, relationship, platform, cycle, and runtime-file constraints, and resolves exports and runtime authority.
+gateway:
+  language: Python
+  path: blueprint_graph.py
+id: common.source.blueprint-graph
+interfaces:
+  common.source.blueprint-graph.interface.python-api:
+    contract:
+      arguments:
+        operation:
+          description: Blueprint-graph operation to perform.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - {value: load-skill-graph, description: Load one module or legacy skill graph from its root blueprint.}
+            - {value: load-repository-graph, description: Discover and load the complete repository blueprint graph.}
+            - {value: load-reachable-graph, description: Resolve the repository subgraph reachable from one module.}
+            - {value: validate-graph, description: "Validate concrete schemas, content ownership, relationships, cycles, platform compatibility, and runtime files."}
+            - {value: resolve-export, description: Resolve a module export and its exact implementing source interface.}
+            - {value: resolve-runtime-authority, description: Resolve the certified module and implementing source required to dispatch an export.}
+            - {value: open-runtime-file, description: Open one graph-authorized runtime file or Python package without following unsafe paths.}
+            - {value: expand-legacy-blueprint, description: Render one legacy skill graph as an expanded declaration.}
+        repository-root:
+          description: Repository or module root from which blueprints and owned runtime files are resolved.
+          required: false
+          sensitivity: user-private
+          direct_io_ref: repository-files
+          type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}
+        selector:
+          description: Operation-specific module ID, interface ID, version, caller ID, runtime path, platform, or graph value.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, description: "Operation-specific Python scalar, sequence, or graph object."}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - id: result
+        audience: machine
+        description: Validated graph, export, runtime authority, opened runtime binding, schema diagnostics, expanded declaration, or graph-derived value.
+        direct_io_ref: return-value
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Lookup operations can return no value only where the Python function explicitly models an absent optional binding.
+        type: {kind: string, sensitivity: user-private, description: "Operation-specific Python graph, dataclass, mapping, tuple, file binding, or optional value."}
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [], caller_action: Use only the validated graph or resolved authority returned by the selected operation.}
+      - {id: invalid-graph, class: error, outputs: [], effects: [], caller_action: "Correct malformed declarations, ownership overlap, unresolved relationships, cycles, platform incompatibility, or unsafe runtime paths before retrying."}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {snapshot: Each load or validation observes the blueprint and owned-file state available during that call; callers should retain one loaded graph for a coherent dispatch decision.}
+        verification:
+        - {method: output-schema, output_ref: result}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: repository-files, medium: repository-filesystem, access: read, content: "module blueprints, behavioral-source sidecars, gateways, owned content, schemas, and authorized runtime files", formats: [yaml, json, text, python, binary], sensitivity: user-private, path: "<repository-root>/**", path_match: glob}
+        writes:
+        - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [python-object], sensitivity: user-private}
+        network: []
+    description: Loads and validates repository blueprint graphs for Python callers.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

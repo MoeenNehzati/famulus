@@ -1,0 +1,83 @@
+authority:
+  owns_filesystem:
+  - allowed_readers: []
+    match: exact
+    path: .health-authentication-key
+    reason: The certifier is the sole writer and reader of its local authentication
+      key.
+  - allowed_readers:
+    - skill-drift.interface.drift-status
+    match: regex
+    path: (^|/)\.last_audit\.json$
+    reason: The certifier is the sole writer of legacy audit records consumed by drift
+      status.
+  - allowed_readers:
+    - skill-drift.interface.drift-status
+    match: regex
+    path: (^|/)\.[^/]+\.health\.json$
+    reason: The certifier is the sole writer of authenticated node and pool health
+      records.
+  - allowed_readers:
+    - skill-drift.interface.drift-status
+    match: regex
+    path: (^|/)\.pooled-blueprint-review\.yaml$
+    reason: The certifier is the sole writer of generated pooled reviews consumed
+      by drift status.
+  - allowed_readers:
+    - skill-drift.interface.drift-status
+    match: regex
+    path: ^\.certificates/public-keys/(active-key-id|[0-9a-f]{64}\.pub)$
+    reason: Retained Ed25519 public keys are read-only verification material for drift.
+  - allowed_readers:
+    - skill-drift.interface.drift-status
+    match: regex
+    path: ^\.certificates/[^/]+\.jsonl$
+    reason: The certifier is the sole writer of append-only node certificate histories.
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _rtx/_audit_certifier.py:Interface
+      reason: Run mechanical checks, compute audit hashes, and write audit records.
+    network: []
+category: skill-making-development-assistant
+description: Certifies exact skill targets after mechanical and semantic checks, writes
+  authenticated local audit state when commit readiness permits, and contains the private
+  v4 migration-candidate inspection and certificate machinery.
+content:
+- SKILL\.md
+- _rtx/_audit_certifier\.py
+- tests/test_audit_certifier\.py
+discovery:
+  mechanism: skill
+exports:
+  skill-certifier.interface.certify:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: skill-certifier.source.rtx-audit-certifier.interface.certify
+  skill-certifier.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: skill-certifier.source.gateway.interface.default
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: skill-certifier
+kind: auditor
+node_type: module
+role: meta-skill
+schema_version: 4
+sources:
+  skill-certifier.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+  skill-certifier.source.rtx-audit-certifier:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-audit-certifier.yaml
+version: 1

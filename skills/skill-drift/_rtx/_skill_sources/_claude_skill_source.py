@@ -60,6 +60,13 @@ def _plugin_sources(home: Path) -> list[SkillSource]:
                     f"/plugins/{plugin_id}/{index} must be an object",
                     record,
                 )
+            version = record.get("version")
+            if not isinstance(version, str) or not version:
+                raise _registry_error(
+                    registry_path,
+                    f"/plugins/{plugin_id}/{index}/version must be a nonempty string",
+                    record,
+                )
             install_path = record.get("installPath")
             if not isinstance(install_path, str) or not install_path:
                 raise _registry_error(
@@ -90,6 +97,8 @@ def _plugin_sources(home: Path) -> list[SkillSource]:
                     source="claude",
                     package_root=install_root.resolve(),
                     skills_root=skills_root.resolve(),
+                    plugin_id=plugin_id,
+                    plugin_version=version,
                 )
             )
     return sources

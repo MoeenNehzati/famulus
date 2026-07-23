@@ -224,6 +224,39 @@ def test_v4_authored_pattern_validates_and_preserves_raw_argv() -> None:
     assert plan.pattern_name == "hashes"
 
 
+def test_v4_authored_pattern_route_smoke_allows_semantic_contract_arguments() -> None:
+    source, export = _v4_pattern_export(
+        [{"name": "command", "min_positionals": 1}]
+    )
+    export.declaration["contract"]["arguments"]["command"] = {
+        "description": "Command and options described by the semantic contract.",
+        "required": True,
+        "sensitivity": "public",
+        "type": {"kind": "string"},
+    }
+
+    plan = compile_route_smoke_invocation(source, export)
+
+    assert plan.argv == ("audit", "--route-smoke")
+
+
+def test_v4_authored_pattern_raw_argv_allows_semantic_contract_arguments() -> None:
+    source, export = _v4_pattern_export(
+        [{"name": "command", "min_positionals": 1}]
+    )
+    export.declaration["contract"]["arguments"]["command"] = {
+        "description": "Command and options described by the semantic contract.",
+        "required": True,
+        "sensitivity": "public",
+        "type": {"kind": "string"},
+    }
+
+    parsed = parse_caller_invocation(export, ["status"], stdin_requested=False)
+    plan = compile_gateway_invocation(source, export, parsed)
+
+    assert plan.argv == ("audit", "status")
+
+
 def test_v4_raw_argv_rejected_when_no_authored_pattern_matches() -> None:
     _source, export = _v4_pattern_export(
         [

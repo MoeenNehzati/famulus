@@ -1,0 +1,22 @@
+content:
+- _rtx/__init__\.py
+- _rtx/_assistant_desktop_notify\.py
+- _rtx/_live_probe\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/jobs-config.yaml
+  reason: Owns the live-probe helper that reads and temporarily rewrites the shared
+    jobs configuration.
+  source: recurring-tasks.source.jobs-config
+  version: 1
+description: Owns package support plus internal execution, live-probe, and desktop-notification helpers used by recurring-task interfaces.
+gateway:
+  language: Python
+  path: _rtx/__init__.py
+id: recurring-tasks.source.rtx-init
+interfaces: {}
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

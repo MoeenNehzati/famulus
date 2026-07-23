@@ -803,7 +803,7 @@ def _resolve_export_dispatch(
                 ):
                     declares_exact_use = True
                     break
-            if not declares_exact_use:
+            if caller_skill != module.node_id and not declares_exact_use:
                 raise InvocationError(
                     f"caller module `{caller_skill}` does not declare use of "
                     f"`{export.interface_id}` version {export.version} in a contained source"
@@ -824,6 +824,7 @@ def _resolve_export_dispatch(
             module.node_id,
             export.interface_id,
             export.version,
+            export.source_node_id,
         )
         if not decision.certified:
             raise InvocationError(
@@ -911,7 +912,7 @@ def resolve_dispatch(
     root = get_repo_root(repo_root)
     module_target = target
     if module_target is None and target_skill is not None and script_interface is not None:
-        module_target = f"{target_skill}.machine.{script_interface}"
+        module_target = f"{target_skill}.interface.{script_interface}"
     if isinstance(module_target, str):
         resolved_module = _resolve_export_dispatch(
             root=root,
