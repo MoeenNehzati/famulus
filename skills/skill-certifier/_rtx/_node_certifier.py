@@ -27,8 +27,10 @@ from officina.common.certification_hashing import (
     compute_certification_basis_hash,
     derive_certifier_identity,
     expected_certifier_checks,
+    map_route_smoke_dependencies,
     normalize_node_checks,
     resolve_certification_basis_paths,
+    route_smoke_trace_signature,
 )
 from officina.common.certificate_records import (
     certificate_public_key_root,
@@ -46,6 +48,7 @@ from officina.common.atomic_files import (
     read_regular_file_bytes,
 )
 from officina.common.blueprint_graph import (
+    BlueprintNode,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
@@ -72,13 +75,24 @@ from officina.common.pooled_blueprint import (
     pooled_review_path,
     render_pooled_review,
 )
+from officina.common.process_binding_compiler import gateway_language_name
 from officina.runtime.python_machine_interface import (
     DispatchCall,
+    PythonRouteSmokeTraceError,
     PythonArgvMachineInterface,
+    trace_python_route_smoke_dependencies_batch,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_SCHEMA_VERSION = 1
+RouteSmokeAuditResult = tuple[
+    tuple[
+        str,
+        str,
+        tuple[tuple[str, str, str | None], ...],
+    ],
+    ...,
+]
 
 
 class CertificationError(RuntimeError):
@@ -384,6 +398,131 @@ def _v4_postorder(
             raise CertificationError(f"unknown exact v4 certification target: {node_id}")
         visit(node_id)
     return tuple(ordered)
+
+
+def _python_route_smoke_trace_specs(
+    graph: RepositoryBlueprintGraph,
+    certification_node_ids: Sequence[str],
+) -> tuple[tuple[str, str, str], ...]:
+    """Return unique scoped Python source/entrypoint traces."""
+
+    selected: set[str] = set()
+    for node_id in certification_node_ids:
+        if node_id not in graph.nodes:
+            raise CertificationHashError(
+                f"unknown route-smoke certification node: {node_id}"
+            )
+        selected.add(node_id)
+    specifications: dict[tuple[str, str], str] = {}
+    for node_id, node in sorted(graph.nodes.items()):
+        if node_id not in selected:
+            continue
+        if node.node_type != "behavioral_source" or node.gateway_path is None:
+            continue
+        gateway = node.declaration.get("gateway")
+        language = gateway.get("language") if isinstance(gateway, Mapping) else None
+        if not isinstance(language, str) or gateway_language_name(language) != "Python":
+            continue
+        interfaces = node.declaration.get("interfaces")
+        if not isinstance(interfaces, Mapping):
+            continue
+        try:
+            gateway_path = node.gateway_path.relative_to(node.skill_root).as_posix()
+        except ValueError as exc:
+            raise CertificationHashError(
+                f"{node_id}: Python gateway must remain inside its module"
+            ) from exc
+        for interface_id, declaration in sorted(interfaces.items()):
+            binding = (
+                declaration.get("process_binding")
+                if isinstance(declaration, Mapping)
+                else None
+            )
+            entry = binding.get("entry") if isinstance(binding, Mapping) else None
+            if (
+                isinstance(binding, Mapping)
+                and binding.get("kind") == "process"
+                and isinstance(entry, str)
+            ):
+                entrypoint = f"{gateway_path}:{entry}"
+                specifications.setdefault((node_id, entrypoint), str(interface_id))
+    return tuple(
+        (node_id, interface_id, entrypoint)
+        for (node_id, entrypoint), interface_id in sorted(specifications.items())
+    )
+
+
+def audit_route_smoke_dependencies(
+    graph: RepositoryBlueprintGraph,
+    states: Mapping[str, NodeHashState],
+    *,
+    repo_root: Path,
+    certification_basis_paths: Sequence[Path],
+    certification_node_ids: Sequence[str],
+) -> RouteSmokeAuditResult:
+    """Run the certifier-owned scoped Python route-smoke dependency audit."""
+
+    root = Path(repo_root).resolve()
+    trace_specs = _python_route_smoke_trace_specs(
+        graph,
+        certification_node_ids,
+    )
+    specifications = tuple(
+        (graph.nodes[node_id].skill_root, entrypoint)
+        for node_id, _interface_id, entrypoint in trace_specs
+    )
+    try:
+        traces = trace_python_route_smoke_dependencies_batch(
+            root,
+            specifications,
+        )
+    except (PythonRouteSmokeTraceError, ValueError) as exc:
+        raise CertificationHashError(str(exc)) from exc
+    results: list[
+        tuple[
+            str,
+            str,
+            tuple[tuple[str, str, str | None], ...],
+        ]
+    ] = []
+    for node_id, _interface_id, entrypoint in trace_specs:
+        key = (graph.nodes[node_id].skill_root.resolve(), entrypoint)
+        mappings = map_route_smoke_dependencies(
+            graph,
+            states,
+            source_node_id=node_id,
+            loaded_paths=traces[key],
+            certification_basis_paths=certification_basis_paths,
+            repo_root=root,
+        )
+        results.append(
+            (
+                node_id,
+                entrypoint,
+                route_smoke_trace_signature(mappings),
+            )
+        )
+    return tuple(results)
+
+
+def _v4_route_smoke_audit(
+    graph: RepositoryBlueprintGraph,
+    states: Mapping[str, NodeHashState],
+    *,
+    repo_root: Path,
+    certification_basis_paths: Sequence[Path],
+    certification_node_ids: Sequence[str],
+) -> RouteSmokeAuditResult:
+    try:
+        return audit_route_smoke_dependencies(
+            graph,
+            states,
+            repo_root=repo_root,
+            certification_basis_paths=certification_basis_paths,
+            certification_node_ids=certification_node_ids,
+        )
+    except CertificationHashError as exc:
+        raise CertificationError(str(exc)) from exc
 
 
 def _v4_payload(
@@ -792,6 +931,24 @@ def _certify_v4_repository(
             allow_non_atomic=allow_non_atomic,
         )
     order = _v4_postorder(graph, states, tuple(target_node_ids))
+    initial_route_smoke_audit = _v4_route_smoke_audit(
+        graph,
+        states,
+        repo_root=root,
+        certification_basis_paths=basis_paths,
+        certification_node_ids=order,
+    )
+    repeated_route_smoke_audit = _v4_route_smoke_audit(
+        graph,
+        states,
+        repo_root=root,
+        certification_basis_paths=basis_paths,
+        certification_node_ids=order,
+    )
+    if repeated_route_smoke_audit != initial_route_smoke_audit:
+        raise CertificationError(
+            "route-smoke dependency audit changed during certification"
+        )
     normalized_checks: dict[str, tuple[dict[str, object], ...]] = {}
 
     tracked_paths: set[Path] = {
@@ -975,6 +1132,7 @@ def _certify_v4_repository(
         )
         gate_records = (
             _v4_deterministic_check(gate_snapshot, graph=graph, states=states),
+            _passed_v4_check("route-smoke"),
             _v4_semantic_attestation(
                 gate_snapshot,
                 reviewed_commit=reviewed_commit,
@@ -1451,37 +1609,6 @@ class CommandResult:
 
 
 @dataclass(frozen=True)
-class TargetHash:
-    module: str
-    source: str
-    package_root: Path
-    module_root: Path
-    hashes: dict[str, Any]
-
-    @classmethod
-    def from_payload(cls, item: Mapping[str, Any]) -> "TargetHash":
-        module = item.get("skill")
-        package_root = item.get("package_root")
-        skills_root = item.get("skills_root")
-        hashes = item.get("hashes")
-        if (
-            not isinstance(module, str)
-            or not module
-            or not isinstance(package_root, str)
-            or not isinstance(skills_root, str)
-            or not isinstance(hashes, dict)
-        ):
-            raise CertificationError("compute-hashes returned an invalid module record")
-        return cls(
-            module=module,
-            source=str(item.get("source", "unknown")),
-            package_root=Path(package_root),
-            module_root=Path(skills_root) / module,
-            hashes=hashes,
-        )
-
-
-@dataclass(frozen=True)
 class NodeCertificationOutcome:
     node_id: str
     certificate_path: Path
@@ -1574,128 +1701,29 @@ def run_v4_mechanical_checks(
     return results
 
 
-def compute_hash_payload(
-    dispatcher: Dispatcher,
-    target: str | None = None,
-) -> dict[str, Any]:
-    args = ["compute-hashes", "--json"]
-    if target:
-        path = Path(target).expanduser()
-        if (
-            "/" in target
-            or "\\" in target
-            or target.startswith((".", "~"))
-        ) and path.exists():
-            args = [
-                "compute-hashes",
-                "--skill-root",
-                str(path.resolve()),
-                "--json",
-            ]
-        else:
-            args = ["compute-hashes", target, "--json"]
-    completed = dispatcher.dispatch(
-        "compute-hashes",
-        args=args,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        raise CertificationError(
-            (completed.stderr or completed.stdout or "compute-hashes failed").strip()
-        )
-    try:
-        payload = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        raise CertificationError(f"compute-hashes did not return JSON: {exc}") from exc
-    if not isinstance(payload, dict) or not isinstance(payload.get("skills"), list):
-        raise CertificationError("compute-hashes payload is missing its module list")
-    return payload
-
-
-def _hash_items(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
-    items = payload.get("skills")
-    if not isinstance(items, list) or not all(
-        isinstance(item, dict) for item in items
-    ):
-        raise CertificationError("compute-hashes returned invalid module records")
-    return items
-
-
-def collect_targets(
-    dispatcher: Dispatcher,
-    requests: Sequence[str],
-) -> list[TargetHash]:
-    items: list[dict[str, Any]] = []
-    if requests:
-        for request in requests:
-            resolved = _hash_items(compute_hash_payload(dispatcher, request))
-            if len(resolved) != 1:
-                raise CertificationError(
-                    f"explicit target {request!r} resolved to "
-                    f"{len(resolved)} modules"
-                )
-            target = TargetHash.from_payload(resolved[0])
-            path_like = (
-                "/" in request
-                or "\\" in request
-                or request.startswith((".", "~"))
-            )
-            if path_like:
-                if (
-                    target.module_root.resolve()
-                    != Path(request).expanduser().resolve()
-                ):
-                    raise CertificationError(
-                        f"explicit target {request!r} resolved to the wrong module"
-                    )
-            elif target.module != request:
-                raise CertificationError(
-                    f"explicit target {request!r} resolved to {target.module!r}"
-                )
-            items.append(resolved[0])
-    else:
-        items.extend(_hash_items(compute_hash_payload(dispatcher)))
-
-    result: list[TargetHash] = []
-    seen: set[tuple[str, str]] = set()
-    for item in items:
-        target = TargetHash.from_payload(item)
-        identity = (target.module, target.module_root.resolve().as_posix())
-        if identity not in seen:
-            seen.add(identity)
-            result.append(target)
-    if not result:
-        raise CertificationError("no blueprint-backed modules were resolved")
-    return result
-
-
-def reviewed_repository_target_requests(
+def resolve_reviewed_repository_targets(
     graph: RepositoryBlueprintGraph,
     requests: Sequence[str],
-) -> tuple[str, ...]:
-    """Resolve requested modules only within the reviewed repository graph."""
+) -> tuple[BlueprintNode, ...]:
+    """Resolve exact module nodes from the already validated reviewed graph."""
 
-    module_roots = tuple(
+    module_nodes = tuple(
         sorted(
-            {
-                node.skill_root.resolve()
+            (
+                node
                 for node in graph.nodes.values()
                 if node.node_type == "module"
-            },
-            key=lambda path: path.as_posix(),
+            ),
+            key=lambda node: (node.node_id, node.skill_root.as_posix()),
         )
     )
-    if not module_roots:
+    if not module_nodes:
         raise CertificationError("reviewed repository contains no v4 modules")
     if not requests:
-        return tuple(root.as_posix() for root in module_roots)
+        return module_nodes
 
-    roots_by_name: dict[str, list[Path]] = {}
-    for root in module_roots:
-        roots_by_name.setdefault(root.name, []).append(root)
-
-    resolved: list[str] = []
+    resolved: list[BlueprintNode] = []
+    seen: set[tuple[str, Path]] = set()
     for request in requests:
         path_like = (
             "/" in request
@@ -1704,15 +1732,27 @@ def reviewed_repository_target_requests(
         )
         if path_like:
             candidate = Path(request).expanduser().resolve()
-            matches = [root for root in module_roots if root == candidate]
+            matches = [
+                node
+                for node in module_nodes
+                if node.skill_root.resolve() == candidate
+            ]
         else:
-            matches = roots_by_name.get(request, [])
+            matches = [
+                node
+                for node in module_nodes
+                if node.node_id == request or node.skill_root.name == request
+            ]
         if len(matches) != 1:
             raise CertificationError(
                 f"target {request!r} resolves to {len(matches)} modules "
                 "in the reviewed repository"
             )
-        resolved.append(matches[0].as_posix())
+        target = matches[0]
+        identity = (target.node_id, target.skill_root.resolve())
+        if identity not in seen:
+            seen.add(identity)
+            resolved.append(target)
     return tuple(resolved)
 
 
@@ -1743,13 +1783,7 @@ def certify(
     ):
         raise CertificationError("certification accepts only an all-v4 repository")
 
-    exact_requests = reviewed_repository_target_requests(graph, targets)
-    resolved = collect_targets(dispatcher, exact_requests)
-    repositories = {target.package_root.resolve() for target in resolved}
-    if repositories != {repository}:
-        raise CertificationError(
-            "semantic review repository does not match the target repository"
-        )
+    resolved = resolve_reviewed_repository_targets(graph, targets)
 
     target_nodes_by_module: dict[str, tuple[str, ...]] = {}
     requested_node_ids: set[str] = set()
@@ -1758,12 +1792,12 @@ def certify(
             sorted(
                 node_id
                 for node_id, node in graph.nodes.items()
-                if node.skill_root.resolve() == target.module_root.resolve()
+                if node.skill_root.resolve() == target.skill_root.resolve()
             )
         )
         if not node_ids:
-            raise CertificationError(f"{target.module}: module owns no v4 nodes")
-        target_nodes_by_module[target.module] = node_ids
+            raise CertificationError(f"{target.node_id}: module owns no v4 nodes")
+        target_nodes_by_module[target.node_id] = node_ids
         requested_node_ids.update(node_ids)
 
     evidence = (
@@ -1792,16 +1826,16 @@ def certify(
 
     outcomes = [
         CertificationOutcome(
-            module=target.module,
-            source=target.source,
-            module_root=target.module_root,
+            module=target.node_id,
+            source="reviewed-repository",
+            module_root=target.skill_root.resolve(),
             nodes=tuple(
                 NodeCertificationOutcome(
                     node_id=node_id,
                     certificate_path=certificate_log_path(graph.nodes[node_id]),
                 )
                 for node_id in result.node_ids
-                if node_id in target_nodes_by_module[target.module]
+                if node_id in target_nodes_by_module[target.node_id]
             ),
         )
         for target in resolved
@@ -1884,12 +1918,6 @@ class Interface(PythonArgvMachineInterface):
     """Dispatcher adapter for certificate issuance."""
 
     dispatches = {
-        "compute-hashes": DispatchCall(
-            caller_skill="skill-certifier",
-            target_skill="skill-drift",
-            interface="skill-drift.interface.compute-hashes",
-            smoke_args=("compute-hashes", "--json"),
-        ),
         "sync-blueprints": DispatchCall(
             caller_skill="skill-certifier",
             target_skill="skill-maker",

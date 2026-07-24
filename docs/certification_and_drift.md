@@ -188,6 +188,15 @@ certifier does not test or record the performance, installed versions, or host
 availability of those machines and dependencies; ordinary tests own those
 questions.
 
+Python route-smoke dependency tracing is another certifier-owned mechanical
+check. For the selected dependency closure, each discovered implementation
+file or invoked interface must map to a directly owned certification input, an
+explicit certification dependency, or the certification basis. The certifier
+runs the scoped trace twice before any certificate append and requires the
+mapped signatures to agree. It records only the passed versioned check.
+Manifest and node-hash derivation are pure: drift and currentness never execute
+gateways or rerun route smoke.
+
 Each node has one append-only certificate log. Every appended complete entry
 contains `payload` and `signature`, and the signature covers the canonical
 encoding of `payload` only. The first entry has `previous_entry_hash: null`;
@@ -210,6 +219,8 @@ A certificate is current only when all of the following hold:
   current;
 - its `certifier` fields match the current certifier;
 - its `certification_basis_hash` equals the current basis hash;
+- its signed checks exactly match the current versioned check registry and all
+  are recorded as passed without findings;
 - its history link agrees with the retained preceding entry.
 
 A missing or malformed field, signature, dependency, or input makes the node
@@ -232,6 +243,7 @@ is_current(x):
         and certificate.payload.certifier == current_certifier_identity()
         and certificate.payload.certification_basis_hash
             == current_certification_basis_hash()
+        and certificate.payload.checks == expected_passed_checks()
         and valid_history_link(certificate)
     )
 ```
@@ -257,9 +269,9 @@ post-write verification remain defense in depth.
 The dispatcher derives one repository-backed certification view. In ordinary
 operation it admits only exports whose module and implementing source have
 current certificates. With no certificate history, the same view admits only
-exact initial certification of `skill-certifier` and its declared read-only
-hash and blueprint-sync checks. Suspect state fails closed; a valid
-dependency-first partial prefix may resume through the same path.
+the certifier's exact bounded blueprint synchronization/check calls and exact
+initial certification of `skill-certifier`. Suspect state fails closed; a
+valid dependency-first partial prefix may resume through the same path.
 
 This is a cooperative same-user contract, not filesystem isolation between
 same-UID processes. A malicious process running as the same OS user may access

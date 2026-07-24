@@ -547,7 +547,7 @@ def test_schema_rejects_invalid_historical_certificate_data(tmp_path: Path) -> N
     assert "invalid-certificate-schema" in status.concerns
 
 
-def test_zero_certificate_view_admits_only_exact_certifier_bootstrap_calls(
+def test_zero_certificate_view_rejects_obsolete_hash_bootstrap_route(
     tmp_path: Path,
 ) -> None:
     view = RepositoryCertificationView(
@@ -572,15 +572,15 @@ def test_zero_certificate_view_admits_only_exact_certifier_bootstrap_calls(
     ).certified
     assert view.check_bootstrap(
         caller_module_id="skill-certifier",
-        interface_id="skill-drift.interface.compute-hashes",
-        pattern_name=None,
-        argv=("compute-hashes", "--json"),
+        interface_id="skill-maker.interface.sync-blueprints",
+        pattern_name="check",
+        argv=("--check",),
     ).certified
     assert view.check_bootstrap(
         caller_module_id="skill-certifier",
         interface_id="skill-maker.interface.sync-blueprints",
-        pattern_name="check",
-        argv=("--check",),
+        pattern_name="sync",
+        argv=(),
     ).certified
 
     rejected = (
@@ -620,7 +620,19 @@ def test_zero_certificate_view_admits_only_exact_certifier_bootstrap_calls(
             "skill-certifier",
             "skill-maker.interface.sync-blueprints",
             "sync",
+            ("--check",),
+        ),
+        (
+            "daily-plan",
+            "skill-maker.interface.sync-blueprints",
+            "sync",
             (),
+        ),
+        (
+            "skill-certifier",
+            "skill-drift.interface.compute-hashes",
+            None,
+            ("compute-hashes", "--json"),
         ),
         (
             "skill-certifier",

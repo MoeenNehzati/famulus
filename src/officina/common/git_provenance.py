@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 import re
 import stat
 import subprocess
-from typing import Mapping, Sequence
+from typing import Iterable, Mapping, Sequence
 
 from .atomic_files import (
     AtomicWriteError,
@@ -499,35 +499,100 @@ def _literal_pathspec(relative_path: str) -> str:
     return f":(literal){relative_path}"
 
 
+def git_file_provenance_batch(
+    repo_root: Path,
+    paths: Iterable[Path],
+) -> dict[Path, str]:
+    """Classify repository files as tracked, ignored, or untracked in one batch."""
+
+    root = Path(repo_root).resolve()
+    normalized: dict[Path, str] = {}
+    for path in paths:
+        candidate = Path(path)
+        relative_path = _repository_relative_path(candidate, root)
+        if relative_path is None:
+            raise ValueError(f"{path}: input is outside repository {root}")
+        raw_path = candidate if candidate.is_absolute() else root / candidate
+        normalized[Path(os.path.abspath(raw_path))] = relative_path
+    ordered = tuple(
+        sorted(normalized.items(), key=lambda item: item[1])
+    )
+    if not ordered:
+        return {}
+
+    try:
+        tracked_result = run_git(
+            root,
+            "ls-files",
+            "--cached",
+            "-z",
+            "--",
+            *(_literal_pathspec(relative) for _path, relative in ordered),
+            check=False,
+        )
+        if tracked_result.returncode != 0:
+            detail = tracked_result.stderr.decode(
+                "utf-8",
+                errors="replace",
+            ).strip()
+            raise ValueError(
+                f"{root}: Git tracked-file query failed: {detail}"
+            )
+        tracked_paths = {
+            os.fsdecode(record)
+            for record in tracked_result.stdout.split(b"\0")
+            if record
+        }
+        remaining = tuple(
+            relative
+            for _path, relative in ordered
+            if relative not in tracked_paths
+        )
+        ignored_paths: set[str] = set()
+        if remaining:
+            ignored_result = run_git(
+                root,
+                "check-ignore",
+                "-z",
+                "--stdin",
+                check=False,
+                input_bytes=b"".join(
+                    os.fsencode(f"./{relative}") + b"\0" for relative in remaining
+                ),
+            )
+            if ignored_result.returncode not in {0, 1}:
+                detail = ignored_result.stderr.decode(
+                    "utf-8",
+                    errors="replace",
+                ).strip()
+                raise ValueError(
+                    f"{root}: Git ignore query failed: {detail}"
+                )
+            ignored_paths = {
+                decoded[2:] if decoded.startswith("./") else decoded
+                for record in ignored_result.stdout.split(b"\0")
+                if record
+                for decoded in (os.fsdecode(record),)
+            }
+    except OSError as exc:
+        raise ValueError(f"{root}: Git provenance is unavailable") from exc
+
+    return {
+        path: (
+            "tracked"
+            if relative in tracked_paths
+            else "ignored"
+            if relative in ignored_paths
+            else "untracked"
+        )
+        for path, relative in ordered
+    }
+
+
 def git_file_provenance(repo_root: Path, path: Path) -> str:
     """Classify one repository file as tracked, ignored, or untracked."""
 
-    root = Path(repo_root).resolve()
-    relative_path = _repository_relative_path(path, root)
-    if relative_path is None:
-        raise ValueError(f"{path}: input is outside repository {root}")
-    try:
-        tracked = _git(
-            root,
-            "ls-files",
-            "--error-unmatch",
-            "--",
-            _literal_pathspec(relative_path),
-            check=False,
-        )
-        if tracked.returncode == 0:
-            return "tracked"
-        ignored = _git(
-            root,
-            "check-ignore",
-            "-q",
-            "--",
-            relative_path,
-            check=False,
-        )
-    except OSError as exc:
-        raise ValueError(f"{root}: Git provenance is unavailable") from exc
-    return "ignored" if ignored.returncode == 0 else "untracked"
+    return next(iter(git_file_provenance_batch(repo_root, (path,)).values()))
 
 
 def _index_entries(

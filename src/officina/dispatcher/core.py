@@ -12,6 +12,7 @@ from typing import Any
 
 from officina.common.blueprint_graph import (
     BlueprintGraphError,
+    RepositoryBlueprintGraph,
     RuntimeFileBinding,
     load_repository_blueprint_graph,
     open_runtime_python_package,
@@ -252,31 +253,33 @@ def _resolve_export_dispatch(
     stdin_requested: bool,
     target_version: int | None,
     certification_view: CertificationView | None,
+    graph: RepositoryBlueprintGraph | None = None,
 ) -> ResolvedInvocation | None:
     """Resolve one v4 repository-graph export."""
 
-    diagnostic_inventory = collect_blueprints(root, skip_parse_errors=True)
-    target_is_module = False
-    target_is_export = False
-    for document in diagnostic_inventory.documents:
-        schema_version = document.declaration.get("schema_version")
-        if schema_version == 4 and document.node_type == "module":
-            if document.node_id == target:
-                target_is_module = True
-            raw_exports = document.declaration.get("exports", {})
-            if isinstance(raw_exports, dict) and target in raw_exports:
-                target_is_export = True
-    if not target_is_module and not target_is_export:
-        return None
-    try:
-        graph = load_repository_blueprint_graph(root)
-    except BlueprintInventoryError as exc:
-        first = exc.issues[0]
-        raise InvocationError(
-            f"{root / first.relative_path}: cannot load blueprint YAML: {first.message}"
-        ) from exc
-    except BlueprintGraphError as exc:
-        raise InvocationError(f"repository blueprint graph is invalid: {exc}") from exc
+    if graph is None:
+        diagnostic_inventory = collect_blueprints(root, skip_parse_errors=True)
+        target_is_module = False
+        target_is_export = False
+        for document in diagnostic_inventory.documents:
+            schema_version = document.declaration.get("schema_version")
+            if schema_version == 4 and document.node_type == "module":
+                if document.node_id == target:
+                    target_is_module = True
+                raw_exports = document.declaration.get("exports", {})
+                if isinstance(raw_exports, dict) and target in raw_exports:
+                    target_is_export = True
+        if not target_is_module and not target_is_export:
+            return None
+        try:
+            graph = load_repository_blueprint_graph(root)
+        except BlueprintInventoryError as exc:
+            first = exc.issues[0]
+            raise InvocationError(
+                f"{root / first.relative_path}: cannot load blueprint YAML: {first.message}"
+            ) from exc
+        except BlueprintGraphError as exc:
+            raise InvocationError(f"repository blueprint graph is invalid: {exc}") from exc
     if target in graph.nodes and graph.nodes[target].node_type == "module":
         raise InvocationError(f"module id `{target}` is not callable")
     if target not in graph.exports:
@@ -416,6 +419,7 @@ def _resolve_dispatch(
     repo_root: Path | None = None,
     target_version: int | None = None,
     certification_view: CertificationView | None = None,
+    graph: RepositoryBlueprintGraph | None = None,
 ) -> ResolvedInvocation:
     args = args or []
     if not caller_skill.strip():
@@ -435,6 +439,7 @@ def _resolve_dispatch(
         stdin_requested=stdin_requested,
         target_version=target_version,
         certification_view=certification_view,
+        graph=graph,
     )
     if resolved is None:
         raise InvocationError(f"unknown exported interface `{target}`")
@@ -472,6 +477,7 @@ def _resolve_dispatch_metadata_for_trace(
     repo_root: Path | None = None,
     target_version: int | None = None,
     certification_view: CertificationView,
+    graph: RepositoryBlueprintGraph | None = None,
 ) -> ResolvedInvocationMetadata:
     """Private route-smoke resolver with a trace-only certification view."""
 
@@ -483,6 +489,7 @@ def _resolve_dispatch_metadata_for_trace(
         repo_root=repo_root,
         target_version=target_version,
         certification_view=certification_view,
+        graph=graph,
     ) as resolved:
         return resolved.metadata()
 

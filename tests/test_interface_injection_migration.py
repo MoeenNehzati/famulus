@@ -1279,7 +1279,6 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
             "atomic-files",
             "blueprint-graph",
             "git-provenance",
-            "process-binding-compiler",
         },
         "certificate-records": {"atomic-files", "secret-store"},
         "blueprint-graph": {"blueprint-inventory"},

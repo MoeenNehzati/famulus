@@ -19,13 +19,7 @@ dependencies:
   reason: Imports Git snapshots and file provenance from git_provenance.py.
   source: common.source.git-provenance
   version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/process-binding-compiler.yaml
-  reason: Imports gateway-language normalization from process_binding_compiler.py.
-  source: common.source.process-binding-compiler
-  version: 1
-description: Resolves the canonical certification basis and node inputs, computes deterministic v4 node hashes, maps route-smoke dependencies, and derives certifier identity and expected checks.
+description: Resolves the canonical certification basis and node inputs, computes deterministic v4 node hashes, maps already observed route-smoke paths to declared authority, and derives certifier identity and expected checks.
 gateway:
   language: Python
   path: certification_hashing.py
@@ -89,7 +83,7 @@ interfaces:
         writes:
         - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [python-object], sensitivity: user-private}
         network: []
-    description: Computes canonical v4 certification-basis and node hash state for Python callers.
+    description: Computes canonical v4 certification state and maps already observed route-smoke paths for Python callers.
     version: 1
 node_type: behavioral_source
 schema_version: 4

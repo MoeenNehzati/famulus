@@ -99,8 +99,10 @@ When a gateway evaluator discovers implementation files or invoked interfaces
 dynamically, every discovered item must resolve to one of three existing
 authorities: a directly owned certification input, an explicit certification
 dependency, or the certification basis. An unmapped discovered item is a
-certification error. Certification records the resolved mapping so migration
-can prove that gateway dependency reachability has not been lost.
+certification error. Before any certificate append, the certifier derives this
+mapping twice over the selected dependency closure and requires identical
+results. The certificate records the versioned passed check, not the
+implementation-path mapping itself.
 
 Certificate currentness also binds a signed `certification_basis_hash` covering
 the project node-input policy, certifier, schemas, hash/safety implementation,
@@ -398,9 +400,9 @@ material or certificate outputs. The architecture introduces no broker,
 service identity, second writer, or parallel signing path.
 
 Drift checking recomputes the node hash, dependency manifest, and certification
-basis and validates the signed evidence and machine claims. It does not
-independently redefine the node, perform semantic conformance review, or repair
-its blueprint.
+basis and validates the signed evidence, including the expected versioned check
+records. It does not rerun gateways, independently redefine the node, perform
+semantic conformance review, or repair its blueprint.
 
 ## Adoption boundary
 

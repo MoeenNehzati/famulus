@@ -11,7 +11,7 @@ interfaces:
     contract:
       arguments:
         targets:
-          description: Optional installed module names or exact path-like module roots; omission certifies every observed blueprint-backed module.
+          description: Optional module ids, names, or exact module-root paths in the reviewed repository; omission certifies every module in that graph.
           required: false
           default: []
           sensitivity: user-private
@@ -36,7 +36,7 @@ interfaces:
       preconditions: []
       interaction: {mode: unattended}
       caller_warnings:
-      - external-side-effect: Runs blueprint synchronization and structural validators before signing.
+      - external-side-effect: Runs blueprint synchronization, structural validators, and the scoped route-smoke dependency audit before signing.
       - external-side-effect: Creates or reuses certifier signing material and appends signed records to affected node histories.
       - external-side-effect: Regenerates each selected module's certificate-backed pooled review after certificate currentness verification.
       - external-side-effect: Requires an explicit repository-bound reviewed commit; the machine path never substitutes HEAD for missing review attestation.
@@ -163,12 +163,12 @@ interfaces:
           sensitivity: derived-private
           system: agent-runtime
         - access: execute
-          content: blueprint synchronization, repository validators, and node-hash target resolution
+          content: blueprint synchronization and repository validators
           id: write-5
           medium: subprocess
           path: $repo/validators/runner.py
           path_match: exact
-          reason: Run certifier-owned mechanical checks and declared dispatcher calls before signing.
+          reason: Run certifier-owned structural checks and the declared blueprint-sync call before signing.
           sensitivity: derived-private
           system: python
         - access: write
@@ -229,8 +229,6 @@ uses_interfaces:
 - interface: common.interface.pooled-blueprint
   version: 1
 - interface: common.interface.git-provenance
-  version: 1
-- interface: skill-drift.interface.compute-hashes
   version: 1
 - interface: skill-maker.interface.sync-blueprints
   version: 1

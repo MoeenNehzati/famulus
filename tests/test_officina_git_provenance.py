@@ -177,6 +177,132 @@ def test_git_literal_pathspec_environment_cannot_break_provenance(
     assert git_file_provenance(repo, path) == "tracked"
 
 
+def test_git_file_provenance_batch_classifies_normalized_literal_paths_in_two_calls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _git(tmp_path, "init", "--quiet")
+    _git(tmp_path, "config", "user.name", "Test User")
+    _git(tmp_path, "config", "user.email", "test@example.invalid")
+    tracked_literal = tmp_path / ":(glob)*.txt"
+    tracked_unusual = tmp_path / "line\nbreak.txt"
+    ignored = tmp_path / ":(exclude)ignored.txt"
+    untracked = tmp_path / ":(glob)*.tmp"
+    decoy = tmp_path / "decoy.tmp"
+    (tmp_path / ".gitignore").write_text(
+        "/:(exclude)ignored.txt\n",
+        encoding="utf-8",
+    )
+    for path in (tracked_literal, tracked_unusual, ignored, untracked, decoy):
+        path.write_text(f"{path.name}\n", encoding="utf-8")
+    _git(
+        tmp_path,
+        "add",
+        "--",
+        ".gitignore",
+        "decoy.tmp",
+        ":(literal):(glob)*.txt",
+        ":(literal)line\nbreak.txt",
+    )
+    _git(tmp_path, "commit", "--quiet", "-m", "Add literal paths")
+    calls: list[tuple[str, ...]] = []
+    real_run_git = git_provenance.run_git
+
+    def counting_run_git(
+        repo_root: Path,
+        *args: str,
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        calls.append(args)
+        return real_run_git(repo_root, *args, **kwargs)
+
+    monkeypatch.setattr(git_provenance, "run_git", counting_run_git)
+
+    result = git_provenance.git_file_provenance_batch(
+        tmp_path,
+        (
+            untracked,
+            tracked_literal,
+            Path(tracked_unusual.name),
+            ignored,
+            tmp_path / "missing-parent" / ".." / tracked_literal.name,
+            tracked_literal,
+        ),
+    )
+
+    expected = {
+        ignored: "ignored",
+        tracked_literal: "tracked",
+        tracked_unusual: "tracked",
+        untracked: "untracked",
+    }
+    assert result == expected
+    assert list(result) == sorted(expected, key=lambda path: path.as_posix())
+    assert len(calls) <= 2
+
+
+def test_git_file_provenance_batch_rejects_fatal_tracked_query(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def fatal_tracked_query(
+        _repo_root: Path,
+        *args: str,
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        calls.append(args)
+        return subprocess.CompletedProcess(
+            args,
+            128,
+            b"",
+            b"fatal: tracked lookup failed\n",
+        )
+
+    monkeypatch.setattr(git_provenance, "run_git", fatal_tracked_query)
+
+    with pytest.raises(ValueError, match="fatal: tracked lookup failed"):
+        git_provenance.git_file_provenance_batch(
+            tmp_path,
+            (tmp_path / "input.txt",),
+        )
+
+    assert len(calls) == 1
+
+
+def test_git_file_provenance_batch_rejects_fatal_ignore_query(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def fatal_ignore_query(
+        _repo_root: Path,
+        *args: str,
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        calls.append(args)
+        if args[0] == "ls-files":
+            return subprocess.CompletedProcess(args, 0, b"", b"")
+        return subprocess.CompletedProcess(
+            args,
+            128,
+            b"",
+            b"fatal: ignore lookup failed\n",
+        )
+
+    monkeypatch.setattr(git_provenance, "run_git", fatal_ignore_query)
+
+    with pytest.raises(ValueError, match="fatal: ignore lookup failed"):
+        git_provenance.git_file_provenance_batch(
+            tmp_path,
+            (tmp_path / "input.txt",),
+        )
+
+    assert [args[0] for args in calls] == ["ls-files", "check-ignore"]
+
+
 def test_run_git_disables_malicious_local_fsmonitor(tmp_path: Path) -> None:
     _git(tmp_path, "init", "--quiet")
     marker = tmp_path / "fsmonitor-ran"

@@ -13,10 +13,7 @@ import yaml
 from officina.common.blueprint_graph import load_repository_blueprint_graph
 from officina.common.blueprint_inventory import BlueprintInventoryError
 from officina.common.process_binding_compiler import gateway_language_name
-from officina.runtime.python_machine_interface import (
-    PythonRouteSmokeTraceError,
-    trace_python_route_smoke_dependencies,
-)
+import officina.runtime.python_machine_interface as python_interface
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -260,22 +257,22 @@ def test_python_machine_runner_interfaces_accept_route_smoke() -> None:
         pytest.skip("no python_machine_interface machine interfaces currently exist")
 
     graph = load_repository_blueprint_graph(REPO_ROOT)
-    failures: list[str] = []
+    specifications: list[tuple[Path, str]] = []
     for case in cases:
         export = graph.exports[case.target]
         source = graph.nodes[export.source_node_id]
         gateway = source.declaration["gateway"]
         binding = export.declaration["process_binding"]
         entrypoint = f"{gateway['path']}:{binding['entry']}"
-        try:
-            trace_python_route_smoke_dependencies(
-                source.skill_root,
-                REPO_ROOT,
-                entrypoint,
-            )
-        except PythonRouteSmokeTraceError as exc:
-            failures.append(
-                f"{case.target} failed its certification route-smoke trace:\n{exc}"
-            )
+        specifications.append((source.skill_root, entrypoint))
 
-    assert not failures, "\n\n".join(failures)
+    batch_tracer = getattr(
+        python_interface,
+        "trace_python_route_smoke_dependencies_batch",
+        None,
+    )
+    assert callable(batch_tracer)
+    try:
+        batch_tracer(REPO_ROOT, specifications)
+    except python_interface.PythonRouteSmokeTraceError as exc:
+        pytest.fail(f"certification route-smoke batch failed:\n{exc}")

@@ -23,12 +23,7 @@ from .blueprint_graph import (
     BlueprintNode,
     RepositoryBlueprintGraph,
 )
-from .git_provenance import capture_git_snapshot, git_file_provenance
-from .process_binding_compiler import gateway_language_name
-from officina.runtime.python_machine_interface import (
-    PythonRouteSmokeTraceError,
-    trace_python_route_smoke_dependencies,
-)
+from .git_provenance import capture_git_snapshot, git_file_provenance_batch
 
 
 class CertificationHashError(ValueError):
@@ -46,6 +41,7 @@ CERTIFIER_INTERFACE_ID = "skill-certifier.interface.certify"
 CERTIFIER_INTERFACE_VERSION = 1
 CERTIFIER_CHECK_REGISTRY: Mapping[str, tuple[str, int]] = {
     "deterministic": ("v4-deterministic", 1),
+    "route-smoke": ("route-smoke-dependencies", 1),
     "semantic-review": ("blueprint-accuracy", 1),
 }
 
@@ -275,7 +271,7 @@ def map_route_smoke_dependencies(
 def route_smoke_trace_signature(
     mappings: Iterable[RouteSmokeDependencyMapping],
 ) -> tuple[tuple[str, str, str | None], ...]:
-    """Return the stable projection used for pre/post migration comparison."""
+    """Return the stable projection compared by the certification audit."""
 
     return tuple(
         sorted(
@@ -892,49 +888,6 @@ def _v4_node_input_manifests(
         Path(os.path.abspath(path)): owner_id
         for path, owner_id in graph.direct_file_owners.items()
     }
-    provenance: dict[Path, str] = {}
-    relative_paths: dict[Path, str] = {}
-    for path in sorted(owned_paths):
-        try:
-            relative = path.relative_to(root).as_posix()
-            provenance[path] = git_file_provenance(root, path)
-        except (ValueError, OSError) as exc:
-            raise CertificationHashError(f"{path}: cannot determine Git provenance") from exc
-        relative_paths[path] = relative
-
-    selected = {
-        path: provenance[path] == "tracked"
-        for path in owned_paths
-    }
-    final_actions: dict[Path, str] = {}
-    raw_rules = policy.get("rules")
-    if not isinstance(raw_rules, list):
-        raise CertificationHashError("node hash policy rules must be a list")
-    for index, rule in enumerate(raw_rules):
-        if not isinstance(rule, Mapping):
-            raise CertificationHashError(f"node hash policy rule {index} must be a mapping")
-        action = rule.get("action")
-        pattern = rule.get("pattern")
-        if action not in {"include", "exclude"} or not isinstance(pattern, str):
-            raise CertificationHashError(f"node hash policy rule {index} is invalid")
-        matched_relatives = _git_exclude_matches(
-            root,
-            relative_paths.values(),
-            pattern,
-        )
-        matches = [
-            path for path, relative in relative_paths.items()
-            if relative in matched_relatives
-        ]
-        if action == "include" and rule.get("require_match") is True and not matches:
-            raise CertificationHashError(
-                f"node hash policy include {pattern!r} requires at least one match"
-            )
-        for path in matches:
-            selected[path] = action == "include"
-            final_actions[path] = action
-
-    manifests: dict[str, tuple[dict[str, str], ...]] = {}
     contract_dependencies: dict[str, set[str]] = {
         node_id: set() for node_id in graph.nodes
     }
@@ -984,37 +937,91 @@ def _v4_node_input_manifests(
             if owner_id != node_id:
                 contract_dependencies[node_id].add(owner_id)
 
+    mandatory_paths_by_node: dict[str, set[Path]] = {}
+    all_paths = set(owned_paths)
     for node_id, node in sorted(graph.nodes.items()):
-        node_paths = {
-            path
-            for path, owner_id in owned_paths.items()
-            if owner_id == node_id and selected[path]
-        }
         mandatory_paths = {
             Path(os.path.abspath(node.blueprint_path)),
         }
         if node.gateway_path is not None:
             mandatory_paths.add(Path(os.path.abspath(node.gateway_path)))
         mandatory_paths.update(mandatory_contract_paths[node_id])
-
         for mandatory_path in mandatory_paths:
             try:
-                relative = mandatory_path.relative_to(root).as_posix()
+                mandatory_path.relative_to(root)
             except ValueError as exc:
                 raise CertificationHashError(
                     f"{mandatory_path}: mandatory node input is outside the repository"
                 ) from exc
-            final_action = final_actions.get(mandatory_path)
-            if mandatory_path not in owned_paths:
-                for rule in raw_rules:
-                    pattern = rule.get("pattern") if isinstance(rule, Mapping) else None
-                    if (
-                        isinstance(pattern, str)
-                        and relative in _git_exclude_matches(root, (relative,), pattern)
-                    ):
-                        action = rule.get("action")
-                        final_action = action if isinstance(action, str) else None
-            if final_action == "exclude":
+        mandatory_paths_by_node[node_id] = mandatory_paths
+        all_paths.update(mandatory_paths)
+
+    relative_paths: dict[Path, str] = {}
+    for path in sorted(all_paths):
+        try:
+            relative_paths[path] = path.relative_to(root).as_posix()
+        except ValueError as exc:
+            raise CertificationHashError(
+                f"{path}: cannot determine Git provenance"
+            ) from exc
+    try:
+        provenance = git_file_provenance_batch(root, all_paths)
+    except (ValueError, OSError) as exc:
+        raise CertificationHashError(
+            f"{root}: cannot determine Git provenance"
+        ) from exc
+
+    selected = {
+        path: provenance[path] == "tracked"
+        for path in owned_paths
+    }
+    final_actions: dict[Path, str] = {}
+    raw_rules = policy.get("rules")
+    if not isinstance(raw_rules, list):
+        raise CertificationHashError("node hash policy rules must be a list")
+    for index, rule in enumerate(raw_rules):
+        if not isinstance(rule, Mapping):
+            raise CertificationHashError(f"node hash policy rule {index} must be a mapping")
+        action = rule.get("action")
+        pattern = rule.get("pattern")
+        if action not in {"include", "exclude"} or not isinstance(pattern, str):
+            raise CertificationHashError(f"node hash policy rule {index} is invalid")
+        matched_relatives = _git_exclude_matches(
+            root,
+            relative_paths.values(),
+            pattern,
+        )
+        matches = [
+            path for path, relative in relative_paths.items()
+            if relative in matched_relatives
+        ]
+        owned_matches = [
+            path for path in matches
+            if path in owned_paths
+        ]
+        if (
+            action == "include"
+            and rule.get("require_match") is True
+            and not owned_matches
+        ):
+            raise CertificationHashError(
+                f"node hash policy include {pattern!r} requires at least one match"
+            )
+        for path in owned_matches:
+            selected[path] = action == "include"
+        for path in matches:
+            final_actions[path] = action
+
+    manifests: dict[str, tuple[dict[str, str], ...]] = {}
+    for node_id, node in sorted(graph.nodes.items()):
+        node_paths = {
+            path
+            for path, owner_id in owned_paths.items()
+            if owner_id == node_id and selected[path]
+        }
+        for mandatory_path in mandatory_paths_by_node[node_id]:
+            relative = relative_paths[mandatory_path]
+            if final_actions.get(mandatory_path) == "exclude":
                 raise CertificationHashError(
                     f"{node_id}: mandatory blueprint, gateway, or contract input "
                     f"cannot be excluded: {relative}"
@@ -1023,11 +1030,7 @@ def _v4_node_input_manifests(
 
         entries: list[dict[str, str]] = []
         for path in sorted(node_paths):
-            try:
-                relative = path.relative_to(root).as_posix()
-                path_provenance = provenance.get(path) or git_file_provenance(root, path)
-            except (ValueError, OSError) as exc:
-                raise CertificationHashError(f"{path}: cannot determine Git provenance") from exc
+            relative = relative_paths[path]
             if _reserved_certification_output(relative):
                 raise CertificationHashError(
                     f"{relative}: reserved certification output cannot be a node input"
@@ -1042,7 +1045,7 @@ def _v4_node_input_manifests(
                 {
                     "path": relative,
                     "digest": _hash_bytes(payload),
-                    "git_provenance": path_provenance,
+                    "git_provenance": provenance[path],
                 }
             )
         manifests[node_id] = tuple(entries)
@@ -1058,56 +1061,6 @@ def _compute_v4_node_hash_states(
     certification_basis_paths: Iterable[Path | str],
     allow_non_atomic: bool = False,
 ) -> dict[str, NodeHashState]:
-    trace_specs: list[tuple[str, str, str]] = []
-    for node_id, node in sorted(graph.nodes.items()):
-        if node.node_type != "behavioral_source" or node.gateway_path is None:
-            continue
-        gateway = node.declaration.get("gateway")
-        language = gateway.get("language") if isinstance(gateway, Mapping) else None
-        if not isinstance(language, str) or gateway_language_name(language) != "Python":
-            continue
-        interfaces = node.declaration.get("interfaces")
-        if not isinstance(interfaces, Mapping):
-            continue
-        try:
-            gateway_path = node.gateway_path.relative_to(node.skill_root).as_posix()
-        except ValueError as exc:
-            raise CertificationHashError(
-                f"{node_id}: Python gateway must remain inside its module"
-            ) from exc
-        for interface_id, declaration in sorted(interfaces.items()):
-            binding = (
-                declaration.get("process_binding")
-                if isinstance(declaration, Mapping)
-                else None
-            )
-            entry = binding.get("entry") if isinstance(binding, Mapping) else None
-            if (
-                isinstance(binding, Mapping)
-                and binding.get("kind") == "process"
-                and isinstance(entry, str)
-            ):
-                trace_specs.append((node_id, str(interface_id), f"{gateway_path}:{entry}"))
-
-    root = Path(repo_root).resolve()
-
-    def collect_traces() -> dict[tuple[str, str], tuple[Path, ...]]:
-        traces: dict[tuple[str, str], tuple[Path, ...]] = {}
-        for node_id, interface_id, entrypoint in trace_specs:
-            try:
-                traces[(node_id, interface_id)] = trace_python_route_smoke_dependencies(
-                    graph.nodes[node_id].skill_root,
-                    root,
-                    entrypoint,
-                )
-            except PythonRouteSmokeTraceError as exc:
-                raise CertificationHashError(
-                    f"{interface_id}: {exc}"
-                ) from exc
-        return traces
-
-    basis_paths = tuple(certification_basis_paths)
-    before_traces = collect_traces()
     policy = load_node_hash_policy(policy_path)
     manifests, contract_dependencies = _v4_node_input_manifests(
         graph,
@@ -1187,29 +1140,6 @@ def _compute_v4_node_hash_states(
             dependency_hashes=dependency_hashes,
             certification_basis_hash=certification_basis_hash,
         )
-
-    after_traces = collect_traces()
-    for node_id, interface_id, _entrypoint in trace_specs:
-        before = map_route_smoke_dependencies(
-            graph,
-            states,
-            source_node_id=node_id,
-            loaded_paths=before_traces[(node_id, interface_id)],
-            certification_basis_paths=basis_paths,
-            repo_root=root,
-        )
-        after = map_route_smoke_dependencies(
-            graph,
-            states,
-            source_node_id=node_id,
-            loaded_paths=after_traces[(node_id, interface_id)],
-            certification_basis_paths=basis_paths,
-            repo_root=root,
-        )
-        if route_smoke_trace_signature(before) != route_smoke_trace_signature(after):
-            raise CertificationHashError(
-                f"{interface_id}: route-smoke dependency trace changed during hash preparation"
-            )
     return states
 
 

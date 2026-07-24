@@ -19,7 +19,6 @@ Uses Interfaces:
 - `skill-certifier.source.rtx-certifier -> common.interface.certification-view@1`
 - `skill-certifier.source.rtx-certifier -> common.interface.git-provenance@1`
 - `skill-certifier.source.rtx-certifier -> common.interface.pooled-blueprint@1`
-- `skill-certifier.source.rtx-certifier -> skill-drift.interface.compute-hashes@1`
 - `skill-certifier.source.rtx-certifier -> skill-maker.interface.sync-blueprints@1`
 
 Public Interfaces:

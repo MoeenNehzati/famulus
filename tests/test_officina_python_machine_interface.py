@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import json
 import os
 import shutil
 import sys
@@ -14,6 +15,9 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from officina.common.certification_view import CertificationDecision  # noqa: E402
+from officina.common.blueprint_graph import (  # noqa: E402
+    load_repository_blueprint_graph,
+)
 import officina.runtime.python_machine_interface as python_interface  # noqa: E402
 from officina.runtime.python_machine_interface import (  # noqa: E402
     DispatchCall,
@@ -251,6 +255,45 @@ def write_interface(path: Path) -> None:
     )
 
 
+def write_traced_interface(skill_root: Path, marker: str) -> None:
+    runtime = skill_root / "_rtx"
+    runtime.mkdir(parents=True)
+    (runtime / "__init__.py").write_text("", encoding="utf-8")
+    (runtime / "_dependency.py").write_text(
+        f"MARKER = {marker!r}\n",
+        encoding="utf-8",
+    )
+    (runtime / "_worker.py").write_text(
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "from ._dependency import MARKER\n"
+        "\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    def route_smoke(self):\n"
+        f"        assert MARKER == {marker!r}\n"
+        "\n"
+        "    def run(self, args):\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+
+
+def write_route_smoke_worker(skill_root: Path, route_smoke_body: str) -> None:
+    runtime = skill_root / "_rtx"
+    runtime.mkdir(parents=True)
+    (runtime / "__init__.py").write_text("", encoding="utf-8")
+    (runtime / "_worker.py").write_text(
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    def route_smoke(self):\n"
+        f"{route_smoke_body}"
+        "\n"
+        "    def run(self, args):\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+
+
 def test_load_interface_from_relative_file_spec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     runtime = tmp_path / "_rtx"
     runtime.mkdir()
@@ -276,6 +319,308 @@ def test_route_smoke_trace_supports_temporary_repository(tmp_path: Path) -> None
 
     assert (runtime / "_demo.py").resolve() in paths
     assert any(path.name == "python_machine_interface.py" for path in paths)
+
+
+def test_route_smoke_batch_uses_one_child_and_isolates_loaded_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = tmp_path / "skills" / "first-skill"
+    second = tmp_path / "skills" / "second-skill"
+    write_traced_interface(first, "first")
+    write_traced_interface(second, "second")
+    entrypoint = "_rtx/_worker.py:Interface"
+    child_calls: list[list[str]] = []
+    real_run = python_interface.subprocess.run
+
+    def counting_run(*args: object, **kwargs: object):
+        child_calls.append(list(args[0]))  # type: ignore[arg-type]
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(python_interface.subprocess, "run", counting_run)
+    batch_tracer = getattr(
+        python_interface,
+        "trace_python_route_smoke_dependencies_batch",
+        None,
+    )
+    assert callable(batch_tracer)
+
+    traces = batch_tracer(
+        tmp_path,
+        [
+            (second, entrypoint),
+            (first, entrypoint),
+            (first.resolve(), entrypoint),
+        ],
+    )
+
+    first_key = (first.resolve(), entrypoint)
+    second_key = (second.resolve(), entrypoint)
+    assert child_calls and len(child_calls) == 1
+    assert list(traces) == [first_key, second_key]
+    assert (first / "_rtx" / "_dependency.py").resolve() in traces[first_key]
+    assert (second / "_rtx" / "_dependency.py").resolve() not in traces[first_key]
+    assert (second / "_rtx" / "_dependency.py").resolve() in traces[second_key]
+    assert (first / "_rtx" / "_dependency.py").resolve() not in traces[second_key]
+
+
+def test_route_smoke_batch_isolates_lazy_officina_imports_between_specs(
+    tmp_path: Path,
+) -> None:
+    source_package = tmp_path / "src" / "officina"
+    source_package.mkdir(parents=True)
+    current_package = Path(__file__).resolve().parents[1] / "src" / "officina"
+    (source_package / "__init__.py").write_text(
+        f"__path__.append({str(current_package)!r})\n",
+        encoding="utf-8",
+    )
+    marker = source_package / "_route_smoke_test_marker.py"
+    marker.write_text("MARKER = True\n", encoding="utf-8")
+    first = tmp_path / "skills" / "a-skill"
+    second = tmp_path / "skills" / "b-skill"
+    write_route_smoke_worker(
+        first,
+        "        import officina._route_smoke_test_marker\n",
+    )
+    write_route_smoke_worker(second, "        pass\n")
+    entrypoint = "_rtx/_worker.py:Interface"
+
+    traces = python_interface.trace_python_route_smoke_dependencies_batch(
+        tmp_path,
+        ((first, entrypoint), (second, entrypoint)),
+    )
+
+    assert marker.resolve() in traces[(first.resolve(), entrypoint)]
+    assert marker.resolve() not in traces[(second.resolve(), entrypoint)]
+
+
+def test_route_smoke_batch_retraces_shared_lazy_officina_import_per_spec(
+    tmp_path: Path,
+) -> None:
+    source_package = tmp_path / "src" / "officina"
+    source_package.mkdir(parents=True)
+    current_package = Path(__file__).resolve().parents[1] / "src" / "officina"
+    (source_package / "__init__.py").write_text(
+        f"__path__.append({str(current_package)!r})\n",
+        encoding="utf-8",
+    )
+    marker = source_package / "_route_smoke_test_marker.py"
+    marker.write_text("MARKER = True\n", encoding="utf-8")
+    first = tmp_path / "skills" / "a-skill"
+    second = tmp_path / "skills" / "b-skill"
+    for skill in (first, second):
+        write_route_smoke_worker(
+            skill,
+            "        from officina import _route_smoke_test_marker\n",
+        )
+    entrypoint = "_rtx/_worker.py:Interface"
+
+    traces = python_interface.trace_python_route_smoke_dependencies_batch(
+        tmp_path,
+        ((first, entrypoint), (second, entrypoint)),
+    )
+
+    assert marker.resolve() in traces[(first.resolve(), entrypoint)]
+    assert marker.resolve() in traces[(second.resolve(), entrypoint)]
+
+
+def test_route_smoke_batch_restores_cwd_and_sys_path_between_specs(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "skills" / "a-skill"
+    second = tmp_path / "skills" / "b-skill"
+    leaked_path = (tmp_path / "leaked-path").as_posix()
+    write_route_smoke_worker(
+        first,
+        "        import os, sys\n"
+        f"        os.chdir({str(tmp_path)!r})\n"
+        f"        sys.path.insert(0, {leaked_path!r})\n",
+    )
+    write_route_smoke_worker(
+        second,
+        "        import sys\n"
+        "        from pathlib import Path\n"
+        "        assert Path.cwd() == Path(__file__).resolve().parents[1]\n"
+        f"        assert {leaked_path!r} not in sys.path\n",
+    )
+    entrypoint = "_rtx/_worker.py:Interface"
+
+    traces = python_interface.trace_python_route_smoke_dependencies_batch(
+        tmp_path,
+        ((first, entrypoint), (second, entrypoint)),
+    )
+
+    assert set(traces) == {
+        (first.resolve(), entrypoint),
+        (second.resolve(), entrypoint),
+    }
+
+
+def test_route_smoke_batch_rejects_invalid_blueprint_outside_skills(
+    tmp_path: Path,
+) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    write_route_smoke_worker(skill, "        pass\n")
+    invalid_module = tmp_path / "components" / "invalid-module"
+    invalid_module.mkdir(parents=True)
+    (invalid_module / "GATEWAY.md").write_text("Gateway.\n", encoding="utf-8")
+    (invalid_module / "blueprint.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 4,
+                "node_type": "module",
+                "id": "invalid-module",
+                "version": 1,
+                "gateway": {
+                    "path": "GATEWAY.md",
+                    "language": "Markdown",
+                },
+                "content": [r"GATEWAY\.md"],
+                "authority": {"owns_filesystem": []},
+                "sources": {},
+                "exports": {
+                    "invalid-module.interface.run": {
+                        "source_interface": "missing.source.interface.run",
+                        "access": {
+                            "allow_all_modules": True,
+                            "allowed_callers": [],
+                        },
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        python_interface.PythonRouteSmokeTraceError,
+        match="schema error",
+    ):
+        python_interface.trace_python_route_smoke_dependencies_batch(
+            tmp_path,
+            ((skill, "_rtx/_worker.py:Interface"),),
+        )
+
+
+def test_route_smoke_batch_rejects_noncanonical_child_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    write_route_smoke_worker(skill, "        pass\n")
+    entrypoint = "_rtx/_worker.py:Interface"
+    relative_skill = os.path.relpath(skill, Path.cwd())
+    payload = [
+        {
+            "skill_root": relative_skill,
+            "entrypoint": entrypoint,
+            "paths": [(skill / "_rtx" / "_worker.py").resolve().as_posix()],
+        }
+    ]
+
+    monkeypatch.setattr(
+        python_interface.subprocess,
+        "run",
+        lambda *_args, **_kwargs: python_interface.subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        ),
+    )
+
+    with pytest.raises(
+        python_interface.PythonRouteSmokeTraceError,
+        match="invalid batch paths",
+    ):
+        python_interface.trace_python_route_smoke_dependencies_batch(
+            tmp_path,
+            ((skill, entrypoint),),
+        )
+
+
+def test_route_smoke_batch_reports_nonzero_child(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    write_route_smoke_worker(skill, "        pass\n")
+    entrypoint = "_rtx/_worker.py:Interface"
+    monkeypatch.setattr(
+        python_interface.subprocess,
+        "run",
+        lambda *_args, **_kwargs: python_interface.subprocess.CompletedProcess(
+            args=[],
+            returncode=7,
+            stdout="",
+            stderr="child failed",
+        ),
+    )
+
+    with pytest.raises(
+        python_interface.PythonRouteSmokeTraceError,
+        match="child failed",
+    ):
+        python_interface.trace_python_route_smoke_dependencies_batch(
+            tmp_path,
+            ((skill, entrypoint),),
+        )
+
+
+def test_route_smoke_batch_empty_input_launches_no_child(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def reject_run(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("empty route-smoke batch launched a child process")
+
+    monkeypatch.setattr(python_interface.subprocess, "run", reject_run)
+    batch_tracer = getattr(
+        python_interface,
+        "trace_python_route_smoke_dependencies_batch",
+        None,
+    )
+    assert callable(batch_tracer)
+
+    assert batch_tracer(tmp_path, []) == {}
+
+
+def test_scalar_route_smoke_trace_delegates_to_batch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    runtime = skill / "_rtx"
+    runtime.mkdir(parents=True)
+    write_interface(runtime / "_demo.py")
+    entrypoint = "_rtx/_demo.py:Interface"
+    expected = (runtime / "_demo.py",)
+    calls: list[tuple[Path, tuple[tuple[Path, str], ...]]] = []
+
+    def trace_batch(
+        repo_root: Path,
+        specifications: tuple[tuple[Path, str], ...],
+    ) -> dict[tuple[Path, str], tuple[Path, ...]]:
+        normalized = tuple(specifications)
+        calls.append((repo_root, normalized))
+        return {(skill.resolve(), entrypoint): expected}
+
+    monkeypatch.setattr(
+        python_interface,
+        "trace_python_route_smoke_dependencies_batch",
+        trace_batch,
+        raising=False,
+    )
+
+    result = python_interface.trace_python_route_smoke_dependencies(
+        skill,
+        tmp_path,
+        entrypoint,
+    )
+
+    assert result == expected
+    assert calls == [(tmp_path, ((skill, entrypoint),))]
 
 
 def test_route_smoke_trace_prefers_candidate_local_officina_source(
@@ -565,6 +910,72 @@ def test_dependency_resolver_collects_transitive_v4_dispatches(tmp_path: Path) -
         ("next", "leaf-skill.interface.run"),
     ]
     assert [item.depth for item in dependencies] == [0, 1]
+
+
+def test_preloaded_graph_resolves_transitive_dispatches_without_reloading(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import officina.dispatcher.core as dispatcher_core
+
+    _write_v4_runtime_module(
+        tmp_path,
+        "source-skill",
+        target="middle-skill.interface.run",
+    )
+    _write_v4_runtime_module(
+        tmp_path,
+        "middle-skill",
+        target="leaf-skill.interface.run",
+        allowed_callers=("source-skill",),
+    )
+    _write_v4_runtime_module(
+        tmp_path,
+        "leaf-skill",
+        allowed_callers=("middle-skill",),
+    )
+    graph = load_repository_blueprint_graph(tmp_path)
+    inventory_calls = 0
+    graph_calls = 0
+
+    def reject_inventory(*_args: object, **_kwargs: object) -> None:
+        nonlocal inventory_calls
+        inventory_calls += 1
+        pytest.fail("preloaded trace resolution reloaded repository inventory")
+
+    def reject_graph(*_args: object, **_kwargs: object) -> None:
+        nonlocal graph_calls
+        graph_calls += 1
+        pytest.fail("preloaded trace resolution rebuilt the repository graph")
+
+    monkeypatch.setattr(dispatcher_core, "collect_blueprints", reject_inventory)
+    monkeypatch.setattr(
+        dispatcher_core,
+        "load_repository_blueprint_graph",
+        reject_graph,
+    )
+
+    class SourceInterface(PythonMachineInterface):
+        dispatches = {
+            "middle": DispatchCall(
+                caller_skill="source-skill",
+                target_skill="middle-skill",
+                interface="middle-skill.interface.run",
+            )
+        }
+
+    dependencies = DispatchDependencyResolver(
+        repo_root=tmp_path,
+        certification_view=_PassingCertificationView(),
+        graph=graph,
+    ).collect(SourceInterface())
+
+    assert [item.resolved.target for item in dependencies] == [
+        "middle-skill.interface.run",
+        "leaf-skill.interface.run",
+    ]
+    assert inventory_calls == 0
+    assert graph_calls == 0
 
 
 def test_repeated_v4_dependency_collection_does_not_retain_file_descriptors(

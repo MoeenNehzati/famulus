@@ -621,20 +621,15 @@ class RepositoryCertificationView(CertificateCurrentnessView):
         if not self.bootstrap_allowed or caller_module_id != CERTIFIER_NODE_ID:
             return rejected
         tokens = tuple(argv)
-        if interface_id == "skill-drift.interface.compute-hashes":
-            if tokens and tokens[0] == "compute-hashes":
-                return CertificationDecision(
-                    True,
-                    "initial-certification",
-                    "Bounded read-only hash computation for initial certification.",
-                )
-            return rejected
         if interface_id == "skill-maker.interface.sync-blueprints":
-            if pattern_name == "check" and tokens == ("--check",):
+            if (
+                (pattern_name == "check" and tokens == ("--check",))
+                or (pattern_name == "sync" and not tokens)
+            ):
                 return CertificationDecision(
                     True,
                     "initial-certification",
-                    "Bounded blueprint synchronization check for initial certification.",
+                    "Bounded blueprint synchronization for initial certification.",
                 )
             return rejected
         if interface_id != "skill-certifier.interface.certify":

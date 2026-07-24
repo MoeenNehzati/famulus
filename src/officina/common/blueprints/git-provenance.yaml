@@ -28,6 +28,7 @@ interfaces:
             - {value: compare-head, description: Check whether a captured repository still points to the same HEAD.}
             - {value: ignored-paths, description: Enumerate Git-ignored paths or ignored directories.}
             - {value: file-provenance, description: "Classify one repository file as tracked, ignored, or untracked."}
+            - {value: file-provenance-batch, description: "Classify normalized, confined repository files as tracked, ignored, or untracked in bounded Git calls."}
             - {value: check-readiness, description: Prove selected worktree files and index entries equal their captured commit blobs and expected hashes.}
             - {value: read-migration-ref, description: Resolve the immutable mechanical or source-overlay migration ref.}
             - {value: pin-migration-ref, description: Create one reserved migration ref at an exact full commit ID.}

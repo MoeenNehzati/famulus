@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import shutil
 import stat
 import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -53,8 +52,14 @@ def test_certifier_does_not_expose_legacy_audit_health_authority() -> None:
         "_legacy_record_is_current",
         "certify_pooled_review",
         "load_or_create_hmac_key",
+        "TargetHash",
+        "compute_hash_payload",
+        "_hash_items",
+        "collect_targets",
+        "reviewed_repository_target_requests",
     ):
         assert not hasattr(certifier, name)
+    assert "compute-hashes" not in certifier.Interface.dispatches
 
 
 def _certify(
@@ -172,6 +177,9 @@ def test_private_writer_issues_parseable_append_only_certificate(
     assert payload["subject"]["id"] == "demo-skill"
     assert payload["source_commit"] == commit
     assert payload["checks"] == list(certifier.expected_certifier_checks())
+    assert {
+        (check["id"], check["version"]) for check in payload["checks"]
+    } >= {("route-smoke-dependencies", 1)}
 
 
 def test_private_writer_writes_certificate_backed_pooled_review(
@@ -617,6 +625,202 @@ def test_private_writer_orders_dependency_before_exact_target(
     assert result.node_ids == (dependency, target)
 
 
+def test_private_writer_audits_exact_dependency_postorder_twice_before_append(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    create_v4_repository(tmp_path)
+    repository_graph = _add_cross_owner_contract(tmp_path)
+    target = "demo-skill.source.gateway"
+    dependency = "demo-skill.source.contract"
+    real_postorder = certifier._v4_postorder
+    postorders: list[tuple[str, ...]] = []
+    audit_scopes: list[tuple[str, ...]] = []
+
+    def record_postorder(
+        graph: object,
+        states: object,
+        requested: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        result = real_postorder(graph, states, requested)
+        postorders.append(result)
+        return result
+
+    def audit(
+        graph: object,
+        states: object,
+        *,
+        repo_root: Path,
+        certification_basis_paths: object,
+        certification_node_ids: tuple[str, ...],
+    ) -> tuple[tuple[str, str, tuple[object, ...]], ...]:
+        del graph, states, repo_root, certification_basis_paths
+        assert not certifier.certificate_log_path(
+            repository_graph.nodes[dependency]
+        ).exists()
+        assert not certifier.certificate_log_path(
+            repository_graph.nodes[target]
+        ).exists()
+        audit_scopes.append(certification_node_ids)
+        return ()
+
+    monkeypatch.setattr(certifier, "_v4_postorder", record_postorder)
+    monkeypatch.setattr(certifier, "audit_route_smoke_dependencies", audit)
+
+    result = _certify(
+        tmp_path,
+        target_node_ids=(target,),
+        require_migration_review=False,
+    )
+
+    assert result.node_ids == (dependency, target)
+    assert postorders == [
+        (dependency, target),
+    ]
+    assert audit_scopes == [
+        (dependency, target),
+        (dependency, target),
+    ]
+
+
+def test_certifier_route_audit_rejects_unknown_scope_before_tracing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, states, _commit = create_v4_repository(tmp_path)
+
+    monkeypatch.setattr(
+        certifier,
+        "trace_python_route_smoke_dependencies_batch",
+        lambda *_args, **_kwargs: pytest.fail("unknown scope reached tracing"),
+    )
+
+    with pytest.raises(
+        certifier.CertificationHashError,
+        match="unknown route-smoke certification node: missing.source",
+    ):
+        certifier.audit_route_smoke_dependencies(
+            graph,
+            states,
+            repo_root=tmp_path,
+            certification_basis_paths=(),
+            certification_node_ids=("missing.source",),
+        )
+
+
+def test_certifier_route_audit_batches_unique_source_entrypoints(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, states, _commit = create_v4_repository(tmp_path)
+    source_id = "demo-skill.source.gateway"
+    source = graph.nodes[source_id]
+    worker = source.skill_root / "_rtx" / "worker.py"
+    worker.parent.mkdir(exist_ok=True)
+    worker.write_text("# route-smoke fixture\n", encoding="utf-8")
+    declaration = dict(source.declaration)
+    declaration["gateway"] = {"path": "_rtx/worker.py", "language": "Python"}
+    interfaces = dict(declaration["interfaces"])
+    first_id = "demo-skill.source.gateway.interface.run"
+    first = dict(interfaces[first_id])
+    first["process_binding"] = {
+        "kind": "process",
+        "entry": "Interface",
+        "arguments": {},
+        "fixed": [],
+    }
+    interfaces[first_id] = first
+    interfaces["demo-skill.source.gateway.interface.inspect"] = dict(first)
+    declaration["interfaces"] = interfaces
+    graph = replace(
+        graph,
+        nodes={
+            **graph.nodes,
+            source_id: replace(
+                source,
+                declaration=declaration,
+                gateway_path=worker,
+            ),
+        },
+    )
+    batch_calls: list[tuple[Path, tuple[tuple[Path, str], ...]]] = []
+
+    def trace_batch(
+        repo_root: Path,
+        specifications: tuple[tuple[Path, str], ...],
+    ) -> dict[tuple[Path, str], tuple[Path, ...]]:
+        batch_calls.append((repo_root, tuple(specifications)))
+        return {
+            (source.skill_root.resolve(), "_rtx/worker.py:Interface"): (worker,)
+        }
+
+    monkeypatch.setattr(
+        certifier,
+        "trace_python_route_smoke_dependencies_batch",
+        trace_batch,
+    )
+    monkeypatch.setattr(
+        certifier,
+        "map_route_smoke_dependencies",
+        lambda *_args, **_kwargs: (),
+    )
+
+    result = certifier.audit_route_smoke_dependencies(
+        graph,
+        states,
+        repo_root=tmp_path,
+        certification_basis_paths=(),
+        certification_node_ids=(source_id,),
+    )
+
+    assert batch_calls == [
+        (
+            tmp_path,
+            ((source.skill_root, "_rtx/worker.py:Interface"),),
+        )
+    ]
+    assert result == ((source_id, "_rtx/worker.py:Interface", ()),)
+
+
+def test_private_writer_route_audit_failure_precedes_every_append(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, _states, _commit = create_v4_repository(tmp_path)
+
+    def reject(*_args: object, **_kwargs: object) -> None:
+        raise certifier.CertificationHashError("route audit failed")
+
+    monkeypatch.setattr(certifier, "audit_route_smoke_dependencies", reject)
+
+    with pytest.raises(certifier.CertificationError, match="route audit failed"):
+        _certify(tmp_path)
+
+    assert not certifier.certificate_log_path(graph.nodes["demo-skill"]).exists()
+
+
+def test_private_writer_route_audit_mismatch_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, _states, _commit = create_v4_repository(tmp_path)
+    results = iter((("before",), ("after",)))
+
+    monkeypatch.setattr(
+        certifier,
+        "audit_route_smoke_dependencies",
+        lambda *_args, **_kwargs: next(results),
+    )
+
+    with pytest.raises(
+        certifier.CertificationError,
+        match="route-smoke dependency audit changed during certification",
+    ):
+        _certify(tmp_path)
+
+    assert not certifier.certificate_log_path(graph.nodes["demo-skill"]).exists()
+
+
 def test_private_writer_rechecks_forced_untracked_input_after_append(
     tmp_path: Path,
 ) -> None:
@@ -759,44 +963,20 @@ def test_completeness_findings_block_structural_draft_signing(
         _certify(tmp_path)
 
 
-class FakeDispatcher:
-    def __init__(self, payload: dict[str, object]) -> None:
-        self.payload = payload
+class RejectingDispatcher:
+    def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
 
     def dispatch(self, key: str, **kwargs: object):
         self.calls.append((key, kwargs))
-        if key == "compute-hashes":
-            return SimpleNamespace(
-                returncode=0,
-                stdout=json.dumps(self.payload),
-                stderr="",
-            )
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
+        pytest.fail(f"unexpected dispatch: {key}")
 
 
-def test_public_certification_uses_only_v4_certificate_writer(
+def test_public_certification_resolves_one_target_without_hash_dispatch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    graph, states, commit = create_v4_repository(tmp_path)
-    payload = {
-        "skills": [
-            {
-                "skill": "demo-skill",
-                "source": "test",
-                "package_root": str(tmp_path),
-                "skills_root": str(tmp_path / "skills"),
-                "hashes": {
-                    "nodes": {
-                        node_id: {"node_hash": states[node_id].node_hash}
-                        for node_id, node in graph.nodes.items()
-                        if node.skill_root == tmp_path / "skills" / "demo-skill"
-                    }
-                },
-            }
-        ]
-    }
+    graph, _states, commit = create_v4_repository(tmp_path)
     calls: list[dict[str, object]] = []
 
     def issue(repo_root: Path, **kwargs: object):
@@ -808,7 +988,7 @@ def test_public_certification_uses_only_v4_certificate_writer(
 
     monkeypatch.setattr(certifier, "_certify_v4_repository", issue)
 
-    dispatcher = FakeDispatcher(payload)
+    dispatcher = RejectingDispatcher()
     evidence, outcomes = certifier.certify(
         dispatcher,
         targets=("demo-skill",),
@@ -818,19 +998,7 @@ def test_public_certification_uses_only_v4_certificate_writer(
     )
 
     assert evidence == []
-    assert dispatcher.calls[0] == (
-        "compute-hashes",
-        {
-            "args": [
-                "compute-hashes",
-                "--skill-root",
-                str((tmp_path / "skills" / "demo-skill").resolve()),
-                "--json",
-            ],
-            "text": True,
-            "check": False,
-        },
-    )
+    assert dispatcher.calls == []
     assert len(calls) == 1
     assert calls[0]["repo_root"] == tmp_path.resolve()
     assert set(calls[0]["target_node_ids"]) == {
@@ -839,6 +1007,10 @@ def test_public_certification_uses_only_v4_certificate_writer(
         if node.skill_root == tmp_path / "skills" / "demo-skill"
     }
     assert outcomes[0].module == "demo-skill"
+    assert outcomes[0].source == "reviewed-repository"
+    assert outcomes[0].module_root == (
+        tmp_path / "skills" / "demo-skill"
+    ).resolve()
     assert all(
         node.certificate_path.parent.name == ".certificates"
         and node.certificate_path.suffix == ".jsonl"
@@ -846,55 +1018,25 @@ def test_public_certification_uses_only_v4_certificate_writer(
     )
 
 
-def test_public_certification_without_targets_hashes_reviewed_module_roots(
+def test_public_certification_without_targets_selects_all_reviewed_modules(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    graph, states, commit = create_v4_repository(tmp_path)
-    expected_roots = tuple(
+    graph, _states, commit = create_v4_repository(
+        tmp_path,
+        extra_modules=("other-skill",),
+    )
+    expected_modules = tuple(
         sorted(
-            {
-                node.skill_root.resolve()
+            node.node_id
                 for node in graph.nodes.values()
                 if node.node_type == "module"
-            },
-            key=lambda path: path.as_posix(),
         )
     )
-    requested_roots: list[Path] = []
-
-    class ExactRootDispatcher:
-        def dispatch(self, key: str, **kwargs: object):
-            assert key == "compute-hashes"
-            args = kwargs["args"]
-            assert isinstance(args, list)
-            assert args[:2] == ["compute-hashes", "--skill-root"]
-            module_root = Path(args[2]).resolve()
-            requested_roots.append(module_root)
-            payload = {
-                "skills": [
-                    {
-                        "skill": module_root.name,
-                        "source": "test",
-                        "package_root": str(tmp_path),
-                        "skills_root": str(module_root.parent),
-                        "hashes": {
-                            "nodes": {
-                                node_id: {"node_hash": states[node_id].node_hash}
-                                for node_id, node in graph.nodes.items()
-                                if node.skill_root.resolve() == module_root
-                            }
-                        },
-                    }
-                ]
-            }
-            return SimpleNamespace(
-                returncode=0,
-                stdout=json.dumps(payload),
-                stderr="",
-            )
+    calls: list[dict[str, object]] = []
 
     def issue(_repo_root: Path, **kwargs: object):
+        calls.append(dict(kwargs))
         return certifier.V4CertificationResult(
             node_ids=tuple(kwargs["target_node_ids"]),
             source_commit=commit,
@@ -902,15 +1044,125 @@ def test_public_certification_without_targets_hashes_reviewed_module_roots(
 
     monkeypatch.setattr(certifier, "_certify_v4_repository", issue)
 
+    dispatcher = RejectingDispatcher()
     _evidence, outcomes = certifier.certify(
-        ExactRootDispatcher(),
+        dispatcher,
         targets=(),
         skip_mechanical=True,
         reviewed_repository=tmp_path,
         reviewed_commit=commit,
     )
 
-    assert tuple(requested_roots) == expected_roots
-    assert {outcome.module for outcome in outcomes} == {
-        root.name for root in expected_roots
-    }
+    assert dispatcher.calls == []
+    assert len(calls) == 1
+    assert {outcome.module for outcome in outcomes} == set(expected_modules)
+    assert {outcome.source for outcome in outcomes} == {"reviewed-repository"}
+    assert calls[0]["target_node_ids"] == tuple(sorted(graph.nodes))
+
+
+def test_reviewed_target_resolution_is_exact_deduplicated_and_fail_closed(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _commit = create_v4_repository(tmp_path)
+    module_root = (tmp_path / "skills" / "demo-skill").resolve()
+
+    resolved = certifier.resolve_reviewed_repository_targets(
+        graph,
+        ("demo-skill", module_root.as_posix(), "demo-skill"),
+    )
+
+    assert tuple(node.node_id for node in resolved) == ("demo-skill",)
+    with pytest.raises(
+        certifier.CertificationError,
+        match="target 'missing-skill' resolves to 0 modules",
+    ):
+        certifier.resolve_reviewed_repository_targets(graph, ("missing-skill",))
+
+    duplicate = replace(
+        graph.nodes["demo-skill"],
+        node_id="duplicate-module",
+    )
+    ambiguous_graph = replace(
+        graph,
+        nodes={**graph.nodes, duplicate.node_id: duplicate},
+    )
+    with pytest.raises(
+        certifier.CertificationError,
+        match="resolves to 2 modules",
+    ):
+        certifier.resolve_reviewed_repository_targets(
+            ambiguous_graph,
+            (module_root.as_posix(),),
+        )
+
+
+def test_reviewed_target_resolution_supports_distinct_module_id_and_name(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _commit = create_v4_repository(tmp_path)
+    renamed = replace(
+        graph.nodes["demo-skill"],
+        node_id="demo-module-id",
+    )
+    nodes = dict(graph.nodes)
+    del nodes["demo-skill"]
+    nodes[renamed.node_id] = renamed
+    mismatched_graph = replace(graph, nodes=nodes)
+
+    by_id = certifier.resolve_reviewed_repository_targets(
+        mismatched_graph,
+        ("demo-module-id",),
+    )
+    by_name = certifier.resolve_reviewed_repository_targets(
+        mismatched_graph,
+        ("demo-skill",),
+    )
+
+    assert by_id == (renamed,)
+    assert by_name == (renamed,)
+
+
+def test_public_skip_mechanical_cannot_skip_route_audit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _graph, _states, commit = create_v4_repository(tmp_path)
+    backend = MemorySecretBackend()
+    test_public_key_root = tmp_path / "public-keys"
+    test_public_key_root.mkdir()
+    real_writer = certifier._certify_v4_repository
+    audit_scopes: list[tuple[str, ...]] = []
+
+    def audit(
+        _graph: object,
+        _states: object,
+        *,
+        repo_root: Path,
+        certification_basis_paths: object,
+        certification_node_ids: tuple[str, ...],
+    ) -> tuple[object, ...]:
+        del repo_root, certification_basis_paths
+        audit_scopes.append(certification_node_ids)
+        return ()
+
+    def issue(repo_root: Path, **kwargs: object):
+        kwargs["public_key_root"] = test_public_key_root
+        kwargs["secret_backend"] = backend
+        kwargs["require_candidate_execution"] = False
+        return real_writer(repo_root, **kwargs)
+
+    monkeypatch.setattr(certifier, "audit_route_smoke_dependencies", audit)
+    monkeypatch.setattr(certifier, "_certify_v4_repository", issue)
+
+    dispatcher = RejectingDispatcher()
+    evidence, _outcomes = certifier.certify(
+        dispatcher,
+        targets=("demo-skill",),
+        skip_mechanical=True,
+        reviewed_repository=tmp_path,
+        reviewed_commit=commit,
+    )
+
+    assert evidence == []
+    assert dispatcher.calls == []
+    assert len(audit_scopes) == 2

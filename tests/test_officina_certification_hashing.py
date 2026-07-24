@@ -116,6 +116,12 @@ def test_v4_basis_and_certifier_identity_are_derived_from_one_state(
             "findings": [],
         },
         {
+            "id": "route-smoke-dependencies",
+            "version": 1,
+            "passed": True,
+            "findings": [],
+        },
+        {
             "id": "v4-deterministic",
             "version": 1,
             "passed": True,

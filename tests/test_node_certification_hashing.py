@@ -8,6 +8,8 @@ import pytest
 import yaml
 
 import officina.common.certification_hashing as certification_hashing
+import officina.common.git_provenance as git_provenance
+import officina.runtime.python_machine_interface as python_interface
 from officina.common.certification_hashing import (
     CertificationHashError,
     NodeHashState,
@@ -453,6 +455,52 @@ def test_policy_last_match_wins_and_reserved_outputs_fail_closed(tmp_path: Path)
         _states(root, policy)
 
 
+def test_required_include_matching_only_mandatory_blueprint_still_fails(
+    tmp_path: Path,
+) -> None:
+    root, policy = _repository(tmp_path)
+    blueprint = "skills/provider-skill/blueprints/gateway.yaml"
+    document = yaml.safe_load(policy.read_text(encoding="utf-8"))
+    document["rules"].append(
+        {
+            "action": "include",
+            "pattern": blueprint,
+            "require_match": True,
+        }
+    )
+    _write_yaml(policy, document)
+    assert certification_hashing._git_exclude_matches(  # type: ignore[attr-defined]
+        root,
+        (blueprint,),
+        blueprint,
+    ) == {blueprint}
+
+    with pytest.raises(
+        CertificationHashError,
+        match="requires at least one match",
+    ):
+        _states(root, policy)
+
+
+def test_excluding_mandatory_blueprint_still_fails(tmp_path: Path) -> None:
+    root, policy = _repository(tmp_path)
+    blueprint = "skills/provider-skill/blueprints/gateway.yaml"
+    document = yaml.safe_load(policy.read_text(encoding="utf-8"))
+    document["rules"].append(
+        {
+            "action": "exclude",
+            "pattern": blueprint,
+        }
+    )
+    _write_yaml(policy, document)
+
+    with pytest.raises(
+        CertificationHashError,
+        match="mandatory blueprint, gateway, or contract input cannot be excluded",
+    ):
+        _states(root, policy)
+
+
 def test_git_policy_matcher_covers_tracked_ignored_and_untracked_files(
     tmp_path: Path,
 ) -> None:
@@ -480,6 +528,76 @@ def test_git_policy_matcher_covers_tracked_ignored_and_untracked_files(
         )
         for pattern in cases
     } == cases
+
+
+def test_v4_hashing_batches_git_provenance_and_policy_calls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, policy = _repository(tmp_path)
+    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
+    document = yaml.safe_load(policy.read_text(encoding="utf-8"))
+    rules = document["rules"]
+    git_commands: list[list[str]] = []
+    real_run = subprocess.run
+
+    def counting_run(
+        command: list[str],
+        *args: object,
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        if command and command[0] == "git":
+            git_commands.append(command)
+        return real_run(command, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", counting_run)
+
+    compute_node_hash_states(
+        graph,
+        repo_root=root,
+        policy_path=policy,
+        certification_basis_hash="sha256:" + "b" * 64,
+        certification_basis_paths=(),
+    )
+
+    assert len(git_commands) <= len(rules) + 2
+
+
+def test_v4_hashing_wraps_fatal_batch_provenance_as_certification_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, policy = _repository(tmp_path)
+    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
+
+    def fatal_tracked_query(
+        _repo_root: Path,
+        *args: str,
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(
+            args,
+            128,
+            b"",
+            b"fatal: node provenance failed\n",
+        )
+
+    monkeypatch.setattr(git_provenance, "run_git", fatal_tracked_query)
+
+    with pytest.raises(
+        CertificationHashError,
+        match="cannot determine Git provenance",
+    ) as error:
+        compute_node_hash_states(
+            graph,
+            repo_root=root,
+            policy_path=policy,
+            certification_basis_hash="sha256:" + "b" * 64,
+            certification_basis_paths=(),
+        )
+
+    assert isinstance(error.value.__cause__, ValueError)
+    assert "fatal: node provenance failed" in str(error.value.__cause__)
 
 
 def test_route_smoke_paths_map_to_input_dependency_or_basis(tmp_path: Path) -> None:
@@ -647,54 +765,31 @@ def test_route_smoke_rejects_unmapped_loaded_path(tmp_path: Path) -> None:
         )
 
 
-def test_v4_hash_preparation_rejects_unmapped_route_smoke_dependency(
-    tmp_path: Path,
-) -> None:
-    root, policy = _repository(tmp_path)
-    _make_python_gateway(root, "provider-skill", import_unowned=True)
-
-    with pytest.raises(CertificationHashError, match="unmapped route-smoke dependency"):
-        _states(
-            root,
-            policy,
-            certification_basis_paths=_python_certification_basis_paths(),
-        )
-
-
-def test_v4_hash_preparation_accepts_stable_mapped_route_smoke_trace(
-    tmp_path: Path,
-) -> None:
-    root, policy = _repository(tmp_path)
-    _make_python_gateway(root, "provider-skill", import_unowned=False)
-
-    states = _states(
-        root,
-        policy,
-        certification_basis_paths=_python_certification_basis_paths(),
-    )
-
-    assert states["provider-skill.source.gateway"].node_hash is not None
-
-
-def test_v4_hash_preparation_rejects_pre_post_route_smoke_change(
+def test_compute_node_hash_states_does_not_trace_route_smoke_dependencies(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root, policy = _repository(tmp_path)
     _make_python_gateway(root, "provider-skill", import_unowned=False)
-    worker = root / "skills" / "provider-skill" / "_rtx" / "worker.py"
-    source_blueprint = (
-        root / "skills" / "provider-skill" / "blueprints" / "gateway.yaml"
-    )
-    traces = iter(((worker,), (worker, source_blueprint)))
+    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
+
+    def reject_trace(*_args: object) -> tuple[Path, ...]:
+        pytest.fail("node hashing launched a route-smoke dependency trace")
+
     monkeypatch.setattr(
-        certification_hashing,
-        "trace_python_route_smoke_dependencies",
-        lambda *_args: next(traces),
+        python_interface,
+        "trace_python_route_smoke_dependencies_batch",
+        reject_trace,
     )
 
-    with pytest.raises(CertificationHashError, match="route-smoke dependency trace changed"):
-        _states(root, policy)
+    states = compute_node_hash_states(
+        graph,
+        repo_root=root,
+        policy_path=policy,
+        certification_basis_hash="sha256:" + "b" * 64,
+    )
+
+    assert states["provider-skill.source.gateway"].node_hash is not None
 
 
 def test_v4_hashing_makes_transitive_same_owner_contract_closure_mandatory(
