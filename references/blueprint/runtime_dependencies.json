@@ -6142,9 +6142,9 @@
               "platforms": {
                 "linux": true,
                 "macos": true,
-                "windows": false
+                "windows": true
               },
-              "reason": "Parses v4 blueprint declarations during semantic inspection."
+              "reason": "Parses skill blueprint YAML files."
             },
             {
               "kind": "python-package",
@@ -6155,7 +6155,7 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Parses skill blueprint YAML files."
+              "reason": "Parses v4 blueprint declarations during semantic inspection."
             },
             {
               "kind": "python-package",

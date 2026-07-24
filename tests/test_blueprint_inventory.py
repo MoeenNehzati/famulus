@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Iterator, Set
 import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 from officina.common import blueprint_inventory
 from officina.common.blueprint_inventory import (
@@ -24,6 +26,59 @@ def _git(repo: Path, *args: str) -> None:
         check=True,
         capture_output=True,
     )
+
+
+class _CountingIgnoredPaths(Set[Path]):
+    def __init__(self, paths: set[Path]) -> None:
+        self._paths = paths
+        self.examined = 0
+
+    def __contains__(self, path: object) -> bool:
+        return path in self._paths
+
+    def __iter__(self) -> Iterator[Path]:
+        for path in self._paths:
+            self.examined += 1
+            yield path
+
+    def __len__(self) -> int:
+        return len(self._paths)
+
+
+def test_strict_inventory_selects_c_safe_loader_when_available() -> None:
+    expected_loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+    assert issubclass(blueprint_inventory._StrictBlueprintLoader, expected_loader)
+
+
+def test_selected_strict_loader_rejects_duplicate_keys() -> None:
+    with pytest.raises(yaml.constructor.ConstructorError, match="duplicate key"):
+        yaml.load(
+            "id: one\nid: two\n",
+            Loader=blueprint_inventory._StrictBlueprintLoader,
+        )
+
+
+def test_ignored_path_lookup_does_not_scan_all_ignored_entries(
+    tmp_path: Path,
+) -> None:
+    ignored_directory = tmp_path / "ignored-directory"
+    ignored_paths = _CountingIgnoredPaths(
+        {
+            ignored_directory,
+            *(tmp_path / "ignored" / f"path-{index}" for index in range(2_000)),
+        }
+    )
+
+    assert blueprint_inventory._ignored_path(
+        ignored_directory / "nested" / "blueprint.yaml",
+        ignored_paths,
+    )
+    assert not blueprint_inventory._ignored_path(
+        tmp_path / "visible" / "blueprint.yaml",
+        ignored_paths,
+    )
+    assert ignored_paths.examined < 20
 
 
 def test_inventory_discovers_only_canonical_v4_modules_and_direct_sources(

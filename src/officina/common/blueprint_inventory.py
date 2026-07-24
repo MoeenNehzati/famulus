@@ -5,7 +5,7 @@ import math
 import os
 from pathlib import Path
 import stat
-from typing import Iterator, Mapping, TypeAlias
+from typing import AbstractSet, Iterator, Mapping, TypeAlias
 
 import yaml
 
@@ -17,7 +17,10 @@ JsonScalar: TypeAlias = str | int | float | bool | None
 JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
 
-class _StrictBlueprintLoader(yaml.SafeLoader):
+_SafeBlueprintLoader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+
+class _StrictBlueprintLoader(_SafeBlueprintLoader):
     pass
 
 
@@ -137,24 +140,26 @@ def _regular_file(path: Path) -> bool:
         return False
 
 
-def _ignored_paths(repo_root: Path) -> tuple[Path, ...]:
+def _ignored_paths(repo_root: Path) -> frozenset[Path]:
     try:
         git_marker_mode = (repo_root / ".git").lstat().st_mode
     except FileNotFoundError:
-        return ()
+        return frozenset()
     if not (stat.S_ISDIR(git_marker_mode) or stat.S_ISREG(git_marker_mode)):
-        return ()
-    return tuple(repo_root / path for path in git_ignored_paths(repo_root))
+        return frozenset()
+    return frozenset(repo_root / path for path in git_ignored_paths(repo_root))
 
 
-def _ignored_path(path: Path, ignored_paths: tuple[Path, ...]) -> bool:
-    return any(path == root or path.is_relative_to(root) for root in ignored_paths)
+def _ignored_path(path: Path, ignored_paths: AbstractSet[Path]) -> bool:
+    return path in ignored_paths or any(
+        parent in ignored_paths for parent in path.parents
+    )
 
 
 def _excluded_directory(
     path: Path,
     *,
-    ignored_paths: tuple[Path, ...],
+    ignored_paths: AbstractSet[Path],
 ) -> bool:
     return (
         path.name in _EXCLUDED_INFRASTRUCTURE_DIRECTORIES
@@ -165,7 +170,7 @@ def _excluded_directory(
 
 def _canonical_module_roots(
     repo_root: Path,
-    ignored_paths: tuple[Path, ...],
+    ignored_paths: AbstractSet[Path],
 ) -> tuple[Path, ...]:
     roots: set[Path] = set()
     for directory, directory_names, file_names in os.walk(
@@ -190,7 +195,7 @@ def _canonical_module_roots(
 def _blueprint_paths(
     repo_root: Path,
     module_roots: tuple[Path, ...],
-    ignored_paths: tuple[Path, ...],
+    ignored_paths: AbstractSet[Path],
 ) -> tuple[Path, ...]:
     candidates: set[Path] = set()
 

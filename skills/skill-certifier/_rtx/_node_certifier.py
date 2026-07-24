@@ -809,9 +809,6 @@ def _certify_v4_repository(
     transition.
     """
 
-    if allow_non_atomic:
-        raise CertificationError("non-atomic mode is diagnostic-only and cannot sign")
-
     root = Path(repo_root).resolve()
     if require_migration_review:
         atomic = run_git(
@@ -933,10 +930,15 @@ def _certify_v4_repository(
             allow_non_atomic=allow_non_atomic,
         )
     try:
+        expanded_target_ids = set(target_node_ids)
+        for node_id in tuple(expanded_target_ids):
+            node = graph.nodes.get(node_id)
+            if node is not None and node.node_type == "module":
+                expanded_target_ids.update(graph.module_sources[node_id])
         order = certification_target_postorder(
             graph,
             states,
-            tuple(target_node_ids),
+            tuple(expanded_target_ids),
         )
     except CertificationHashError as exc:
         raise CertificationError(str(exc)) from exc
@@ -1769,6 +1771,7 @@ def certify(
     timestamp: str | None = None,
     reviewed_repository: Path | None = None,
     reviewed_commit: str | None = None,
+    allow_non_atomic: bool = False,
 ) -> tuple[list[CommandResult], list[CertificationOutcome]]:
     """Issue certificates for exact v4 module targets."""
 
@@ -1818,6 +1821,7 @@ def certify(
         reviewed_commit=reviewed_commit,
         certified_at=timestamp
         or datetime.now().astimezone().isoformat(timespec="seconds"),
+        allow_non_atomic=allow_non_atomic,
         require_candidate_execution=True,
         require_migration_review=False,
     )
@@ -1871,6 +1875,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("command", choices=["certify"])
     parser.add_argument("targets", nargs="*")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--allow-non-atomic", action="store_true")
     parser.add_argument("--skip-mechanical", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--timestamp", help=argparse.SUPPRESS)
     parser.add_argument("--reviewed-repository", type=Path, required=True)
@@ -1892,6 +1897,7 @@ def main(
             timestamp=args.timestamp,
             reviewed_repository=args.reviewed_repository,
             reviewed_commit=args.reviewed_commit,
+            allow_non_atomic=args.allow_non_atomic,
         )
     except CertificationError as exc:
         if args.json:

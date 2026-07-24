@@ -1,19 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "caller-contract.schema.json",
-  "title": "Simple Machine Interface Caller Contract",
-  "type": "object",
-  "required": ["arguments", "preconditions", "interaction", "caller_warnings", "outputs", "outcomes", "execution"],
-  "additionalProperties": false,
-  "properties": {
-    "arguments": {"type": "object", "additionalProperties": {"$ref": "#/definitions/argument"}},
-    "preconditions": {"type": "array", "items": {"$ref": "#/definitions/precondition"}},
-    "interaction": {"$ref": "#/definitions/interaction"},
-    "caller_warnings": {"type": "array", "items": {"$ref": "#/definitions/warning"}},
-    "outputs": {"type": "array", "items": {"$ref": "#/definitions/output"}},
-    "outcomes": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/outcome"}},
-    "execution": {"$ref": "#/definitions/execution"}
-  },
+  "title": "Interface Caller Contract",
+  "$ref": "#/definitions/v4Contract",
   "definitions": {
     "localId": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"},
     "relativePath": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
@@ -141,26 +130,6 @@
         {"if": {"properties": {"type": {"properties": {"kind": {"enum": ["path", "file", "dir"]}}}}}, "then": {"required": ["direct_io_ref"]}, "else": {"not": {"required": ["direct_io_ref"]}}}
       ]
     },
-    "argument": {
-      "type": "object",
-      "required": ["description", "required", "sensitivity", "invocation_binding", "type"],
-      "additionalProperties": false,
-      "properties": {
-        "description": {"type": "string", "minLength": 1},
-        "required": {"type": "boolean"},
-        "default": {},
-        "sensitivity": {"enum": ["public", "user-private", "derived-private", "credential", "secret"]},
-        "invocation_binding": {"$ref": "#/definitions/argumentBinding"},
-        "direct_io_ref": {"$ref": "#/definitions/localId"},
-        "type": {"$ref": "#/definitions/typeSpec"}
-      },
-      "allOf": [
-        {"if": {"properties": {"required": {"const": true}}}, "then": {"not": {"required": ["default"]}}},
-        {"if": {"properties": {"invocation_binding": {"properties": {"kind": {"const": "switch"}}}}}, "then": {"properties": {"type": {"properties": {"kind": {"const": "flag"}}}}}},
-        {"if": {"properties": {"type": {"properties": {"kind": {"const": "flag"}}}}}, "then": {"properties": {"invocation_binding": {"properties": {"kind": {"const": "switch"}}}}}},
-        {"if": {"properties": {"type": {"properties": {"kind": {"enum": ["path", "file", "dir"]}}}}}, "then": {"required": ["direct_io_ref"]}, "else": {"not": {"required": ["direct_io_ref"]}}}
-      ]
-    },
     "preconditionCheck": {"oneOf": [
       {"type": "object", "required": ["kind", "argument_ref", "predicate"], "additionalProperties": false, "properties": {"kind": {"const": "argument"}, "argument_ref": {"$ref": "#/definitions/localId"}, "predicate": {"enum": ["present", "equals", "matches"]}, "expected": {}}},
       {"type": "object", "required": ["kind", "direct_io_ref", "predicate"], "additionalProperties": false, "properties": {"kind": {"const": "direct-io"}, "direct_io_ref": {"$ref": "#/definitions/localId"}, "predicate": {"enum": ["exists", "readable", "writable", "matches"]}, "expected": {}}},
@@ -176,12 +145,6 @@
       "oneOf": [
         {"type": "object", "required": ["mode"], "additionalProperties": false, "properties": {"mode": {"const": "unattended"}, "timeout_seconds": {"type": "integer", "minimum": 1}}},
         {"type": "object", "required": ["mode", "channel", "unattended_outcome"], "additionalProperties": false, "properties": {"mode": {"const": "interactive"}, "channel": {"enum": ["stdin", "tty"]}, "unattended_outcome": {"$ref": "#/definitions/localId"}, "timeout_seconds": {"type": "integer", "minimum": 1}}}
-      ]
-    },
-    "interaction": {
-      "oneOf": [
-        {"type": "object", "required": ["mode"], "additionalProperties": false, "properties": {"mode": {"const": "unattended"}, "timeout_seconds": {"type": "integer", "minimum": 1}, "cancellation": {"$ref": "#/definitions/cancellation"}}},
-        {"type": "object", "required": ["mode", "channel", "unattended_outcome"], "additionalProperties": false, "properties": {"mode": {"const": "interactive"}, "channel": {"enum": ["stdin", "tty"]}, "unattended_outcome": {"$ref": "#/definitions/localId"}, "timeout_seconds": {"type": "integer", "minimum": 1}, "cancellation": {"$ref": "#/definitions/cancellation"}}}
       ]
     },
     "cancellation": {"oneOf": [
@@ -202,15 +165,6 @@
       },
       "oneOf": [{"required": ["schema"]}, {"required": ["type"]}]
     },
-    "output": {
-      "type": "object",
-      "required": ["id", "channel", "audience", "encoding", "framing", "description", "direct_io_ref", "cardinality", "ordering", "pagination", "truncation", "empty"],
-      "additionalProperties": false,
-      "properties": {
-        "id": {"$ref": "#/definitions/localId"}, "channel": {"enum": ["stdout", "stderr", "file", "event-stream"]}, "audience": {"enum": ["machine", "human", "both"]}, "encoding": {"const": "utf-8"}, "framing": {"enum": ["raw", "text", "exactly-one-json-document", "newline-delimited-json"]}, "description": {"type": "string", "minLength": 1}, "schema": {"$ref": "#/definitions/schemaRef"}, "type": {"$ref": "#/definitions/typeSpec"}, "direct_io_ref": {"$ref": "#/definitions/localId"}, "cardinality": {"$ref": "#/definitions/arity"}, "ordering": {"enum": ["stable", "unspecified", "sorted"]}, "pagination": {"$ref": "#/definitions/pagination"}, "truncation": {"$ref": "#/definitions/truncation"}, "empty": {"type": "string", "minLength": 1}
-      },
-      "oneOf": [{"required": ["schema"]}, {"required": ["type"]}]
-    },
     "pagination": {"oneOf": [
       {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "none"}}},
       {"type": "object", "required": ["kind", "cursor_output_ref"], "additionalProperties": false, "properties": {"kind": {"const": "cursor"}, "cursor_output_ref": {"$ref": "#/definitions/localId"}}},
@@ -226,7 +180,6 @@
     ]},
     "signal": {"type": "object", "required": ["exit_codes"], "additionalProperties": false, "properties": {"exit_codes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "integer", "minimum": 0, "maximum": 255}}, "stdout_match": {"$ref": "#/definitions/matcher"}, "stderr_match": {"$ref": "#/definitions/matcher"}}},
     "v4Outcome": {"type": "object", "required": ["id", "class", "outputs", "effects", "caller_action"], "additionalProperties": false, "properties": {"id": {"$ref": "#/definitions/localId"}, "class": {"enum": ["success", "no-op", "refusal", "partial", "error"]}, "outputs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/localId"}}, "effects": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/localId"}}, "caller_action": {"type": "string", "minLength": 1}}},
-    "outcome": {"type": "object", "required": ["id", "class", "signal", "outputs", "effects", "caller_action"], "additionalProperties": false, "properties": {"id": {"$ref": "#/definitions/localId"}, "class": {"enum": ["success", "no-op", "refusal", "partial", "error"]}, "signal": {"$ref": "#/definitions/signal"}, "outputs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/localId"}}, "effects": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/localId"}}, "caller_action": {"type": "string", "minLength": 1}}},
     "decisionText": {"type": "string", "minLength": 1},
     "consistencyDecision": {"type": "object", "minProperties": 1, "maxProperties": 1, "additionalProperties": false, "properties": {"snapshot": {"$ref": "#/definitions/decisionText"}, "eventually_consistent": {"$ref": "#/definitions/decisionText"}, "per_source": {"$ref": "#/definitions/decisionText"}, "best_effort": {"$ref": "#/definitions/decisionText"}, "live": {"$ref": "#/definitions/decisionText"}}},
     "reversibilityDecision": {"type": "object", "minProperties": 1, "maxProperties": 1, "additionalProperties": false, "properties": {"reversible": {"$ref": "#/definitions/decisionText"}, "compensatable": {"$ref": "#/definitions/decisionText"}, "irreversible": {"$ref": "#/definitions/decisionText"}}},
@@ -289,16 +242,6 @@
       "type": "object", "required": ["state_effect", "lifecycle", "consistency", "verification"], "additionalProperties": false,
       "properties": {
         "state_effect": {"enum": ["read-only", "mutating"]}, "lifecycle": {"enum": ["finite", "long-running"]}, "consistency": {"$ref": "#/definitions/consistencyDecision"}, "effects": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/effect"}}, "mutation_safety": {"type": "object", "required": ["atomicity", "concurrent_invocations", "idempotency", "on_uncertain_completion", "partial_effects_on_failure", "rollback_on_failure"], "additionalProperties": false, "properties": {"atomicity": {"$ref": "#/definitions/atomicityDecision"}, "concurrent_invocations": {"$ref": "#/definitions/concurrencyDecision"}, "idempotency": {"$ref": "#/definitions/idempotencyDecision"}, "on_uncertain_completion": {"$ref": "#/definitions/uncertainDecision"}, "partial_effects_on_failure": {"$ref": "#/definitions/partialEffectsDecision"}, "rollback_on_failure": {"$ref": "#/definitions/rollbackDecision"}}}, "long_running": {"type": "object", "required": ["ready_when", "startup_failure_outcome"], "additionalProperties": false, "properties": {"ready_when": {"$ref": "#/definitions/readyWhen"}, "startup_failure_outcome": {"$ref": "#/definitions/localId"}}}, "verification": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/verification"}}
-      },
-      "allOf": [
-        {"if": {"properties": {"state_effect": {"const": "mutating"}}}, "then": {"required": ["effects", "mutation_safety"]}, "else": {"not": {"anyOf": [{"required": ["effects"]}, {"required": ["mutation_safety"]}]}}},
-        {"if": {"properties": {"lifecycle": {"const": "long-running"}}}, "then": {"required": ["long_running"]}, "else": {"not": {"required": ["long_running"]}}}
-      ]
-    },
-    "execution": {
-      "type": "object", "required": ["state_effect", "lifecycle", "consistency", "verification"], "additionalProperties": false,
-      "properties": {
-        "state_effect": {"enum": ["read-only", "mutating"]}, "lifecycle": {"enum": ["finite", "long-running"]}, "consistency": {"$ref": "#/definitions/consistencyDecision"}, "effects": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/effect"}}, "mutation_safety": {"type": "object", "required": ["atomicity", "concurrent_invocations", "idempotency", "on_uncertain_completion", "partial_effects_on_failure", "rollback_on_failure"], "additionalProperties": false, "properties": {"atomicity": {"$ref": "#/definitions/atomicityDecision"}, "concurrent_invocations": {"$ref": "#/definitions/concurrencyDecision"}, "idempotency": {"$ref": "#/definitions/idempotencyDecision"}, "on_uncertain_completion": {"$ref": "#/definitions/uncertainDecision"}, "partial_effects_on_failure": {"$ref": "#/definitions/partialEffectsDecision"}, "rollback_on_failure": {"$ref": "#/definitions/rollbackDecision"}}}, "long_running": {"type": "object", "required": ["ready_when", "stop_method", "startup_failure_outcome"], "additionalProperties": false, "properties": {"ready_when": {"$ref": "#/definitions/readyWhen"}, "stop_method": {"$ref": "#/definitions/stopMethod"}, "startup_failure_outcome": {"$ref": "#/definitions/localId"}}}, "verification": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/verification"}}
       },
       "allOf": [
         {"if": {"properties": {"state_effect": {"const": "mutating"}}}, "then": {"required": ["effects", "mutation_safety"]}, "else": {"not": {"anyOf": [{"required": ["effects"]}, {"required": ["mutation_safety"]}]}}},

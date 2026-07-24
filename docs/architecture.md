@@ -1,8 +1,7 @@
 # Famulus Architecture
 
-> **Status:** Architectural draft. This document describes the intended unified
-> architecture. It does not yet supersede the current blueprint schemas,
-> validators, node taxonomy, or runtime implementation.
+> **Status:** Adopted version-4 architecture. The live schemas, validators, and
+> implementation provide the executable details of this contract.
 
 ## Scope
 
@@ -17,9 +16,6 @@ More specialized documents refine this architecture:
 - `docs/skill-blueprints.md` explains concrete blueprint authoring;
 - `docs/certification_and_drift.md` defines certificate lifecycle and drift;
 - `docs/blueprint_search.md` defines graph-query behavior.
-
-Until this draft is adopted, conflicts are resolved in favor of the current
-schemas and implementation rather than this document.
 
 ## Nodes
 
@@ -404,8 +400,10 @@ basis and validates the signed evidence, including the expected versioned check
 records. It does not rerun gateways, independently redefine the node, perform
 semantic conformance review, or repair its blueprint.
 
-## Adoption boundary
+## Package boundary
 
-This draft differs from the current implementation and changes no live
-declaration until the approved migration maps every existing fact and passes
-its adoption gates.
+Certification applies to the module graph in one explicit reviewed repository
+checkout and commit. Installed-source adapters may inspect direct installations
+or host-authorized plugin records for read-only drift diagnostics, but installing
+a plugin does not extend the package's certifiable graph. A plugin is a consumer
+of the installed package, not an additional part of that package.

@@ -1,6 +1,6 @@
 # Interface Metadata Refactor Plan
 
-> **Deferred pending version-4 adoption and rebase — do not execute.** This
+> **Deferred pending approved post-adoption rebase — do not execute.** This
 > plan overlaps the unified migration's interface metadata, direct-I/O,
 > source-ownership, schema, validator, graph, and conversion contracts. None of
 > its proposed artifacts is authorized by that migration; resumption requires

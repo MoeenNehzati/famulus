@@ -23,7 +23,7 @@ authority:
     cutover: atomic
 
 execution_status_contract:
-  allowed: [active_authority, frozen_history, deferred_pending_v4_adoption_and_rebase, independent]
+  allowed: [active_authority, frozen_history, deferred_pending_approved_post_adoption_rebase, independent]
   frozen_rule: a frozen or deferred plan is non-executable until its banner is removed by an approved rebase
   predecessor_rule: proposed artifacts in a frozen or deferred plan are not authorized by this migration and require fresh functional-predecessor dispositions when rebased
 
@@ -112,23 +112,23 @@ superseded_execution_sequences:
 overlapping_execution_plans:
   - path: docs/plans/logical-resource-addressing.md
     disposition: preserve
-    execution_status: deferred_pending_v4_adoption_and_rebase
+    execution_status: deferred_pending_approved_post_adoption_rebase
     conflict: blueprint direct-I/O schemas, graph edges, validators, certification boundaries, and generated resource overlay
   - path: docs/plans/osx_feedback_fix/README.md
     disposition: preserve
-    execution_status: deferred_pending_v4_adoption_and_rebase
+    execution_status: deferred_pending_approved_post_adoption_rebase
     conflict: installer runtime, plugin payload activation, dependency manifest, launchers, hooks, and atomic installation state
   - path: docs/plans/per-llm-interface-personal-preferences.md
     disposition: preserve
-    execution_status: deferred_pending_v4_adoption_and_rebase
+    execution_status: deferred_pending_approved_post_adoption_rebase
     conflict: LLM interface identity, sidecar blueprints, source discovery, validators, generated blocks, and skill-maker scaffolding
   - path: docs/plans/interface-metadata-refactor.md
     disposition: preserve
-    execution_status: deferred_pending_v4_adoption_and_rebase
+    execution_status: deferred_pending_approved_post_adoption_rebase
     conflict: interface metadata, direct I/O, behavior-source ownership, schemas, validators, graph views, and blueprint migration
   - path: docs/plans/blueprint-schema-documentation-consolidation.md
     disposition: preserve
-    execution_status: deferred_pending_v4_adoption_and_rebase
+    execution_status: deferred_pending_approved_post_adoption_rebase
     conflict: schema metadata, templates, generated documentation, route-smoke status, validators, and blueprint authoring authority
 
 coverage_contract:
@@ -1431,7 +1431,7 @@ documents:
     target: historical evidence, excluded from active runtime-authority scans
   - paths: [docs/plans/logical-resource-addressing.md]
     disposition: preserve
-    execution_status: deferred_pending_v4_adoption_and_rebase
+    execution_status: deferred_pending_approved_post_adoption_rebase
     target: rebase its blueprint, graph, validator, and certification contracts after v4 adoption; proposed artifacts require fresh predecessor dispositions
   - paths: [docs/plans/logical-resource-registry.yaml]
     disposition: move
@@ -1445,7 +1445,7 @@ documents:
       - docs/plans/osx_feedback_fix/**
       - docs/plans/per-llm-interface-personal-preferences.md
     disposition: preserve
-    execution_status: deferred_pending_v4_adoption_and_rebase
+    execution_status: deferred_pending_approved_post_adoption_rebase
     target: non-executable until rebased after v4 adoption; proposed artifacts require fresh predecessor dispositions
   - paths: [skills/*/SKILL.md, skills/*/llm_interfaces/*.md, skills/*/instructions/*.md, skills/*/personal-preferences/*.md, skills/*/references/*.md, skills/*/DEBUGGING.md]
     disposition: move
@@ -1599,17 +1599,17 @@ certification_authority:
   target_platforms: [linux, macos, windows]
   current_certificate_write_support:
     owner: src/officina/common/atomic_files.py
-    implementation: POSIX directory-descriptor and no-follow primitives only
-    off_posix_behavior: fail closed with AtomicWriteError
-    windows_status: unsupported until the Task 3 in-place generalization and platform certificate tests pass
+    implementation: POSIX directory-descriptor primitives and Windows handle-relative reparse-point-safe primitives
+    unavailable_native_primitive_behavior: fail closed with AtomicWriteError unless the caller explicitly opts into the non-atomic fallback
+    windows_status: implemented in the existing owner; native Windows verification remains platform-specific
   certification_platform_gate:
-    rule: a target platform is not v4-certified until the existing atomic_files owner provides equivalent confined atomic and no-follow certificate writes there and its platform tests pass
-    windows_requirement: Task 3 must generalize atomic_files.py in place for Windows reparse-point-safe confinement, atomic replacement, durability, permissions, and post-write verification
+    rule: release support for a target platform requires the existing atomic_files owner to provide equivalent confined atomic and no-follow certificate writes there and its native platform tests to pass
+    windows_requirement: native Windows tests must verify the existing handle-relative implementation's reparse-point confinement, atomic replacement, durability, permissions, and post-write checks
     ownership: no parallel writer or platform provider file is authorized
   platform_contracts:
     linux: target user-scoped signing material and outputs with restrictive file modes
     macos: target user-scoped signing material and outputs with restrictive file modes
-    windows: target user-scoped signing material and outputs with restrictive user ACLs, gated by the Task 3 atomic-files requirement
+    windows: user-scoped signing material and outputs with restrictive user ACLs; native platform verification runs on Windows
   os_identity:
     filesystem_owner: invoking OS user
     isolation_from_same_uid_processes: false

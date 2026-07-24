@@ -2,6 +2,12 @@
 
 This document defines the live version-4 certification contract.
 
+Certification is repository-bound. The public certifier requires an explicit
+reviewed repository and commit and derives the complete certifiable graph from
+that checkout. Installed-source adapters are read-only drift diagnostics;
+installing a plugin does not add its modules to the package's certification
+graph.
+
 ## Nodes and dependencies
 
 Version 4 has two authored node types:
@@ -265,6 +271,10 @@ read-only and verifies through the public-key path.
 No broker, service identity, second writer, or parallel signing route is
 introduced. Atomic no-follow writes, user-only permissions, history, and
 post-write verification remain defense in depth.
+
+Secure atomic writes are the default. A caller may explicitly opt into the
+existing non-atomic fallback when the host cannot provide the secure primitive;
+the certifier never selects that fallback silently.
 
 The dispatcher derives one repository-backed certification view. In ordinary
 operation it admits only exports whose module and implementing source have

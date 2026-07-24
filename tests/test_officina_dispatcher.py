@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import os
 from pathlib import Path
 import subprocess
 
@@ -123,8 +124,9 @@ def _write_v4_module(
     language: str = "Python>=3.11",
     worker_source: str | None = None,
     extra_python_sources: dict[str, str] | None = None,
+    module_root: Path | None = None,
 ) -> None:
-    module = repo / "skills" / "demo-skill"
+    module = module_root or repo / "skills" / "demo-skill"
     runtime = module / "_rtx"
     runtime.mkdir(parents=True)
     (module / "SKILL.md").write_text("Instructions.\n", encoding="utf-8")
@@ -450,6 +452,36 @@ def test_v4_python_runtime_preserves_utf8_and_descriptor_confinement(
         assert "--source-fd" in resolved.command
         assert "--package-file" in resolved.command
         assert resolved.pass_fds
+
+
+def test_v4_python_runtime_uses_resolved_module_root_outside_skills(
+    tmp_path: Path,
+) -> None:
+    module_root = tmp_path / "modules" / "demo-skill"
+    _write_v4_module(tmp_path, module_root=module_root)
+    _write_v4_caller(tmp_path)
+
+    with resolve_dispatch(
+        caller_skill="caller-skill",
+        target="demo-skill.interface.run",
+        args=["value"],
+        repo_root=tmp_path,
+    ) as resolved:
+        source_fd_index = resolved.command.index("--source-fd") + 1
+        source_fd = int(resolved.command[source_fd_index])
+        source_binding = next(
+            binding
+            for binding in resolved.runtime_bindings
+            if binding.fd == source_fd
+        )
+
+        assert source_binding.path == module_root / "_rtx" / "_worker.py"
+        assert resolved.cwd == module_root
+        assert resolved.env is not None
+        assert resolved.env["PYTHONPATH"].split(os.pathsep)[:2] == [
+            str(module_root),
+            str(tmp_path / "src"),
+        ]
 
 
 def test_v4_dispatch_pins_utf8_strict_text_mode(

@@ -29,7 +29,7 @@ interfaces:
   refactor-skills.source.gateway.interface.default:
     contract:
       arguments:
-        request: {description: Skill-audit or refactoring request naming the target skill and desired convention or structural improvement., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        request: {description: Skill review or refactoring request naming the target skill and desired convention or structural improvement., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
       preconditions: []
       interaction: {mode: interactive, channel: tty, unattended_outcome: approval-required}
       caller_warnings:

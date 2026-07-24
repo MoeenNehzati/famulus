@@ -78,7 +78,8 @@ def render_pooled_review(
         for target_id in sorted(children.get(node_id, ())):
             visit(target_id)
 
-    visit(selected_root)
+    for node_id in (selected_root, *graph.module_sources[selected_root]):
+        visit(node_id)
     certificates = {}
     for node_id in sorted(selected):
         certificate = certification.certificate_for(node_id)

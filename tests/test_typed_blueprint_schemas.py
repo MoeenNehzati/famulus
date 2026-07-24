@@ -275,6 +275,18 @@ def _valid_v4_contract() -> dict:
     }
 
 
+def test_caller_contract_root_validates_the_current_v4_contract() -> None:
+    _validator("caller-contract.schema.json").validate(_valid_v4_contract())
+
+
+def test_caller_contract_has_no_obsolete_parallel_contract_definitions() -> None:
+    definitions = set(_load("caller-contract.schema.json")["definitions"])
+
+    assert definitions.isdisjoint(
+        {"argument", "interaction", "output", "outcome", "execution"}
+    )
+
+
 def test_v4_interface_contract_is_semantic_and_excludes_process_mechanics() -> None:
     validator = _validator("caller-contract.schema.json").evolve(
         schema=_load("caller-contract.schema.json")["definitions"]["v4Contract"]

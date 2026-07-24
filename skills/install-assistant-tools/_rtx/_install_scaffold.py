@@ -45,6 +45,15 @@ DEFAULT_PIP_INSTALL_TIMEOUT_SECONDS = 60
 
 def required_python_packages(repo_root: Path) -> list[str]:
     packages: dict[str, tuple[str, set[str]]] = {}
+    platform_name = (
+        "macos"
+        if sys.platform == "darwin"
+        else "windows"
+        if sys.platform.startswith("win")
+        else "linux"
+        if sys.platform.startswith("linux")
+        else None
+    )
     manifest = repo_root / RUNTIME_DEPENDENCIES_MANIFEST
     if manifest.exists():
         data = json.loads(manifest.read_text(encoding="utf-8"))
@@ -70,6 +79,13 @@ def required_python_packages(repo_root: Path) -> list[str]:
                         if (
                             not isinstance(dependency, dict)
                             or dependency.get("kind") != "python-package"
+                        ):
+                            continue
+                        platforms = dependency.get("platforms")
+                        if (
+                            isinstance(platforms, dict)
+                            and platform_name is not None
+                            and platforms.get(platform_name) is False
                         ):
                             continue
                         name = dependency.get("name")

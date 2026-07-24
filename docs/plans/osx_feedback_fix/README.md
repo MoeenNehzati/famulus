@@ -1,6 +1,6 @@
 # macOS Installation Feedback Remediation Umbrella Plan
 
-> **Deferred pending version-4 adoption and rebase — do not execute this
+> **Deferred pending approved post-adoption rebase — do not execute this
 > package or its subplans.** It overlaps the unified migration's installer,
 > plugin-discovery, manifest, launcher, hook, and atomic-state contracts. None
 > of its proposed artifacts is authorized by that migration; resumption

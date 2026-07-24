@@ -70,6 +70,10 @@ def test_pooled_review_is_deterministic_certificate_backed_and_schema_valid(
     assert first == second
     assert document["schema_version"] == 2
     assert document["root"]["node_hash"] == states["demo-skill"].node_hash
+    assert [node["id"] for node in document["nodes"]] == [
+        "demo-skill",
+        "demo-skill.source.gateway",
+    ]
     assert all(
         node["certificate"]["status"] == "current"
         for node in document["nodes"]
@@ -98,6 +102,30 @@ def test_pooled_review_fails_closed_without_current_certificate(
     with pytest.raises(
         PooledReviewValidationError,
         match="requires a current certificate",
+    ):
+        render_pooled_review(graph, view, root_id="demo-skill")
+
+
+def test_pooled_review_exposes_missing_contained_source_certificate(
+    tmp_path: Path,
+) -> None:
+    graph, states, records, _view = _certificate_view(tmp_path)
+    records.pop("demo-skill.source.gateway")
+    view = CertificateRecordView(
+        records,
+        expected_node_hashes={
+            node_id: state.node_hash
+            for node_id, state in states.items()
+            if state.node_hash is not None
+        },
+    )
+
+    with pytest.raises(
+        PooledReviewValidationError,
+        match=(
+            "demo-skill.source.gateway: pooled review "
+            "requires a current certificate"
+        ),
     ):
         render_pooled_review(graph, view, root_id="demo-skill")
 

@@ -168,7 +168,10 @@ def test_private_writer_issues_parseable_append_only_certificate(
 
     result = _certify(tmp_path)
 
-    assert result.node_ids == ("demo-skill",)
+    assert result.node_ids == (
+        "demo-skill",
+        "demo-skill.source.gateway",
+    )
     assert result.source_commit == commit
     path = certifier.certificate_log_path(graph.nodes["demo-skill"])
     entries = parse_certificate_log(path.read_bytes(), tmp_path / "public-keys")
@@ -180,6 +183,18 @@ def test_private_writer_issues_parseable_append_only_certificate(
     assert {
         (check["id"], check["version"]) for check in payload["checks"]
     } >= {("route-smoke-dependencies", 1)}
+
+
+def test_private_writer_module_target_certifies_contained_source(
+    tmp_path: Path,
+) -> None:
+    graph, _states, _commit = create_v4_repository(tmp_path)
+    source_id = "demo-skill.source.gateway"
+
+    result = _certify(tmp_path, target_node_ids=("demo-skill",))
+
+    assert source_id in result.node_ids
+    assert certifier.certificate_log_path(graph.nodes[source_id]).is_file()
 
 
 def test_private_writer_writes_certificate_backed_pooled_review(
@@ -294,7 +309,10 @@ def test_private_writer_allows_preexisting_but_rejects_new_untracked_file(
 
     result = _certify(tmp_path, secret_backend=backend)
 
-    assert result.node_ids == ("demo-skill",)
+    assert result.node_ids == (
+        "demo-skill",
+        "demo-skill.source.gateway",
+    )
 
     def add_untracked(_node_id: str) -> None:
         (tmp_path / "new-untracked.txt").write_text(
@@ -321,14 +339,67 @@ def test_private_writer_detects_post_append_log_corruption(tmp_path: Path) -> No
         _certify(tmp_path, after_append=corrupt)
 
 
-def test_private_writer_rejects_non_atomic_certification(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("allow_non_atomic", "overrides"),
+    [
+        (False, {}),
+        (True, {"allow_non_atomic": True}),
+    ],
+    ids=("default-atomic", "explicit-non-atomic"),
+)
+def test_private_writer_propagates_atomic_mode_to_existing_file_apis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    allow_non_atomic: bool,
+    overrides: dict[str, object],
+) -> None:
     create_v4_repository(tmp_path)
     (tmp_path / "public-keys").mkdir()
+    observed: dict[str, list[object]] = {
+        "read": [],
+        "replace": [],
+        "compare-and-append": [],
+    }
 
-    with pytest.raises(certifier.CertificationError, match="diagnostic-only"):
-        _certify(tmp_path, allow_non_atomic=True)
+    def observe(name: str, operation):
+        def wrapped(*args, **kwargs):
+            observed[name].append(kwargs.get("allow_non_atomic"))
+            return operation(*args, **kwargs)
 
-    assert not tuple(tmp_path.rglob("*.certificates.jsonl"))
+        return wrapped
+
+    monkeypatch.setattr(
+        certifier,
+        "read_regular_file_bytes",
+        observe("read", certifier.read_regular_file_bytes),
+    )
+    monkeypatch.setattr(
+        certifier,
+        "atomic_replace_bytes",
+        observe("replace", certifier.atomic_replace_bytes),
+    )
+    monkeypatch.setattr(
+        certifier,
+        "atomic_compare_and_append_bytes",
+        observe("compare-and-append", certifier.atomic_compare_and_append_bytes),
+    )
+    monkeypatch.setattr(
+        certifier,
+        "render_pooled_review",
+        lambda *_args, **_kwargs: "pooled review\n",
+    )
+
+    result = _certify(tmp_path, **overrides)
+
+    assert "demo-skill" in result.node_ids
+    assert {
+        name: set(values)
+        for name, values in observed.items()
+    } == {
+        "read": {allow_non_atomic},
+        "replace": {allow_non_atomic},
+        "compare-and-append": {allow_non_atomic},
+    }
 
 
 def test_live_writer_does_not_require_migration_review_metadata(
@@ -351,7 +422,10 @@ def test_live_writer_does_not_require_migration_review_metadata(
         require_migration_review=False,
     )
 
-    assert result.node_ids == ("demo-skill",)
+    assert result.node_ids == (
+        "demo-skill",
+        "demo-skill.source.gateway",
+    )
 
 
 def test_private_writer_rejects_caller_supplied_gate_callbacks(
@@ -376,13 +450,16 @@ def test_private_writer_certifies_certifier_through_same_path(
         target_node_ids=("skill-certifier",),
     )
 
-    assert result.node_ids == ("skill-certifier",)
+    assert result.node_ids == (
+        "skill-certifier",
+        "skill-certifier.source.gateway",
+    )
     assert certifier.certificate_log_path(
         graph.nodes["skill-certifier"]
     ).is_file()
-    assert not certifier.certificate_log_path(
+    assert certifier.certificate_log_path(
         graph.nodes["skill-certifier.source.gateway"]
-    ).exists()
+    ).is_file()
 
 
 def test_private_writer_fails_closed_without_current_certifier(
@@ -1000,6 +1077,35 @@ class RejectingDispatcher:
         pytest.fail(f"unexpected dispatch: {key}")
 
 
+def test_cli_propagates_explicit_non_atomic_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def issue(_dispatcher: object, **kwargs: object):
+        calls.append(dict(kwargs))
+        return [], []
+
+    monkeypatch.setattr(certifier, "certify", issue)
+
+    exit_code = certifier.main(
+        [
+            "certify",
+            "demo-skill",
+            "--allow-non-atomic",
+            "--reviewed-repository",
+            str(tmp_path),
+            "--reviewed-commit",
+            "a" * 40,
+        ],
+        dispatcher=RejectingDispatcher(),
+    )
+
+    assert exit_code == 0
+    assert calls[0]["allow_non_atomic"] is True
+
+
 def test_public_certification_resolves_one_target_without_hash_dispatch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1029,6 +1135,7 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
     assert dispatcher.calls == []
     assert len(calls) == 1
     assert calls[0]["repo_root"] == tmp_path.resolve()
+    assert calls[0]["allow_non_atomic"] is False
     assert set(calls[0]["target_node_ids"]) == {
         node_id
         for node_id, node in graph.nodes.items()
@@ -1044,6 +1151,34 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
         and node.certificate_path.suffix == ".jsonl"
         for node in outcomes[0].nodes
     )
+
+
+def test_public_certification_propagates_explicit_non_atomic_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _graph, _states, commit = create_v4_repository(tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def issue(_repo_root: Path, **kwargs: object):
+        calls.append(dict(kwargs))
+        return certifier.V4CertificationResult(
+            node_ids=tuple(kwargs["target_node_ids"]),
+            source_commit=commit,
+        )
+
+    monkeypatch.setattr(certifier, "_certify_v4_repository", issue)
+
+    certifier.certify(
+        RejectingDispatcher(),
+        targets=("demo-skill",),
+        skip_mechanical=True,
+        reviewed_repository=tmp_path,
+        reviewed_commit=commit,
+        allow_non_atomic=True,
+    )
+
+    assert calls[0]["allow_non_atomic"] is True
 
 
 def test_public_certification_without_targets_selects_all_reviewed_modules(

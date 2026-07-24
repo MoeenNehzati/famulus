@@ -145,7 +145,7 @@ def get_repo_root(repo_root: Path | None = None) -> Path:
 
 
 def _build_python_runtime(
-    module_id: str,
+    module_root: Path,
     interface_id: str,
     gateway: dict[str, Any],
     script_args: list[str],
@@ -168,7 +168,6 @@ def _build_python_runtime(
         )
     entrypoint = f"{path}:{symbol}"
     root = get_repo_root(repo_root)
-    skill_root = root / "skills" / module_id
     args_prefix = gateway.get("args_prefix", [])
     if not isinstance(args_prefix, list) or not all(
         isinstance(token, str) and token for token in args_prefix
@@ -178,7 +177,7 @@ def _build_python_runtime(
         )
     env = os.environ.copy()
     src_root = root / "src"
-    entries = [str(skill_root), str(src_root)]
+    entries = [str(module_root), str(src_root)]
     current = env.get("PYTHONPATH")
     env["PYTHONPATH"] = os.pathsep.join(entries + ([current] if current else []))
     env["PYTHONIOENCODING"] = "utf-8:strict"
@@ -199,13 +198,13 @@ def _build_python_runtime(
         )
     try:
         package_bindings = open_runtime_python_package(
-            skill_root / "_rtx",
-            skill_root,
+            module_root / "_rtx",
+            module_root,
             root,
         )
     except BlueprintGraphError as exc:
         raise InvocationError(f"{interface_id}: {exc}") from exc
-    source_path = Path(os.path.abspath(skill_root / module_path))
+    source_path = Path(os.path.abspath(module_root / module_path))
     source_binding = next(
         (binding for binding in package_bindings if binding.path == source_path),
         None,
@@ -223,11 +222,11 @@ def _build_python_runtime(
         for token in (
             "--package-file",
             str(binding.fd),
-            binding.path.relative_to(skill_root).as_posix(),
+            binding.path.relative_to(module_root).as_posix(),
         )
     ]
     return (
-        skill_root,
+        module_root,
         [
             sys.executable,
             "-m",
@@ -386,7 +385,7 @@ def _resolve_export_dispatch(
             f"{export.interface_id}: gateway must remain inside its module"
         ) from exc
     cwd, command, env, runtime_bindings = _build_python_runtime(
-        target_skill,
+        source.skill_root,
         export.interface_id,
         {
             "path": gateway_path,

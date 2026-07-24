@@ -1,6 +1,6 @@
 # Downstream Email and List Workflow Repairs Implementation Plan
 
-> **Deferred pending version-4 adoption and rebase — do not execute.** The
+> **Deferred pending approved post-adoption rebase — do not execute.** The
 > umbrella package is frozen. Its proposed artifacts are not authorized by the
 > unified migration and require fresh functional-predecessor dispositions when
 > rebased.

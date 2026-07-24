@@ -5,6 +5,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
 import _install_scaffold as scaffold
@@ -245,6 +247,82 @@ def test_required_python_packages_preserve_declared_versions(tmp_path):
     assert scaffold.required_python_packages(repo_root) == [
         "cryptography>=44.0.1"
     ]
+
+
+@pytest.mark.parametrize(
+    ("runtime_platform", "expected"),
+    [
+        ("linux", ["Example<2,>=1"]),
+        ("darwin", ["Example!=1.5,>=1"]),
+        ("win32", ["Example>=1,~=1.8"]),
+    ],
+)
+def test_required_python_packages_merge_only_platform_applicable_versions(
+    tmp_path,
+    monkeypatch,
+    runtime_platform,
+    expected,
+):
+    repo_root = tmp_path / "repo"
+    manifest = repo_root / scaffold.RUNTIME_DEPENDENCIES_MANIFEST
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "skills": {
+                    "fixture": {
+                        "interfaces": {
+                            "run": {
+                                "dependencies": [
+                                    {
+                                        "kind": "python-package",
+                                        "name": "Example",
+                                        "version": ">=1",
+                                    },
+                                    {
+                                        "kind": "python-package",
+                                        "name": "example",
+                                        "version": "<2",
+                                        "platforms": {
+                                            "linux": True,
+                                            "macos": False,
+                                            "windows": False,
+                                        },
+                                    },
+                                    {
+                                        "kind": "python-package",
+                                        "name": "EXAMPLE",
+                                        "version": "!=1.5",
+                                        "platforms": {
+                                            "linux": False,
+                                            "macos": True,
+                                            "windows": False,
+                                        },
+                                    },
+                                    {
+                                        "kind": "python-package",
+                                        "name": "Example",
+                                        "version": "~=1.8",
+                                        "platforms": {
+                                            "linux": False,
+                                            "macos": False,
+                                            "windows": True,
+                                        },
+                                    },
+                                ]
+                            }
+                        }
+                    }
+                },
+                "all": {"python-package": ["Example"], "binary": []},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(scaffold.sys, "platform", runtime_platform)
+
+    assert scaffold.required_python_packages(repo_root) == expected
 
 
 def test_certificate_signing_material_capability_uses_shared_owner(

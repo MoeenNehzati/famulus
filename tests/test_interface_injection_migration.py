@@ -1821,6 +1821,46 @@ def test_active_reference_check_reports_only_nonhistorical_tracked_references(
     ]
 
 
+def test_active_reference_check_reports_mixed_case_legacy_markers(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    active = repo / "src" / "active.py"
+    legacy_path = repo / "References" / "Blueprint" / "Health.Schema.Json"
+    active.parent.mkdir(parents=True)
+    legacy_path.parent.mkdir(parents=True)
+    active.write_text(
+        'TARGET = "demo.Machine.run"\nOWNER = "Skill-audit"\n',
+        encoding="utf-8",
+    )
+    legacy_path.write_text("{}\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+
+    findings = migration.check_active_migration_references(repo, {})
+
+    assert [finding.as_document() for finding in findings] == [
+        {
+            "code": "legacy-health-authority",
+            "path": "References/Blueprint/Health.Schema.Json",
+            "line": 0,
+            "reference": "health.schema.json",
+        },
+        {
+            "code": "legacy-public-interface-namespace",
+            "path": "src/active.py",
+            "line": 1,
+            "reference": ".machine.",
+        },
+        {
+            "code": "legacy-certifier-name",
+            "path": "src/active.py",
+            "line": 2,
+            "reference": "skill-audit",
+        },
+    ]
+
+
 def test_active_reference_check_reports_legacy_paths_without_reading_untracked_files(
     tmp_path: Path,
 ) -> None:

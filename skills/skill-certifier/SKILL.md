@@ -32,7 +32,7 @@ Dispatcher Interfaces:
 
 Use the installed `dispatcher` command for these process-bound interfaces:
 - `skill-certifier.interface.certify` — Certify exact v4 module closures by appending signed certificate histories for an explicit reviewed repository commit.
-  - `dispatcher --caller-skill skill-certifier skill-certifier.interface.certify certify [target ...] --reviewed-repository ROOT --reviewed-commit COMMIT [--json]`
+  - `dispatcher --caller-skill skill-certifier skill-certifier.interface.certify certify [target ...] --reviewed-repository ROOT --reviewed-commit COMMIT [--json] [--allow-non-atomic]`
 
 Instruction Interfaces:
 

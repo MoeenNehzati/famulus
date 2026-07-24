@@ -200,7 +200,7 @@ node_type: behavioral_source
 platform_support:
   linux: true
   macos: true
-  windows: false
+  windows: true
 runtime_dependencies: []
 schema_version: 4
 uses_interfaces:

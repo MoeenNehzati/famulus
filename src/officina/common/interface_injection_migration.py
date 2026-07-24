@@ -415,7 +415,7 @@ _MIGRATION_EVIDENCE_PATHS = frozenset(
 )
 
 _NON_ACTIVE_EXECUTION_STATUSES = frozenset(
-    {"frozen_history", "deferred_pending_v4_adoption_and_rebase"}
+    {"frozen_history", "deferred_pending_approved_post_adoption_rebase"}
 )
 
 
@@ -513,11 +513,12 @@ def check_active_migration_references(
         ):
             continue
         path_text = relative.as_posix()
+        folded_path_text = path_text.casefold()
         candidate = root / relative
         if not candidate.exists():
             continue
         for code, marker in _ACTIVE_REFERENCE_PATH_MARKERS:
-            if marker in path_text:
+            if marker.casefold() in folded_path_text:
                 findings.append(
                     ActiveReferenceFinding(code, relative, 0, marker.rsplit("/", 1)[-1])
                 )
@@ -536,8 +537,9 @@ def check_active_migration_references(
         except UnicodeError:
             continue
         for line_number, line in enumerate(text.splitlines(), start=1):
+            folded_line = line.casefold()
             for code, marker in _ACTIVE_REFERENCE_TEXT_MARKERS:
-                if marker in line:
+                if marker.casefold() in folded_line:
                     findings.append(
                         ActiveReferenceFinding(
                             code,

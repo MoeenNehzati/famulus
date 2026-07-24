@@ -1,6 +1,6 @@
 # Per-LLM-Interface Personal Preferences Implementation Plan
 
-> **Deferred pending version-4 adoption and rebase — do not execute.** This
+> **Deferred pending approved post-adoption rebase — do not execute.** This
 > plan overlaps the unified migration's source/interface identity, sidecar,
 > discovery, validator, generated-block, and scaffolding contracts. None of its
 > proposed artifacts is authorized by that migration; resumption requires an
