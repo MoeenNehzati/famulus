@@ -17,9 +17,9 @@ mcp-needs-auth-cache.json
 settings.local.json
 settings.json
 
-# Skill runtime state
-skills/**/.certificates/
-skills/**/.pooled-blueprint-review.yaml
+# Node runtime state
+**/.certificates/
+**/.pooled-blueprint-review.yaml
 skills/email-triage/state/
 skills/email-triage/triage.log
 

@@ -66,11 +66,15 @@ verification. It reconstructs every payload field internally and accepts only
 the exact reviewed repository and commit; it never signs caller-supplied
 certificate data.
 
-The canonical certification view normally requires current certificates. With
-no certificate history, it admits only exact initial certification of
-`skill-certifier` and that invocation's declared read-only mechanical calls.
-This is an admission state in the same certifier path, not a second writer or
-signing route.
+The canonical certification view normally requires current certificates. It
+also admits exact self-certification of `skill-certifier` when its certification
+closure has no history or has appendable canonical, schema-valid,
+signature-valid, unbroken history; the final signing key may be inactive.
+Existing logs must form a dependency-first prefix of the exact closure. Corrupt
+history, a non-prefix gap, a wrong-subject entry, or missing verification
+material fails closed. The only uncertified mechanical subcall admitted is the
+existing read-only blueprint synchronization check. This remains an admission
+state in the same certifier path, not a second writer or signing route.
 
 An exact target includes its certification dependency closure. Omitted targets
 select all repository nodes. New certificates require tracked inputs to match

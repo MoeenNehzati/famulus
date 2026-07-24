@@ -15,6 +15,7 @@ from .certification_hashing import (
     CANONICAL_NODE_HASH_POLICY,
     CERTIFIER_NODE_ID,
     NodeHashState,
+    certification_target_postorder,
     compute_certification_basis_hash,
     compute_node_hash_states,
     derive_certifier_identity,
@@ -516,11 +517,33 @@ def derive_repository_certification_state(
     )
 
 
+def _certifier_target_postorder(
+    state: RepositoryCertificationState,
+) -> tuple[str, ...] | None:
+    """Return the exact dependency-first order for the certifier module target."""
+
+    roots = {
+        CERTIFIER_NODE_ID,
+        *state.graph.module_sources.get(CERTIFIER_NODE_ID, ()),
+    }
+    try:
+        return certification_target_postorder(
+            state.graph,
+            state.states,
+            tuple(roots),
+        )
+    except CertificationHashError:
+        return None
+
+
 def _initial_certificate_state_admissible(
     state: RepositoryCertificationState,
 ) -> bool:
     """Return whether initial certification is pristine or a valid resumable prefix."""
 
+    order = _certifier_target_postorder(state)
+    if order is None:
+        return False
     allowed_concerns = {
         "missing-certificate-log",
         *(
@@ -541,38 +564,71 @@ def _initial_certificate_state_admissible(
         elif any(concern not in allowed_concerns for concern in status.concerns):
             return False
 
-    order: list[str] = []
-    visiting: set[str] = set()
-    visited: set[str] = set()
-
-    def visit(node_id: str) -> bool:
-        if node_id in visited:
-            return True
-        if node_id in visiting:
-            return False
-        state_for_node = state.states.get(node_id)
-        if not isinstance(state_for_node, NodeHashState):
-            return False
-        visiting.add(node_id)
-        for dependency in state_for_node.dependency_hashes:
-            target = (
-                dependency.get("target")
-                if isinstance(dependency, Mapping)
-                else None
-            )
-            if isinstance(target, str) and target in state.graph.nodes:
-                if not visit(target):
-                    return False
-        visiting.remove(node_id)
-        visited.add(node_id)
-        order.append(node_id)
-        return True
-
-    if CERTIFIER_NODE_ID not in state.graph.nodes or not visit(CERTIFIER_NODE_ID):
-        return False
     if not existing <= set(order):
         return False
     return existing == set(order[: len(existing)])
+
+
+def _certifier_renewal_state_admissible(
+    state: RepositoryCertificationState,
+    *,
+    repo_root: Path,
+    allow_non_atomic: bool = False,
+) -> bool:
+    """Return whether the exact certifier closure has appendable signed history."""
+
+    order = _certifier_target_postorder(state)
+    if order is None:
+        return False
+    if any(
+        "source-commit-input-mismatch" in status.concerns
+        for status in state.currentness.nodes.values()
+    ):
+        return False
+    root = Path(repo_root).resolve()
+    try:
+        validator = schema_validator(
+            load_schema(root / "references" / "blueprint" / "certificate.schema.json")
+        )
+        public_key_root = certificate_public_key_root(root)
+        existing: set[str] = set()
+        for node_id in order:
+            node = state.graph.nodes[node_id]
+            path = certificate_log_path(node)
+            if not path.exists():
+                continue
+            existing.add(node_id)
+            entries = parse_certificate_log(
+                read_regular_file_bytes(
+                    path,
+                    allowed_root=node.skill_root,
+                    allow_non_atomic=allow_non_atomic,
+                ),
+                public_key_root,
+                require_active_final=False,
+                allow_non_atomic=allow_non_atomic,
+            )
+            for entry in entries:
+                validator.validate(entry)
+                payload = entry.get("payload")
+                if (
+                    not isinstance(payload, Mapping)
+                    or payload.get("subject") != _expected_subject(node, root)
+                ):
+                    return False
+        if existing != set(order[: len(existing)]):
+            return False
+    except (
+        AtomicWriteError,
+        CertificateLogError,
+        jsonschema.SchemaError,
+        jsonschema.ValidationError,
+        OSError,
+        TypeError,
+        ValueError,
+    ):
+        return False
+    return True
 
 
 def _flag_value(argv: Sequence[str], flag: str) -> str | None:
@@ -588,7 +644,7 @@ def _flag_value(argv: Sequence[str], flag: str) -> str | None:
 
 
 class RepositoryCertificationView(CertificateCurrentnessView):
-    """Current-certificate admission plus the sole bounded initial route."""
+    """Current-certificate admission plus the sole bounded certifier fallback."""
 
     def __init__(
         self,
@@ -611,7 +667,7 @@ class RepositoryCertificationView(CertificateCurrentnessView):
         pattern_name: str | None,
         argv: Sequence[str],
     ) -> CertificationDecision:
-        """Admit only the certifier's exact initial mechanical/certification calls."""
+        """Admit only exact certifier self-certification and its read-only check."""
 
         rejected = CertificationDecision(
             False,
@@ -622,14 +678,11 @@ class RepositoryCertificationView(CertificateCurrentnessView):
             return rejected
         tokens = tuple(argv)
         if interface_id == "skill-maker.interface.sync-blueprints":
-            if (
-                (pattern_name == "check" and tokens == ("--check",))
-                or (pattern_name == "sync" and not tokens)
-            ):
+            if pattern_name == "check" and tokens == ("--check",):
                 return CertificationDecision(
                     True,
-                    "initial-certification",
-                    "Bounded blueprint synchronization for initial certification.",
+                    "certifier-self-certification",
+                    "Bounded blueprint check for certifier self-certification.",
                 )
             return rejected
         if interface_id != "skill-certifier.interface.certify":
@@ -660,8 +713,8 @@ class RepositoryCertificationView(CertificateCurrentnessView):
         ):
             return CertificationDecision(
                 True,
-                "initial-certification",
-                "Bounded initial certification of the canonical certifier.",
+                "certifier-self-certification",
+                "Bounded self-certification of the canonical certifier.",
             )
         return rejected
 
@@ -681,7 +734,14 @@ def repository_certification_view(
         state.currentness,
         repo_root=repo_root,
         source_commit=state.source_commit,
-        bootstrap_allowed=_initial_certificate_state_admissible(state),
+        bootstrap_allowed=(
+            _initial_certificate_state_admissible(state)
+            or _certifier_renewal_state_admissible(
+                state,
+                repo_root=repo_root,
+                allow_non_atomic=allow_non_atomic,
+            )
+        ),
     )
 
 

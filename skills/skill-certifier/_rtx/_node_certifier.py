@@ -23,6 +23,7 @@ from officina.common.certification_hashing import (
     CERTIFIER_CHECK_REGISTRY,
     CertificationHashError,
     NodeHashState,
+    certification_target_postorder,
     compute_node_hash_states,
     compute_certification_basis_hash,
     derive_certifier_identity,
@@ -367,37 +368,6 @@ def _expected_file_hashes(
         if stat.S_ISREG(metadata.st_mode):
             expected[relative] = _v4_hash_bytes(path.read_bytes())
     return expected
-
-
-def _v4_postorder(
-    graph: RepositoryBlueprintGraph,
-    states: Mapping[str, NodeHashState],
-    requested: Sequence[str],
-) -> tuple[str, ...]:
-    """Order exact targets after every dependency in canonical hash state."""
-
-    ordered: list[str] = []
-    visited: set[str] = set()
-
-    def visit(node_id: str) -> None:
-        if node_id in visited:
-            return
-        visited.add(node_id)
-        state = states.get(node_id)
-        if not isinstance(state, NodeHashState):
-            raise CertificationError(f"missing canonical v4 state for {node_id}")
-        for dependency in state.dependency_hashes:
-            target = dependency.get("target")
-            if not isinstance(target, str) or target not in graph.nodes:
-                raise CertificationError(f"invalid canonical v4 dependency for {node_id}")
-            visit(target)
-        ordered.append(node_id)
-
-    for node_id in requested:
-        if node_id not in graph.nodes:
-            raise CertificationError(f"unknown exact v4 certification target: {node_id}")
-        visit(node_id)
-    return tuple(ordered)
 
 
 def _python_route_smoke_trace_specs(
@@ -860,6 +830,38 @@ def _certify_v4_repository(
         raise CertificationError("v4 certification requires the exact Git repository root")
     if snapshot.commit != reviewed_commit:
         raise CertificationError("v4 certification HEAD does not match the reviewed commit")
+
+    def porcelain_status_records(phase: str) -> tuple[bytes, ...]:
+        status = run_git(
+            root,
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            check=False,
+        )
+        if status.returncode != 0:
+            raise CertificationError(f"repository status is unavailable {phase}")
+        return tuple(
+            record
+            for record in status.stdout.rstrip(b"\0").split(b"\0")
+            if record
+        )
+
+    initial_untracked_records: set[bytes] = set()
+    for record in porcelain_status_records("before certification"):
+        if not record.startswith(b"?? "):
+            raise CertificationError(
+                "tracked repository state changed before certification"
+            )
+        try:
+            os.fsdecode(record[3:])
+        except UnicodeError as exc:
+            raise CertificationError(
+                "untracked repository state changed before certification"
+            ) from exc
+        initial_untracked_records.add(record)
+
     mechanical_commit: str | None = None
     if require_migration_review:
         try:
@@ -930,7 +932,14 @@ def _certify_v4_repository(
             reviewed_commit=reviewed_commit,
             allow_non_atomic=allow_non_atomic,
         )
-    order = _v4_postorder(graph, states, tuple(target_node_ids))
+    try:
+        order = certification_target_postorder(
+            graph,
+            states,
+            tuple(target_node_ids),
+        )
+    except CertificationHashError as exc:
+        raise CertificationError(str(exc)) from exc
     initial_route_smoke_audit = _v4_route_smoke_audit(
         graph,
         states,
@@ -1022,17 +1031,8 @@ def _certify_v4_repository(
         raise CertificationError("certificate public-key root is outside repository") from exc
 
     def require_frozen_tracked_inputs(phase: str) -> None:
-        status = run_git(
-            root,
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-            check=False,
-        )
-        if status.returncode != 0:
-            raise CertificationError(f"repository status is unavailable {phase}")
-        for record in status.stdout.rstrip(b"\0").split(b"\0"):
+        current_preexisting_records: set[bytes] = set()
+        for record in porcelain_status_records(phase):
             if not record:
                 continue
             if not record.startswith(b"?? "):
@@ -1041,6 +1041,9 @@ def _certify_v4_repository(
                 relative = Path(os.fsdecode(record[3:]))
             except UnicodeError as exc:
                 raise CertificationError(f"untracked repository state changed {phase}") from exc
+            if record in initial_untracked_records:
+                current_preexisting_records.add(record)
+                continue
             if relative.is_relative_to(public_key_relative) or (
                 ".certificates" in relative.parts
                 and relative.suffix == ".jsonl"
@@ -1053,6 +1056,8 @@ def _certify_v4_repository(
             raise CertificationError(
                 f"untracked repository state changed {phase}: {relative}"
             )
+        if current_preexisting_records != initial_untracked_records:
+            raise CertificationError(f"untracked repository state changed {phase}")
         index = run_git(
             root,
             "diff-index",

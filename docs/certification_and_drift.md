@@ -268,10 +268,15 @@ post-write verification remain defense in depth.
 
 The dispatcher derives one repository-backed certification view. In ordinary
 operation it admits only exports whose module and implementing source have
-current certificates. With no certificate history, the same view admits only
-the certifier's exact bounded blueprint synchronization/check calls and exact
-initial certification of `skill-certifier`. Suspect state fails closed; a
-valid dependency-first partial prefix may resume through the same path.
+current certificates. The same view admits exact self-certification of
+`skill-certifier` when its certification closure has no history or has
+appendable history: every existing log in the closure must be canonical,
+schema-valid, signature-valid, and unbroken, although its final signing key may
+be inactive, and existing logs must form a dependency-first prefix of the exact
+closure. An empty closure history or a valid partial prefix may resume through
+this path. Corrupt history, a non-prefix gap, a wrong-subject entry, or missing
+verification material fails closed. The only uncertified mechanical subcall
+admitted is the existing read-only blueprint synchronization check.
 
 This is a cooperative same-user contract, not filesystem isolation between
 same-UID processes. A malicious process running as the same OS user may access

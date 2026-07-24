@@ -282,6 +282,34 @@ def test_private_writer_aborts_pre_append_races(
         _certify(tmp_path, before_append=mutate)
 
 
+def test_private_writer_allows_preexisting_but_rejects_new_untracked_file(
+    tmp_path: Path,
+) -> None:
+    create_v4_repository(tmp_path)
+    (tmp_path / "preexisting-untracked.txt").write_text(
+        "preexisting\n",
+        encoding="utf-8",
+    )
+    backend = MemorySecretBackend()
+
+    result = _certify(tmp_path, secret_backend=backend)
+
+    assert result.node_ids == ("demo-skill",)
+
+    def add_untracked(_node_id: str) -> None:
+        (tmp_path / "new-untracked.txt").write_text(
+            "new\n",
+            encoding="utf-8",
+        )
+
+    with pytest.raises(certifier.CertificationError, match="changed"):
+        _certify(
+            tmp_path,
+            secret_backend=backend,
+            before_append=add_untracked,
+        )
+
+
 def test_private_writer_detects_post_append_log_corruption(tmp_path: Path) -> None:
     graph, _states, _commit = create_v4_repository(tmp_path)
 
@@ -633,7 +661,7 @@ def test_private_writer_audits_exact_dependency_postorder_twice_before_append(
     repository_graph = _add_cross_owner_contract(tmp_path)
     target = "demo-skill.source.gateway"
     dependency = "demo-skill.source.contract"
-    real_postorder = certifier._v4_postorder
+    real_postorder = certifier.certification_target_postorder
     postorders: list[tuple[str, ...]] = []
     audit_scopes: list[tuple[str, ...]] = []
 
@@ -664,7 +692,7 @@ def test_private_writer_audits_exact_dependency_postorder_twice_before_append(
         audit_scopes.append(certification_node_ids)
         return ()
 
-    monkeypatch.setattr(certifier, "_v4_postorder", record_postorder)
+    monkeypatch.setattr(certifier, "certification_target_postorder", record_postorder)
     monkeypatch.setattr(certifier, "audit_route_smoke_dependencies", audit)
 
     result = _certify(

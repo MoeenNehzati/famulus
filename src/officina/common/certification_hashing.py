@@ -13,7 +13,7 @@ from pathlib import Path
 from pathlib import PurePosixPath
 import stat
 import subprocess
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Sequence
 
 import jsonschema
 import yaml
@@ -54,6 +54,61 @@ class NodeHashState:
     input_manifest: tuple[dict[str, str], ...] = ()
     dependency_hashes: tuple[dict[str, Any], ...] = ()
     certification_basis_hash: str | None = None
+
+
+def certification_target_postorder(
+    graph: RepositoryBlueprintGraph,
+    states: Mapping[str, NodeHashState],
+    requested: Sequence[str],
+) -> tuple[str, ...]:
+    """Order exact certification targets after every canonical dependency."""
+
+    ordered: list[str] = []
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(node_id: str) -> None:
+        if node_id in visited:
+            return
+        if node_id in visiting:
+            raise CertificationHashError(
+                f"canonical certification dependency cycle at {node_id}"
+            )
+        if node_id not in graph.nodes:
+            raise CertificationHashError(
+                f"unknown exact certification target: {node_id}"
+            )
+        state = states.get(node_id)
+        if not isinstance(state, NodeHashState):
+            raise CertificationHashError(
+                f"missing canonical certification state for {node_id}"
+            )
+        visiting.add(node_id)
+        dependencies: list[tuple[str, str, int]] = []
+        for dependency in state.dependency_hashes:
+            relation = dependency.get("relation")
+            target = dependency.get("target")
+            version = dependency.get("version")
+            if (
+                not isinstance(relation, str)
+                or not isinstance(target, str)
+                or target not in graph.nodes
+                or not isinstance(version, int)
+                or isinstance(version, bool)
+            ):
+                raise CertificationHashError(
+                    f"invalid canonical certification dependency for {node_id}"
+                )
+            dependencies.append((relation, target, version))
+        for _relation, target, _version in sorted(dependencies):
+            visit(target)
+        visiting.remove(node_id)
+        visited.add(node_id)
+        ordered.append(node_id)
+
+    for node_id in sorted(set(requested)):
+        visit(node_id)
+    return tuple(ordered)
 
 
 @dataclass(frozen=True, order=True)

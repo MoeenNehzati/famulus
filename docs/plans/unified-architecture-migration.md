@@ -62,9 +62,12 @@ uses the public verification key through its supported code path. The existing
 `install-assistant-tools` owner provisions the user-scoped installation on
 Linux, macOS, and Windows; no broker, service identity, second writer, special
 bootstrap writer, or parallel signing path is added. The canonical
-repository-backed certification view may admit only the certifier's exact
-initial certification call and its declared read-only mechanical subcalls when
-the repository has no certificate logs and the complete basis is commit-ready.
+repository-backed certification view may admit only exact self-certification
+of the certifier and its read-only blueprint synchronization check when the
+complete basis is commit-ready and the certifier closure has no history or
+appendable canonical, schema-valid, signature-valid, unbroken history forming a
+dependency-first prefix of the exact closure. Corrupt history, a non-prefix
+gap, a wrong-subject entry, or missing verification material fails closed.
 
 Windows remains a target, not a completed certificate-write platform. The
 current `src/officina/common/atomic_files.py` fails closed off POSIX. Task 3
@@ -385,11 +388,12 @@ reviewed retirement. Mechanism deletion must not silently delete a safety rule.
   secure path is the default. Expose an explicit non-atomic fallback for hosts
   where it cannot operate; never fall back silently. Do not add a parallel
   writer or platform provider file.
-- [ ] Keep runtime fail-closed for missing or suspect certification. Initial
-  `skill-certifier` certification uses the same certifier path and complete
-  basis checks. Permit only its exact initial call and declared read-only
-  mechanical subcalls through the canonical certification view; add no
-  bootstrap service, alternate writer, or alternate signing path.
+- [ ] Keep runtime fail-closed for missing or suspect certification.
+  `skill-certifier` self-certification uses the same certifier path and complete
+  basis checks. Permit only its exact call and read-only blueprint
+  synchronization check when its closure history is absent or an appendable
+  dependency-first prefix; add no bootstrap service, alternate writer, or
+  alternate signing path.
 - [ ] Require the certifier implementation and tracked target inputs to match
   their commits. Bind included ignored/untracked inputs by pre-certification
   digest and abort on mutation before write.

@@ -19,7 +19,7 @@ dependencies:
   reason: Imports Git snapshots and file provenance from git_provenance.py.
   source: common.source.git-provenance
   version: 1
-description: Resolves the canonical certification basis and node inputs, computes deterministic v4 node hashes, maps already observed route-smoke paths to declared authority, and derives certifier identity and expected checks.
+description: Resolves the canonical certification basis and node inputs, computes deterministic v4 node hashes and dependency-first target order, maps already observed route-smoke paths to declared authority, and derives certifier identity and expected checks.
 gateway:
   language: Python
   path: certification_hashing.py
@@ -41,6 +41,7 @@ interfaces:
             - {value: expected-checks, description: Return the exact versioned checks owned by the certifier.}
             - {value: derive-certifier-identity, description: "Derive certifier identity from the v4 graph, node state, and source commit."}
             - {value: hash-nodes, description: Compute canonical v4 node hash states from the graph and node-input policy.}
+            - {value: order-certification-targets, description: Order exact targets after their canonical certification dependencies.}
         repository-root:
           description: Exact repository root for policy, Git provenance, and certification-basis operations.
           required: false
@@ -83,7 +84,7 @@ interfaces:
         writes:
         - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [python-object], sensitivity: user-private}
         network: []
-    description: Computes canonical v4 certification state and maps already observed route-smoke paths for Python callers.
+    description: Computes canonical v4 certification state and dependency-first target order, and maps already observed route-smoke paths for Python callers.
     version: 1
 node_type: behavioral_source
 schema_version: 4

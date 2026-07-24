@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from copy import deepcopy
 import subprocess
 from pathlib import Path
@@ -11,6 +12,7 @@ import officina.common.certification_view as certification_view_module
 from officina.common.certification_hashing import NodeHashState, compute_node_hash_states
 from officina.common.certificate_records import (
     canonical_certificate_envelope_bytes,
+    certificate_public_key_root,
     certificate_entry_hash,
     load_or_create_certificate_signing_key,
     rotate_certificate_signing_key,
@@ -28,7 +30,13 @@ from officina.common.certification_view import (
     RepositoryCertificationView,
     RepositoryCertificationState,
     certificate_log_path,
+    derive_repository_certification_state,
     evaluate_certificate_currentness,
+    repository_certification_view,
+)
+from v4_certification_fixtures import (
+    create_v4_repository,
+    payload as v4_payload,
 )
 
 
@@ -301,6 +309,66 @@ def _fixture(root: Path) -> tuple[object, dict[str, object], str, Path, MemorySe
     return graph, states, commit, public_key_root, backend, key
 
 
+def _certifier_repository_with_provider_source(
+    root: Path,
+) -> RepositoryCertificationState:
+    create_v4_repository(root, extra_modules=("provider",))
+    source_id = "skill-certifier.source.provider-client"
+    source_path = root / "skills" / "skill-certifier" / "_rtx" / "provider_client.py"
+    source_path.parent.mkdir()
+    source_path.write_text("VALUE = 1\n", encoding="utf-8")
+    _write_yaml(
+        root / "skills" / "skill-certifier" / "blueprints" / "provider-client.yaml",
+        {
+            "schema_version": 4,
+            "node_type": "behavioral_source",
+            "id": source_id,
+            "version": 1,
+            "description": "Certifier provider client.",
+            "gateway": {
+                "path": "_rtx/provider_client.py",
+                "language": "Python",
+            },
+            "content": [r"_rtx/provider_client\.py"],
+            "dependencies": [
+                {
+                    "source": "provider.source.gateway",
+                    "version": 1,
+                    "reason": "Uses the provider source.",
+                    "blueprint": {
+                        "base": "repository-root",
+                        "path": "skills/provider/blueprints/gateway.yaml",
+                    },
+                }
+            ],
+            "uses_interfaces": [],
+            "interfaces": {
+                f"{source_id}.interface.run": {
+                    "version": 1,
+                    "description": "Run.",
+                    "contract": _contract(),
+                }
+            },
+        },
+    )
+    module_path = root / "skills" / "skill-certifier" / "blueprint.yaml"
+    module = yaml.safe_load(module_path.read_text(encoding="utf-8"))
+    module["content"].append(r"_rtx/provider_client\.py")
+    module["sources"][source_id] = {
+        "blueprint": {
+            "base": "module-root",
+            "path": "blueprints/provider-client.yaml",
+        }
+    }
+    _write_yaml(module_path, module)
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-qm", "add provider client"],
+        check=True,
+    )
+    return derive_repository_certification_state(root)
+
+
 def _evaluate(
     root: Path,
     graph: object,
@@ -547,7 +615,7 @@ def test_schema_rejects_invalid_historical_certificate_data(tmp_path: Path) -> N
     assert "invalid-certificate-schema" in status.concerns
 
 
-def test_zero_certificate_view_rejects_obsolete_hash_bootstrap_route(
+def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
     tmp_path: Path,
 ) -> None:
     view = RepositoryCertificationView(
@@ -575,12 +643,6 @@ def test_zero_certificate_view_rejects_obsolete_hash_bootstrap_route(
         interface_id="skill-maker.interface.sync-blueprints",
         pattern_name="check",
         argv=("--check",),
-    ).certified
-    assert view.check_bootstrap(
-        caller_module_id="skill-certifier",
-        interface_id="skill-maker.interface.sync-blueprints",
-        pattern_name="sync",
-        argv=(),
     ).certified
 
     rejected = (
@@ -621,6 +683,12 @@ def test_zero_certificate_view_rejects_obsolete_hash_bootstrap_route(
             "skill-maker.interface.sync-blueprints",
             "sync",
             ("--check",),
+        ),
+        (
+            "skill-certifier",
+            "skill-maker.interface.sync-blueprints",
+            "sync",
+            (),
         ),
         (
             "daily-plan",
@@ -677,20 +745,117 @@ def test_repository_view_never_bootstraps_when_initial_state_is_not_clean(
     assert decision.code == "certification-unavailable"
 
 
-def test_initial_certification_can_resume_only_a_current_dependency_first_prefix(
+def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_history(
     tmp_path: Path,
 ) -> None:
+    graph, states, commit = create_v4_repository(tmp_path)
+    public_key_root = certificate_public_key_root(tmp_path)
+    public_key_root.mkdir(parents=True)
+    backend = MemorySecretBackend()
+    key = load_or_create_certificate_signing_key(
+        public_key_root,
+        secret_backend=backend,
+    )
+    certifier_root = graph.nodes["skill-certifier"].skill_root
+    certifier_targets = tuple(
+        sorted(
+            node_id
+            for node_id, node in graph.nodes.items()
+            if node.skill_root == certifier_root
+        )
+    )
+    signed: dict[str, dict] = {}
+    for node_id in certifier_targets:
+        signed[node_id] = sign_certificate_payload(
+            v4_payload(
+                tmp_path,
+                graph,
+                states,
+                node_id,
+                commit,
+                key.key_id,
+            ),
+            key,
+        )
+        _write_log(graph, node_id, [signed[node_id]])
+    rotate_certificate_signing_key(public_key_root, secret_backend=backend)
+
+    view = repository_certification_view(tmp_path)
+    assert all(
+        "suspect-certificate-log" in view.report.nodes[node_id].concerns
+        for node_id in certifier_targets
+    )
+    exact = (
+        "certify",
+        "skill-certifier",
+        "--reviewed-repository",
+        str(tmp_path),
+        "--reviewed-commit",
+        commit,
+    )
+    assert view.check_bootstrap(
+        caller_module_id="skill-certifier",
+        interface_id="skill-certifier.interface.certify",
+        pattern_name=None,
+        argv=exact,
+    ).certified
+    assert not view.check_bootstrap(
+        caller_module_id="skill-certifier",
+        interface_id="skill-certifier.interface.certify",
+        pattern_name=None,
+        argv=(
+            "certify",
+            "demo-skill",
+            "--reviewed-repository",
+            str(tmp_path),
+            "--reviewed-commit",
+            commit,
+        ),
+    ).certified
+
+    corrupt_node_id = certifier_targets[-1]
+    corrupt = deepcopy(signed[corrupt_node_id])
+    corrupt["signature"]["value"] = "base64:" + base64.b64encode(
+        b"\0" * 64
+    ).decode("ascii")
+    _write_log(graph, corrupt_node_id, [corrupt])
+
+    assert not repository_certification_view(tmp_path).check_bootstrap(
+        caller_module_id="skill-certifier",
+        interface_id="skill-certifier.interface.certify",
+        pattern_name=None,
+        argv=exact,
+    ).certified
+
+
+def test_partial_certifier_multi_root_closure_keeps_only_read_only_sync_fallback(
+    tmp_path: Path,
+) -> None:
+    certifier_root = tmp_path / "skills" / "skill-certifier"
     nodes = {
         node_id: BlueprintNode(
             node_id=node_id,
-            node_type="module" if node_id == "skill-certifier" else "behavioral_source",
+            node_type=(
+                "module"
+                if node_id == "skill-certifier"
+                else "behavioral_source"
+            ),
             version=1,
-            skill_root=tmp_path / "skills" / "skill-certifier",
+            skill_root=(
+                certifier_root
+                if node_id.startswith("skill-certifier")
+                else tmp_path / "skills" / "skill-maker"
+            ),
             blueprint_path=tmp_path / f"{node_id}.yaml",
             gateway_path=None,
             declaration={"schema_version": 4},
         )
-        for node_id in ("dependency", "skill-certifier")
+        for node_id in (
+            "skill-certifier",
+            "skill-certifier.source.gateway",
+            "skill-certifier.source.runtime",
+            "skill-maker.source.sync-blueprints",
+        )
     }
     graph = RepositoryBlueprintGraph(
         nodes=nodes,
@@ -699,19 +864,30 @@ def test_initial_certification_can_resume_only_a_current_dependency_first_prefix
         export_edges=(),
         helper_edges=(),
         certification_edges=(),
-        module_sources={},
+        module_sources={
+            "skill-certifier": (
+                "skill-certifier.source.gateway",
+                "skill-certifier.source.runtime",
+            )
+        },
         direct_file_owners={},
     )
     states = {
-        "dependency": NodeHashState(),
-        "skill-certifier": NodeHashState(
+        "skill-certifier": NodeHashState(),
+        "skill-certifier.source.gateway": NodeHashState(
             dependency_hashes=(
-                {"relation": "uses-source", "target": "dependency", "version": 1},
+                {
+                    "relation": "uses-source",
+                    "target": "skill-maker.source.sync-blueprints",
+                    "version": 1,
+                },
             )
         ),
+        "skill-certifier.source.runtime": NodeHashState(),
+        "skill-maker.source.sync-blueprints": NodeHashState(),
     }
 
-    def state(existing: set[str], *, current: bool = True) -> RepositoryCertificationState:
+    def state(existing: set[str]) -> RepositoryCertificationState:
         for node_id, node in nodes.items():
             path = certificate_log_path(node)
             if node_id in existing:
@@ -723,11 +899,9 @@ def test_initial_certification_can_resume_only_a_current_dependency_first_prefix
             nodes={
                 node_id: CertificateNodeCurrentness(
                     node_id=node_id,
-                    current=current if node_id in existing else False,
+                    current=node_id in existing,
                     concerns=(
                         ()
-                        if node_id in existing and current
-                        else ("suspect-certificate-log",)
                         if node_id in existing
                         else ("missing-certificate-log",)
                     ),
@@ -745,13 +919,115 @@ def test_initial_certification_can_resume_only_a_current_dependency_first_prefix
             currentness=report,
         )
 
-    assert certification_view_module._initial_certificate_state_admissible(state(set()))
-    assert certification_view_module._initial_certificate_state_admissible(
-        state({"dependency"})
+    partial = state(
+        {
+            "skill-certifier",
+            "skill-maker.source.sync-blueprints",
+        }
     )
-    assert not certification_view_module._initial_certificate_state_admissible(
-        state({"skill-certifier"})
+    view = RepositoryCertificationView(
+        partial.currentness,
+        repo_root=tmp_path,
+        source_commit=partial.source_commit,
+        bootstrap_allowed=certification_view_module._initial_certificate_state_admissible(
+            partial
+        ),
     )
-    assert not certification_view_module._initial_certificate_state_admissible(
-        state({"dependency"}, current=False)
+
+    assert view.check_bootstrap(
+        caller_module_id="skill-certifier",
+        interface_id="skill-maker.interface.sync-blueprints",
+        pattern_name="check",
+        argv=("--check",),
+    ).certified
+    assert not view.check_bootstrap(
+        caller_module_id="skill-certifier",
+        interface_id="skill-maker.interface.sync-blueprints",
+        pattern_name="sync",
+        argv=(),
+    ).certified
+
+
+def test_renewal_rejects_nonprefix_second_root_provider_history(
+    tmp_path: Path,
+) -> None:
+    state = _certifier_repository_with_provider_source(tmp_path)
+    order = certification_view_module._certifier_target_postorder(state)
+    assert order == (
+        "skill-certifier",
+        "skill-certifier.source.gateway",
+        "provider.source.gateway",
+        "skill-certifier.source.provider-client",
+    )
+    public_key_root = certificate_public_key_root(tmp_path)
+    public_key_root.mkdir(parents=True)
+    key = load_or_create_certificate_signing_key(
+        public_key_root,
+        secret_backend=MemorySecretBackend(),
+    )
+    for node_id in (
+        "skill-certifier",
+        "skill-certifier.source.gateway",
+        "skill-certifier.source.provider-client",
+    ):
+        _write_log(
+            state.graph,
+            node_id,
+            [
+                sign_certificate_payload(
+                    v4_payload(
+                        tmp_path,
+                        state.graph,
+                        state.states,
+                        node_id,
+                        state.source_commit,
+                        key.key_id,
+                    ),
+                    key,
+                )
+            ],
+        )
+    state = derive_repository_certification_state(tmp_path)
+
+    assert not certification_view_module._certifier_renewal_state_admissible(
+        state,
+        repo_root=tmp_path,
+    )
+
+
+def test_renewal_rejects_signed_entry_for_different_log_subject(
+    tmp_path: Path,
+) -> None:
+    create_v4_repository(tmp_path)
+    state = derive_repository_certification_state(tmp_path)
+    public_key_root = certificate_public_key_root(tmp_path)
+    public_key_root.mkdir(parents=True)
+    key = load_or_create_certificate_signing_key(
+        public_key_root,
+        secret_backend=MemorySecretBackend(),
+    )
+    log_node_id = "skill-certifier.source.gateway"
+    _write_log(
+        state.graph,
+        log_node_id,
+        [
+            sign_certificate_payload(
+                v4_payload(
+                    tmp_path,
+                    state.graph,
+                    state.states,
+                    "skill-certifier",
+                    state.source_commit,
+                    key.key_id,
+                ),
+                key,
+            )
+        ],
+    )
+    state = derive_repository_certification_state(tmp_path)
+    assert "subject-mismatch" in state.currentness.nodes[log_node_id].concerns
+
+    assert not certification_view_module._certifier_renewal_state_admissible(
+        state,
+        repo_root=tmp_path,
     )
