@@ -745,8 +745,10 @@ def test_completeness_findings_block_structural_draft_signing(
 class FakeDispatcher:
     def __init__(self, payload: dict[str, object]) -> None:
         self.payload = payload
+        self.calls: list[tuple[str, dict[str, object]]] = []
 
-    def dispatch(self, key: str, **_kwargs: object):
+    def dispatch(self, key: str, **kwargs: object):
+        self.calls.append((key, kwargs))
         if key == "compute-hashes":
             return SimpleNamespace(
                 returncode=0,
@@ -789,8 +791,9 @@ def test_public_certification_uses_only_v4_certificate_writer(
 
     monkeypatch.setattr(certifier, "_certify_v4_repository", issue)
 
+    dispatcher = FakeDispatcher(payload)
     evidence, outcomes = certifier.certify(
-        FakeDispatcher(payload),
+        dispatcher,
         targets=("demo-skill",),
         skip_mechanical=True,
         reviewed_repository=tmp_path,
@@ -798,6 +801,19 @@ def test_public_certification_uses_only_v4_certificate_writer(
     )
 
     assert evidence == []
+    assert dispatcher.calls[0] == (
+        "compute-hashes",
+        {
+            "args": [
+                "compute-hashes",
+                "--skill-root",
+                str((tmp_path / "skills" / "demo-skill").resolve()),
+                "--json",
+            ],
+            "text": True,
+            "check": False,
+        },
+    )
     assert len(calls) == 1
     assert calls[0]["repo_root"] == tmp_path.resolve()
     assert set(calls[0]["target_node_ids"]) == {
@@ -811,3 +827,73 @@ def test_public_certification_uses_only_v4_certificate_writer(
         and node.certificate_path.suffix == ".jsonl"
         for node in outcomes[0].nodes
     )
+
+
+def test_public_certification_without_targets_hashes_reviewed_module_roots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, states, commit = create_v4_repository(tmp_path)
+    expected_roots = tuple(
+        sorted(
+            {
+                node.skill_root.resolve()
+                for node in graph.nodes.values()
+                if node.node_type == "module"
+            },
+            key=lambda path: path.as_posix(),
+        )
+    )
+    requested_roots: list[Path] = []
+
+    class ExactRootDispatcher:
+        def dispatch(self, key: str, **kwargs: object):
+            assert key == "compute-hashes"
+            args = kwargs["args"]
+            assert isinstance(args, list)
+            assert args[:2] == ["compute-hashes", "--skill-root"]
+            module_root = Path(args[2]).resolve()
+            requested_roots.append(module_root)
+            payload = {
+                "skills": [
+                    {
+                        "skill": module_root.name,
+                        "source": "test",
+                        "package_root": str(tmp_path),
+                        "skills_root": str(module_root.parent),
+                        "hashes": {
+                            "nodes": {
+                                node_id: {"node_hash": states[node_id].node_hash}
+                                for node_id, node in graph.nodes.items()
+                                if node.skill_root.resolve() == module_root
+                            }
+                        },
+                    }
+                ]
+            }
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(payload),
+                stderr="",
+            )
+
+    def issue(_repo_root: Path, **kwargs: object):
+        return certifier.V4CertificationResult(
+            node_ids=tuple(kwargs["target_node_ids"]),
+            source_commit=commit,
+        )
+
+    monkeypatch.setattr(certifier, "_certify_v4_repository", issue)
+
+    _evidence, outcomes = certifier.certify(
+        ExactRootDispatcher(),
+        targets=(),
+        skip_mechanical=True,
+        reviewed_repository=tmp_path,
+        reviewed_commit=commit,
+    )
+
+    assert tuple(requested_roots) == expected_roots
+    assert {outcome.module for outcome in outcomes} == {
+        root.name for root in expected_roots
+    }

@@ -1662,6 +1662,52 @@ def collect_targets(
     return result
 
 
+def reviewed_repository_target_requests(
+    graph: RepositoryBlueprintGraph,
+    requests: Sequence[str],
+) -> tuple[str, ...]:
+    """Resolve requested modules only within the reviewed repository graph."""
+
+    module_roots = tuple(
+        sorted(
+            {
+                node.skill_root.resolve()
+                for node in graph.nodes.values()
+                if node.node_type == "module"
+            },
+            key=lambda path: path.as_posix(),
+        )
+    )
+    if not module_roots:
+        raise CertificationError("reviewed repository contains no v4 modules")
+    if not requests:
+        return tuple(root.as_posix() for root in module_roots)
+
+    roots_by_name: dict[str, list[Path]] = {}
+    for root in module_roots:
+        roots_by_name.setdefault(root.name, []).append(root)
+
+    resolved: list[str] = []
+    for request in requests:
+        path_like = (
+            "/" in request
+            or "\\" in request
+            or request.startswith((".", "~"))
+        )
+        if path_like:
+            candidate = Path(request).expanduser().resolve()
+            matches = [root for root in module_roots if root == candidate]
+        else:
+            matches = roots_by_name.get(request, [])
+        if len(matches) != 1:
+            raise CertificationError(
+                f"target {request!r} resolves to {len(matches)} modules "
+                "in the reviewed repository"
+            )
+        resolved.append(matches[0].as_posix())
+    return tuple(resolved)
+
+
 def certify(
     dispatcher: Dispatcher,
     *,
@@ -1673,19 +1719,11 @@ def certify(
 ) -> tuple[list[CommandResult], list[CertificationOutcome]]:
     """Issue certificates for exact v4 module targets."""
 
-    resolved = collect_targets(dispatcher, targets)
-    repositories = {target.package_root.resolve() for target in resolved}
-    if len(repositories) != 1:
-        raise CertificationError("one certification invocation may attest only one repository")
-    repository = next(iter(repositories))
     if reviewed_repository is None or reviewed_commit is None:
         raise CertificationError(
             "certification requires the exact LLM-reviewed repository and commit"
         )
-    if Path(reviewed_repository).resolve() != repository:
-        raise CertificationError(
-            "semantic review repository does not match the target repository"
-        )
+    repository = Path(reviewed_repository).resolve()
 
     graph = load_repository_blueprint_graph(
         repository,
@@ -1696,6 +1734,14 @@ def certify(
         for node in graph.nodes.values()
     ):
         raise CertificationError("certification accepts only an all-v4 repository")
+
+    exact_requests = reviewed_repository_target_requests(graph, targets)
+    resolved = collect_targets(dispatcher, exact_requests)
+    repositories = {target.package_root.resolve() for target in resolved}
+    if repositories != {repository}:
+        raise CertificationError(
+            "semantic review repository does not match the target repository"
+        )
 
     target_nodes_by_module: dict[str, tuple[str, ...]] = {}
     requested_node_ids: set[str] = set()
