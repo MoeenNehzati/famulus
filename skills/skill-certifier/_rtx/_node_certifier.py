@@ -36,6 +36,7 @@ from officina.common.certificate_records import (
     certificate_entry_hash,
     load_or_create_certificate_signing_key,
     parse_certificate_log,
+    provision_certificate_signing_material,
     sign_certificate_payload,
 )
 from officina.common.atomic_files import (
@@ -926,11 +927,18 @@ def _certify_v4_repository(
                     f"tracked certification input changed {phase}: {path}"
                 )
 
-    key = load_or_create_certificate_signing_key(
-        public_key_root,
-        secret_backend=secret_backend,
-        allow_non_atomic=allow_non_atomic,
-    )
+    if Path(public_key_root).resolve() == certificate_public_key_root(root):
+        key = provision_certificate_signing_material(
+            root,
+            secret_backend=secret_backend,
+            allow_non_atomic=allow_non_atomic,
+        )
+    else:
+        key = load_or_create_certificate_signing_key(
+            public_key_root,
+            secret_backend=secret_backend,
+            allow_non_atomic=allow_non_atomic,
+        )
     written: list[str] = []
     for node_id in order:
         log_path = certificate_log_path(graph.nodes[node_id])

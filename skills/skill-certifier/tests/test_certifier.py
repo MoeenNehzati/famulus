@@ -23,6 +23,7 @@ if str(TEST_ROOT) not in sys.path:
     sys.path.insert(0, str(TEST_ROOT))
 
 from officina.common.certificate_records import (
+    certificate_public_key_root,
     certificate_entry_hash,
     load_or_create_certificate_signing_key,
     parse_certificate_log,
@@ -137,6 +138,22 @@ def _add_cross_owner_contract(repo: Path):
         repo,
         schema_root=repo / "references" / "blueprint",
     )
+
+
+def test_live_certification_provisions_missing_canonical_key_root(
+    tmp_path: Path,
+) -> None:
+    _graph, _states, commit = create_v4_repository(tmp_path)
+    public_key_root = certificate_public_key_root(tmp_path)
+
+    result = _certify(
+        tmp_path,
+        public_key_root=public_key_root,
+        secret_backend=MemorySecretBackend(),
+    )
+
+    assert result.source_commit == commit
+    assert (public_key_root / "active-key-id").is_file()
 
 
 def test_private_writer_issues_parseable_append_only_certificate(
