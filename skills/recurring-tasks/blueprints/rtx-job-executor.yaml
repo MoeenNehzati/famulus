@@ -7,6 +7,12 @@ dependencies:
   reason: Loads the recurring job definition selected from the shared jobs configuration.
   source: recurring-tasks.source.jobs-config
   version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: recurring-tasks.source.rtx-init
+  version: 1
 description: Loads one named recurring-job definition, parses its command into environment assignments and argv, executes it without a shell, and appends combined output to the job's run log.
 gateway:
   language: Python
