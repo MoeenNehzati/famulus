@@ -1335,9 +1335,13 @@ def _windows_rename_handle(
     """Atomically rename relative to a retained 64-bit directory handle."""
 
     kernel32, _advapi32, _ntdll = _windows_modules()
+    # The temporary file already resides in the retained destination directory.
+    # With a simple new name, the native API renames within that same directory;
+    # RootDirectory must therefore be NULL rather than redundantly supplied.
+    del parent_handle
     information = _windows_file_rename_info(
         name,
-        parent_handle,
+        0,
         replace=replace,
     )
     for information_class in (22, 3):

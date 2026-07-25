@@ -2305,6 +2305,10 @@ def test_candidate_source_rejects_escaping_overlay_symlink(
     candidate.mkdir()
     (source / ".gitignore").write_text("# tracked\n")
     subprocess.run(["git", "init", "-q", str(source)], check=True)
+    subprocess.run(
+        ["git", "-C", str(source), "config", "core.autocrlf", "false"],
+        check=True,
+    )
     subprocess.run(["git", "-C", str(source), "config", "user.name", "Test"], check=True)
     subprocess.run(["git", "-C", str(source), "config", "user.email", "test@example.invalid"], check=True)
     subprocess.run(["git", "-C", str(source), "add", ".gitignore"], check=True)
@@ -2349,6 +2353,10 @@ def test_candidate_source_snapshot_detects_post_capture_mutation(tmp_path: Path)
     tracked = source / "tracked.txt"
     tracked.write_text("before\n")
     subprocess.run(["git", "init", "-q", str(source)], check=True)
+    subprocess.run(
+        ["git", "-C", str(source), "config", "core.autocrlf", "false"],
+        check=True,
+    )
     subprocess.run(
         ["git", "-C", str(source), "config", "user.name", "Test"], check=True
     )

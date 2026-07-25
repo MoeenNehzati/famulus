@@ -358,5 +358,8 @@ def test_inventory_rejects_ancestor_replaced_by_symlink(
         replace_after_discovery,
     )
 
-    with pytest.raises(BlueprintInventoryError, match="securely open"):
+    with pytest.raises(
+        BlueprintInventoryError,
+        match="securely open|reparse point",
+    ):
         tuple(iter_blueprints(tmp_path))

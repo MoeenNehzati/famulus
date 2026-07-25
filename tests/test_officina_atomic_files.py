@@ -901,17 +901,24 @@ def test_windows_file_disposition_boolean_has_native_one_byte_abi() -> None:
     assert ctypes.sizeof(atomic_files._WinFileDispositionInformation) == 1
 
 
-def test_windows_rename_retries_legacy_handle_relative_class(
+def test_windows_rename_retries_legacy_class_with_same_directory_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    roots: list[int | None] = []
+
     class Kernel32:
         def SetFileInformationByHandle(
             self,
             _handle: object,
             information_class: int,
-            _information: object,
+            information: object,
             _size: int,
         ) -> int:
+            rename = ctypes.cast(
+                information,
+                ctypes.POINTER(atomic_files._WinFileRenameInfo),
+            ).contents
+            roots.append(rename.RootDirectory)
             if information_class == 22:
                 return 0
             if information_class == 3:
@@ -936,6 +943,7 @@ def test_windows_rename_retries_legacy_handle_relative_class(
         "certificate.jsonl",
         replace=True,
     )
+    assert roots == [None, None]
 
 
 def test_windows_mark_delete_reports_native_failure_after_one_byte_call(

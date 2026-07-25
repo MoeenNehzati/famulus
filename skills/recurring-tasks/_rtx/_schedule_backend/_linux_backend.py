@@ -6,7 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from ._base_backend import ScheduleContext, ScheduleJob
 
@@ -54,11 +54,11 @@ def _systemd_quote(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _launcher_bin_dir() -> Path:
+def _launcher_bin_dir() -> PurePosixPath:
     launcher = shutil.which("invoke-skill")
     if launcher:
-        return Path(launcher).parent
-    return Path.home() / "Documents" / "_rtx" / "bin"
+        return PurePosixPath(launcher).parent
+    return PurePosixPath(Path.home().as_posix()) / "Documents" / "_rtx" / "bin"
 
 
 def service_content(
@@ -70,7 +70,7 @@ def service_content(
     launcher_bin: Path | None = None,
 ) -> str:
     """Generate systemd service unit for a job."""
-    python = python_executable or Path(sys.executable)
+    python = python_executable or PurePosixPath(sys.executable)
     launcher_dir = launcher_bin or _launcher_bin_dir()
     path_value = (
         f"{launcher_dir}:{python.parent}:%h/.npm-global/bin:"

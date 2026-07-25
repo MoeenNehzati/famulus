@@ -854,6 +854,7 @@ def test_snapshot_head_matches_detects_new_commit(repo: Path) -> None:
 def test_unsupported_descriptor_capability_is_a_no_stamp_outcome(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(git_provenance, "_use_native_confined_read", lambda: False)
     monkeypatch.setattr(git_provenance, "_descriptor_safe_open_supported", lambda: False)
 
     result = check_commit_readiness(

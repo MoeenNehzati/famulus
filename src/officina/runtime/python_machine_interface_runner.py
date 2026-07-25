@@ -379,7 +379,7 @@ def load_interface(
     dispatcher command runtimes.
     """
 
-    module_text, sep, class_name = spec.partition(":")
+    module_text, sep, class_name = spec.rpartition(":")
     if sep != ":" or not module_text or not class_name:
         raise InterfaceLoadError("interface spec must be `path/to/file.py:ClassName`")
     module_path = Path(module_text)
