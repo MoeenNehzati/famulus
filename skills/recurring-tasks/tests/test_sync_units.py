@@ -183,11 +183,12 @@ def test_no_per_job_runner_scripts_written():
 
 def test_service_runs_python_executor_without_shell(monkeypatch):
     monkeypatch.setattr(shutil, "which", lambda _name: "/opt/famulus/bin/invoke-skill")
+    monkeypatch.setattr(sys, "executable", "/usr/bin/python3")
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
         content = (Path(d) / "ai-test-job.service").read_text()
-        assert f'ExecStart="{sys.executable}"' in content
-        assert f'Environment="PATH=/opt/famulus/bin:{Path(sys.executable).parent}:' in content
+        assert 'ExecStart="/usr/bin/python3"' in content
+        assert 'Environment="PATH=/opt/famulus/bin:/usr/bin:' in content
         assert '_job_executor.py" --jobs-file' in content
         assert "/bin/bash" not in content
         assert ">>" not in content

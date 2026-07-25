@@ -239,6 +239,10 @@ def create_v4_repository(
         ["git", "-C", str(root), "config", "user.email", "tests@example.invalid"],
         check=True,
     )
+    subprocess.run(
+        ["git", "-C", str(root), "config", "core.autocrlf", "false"],
+        check=True,
+    )
     subprocess.run(["git", "-C", str(root), "add", "."], check=True)
     subprocess.run(
         [

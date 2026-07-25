@@ -137,7 +137,7 @@ def _windows_component_utf16(name: str) -> bytes:
 def _windows_file_rename_info(
     name: str, parent_handle: int, *, replace: bool = False
 ) -> _WinFileRenameInfo:
-    """Build one fixed-width FILE_RENAME_INFO_EX variable-length buffer."""
+    """Build the shared FILE_RENAME_INFO/EX variable-length buffer."""
     encoded = _windows_component_utf16(name)
     size = ctypes.sizeof(_WinFileRenameInfo) + len(encoded)
     backing = ctypes.create_string_buffer(size)
@@ -641,6 +641,13 @@ def _fallback_read_regular_file_bytes(path: Path, *, allowed_root: Path) -> byte
         raise AtomicWriteError(f"cannot read confined file: {path}") from exc
 
 
+def _fallback_chmod(path: Path, mode: int) -> None:
+    try:
+        os.chmod(path, mode, follow_symlinks=False)
+    except (NotImplementedError, TypeError):
+        os.chmod(path, mode)
+
+
 def _fallback_write(
     path: Path,
     data: bytes,
@@ -659,7 +666,7 @@ def _fallback_write(
             return False
         raise
     try:
-        os.chmod(destination, mode, follow_symlinks=False)
+        _fallback_chmod(destination, mode)
         written = handle.write(data)
         if written != len(data):
             raise AtomicWriteError(
@@ -706,7 +713,7 @@ def _fallback_compare_and_append(
             f"compare-and-append predecessor mismatch: {path}"
         ) from exc
     try:
-        os.chmod(destination, mode, follow_symlinks=False)
+        _fallback_chmod(destination, mode)
         handle.seek(0)
         previous = handle.read()
         if expected_previous_bytes is not None and previous != expected_previous_bytes:
@@ -1325,7 +1332,7 @@ def _windows_rename_handle(
     *,
     replace: bool,
 ) -> bool:
-    """Use documented FileRenameInfoEx with a 64-bit RootDirectory handle."""
+    """Atomically rename relative to a retained 64-bit directory handle."""
 
     kernel32, _advapi32, _ntdll = _windows_modules()
     information = _windows_file_rename_info(
@@ -1333,19 +1340,23 @@ def _windows_rename_handle(
         parent_handle,
         replace=replace,
     )
-    if kernel32.SetFileInformationByHandle(
-        _WinHandle(handle),
-        22,
-        ctypes.byref(information),
-        information._used_size,
-    ):
-        return True
-    error = ctypes.get_last_error()
-    if error in {80, 183}:
-        return False
-    if error in {1, 50, 87, 120}:
-        raise AtomicWriteError(_CAPABILITY_ERROR)
-    raise _windows_call_error(f"cannot atomically rename to {name}", error)
+    for information_class in (22, 3):
+        if kernel32.SetFileInformationByHandle(
+            _WinHandle(handle),
+            information_class,
+            ctypes.byref(information),
+            information._used_size,
+        ):
+            return True
+        error = ctypes.get_last_error()
+        if error in {80, 183}:
+            return False
+        if information_class == 22 and error in {1, 50, 87, 120}:
+            continue
+        if error in {1, 50, 87, 120}:
+            raise AtomicWriteError(_CAPABILITY_ERROR)
+        raise _windows_call_error(f"cannot atomically rename to {name}", error)
+    raise AtomicWriteError(_CAPABILITY_ERROR)
 
 
 def _windows_write_temp(

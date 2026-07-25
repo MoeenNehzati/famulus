@@ -22,10 +22,12 @@ def _load_runtime():
     if repo_src not in sys.path:
         sys.path.insert(0, repo_src)
     skill_path = str(SKILL_ROOT)
-    if skill_path not in sys.path:
-        sys.path.insert(0, skill_path)
-    for name in ("_rtx._mail_envelope_stream", "_rtx._envelope_gate"):
-        sys.modules.pop(name, None)
+    if skill_path in sys.path:
+        sys.path.remove(skill_path)
+    sys.path.insert(0, skill_path)
+    for name in tuple(sys.modules):
+        if name == "_rtx" or name.startswith("_rtx."):
+            sys.modules.pop(name, None)
     return importlib.import_module("_rtx._mail_envelope_stream")
 
 

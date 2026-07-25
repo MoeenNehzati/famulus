@@ -265,7 +265,7 @@ def test_validate_document_rejects_absolute_import_artifact(tmp_path: Path) -> N
         }
     }
     value["artifacts"]["outside"] = {
-        "path": "/tmp/outside.standard.yaml",
+        "path": str(Path(tmp_path.anchor) / "outside.standard.yaml"),
         "format": "yaml",
         "roles": ["other"],
     }

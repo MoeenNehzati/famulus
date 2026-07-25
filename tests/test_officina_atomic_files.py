@@ -21,6 +21,22 @@ from officina.common.atomic_files import (
 )
 
 
+# famulus-skip: category=platform-contract; reason=these cases inject POSIX descriptor internals; alternate=the native Windows contract cases below exercise the corresponding Windows branches
+_POSIX_DESCRIPTOR_ONLY = pytest.mark.skipif(
+    os.name != "posix", reason="POSIX descriptor implementation contract"
+)
+
+
+def _force_atomic_capability_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    if os.name == "nt":
+        def unavailable(*_args: object, **_kwargs: object) -> None:
+            raise AtomicWriteError(atomic_files._CAPABILITY_ERROR)
+
+        monkeypatch.setattr(atomic_files, "_windows_open_parent", unavailable)
+        return
+    monkeypatch.setattr(atomic_files.os, "supports_dir_fd", set())
+
+
 class ParentSwapFixture:
     def __init__(self, tmp_path: Path) -> None:
         self.allowed_root = tmp_path / "allowed"
@@ -68,8 +84,11 @@ def _windows_native_acl_is_restrictive(path: Path, allowed_root: Path) -> bool:
         )
         return atomic_files._windows_verify_handle_user_restrictive_acl(handle)
     finally:
-        atomic_files._windows_close_quietly(handle)
-        atomic_files._windows_close_chain(parents)
+        try:
+            if handle >= 0:
+                atomic_files._windows_close_handle(handle)
+        finally:
+            atomic_files._windows_close_chain(parents)
 
 
 def test_existing_final_symlink_is_rejected(tmp_path: Path) -> None:
@@ -97,6 +116,7 @@ def test_create_rejects_existing_final_symlink(tmp_path: Path) -> None:
     assert victim.read_bytes() == b"safe"
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_parent_swap_cannot_redirect_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -162,6 +182,7 @@ def test_existing_directory_is_rejected(tmp_path: Path) -> None:
     assert target.is_dir()
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_interrupted_replace_preserves_previous_complete_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -180,6 +201,7 @@ def test_interrupted_replace_preserves_previous_complete_bytes(
     assert _temp_entries(tmp_path, target.name) == []
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_interrupted_create_leaves_no_destination_or_temp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -197,6 +219,7 @@ def test_interrupted_create_leaves_no_destination_or_temp(
     assert _temp_entries(tmp_path, target.name) == []
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_mode_failure_cleans_up_exclusively_created_temp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -214,6 +237,7 @@ def test_mode_failure_cleans_up_exclusively_created_temp(
     assert _temp_entries(tmp_path, target.name) == []
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_fdopen_failure_is_preserved_when_raw_descriptor_close_also_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -245,6 +269,7 @@ def test_fdopen_failure_is_preserved_when_raw_descriptor_close_also_fails(
     assert _temp_entries(tmp_path, target.name) == []
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_write_failure_is_preserved_when_handle_close_also_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -331,6 +356,7 @@ def test_created_destination_has_exact_requested_mode(
     assert target.stat().st_mode & 0o777 == 0o640
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_replace_fsync_order_is_file_replace_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -355,6 +381,7 @@ def test_replace_fsync_order_is_file_replace_directory(
     assert events == ["file-fsync", "replace", "directory-fsync"]
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_create_fsyncs_directory_after_link_and_temp_cleanup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -385,6 +412,7 @@ def test_create_fsyncs_directory_after_link_and_temp_cleanup(
     assert events == ["file-fsync", "link", "unlink-temp", "directory-fsync"]
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_missing_directory_fd_capability_fails_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -399,6 +427,7 @@ def test_missing_directory_fd_capability_fails_closed(
     assert not target.exists()
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_runtime_missing_replace_dir_fd_fails_closed_and_cleans_temp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -417,6 +446,7 @@ def test_runtime_missing_replace_dir_fd_fails_closed_and_cleans_temp(
     assert _temp_entries(tmp_path, target.name) == []
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_runtime_missing_root_nofollow_open_fails_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -437,6 +467,7 @@ def test_runtime_missing_root_nofollow_open_fails_closed(
     assert not target.exists()
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_runtime_missing_intermediate_dir_fd_open_closes_root_fd(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -468,6 +499,7 @@ def test_runtime_missing_intermediate_dir_fd_open_closes_root_fd(
     assert not target.exists()
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_runtime_missing_nofollow_stat_fails_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -488,6 +520,7 @@ def test_runtime_missing_nofollow_stat_fails_closed(
     assert not target.exists()
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_runtime_missing_temp_dir_fd_open_fails_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -509,6 +542,7 @@ def test_runtime_missing_temp_dir_fd_open_fails_closed(
     assert _temp_entries(tmp_path, target.name) == []
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_runtime_missing_mode_application_fails_closed_and_cleans_temp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -527,6 +561,7 @@ def test_runtime_missing_mode_application_fails_closed_and_cleans_temp(
     assert _temp_entries(tmp_path, target.name) == []
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_runtime_missing_link_dir_fd_fails_closed_and_cleans_temp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -545,6 +580,7 @@ def test_runtime_missing_link_dir_fd_fails_closed_and_cleans_temp(
     assert _temp_entries(tmp_path, target.name) == []
 
 
+@_POSIX_DESCRIPTOR_ONLY
 def test_runtime_missing_unlink_is_normalized_and_cleanup_is_retried(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -709,7 +745,7 @@ def test_secure_append_fails_closed_when_capability_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     target = tmp_path / "certificate.jsonl"
-    monkeypatch.setattr(atomic_files.os, "supports_dir_fd", set())
+    _force_atomic_capability_error(monkeypatch)
 
     with pytest.raises(AtomicWriteError, match="secure directory-relative replacement"):
         atomic_append_bytes(target, b"entry\n", allowed_root=tmp_path, mode=0o600)
@@ -722,7 +758,7 @@ def test_explicit_non_atomic_append_fallback_is_framed_flushed_and_reread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     target = tmp_path / "certificate.jsonl"
-    monkeypatch.setattr(atomic_files.os, "supports_dir_fd", set())
+    _force_atomic_capability_error(monkeypatch)
 
     atomic_append_bytes(
         target,
@@ -735,12 +771,43 @@ def test_explicit_non_atomic_append_fallback_is_framed_flushed_and_reread(
     assert target.read_bytes() == b"entry\n"
 
 
+def test_explicit_non_atomic_fallback_uses_plain_chmod_when_nofollow_is_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "health.json"
+    real_chmod = atomic_files.os.chmod
+
+    def windows_compatible_chmod(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        mode: int,
+        *,
+        follow_symlinks: bool = True,
+    ) -> None:
+        if follow_symlinks is False:
+            raise NotImplementedError("chmod: follow_symlinks unavailable")
+        real_chmod(path, mode)
+
+    _force_atomic_capability_error(monkeypatch)
+    monkeypatch.setattr(atomic_files.os, "chmod", windows_compatible_chmod)
+
+    atomic_replace_bytes(
+        target,
+        b"new",
+        allowed_root=tmp_path,
+        mode=0o600,
+        allow_non_atomic=True,
+    )
+
+    assert target.read_bytes() == b"new"
+
+
 def test_explicit_non_atomic_read_preserves_missing_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     target = tmp_path / "missing.json"
-    monkeypatch.setattr(atomic_files.os, "supports_dir_fd", set())
+    _force_atomic_capability_error(monkeypatch)
 
     with pytest.raises(FileNotFoundError):
         atomic_files.read_regular_file_bytes(
@@ -755,7 +822,7 @@ def test_explicit_non_atomic_compare_and_append_fallback_checks_predecessor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     target = tmp_path / "certificate.jsonl"
-    monkeypatch.setattr(atomic_files.os, "supports_dir_fd", set())
+    _force_atomic_capability_error(monkeypatch)
 
     atomic_compare_and_append_bytes(
         target,
@@ -794,7 +861,7 @@ def test_explicit_non_atomic_append_fallback_still_rejects_symlink(
     victim.write_bytes(b"safe\n")
     target = tmp_path / "certificate.jsonl"
     target.symlink_to(victim)
-    monkeypatch.setattr(atomic_files.os, "supports_dir_fd", set())
+    _force_atomic_capability_error(monkeypatch)
 
     with pytest.raises(AtomicWriteError):
         atomic_append_bytes(
@@ -832,6 +899,43 @@ def test_windows_file_disposition_boolean_has_native_one_byte_abi() -> None:
 
     assert fields["DeleteFile"] is ctypes.c_ubyte
     assert ctypes.sizeof(atomic_files._WinFileDispositionInformation) == 1
+
+
+def test_windows_rename_retries_legacy_handle_relative_class(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Kernel32:
+        def SetFileInformationByHandle(
+            self,
+            _handle: object,
+            information_class: int,
+            _information: object,
+            _size: int,
+        ) -> int:
+            if information_class == 22:
+                return 0
+            if information_class == 3:
+                return 1
+            raise AssertionError(f"unexpected information class {information_class}")
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_modules",
+        lambda: (Kernel32(), object(), object()),
+    )
+    monkeypatch.setattr(
+        atomic_files.ctypes,
+        "get_last_error",
+        lambda: 87,
+        raising=False,
+    )
+
+    assert atomic_files._windows_rename_handle(
+        123,
+        456,
+        "certificate.jsonl",
+        replace=True,
+    )
 
 
 def test_windows_mark_delete_reports_native_failure_after_one_byte_call(

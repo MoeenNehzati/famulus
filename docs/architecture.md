@@ -86,6 +86,17 @@ signed local-state claims that must stay
 unchanged during certification. `source_commit` therefore reproduces only the
 tracked subset when local inputs exist.
 
+Repository paths have filesystem identity, not textual identity. The same
+checkout may have equivalent absolute spellings, such as `/Users/...` and
+`/private/Users/...` on macOS. Repository-aware code must derive relative paths
+through `officina.common.blueprint_graph.repository_relative_path`, then use
+the selected repository root's spelling for Git keys, diagnostics, and
+confined reads; lexical `Path.relative_to()` or string-prefix comparisons are
+not containment checks. Authored repository text is UTF-8 with LF line endings
+in Git so hashes, generated views, and diagnostics are host-independent. Code
+that decodes authored repository text must request UTF-8 explicitly rather
+than inherit the host locale.
+
 The local node hash covers canonical node identity and blueprint data plus the
 paths and exact bytes of the resolved inputs. Dependency hashes remain
 separate certificate data: a dependency change invalidates certification but

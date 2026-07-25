@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib
 import json
 import os
@@ -16,15 +17,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from officina.common.certification_view import CertificationDecision  # noqa: E402
 from officina.common.blueprint_graph import (  # noqa: E402
+    descriptor_safe_open_supported,
     load_repository_blueprint_graph,
 )
 import officina.runtime.python_machine_interface as python_interface  # noqa: E402
+import officina.runtime.python_machine_interface_runner as python_runner  # noqa: E402
 from officina.runtime.python_machine_interface import (  # noqa: E402
     DispatchCall,
     DispatchDependencyResolver,
     PythonMachineInterface,
 )
 from officina.runtime.python_machine_interface_runner import (  # noqa: E402
+    InterfaceLoadError,
     load_interface,
     main,
     run_python_machine_interface,
@@ -510,10 +514,9 @@ def test_route_smoke_batch_rejects_noncanonical_child_identity(
     skill = tmp_path / "skills" / "demo-skill"
     write_route_smoke_worker(skill, "        pass\n")
     entrypoint = "_rtx/_worker.py:Interface"
-    relative_skill = os.path.relpath(skill, Path.cwd())
     payload = [
         {
-            "skill_root": relative_skill,
+            "skill_root": "skills/demo-skill",
             "entrypoint": entrypoint,
             "paths": [(skill / "_rtx" / "_worker.py").resolve().as_posix()],
         }
@@ -707,6 +710,128 @@ def test_load_interface_ignores_conflicting_cached_package(
     sys.modules.pop("_rtx._demo", None)
 
 
+def test_load_interface_uses_shared_reader_without_posix_descriptors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class PlatformWithoutPosixDescriptors:
+        name = "nt"
+        supports_dir_fd: set[object] = set()
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(os, name)
+
+    runtime = tmp_path / "_rtx"
+    runtime.mkdir()
+    write_interface(runtime / "_demo.py")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        python_runner,
+        "os",
+        PlatformWithoutPosixDescriptors(),
+    )
+
+    interface = load_interface("_rtx/_demo.py:Interface")
+
+    assert interface.__class__.__name__ == "Interface"
+
+
+def test_load_interface_rejects_source_outside_working_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skill_root = tmp_path / "skill"
+    skill_root.mkdir()
+    outside = tmp_path / "_outside.py"
+    write_interface(outside)
+    monkeypatch.chdir(skill_root)
+
+    with pytest.raises(InterfaceLoadError, match="outside allowed root"):
+        load_interface(f"{outside}:Interface")
+
+
+def test_load_interface_binds_lazy_package_imports_to_initial_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runtime = tmp_path / "_rtx"
+    runtime.mkdir()
+    (runtime / "__init__.py").write_text("", encoding="utf-8")
+    helper = runtime / "_helper.py"
+    helper.write_text("VALUE = 'trusted'\n", encoding="utf-8")
+    (runtime / "_demo.py").write_text(
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    def run(self, args):\n"
+        "        from ._helper import VALUE\n"
+        "        print(VALUE)\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    interface = load_interface("_rtx/_demo.py:Interface")
+    helper.write_text("VALUE = 'untrusted'\n", encoding="utf-8")
+
+    assert run_python_machine_interface(interface, []) == 0
+    assert capsys.readouterr().out == "trusted\n"
+
+
+def test_load_interface_rejects_symlinked_package_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = tmp_path / "_rtx"
+    runtime.mkdir()
+    (runtime / "__init__.py").write_text("", encoding="utf-8")
+    outside = tmp_path / "_outside.py"
+    outside.write_text("VALUE = 'outside'\n", encoding="utf-8")
+    try:
+        (runtime / "_helper.py").symlink_to(outside)
+    except OSError as exc:
+        # famulus-skip: category=platform-contract; reason=some Windows runners deny symlink creation; alternate=Linux and macOS exercise the same confined-loader rejection
+        pytest.skip(f"symlink creation unavailable: {exc}")
+    (runtime / "_demo.py").write_text(
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    def run(self, args):\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(InterfaceLoadError, match="symbolic link|reparse point"):
+        load_interface("_rtx/_demo.py:Interface")
+
+
+def test_main_rejects_matching_digest_for_malformed_package_snapshot(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    payload = b"{}"
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_bytes(payload)
+
+    result = main(
+        [
+            "--package-snapshot",
+            str(snapshot),
+            "--package-snapshot-sha256",
+            hashlib.sha256(payload).hexdigest(),
+            "_rtx/_demo.py:Interface",
+        ]
+    )
+
+    assert result == 2
+    assert "invalid package snapshot" in capsys.readouterr().err
+
+
+# famulus-skip: category=platform-contract; reason=retained POSIX descriptors permit rename-after-open while Windows denies that rename; alternate=path-snapshot and lazy-package-snapshot tests cover the native Windows reader
+@pytest.mark.skipif(
+    not descriptor_safe_open_supported(),
+    reason="retained descriptor swap requires POSIX dir-fd support",
+)
 def test_load_interface_uses_bound_source_snapshot_after_final_swap(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

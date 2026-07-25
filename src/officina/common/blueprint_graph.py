@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass, field
 import errno
 import json
@@ -406,6 +408,223 @@ def open_runtime_python_package(
         root_binding.close()
 
 
+def snapshot_runtime_python_package(
+    package_root: Path,
+    owner_root: Path,
+    repo_root: Path,
+    *,
+    allow_non_atomic: bool = False,
+) -> tuple[tuple[Path, bytes], ...]:
+    """Snapshot confined Python sources through the shared native reader."""
+
+    package_absolute, _relative = _runtime_relative_path(
+        package_root,
+        owner_root,
+        repo_root,
+    )
+    owner_absolute = Path(os.path.abspath(owner_root))
+    snapshots: list[tuple[Path, bytes]] = []
+
+    def raise_walk_error(error: OSError) -> None:
+        raise error
+
+    try:
+        for directory, directory_names, file_names in os.walk(
+            package_absolute,
+            followlinks=False,
+            onerror=raise_walk_error,
+        ):
+            directory_path = Path(directory)
+            for name in (*directory_names, *file_names):
+                child_path = directory_path / name
+                metadata = child_path.lstat()
+                if stat.S_ISLNK(metadata.st_mode) or (
+                    getattr(metadata, "st_file_attributes", 0) & 0x400
+                ):
+                    raise BlueprintGraphError(
+                        f"{child_path}: Python package contains a symbolic link "
+                        "or reparse point component"
+                    )
+            directory_names[:] = sorted(directory_names)
+            for name in sorted(file_names):
+                if not name.endswith(".py"):
+                    continue
+                source_path = directory_path / name
+                snapshots.append(
+                    (
+                        source_path,
+                        read_regular_file_bytes(
+                            source_path,
+                            allowed_root=owner_absolute,
+                            allow_non_atomic=allow_non_atomic,
+                        ),
+                    )
+                )
+    except (AtomicWriteError, OSError) as exc:
+        raise BlueprintGraphError(
+            f"{package_root}: cannot snapshot Python package safely: {exc}"
+        ) from exc
+    return tuple(snapshots)
+
+
+_RUNTIME_PYTHON_PACKAGE_SNAPSHOT_FORMAT = "officina-python-package-snapshot"
+_RUNTIME_PYTHON_PACKAGE_SNAPSHOT_VERSION = 1
+
+
+def _runtime_python_snapshot_path(value: object) -> str:
+    if not isinstance(value, str) or not value or "\x00" in value:
+        raise BlueprintGraphError(
+            "invalid package snapshot: source path must be a non-empty string"
+        )
+    path = PurePosixPath(value)
+    if (
+        path.is_absolute()
+        or path.as_posix() != value
+        or len(path.parts) < 2
+        or "." in path.parts
+        or ".." in path.parts
+        or path.suffix != ".py"
+    ):
+        raise BlueprintGraphError(
+            f"invalid package snapshot: invalid Python source path {value!r}"
+        )
+    return value
+
+
+def encode_runtime_python_package_snapshot(
+    snapshots: tuple[tuple[Path, bytes], ...],
+    owner_root: Path,
+) -> bytes:
+    """Encode one deterministic, path-confined Python package snapshot."""
+
+    records: list[dict[str, str]] = []
+    for source_path, source in snapshots:
+        if not isinstance(source, bytes):
+            raise BlueprintGraphError(
+                "invalid package snapshot: source content must be bytes"
+            )
+        logical_path = _runtime_python_snapshot_path(
+            repository_relative_path(source_path, owner_root).as_posix()
+        )
+        records.append(
+            {
+                "path": logical_path,
+                "source": base64.b64encode(source).decode("ascii"),
+            }
+        )
+    records.sort(key=lambda record: record["path"])
+    paths = [record["path"] for record in records]
+    if not paths or len(paths) != len(set(paths)):
+        raise BlueprintGraphError(
+            "invalid package snapshot: source paths must be non-empty and unique"
+        )
+    roots = {PurePosixPath(path).parts[0] for path in paths}
+    if len(roots) != 1:
+        raise BlueprintGraphError(
+            "invalid package snapshot: sources must share one package root"
+        )
+    document = {
+        "files": records,
+        "format": _RUNTIME_PYTHON_PACKAGE_SNAPSHOT_FORMAT,
+        "version": _RUNTIME_PYTHON_PACKAGE_SNAPSHOT_VERSION,
+    }
+    return json.dumps(
+        document,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+
+
+def decode_runtime_python_package_snapshot(
+    payload: bytes,
+) -> tuple[tuple[str, bytes], ...]:
+    """Strictly decode a deterministic Python package snapshot."""
+
+    def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate key {key!r}")
+            result[key] = value
+        return result
+
+    try:
+        document = json.loads(
+            payload.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_keys,
+        )
+    except (UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        raise BlueprintGraphError(
+            f"invalid package snapshot: malformed JSON: {exc}"
+        ) from exc
+    if not isinstance(document, dict) or set(document) != {
+        "files",
+        "format",
+        "version",
+    }:
+        raise BlueprintGraphError(
+            "invalid package snapshot: document fields are not exact"
+        )
+    if document["format"] != _RUNTIME_PYTHON_PACKAGE_SNAPSHOT_FORMAT:
+        raise BlueprintGraphError(
+            "invalid package snapshot: unsupported format"
+        )
+    version = document["version"]
+    if (
+        not isinstance(version, int)
+        or isinstance(version, bool)
+        or version != _RUNTIME_PYTHON_PACKAGE_SNAPSHOT_VERSION
+    ):
+        raise BlueprintGraphError(
+            "invalid package snapshot: unsupported version"
+        )
+    files = document["files"]
+    if not isinstance(files, list) or not files:
+        raise BlueprintGraphError(
+            "invalid package snapshot: files must be a non-empty list"
+        )
+
+    decoded: list[tuple[str, bytes]] = []
+    previous_path: str | None = None
+    package_root: str | None = None
+    for record in files:
+        if not isinstance(record, dict) or set(record) != {"path", "source"}:
+            raise BlueprintGraphError(
+                "invalid package snapshot: source fields are not exact"
+            )
+        logical_path = _runtime_python_snapshot_path(record["path"])
+        if previous_path is not None and logical_path <= previous_path:
+            raise BlueprintGraphError(
+                "invalid package snapshot: source paths must be sorted and unique"
+            )
+        previous_path = logical_path
+        current_root = PurePosixPath(logical_path).parts[0]
+        if package_root is None:
+            package_root = current_root
+        elif current_root != package_root:
+            raise BlueprintGraphError(
+                "invalid package snapshot: sources must share one package root"
+            )
+        encoded_source = record["source"]
+        if not isinstance(encoded_source, str):
+            raise BlueprintGraphError(
+                "invalid package snapshot: source content must be base64 text"
+            )
+        try:
+            source = base64.b64decode(encoded_source, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise BlueprintGraphError(
+                "invalid package snapshot: source content is not valid base64"
+            ) from exc
+        if base64.b64encode(source).decode("ascii") != encoded_source:
+            raise BlueprintGraphError(
+                "invalid package snapshot: source content is not canonical base64"
+            )
+        decoded.append((logical_path, source))
+    return tuple(decoded)
+
+
 def _positive_version(value: object, context: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 1:
         raise BlueprintGraphError(f"{context}: version must be a positive integer")
@@ -754,11 +973,13 @@ def load_module_blueprint(
         ) from exc
 
     marker = module / "blueprint.yaml"
-    binding: RuntimeFileBinding | None = None
     try:
-        binding = open_runtime_file(marker, module, repository)
         loaded = yaml.load(
-            binding.read_bytes().decode("utf-8"),
+            read_regular_file_bytes(
+                marker,
+                allowed_root=module,
+                allow_non_atomic=False,
+            ).decode("utf-8"),
             Loader=_StrictBlueprintLoader,
         )
         if not isinstance(loaded, dict):
@@ -767,13 +988,10 @@ def load_module_blueprint(
         assert isinstance(declaration, dict)
     except BlueprintGraphError:
         raise
-    except (UnicodeError, ValueError, yaml.YAMLError) as exc:
+    except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
         raise BlueprintGraphError(
             f"{marker}: cannot load module blueprint: {exc}"
         ) from exc
-    finally:
-        if binding is not None:
-            binding.close()
 
     node_type = declaration.get("node_type")
     node_id = declaration.get("id")

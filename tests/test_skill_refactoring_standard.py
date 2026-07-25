@@ -94,7 +94,7 @@ REMEDY_TARGETS = {
 
 
 def load_standard():
-    return yaml.safe_load(STANDARD.read_text())
+    return yaml.safe_load(STANDARD.read_text(encoding="utf-8"))
 
 
 def descendants_by_id(document, family_id):
@@ -153,7 +153,7 @@ def test_standard_validates_and_has_explicit_canonical_path():
 def test_every_immutable_source_unit_has_exact_or_documented_fidelity():
     document = load_standard()
     nodes = semantic_nodes(document)
-    source_map = yaml.safe_load(SOURCE_MAP.read_text())["units"]
+    source_map = yaml.safe_load(SOURCE_MAP.read_text(encoding="utf-8"))["units"]
     fixture_paths = {
         name: FIXTURES / name
         for name in ("skill-smells.md", "skill-refactoring-catalog.md")
@@ -163,7 +163,10 @@ def test_every_immutable_source_unit_has_exact_or_documented_fidelity():
         assert hashlib.sha256(fixture.read_bytes()).hexdigest() == SOURCE_DIGESTS[name]
         expected_units.extend(
             (name, line_number, line.strip())
-            for line_number, line in enumerate(fixture.read_text().splitlines(), 1)
+            for line_number, line in enumerate(
+                fixture.read_text(encoding="utf-8").splitlines(),
+                1,
+            )
             if line.strip()
         )
     assert [(unit["source"], unit["line"], unit["text"]) for unit in source_map] == expected_units
@@ -175,7 +178,7 @@ def test_every_immutable_source_unit_has_exact_or_documented_fidelity():
 
 
 def test_mapped_procedure_steps_detect_mutation_in_each_risk_family():
-    source_map = yaml.safe_load(SOURCE_MAP.read_text())["units"]
+    source_map = yaml.safe_load(SOURCE_MAP.read_text(encoding="utf-8"))["units"]
     representatives = {
         ("skill-refactoring-catalog.md", 20),  # safe: Declare/fix Category
         ("skill-refactoring-catalog.md", 43),  # medium: Extract Reference
@@ -301,7 +304,7 @@ def test_rendering_is_deterministic_and_checked_in_in_full():
     first = renderer.render_document(document)
     second = renderer.render_document(document)
     assert first == second
-    assert RENDERED.read_text() == first
+    assert RENDERED.read_text(encoding="utf-8") == first
     assert "Remedies: Add/fix blueprint" in first
     assert "Remedies: Inline to Reference" in first
     assert first.count("Addresses:") == sum(len(value) for value in EXPECTED_MAPPINGS.values())

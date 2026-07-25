@@ -186,4 +186,6 @@ def test_fails_closed_when_generated_view_is_missing(tmp_path):
 
     errors = _load_validator().validate(repo)
 
-    assert errors == [f"{view.relative_to(repo)}: missing generated view"]
+    assert errors == [
+        f"{view.relative_to(repo).as_posix()}: missing generated view"
+    ]

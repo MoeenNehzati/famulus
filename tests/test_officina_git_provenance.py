@@ -34,7 +34,7 @@ requires_descriptor_safe_open = pytest.mark.skipif(
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", "-C", str(repo), *args],
+        ["git", "-c", "core.autocrlf=false", "-C", str(repo), *args],
         check=True,
         capture_output=True,
         encoding="utf-8",
@@ -43,7 +43,7 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def _git_bytes(repo: Path, *args: str, input_bytes: bytes) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(
-        ["git", "-C", str(repo), *args],
+        ["git", "-c", "core.autocrlf=false", "-C", str(repo), *args],
         check=True,
         input=input_bytes,
         capture_output=True,
@@ -52,6 +52,32 @@ def _git_bytes(repo: Path, *args: str, input_bytes: bytes) -> subprocess.Complet
 
 def sha256_file(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_git_test_repository_preserves_exact_bytes_under_ambient_autocrlf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    global_config = tmp_path / "global.gitconfig"
+    global_config.write_text("[core]\n\tautocrlf = true\n", encoding="utf-8")
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
+    _git(repository, "init", "--quiet")
+    _git(repository, "config", "user.name", "Test User")
+    _git(repository, "config", "user.email", "test@example.invalid")
+    tracked = repository / "tracked.txt"
+    tracked.write_bytes(b"exact\r\nbytes\r\n")
+
+    _git(repository, "add", "tracked.txt")
+    _git(repository, "commit", "--quiet", "-m", "exact bytes")
+    committed = subprocess.run(
+        ["git", "-C", str(repository), "show", "HEAD:tracked.txt"],
+        check=True,
+        capture_output=True,
+    ).stdout
+
+    assert committed == tracked.read_bytes()
 
 
 def test_run_git_sanitizes_ambient_routing_and_config(
@@ -184,13 +210,13 @@ def test_git_file_provenance_batch_classifies_normalized_literal_paths_in_two_ca
     _git(tmp_path, "init", "--quiet")
     _git(tmp_path, "config", "user.name", "Test User")
     _git(tmp_path, "config", "user.email", "test@example.invalid")
-    tracked_literal = tmp_path / ":(glob)*.txt"
-    tracked_unusual = tmp_path / "line\nbreak.txt"
-    ignored = tmp_path / ":(exclude)ignored.txt"
-    untracked = tmp_path / ":(glob)*.tmp"
-    decoy = tmp_path / "decoy.tmp"
+    tracked_literal = tmp_path / "[ab].txt"
+    tracked_unusual = tmp_path / "line break.txt"
+    ignored = tmp_path / "ignored.txt"
+    untracked = tmp_path / "[ab].tmp"
+    decoy = tmp_path / "a.tmp"
     (tmp_path / ".gitignore").write_text(
-        "/:(exclude)ignored.txt\n",
+        "/ignored.txt\n",
         encoding="utf-8",
     )
     for path in (tracked_literal, tracked_unusual, ignored, untracked, decoy):
@@ -200,9 +226,9 @@ def test_git_file_provenance_batch_classifies_normalized_literal_paths_in_two_ca
         "add",
         "--",
         ".gitignore",
-        "decoy.tmp",
-        ":(literal):(glob)*.txt",
-        ":(literal)line\nbreak.txt",
+        "a.tmp",
+        ":(literal)[ab].txt",
+        "line break.txt",
     )
     _git(tmp_path, "commit", "--quiet", "-m", "Add literal paths")
     calls: list[tuple[str, ...]] = []
@@ -239,6 +265,24 @@ def test_git_file_provenance_batch_classifies_normalized_literal_paths_in_two_ca
     assert result == expected
     assert list(result) == sorted(expected, key=lambda path: path.as_posix())
     assert len(calls) <= 2
+
+
+# famulus-skip: category=platform-contract; reason=Windows forbids newline characters in filenames; alternate=test_git_file_provenance_batch_classifies_normalized_literal_paths_in_two_calls covers portable batch classification
+@pytest.mark.skipif(os.name != "posix", reason="newline filenames require POSIX")
+def test_git_file_provenance_batch_parses_nul_delimited_newline_path(
+    tmp_path: Path,
+) -> None:
+    _git(tmp_path, "init", "--quiet")
+    _git(tmp_path, "config", "user.name", "Test User")
+    _git(tmp_path, "config", "user.email", "test@example.invalid")
+    tracked = tmp_path / "line\nbreak.txt"
+    tracked.write_text("tracked\n", encoding="utf-8")
+    _git(tmp_path, "add", "--", "line\nbreak.txt")
+    _git(tmp_path, "commit", "--quiet", "-m", "Add newline path")
+
+    result = git_provenance.git_file_provenance_batch(tmp_path, (tracked,))
+
+    assert result == {tracked: "tracked"}
 
 
 def test_git_file_provenance_batch_rejects_fatal_tracked_query(
@@ -389,7 +433,8 @@ def test_materialize_git_commit_ignores_export_attribute_transformations(
     assert (destination / "template.txt").read_text(
         encoding="utf-8"
     ) == "$Format:%H$\n"
-    assert (destination / "run.sh").stat().st_mode & stat.S_IXUSR
+    if os.name == "posix":
+        assert (destination / "run.sh").stat().st_mode & stat.S_IXUSR
 
 
 def test_blueprint_v4_mechanical_ref_is_pinned_once(repo: Path) -> None:
@@ -603,12 +648,12 @@ def test_literal_pathspec_metacharacters_do_not_match_another_file(tmp_path: Pat
     tracked.write_text("original\n", encoding="utf-8")
     _git(tmp_path, "add", "tracked.txt")
     _git(tmp_path, "commit", "--quiet", "-m", "Add tracked text")
-    path = tmp_path / ":"
+    path = tmp_path / "[t]racked.txt"
     path.write_text("original\n", encoding="utf-8")
 
     result = check_commit_readiness(capture_git_snapshot(tmp_path), [path], {})
 
-    assert result.reasons == ("not-tracked-at-commit::",)
+    assert result.reasons == ("not-tracked-at-commit:[t]racked.txt",)
 
 
 @requires_descriptor_safe_open

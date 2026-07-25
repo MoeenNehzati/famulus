@@ -20,6 +20,10 @@ TOOLING_ARTIFACTS = (
 )
 
 
+def _display(path: Path) -> str:
+    return path.as_posix()
+
+
 def _load_tool(repo_root: Path, module_name: str):
     path = repo_root / "references" / "standards" / f"{module_name}.py"
     spec = importlib.util.spec_from_file_location(f"_standard_documents_{module_name}", path)
@@ -36,7 +40,7 @@ def validate(repo_root: Path) -> list[str]:
     if not tooling_root.is_dir():
         return ["references/standards: missing standards tooling directory"]
     missing_tooling = [
-        f"{path}: missing standards tooling artifact"
+        f"{_display(path)}: missing standards tooling artifact"
         for path in TOOLING_ARTIFACTS
         if not (repo_root / path).is_file()
     ]
@@ -47,8 +51,14 @@ def validate(repo_root: Path) -> list[str]:
         path.relative_to(repo_root)
         for path in (repo_root / "references").rglob("*.standard.yaml")
     }
-    errors = [f"{path}: missing canonical standard" for path in sorted(expected - actual)]
-    errors.extend(f"{path}: unexpected canonical standard" for path in sorted(actual - expected))
+    errors = [
+        f"{_display(path)}: missing canonical standard"
+        for path in sorted(expected - actual)
+    ]
+    errors.extend(
+        f"{_display(path)}: unexpected canonical standard"
+        for path in sorted(actual - expected)
+    )
 
     try:
         validator = _load_tool(repo_root, "validate_standard_v6")
@@ -60,22 +70,29 @@ def validate(repo_root: Path) -> list[str]:
         path = repo_root / relative
         if not path.is_file():
             continue
-        errors.extend(f"{relative}: {error}" for error in validator.validate_file(path, root=repo_root))
+        errors.extend(
+            f"{_display(relative)}: {error}"
+            for error in validator.validate_file(path, root=repo_root)
+        )
         try:
             document = yaml.safe_load(path.read_text(encoding="utf-8"))
             if document.get("canonical_path") != relative.as_posix():
                 errors.append(
-                    f"{relative}: canonical_path must equal {relative}; "
+                    f"{_display(relative)}: canonical_path must equal "
+                    f"{_display(relative)}; "
                     f"found {document.get('canonical_path')!r}"
                 )
             rendered = renderer.render_document(document)
         except Exception as exc:
-            errors.append(f"{relative}: cannot render standard: {exc}")
+            errors.append(f"{_display(relative)}: cannot render standard: {exc}")
             continue
         view_relative = Path(str(relative).removesuffix(".standard.yaml") + ".md")
         view_path = repo_root / view_relative
         if not view_path.is_file():
-            errors.append(f"{view_relative}: missing generated view")
+            errors.append(f"{_display(view_relative)}: missing generated view")
         elif view_path.read_text(encoding="utf-8") != rendered:
-            errors.append(f"{view_relative}: generated view is stale; render {relative}")
+            errors.append(
+                f"{_display(view_relative)}: generated view is stale; "
+                f"render {_display(relative)}"
+            )
     return errors

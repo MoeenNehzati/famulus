@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,9 +16,12 @@ from officina.common.blueprint_graph import (
     BlueprintGraphError,
     RepositoryBlueprintGraph,
     RuntimeFileBinding,
+    descriptor_safe_open_supported,
+    encode_runtime_python_package_snapshot,
     load_repository_blueprint_graph,
     open_runtime_python_package,
     resolve_export,
+    snapshot_runtime_python_package,
 )
 from officina.common.certification_view import (
     CertificationView,
@@ -40,6 +45,26 @@ class InvocationError(Exception):
 _EXPORT_TARGET_RE = re.compile(
     r"^[a-z0-9]+(?:-[a-z0-9]+)*\.interface\.[a-z0-9]+(?:-[a-z0-9]+)*$"
 )
+
+
+class _RuntimeSnapshotTransport:
+    """One private snapshot file owned by a resolved invocation."""
+
+    def __init__(self, path: Path, sha256: str) -> None:
+        self.path = path
+        self.sha256 = sha256
+        self._closed = False
+
+    def close(self) -> None:
+        if not self._closed:
+            self.path.unlink(missing_ok=True)
+            self._closed = True
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except OSError:
+            pass
 
 
 @dataclass(frozen=True)
@@ -82,14 +107,22 @@ class ResolvedInvocation:
     stdin: bool
     env: dict[str, str] | None = None
     runtime_bindings: tuple[RuntimeFileBinding, ...] = ()
+    runtime_snapshots: tuple[_RuntimeSnapshotTransport, ...] = ()
 
     @property
     def pass_fds(self) -> tuple[int, ...]:
         return tuple(binding.fd for binding in self.runtime_bindings if binding.fd >= 0)
 
     def close(self) -> None:
-        for binding in self.runtime_bindings:
-            binding.close()
+        first_error: OSError | None = None
+        for resource in (*self.runtime_bindings, *self.runtime_snapshots):
+            try:
+                resource.close()
+            except OSError as exc:
+                if first_error is None:
+                    first_error = exc
+        if first_error is not None:
+            raise first_error
 
     def __enter__(self) -> "ResolvedInvocation":
         return self
@@ -99,18 +132,20 @@ class ResolvedInvocation:
 
     def _logical_command(self) -> list[str]:
         command = list(self.command)
+        private_options = {
+            "--source-fd": 1,
+            "--package-file": 2,
+            "--package-snapshot": 1,
+            "--package-snapshot-sha256": 1,
+        }
+        if len(command) >= 4:
+            index = 3
+            while index < len(command) and command[index] in private_options:
+                width = private_options[command[index]]
+                del command[index : index + width + 1]
         if self.runtime_bindings:
             binding = self.runtime_bindings[0]
-            if len(command) >= 4 and command[3] in {"--source-fd", "--package-file"}:
-                index = 3
-                while index < len(command):
-                    if command[index] == "--source-fd" and index + 1 < len(command):
-                        del command[index : index + 2]
-                    elif command[index] == "--package-file" and index + 2 < len(command):
-                        del command[index : index + 3]
-                    else:
-                        break
-            elif command and command[0].startswith("/proc/self/fd/"):
+            if command and command[0].startswith("/proc/self/fd/"):
                 command[0] = str(binding.path)
         return command
 
@@ -144,6 +179,32 @@ def get_repo_root(repo_root: Path | None = None) -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def _create_runtime_snapshot_transport(
+    snapshots: tuple[tuple[Path, bytes], ...],
+    module_root: Path,
+) -> _RuntimeSnapshotTransport:
+    payload = encode_runtime_python_package_snapshot(snapshots, module_root)
+    digest = hashlib.sha256(payload).hexdigest()
+    descriptor, raw_path = tempfile.mkstemp(
+        prefix="officina-python-snapshot-",
+        suffix=".json",
+    )
+    path = Path(raw_path)
+    try:
+        stream = os.fdopen(descriptor, "wb")
+        descriptor = -1
+        with stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        if descriptor >= 0:
+            os.close(descriptor)
+        path.unlink(missing_ok=True)
+        raise
+    return _RuntimeSnapshotTransport(path, digest)
+
+
 def _build_python_runtime(
     module_root: Path,
     interface_id: str,
@@ -155,6 +216,7 @@ def _build_python_runtime(
     list[str],
     dict[str, str] | None,
     tuple[RuntimeFileBinding, ...],
+    tuple[_RuntimeSnapshotTransport, ...],
 ]:
     path = gateway.get("path")
     symbol = gateway.get("symbol")
@@ -196,43 +258,68 @@ def _build_python_runtime(
             f"{interface_id}: entrypoint must be `_rtx/path.py:ClassName` "
             "without parent traversal"
         )
-    try:
-        package_bindings = open_runtime_python_package(
-            module_root / "_rtx",
-            module_root,
-            root,
-        )
-    except BlueprintGraphError as exc:
-        raise InvocationError(f"{interface_id}: {exc}") from exc
     source_path = Path(os.path.abspath(module_root / module_path))
-    source_binding = next(
-        (binding for binding in package_bindings if binding.path == source_path),
-        None,
-    )
-    if source_binding is None:
-        for binding in package_bindings:
-            binding.close()
-        raise InvocationError(
-            f"{interface_id}: entrypoint is not a regular Python package source: "
-            f"{module_text}"
-        )
-    package_arguments = [
-        token
-        for binding in package_bindings
-        for token in (
-            "--package-file",
-            str(binding.fd),
-            binding.path.relative_to(module_root).as_posix(),
-        )
-    ]
+    package_bindings: tuple[RuntimeFileBinding, ...] = ()
+    snapshot_transports: tuple[_RuntimeSnapshotTransport, ...] = ()
+    package_arguments: list[str] = []
+    source_arguments: list[str] = []
+    try:
+        if descriptor_safe_open_supported():
+            package_bindings = open_runtime_python_package(
+                module_root / "_rtx",
+                module_root,
+                root,
+            )
+            source_binding = next(
+                (binding for binding in package_bindings if binding.path == source_path),
+                None,
+            )
+            if source_binding is None:
+                for binding in package_bindings:
+                    binding.close()
+                raise InvocationError(
+                    f"{interface_id}: entrypoint is not a regular Python package source: "
+                    f"{module_text}"
+                )
+            source_arguments = ["--source-fd", str(source_binding.fd)]
+            package_arguments = [
+                token
+                for binding in package_bindings
+                for token in (
+                    "--package-file",
+                    str(binding.fd),
+                    binding.path.relative_to(module_root).as_posix(),
+                )
+            ]
+        else:
+            snapshots = snapshot_runtime_python_package(
+                module_root / "_rtx",
+                module_root,
+                root,
+                allow_non_atomic=False,
+            )
+            if not any(path == source_path for path, _source in snapshots):
+                raise InvocationError(
+                    f"{interface_id}: entrypoint is not a regular Python package source: "
+                    f"{module_text}"
+                )
+            transport = _create_runtime_snapshot_transport(snapshots, module_root)
+            snapshot_transports = (transport,)
+            package_arguments = [
+                "--package-snapshot",
+                str(transport.path),
+                "--package-snapshot-sha256",
+                transport.sha256,
+            ]
+    except (BlueprintGraphError, OSError) as exc:
+        raise InvocationError(f"{interface_id}: {exc}") from exc
     return (
         module_root,
         [
             sys.executable,
             "-m",
             "officina.runtime.python_machine_interface_runner",
-            "--source-fd",
-            str(source_binding.fd),
+            *source_arguments,
             *package_arguments,
             entrypoint,
             *args_prefix,
@@ -240,6 +327,7 @@ def _build_python_runtime(
         ],
         env,
         package_bindings,
+        snapshot_transports,
     )
 
 
@@ -384,7 +472,7 @@ def _resolve_export_dispatch(
         raise InvocationError(
             f"{export.interface_id}: gateway must remain inside its module"
         ) from exc
-    cwd, command, env, runtime_bindings = _build_python_runtime(
+    cwd, command, env, runtime_bindings, runtime_snapshots = _build_python_runtime(
         source.skill_root,
         export.interface_id,
         {
@@ -406,6 +494,7 @@ def _resolve_export_dispatch(
         stdin=compiled.stdin_argument_id is not None,
         env=env,
         runtime_bindings=runtime_bindings,
+        runtime_snapshots=runtime_snapshots,
     )
 
 

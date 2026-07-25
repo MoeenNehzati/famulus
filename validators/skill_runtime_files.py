@@ -55,7 +55,7 @@ def _validate_private_component(component: str, rel_path: Path, kind: str) -> li
     if RUNTIME_STEM_RE.fullmatch(component):
         return []
     return [
-        f"{rel_path}: runtime {kind} must match "
+        f"{rel_path.as_posix()}: runtime {kind} must match "
         f"`^_[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$`; got `{component}`"
     ]
 
@@ -83,7 +83,10 @@ def _validate_rtx_path(path: Path, rel_path: Path) -> list[str]:
 
     if path.suffix not in ALLOWED_RTX_SUFFIXES:
         allowed = ", ".join(sorted(ALLOWED_RTX_SUFFIXES))
-        errors.append(f"{rel_path}: unsupported runtime suffix `{path.suffix}`; allowed suffixes: {allowed}")
+        errors.append(
+            f"{rel_path.as_posix()}: unsupported runtime suffix `{path.suffix}`; "
+            f"allowed suffixes: {allowed}"
+        )
     errors.extend(_validate_private_component(path.stem, rel_path, "filename stem"))
     return errors
 
@@ -96,7 +99,7 @@ def validate(repo_root: Path) -> list[str]:
         parts = rel_path.parts
         if len(parts) >= 4 and parts[2] == "scripts" and path.suffix in ALLOWED_RTX_SUFFIXES:
             errors.append(
-                f"{rel_path}: skill runtime files must live under "
+                f"{rel_path.as_posix()}: skill runtime files must live under "
                 f"`skills/<skill>/{RTX_DIR_NAME}/`, not `scripts/`"
             )
             continue
@@ -116,7 +119,9 @@ def validate(repo_root: Path) -> list[str]:
                 previous = seen_by_parent[parent].get(folded)
                 if previous is not None and previous != component_parts:
                     errors.append(
-                        f"{Path(*component_parts)}: case-insensitive runtime path collision with {Path(*previous)}"
+                        f"{Path(*component_parts).as_posix()}: case-insensitive "
+                        "runtime path collision with "
+                        f"{Path(*previous).as_posix()}"
                     )
                 else:
                     seen_by_parent[parent][folded] = component_parts
@@ -124,7 +129,9 @@ def validate(repo_root: Path) -> list[str]:
             if path.name.endswith(".blueprint.yaml") or path.name.endswith(".health.json"):
                 continue
             if not os.access(path, os.X_OK):
-                errors.append(f"{rel_path}: _cx command file must be executable")
+                errors.append(
+                    f"{rel_path.as_posix()}: _cx command file must be executable"
+                )
 
     return errors
 

@@ -189,7 +189,7 @@ def validate(repo_root: Path) -> list[str]:
             if _is_allowed_platform_metadata_line(rel, line):
                 continue
             if pattern.search(line):
-                errors.append(f"{rel}:{lineno}: {line.strip()}")
+                errors.append(f"{rel.as_posix()}:{lineno}: {line.strip()}")
     return errors
 
 

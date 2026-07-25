@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import importlib
 import importlib.abc
 import importlib.util
@@ -12,6 +14,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
 from typing import Iterator, Sequence
+
+from officina.common.atomic_files import read_regular_file_bytes
+from officina.common.blueprint_graph import (
+    BlueprintGraphError,
+    decode_runtime_python_package_snapshot,
+    repository_relative_path,
+    snapshot_runtime_python_package,
+)
 
 from .python_machine_interface import PythonMachineInterface, coerce_exit_code
 
@@ -52,6 +62,9 @@ class _BoundPackageFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         exec(compile(source, logical_path, "exec"), module.__dict__)
 
 
+_BOUND_PACKAGE_SOURCES_ATTRIBUTE = "_officina_bound_package_sources"
+
+
 def _bound_module_name(logical_path: str) -> tuple[str, bool]:
     path = Path(logical_path)
     if path.suffix != ".py" or path.is_absolute() or ".." in path.parts:
@@ -70,13 +83,26 @@ def _bound_module_name(logical_path: str) -> tuple[str, bool]:
 def _load_bound_package_sources(
     package_files: Sequence[tuple[int, str]],
 ) -> dict[str, tuple[bytes, str, bool]]:
+    entries = [
+        (_read_bound_source(Path(logical_path), source_fd), logical_path)
+        for source_fd, logical_path in package_files
+    ]
+    return _index_bound_package_sources(entries)
+
+
+def _index_bound_package_sources(
+    entries: Sequence[tuple[bytes, str]],
+) -> dict[str, tuple[bytes, str, bool]]:
     sources: dict[str, tuple[bytes, str, bool]] = {}
-    for source_fd, logical_path in package_files:
+    for source, logical_path in entries:
         module_name, is_package = _bound_module_name(logical_path)
         if module_name in sources:
             raise InterfaceLoadError(f"duplicate bound package module: {module_name}")
-        source = _read_bound_source(Path(logical_path), source_fd)
-        sources[module_name] = (source, logical_path, is_package)
+        sources[module_name] = (
+            source,
+            str(Path(os.path.abspath(logical_path))),
+            is_package,
+        )
     for module_name in tuple(sources):
         parts = module_name.split(".")
         for index in range(1, len(parts)):
@@ -88,17 +114,56 @@ def _load_bound_package_sources(
     return sources
 
 
+def _load_package_snapshot_sources(
+    snapshot_path: Path,
+    expected_sha256: str,
+) -> dict[str, tuple[bytes, str, bool]]:
+    if (
+        len(expected_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in expected_sha256)
+    ):
+        raise InterfaceLoadError(
+            "package snapshot SHA-256 must be 64 lowercase hexadecimal characters"
+        )
+    absolute = Path(os.path.abspath(snapshot_path))
+    try:
+        payload = read_regular_file_bytes(
+            absolute,
+            allowed_root=absolute.parent,
+            allow_non_atomic=False,
+        )
+    except OSError as exc:
+        raise InterfaceLoadError(
+            f"could not safely read package snapshot {snapshot_path}: {exc}"
+        ) from exc
+    actual_sha256 = hashlib.sha256(payload).hexdigest()
+    if not hmac.compare_digest(actual_sha256, expected_sha256):
+        raise InterfaceLoadError("package snapshot digest mismatch")
+    try:
+        entries = decode_runtime_python_package_snapshot(payload)
+    except BlueprintGraphError as exc:
+        raise InterfaceLoadError(str(exc)) from exc
+    return _index_bound_package_sources(
+        [(source, logical_path) for logical_path, source in entries]
+    )
+
+
 @contextmanager
-def _bound_package_imports(
-    package_files: Sequence[tuple[int, str]],
+def _bound_package_source_imports(
+    sources: dict[str, tuple[bytes, str, bool]],
+    *,
+    clear_cached: bool = True,
 ) -> Iterator[dict[str, tuple[bytes, str, bool]]]:
     """Keep snapshot-only package imports active for one interface lifecycle."""
 
-    sources = _load_bound_package_sources(package_files)
     roots = {name.partition(".")[0] for name in sources}
-    for cached_name in list(sys.modules):
-        if any(cached_name == root or cached_name.startswith(f"{root}.") for root in roots):
-            del sys.modules[cached_name]
+    if clear_cached:
+        for cached_name in list(sys.modules):
+            if any(
+                cached_name == root or cached_name.startswith(f"{root}.")
+                for root in roots
+            ):
+                del sys.modules[cached_name]
     finder = _BoundPackageFinder(sources)
     sys.meta_path.insert(0, finder)
     try:
@@ -106,6 +171,15 @@ def _bound_package_imports(
     finally:
         if finder in sys.meta_path:
             sys.meta_path.remove(finder)
+
+
+@contextmanager
+def _bound_package_imports(
+    package_files: Sequence[tuple[int, str]],
+) -> Iterator[dict[str, tuple[bytes, str, bool]]]:
+    sources = _load_bound_package_sources(package_files)
+    with _bound_package_source_imports(sources) as active_sources:
+        yield active_sources
 
 
 def route_smoke_requested(argv: Sequence[str]) -> bool:
@@ -118,43 +192,22 @@ def route_smoke_requested(argv: Sequence[str]) -> bool:
     return "--route-smoke" in argv
 
 
-def _read_bound_source(path: Path, source_fd: int | None) -> bytes:
+def _read_bound_source(
+    path: Path,
+    source_fd: int | None,
+    *,
+    allowed_root: Path | None = None,
+) -> bytes:
     """Read Python source from a bound descriptor, opening no-follow if needed."""
 
-    owned_fd = -1
-    current_fd = -1
     try:
         if source_fd is None:
-            if (
-                os.name != "posix"
-                or not hasattr(os, "O_NOFOLLOW")
-                or not hasattr(os, "O_DIRECTORY")
-                or os.open not in os.supports_dir_fd
-            ):
-                raise InterfaceLoadError(
-                    f"descriptor-safe interface loading is unavailable: {path}"
-                )
-            absolute = Path(os.path.abspath(path))
-            file_flags = (
-                os.O_RDONLY
-                | os.O_NOFOLLOW
-                | os.O_NONBLOCK
-                | getattr(os, "O_CLOEXEC", 0)
+            root = Path.cwd() if allowed_root is None else allowed_root
+            return read_regular_file_bytes(
+                Path(os.path.abspath(path)),
+                allowed_root=Path(os.path.abspath(root)),
+                allow_non_atomic=False,
             )
-            directory_flags = file_flags | os.O_DIRECTORY
-            current_fd = os.open("/", directory_flags)
-            for index, component in enumerate(absolute.parts[1:]):
-                final = index == len(absolute.parts[1:]) - 1
-                next_fd = os.open(
-                    component,
-                    file_flags if final else directory_flags,
-                    dir_fd=current_fd,
-                )
-                os.close(current_fd)
-                current_fd = next_fd
-            owned_fd = current_fd
-            current_fd = -1
-            source_fd = owned_fd
         metadata = os.fstat(source_fd)
         if not stat.S_ISREG(metadata.st_mode):
             raise InterfaceLoadError(f"interface module is not a regular file: {path}")
@@ -167,11 +220,57 @@ def _read_bound_source(path: Path, source_fd: int | None) -> bytes:
         raise
     except OSError as exc:
         raise InterfaceLoadError(f"could not safely read interface module {path}: {exc}") from exc
-    finally:
-        if current_fd >= 0:
-            os.close(current_fd)
-        if owned_fd >= 0:
-            os.close(owned_fd)
+
+
+def _load_confined_package_sources(
+    path: Path,
+) -> dict[str, tuple[bytes, str, bool]] | None:
+    """Snapshot the entrypoint package without following paths outside cwd."""
+
+    root = Path(os.path.abspath(Path.cwd()))
+    absolute = Path(os.path.abspath(path))
+    try:
+        relative = repository_relative_path(absolute, root)
+    except BlueprintGraphError as exc:
+        raise InterfaceLoadError(
+            f"interface module is outside allowed root {root}: {path}"
+        ) from exc
+    if len(relative.parts) < 2:
+        return None
+
+    package_root = root / relative.parts[0]
+    try:
+        snapshots = snapshot_runtime_python_package(
+            package_root,
+            root,
+            root,
+            allow_non_atomic=False,
+        )
+    except BlueprintGraphError as exc:
+        raise InterfaceLoadError(str(exc)) from exc
+
+    sources: dict[str, tuple[bytes, str, bool]] = {}
+    for source_path, source in snapshots:
+        logical_path = source_path.relative_to(root).as_posix()
+        module_name, is_package = _bound_module_name(logical_path)
+        if module_name in sources:
+            raise InterfaceLoadError(f"duplicate bound package module: {module_name}")
+        sources[module_name] = (source, str(source_path), is_package)
+    for module_name in tuple(sources):
+        parts = module_name.split(".")
+        for index in range(1, len(parts)):
+            package_name = ".".join(parts[:index])
+            sources.setdefault(
+                package_name,
+                (b"", package_name.replace(".", "/"), True),
+            )
+
+    entry_name, _is_package = _bound_module_name(relative.as_posix())
+    if entry_name not in sources:
+        raise InterfaceLoadError(
+            f"interface module is not a regular package source: {path}"
+        )
+    return sources
 
 
 def _load_module_from_path(
@@ -183,7 +282,12 @@ def _load_module_from_path(
     """Execute a trusted source snapshot with the path's package context."""
 
     if package_sources is not None:
-        logical_path = path.relative_to(Path.cwd()).as_posix()
+        try:
+            logical_path = repository_relative_path(path, Path.cwd()).as_posix()
+        except BlueprintGraphError as exc:
+            raise InterfaceLoadError(
+                f"interface module is outside the validated package root: {path}"
+            ) from exc
         module_name, _is_package = _bound_module_name(logical_path)
         if module_name not in package_sources:
             raise InterfaceLoadError(
@@ -281,19 +385,32 @@ def load_interface(
     module_path = Path(module_text)
     if not module_path.is_absolute():
         module_path = Path.cwd() / module_path
-    module = _load_module_from_path(
-        module_path,
-        source_fd,
-        package_files,
-        package_sources=_package_sources,
-    )
-    interface_type = getattr(module, class_name, None)
-    if interface_type is None:
-        raise InterfaceLoadError(f"{spec}: class `{class_name}` not found")
-    interface = interface_type()
-    if not isinstance(interface, PythonMachineInterface):
-        raise InterfaceLoadError(f"{spec}: class must inherit PythonMachineInterface")
-    return interface
+    confined_sources = None
+    if source_fd is None and not package_files and _package_sources is None:
+        confined_sources = _load_confined_package_sources(module_path)
+    active_sources = _package_sources or confined_sources
+
+    def instantiate() -> PythonMachineInterface:
+        module = _load_module_from_path(
+            module_path,
+            source_fd,
+            package_files,
+            package_sources=active_sources,
+        )
+        interface_type = getattr(module, class_name, None)
+        if interface_type is None:
+            raise InterfaceLoadError(f"{spec}: class `{class_name}` not found")
+        interface = interface_type()
+        if not isinstance(interface, PythonMachineInterface):
+            raise InterfaceLoadError(f"{spec}: class must inherit PythonMachineInterface")
+        if active_sources:
+            setattr(interface, _BOUND_PACKAGE_SOURCES_ATTRIBUTE, active_sources)
+        return interface
+
+    if active_sources is None:
+        return instantiate()
+    with _bound_package_source_imports(active_sources):
+        return instantiate()
 
 
 def run_python_machine_interface(interface: PythonMachineInterface, argv: Sequence[str]) -> int:
@@ -306,15 +423,22 @@ def run_python_machine_interface(interface: PythonMachineInterface, argv: Sequen
     3. Otherwise parse arguments and call ``interface.run(args)``.
     """
 
-    parser = interface.build_parser()
-    if not isinstance(parser, argparse.ArgumentParser):
-        raise TypeError("build_parser() must return argparse.ArgumentParser")
-    if route_smoke_requested(argv):
-        interface.route_smoke()
-        print("route-smoke ok")
-        return 0
-    args = interface.parse_args(parser, list(argv))
-    return coerce_exit_code(interface.run(args))
+    def run() -> int:
+        parser = interface.build_parser()
+        if not isinstance(parser, argparse.ArgumentParser):
+            raise TypeError("build_parser() must return argparse.ArgumentParser")
+        if route_smoke_requested(argv):
+            interface.route_smoke()
+            print("route-smoke ok")
+            return 0
+        args = interface.parse_args(parser, list(argv))
+        return coerce_exit_code(interface.run(args))
+
+    sources = getattr(interface, _BOUND_PACKAGE_SOURCES_ATTRIBUTE, None)
+    if not isinstance(sources, dict) or not sources:
+        return run()
+    with _bound_package_source_imports(sources, clear_cached=False):
+        return run()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -333,12 +457,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     source_fd: int | None = None
     package_files: list[tuple[int, str]] = []
-    while argv and argv[0] in {"--source-fd", "--package-file"}:
+    package_snapshot: Path | None = None
+    package_snapshot_sha256: str | None = None
+    private_options = {
+        "--source-fd",
+        "--package-file",
+        "--package-snapshot",
+        "--package-snapshot-sha256",
+    }
+    while argv and argv[0] in private_options:
         option = argv.pop(0)
-        required = 1 if option == "--source-fd" else 2
+        required = 2 if option == "--package-file" else 1
         if len(argv) < required:
             print(f"error: {option} is missing required arguments", file=sys.stderr)
             return 2
+        if option == "--package-snapshot":
+            if package_snapshot is not None:
+                print(f"error: duplicate {option}", file=sys.stderr)
+                return 2
+            package_snapshot = Path(argv.pop(0))
+            continue
+        if option == "--package-snapshot-sha256":
+            if package_snapshot_sha256 is not None:
+                print(f"error: duplicate {option}", file=sys.stderr)
+                return 2
+            package_snapshot_sha256 = argv.pop(0)
+            continue
         try:
             descriptor = int(argv.pop(0))
         except ValueError:
@@ -348,11 +492,32 @@ def main(argv: Sequence[str] | None = None) -> int:
             source_fd = descriptor
         else:
             package_files.append((descriptor, argv.pop(0)))
+    if (package_snapshot is None) != (package_snapshot_sha256 is None):
+        print(
+            "error: package snapshot path and SHA-256 must be provided together",
+            file=sys.stderr,
+        )
+        return 2
+    if package_snapshot is not None and (source_fd is not None or package_files):
+        print(
+            "error: package snapshot transport cannot be combined with descriptors",
+            file=sys.stderr,
+        )
+        return 2
     if not argv:
         print("error: missing interface spec", file=sys.stderr)
         return 2
     spec, *interface_argv = argv
     try:
+        if package_snapshot is not None:
+            assert package_snapshot_sha256 is not None
+            sources = _load_package_snapshot_sources(
+                package_snapshot,
+                package_snapshot_sha256,
+            )
+            with _bound_package_source_imports(sources):
+                interface = load_interface(spec, _package_sources=sources)
+                return run_python_machine_interface(interface, interface_argv)
         if package_files:
             with _bound_package_imports(package_files) as sources:
                 interface = load_interface(

@@ -62,6 +62,35 @@ def test_certifier_does_not_expose_legacy_audit_health_authority() -> None:
     assert "compute-hashes" not in certifier.Interface.dispatches
 
 
+def test_repository_fixture_preserves_exact_bytes_under_ambient_autocrlf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    global_config = tmp_path / "global.gitconfig"
+    global_config.write_text("[core]\n\tautocrlf = true\n", encoding="utf-8")
+    repository = tmp_path / "repo"
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
+    create_v4_repository(repository)
+    tracked = repository / "exact-bytes.txt"
+    tracked.write_bytes(b"exact\r\nbytes\r\n")
+
+    subprocess.run(
+        ["git", "-C", str(repository), "add", "exact-bytes.txt"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repository), "commit", "-qm", "exact bytes"],
+        check=True,
+    )
+    committed = subprocess.run(
+        ["git", "-C", str(repository), "show", "HEAD:exact-bytes.txt"],
+        check=True,
+        capture_output=True,
+    ).stdout
+
+    assert committed == tracked.read_bytes()
+
+
 def _certify(
     repo: Path,
     *,

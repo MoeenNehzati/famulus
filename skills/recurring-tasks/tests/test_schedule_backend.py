@@ -65,6 +65,10 @@ def test_linux_sync_writes_units_and_enables_timer(tmp_path):
     with (
         mock.patch("_schedule_backend._linux_backend.subprocess.run") as run,
         mock.patch(
+            "_schedule_backend._linux_backend.sys.executable",
+            "/usr/bin/python3",
+        ),
+        mock.patch(
             "_schedule_backend._linux_backend.shutil.which",
             return_value="/opt/famulus/bin/invoke-skill",
         ),
@@ -73,8 +77,8 @@ def test_linux_sync_writes_units_and_enables_timer(tmp_path):
 
     service = (tmp_path / "ai-my-job.service").read_text()
     timer = (tmp_path / "ai-my-job.timer").read_text()
-    assert f'ExecStart="{sys.executable}"' in service
-    assert f'Environment="PATH=/opt/famulus/bin:{Path(sys.executable).parent}:' in service
+    assert 'ExecStart="/usr/bin/python3"' in service
+    assert 'Environment="PATH=/opt/famulus/bin:/usr/bin:' in service
     assert '_job_executor.py" --jobs-file' in service
     assert "/bin/bash" not in service
     assert ">>" not in service

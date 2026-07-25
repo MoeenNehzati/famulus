@@ -30,7 +30,7 @@ def _pytest_args(*, verbose: bool) -> list[str]:
 def _discover_skill_test_dirs() -> list[str]:
     skills_root = REPO_ROOT / "skills"
     return sorted(
-        str(path.relative_to(REPO_ROOT))
+        path.relative_to(REPO_ROOT).as_posix()
         for path in skills_root.glob("*/tests")
         if path.is_dir()
     )

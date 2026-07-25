@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from officina.common.certification_view import CertificationDecision
+import officina.dispatcher.core as dispatcher_core
 from officina.dispatcher.core import (
     InvocationError,
     dispatch,
@@ -28,6 +29,33 @@ def _current_test_certificates(monkeypatch: pytest.MonkeyPatch) -> None:
         "officina.dispatcher.core.repository_certification_view",
         lambda _root: _PassingCertificationView(),
     )
+
+
+def _use_descriptor_free_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "PYTHONPATH",
+        str(Path(__file__).resolve().parents[1] / "src"),
+    )
+    monkeypatch.setattr(
+        dispatcher_core,
+        "descriptor_safe_open_supported",
+        lambda: False,
+    )
+
+
+def _track_runtime_snapshot_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[Path]:
+    real_mkstemp = dispatcher_core.tempfile.mkstemp
+    paths: list[Path] = []
+
+    def tracked_mkstemp(*args: object, **kwargs: object) -> tuple[int, str]:
+        descriptor, raw_path = real_mkstemp(*args, **kwargs)
+        paths.append(Path(raw_path))
+        return descriptor, raw_path
+
+    monkeypatch.setattr(dispatcher_core.tempfile, "mkstemp", tracked_mkstemp)
+    return paths
 
 
 def test_public_dispatcher_apis_accept_only_canonical_target() -> None:
@@ -431,6 +459,11 @@ def test_v4_dispatch_rejects_declared_use_with_wrong_version(tmp_path: Path) -> 
         )
 
 
+# famulus-skip: category=platform-contract; reason=pass_fds is a POSIX transport; alternate=test_v4_python_runtime_falls_back_to_confined_path_snapshot covers the native-reader path
+@pytest.mark.skipif(
+    not dispatcher_core.descriptor_safe_open_supported(),
+    reason="descriptor inheritance requires POSIX dir-fd support",
+)
 def test_v4_python_runtime_preserves_utf8_and_descriptor_confinement(
     tmp_path: Path,
 ) -> None:
@@ -454,6 +487,152 @@ def test_v4_python_runtime_preserves_utf8_and_descriptor_confinement(
         assert resolved.pass_fds
 
 
+def test_v4_python_runtime_falls_back_to_confined_path_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_v4_module(tmp_path)
+    _write_v4_caller(tmp_path)
+    _use_descriptor_free_runtime(monkeypatch)
+
+    def reject_descriptor_package(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("descriptor-free runtime attempted to open POSIX package FDs")
+
+    monkeypatch.setattr(
+        dispatcher_core,
+        "open_runtime_python_package",
+        reject_descriptor_package,
+    )
+
+    completed = dispatch(
+        caller_skill="caller-skill",
+        target="demo-skill.interface.run",
+        args=["--route-smoke"],
+        capture_output=True,
+        text=True,
+        repo_root=tmp_path,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == "route-smoke ok\n"
+
+
+def test_v4_descriptor_free_runtime_executes_parent_snapshot_after_source_swap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_source = (
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    def route_smoke(self):\n"
+        "        print('captured')\n"
+        "    def run(self, args):\n"
+        "        return 0\n"
+    )
+    replaced_source = captured_source.replace("'captured'", "'replaced'")
+    _write_v4_module(tmp_path, worker_source=captured_source)
+    _write_v4_caller(tmp_path)
+    _use_descriptor_free_runtime(monkeypatch)
+    worker = tmp_path / "skills" / "demo-skill" / "_rtx" / "_worker.py"
+    real_run = subprocess.run
+    snapshot_paths: list[Path] = []
+
+    def swap_then_run(command: list[str], **kwargs: object):
+        snapshot_index = command.index("--package-snapshot") + 1
+        snapshot_paths.append(Path(command[snapshot_index]))
+        worker.write_text(replaced_source, encoding="utf-8")
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(dispatcher_core.subprocess, "run", swap_then_run)
+
+    completed = dispatch(
+        caller_skill="caller-skill",
+        target="demo-skill.interface.run",
+        args=["--route-smoke"],
+        capture_output=True,
+        text=True,
+        repo_root=tmp_path,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == "captured\nroute-smoke ok\n"
+    assert snapshot_paths and all(not path.exists() for path in snapshot_paths)
+
+
+def test_v4_descriptor_free_runtime_rejects_tampered_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_v4_module(tmp_path)
+    _write_v4_caller(tmp_path)
+    _use_descriptor_free_runtime(monkeypatch)
+    real_run = subprocess.run
+    snapshot_paths: list[Path] = []
+
+    def tamper_then_run(command: list[str], **kwargs: object):
+        snapshot_index = command.index("--package-snapshot") + 1
+        snapshot_path = Path(command[snapshot_index])
+        snapshot_paths.append(snapshot_path)
+        snapshot_path.write_bytes(b"{}")
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(dispatcher_core.subprocess, "run", tamper_then_run)
+
+    completed = dispatch(
+        caller_skill="caller-skill",
+        target="demo-skill.interface.run",
+        args=["--route-smoke"],
+        capture_output=True,
+        text=True,
+        repo_root=tmp_path,
+    )
+
+    assert completed.returncode == 2
+    assert "package snapshot digest mismatch" in completed.stderr
+    assert snapshot_paths and all(not path.exists() for path in snapshot_paths)
+
+
+def test_v4_descriptor_free_metadata_and_launch_failure_clean_snapshot_transport(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_v4_module(tmp_path)
+    _write_v4_caller(tmp_path)
+    _use_descriptor_free_runtime(monkeypatch)
+    snapshot_paths = _track_runtime_snapshot_paths(monkeypatch)
+
+    metadata = resolve_dispatch_metadata(
+        caller_skill="caller-skill",
+        target="demo-skill.interface.run",
+        args=["--route-smoke"],
+        repo_root=tmp_path,
+    )
+
+    assert "--package-snapshot" not in metadata.command
+    assert "--package-snapshot-sha256" not in metadata.command
+    assert snapshot_paths and all(not path.exists() for path in snapshot_paths)
+
+    def fail_launch(_command: list[str], **_kwargs: object):
+        raise OSError("launch broke")
+
+    monkeypatch.setattr(dispatcher_core.subprocess, "run", fail_launch)
+
+    with pytest.raises(InvocationError, match="launch failed: launch broke"):
+        dispatch(
+            caller_skill="caller-skill",
+            target="demo-skill.interface.run",
+            args=["--route-smoke"],
+            repo_root=tmp_path,
+        )
+
+    assert snapshot_paths and all(not path.exists() for path in snapshot_paths)
+
+
+# famulus-skip: category=platform-contract; reason=this assertion inspects retained POSIX source descriptors; alternate=test_v4_python_runtime_falls_back_to_confined_path_snapshot covers descriptor-free roots
+@pytest.mark.skipif(
+    not dispatcher_core.descriptor_safe_open_supported(),
+    reason="descriptor inheritance requires POSIX dir-fd support",
+)
 def test_v4_python_runtime_uses_resolved_module_root_outside_skills(
     tmp_path: Path,
 ) -> None:

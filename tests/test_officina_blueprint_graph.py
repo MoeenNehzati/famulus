@@ -325,11 +325,17 @@ def test_repository_graph_rejects_pre_v4_documents(
 
 def test_load_module_blueprint_is_exact_and_ignores_invalid_siblings(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _write_v4_module(tmp_path, "target-skill", allow_callers=[])
     sibling = tmp_path / "skills" / "invalid-sibling"
     sibling.mkdir()
     (sibling / "blueprint.yaml").write_text("not: [valid\n", encoding="utf-8")
+    monkeypatch.setattr(
+        blueprint_graph,
+        "_descriptor_safe_open_supported",
+        lambda: False,
+    )
 
     node = blueprint_graph.load_module_blueprint(
         tmp_path,

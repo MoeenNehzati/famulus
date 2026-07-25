@@ -2109,6 +2109,10 @@ def certify_v4_migration_candidate(root, *, reviewed_commit, certified_at):
         ["git", "-C", str(root), "config", "user.email", "test@example.invalid"],
         check=True,
     )
+    subprocess.run(
+        ["git", "-C", str(root), "config", "core.autocrlf", "false"],
+        check=True,
+    )
     subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
     subprocess.run(
         ["git", "-C", str(root), "commit", "-qm", "candidate"], check=True
@@ -2128,6 +2132,37 @@ def certify_v4_migration_candidate(root, *, reviewed_commit, certified_at):
         check=True,
     )
     return commit
+
+
+def test_candidate_fixture_preserves_exact_head_under_ambient_autocrlf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    global_config = tmp_path / "global.gitconfig"
+    global_config.write_text("[core]\n\tautocrlf = true\n", encoding="utf-8")
+    candidate = tmp_path / "candidate"
+    candidate.mkdir()
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
+    _write_candidate_certifier_api_fixture(candidate)
+    certifier_path = (
+        candidate / "skills" / "skill-certifier" / "_rtx" / "_node_certifier.py"
+    )
+    certifier_path.unlink()
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(candidate),
+            "checkout",
+            "--",
+            certifier_path.relative_to(candidate).as_posix(),
+        ],
+        check=True,
+    )
+
+    inspection = migration.inspect_candidate_v4(candidate)
+
+    assert inspection["node_ids"] == ["candidate-node"]
 
 
 def test_candidate_source_materialization_excludes_ignored_private_state(
