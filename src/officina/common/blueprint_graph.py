@@ -14,7 +14,7 @@ from typing import Any, Mapping
 import jsonschema
 import yaml
 
-from .atomic_files import read_regular_file_bytes
+from .atomic_files import AtomicWriteError, read_regular_file_bytes
 from .blueprint_inventory import (
     BlueprintDocument,
     JsonValue,
@@ -185,6 +185,33 @@ def descriptor_safe_open_supported() -> bool:
     return _descriptor_safe_open_supported()
 
 
+def _relative_to_equivalent_root(path: Path, root: Path) -> Path:
+    try:
+        return path.relative_to(root)
+    except ValueError as lexical_error:
+        for ancestor in (path, *path.parents):
+            try:
+                equivalent = ancestor.samefile(root)
+            except OSError:
+                continue
+            if equivalent:
+                return path.relative_to(ancestor)
+        raise lexical_error
+
+
+def repository_relative_path(path: Path, repo_root: Path) -> Path:
+    """Return a path relative to a filesystem-equivalent repository root."""
+
+    absolute = Path(os.path.abspath(path))
+    root = Path(os.path.abspath(repo_root))
+    try:
+        return _relative_to_equivalent_root(absolute, root)
+    except ValueError as exc:
+        raise BlueprintGraphError(
+            f"{path}: runtime input must be under {repo_root}"
+        ) from exc
+
+
 def _runtime_relative_path(
     path: Path,
     owner_root: Path,
@@ -194,15 +221,12 @@ def _runtime_relative_path(
     owner_absolute = Path(os.path.abspath(owner_root))
     path_absolute = Path(os.path.abspath(path))
     try:
-        path_absolute.relative_to(owner_absolute)
+        _relative_to_equivalent_root(path_absolute, owner_absolute)
     except ValueError as exc:
         raise BlueprintGraphError(
             f"{path}: runtime input must be under its owning root {owner_root}"
         ) from exc
-    try:
-        relative = path_absolute.relative_to(repo_absolute)
-    except ValueError as exc:
-        raise BlueprintGraphError(f"{path}: runtime input must be under {repo_root}") from exc
+    relative = repository_relative_path(path_absolute, repo_absolute)
     if not relative.parts:
         raise BlueprintGraphError(f"{path}: runtime input must name a file")
     return path_absolute, relative
@@ -583,10 +607,10 @@ def resolved_node_content_paths(
         raise BlueprintGraphError(
             f"{node.blueprint_path}: content resolution requires schema_version 4"
         )
-    repo_root = Path(repo_root).resolve()
-    owner_root = Path(node.skill_root).resolve()
+    repo_root = Path(os.path.abspath(repo_root))
+    owner_root = Path(os.path.abspath(node.skill_root))
     try:
-        owner_root.relative_to(repo_root)
+        _relative_to_equivalent_root(owner_root, repo_root)
     except ValueError as exc:
         raise BlueprintGraphError(
             f"{node.blueprint_path}: content ownership root must be inside the repository"
@@ -667,13 +691,22 @@ def validate_runtime_file_path(
     owner_root: Path,
     repo_root: Path,
 ) -> Path:
-    """Validate one lexical runtime file through a no-follow descriptor walk."""
+    """Validate one confined regular runtime file on the current platform."""
 
-    binding = open_runtime_file(path, owner_root, repo_root)
+    path_absolute, _relative = _runtime_relative_path(
+        path,
+        owner_root,
+        repo_root,
+    )
     try:
-        return binding.path
-    finally:
-        binding.close()
+        read_regular_file_bytes(
+            path_absolute,
+            allowed_root=Path(os.path.abspath(owner_root)),
+            allow_non_atomic=False,
+        )
+    except (AtomicWriteError, OSError) as exc:
+        raise BlueprintGraphError(f"{path}: {exc}") from exc
+    return path_absolute
 
 
 def _v4_node_from_document(document: Any) -> BlueprintNode:

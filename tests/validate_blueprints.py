@@ -50,6 +50,28 @@ def test_v4_skill_passes(
     assert MOD.validate(tmp_path) == []
 
 
+def test_v4_skill_passes_through_equivalent_repository_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    physical_parent = tmp_path / "physical"
+    repository = physical_parent / "repository"
+    _copy_v4_skill(repository)
+    alias_parent = tmp_path / "alias"
+    try:
+        alias_parent.symlink_to(physical_parent, target_is_directory=True)
+    except OSError:
+        # famulus-skip: category=platform-contract; reason=some Windows runners deny directory-symlink creation; alternate=Linux and macOS exercise the validator-alias regression
+        pytest.skip("directory symlinks are unavailable")
+    monkeypatch.setattr(
+        MOD,
+        "_git_tracked_files",
+        lambda _root: _tracked(repository),
+    )
+
+    assert MOD.validate(alias_parent / "repository") == []
+
+
 def test_skill_file_requires_module_blueprint(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

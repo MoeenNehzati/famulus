@@ -30,6 +30,7 @@ from officina.common.blueprint_graph import (  # noqa: E402
     BlueprintGraphError,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
+    repository_relative_path,
 )
 from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
 
@@ -153,12 +154,16 @@ def _validate_v4_blueprints(
 ) -> list[str]:
     errors: list[str] = []
     repo_root = repo_root.resolve()
-    skills_root = repo_root / "skills"
     for node in graph.nodes.values():
-        rel_path = node.blueprint_path.relative_to(repo_root)
+        rel_path = repository_relative_path(node.blueprint_path, repo_root)
+        owner_relative = repository_relative_path(node.skill_root, repo_root)
+        is_skill_node = (
+            len(owner_relative.parts) == 2
+            and owner_relative.parts[0] == "skills"
+        )
         if (
             node.node_type == "module"
-            and node.skill_root.parent == skills_root
+            and is_skill_node
         ):
             authority = node.declaration.get("authority")
             suggested = (
@@ -199,7 +204,7 @@ def _validate_v4_blueprints(
             continue
         if (
             node.node_type != "behavioral_source"
-            or node.skill_root.parent != skills_root
+            or not is_skill_node
         ):
             continue
         dependencies = node.declaration.get("runtime_dependencies", [])

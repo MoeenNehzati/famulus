@@ -1,7 +1,6 @@
 """Validate version-4 blueprint source files and generated skill blocks."""
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +15,7 @@ from officina.common.blueprint_graph import (  # noqa: E402
     RepositoryBlueprintGraph,
     authored_node_input_paths,
     load_repository_blueprint_graph,
+    repository_relative_path,
     validate_runtime_file_path,
 )
 from officina.common.blueprint_inventory import (  # noqa: E402
@@ -66,7 +66,6 @@ def _validate_authored_input_files(
     tracked_files: dict[str, tuple[tuple[str, str], ...]],
 ) -> list[str]:
     errors: list[str] = []
-    absolute_root = Path(os.path.abspath(repo_root))
     for node in graph.nodes.values():
         try:
             paths = authored_node_input_paths(node, repo_root)
@@ -78,11 +77,13 @@ def _validate_authored_input_files(
                 validate_runtime_file_path(path, node.skill_root, repo_root)
             except BlueprintGraphError as exc:
                 errors.append(str(exc))
-            lexical_path = Path(os.path.abspath(path))
             try:
-                relative_path = lexical_path.relative_to(absolute_root).as_posix()
-            except ValueError:
-                relative_path = lexical_path.as_posix()
+                relative_path = repository_relative_path(
+                    path,
+                    repo_root,
+                ).as_posix()
+            except BlueprintGraphError:
+                relative_path = path.as_posix()
             index_entries = tracked_files.get(relative_path)
             if not index_entries:
                 errors.append(

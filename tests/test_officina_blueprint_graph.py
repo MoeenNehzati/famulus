@@ -14,6 +14,7 @@ from officina.common.blueprint_graph import (
     load_repository_blueprint_graph,
     resolved_node_content_paths,
     resolve_export,
+    validate_runtime_file_path,
 )
 
 
@@ -192,6 +193,13 @@ def test_v4_schema_loading_does_not_require_posix_runtime_descriptors(
     graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
 
     assert "demo-skill" in graph.nodes
+    node = graph.nodes["demo-skill"]
+    assert node.gateway_path is not None
+    assert validate_runtime_file_path(
+        node.gateway_path,
+        node.skill_root,
+        tmp_path,
+    ) == node.gateway_path
 
 
 def test_content_ownership_accepts_equivalent_repository_alias(
@@ -226,6 +234,11 @@ def test_content_ownership_accepts_equivalent_repository_alias(
         node,
         alias_parent / "repository",
     ) == (content,)
+    assert validate_runtime_file_path(
+        content,
+        module,
+        alias_parent / "repository",
+    ) == content
 
 
 def test_v4_repository_graph_uses_one_generic_export_and_direct_ownership(
