@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 
+import pytest
 import yaml
 
 
@@ -41,6 +42,23 @@ def test_clean_v4_python_module_passes(tmp_path: Path) -> None:
     _copy_module(tmp_path)
 
     assert validate(tmp_path) == []
+
+
+def test_clean_v4_module_passes_through_symlinked_repository_root(
+    tmp_path: Path,
+) -> None:
+    physical_parent = tmp_path / "physical-parent"
+    physical_root = physical_parent / "repository"
+    _copy_module(physical_root)
+    logical_parent = tmp_path / "logical-parent"
+    try:
+        logical_parent.symlink_to(physical_parent, target_is_directory=True)
+    except OSError as exc:
+        # famulus-skip: category=platform-contract; reason=some Windows runners deny directory-symlink creation; alternate=Linux and macOS exercise the parent-alias regression
+        pytest.skip(f"directory symlinks unavailable: {exc}")
+    logical_root = logical_parent / "repository"
+
+    assert validate(logical_root) == []
 
 
 def test_shell_script_is_rejected(tmp_path: Path) -> None:

@@ -152,6 +152,7 @@ def _validate_v4_blueprints(
     repo_root: Path,
 ) -> list[str]:
     errors: list[str] = []
+    repo_root = repo_root.resolve()
     skills_root = repo_root / "skills"
     for node in graph.nodes.values():
         rel_path = node.blueprint_path.relative_to(repo_root)

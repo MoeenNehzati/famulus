@@ -9,7 +9,7 @@ OPTIONAL=('imports','applicability_facts','schema_authorities','schema_authority
 SEMANTIC={'family','rule','assertion','guidance','definition','procedure','step','evidence-claim'}
 
 def _schema():
- schema=json.loads((HERE/'standard-v6.schema.json').read_text())
+ schema=json.loads((HERE/'standard-v6.schema.json').read_text(encoding='utf-8'))
  # The checked-in identity is repository-relative. Give jsonschema an absolute
  # runtime base so its legacy resolver keeps local fragment references local.
  schema['$id']=(HERE/'standard-v6.schema.json').resolve().as_uri()
@@ -186,7 +186,7 @@ def validate_file(path,root=None,cache=None,_stack=None):
  path=Path(path).resolve(); root=Path(root).resolve() if root else path.parent.resolve(); cache={} if cache is None else cache; stack=list(_stack or [])
  if path in stack:return ['import cycle: '+' -> '.join(map(str,stack+[path]))]
  if path in cache:return cache[path][1]
- try:d=yaml.safe_load(path.read_text())
+ try:d=yaml.safe_load(path.read_text(encoding='utf-8'))
  except Exception as x:return [f'cannot load document: {x}']
  try:jsonschema.validate(d,_schema())
  except jsonschema.ValidationError as x:return [f'schema validation failed: {x.message}']
@@ -199,7 +199,7 @@ def validate_file(path,root=None,cache=None,_stack=None):
   target,problem=_resolve_artifact_path(artifact,root,f'schema_authorities.{aid}.artifact')
   if problem:
    errors.append(problem);continue
-  try:schema_document=json.loads(target.read_text())
+  try:schema_document=json.loads(target.read_text(encoding='utf-8'))
   except Exception as exc:
    errors.append(f'schema_authorities.{aid}.artifact: cannot load JSON Schema: {exc}');continue
   try:jsonschema.validators.validator_for(schema_document).check_schema(schema_document)
@@ -242,7 +242,7 @@ def validate_file(path,root=None,cache=None,_stack=None):
   if problem:errors.append(problem);continue
   actual='sha256:'+hashlib.sha256(target.read_bytes()).hexdigest()
   if actual!=decl['digest']:errors.append(f'imports.{alias}: digest mismatch');continue
-  try:child=yaml.safe_load(target.read_text())
+  try:child=yaml.safe_load(target.read_text(encoding='utf-8'))
   except Exception as exc:errors.append(f'imports.{alias}: cannot load imported document {target}: {exc}');continue
   try:jsonschema.validate(child,_schema())
   except jsonschema.ValidationError as exc:errors.append(f'imports.{alias}: schema validation failed at {exc.json_path}: {exc.message}');continue

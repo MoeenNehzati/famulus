@@ -176,6 +176,22 @@ def _write_v4_module(
     )
 
 
+def test_v4_schema_loading_does_not_require_posix_runtime_descriptors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_v4_module(tmp_path, "demo-skill")
+    monkeypatch.setattr(
+        blueprint_graph,
+        "_descriptor_safe_open_supported",
+        lambda: False,
+    )
+
+    graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+
+    assert "demo-skill" in graph.nodes
+
+
 def test_v4_repository_graph_uses_one_generic_export_and_direct_ownership(
     tmp_path: Path,
 ) -> None:

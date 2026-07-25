@@ -62,7 +62,7 @@ def validate(repo_root: Path) -> list[str]:
             continue
         errors.extend(f"{relative}: {error}" for error in validator.validate_file(path, root=repo_root))
         try:
-            document = yaml.safe_load(path.read_text())
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
             if document.get("canonical_path") != relative.as_posix():
                 errors.append(
                     f"{relative}: canonical_path must equal {relative}; "
@@ -76,6 +76,6 @@ def validate(repo_root: Path) -> list[str]:
         view_path = repo_root / view_relative
         if not view_path.is_file():
             errors.append(f"{view_relative}: missing generated view")
-        elif view_path.read_text() != rendered:
+        elif view_path.read_text(encoding="utf-8") != rendered:
             errors.append(f"{view_relative}: generated view is stale; render {relative}")
     return errors

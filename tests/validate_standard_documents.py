@@ -45,13 +45,36 @@ def test_repository_canonical_standards_are_valid_and_fresh():
     assert validator.validate(ROOT) == []
 
 
+def test_accepts_utf8_standards_and_crlf_views_under_windows_default_encoding(
+    tmp_path, monkeypatch
+):
+    repo = _copy_standard_repo(tmp_path)
+    for relative in CANONICAL:
+        view = repo / Path(relative.removesuffix(".standard.yaml") + ".md")
+        text = view.read_text(encoding="utf-8")
+        view.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+
+    original_read_text = Path.read_text
+
+    def read_text_with_windows_default(path, encoding=None, errors=None):
+        return original_read_text(
+            path,
+            encoding=encoding or "cp1252",
+            errors=errors,
+        )
+
+    monkeypatch.setattr(Path, "read_text", read_text_with_windows_default)
+
+    assert _load_validator().validate(repo) == []
+
+
 def test_rejects_schema_or_semantically_invalid_standard(tmp_path):
     repo = _copy_standard_repo(tmp_path)
     path = repo / CANONICAL[1]
-    document = yaml.safe_load(path.read_text())
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
     remedy = next(link for link in document["links"].values() if link["relation"] == "remedied-by")
     remedy["source"]["kind"] = "procedure"
-    path.write_text(yaml.safe_dump(document, sort_keys=False))
+    path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
 
     errors = _load_validator().validate(repo)
 
@@ -61,9 +84,9 @@ def test_rejects_schema_or_semantically_invalid_standard(tmp_path):
 def test_rejects_json_schema_invalid_standard(tmp_path):
     repo = _copy_standard_repo(tmp_path)
     path = repo / CANONICAL[0]
-    document = yaml.safe_load(path.read_text())
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
     del document["title"]
-    path.write_text(yaml.safe_dump(document, sort_keys=False))
+    path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
 
     errors = _load_validator().validate(repo)
 
@@ -73,7 +96,7 @@ def test_rejects_json_schema_invalid_standard(tmp_path):
 def test_reports_malformed_yaml_without_crashing(tmp_path):
     repo = _copy_standard_repo(tmp_path)
     path = repo / CANONICAL[2]
-    path.write_text("standards: [\n")
+    path.write_text("standards: [\n", encoding="utf-8")
 
     errors = _load_validator().validate(repo)
 
@@ -83,7 +106,10 @@ def test_reports_malformed_yaml_without_crashing(tmp_path):
 def test_rejects_stale_generated_markdown(tmp_path):
     repo = _copy_standard_repo(tmp_path)
     view = repo / "references/skill-standards/skill-refactoring.md"
-    view.write_text(view.read_text() + "\nstale edit\n")
+    view.write_text(
+        view.read_text(encoding="utf-8") + "\nstale edit\n",
+        encoding="utf-8",
+    )
 
     errors = _load_validator().validate(repo)
 
@@ -109,14 +135,20 @@ def test_rejects_canonical_path_mismatch_at_allowlisted_location(tmp_path):
     repo = _copy_standard_repo(tmp_path)
     first = repo / CANONICAL[0]
     second = repo / CANONICAL[1]
-    first_document = yaml.safe_load(first.read_text())
-    second_document = yaml.safe_load(second.read_text())
+    first_document = yaml.safe_load(first.read_text(encoding="utf-8"))
+    second_document = yaml.safe_load(second.read_text(encoding="utf-8"))
     first_document["canonical_path"], second_document["canonical_path"] = (
         second_document["canonical_path"],
         first_document["canonical_path"],
     )
-    first.write_text(yaml.safe_dump(first_document, sort_keys=False))
-    second.write_text(yaml.safe_dump(second_document, sort_keys=False))
+    first.write_text(
+        yaml.safe_dump(first_document, sort_keys=False),
+        encoding="utf-8",
+    )
+    second.write_text(
+        yaml.safe_dump(second_document, sort_keys=False),
+        encoding="utf-8",
+    )
 
     errors = _load_validator().validate(repo)
 

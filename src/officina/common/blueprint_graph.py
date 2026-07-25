@@ -14,6 +14,7 @@ from typing import Any, Mapping
 import jsonschema
 import yaml
 
+from .atomic_files import read_regular_file_bytes
 from .blueprint_inventory import (
     BlueprintDocument,
     JsonValue,
@@ -434,44 +435,27 @@ def _json_error_path(error: jsonschema.ValidationError) -> str:
 
 
 def _load_schema_validator(schema_path: Path) -> jsonschema.Draft7Validator:
-    """Read a concrete v4 schema bundle through one no-follow directory handle."""
+    """Read a concrete v4 schema bundle through the shared confined reader."""
 
     schema_path = Path(os.path.abspath(schema_path))
     schema_root = schema_path.parent
     repo_root = schema_root.parent.parent
-    directory: RuntimeFileBinding | None = None
     try:
-        directory = _open_runtime_descriptor(
-            schema_root,
-            repo_root,
-            repo_root,
-            directory=True,
-        )
         documents: dict[str, dict[str, Any]] = {}
-        file_flags = (
-            os.O_RDONLY
-            | os.O_NOFOLLOW
-            | os.O_NONBLOCK
-            | getattr(os, "O_CLOEXEC", 0)
-        )
         for name in sorted(
             name
-            for name in os.listdir(directory.fd)
+            for name in os.listdir(schema_root)
             if name.endswith(".schema.json")
         ):
             child_path = schema_root / name
-            child_fd = -1
             try:
-                child_fd = os.open(name, file_flags, dir_fd=directory.fd)
-                metadata = os.fstat(child_fd)
-                if not stat.S_ISREG(metadata.st_mode):
-                    raise OSError(f"schema is not a regular file: {child_path}")
-                child = RuntimeFileBinding(child_path, child_fd, metadata.st_mode)
-                child_fd = -1
-                try:
-                    document = json.loads(child.read_bytes().decode("utf-8"))
-                finally:
-                    child.close()
+                document = json.loads(
+                    read_regular_file_bytes(
+                        child_path,
+                        allowed_root=repo_root,
+                        allow_non_atomic=False,
+                    ).decode("utf-8")
+                )
                 if not isinstance(document, dict):
                     raise TypeError("schema top level must be a mapping")
                 documents[name] = document
@@ -481,9 +465,6 @@ def _load_schema_validator(schema_path: Path) -> jsonschema.Draft7Validator:
                     "$",
                     f"cannot load schema: {exc}",
                 ) from exc
-            finally:
-                if child_fd >= 0:
-                    os.close(child_fd)
         try:
             selected = documents[schema_path.name]
         except KeyError as exc:
@@ -513,9 +494,6 @@ def _load_schema_validator(schema_path: Path) -> jsonschema.Draft7Validator:
             "$",
             f"cannot load schema bundle: {exc}",
         ) from exc
-    finally:
-        if directory is not None:
-            directory.close()
 
 
 def _declaration_schema_errors(
