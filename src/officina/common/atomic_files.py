@@ -798,6 +798,7 @@ def _windows_modules():
         declare(advapi32, "GetAclInformation", [pointer, pointer, dword, ctypes.c_int32], boolean)
         declare(advapi32, "GetAce", [pointer, dword, pointer_out], boolean)
         declare(ntdll, "NtCreateFile", [ctypes.POINTER(_WinHandle), dword, ctypes.POINTER(_WinObjectAttributes), ctypes.POINTER(_WinIoStatusBlock), pointer, dword, dword, dword, dword, pointer, dword], ctypes.c_int32)
+        declare(ntdll, "NtSetInformationFile", [_WinHandle, ctypes.POINTER(_WinIoStatusBlock), pointer, dword, ctypes.c_int32], ctypes.c_int32)
         declare(ntdll, "RtlNtStatusToDosError", [ctypes.c_int32], dword)
     except (AttributeError, OSError, TypeError) as exc:
         raise AtomicWriteError(_CAPABILITY_ERROR) from exc
@@ -1334,28 +1335,29 @@ def _windows_rename_handle(
 ) -> bool:
     """Atomically rename relative to a retained 64-bit directory handle."""
 
-    kernel32, _advapi32, _ntdll = _windows_modules()
-    # The temporary file already resides in the retained destination directory.
-    # With a simple new name, the native API renames within that same directory;
-    # RootDirectory must therefore be NULL rather than redundantly supplied.
-    del parent_handle
+    _kernel32, _advapi32, ntdll = _windows_modules()
     information = _windows_file_rename_info(
         name,
-        0,
+        parent_handle,
         replace=replace,
     )
-    for information_class in (22, 3):
-        if kernel32.SetFileInformationByHandle(
-            _WinHandle(handle),
-            information_class,
-            ctypes.byref(information),
-            information._used_size,
-        ):
+    for information_class in (65, 10):
+        io_status = _WinIoStatusBlock()
+        status = int(
+            ntdll.NtSetInformationFile(
+                _WinHandle(handle),
+                ctypes.byref(io_status),
+                ctypes.byref(information),
+                information._used_size,
+                information_class,
+            )
+        )
+        if status >= 0:
             return True
-        error = ctypes.get_last_error()
+        error = int(ntdll.RtlNtStatusToDosError(status))
         if error in {80, 183}:
             return False
-        if information_class == 22 and error in {1, 50, 87, 120}:
+        if information_class == 65 and error in {1, 50, 87, 120}:
             continue
         if error in {1, 50, 87, 120}:
             raise AtomicWriteError(_CAPABILITY_ERROR)

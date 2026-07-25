@@ -901,40 +901,38 @@ def test_windows_file_disposition_boolean_has_native_one_byte_abi() -> None:
     assert ctypes.sizeof(atomic_files._WinFileDispositionInformation) == 1
 
 
-def test_windows_rename_retries_legacy_class_with_same_directory_name(
+def test_windows_rename_retries_legacy_handle_relative_class(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     roots: list[int | None] = []
 
-    class Kernel32:
-        def SetFileInformationByHandle(
+    class Ntdll:
+        def NtSetInformationFile(
             self,
             _handle: object,
-            information_class: int,
+            _io_status: object,
             information: object,
             _size: int,
+            information_class: int,
         ) -> int:
             rename = ctypes.cast(
                 information,
                 ctypes.POINTER(atomic_files._WinFileRenameInfo),
             ).contents
             roots.append(rename.RootDirectory)
-            if information_class == 22:
+            if information_class == 65:
+                return -1
+            if information_class == 10:
                 return 0
-            if information_class == 3:
-                return 1
             raise AssertionError(f"unexpected information class {information_class}")
+
+        def RtlNtStatusToDosError(self, _status: int) -> int:
+            return 87
 
     monkeypatch.setattr(
         atomic_files,
         "_windows_modules",
-        lambda: (Kernel32(), object(), object()),
-    )
-    monkeypatch.setattr(
-        atomic_files.ctypes,
-        "get_last_error",
-        lambda: 87,
-        raising=False,
+        lambda: (object(), object(), Ntdll()),
     )
 
     assert atomic_files._windows_rename_handle(
@@ -943,7 +941,7 @@ def test_windows_rename_retries_legacy_class_with_same_directory_name(
         "certificate.jsonl",
         replace=True,
     )
-    assert roots == [None, None]
+    assert roots == [456, 456]
 
 
 def test_windows_mark_delete_reports_native_failure_after_one_byte_call(

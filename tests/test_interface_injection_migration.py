@@ -2181,6 +2181,10 @@ def test_candidate_source_materialization_excludes_ignored_private_state(
     (source / ".gitignore").write_text("skills/demo/state/\n")
     subprocess.run(["git", "init", "-q", str(source)], check=True)
     subprocess.run(
+        ["git", "-C", str(source), "config", "core.autocrlf", "false"],
+        check=True,
+    )
+    subprocess.run(
         ["git", "-C", str(source), "config", "user.name", "Test"], check=True
     )
     subprocess.run(
