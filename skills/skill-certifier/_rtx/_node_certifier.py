@@ -49,9 +49,11 @@ from officina.common.atomic_files import (
     read_regular_file_bytes,
 )
 from officina.common.blueprint_graph import (
+    BlueprintGraphError,
     BlueprintNode,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
+    repository_relative_path,
 )
 from officina.common.certification_view import (
     CertificateCurrentnessView,
@@ -518,8 +520,14 @@ def _v4_payload(
             "id": node.node_id,
             "node_type": node.node_type,
             "version": node.version,
-            "blueprint_path": node.blueprint_path.relative_to(repo_root).as_posix(),
-            "gateway_path": node.gateway_path.relative_to(repo_root).as_posix(),
+            "blueprint_path": repository_relative_path(
+                node.blueprint_path,
+                repo_root,
+            ).as_posix(),
+            "gateway_path": repository_relative_path(
+                node.gateway_path,
+                repo_root,
+            ).as_posix(),
         },
         "node_hash": state.node_hash,
         "source_commit": source_commit,
@@ -619,10 +627,10 @@ def _v4_blueprint_paths(
 ) -> set[Path]:
     try:
         return {
-            node.blueprint_path.relative_to(repo_root)
+            repository_relative_path(node.blueprint_path, repo_root)
             for node in graph.nodes.values()
         }
-    except ValueError as exc:
+    except BlueprintGraphError as exc:
         raise CertificationError("v4 blueprint path escapes its repository") from exc
 
 
@@ -765,8 +773,8 @@ def _verify_executing_candidate_certifier(
 ) -> None:
     executing = Path(__file__).resolve()
     try:
-        executing_relative = executing.relative_to(root).as_posix()
-    except ValueError as exc:
+        executing_relative = repository_relative_path(executing, root).as_posix()
+    except BlueprintGraphError as exc:
         raise CertificationError("executing certifier bytes are outside the candidate") from exc
     owners = [
         node_id
@@ -963,8 +971,11 @@ def _certify_v4_repository(
     normalized_checks: dict[str, tuple[dict[str, object], ...]] = {}
 
     tracked_paths: set[Path] = {
-        *basis_paths,
-        *(node.blueprint_path for node in graph.nodes.values()),
+        root / repository_relative_path(path, root)
+        for path in (
+            *basis_paths,
+            *(node.blueprint_path for node in graph.nodes.values()),
+        )
     }
     local_claims: dict[str, str] = {}
     for state in states.values():
@@ -976,7 +987,10 @@ def _certify_v4_repository(
                 local_claims[entry["path"]] = entry["digest"]
     ordered_tracked_paths = tuple(sorted(tracked_paths))
     pooled_review_relatives = {
-        pooled_review_path(node.skill_root).relative_to(root)
+        repository_relative_path(
+            pooled_review_path(node.skill_root),
+            root,
+        )
         for node in graph.nodes.values()
         if node.node_type == "module"
     }
@@ -1026,10 +1040,11 @@ def _certify_v4_repository(
             bool(metadata.st_mode & stat.S_IXUSR),
         )
     try:
-        public_key_relative = Path(
-            os.path.abspath(public_key_root)
-        ).relative_to(root)
-    except ValueError as exc:
+        public_key_relative = repository_relative_path(
+            Path(os.path.abspath(public_key_root)),
+            root,
+        )
+    except BlueprintGraphError as exc:
         raise CertificationError("certificate public-key root is outside repository") from exc
 
     def require_frozen_tracked_inputs(phase: str) -> None:
@@ -1473,7 +1488,10 @@ def _v4_reconciliation_digest(
     payload = [
         {
             "subject_id": item.subject_id,
-            "blueprint_path": item.blueprint_path.relative_to(root).as_posix(),
+            "blueprint_path": repository_relative_path(
+                item.blueprint_path,
+                root,
+            ).as_posix(),
             "field": item.field,
             "target_id": item.target_id,
             "claim": item.claim,

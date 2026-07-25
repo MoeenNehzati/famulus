@@ -20,14 +20,23 @@ import yaml
 
 from .atomic_files import AtomicWriteError, read_regular_file_bytes
 from .blueprint_graph import (
+    BlueprintGraphError,
     BlueprintNode,
     RepositoryBlueprintGraph,
+    repository_relative_path,
 )
 from .git_provenance import capture_git_snapshot, git_file_provenance_batch
 
 
 class CertificationHashError(ValueError):
     """Raised when a graph cannot be certified deterministically."""
+
+
+def _repository_path(path: Path, repo_root: Path) -> Path:
+    try:
+        return repo_root / repository_relative_path(path, repo_root)
+    except BlueprintGraphError as exc:
+        raise CertificationHashError(str(exc)) from exc
 
 
 CERTIFICATION_BASIS_MANIFEST = Path(
@@ -152,8 +161,10 @@ def _route_smoke_path(
         candidate = repo_root / candidate
     absolute = Path(os.path.abspath(candidate))
     try:
-        relative = absolute.relative_to(repo_root).as_posix()
-    except ValueError:
+        relative_path = repository_relative_path(absolute, repo_root)
+        relative = relative_path.as_posix()
+        absolute = repo_root / relative_path
+    except BlueprintGraphError:
         if not allow_outside:
             raise CertificationHashError(
                 f"unmapped route-smoke dependency outside repository: {absolute}"
@@ -275,8 +286,8 @@ def map_route_smoke_dependencies(
         _route_smoke_path(path, root, allow_outside=True) for path in loaded_paths
     ):
         try:
-            absolute.relative_to(root)
-        except ValueError:
+            repository_relative_path(absolute, root)
+        except BlueprintGraphError:
             basis_label = basis.get(absolute)
             if basis_label is None:
                 raise CertificationHashError(
@@ -519,8 +530,8 @@ def compute_certification_basis_hash(
         allow_non_atomic=allow_non_atomic,
     ):
         try:
-            relative = path.relative_to(root).as_posix()
-        except ValueError as exc:
+            relative = repository_relative_path(path, root).as_posix()
+        except BlueprintGraphError as exc:
             raise CertificationHashError(
                 f"certification basis input is outside repository: {path}"
             ) from exc
@@ -916,13 +927,16 @@ def _read_node_input(
     allow_non_atomic: bool = False,
 ) -> bytes:
     try:
-        path.relative_to(repo_root)
+        relative = repository_relative_path(path, repo_root)
+        repository_owner = (
+            repo_root / repository_relative_path(node.skill_root, repo_root)
+        )
         return read_regular_file_bytes(
-            path,
-            allowed_root=node.skill_root,
+            repo_root / relative,
+            allowed_root=repository_owner,
             allow_non_atomic=allow_non_atomic,
         )
-    except (AtomicWriteError, BlueprintGraphError, OSError, ValueError) as exc:
+    except (AtomicWriteError, BlueprintGraphError, OSError) as exc:
         raise CertificationHashError(str(exc)) from exc
 
 
@@ -940,7 +954,7 @@ def _v4_node_input_manifests(
 
     root = Path(repo_root).resolve()
     owned_paths = {
-        Path(os.path.abspath(path)): owner_id
+        _repository_path(Path(os.path.abspath(path)), root): owner_id
         for path, owner_id in graph.direct_file_owners.items()
     }
     contract_dependencies: dict[str, set[str]] = {
@@ -981,7 +995,10 @@ def _v4_node_input_manifests(
             _recursive_contract_references_from_roots(structured_seeds)
         )
         for reference in references:
-            canonical_reference = Path(os.path.abspath(reference.path))
+            canonical_reference = _repository_path(
+                Path(os.path.abspath(reference.path)),
+                root,
+            )
             owner_id = owned_paths.get(canonical_reference)
             if owner_id is None:
                 raise CertificationHashError(
@@ -996,15 +1013,23 @@ def _v4_node_input_manifests(
     all_paths = set(owned_paths)
     for node_id, node in sorted(graph.nodes.items()):
         mandatory_paths = {
-            Path(os.path.abspath(node.blueprint_path)),
+            _repository_path(
+                Path(os.path.abspath(node.blueprint_path)),
+                root,
+            ),
         }
         if node.gateway_path is not None:
-            mandatory_paths.add(Path(os.path.abspath(node.gateway_path)))
+            mandatory_paths.add(
+                _repository_path(
+                    Path(os.path.abspath(node.gateway_path)),
+                    root,
+                )
+            )
         mandatory_paths.update(mandatory_contract_paths[node_id])
         for mandatory_path in mandatory_paths:
             try:
-                mandatory_path.relative_to(root)
-            except ValueError as exc:
+                repository_relative_path(mandatory_path, root)
+            except BlueprintGraphError as exc:
                 raise CertificationHashError(
                     f"{mandatory_path}: mandatory node input is outside the repository"
                 ) from exc
@@ -1014,8 +1039,11 @@ def _v4_node_input_manifests(
     relative_paths: dict[Path, str] = {}
     for path in sorted(all_paths):
         try:
-            relative_paths[path] = path.relative_to(root).as_posix()
-        except ValueError as exc:
+            relative_paths[path] = repository_relative_path(
+                path,
+                root,
+            ).as_posix()
+        except BlueprintGraphError as exc:
             raise CertificationHashError(
                 f"{path}: cannot determine Git provenance"
             ) from exc
