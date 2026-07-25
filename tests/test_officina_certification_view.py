@@ -212,6 +212,10 @@ def _repository(root: Path) -> tuple[object, dict[str, object], str]:
         ["git", "-C", str(root), "config", "user.email", "tests@example.invalid"],
         check=True,
     )
+    subprocess.run(
+        ["git", "-C", str(root), "config", "core.autocrlf", "false"],
+        check=True,
+    )
     subprocess.run(["git", "-C", str(root), "add", "."], check=True)
     subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
     commit = subprocess.run(

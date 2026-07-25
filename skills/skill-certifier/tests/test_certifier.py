@@ -279,6 +279,9 @@ def test_private_writer_aborts_pre_append_races(
     tmp_path: Path,
     race: str,
 ) -> None:
+    if race == "worktree-mode" and sys.platform == "win32":
+        # famulus-skip: category=platform-contract; reason=Windows worktrees do not expose a reliable POSIX executable mode; alternate=index-mode covers the authoritative Git mode boundary
+        pytest.skip("POSIX worktree mode is unavailable")
     graph, _states, _commit = create_v4_repository(tmp_path)
 
     def mutate(node_id: str) -> None:
@@ -622,6 +625,9 @@ def test_private_writer_rederives_every_final_state_after_append(
     monkeypatch: pytest.MonkeyPatch,
     race: str,
 ) -> None:
+    if race == "worktree-mode" and sys.platform == "win32":
+        # famulus-skip: category=platform-contract; reason=Windows worktrees do not expose a reliable POSIX executable mode; alternate=index-mode covers the authoritative Git mode boundary
+        pytest.skip("POSIX worktree mode is unavailable")
     graph, _states, _commit = create_v4_repository(tmp_path)
     target = "demo-skill.source.gateway"
 

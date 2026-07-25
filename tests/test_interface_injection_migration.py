@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -2214,7 +2215,8 @@ def test_candidate_source_materialization_excludes_ignored_private_state(
 
     assert (candidate / "skills/demo/tracked.txt").is_file()
     assert (candidate / "reviewed-local.txt").is_file()
-    assert (candidate / "reviewed-local.txt").stat().st_mode & 0o777 == 0o775
+    if os.name == "posix":
+        assert (candidate / "reviewed-local.txt").stat().st_mode & 0o777 == 0o775
     assert not (candidate / "skills/demo/state").exists()
     assert Path("skills/demo/state/private.txt") not in snapshot.entries
 
