@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Set
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -13,19 +12,12 @@ from officina.common.blueprint_inventory import (
     collect_blueprints,
     iter_blueprints,
 )
+from test_support.git_repository import GitTestRepository
 
 
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
-
-
-def _git(repo: Path, *args: str) -> None:
-    subprocess.run(
-        ["git", "-C", str(repo), *args],
-        check=True,
-        capture_output=True,
-    )
 
 
 class _CountingIgnoredPaths(Set[Path]):
@@ -265,22 +257,22 @@ def test_inventory_rejects_module_root_identity_collision(tmp_path: Path) -> Non
 
 
 def test_inventory_prunes_git_ignored_module_directories(tmp_path: Path) -> None:
-    _git(tmp_path, "init", "--quiet")
-    _write(tmp_path / ".gitignore", "ignored-module/\nignored-skill/\n")
+    root = GitTestRepository.create(tmp_path / "repo").root
+    _write(root / ".gitignore", "ignored-module/\nignored-skill/\n")
     _write(
-        tmp_path / "ignored-module" / "blueprint.yaml",
+        root / "ignored-module" / "blueprint.yaml",
         "schema_version: 4\nnode_type: module\nid: ignored-module\n",
     )
     _write(
-        tmp_path / "skills" / "ignored-skill" / "blueprint.yaml",
+        root / "skills" / "ignored-skill" / "blueprint.yaml",
         "schema_version: 4\nnode_type: module\nid: ignored-skill\n",
     )
     _write(
-        tmp_path / "visible-module" / "blueprint.yaml",
+        root / "visible-module" / "blueprint.yaml",
         "schema_version: 4\nnode_type: module\nid: visible-module\n",
     )
 
-    documents = tuple(iter_blueprints(tmp_path))
+    documents = tuple(iter_blueprints(root))
 
     assert [document.node_id for document in documents] == ["visible-module"]
 
@@ -288,10 +280,10 @@ def test_inventory_prunes_git_ignored_module_directories(tmp_path: Path) -> None
 def test_inventory_prunes_individually_ignored_blueprint_files(
     tmp_path: Path,
 ) -> None:
-    _git(tmp_path, "init", "--quiet")
-    module = tmp_path / "visible-module"
+    root = GitTestRepository.create(tmp_path / "repo").root
+    module = root / "visible-module"
     _write(
-        tmp_path / ".gitignore",
+        root / ".gitignore",
         "visible-module/blueprints/ignored.yaml\n"
         "visible-module/.ignored.md.blueprint.yaml\n",
     )
@@ -312,7 +304,7 @@ def test_inventory_prunes_individually_ignored_blueprint_files(
         "schema_version: 3\nnode_type: behavior" "-source\nid: ignored-sidecar\n",
     )
 
-    documents = tuple(iter_blueprints(tmp_path))
+    documents = tuple(iter_blueprints(root))
 
     assert [document.node_id for document in documents] == [
         "visible-module",

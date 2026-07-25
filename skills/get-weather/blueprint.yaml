@@ -6,7 +6,8 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_weather_client.py:Interface
+      - _rtx/_weather_client.py
+      - Interface
       reason: Weather lookup tool.
     network: []
 category: productivity-general-assistant

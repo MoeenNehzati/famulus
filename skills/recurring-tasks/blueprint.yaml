@@ -6,37 +6,43 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_setup_runner.py:Interface
+      - _rtx/_setup_runner.py
+      - Interface
       reason: 'Initial setup: syncs unit files, installs healthcheck cron entry.'
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_unit_writer.py:Interface
+      - _rtx/_unit_writer.py
+      - Interface
       reason: Write/remove systemd user unit files to match jobs.yaml.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_job_control.py:Interface
+      - _rtx/_job_control.py
+      - Interface
       reason: 'Consolidated interface: enable/disable/test/view-logs jobs.'
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_healthcheck_probe.py:Interface
+      - _rtx/_healthcheck_probe.py
+      - Interface
       reason: Run pre-flight and per-job health checks.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_ensure_agent_env.py:Interface
+      - _rtx/_ensure_agent_env.py
+      - Interface
       reason: Ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE is in place.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_job_utils.py:Interface
+      - _rtx/_job_utils.py
+      - Interface
       reason: Expose legacy recurring job helper module through the dispatcher runtime
         contract.
     - command:

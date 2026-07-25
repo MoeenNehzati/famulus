@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import ast
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -22,31 +21,13 @@ _SKIP_PARTS = {"tests", "validators", "__pycache__", ".git", ".claude-plugin", "
 _NON_PORTABLE_STRFTIME = re.compile(r"(?<!%)%[-_#0][A-Za-z]")
 
 
-def _tracked_files(repo_root: Path) -> set[Path] | None:
-    result = subprocess.run(
-        ["git", "ls-files"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="surrogateescape",
-        check=False,
-    )
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
-    return {repo_root / path for path in result.stdout.splitlines()}
-
-
 def _iter_files(repo_root: Path):
-    tracked = _tracked_files(repo_root)
     for root_name in _CHECK_ROOTS:
         root = repo_root / root_name
         if not root.exists():
             continue
         for path in root.rglob("*"):
             if not path.is_file():
-                continue
-            if tracked is not None and path not in tracked:
                 continue
             rel_path = path.relative_to(repo_root)
             if any(part in _SKIP_PARTS for part in rel_path.parts):

@@ -42,7 +42,7 @@ interfaces:
       preconditions: []
       interaction: {mode: unattended}
       caller_warnings:
-      - external-side-effect: Runs blueprint synchronization, structural validators, and the scoped route-smoke dependency audit before signing.
+      - external-side-effect: Runs the repository validator runner, including blueprint synchronization checks, and the scoped route-smoke dependency audit before signing.
       - external-side-effect: Creates or reuses certifier signing material and appends signed records to affected node histories.
       - external-side-effect: Regenerates each selected module's certificate-backed pooled review after certificate currentness verification.
       - external-side-effect: Requires an explicit repository-bound reviewed commit; the machine path never substitutes HEAD for missing review attestation.
@@ -238,6 +238,6 @@ uses_interfaces:
   version: 1
 - interface: common.interface.git-provenance
   version: 1
-- interface: skill-maker.interface.sync-blueprints
+- interface: common.interface.repository-paths
   version: 1
 version: 1

@@ -16,6 +16,8 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
+from test_support.git_repository import GitTestRepository
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 DISPATCHER_CONTEXT_MARKERS = [
@@ -38,10 +40,11 @@ def github_owner_repo(repo_root: Path = REPO_ROOT) -> str:
 
 
 def expected_skills(repo_root: Path = REPO_ROOT) -> list[str]:
-    result = subprocess.run(
-        ["git", "ls-files", "-z", "--", "skills"],
-        cwd=repo_root,
-        capture_output=True,
+    result = GitTestRepository(repo_root).git(
+        "ls-files",
+        "-z",
+        "--",
+        "skills",
         check=False,
     )
     if result.returncode == 0 and result.stdout:
@@ -124,12 +127,7 @@ def copy_repo_tree(destination: Path, repo_root: Path = REPO_ROOT) -> None:
     """Copy only git-tracked content, so tests see exactly what a fresh
     checkout (e.g. CI) sees — not untracked runtime artifacts (workers/,
     generated env.sh, logs) that happen to exist in a local working tree."""
-    result = subprocess.run(
-        ["git", "ls-files", "-z"],
-        cwd=repo_root,
-        capture_output=True,
-        check=True,
-    )
+    result = GitTestRepository(repo_root).git("ls-files", "-z")
     for rel in result.stdout.decode("utf-8", errors="surrogateescape").split("\0"):
         if not rel:
             continue

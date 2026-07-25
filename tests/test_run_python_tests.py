@@ -12,6 +12,17 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(runner)
 
 
+EXPECTED_PORTABILITY_TESTS = (
+    "tests/test_officina_atomic_files.py::test_secure_append_creates_then_appends_complete_framed_records",
+    "tests/test_officina_atomic_files.py::test_windows_native_secure_create_replace_append_and_acl",
+    "tests/test_officina_dispatcher.py::test_python_process_target_keeps_gateway_and_entry_separate",
+    "tests/test_officina_git_provenance.py::test_git_test_repository_preserves_exact_bytes_under_ambient_autocrlf",
+    "skills/recurring-tasks/tests/test_schedule_backend.py::test_linux_sync_writes_units_and_enables_timer",
+    "tests/test_officina_blueprint_graph.py::test_content_ownership_accepts_equivalent_repository_alias",
+    "tests/test_validator_runner.py::test_run_all_isolates_unmerged_index_and_restores_git_environment",
+)
+
+
 def test_runner_supplies_repo_src_pythonpath() -> None:
     assert runner._pytest_args(verbose=False) == [
         "-o",
@@ -55,3 +66,27 @@ def test_full_discovers_install_tests(tmp_path: Path, monkeypatch) -> None:
         "skills/install-assistant-tools/tests",
         "skills/new-skill/tests",
     ]
+
+
+def test_portability_suite_has_exact_early_failure_nodes() -> None:
+    assert runner.PORTABILITY_TESTS == EXPECTED_PORTABILITY_TESTS
+    assert runner._resolve_suite("portability") == list(EXPECTED_PORTABILITY_TESTS)
+
+
+def test_ci_runs_portability_between_validators_and_full_suite() -> None:
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "python-tests.yml"
+    ).read_text(encoding="utf-8")
+
+    validator = workflow.index("python3 validators/runner.py")
+    portability = workflow.index(
+        "python3 scripts/run-python-tests.py --suite portability --verbose"
+    )
+    full = workflow.index(
+        "python3 scripts/run-python-tests.py --suite full --verbose"
+    )
+
+    assert validator < portability < full

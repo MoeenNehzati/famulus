@@ -5,4 +5,4 @@
 set -uo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
-python3 "$repo_root/skills/skill-maker/validators/blueprints.py"
+python3 "$repo_root/validators/runner.py" --validator skill-maker/blueprints

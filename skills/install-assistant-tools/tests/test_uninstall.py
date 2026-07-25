@@ -16,6 +16,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
+from test_support.git_repository import GitTestRepository
 
 from install_test_utils import REPO_ROOT, can_create_symlink, python_test_env, run_command
 
@@ -63,6 +64,7 @@ def make_fake_repo(root: Path) -> Path:
     """Minimal fake repo: uninstall must never run against the real one
     (it removes repo-scoped artifacts like recurring-tasks env.sh)."""
     repo = root / "repo"
+    GitTestRepository.create(repo)
     for d in ("references", "agents"):
         (repo / d).mkdir(parents=True)
     (repo / "skills" / "repo-skill").mkdir(parents=True)
@@ -93,7 +95,6 @@ def make_fake_repo(root: Path) -> Path:
     (repo / "llmhooks" / "registry.py").write_text(_REGISTRY_STUB, encoding="utf-8")
     (repo / "llmhooks" / "stub_hook.py").write_text("print('hi')\n", encoding="utf-8")
 
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
     return repo
 
 

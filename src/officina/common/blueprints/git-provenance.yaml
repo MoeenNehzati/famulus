@@ -7,6 +7,12 @@ dependencies:
   reason: Imports confined file reads and atomic source-overlay writes from atomic_files.py.
   source: common.source.atomic-files
   version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/repository-paths.yaml
+  reason: Imports canonical repository-relative path serialization from repository_paths.py.
+  source: common.source.repository-paths
+  version: 1
 description: Runs Git without ambient configuration or hooks to capture repository snapshots, classify file provenance, prove commit readiness, pin immutable migration refs, and safely materialize exact commit trees.
 gateway:
   language: Python

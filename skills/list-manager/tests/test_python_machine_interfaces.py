@@ -15,7 +15,8 @@ RUNNER = "officina.runtime.python_machine_interface_runner"
 
 
 def run_interface(
-    entrypoint: str,
+    gateway_path: str,
+    process_entry: str,
     args: list[str],
     stdin: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
@@ -25,7 +26,14 @@ def run_interface(
         "PYTHONIOENCODING": "utf-8:strict",
     }
     return subprocess.run(
-        [sys.executable, "-m", RUNNER, entrypoint, *args],
+        [
+            sys.executable,
+            "-m",
+            RUNNER,
+            gateway_path,
+            process_entry,
+            *args,
+        ],
         cwd=SKILL_ROOT,
         input=stdin,
         capture_output=True,
@@ -39,7 +47,8 @@ def run_interface(
 
 def test_describe_schema_interface_reports_field_spec() -> None:
     result = run_interface(
-        "_rtx/_yaml_store.py:DescribeSchemaInterface",
+        "_rtx/_yaml_store.py",
+        "DescribeSchemaInterface",
         ["todo", "state"],
     )
 
@@ -64,7 +73,8 @@ categories:
 """
 
     result = run_interface(
-        "_rtx/_list_beautify.py:BeautifyListInterface",
+        "_rtx/_list_beautify.py",
+        "BeautifyListInterface",
         ["--markdown", "--ids"],
         stdin=yaml_in,
     )

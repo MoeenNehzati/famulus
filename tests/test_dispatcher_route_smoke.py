@@ -257,14 +257,19 @@ def test_python_machine_runner_interfaces_accept_route_smoke() -> None:
         pytest.skip("no python_machine_interface machine interfaces currently exist")
 
     graph = load_repository_blueprint_graph(REPO_ROOT)
-    specifications: list[tuple[Path, str]] = []
+    specifications: list[
+        tuple[Path, python_interface.PythonProcessTarget]
+    ] = []
     for case in cases:
         export = graph.exports[case.target]
         source = graph.nodes[export.source_node_id]
         gateway = source.declaration["gateway"]
         binding = export.declaration["process_binding"]
-        entrypoint = f"{gateway['path']}:{binding['entry']}"
-        specifications.append((source.skill_root, entrypoint))
+        target = python_interface.PythonProcessTarget(
+            Path(gateway["path"]),
+            binding["entry"],
+        )
+        specifications.append((source.skill_root, target))
 
     batch_tracer = getattr(
         python_interface,

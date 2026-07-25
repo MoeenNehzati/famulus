@@ -1,15 +1,12 @@
 """Validate private skill runtime file layout and names."""
 from __future__ import annotations
 
-import os
 import re
-import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 RTX_DIR_NAME = "_rtx"
-CX_DIR_NAME = "_cx"
 ALLOWED_RTX_SUFFIXES = {".py", ".sh"}
 EXEMPT_RTX_FILENAMES = {"__init__.py"}
 EXEMPT_RTX_DIRNAMES = {"__pycache__"}
@@ -18,30 +15,12 @@ RUNTIME_STEM_RE = re.compile(r"^_[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$")
 _SKIP_SKILLS = {".system"}
 
 
-def _tracked_files(repo_root: Path) -> set[Path] | None:
-    result = subprocess.run(
-        ["git", "ls-files"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="surrogateescape",
-        check=False,
-    )
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
-    return {repo_root / path for path in result.stdout.splitlines()}
-
-
 def _iter_skill_files(repo_root: Path):
-    tracked = _tracked_files(repo_root)
     skills_root = repo_root / "skills"
     if not skills_root.is_dir():
         return
     for path in skills_root.rglob("*"):
         if not path.is_file():
-            continue
-        if tracked is not None and path not in tracked:
             continue
         rel_path = path.relative_to(repo_root)
         if len(rel_path.parts) < 3:
@@ -125,14 +104,6 @@ def validate(repo_root: Path) -> list[str]:
                     )
                 else:
                     seen_by_parent[parent][folded] = component_parts
-        elif len(parts) >= 4 and parts[2] == CX_DIR_NAME:
-            if path.name.endswith(".blueprint.yaml") or path.name.endswith(".health.json"):
-                continue
-            if not os.access(path, os.X_OK):
-                errors.append(
-                    f"{rel_path.as_posix()}: _cx command file must be executable"
-                )
-
     return errors
 
 

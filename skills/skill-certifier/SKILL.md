@@ -19,7 +19,7 @@ Uses Interfaces:
 - `skill-certifier.source.rtx-certifier -> common.interface.certification-view@1`
 - `skill-certifier.source.rtx-certifier -> common.interface.git-provenance@1`
 - `skill-certifier.source.rtx-certifier -> common.interface.pooled-blueprint@1`
-- `skill-certifier.source.rtx-certifier -> skill-maker.interface.sync-blueprints@1`
+- `skill-certifier.source.rtx-certifier -> common.interface.repository-paths@1`
 
 Public Interfaces:
 - `skill-certifier.interface.certify`
@@ -60,11 +60,11 @@ The review must establish:
   direct ownership, a declared interface use, or the certification basis.
 
 Mechanical certification runs only through
-`skill-certifier.interface.certify`. It owns blueprint synchronization checks,
-hash computation, signing, append-only certificate writes, and post-write drift
-verification. It reconstructs every payload field internally and accepts only
-the exact reviewed repository and commit; it never signs caller-supplied
-certificate data.
+`skill-certifier.interface.certify`. It invokes the repository validator runner
+once, then owns hash computation, signing, append-only certificate writes, and
+post-write drift verification. It reconstructs every payload field internally
+and accepts only the exact reviewed repository and commit; it never signs
+caller-supplied certificate data.
 
 The canonical certification view normally requires current certificates. It
 also admits exact self-certification of `skill-certifier` when its certification
@@ -72,9 +72,7 @@ closure has no history or has appendable canonical, schema-valid,
 signature-valid, unbroken history; the final signing key may be inactive.
 Existing logs must form a dependency-first prefix of the exact closure. Corrupt
 history, a non-prefix gap, a wrong-subject entry, or missing verification
-material fails closed. The only uncertified mechanical subcall admitted is the
-existing read-only blueprint synchronization check. This remains an admission
-state in the same certifier path, not a second writer or signing route.
+material fails closed.
 
 An exact target includes its certification dependency closure. Omitted targets
 select all repository nodes. New certificates require tracked inputs to match

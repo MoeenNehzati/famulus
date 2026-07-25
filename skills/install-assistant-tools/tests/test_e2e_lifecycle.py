@@ -21,6 +21,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
+from test_support.git_repository import GitTestRepository
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -47,6 +48,19 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _raw_git_config(
+    repo_root: Path,
+    *args: str,
+    check: bool = True,
+) -> subprocess.CompletedProcess[bytes]:
+    # famulus-raw-git: category=hooks; reason=the lifecycle test must preserve the real repository hooksPath without the shared helper's hooksPath override
+    return subprocess.run(
+        ["git", "-C", str(repo_root), "config", *args],
+        capture_output=True,
+        check=check,
+    )
+
+
 def _tree_hash(root: Path) -> str:
     """Deterministic content hash of a directory tree (paths + file bytes)."""
     digest = hashlib.sha256()
@@ -64,11 +78,18 @@ def _dev_install(home: Path, claude_home: Path, codex_home: Path, repo_root: Pat
     # When repo_root is the real live checkout (as in the dev-mode-against-
     # real-repo tests below), save and restore that value so this test run
     # never leaves a lasting side effect on the real repo's git config.
-    probe = subprocess.run(
-        ["git", "-C", str(repo_root), "config", "--local", "--get", "core.hooksPath"],
-        capture_output=True, text=True,
+    probe = _raw_git_config(
+        repo_root,
+        "--local",
+        "--get",
+        "core.hooksPath",
+        check=False,
     )
-    original_hooks_path = probe.stdout.strip() if probe.returncode == 0 else None
+    original_hooks_path = (
+        probe.stdout.decode("utf-8").strip()
+        if probe.returncode == 0
+        else None
+    )
 
     buf = io.StringIO()
     try:
@@ -81,14 +102,13 @@ def _dev_install(home: Path, claude_home: Path, codex_home: Path, repo_root: Pat
             )
     finally:
         if original_hooks_path is not None:
-            subprocess.run(
-                ["git", "-C", str(repo_root), "config", "core.hooksPath", original_hooks_path],
-                check=True,
-            )
+            _raw_git_config(repo_root, "core.hooksPath", original_hooks_path)
         else:
-            subprocess.run(
-                ["git", "-C", str(repo_root), "config", "--unset", "core.hooksPath"],
-                capture_output=True,
+            _raw_git_config(
+                repo_root,
+                "--unset",
+                "core.hooksPath",
+                check=False,
             )
     return buf.getvalue()
 
@@ -168,6 +188,7 @@ def test_launchers_executable_after_install(homes):
 
 def _make_fake_repo(root: Path) -> Path:
     repo = root / "repo"
+    GitTestRepository.create(repo)
     (repo / "skills" / "repo-skill").mkdir(parents=True)
     (repo / "skills" / "repo-skill" / "SKILL.md").write_text(
         "# repo skill\n", encoding="utf-8"
@@ -196,7 +217,6 @@ def _make_fake_repo(root: Path) -> Path:
             f"---\ndescription: {agent}\n---\nBody.\n", encoding="utf-8"
         )
 
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
     return repo
 
 

@@ -23,6 +23,7 @@ from officina.common.git_provenance import (
     run_git,
     snapshot_head_matches,
 )
+from test_support.git_repository import GitTestRepository
 
 
 # famulus-skip: category=platform-contract; reason=descriptor-safe opens require POSIX dir-fd support; alternate=unsupported-host readiness tests cover fail-closed behavior
@@ -32,22 +33,12 @@ requires_descriptor_safe_open = pytest.mark.skipif(
 )
 
 
-def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", "-c", "core.autocrlf=false", "-C", str(repo), *args],
-        check=True,
-        capture_output=True,
-        encoding="utf-8",
-    )
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
+    return GitTestRepository(repo).git(*args)
 
 
 def _git_bytes(repo: Path, *args: str, input_bytes: bytes) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        ["git", "-c", "core.autocrlf=false", "-C", str(repo), *args],
-        check=True,
-        input=input_bytes,
-        capture_output=True,
-    )
+    return GitTestRepository(repo).git(*args, input_bytes=input_bytes)
 
 
 def sha256_file(path: Path) -> str:
@@ -61,21 +52,14 @@ def test_git_test_repository_preserves_exact_bytes_under_ambient_autocrlf(
     global_config = tmp_path / "global.gitconfig"
     global_config.write_text("[core]\n\tautocrlf = true\n", encoding="utf-8")
     repository = tmp_path / "repo"
-    repository.mkdir()
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
-    _git(repository, "init", "--quiet")
-    _git(repository, "config", "user.name", "Test User")
-    _git(repository, "config", "user.email", "test@example.invalid")
+    git = GitTestRepository.create(repository)
     tracked = repository / "tracked.txt"
     tracked.write_bytes(b"exact\r\nbytes\r\n")
 
-    _git(repository, "add", "tracked.txt")
-    _git(repository, "commit", "--quiet", "-m", "exact bytes")
-    committed = subprocess.run(
-        ["git", "-C", str(repository), "show", "HEAD:tracked.txt"],
-        check=True,
-        capture_output=True,
-    ).stdout
+    git.git("add", "tracked.txt")
+    git.git("commit", "--quiet", "-m", "exact bytes")
+    committed = git.git("show", "HEAD:tracked.txt").stdout
 
     assert committed == tracked.read_bytes()
 
@@ -104,6 +88,7 @@ def test_run_git_sanitizes_ambient_routing_and_config(
     monkeypatch.setenv("UNRELATED_ENVIRONMENT_VALUE", "retained")
     monkeypatch.setattr(git_provenance.subprocess, "run", fake_run)
 
+    # famulus-raw-git: category=run-git-contract; reason=the test instruments the production run_git boundary itself
     result = run_git(tmp_path, "status", "--short", check=False)
 
     assert result.returncode == 0
@@ -151,17 +136,13 @@ def test_capture_snapshot_ignores_ambient_git_dir(
 ) -> None:
     requested = tmp_path / "requested"
     decoy = tmp_path / "decoy"
-    requested.mkdir()
-    decoy.mkdir()
     for repository, value in ((requested, "requested"), (decoy, "decoy")):
-        _git(repository, "init", "--quiet")
-        _git(repository, "config", "user.name", "Test User")
-        _git(repository, "config", "user.email", "test@example.invalid")
+        GitTestRepository.create(repository)
         (repository / "value.txt").write_text(value, encoding="utf-8")
         _git(repository, "add", "value.txt")
         _git(repository, "commit", "--quiet", "-m", value)
 
-    requested_commit = _git(requested, "rev-parse", "HEAD").stdout.strip()
+    requested_commit = _git(requested, "rev-parse", "HEAD").stdout.decode().strip()
     monkeypatch.setenv("GIT_DIR", str(decoy / ".git"))
     monkeypatch.setenv("GIT_WORK_TREE", str(decoy))
 
@@ -173,12 +154,10 @@ def test_capture_snapshot_ignores_ambient_git_dir(
 
 
 def test_run_git_disables_repository_hooks(tmp_path: Path) -> None:
-    run_git(tmp_path, "init", "--quiet")
-    run_git(tmp_path, "config", "user.name", "Test User")
-    run_git(tmp_path, "config", "user.email", "test@example.invalid")
+    GitTestRepository.initialize_existing_empty(tmp_path)
     tracked = tmp_path / "tracked.txt"
     tracked.write_text("tracked\n", encoding="utf-8")
-    run_git(tmp_path, "add", "tracked.txt")
+    GitTestRepository(tmp_path).git("add", "tracked.txt")
     hook_marker = tmp_path / "hook-ran"
     hook = tmp_path / ".git" / "hooks" / "pre-commit"
     hook.write_text(
@@ -187,6 +166,7 @@ def test_run_git_disables_repository_hooks(tmp_path: Path) -> None:
     )
     hook.chmod(0o755)
 
+    # famulus-raw-git: category=run-git-contract; reason=the test verifies that production run_git suppresses repository hooks
     result = run_git(tmp_path, "commit", "--quiet", "-m", "commit", check=False)
 
     assert result.returncode == 0
@@ -207,9 +187,7 @@ def test_git_file_provenance_batch_classifies_normalized_literal_paths_in_two_ca
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _git(tmp_path, "init", "--quiet")
-    _git(tmp_path, "config", "user.name", "Test User")
-    _git(tmp_path, "config", "user.email", "test@example.invalid")
+    GitTestRepository.initialize_existing_empty(tmp_path)
     tracked_literal = tmp_path / "[ab].txt"
     tracked_unusual = tmp_path / "line break.txt"
     ignored = tmp_path / "ignored.txt"
@@ -272,9 +250,7 @@ def test_git_file_provenance_batch_classifies_normalized_literal_paths_in_two_ca
 def test_git_file_provenance_batch_parses_nul_delimited_newline_path(
     tmp_path: Path,
 ) -> None:
-    _git(tmp_path, "init", "--quiet")
-    _git(tmp_path, "config", "user.name", "Test User")
-    _git(tmp_path, "config", "user.email", "test@example.invalid")
+    GitTestRepository.initialize_existing_empty(tmp_path)
     tracked = tmp_path / "line\nbreak.txt"
     tracked.write_text("tracked\n", encoding="utf-8")
     _git(tmp_path, "add", "--", "line\nbreak.txt")
@@ -348,7 +324,7 @@ def test_git_file_provenance_batch_rejects_fatal_ignore_query(
 
 
 def test_run_git_disables_malicious_local_fsmonitor(tmp_path: Path) -> None:
-    _git(tmp_path, "init", "--quiet")
+    GitTestRepository.initialize_existing_empty(tmp_path)
     marker = tmp_path / "fsmonitor-ran"
     monitor = tmp_path / "malicious-fsmonitor"
     monitor.write_text(
@@ -358,6 +334,7 @@ def test_run_git_disables_malicious_local_fsmonitor(tmp_path: Path) -> None:
     monitor.chmod(0o755)
     _git(tmp_path, "config", "core.fsmonitor", str(monitor))
 
+    # famulus-raw-git: category=run-git-contract; reason=the test verifies that production run_git suppresses a configured fsmonitor
     result = run_git(tmp_path, "status", "--short", check=False)
 
     assert result.returncode == 0
@@ -365,7 +342,7 @@ def test_run_git_disables_malicious_local_fsmonitor(tmp_path: Path) -> None:
 
 
 def test_materialize_git_commit_uses_exact_commit_not_worktree(repo: Path) -> None:
-    commit = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    commit = _git(repo, "rev-parse", "HEAD").stdout.decode().strip()
     (repo / "skills" / "demo" / "SKILL.md").write_text(
         "uncommitted\n", encoding="utf-8"
     )
@@ -383,22 +360,21 @@ def test_materialize_git_commit_uses_exact_commit_not_worktree(repo: Path) -> No
 def test_materialize_git_commit_rejects_escaping_symlink_before_writes(
     repo: Path,
 ) -> None:
-    object_id = run_git(
-        repo,
+    repository = GitTestRepository(repo)
+    object_id = repository.git(
         "hash-object",
         "-w",
         "--stdin",
         input_bytes=b"../../outside",
     ).stdout.decode("ascii").strip()
-    run_git(
-        repo,
+    repository.git(
         "update-index",
         "--add",
         "--cacheinfo",
         f"120000,{object_id},escape-link",
     )
-    run_git(repo, "commit", "--quiet", "-m", "unsafe symlink")
-    commit = run_git(repo, "rev-parse", "HEAD").stdout.decode("ascii").strip()
+    repository.git("commit", "--quiet", "-m", "unsafe symlink")
+    commit = repository.git("rev-parse", "HEAD").stdout.decode("ascii").strip()
     destination = repo / "materialized"
     destination.mkdir(mode=0o700)
 
@@ -422,7 +398,7 @@ def test_materialize_git_commit_ignores_export_attribute_transformations(
     executable.chmod(0o755)
     _git(repo, "add", ".gitattributes", "hidden.txt", "template.txt", "run.sh")
     _git(repo, "commit", "--quiet", "-m", "export attributes")
-    commit = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    commit = _git(repo, "rev-parse", "HEAD").stdout.decode().strip()
     destination = repo / "materialized"
     destination.mkdir(mode=0o700)
 
@@ -438,14 +414,19 @@ def test_materialize_git_commit_ignores_export_attribute_transformations(
 
 
 def test_blueprint_v4_mechanical_ref_is_pinned_once(repo: Path) -> None:
-    mechanical = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    mechanical = _git(repo, "rev-parse", "HEAD").stdout.decode().strip()
 
     assert pin_blueprint_v4_mechanical_commit(repo, mechanical) == mechanical
     assert blueprint_v4_mechanical_commit(repo) == mechanical
-    assert _git(repo, "rev-parse", BLUEPRINT_V4_MECHANICAL_REF).stdout.strip() == mechanical
+    assert (
+        _git(repo, "rev-parse", BLUEPRINT_V4_MECHANICAL_REF)
+        .stdout.decode()
+        .strip()
+        == mechanical
+    )
 
     commit_unrelated_change(repo)
-    reviewed = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    reviewed = _git(repo, "rev-parse", "HEAD").stdout.decode().strip()
     with pytest.raises(GitMaterializationError, match="already pinned"):
         pin_blueprint_v4_mechanical_commit(repo, reviewed)
     assert blueprint_v4_mechanical_commit(repo) == mechanical
@@ -453,9 +434,7 @@ def test_blueprint_v4_mechanical_ref_is_pinned_once(repo: Path) -> None:
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    _git(tmp_path, "init", "--quiet")
-    _git(tmp_path, "config", "user.name", "Test User")
-    _git(tmp_path, "config", "user.email", "test@example.invalid")
+    GitTestRepository.initialize_existing_empty(tmp_path)
     path = tmp_path / "skills" / "demo" / "SKILL.md"
     path.parent.mkdir(parents=True)
     path.write_text("original\n", encoding="utf-8")
@@ -624,7 +603,11 @@ def test_unstaged_mode_only_change_blocks_stamp(repo: Path) -> None:
 
 def test_nonzero_index_stage_blocks_stamp(repo: Path) -> None:
     relative_path = "skills/demo/SKILL.md"
-    object_id = _git(repo, "rev-parse", f"HEAD:{relative_path}").stdout.strip()
+    object_id = (
+        _git(repo, "rev-parse", f"HEAD:{relative_path}")
+        .stdout.decode()
+        .strip()
+    )
     _git(repo, "read-tree", "--empty")
     _git_bytes(
         repo,
@@ -641,9 +624,7 @@ def test_nonzero_index_stage_blocks_stamp(repo: Path) -> None:
 
 
 def test_literal_pathspec_metacharacters_do_not_match_another_file(tmp_path: Path) -> None:
-    _git(tmp_path, "init", "--quiet")
-    _git(tmp_path, "config", "user.name", "Test User")
-    _git(tmp_path, "config", "user.email", "test@example.invalid")
+    GitTestRepository.initialize_existing_empty(tmp_path)
     tracked = tmp_path / "tracked.txt"
     tracked.write_text("original\n", encoding="utf-8")
     _git(tmp_path, "add", "tracked.txt")
@@ -823,6 +804,7 @@ def test_non_git_snapshot_is_a_no_stamp_outcome(tmp_path: Path) -> None:
 
 @requires_descriptor_safe_open
 def test_sha256_repository_is_supported_when_available(tmp_path: Path) -> None:
+    # famulus-raw-git: category=object-format; reason=the test probes whether this Git supports SHA-256 repository initialization
     initialized = subprocess.run(
         ["git", "-C", str(tmp_path), "init", "--quiet", "--object-format=sha256"],
         capture_output=True,

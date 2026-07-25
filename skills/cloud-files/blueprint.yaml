@@ -11,37 +11,43 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_read_llm_file.py:Interface
+      - _rtx/_read_llm_file.py
+      - Interface
       reason: Read files from cloud storage under LLM root.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_write_llm_file.py:Interface
+      - _rtx/_write_llm_file.py
+      - Interface
       reason: Write files to cloud storage under LLM root.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_delete_llm_file.py:Interface
+      - _rtx/_delete_llm_file.py
+      - Interface
       reason: Delete files from cloud storage under LLM root.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_ls_llm.py:Interface
+      - _rtx/_ls_llm.py
+      - Interface
       reason: List/check files in cloud storage.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_oauth_bootstrap.py:Interface
+      - _rtx/_oauth_bootstrap.py
+      - Interface
       reason: OAuth setup for cloud access.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_ensure_oauth.py:Interface
+      - _rtx/_ensure_oauth.py
+      - Interface
       reason: Check OAuth status and write config.json (relocated from install-assistant-tools).
     network: []
 category: system-assistant

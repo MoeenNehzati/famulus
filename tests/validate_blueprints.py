@@ -139,6 +139,20 @@ def test_authored_inputs_must_be_tracked(
     assert any("not tracked by git" in error for error in errors)
 
 
+def test_cx_command_requires_stage_zero_executable_mode() -> None:
+    tracked = {
+        "skills/demo-skill/_cx/run-task": (("100644", "0"),),
+        "skills/demo-skill/_cx/run-other": (("100755", "0"),),
+    }
+
+    errors = MOD._validate_command_file_modes(tracked)
+
+    assert errors == [
+        "skills/demo-skill/_cx/run-task: _cx command file must have "
+        "one stage-0 executable Git index entry"
+    ]
+
+
 def test_malformed_v4_source_is_reported(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

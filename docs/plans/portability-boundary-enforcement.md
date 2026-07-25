@@ -1,221 +1,353 @@
 # Portability Boundary Enforcement
 
-## Status
-
-Approved design. This document defines the smallest repository changes needed
-to prevent the cross-platform failure classes exposed by the v4 certification
-migration. It does not introduce a second conformance system.
-
 ## Goal
 
-Make portable repository behavior the default by giving repeated boundary
-semantics one owner, requiring ordinary code and tests to use those owners, and
-running the same mechanical validators during local development, CI, and
-certification.
+Prevent recurring cross-platform failures by consolidating repeated semantics
+under existing owners and enforcing those owners through the current validator,
+test, and certification paths.
 
-## Principles
+This is a portability hardening pass, not a new conformance system.
 
-1. Centralize semantics, not merely syntax. A helper is justified only when it
-   owns a repeated behavioral contract.
-2. Keep the canonical skill standard as the policy source. Generated Markdown
-   remains a view of that standard.
-3. Enforce only mechanically recognizable violations with static validators.
-   Semantic blueprint correctness remains the certifier's responsibility.
-4. Use the existing validator runner everywhere. Do not create a parallel
-   portability checker or certification mechanism.
-5. Preserve native filesystem path types internally. Convert to POSIX text only
-   at serialization boundaries.
-6. Prefer structured values over composite strings that must later be parsed.
-7. Keep exceptional low-level tests possible through narrow, documented
-   exemptions.
+## Design rules
 
-## Design
+1. Extract existing semantics instead of adding parallel implementations.
+2. Keep native `Path` values internally and serialize repository identifiers as
+   POSIX text only at explicit boundaries.
+3. Keep structured values structured; launch commands are transport, not a
+   source of semantic data.
+4. Add static checks only for violations that can be recognized reliably.
+5. Run the same validators in pre-commit, CI, and certification.
 
-### 1. One validator execution boundary
+## 1. Tracked validator execution
 
-`validators/runner.py` remains the sole command-line entry point for ordinary
-repository validators. It:
+Refactor `validators/runner.py` in place. It remains the only CLI entry point
+for repository validators and operates in two phases:
 
-- constructs the Git-index-backed mirror;
-- provides that mirror to validators;
-- supports selecting one validator for focused hooks or tests;
-- fails closed when the tracked mirror or its isolated Git metadata cannot be
-  constructed.
+1. The bootstrap phase materializes the staged Git index into a temporary
+   mirror and creates isolated Git metadata.
+2. A fresh Python process runs the mirror's tracked `validators/runner.py`,
+   discovers validators from that mirror, and resolves all repository imports
+   from the mirror.
 
-Ordinary validators walk the supplied root and do not run `git ls-files`
-themselves. The blueprint validator may retain `git ls-files --stage -z`
-because index mode, stage, and conflict records are its subject rather than an
-enumeration mechanism. Direct validator hooks call the runner's selected mode,
-not validator modules directly.
+The bootstrap imports no validator or repository policy modules. The child
+process receives a mirror-root-only repository import path, so untracked or
+unstaged validator code and transitive dependencies such as `docs_tooling`
+cannot affect results.
 
-### 2. One repository-path owner
+### Mirror contract
 
-Create `src/officina/common/repository_paths.py` to own equivalent-root-aware
-repository path conversion:
+- Modes `100644` and `100755` are materialized from stage-0 blob bytes, never
+  from working-tree files.
+- On POSIX, `100755` receives its executable bits. On hosts without a meaningful
+  executable bit, the isolated index remains authoritative.
+- Mode `120000` and paths having only nonzero stages remain in the isolated
+  index but have no mirror worktree entry. The runner never creates or
+  dereferences symlinks.
+- Missing blobs, malformed records, duplicate stage-0 entries, unsupported
+  modes, and materialization or isolated-Git failures raise
+  `ValidatorRunnerError(RuntimeError)`.
+- The runner never falls back to the source working tree and never silently
+  skips a file or validator.
+
+The existing blueprint validator remains the only validator allowed to inspect
+`git ls-files --stage -z`. It owns index modes, conflict stages, and blueprint
+synchronization checks. Move the `_cx` executable-mode assertion currently
+based on `os.access` in `validators/skill_runtime_files.py` into that
+index-aware validator; ordinary validators only walk the supplied mirror.
+
+### Runner API
+
+```python
+def run_all(
+    repo_root: Path = REPO_ROOT,
+    validator_ids: Sequence[str] | None = None,
+) -> dict[str, list[str]]: ...
+```
+
+Canonical validator IDs are `repo/<stem>` and `skill-maker/<stem>`. Result keys
+use those IDs. `--validator` is repeatable and maps to `validator_ids`. IDs and
+execution order are sorted. Unknown or duplicate selections, import failures,
+missing or non-callable `validate`, and validator exceptions are runner errors;
+validator findings remain dictionary values.
+
+Direct hooks invoke the runner with a canonical ID, for example:
+
+```text
+validators/runner.py --validator skill-maker/blueprints
+```
+
+Tests cover partially staged files in both directions, modes, nonzero stages,
+tracked symlinks, partially staged runner code, untracked validators, and live
+transitive modules that must not execute.
+
+## 2. Repository-path conversion
+
+Equivalent-root handling already exists in `blueprint_graph.py`, but
+`git_provenance.py` and `certification_view.py` have weaker duplicates.
+Extract the shared semantics into
+`src/officina/common/repository_paths.py` because importing them from
+`blueprint_graph.py` would create a graph/inventory/Git-provenance cycle.
 
 ```python
 class RepositoryPathError(ValueError): ...
+
+def equivalent_root_relative_path(path: Path, root: Path) -> Path: ...
 
 def repository_relative_path(path: Path, repo_root: Path) -> Path: ...
 
 def repository_relative_posix(path: Path, repo_root: Path) -> str: ...
 ```
 
-Inputs are absolute paths or paths interpreted relative to `repo_root`.
-`repository_relative_path` returns the host-native `Path`.
-`repository_relative_posix` is used only for serialized repository
-identifiers. Equivalent filesystem roots such as macOS `/Users` and
-`/private/Users` resolve consistently.
+`equivalent_root_relative_path` owns lexical containment plus the existing
+ancestor-`samefile` fallback for equivalent roots. It does not resolve or
+follow descendants. Repository wrappers interpret relative inputs as
+`repo_root / path`; they never use the process working directory.
 
-Graph, dispatcher, runner, hashing, certification, and Git-provenance callers
-reuse this owner and translate `RepositoryPathError` into their established
-boundary-specific errors. This new common source receives the normal v4
-blueprint, graph, certification-basis, tests, and recertification treatment.
+Migrate the existing implementations in:
 
-### 3. Structured Python process targets
+- `blueprint_graph.py`, including owner-root callers;
+- `git_provenance.py`;
+- `certification_view.py`;
+- certification hashing and certifier serialization;
+- dispatcher and Python-runner root conversions.
 
-The Python process adapter carries the gateway path and Python entry separately:
+The helper replaces repository-relative conversion only. Existing module-root,
+owner-root, source-root, and gateway confinement checks remain where they are.
+Boundary callers preserve their current public error types or readiness
+reasons.
+
+The new source receives one common-module behavioral-source blueprint and the
+corresponding module content, source, export, dependency, test, architecture,
+and certification-basis updates. Its blueprint is already a node-hash input
+and is not added separately to the global basis.
+
+## 3. Structured Python process targets
+
+Keep the Python-specific target in the existing adapter owner,
+`src/officina/runtime/python_machine_interface.py`:
 
 ```python
+class PythonProcessTargetError(ValueError): ...
+
 @dataclass(frozen=True)
 class PythonProcessTarget:
     gateway_path: Path
     process_entry: str
 ```
 
-The dispatcher, resolved invocation metadata, dependency tracing, route smoke,
-dry-run output, runner transport, and certification evidence consume these
-fields directly. No live path constructs or reparses
-`"_rtx/file.py:ClassName"`.
+The gateway is module-root-relative, begins with `_rtx`, ends in `.py`, is not
+absolute, and contains neither `.` nor `..`. The process entry is one nonempty
+Python identifier.
 
-The runner command accepts two fixed positional values after its private
-transport options:
+Both `ResolvedInvocation` and `ResolvedInvocationMetadata` gain
+`python_target: PythonProcessTarget | None`; `metadata()` copies it.
+`ResolvedInvocationMetadata.as_payload()` emits:
+
+```json
+{
+  "python_target": {
+    "gateway_path": "_rtx/_worker.py",
+    "process_entry": "Interface"
+  }
+}
+```
+
+Non-Python invocations emit `"python_target": null`. Trace keys become
+`(skill_root, PythonProcessTarget)`. Child trace requests and responses use the
+same nested object; responses additionally contain their existing `paths`.
+Certification evidence uses the same representation.
+
+The runner CLI receives two tokens:
 
 ```text
 python_machine_interface_runner <gateway-path> <process-entry> [interface args...]
 ```
 
-Python-specific entry validation has one owner and is shared by dispatch,
-tracing, and certification. Provider-neutral blueprint schemas continue to
-store `gateway.path` and `process_binding.entry` separately. Historical
-migration-only parsing may remain if explicitly named as legacy behavior; live
-blueprints, permissions, generated projections, and runtime paths migrate
-atomically.
+`command` remains launch serialization only. Runtime, dry-run, tracing, route
+smoke, dependency loading, and certification never parse it to reconstruct the
+target.
 
-### 4. Deterministic Git repositories in tests
+Provider-neutral blueprints continue to store `gateway.path` and
+`process_binding.entry` separately. Migrate runtime code, live blueprint
+permission arrays, generated projections, dry-run output, child transport,
+certification evidence, and tests atomically. Historical composite parsing is
+allowed only in an exact function allowlist for
+`interface_injection_migration.py`; live code has no compatibility path.
 
-Add one repository-visible, test-only Git helper that works with pytest and
-`unittest` callers. It:
+## 4. Deterministic Git tests
 
-- initializes one repository per test;
-- delegates Git execution to production `git_provenance.run_git`;
-- fixes the initial branch and user identity;
-- sets `core.autocrlf=false`;
-- sets `core.filemode` explicitly according to the test contract;
-- uses bytes-oriented results;
-- never adds or commits implicitly.
+Extract repeated local Git fixtures into `test_support/git_repository.py`:
 
-Ordinary tests use this helper. Tests whose subject is ambient Git behavior,
-hooks, object format, conflict-index state, or validator isolation may invoke
-raw Git only beside a narrow annotation:
+```python
+@dataclass(frozen=True)
+class GitTestRepository:
+    root: Path
 
-```text
-# famulus-raw-git: category=<category>; reason=<specific reason>
+    @classmethod
+    def create(
+        cls,
+        root: Path,
+        *,
+        branch: str = "main",
+        filemode: bool = True,
+    ) -> GitTestRepository: ...
+
+    def git(
+        self,
+        *args: str,
+        check: bool = True,
+        input_bytes: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]: ...
 ```
 
-Exemptions are call-local, not file-wide.
+`create` requires a nonexistent target directory, initializes exactly that
+directory, returns its resolved path, and configures:
 
-### 5. Narrow mechanical enforcement
+- `Famulus Tests <famulus-tests@example.invalid>`;
+- `core.autocrlf=false`;
+- explicit `core.filemode`;
+- a stable initial branch.
 
-Extend the canonical `cross-platform-tools` standard family with assertions
-that name the repository path owner, structured process-target boundary,
-deterministic Git-test helper, and sole validator runner.
+`git()` delegates to production `git_provenance.run_git`. The helper never
+stages or commits implicitly. Replace existing ordinary `_git` helpers and
+repository fixtures rather than leaving parallel versions.
 
-Add one focused AST validator for reliable bypasses:
+“Ordinary tests” means Python files under `tests/**` and
+`skills/*/tests/**`. Only `test_support/git_repository.py` is unconditionally
+allowed to call `run_git`. Elsewhere, a raw Git or direct `run_git` call
+requires an annotation on the immediately preceding line:
 
-- raw Git subprocess calls in ordinary tests;
-- direct ordinary-test calls to production `run_git`;
-- ordinary validators invoking `git ls-files`;
-- live construction or parsing of composite Python process targets;
-- invalid or missing raw-Git exemption annotations.
+```text
+# famulus-raw-git: category=<category>; reason=<nonempty reason>
+```
 
-The validator does not attempt general semantic path inference, atomic-write
-policy inference, or blueprint correctness. Existing focused validators retain
-their current domains.
+Closed categories are `ambient-config`, `hooks`, `object-format`,
+`index-stages`, `validator-isolation`, and `run-git-contract`. The last covers
+tests that instrument production `run_git` itself. Exemptions are statement
+local: the comment binds only to the following AST statement. Changing the
+category set requires changing the standard and validator together.
 
-Update the live canonical YAML and regenerate only its live Markdown view.
-Historical migration fixtures remain frozen evidence.
+## 5. Mechanical enforcement
 
-### 6. Continuous enforcement
+Extend existing owners instead of adding another portability validator:
 
-All development paths use the same mechanical owner:
+- `validators/cross_platform.py` detects raw-Git test bypasses, live composite
+  Python targets, and composite runner permission arrays in live v4 blueprints
+  and generated projections.
+- Its exact allowlists cover historical standard fixtures and the named
+  migration-only parser.
+- Existing focused validators retain TOML, dates, subprocess encoding,
+  platform-neutral source placement, and skip hygiene.
+
+Update the canonical standard without creating a new family:
+
+- repository paths and Python targets extend `cross-platform-tools`;
+- Git-test helper and exemptions extend `test-file-conventions`;
+- sole-runner and tracked-mirror rules extend
+  `validator-test-conventions`.
+
+Regenerate only the live Markdown view. Historical migration fixtures remain
+frozen.
+
+## 6. Continuous enforcement
+
+The same mechanical owner runs everywhere:
 
 ```text
 pre-commit -> validator runner -> precommit tests
-CI         -> validator runner -> portability suite -> full OS suite
-certifier  -> validator runner -> semantic LLM audit -> hash and sign
+CI         -> validator runner -> portability sentinel -> full OS suite
+certifier  -> validator runner -> semantic review -> hash and sign
 ```
 
-Certification removes the public and programmatic `skip_mechanical` bypass.
-Tests mock the mechanical-check boundary when isolation is required.
+Remove `_blueprint_sync_check`, the dispatcher parameter used only by that
+check, `skip_mechanical`, and `--skip-mechanical`. Also remove the certifier's
+now-unused `sync-blueprints` dispatch declaration and corresponding blueprint
+use, dependency, and permission.
 
-The validator runner owns blueprint synchronization. The certifier removes its
-separate blueprint-sync dispatch so synchronization is checked once. A
-certification behavior test proves that a validator or blueprint-sync failure
-prevents signing.
+```python
+def run_v4_mechanical_checks(
+    repo_root: Path = REPO_ROOT,
+) -> CommandResult: ...
+```
 
-Add an explicit `portability` suite to `scripts/run-python-tests.py`. It uses
-exact existing pytest node IDs and runs in the existing OS matrix after
-validators and before the full suite. It covers:
+It invokes the runner once. `certify()` preserves its existing evidence-list
+and output-schema shape with
+`evidence = [run_v4_mechanical_checks(repository)]`. Tests replace this
+module-level function when isolation is required. Launch failure, missing
+result, or nonzero result raises `CertificationError` before signing.
 
-- native atomic create, replace, and append;
-- separated Python process targets;
-- hostile ambient `core.autocrlf`;
-- foreign-platform artifact rendering;
-- equivalent-root repository paths;
-- blueprint index mode and stage isolation.
+The existing blueprint validator owns the synchronization check; artifact
+generation remains with the syncer.
 
-The pre-commit hook does not run this suite separately because its broader
-precommit suite already includes the same tests.
+### Fast portability sentinel
 
-### 7. Certification basis and generated artifacts
+The `portability` suite is an intentional early-failure subset of the full
+suite, not additional coverage. It runs in the existing OS matrix after
+validators and before `full`; pre-commit does not run it separately.
 
-The certification basis includes every source executed to enforce or render
-the canonical standard, including:
+| Boundary | Pytest node ID |
+|---|---|
+| Native atomic append | `tests/test_officina_atomic_files.py::test_secure_append_creates_then_appends_complete_framed_records` |
+| Native Windows atomic path | `tests/test_officina_atomic_files.py::test_windows_native_secure_create_replace_append_and_acl` |
+| Separated Python target | `tests/test_officina_dispatcher.py::test_python_process_target_keeps_gateway_and_entry_separate` |
+| Hostile `core.autocrlf` | `tests/test_officina_git_provenance.py::test_git_test_repository_preserves_exact_bytes_under_ambient_autocrlf` |
+| Foreign-platform artifact | `skills/recurring-tasks/tests/test_schedule_backend.py::test_linux_sync_writes_units_and_enables_timer` |
+| Equivalent repository root | `tests/test_officina_blueprint_graph.py::test_content_ownership_accepts_equivalent_repository_alias` |
+| Isolated index stages | `tests/test_validator_runner.py::test_run_all_isolates_unmerged_index_and_restores_git_environment` |
+
+The separated-target test is added under that exact name; the other node IDs
+already exist.
+
+## 7. Certification basis and artifact order
+
+Add only missing executed sources to
+`skills/skill-drift/references/certification-basis-roots.json`:
 
 - `references/standards/standard-v6.schema.json`;
 - `references/standards/validate_standard_v6.py`;
 - `references/standards/render_standard_v6.py`;
-- the new repository-path source and its blueprint.
+- `src/officina/common/repository_paths.py`;
+- `docs_tooling/**/*.py`.
 
-Live blueprint projections, runner permission arguments, pooled reviews, and
-certificates are regenerated through their existing owners rather than edited
-by hand. The final exact commit is recertified dependency-first across the
-repository.
+The existing validator glob and runtime entries already cover the validator and
+Python target owner. Add a test that every repository module imported by a
+validator is covered by the basis.
 
-## Scope
+Apply changes in this order:
 
-This work changes only repeated portability boundaries uncovered by the
-cross-platform certification failures. It does not:
+1. Add the path and Python-target owners with focused tests.
+2. Migrate every live process target and Git test fixture.
+3. Refactor the runner and move index-mode checking to the blueprint validator.
+4. Enable the new cross-platform checks and update the canonical standard.
+5. Regenerate the live standard view, blueprints, permissions, and tracked
+   projections through their existing owners.
+6. Add the sentinel and CI step, update `TESTING.md`, and run the complete
+   Linux, macOS, and Windows matrix.
+7. Update the basis, commit the exact source state, and recertify
+   dependency-first against that commit.
+8. Let certification regenerate ignored certificate logs and pooled reviews;
+   verify them after certification.
 
-- create another policy file or portability framework;
-- replace existing TOML, date, subprocess, platform-neutral, or skip validators;
-- broaden certification into runtime-performance testing;
-- change provider-neutral interface schema semantics;
-- preserve backward compatibility for live composite Python targets;
-- rewrite historical migration fixtures;
-- require certification in plugin mode.
+## Non-goals
+
+- No new policy file, standard family, portability validator, or certification
+  mechanism.
+- No functional or performance testing inside certification.
+- No backward compatibility for live composite Python targets.
+- No changes to historical migration fixtures.
+- No change to plugin admission. Gitless plugin machine-interface dispatch
+  remains unsupported until it receives a separate admission design.
 
 ## Completion criteria
 
-The design is complete when:
+The work is complete when:
 
-1. ordinary validators have no independent tracked-file enumeration;
-2. live repository path conversion and Python process targets have one owner;
-3. ordinary Git-backed tests are deterministic across supported hosts;
-4. narrow validators reject recognizable boundary bypasses;
-5. local hooks, CI, and certification execute the same validator runner;
-6. certification cannot skip mechanical conformance or sign after its failure;
-7. the fast portability suite and the full Linux, macOS, and Windows suites pass;
-8. standards, basis files, generated artifacts, and certificates match the
-   final committed repository state.
+1. validators execute tracked index bytes and tracked import closures only;
+2. repository conversion and Python process targets each have one owner;
+3. ordinary Git tests use one deterministic helper;
+4. existing validators reject recognizable boundary bypasses;
+5. hooks, CI, and certification run the same validator runner;
+6. certification cannot skip or sign after failed mechanical conformance;
+7. the sentinel and full Linux, macOS, and Windows suites pass; and
+8. the standard, basis, generated artifacts, certificates, and pooled reviews
+   match the final committed source state.

@@ -12,13 +12,15 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_oauth_bootstrap.py:Interface
+      - _rtx/_oauth_bootstrap.py
+      - Interface
       reason: OAuth setup tool.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_ensure_oauth.py:Interface
+      - _rtx/_ensure_oauth.py
+      - Interface
       reason: Check OAuth status and guide setup (relocated from install-assistant-tools).
     network: []
 category: productivity-general-assistant

@@ -20,12 +20,15 @@ from officina.common.blueprint_graph import (  # noqa: E402
     descriptor_safe_open_supported,
     load_repository_blueprint_graph,
 )
+from officina.dispatcher.core import ResolvedInvocationMetadata  # noqa: E402
 import officina.runtime.python_machine_interface as python_interface  # noqa: E402
 import officina.runtime.python_machine_interface_runner as python_runner  # noqa: E402
 from officina.runtime.python_machine_interface import (  # noqa: E402
     DispatchCall,
     DispatchDependencyResolver,
     PythonMachineInterface,
+    PythonProcessTarget,
+    PythonProcessTargetError,
 )
 from officina.runtime.python_machine_interface_runner import (  # noqa: E402
     InterfaceLoadError,
@@ -44,6 +47,32 @@ class _PassingCertificationView:
         source_node_id: str | None,
     ) -> CertificationDecision:
         return CertificationDecision(True, "current", "Current test certificate.")
+
+
+def _target(
+    gateway_path: str = "_rtx/_demo.py",
+    process_entry: str = "Interface",
+) -> PythonProcessTarget:
+    return PythonProcessTarget(Path(gateway_path), process_entry)
+
+
+@pytest.mark.parametrize(
+    ("gateway_path", "process_entry"),
+    [
+        (Path("worker.py"), "Interface"),
+        (Path("../_rtx/worker.py"), "Interface"),
+        (Path("_rtx/worker.txt"), "Interface"),
+        (Path("/_rtx/worker.py"), "Interface"),
+        (Path("_rtx/worker.py"), "module.Interface"),
+        (Path("_rtx/worker.py"), ""),
+    ],
+)
+def test_python_process_target_rejects_noncanonical_fields(
+    gateway_path: Path,
+    process_entry: str,
+) -> None:
+    with pytest.raises(PythonProcessTargetError):
+        PythonProcessTarget(gateway_path, process_entry)
 
 
 def _v4_runtime_contract() -> dict[str, object]:
@@ -304,7 +333,7 @@ def test_load_interface_from_relative_file_spec(tmp_path: Path, monkeypatch: pyt
     write_interface(runtime / "_demo.py")
     monkeypatch.chdir(tmp_path)
 
-    interface = load_interface("_rtx/_demo.py:Interface")
+    interface = load_interface("_rtx/_demo.py", "Interface")
 
     assert interface.__class__.__name__ == "Interface"
 
@@ -318,11 +347,37 @@ def test_route_smoke_trace_supports_temporary_repository(tmp_path: Path) -> None
     paths = python_interface.trace_python_route_smoke_dependencies(
         skill,
         tmp_path,
-        "_rtx/_demo.py:Interface",
+        _target(),
     )
 
     assert (runtime / "_demo.py").resolve() in paths
     assert any(path.name == "python_machine_interface.py" for path in paths)
+
+
+def test_dependency_loader_uses_structured_target_not_command(
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "_rtx"
+    runtime.mkdir()
+    write_interface(runtime / "_demo.py")
+    resolved = ResolvedInvocationMetadata(
+        caller_skill="caller-skill",
+        target_skill="demo-skill",
+        script_interface="run",
+        target="demo-skill.interface.run",
+        pattern="run",
+        cwd=tmp_path,
+        command=["opaque", "command", "without", "target"],
+        stdin=False,
+        python_target=_target(),
+    )
+
+    interface = DispatchDependencyResolver(
+        repo_root=tmp_path,
+    ).load_resolved_python_interface(resolved)
+
+    assert interface is not None
+    assert interface.__class__.__name__ == "Interface"
 
 
 def test_route_smoke_batch_uses_one_child_and_isolates_loaded_paths(
@@ -333,7 +388,7 @@ def test_route_smoke_batch_uses_one_child_and_isolates_loaded_paths(
     second = tmp_path / "skills" / "second-skill"
     write_traced_interface(first, "first")
     write_traced_interface(second, "second")
-    entrypoint = "_rtx/_worker.py:Interface"
+    target = _target("_rtx/_worker.py")
     child_calls: list[list[str]] = []
     real_run = python_interface.subprocess.run
 
@@ -352,14 +407,14 @@ def test_route_smoke_batch_uses_one_child_and_isolates_loaded_paths(
     traces = batch_tracer(
         tmp_path,
         [
-            (second, entrypoint),
-            (first, entrypoint),
-            (first.resolve(), entrypoint),
+            (second, target),
+            (first, target),
+            (first.resolve(), target),
         ],
     )
 
-    first_key = (first.resolve(), entrypoint)
-    second_key = (second.resolve(), entrypoint)
+    first_key = (first.resolve(), target)
+    second_key = (second.resolve(), target)
     assert child_calls and len(child_calls) == 1
     assert list(traces) == [first_key, second_key]
     assert (first / "_rtx" / "_dependency.py").resolve() in traces[first_key]
@@ -387,15 +442,15 @@ def test_route_smoke_batch_isolates_lazy_officina_imports_between_specs(
         "        import officina._route_smoke_test_marker\n",
     )
     write_route_smoke_worker(second, "        pass\n")
-    entrypoint = "_rtx/_worker.py:Interface"
+    target = _target("_rtx/_worker.py")
 
     traces = python_interface.trace_python_route_smoke_dependencies_batch(
         tmp_path,
-        ((first, entrypoint), (second, entrypoint)),
+        ((first, target), (second, target)),
     )
 
-    assert marker.resolve() in traces[(first.resolve(), entrypoint)]
-    assert marker.resolve() not in traces[(second.resolve(), entrypoint)]
+    assert marker.resolve() in traces[(first.resolve(), target)]
+    assert marker.resolve() not in traces[(second.resolve(), target)]
 
 
 def test_route_smoke_batch_retraces_shared_lazy_officina_import_per_spec(
@@ -417,15 +472,15 @@ def test_route_smoke_batch_retraces_shared_lazy_officina_import_per_spec(
             skill,
             "        from officina import _route_smoke_test_marker\n",
         )
-    entrypoint = "_rtx/_worker.py:Interface"
+    target = _target("_rtx/_worker.py")
 
     traces = python_interface.trace_python_route_smoke_dependencies_batch(
         tmp_path,
-        ((first, entrypoint), (second, entrypoint)),
+        ((first, target), (second, target)),
     )
 
-    assert marker.resolve() in traces[(first.resolve(), entrypoint)]
-    assert marker.resolve() in traces[(second.resolve(), entrypoint)]
+    assert marker.resolve() in traces[(first.resolve(), target)]
+    assert marker.resolve() in traces[(second.resolve(), target)]
 
 
 def test_route_smoke_batch_restores_cwd_and_sys_path_between_specs(
@@ -447,16 +502,16 @@ def test_route_smoke_batch_restores_cwd_and_sys_path_between_specs(
         "        assert Path.cwd() == Path(__file__).resolve().parents[1]\n"
         f"        assert {leaked_path!r} not in sys.path\n",
     )
-    entrypoint = "_rtx/_worker.py:Interface"
+    target = _target("_rtx/_worker.py")
 
     traces = python_interface.trace_python_route_smoke_dependencies_batch(
         tmp_path,
-        ((first, entrypoint), (second, entrypoint)),
+        ((first, target), (second, target)),
     )
 
     assert set(traces) == {
-        (first.resolve(), entrypoint),
-        (second.resolve(), entrypoint),
+        (first.resolve(), target),
+        (second.resolve(), target),
     }
 
 
@@ -503,7 +558,7 @@ def test_route_smoke_batch_rejects_invalid_blueprint_outside_skills(
     ):
         python_interface.trace_python_route_smoke_dependencies_batch(
             tmp_path,
-            ((skill, "_rtx/_worker.py:Interface"),),
+            ((skill, _target("_rtx/_worker.py")),),
         )
 
 
@@ -513,11 +568,14 @@ def test_route_smoke_batch_rejects_noncanonical_child_identity(
 ) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     write_route_smoke_worker(skill, "        pass\n")
-    entrypoint = "_rtx/_worker.py:Interface"
+    target = _target("_rtx/_worker.py")
     payload = [
         {
             "skill_root": "skills/demo-skill",
-            "entrypoint": entrypoint,
+            "python_target": {
+                "gateway_path": target.gateway_path.as_posix(),
+                "process_entry": target.process_entry,
+            },
             "paths": [(skill / "_rtx" / "_worker.py").resolve().as_posix()],
         }
     ]
@@ -539,7 +597,7 @@ def test_route_smoke_batch_rejects_noncanonical_child_identity(
     ):
         python_interface.trace_python_route_smoke_dependencies_batch(
             tmp_path,
-            ((skill, entrypoint),),
+            ((skill, target),),
         )
 
 
@@ -549,7 +607,7 @@ def test_route_smoke_batch_reports_nonzero_child(
 ) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     write_route_smoke_worker(skill, "        pass\n")
-    entrypoint = "_rtx/_worker.py:Interface"
+    target = _target("_rtx/_worker.py")
     monkeypatch.setattr(
         python_interface.subprocess,
         "run",
@@ -567,7 +625,7 @@ def test_route_smoke_batch_reports_nonzero_child(
     ):
         python_interface.trace_python_route_smoke_dependencies_batch(
             tmp_path,
-            ((skill, entrypoint),),
+            ((skill, target),),
         )
 
 
@@ -597,17 +655,19 @@ def test_scalar_route_smoke_trace_delegates_to_batch(
     runtime = skill / "_rtx"
     runtime.mkdir(parents=True)
     write_interface(runtime / "_demo.py")
-    entrypoint = "_rtx/_demo.py:Interface"
+    target = _target()
     expected = (runtime / "_demo.py",)
-    calls: list[tuple[Path, tuple[tuple[Path, str], ...]]] = []
+    calls: list[
+        tuple[Path, tuple[tuple[Path, PythonProcessTarget], ...]]
+    ] = []
 
     def trace_batch(
         repo_root: Path,
-        specifications: tuple[tuple[Path, str], ...],
-    ) -> dict[tuple[Path, str], tuple[Path, ...]]:
+        specifications: tuple[tuple[Path, PythonProcessTarget], ...],
+    ) -> dict[tuple[Path, PythonProcessTarget], tuple[Path, ...]]:
         normalized = tuple(specifications)
         calls.append((repo_root, normalized))
-        return {(skill.resolve(), entrypoint): expected}
+        return {(skill.resolve(), target): expected}
 
     monkeypatch.setattr(
         python_interface,
@@ -619,11 +679,11 @@ def test_scalar_route_smoke_trace_delegates_to_batch(
     result = python_interface.trace_python_route_smoke_dependencies(
         skill,
         tmp_path,
-        entrypoint,
+        target,
     )
 
     assert result == expected
-    assert calls == [(tmp_path, ((skill, entrypoint),))]
+    assert calls == [(tmp_path, ((skill, target),))]
 
 
 def test_route_smoke_trace_prefers_candidate_local_officina_source(
@@ -640,7 +700,7 @@ def test_route_smoke_trace_prefers_candidate_local_officina_source(
     paths = python_interface.trace_python_route_smoke_dependencies(
         skill,
         tmp_path,
-        "_rtx/_demo.py:Interface",
+        _target(),
     )
 
     assert (candidate_source / "officina" / "__init__.py").resolve() in paths
@@ -668,7 +728,7 @@ def test_load_interface_preserves_package_relative_imports(
     )
     monkeypatch.chdir(tmp_path)
 
-    interface = load_interface("_rtx/_demo.py:Interface")
+    interface = load_interface("_rtx/_demo.py", "Interface")
 
     assert interface.__class__.__name__ == "Interface"
 
@@ -703,7 +763,7 @@ def test_load_interface_ignores_conflicting_cached_package(
     )
     monkeypatch.chdir(skill_root)
 
-    interface = load_interface("_rtx/_demo.py:Interface")
+    interface = load_interface("_rtx/_demo.py", "Interface")
 
     assert interface.value == "ok"
     sys.modules.pop("_rtx", None)
@@ -731,7 +791,7 @@ def test_load_interface_uses_shared_reader_without_posix_descriptors(
         PlatformWithoutPosixDescriptors(),
     )
 
-    interface = load_interface("_rtx/_demo.py:Interface")
+    interface = load_interface("_rtx/_demo.py", "Interface")
 
     assert interface.__class__.__name__ == "Interface"
 
@@ -746,8 +806,8 @@ def test_load_interface_rejects_source_outside_working_root(
     write_interface(outside)
     monkeypatch.chdir(skill_root)
 
-    with pytest.raises(InterfaceLoadError, match="outside allowed root"):
-        load_interface(f"{outside}:Interface")
+    with pytest.raises(InterfaceLoadError, match="must be a relative `_rtx/"):
+        load_interface(outside, "Interface")
 
 
 def test_load_interface_binds_lazy_package_imports_to_initial_snapshot(
@@ -771,7 +831,7 @@ def test_load_interface_binds_lazy_package_imports_to_initial_snapshot(
     )
     monkeypatch.chdir(tmp_path)
 
-    interface = load_interface("_rtx/_demo.py:Interface")
+    interface = load_interface("_rtx/_demo.py", "Interface")
     helper.write_text("VALUE = 'untrusted'\n", encoding="utf-8")
 
     assert run_python_machine_interface(interface, []) == 0
@@ -802,7 +862,7 @@ def test_load_interface_rejects_symlinked_package_source(
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(InterfaceLoadError, match="symbolic link|reparse point"):
-        load_interface("_rtx/_demo.py:Interface")
+        load_interface("_rtx/_demo.py", "Interface")
 
 
 def test_main_rejects_matching_digest_for_malformed_package_snapshot(
@@ -819,7 +879,8 @@ def test_main_rejects_matching_digest_for_malformed_package_snapshot(
             str(snapshot),
             "--package-snapshot-sha256",
             hashlib.sha256(payload).hexdigest(),
-            "_rtx/_demo.py:Interface",
+            "_rtx/_demo.py",
+            "Interface",
         ]
     )
 
@@ -851,7 +912,11 @@ def test_load_interface_uses_bound_source_snapshot_after_final_swap(
     )
     monkeypatch.chdir(tmp_path)
     try:
-        interface = load_interface("_rtx/_demo.py:Interface", source_fd=source_fd)
+        interface = load_interface(
+            "_rtx/_demo.py",
+            "Interface",
+            source_fd=source_fd,
+        )
     finally:
         os.close(source_fd)
 
@@ -868,7 +933,7 @@ def test_route_smoke_builds_parser_but_does_not_require_normal_args(
     runtime.mkdir()
     write_interface(runtime / "_demo.py")
     monkeypatch.chdir(tmp_path)
-    interface = load_interface("_rtx/_demo.py:Interface")
+    interface = load_interface("_rtx/_demo.py", "Interface")
 
     result = run_python_machine_interface(interface, ["--route-smoke"])
 
@@ -886,7 +951,7 @@ def test_normal_mode_parses_args_and_runs(
     runtime.mkdir()
     write_interface(runtime / "_demo.py")
     monkeypatch.chdir(tmp_path)
-    interface = load_interface("_rtx/_demo.py:Interface")
+    interface = load_interface("_rtx/_demo.py", "Interface")
 
     result = run_python_machine_interface(interface, ["--name", "Ada"])
 
@@ -912,7 +977,7 @@ def test_argv_adapter_passes_normal_args_through(
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
-    interface = load_interface("_rtx/_legacy.py:Interface")
+    interface = load_interface("_rtx/_legacy.py", "Interface")
 
     result = run_python_machine_interface(interface, ["--legacy-flag", "value"])
 
@@ -1142,6 +1207,8 @@ def test_repeated_v4_dependency_collection_does_not_retain_file_descriptors(
     assert after == before
 
 
-def test_main_reports_bad_interface_spec(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_reports_incomplete_python_target(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert main(["not-a-spec"]) == 2
-    assert "interface spec must be" in capsys.readouterr().err
+    assert "missing Python gateway path or process entry" in capsys.readouterr().err

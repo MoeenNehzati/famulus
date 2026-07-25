@@ -37,6 +37,14 @@ from officina.common.process_binding_compiler import (
     parse_caller_invocation,
 )
 from officina.common.blueprint_inventory import BlueprintInventoryError, collect_blueprints
+from officina.common.repository_paths import (
+    RepositoryPathError,
+    equivalent_root_relative_path,
+)
+from officina.runtime.python_machine_interface import (
+    PythonProcessTarget,
+    PythonProcessTargetError,
+)
 
 class InvocationError(Exception):
     """Raised when a dispatcher request is invalid."""
@@ -79,6 +87,7 @@ class ResolvedInvocationMetadata:
     cwd: Path
     command: list[str]
     stdin: bool
+    python_target: PythonProcessTarget | None = None
 
     def as_payload(self) -> dict[str, Any]:
         return {
@@ -90,6 +99,14 @@ class ResolvedInvocationMetadata:
             "cwd": str(self.cwd),
             "command": list(self.command),
             "stdin": self.stdin,
+            "python_target": (
+                {
+                    "gateway_path": self.python_target.gateway_path.as_posix(),
+                    "process_entry": self.python_target.process_entry,
+                }
+                if self.python_target is not None
+                else None
+            ),
         }
 
 
@@ -105,6 +122,7 @@ class ResolvedInvocation:
     cwd: Path
     command: list[str]
     stdin: bool
+    python_target: PythonProcessTarget | None = None
     env: dict[str, str] | None = None
     runtime_bindings: tuple[RuntimeFileBinding, ...] = ()
     runtime_snapshots: tuple[_RuntimeSnapshotTransport, ...] = ()
@@ -159,6 +177,7 @@ class ResolvedInvocation:
             cwd=self.cwd,
             command=self._logical_command(),
             stdin=self.stdin,
+            python_target=self.python_target,
         )
 
     def as_payload(self) -> dict[str, Any]:
@@ -217,6 +236,7 @@ def _build_python_runtime(
     dict[str, str] | None,
     tuple[RuntimeFileBinding, ...],
     tuple[_RuntimeSnapshotTransport, ...],
+    PythonProcessTarget,
 ]:
     path = gateway.get("path")
     symbol = gateway.get("symbol")
@@ -228,7 +248,10 @@ def _build_python_runtime(
         raise InvocationError(
             f"{interface_id}: Python gateway needs non-empty `symbol`"
         )
-    entrypoint = f"{path}:{symbol}"
+    try:
+        python_target = PythonProcessTarget(Path(path), symbol)
+    except PythonProcessTargetError as exc:
+        raise InvocationError(f"{interface_id}: {exc}") from exc
     root = get_repo_root(repo_root)
     args_prefix = gateway.get("args_prefix", [])
     if not isinstance(args_prefix, list) or not all(
@@ -243,21 +266,7 @@ def _build_python_runtime(
     current = env.get("PYTHONPATH")
     env["PYTHONPATH"] = os.pathsep.join(entries + ([current] if current else []))
     env["PYTHONIOENCODING"] = "utf-8:strict"
-    module_text, separator, class_name = entrypoint.partition(":")
-    module_path = Path(module_text)
-    if (
-        separator != ":"
-        or not module_text
-        or not class_name
-        or module_path.is_absolute()
-        or ".." in module_path.parts
-        or not module_path.parts
-        or module_path.parts[0] != "_rtx"
-    ):
-        raise InvocationError(
-            f"{interface_id}: entrypoint must be `_rtx/path.py:ClassName` "
-            "without parent traversal"
-        )
+    module_path = python_target.gateway_path
     source_path = Path(os.path.abspath(module_root / module_path))
     package_bindings: tuple[RuntimeFileBinding, ...] = ()
     snapshot_transports: tuple[_RuntimeSnapshotTransport, ...] = ()
@@ -278,8 +287,8 @@ def _build_python_runtime(
                 for binding in package_bindings:
                     binding.close()
                 raise InvocationError(
-                    f"{interface_id}: entrypoint is not a regular Python package source: "
-                    f"{module_text}"
+                    f"{interface_id}: gateway is not a regular Python package source: "
+                    f"{module_path.as_posix()}"
                 )
             source_arguments = ["--source-fd", str(source_binding.fd)]
             package_arguments = [
@@ -288,7 +297,10 @@ def _build_python_runtime(
                 for token in (
                     "--package-file",
                     str(binding.fd),
-                    binding.path.relative_to(module_root).as_posix(),
+                    equivalent_root_relative_path(
+                        binding.path,
+                        module_root,
+                    ).as_posix(),
                 )
             ]
         else:
@@ -300,8 +312,8 @@ def _build_python_runtime(
             )
             if not any(path == source_path for path, _source in snapshots):
                 raise InvocationError(
-                    f"{interface_id}: entrypoint is not a regular Python package source: "
-                    f"{module_text}"
+                    f"{interface_id}: gateway is not a regular Python package source: "
+                    f"{module_path.as_posix()}"
                 )
             transport = _create_runtime_snapshot_transport(snapshots, module_root)
             snapshot_transports = (transport,)
@@ -321,13 +333,15 @@ def _build_python_runtime(
             "officina.runtime.python_machine_interface_runner",
             *source_arguments,
             *package_arguments,
-            entrypoint,
+            python_target.gateway_path.as_posix(),
+            python_target.process_entry,
             *args_prefix,
             *script_args,
         ],
         env,
         package_bindings,
         snapshot_transports,
+        python_target,
     )
 
 
@@ -467,12 +481,22 @@ def _resolve_export_dispatch(
             f"{export.interface_id}: Python process binding requires a gateway and entry"
         )
     try:
-        gateway_path = source.gateway_path.relative_to(source.skill_root).as_posix()
-    except ValueError as exc:
+        gateway_path = equivalent_root_relative_path(
+            source.gateway_path,
+            source.skill_root,
+        ).as_posix()
+    except RepositoryPathError as exc:
         raise InvocationError(
             f"{export.interface_id}: gateway must remain inside its module"
         ) from exc
-    cwd, command, env, runtime_bindings, runtime_snapshots = _build_python_runtime(
+    (
+        cwd,
+        command,
+        env,
+        runtime_bindings,
+        runtime_snapshots,
+        python_target,
+    ) = _build_python_runtime(
         source.skill_root,
         export.interface_id,
         {
@@ -492,6 +516,7 @@ def _resolve_export_dispatch(
         cwd=cwd,
         command=command,
         stdin=compiled.stdin_argument_id is not None,
+        python_target=python_target,
         env=env,
         runtime_bindings=runtime_bindings,
         runtime_snapshots=runtime_snapshots,

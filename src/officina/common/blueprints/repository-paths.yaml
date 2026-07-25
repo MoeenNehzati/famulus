@@ -1,0 +1,69 @@
+content:
+- repository_paths\.py
+dependencies: []
+description: Converts paths to root-relative forms without resolving descendants, while accepting lexical containment and filesystem-equivalent root aliases.
+gateway:
+  language: Python
+  path: repository_paths.py
+id: common.source.repository-paths
+interfaces:
+  common.source.repository-paths.interface.python-api:
+    contract:
+      arguments:
+        operation:
+          description: Root-relative path conversion to perform.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - {value: equivalent-root-relative, description: Return a path relative to a lexically or physically equivalent root.}
+            - {value: repository-relative, description: "Return a Path relative to a repository root, interpreting relative inputs from that root."}
+            - {value: repository-relative-posix, description: Return the repository-relative path with POSIX separators.}
+        path:
+          description: Absolute path or repository-root-relative path to convert.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        root:
+          description: Root against which the path is interpreted.
+          required: true
+          sensitivity: user-private
+          direct_io_ref: root-metadata
+          type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - id: result
+        audience: machine
+        description: Root-relative Path or POSIX path string.
+        direct_io_ref: return-value
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: The root itself produces an empty relative Path or string.
+        type: {kind: string, sensitivity: user-private}
+      outcomes:
+      - {id: converted, class: success, outputs: [result], effects: [], caller_action: Use the result only with the root supplied to the conversion.}
+      - {id: outside-root, class: error, outputs: [], effects: [], caller_action: Supply a path lexically beneath the root or beneath a filesystem-equivalent root alias.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {live: Equivalent-root fallback compares existing ancestors to the supplied root during the call.}
+        verification:
+        - {method: output-schema, output_ref: result}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: root-metadata, medium: local-filesystem, access: read, content: root and ancestor filesystem identity metadata, formats: [filesystem-metadata], sensitivity: user-private, path: "<root>/**", path_match: glob}
+        writes:
+        - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [path, text], sensitivity: user-private}
+        network: []
+    description: Provides canonical root-relative path conversion to Python callers.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1

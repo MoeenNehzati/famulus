@@ -3,7 +3,6 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 import shutil
-import subprocess
 
 import yaml
 
@@ -27,6 +26,7 @@ from officina.common.git_provenance import (
     pin_blueprint_v4_mechanical_commit,
     pin_blueprint_v4_source_overlay_commit,
 )
+from test_support.git_repository import GitTestRepository
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -174,6 +174,11 @@ def create_v4_repository(
     *,
     extra_modules: tuple[str, ...] = (),
 ):
+    repository = (
+        GitTestRepository.initialize_existing_empty(root)
+        if root.is_dir()
+        else GitTestRepository.create(root)
+    )
     schema_root = root / "references" / "blueprint"
     shutil.copytree(SOURCE_SCHEMA_ROOT, schema_root)
     migration_map = root / "docs/plans/unified-architecture-migration-map.yaml"
@@ -233,34 +238,13 @@ def create_v4_repository(
         "]\n",
         encoding="utf-8",
     )
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
-    subprocess.run(["git", "-C", str(root), "config", "user.name", "Tests"], check=True)
-    subprocess.run(
-        ["git", "-C", str(root), "config", "user.email", "tests@example.invalid"],
-        check=True,
+    repository.git("add", ".")
+    repository.git(
+        "commit",
+        "-qm",
+        "materialize mechanical v4 blueprint candidate",
     )
-    subprocess.run(
-        ["git", "-C", str(root), "config", "core.autocrlf", "false"],
-        check=True,
-    )
-    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(root),
-            "commit",
-            "-qm",
-            "materialize mechanical v4 blueprint candidate",
-        ],
-        check=True,
-    )
-    commit = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    commit = repository.git("rev-parse", "HEAD").stdout.decode("ascii").strip()
     pin_blueprint_v4_mechanical_commit(root, commit)
     pin_blueprint_v4_source_overlay_commit(root, commit)
     graph = load_repository_blueprint_graph(root, schema_root=schema_root)

@@ -14,7 +14,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Mapping, Sequence
 
 import yaml
 
@@ -53,7 +53,6 @@ from officina.common.blueprint_graph import (
     BlueprintNode,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
-    repository_relative_path,
 )
 from officina.common.certification_view import (
     CertificateCurrentnessView,
@@ -73,6 +72,10 @@ from officina.common.git_provenance import (
     run_git,
     snapshot_head_matches,
 )
+from officina.common.repository_paths import (
+    RepositoryPathError,
+    repository_relative_path,
+)
 from officina.common.pooled_blueprint import (
     PooledReviewValidationError,
     pooled_review_path,
@@ -80,9 +83,10 @@ from officina.common.pooled_blueprint import (
 )
 from officina.common.process_binding_compiler import gateway_language_name
 from officina.runtime.python_machine_interface import (
-    DispatchCall,
-    PythonRouteSmokeTraceError,
     PythonArgvMachineInterface,
+    PythonProcessTarget,
+    PythonProcessTargetError,
+    PythonRouteSmokeTraceError,
     trace_python_route_smoke_dependencies_batch,
 )
 
@@ -91,7 +95,7 @@ OUTPUT_SCHEMA_VERSION = 1
 RouteSmokeAuditResult = tuple[
     tuple[
         str,
-        str,
+        PythonProcessTarget,
         tuple[tuple[str, str, str | None], ...],
     ],
     ...,
@@ -375,8 +379,8 @@ def _expected_file_hashes(
 def _python_route_smoke_trace_specs(
     graph: RepositoryBlueprintGraph,
     certification_node_ids: Sequence[str],
-) -> tuple[tuple[str, str, str], ...]:
-    """Return unique scoped Python source/entrypoint traces."""
+) -> tuple[tuple[str, str, PythonProcessTarget], ...]:
+    """Return unique scoped Python source/target traces."""
 
     selected: set[str] = set()
     for node_id in certification_node_ids:
@@ -385,7 +389,7 @@ def _python_route_smoke_trace_specs(
                 f"unknown route-smoke certification node: {node_id}"
             )
         selected.add(node_id)
-    specifications: dict[tuple[str, str], str] = {}
+    specifications: dict[tuple[str, PythonProcessTarget], str] = {}
     for node_id, node in sorted(graph.nodes.items()):
         if node_id not in selected:
             continue
@@ -416,11 +420,29 @@ def _python_route_smoke_trace_specs(
                 and binding.get("kind") == "process"
                 and isinstance(entry, str)
             ):
-                entrypoint = f"{gateway_path}:{entry}"
-                specifications.setdefault((node_id, entrypoint), str(interface_id))
+                try:
+                    python_target = PythonProcessTarget(
+                        Path(gateway_path),
+                        entry,
+                    )
+                except PythonProcessTargetError as exc:
+                    raise CertificationHashError(
+                        f"{node_id}: invalid Python process target: {exc}"
+                    ) from exc
+                specifications.setdefault(
+                    (node_id, python_target),
+                    str(interface_id),
+                )
     return tuple(
-        (node_id, interface_id, entrypoint)
-        for (node_id, entrypoint), interface_id in sorted(specifications.items())
+        (node_id, interface_id, python_target)
+        for (node_id, python_target), interface_id in sorted(
+            specifications.items(),
+            key=lambda item: (
+                item[0][0],
+                item[0][1].gateway_path.as_posix(),
+                item[0][1].process_entry,
+            ),
+        )
     )
 
 
@@ -440,8 +462,8 @@ def audit_route_smoke_dependencies(
         certification_node_ids,
     )
     specifications = tuple(
-        (graph.nodes[node_id].skill_root, entrypoint)
-        for node_id, _interface_id, entrypoint in trace_specs
+        (graph.nodes[node_id].skill_root, python_target)
+        for node_id, _interface_id, python_target in trace_specs
     )
     try:
         traces = trace_python_route_smoke_dependencies_batch(
@@ -457,8 +479,8 @@ def audit_route_smoke_dependencies(
             tuple[tuple[str, str, str | None], ...],
         ]
     ] = []
-    for node_id, _interface_id, entrypoint in trace_specs:
-        key = (graph.nodes[node_id].skill_root.resolve(), entrypoint)
+    for node_id, _interface_id, python_target in trace_specs:
+        key = (graph.nodes[node_id].skill_root.resolve(), python_target)
         mappings = map_route_smoke_dependencies(
             graph,
             states,
@@ -470,7 +492,7 @@ def audit_route_smoke_dependencies(
         results.append(
             (
                 node_id,
-                entrypoint,
+                python_target,
                 route_smoke_trace_signature(mappings),
             )
         )
@@ -630,7 +652,7 @@ def _v4_blueprint_paths(
             repository_relative_path(node.blueprint_path, repo_root)
             for node in graph.nodes.values()
         }
-    except BlueprintGraphError as exc:
+    except RepositoryPathError as exc:
         raise CertificationError("v4 blueprint path escapes its repository") from exc
 
 
@@ -774,7 +796,7 @@ def _verify_executing_candidate_certifier(
     executing = Path(__file__).resolve()
     try:
         executing_relative = repository_relative_path(executing, root).as_posix()
-    except BlueprintGraphError as exc:
+    except RepositoryPathError as exc:
         raise CertificationError("executing certifier bytes are outside the candidate") from exc
     owners = [
         node_id
@@ -1592,24 +1614,6 @@ def certify_v4_migration_candidate(
     )
 
 
-class Dispatcher(Protocol):
-    """Small protocol for dispatcher-backed mechanical calls."""
-
-    def dispatch(
-        self,
-        key: str,
-        *,
-        args: Sequence[str] | None = None,
-        stdin: str | bytes | None = None,
-        timeout: float | None = None,
-        capture_output: bool = True,
-        check: bool = False,
-        text: bool | None = None,
-        repo_root: Path | None = None,
-    ) -> Any:
-        ...
-
-
 @dataclass(frozen=True)
 class CommandResult:
     name: str
@@ -1686,44 +1690,21 @@ def run_local_command(
     )
 
 
-def _blueprint_sync_check(dispatcher: Dispatcher) -> CommandResult:
-    completed = dispatcher.dispatch(
-        "sync-blueprints",
-        args=["--check"],
-        text=True,
-        check=False,
-    )
-    return CommandResult(
-        "blueprint-sync",
-        ["skill-maker.interface.sync-blueprints", "--check"],
-        completed.returncode,
-        completed.stdout,
-        completed.stderr,
-    )
-
-
 def run_v4_mechanical_checks(
-    dispatcher: Dispatcher,
-    *,
     repo_root: Path = REPO_ROOT,
-) -> list[CommandResult]:
+) -> CommandResult:
     """Run blueprint-conformance checks owned by certification."""
 
-    results = [
-        _blueprint_sync_check(dispatcher),
-        run_local_command(
-            "validators",
-            [sys.executable, "validators/runner.py"],
-            repo_root=repo_root,
-        ),
-    ]
-    failed = [result for result in results if not result.passed]
-    if failed:
+    result = run_local_command(
+        "validators",
+        [sys.executable, "validators/runner.py"],
+        repo_root=repo_root,
+    )
+    if not result.passed:
         raise CertificationError(
-            "mechanical certification checks failed: "
-            + ", ".join(result.name for result in failed)
+            f"mechanical certification checks failed: {result.name}"
         )
-    return results
+    return result
 
 
 def resolve_reviewed_repository_targets(
@@ -1782,10 +1763,8 @@ def resolve_reviewed_repository_targets(
 
 
 def certify(
-    dispatcher: Dispatcher,
     *,
     targets: Sequence[str],
-    skip_mechanical: bool = False,
     timestamp: str | None = None,
     reviewed_repository: Path | None = None,
     reviewed_commit: str | None = None,
@@ -1826,11 +1805,7 @@ def certify(
         target_nodes_by_module[target.node_id] = node_ids
         requested_node_ids.update(node_ids)
 
-    evidence = (
-        []
-        if skip_mechanical
-        else run_v4_mechanical_checks(dispatcher, repo_root=repository)
-    )
+    evidence = [run_v4_mechanical_checks(repository)]
     result = _certify_v4_repository(
         repository,
         target_node_ids=tuple(sorted(requested_node_ids)),
@@ -1894,24 +1869,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("targets", nargs="*")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--allow-non-atomic", action="store_true")
-    parser.add_argument("--skip-mechanical", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--timestamp", help=argparse.SUPPRESS)
     parser.add_argument("--reviewed-repository", type=Path, required=True)
     parser.add_argument("--reviewed-commit", required=True)
     return parser
 
 
-def main(
-    argv: Sequence[str] | None = None,
-    dispatcher: Dispatcher | None = None,
-) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(list(sys.argv[1:] if argv is None else argv))
-    runtime = dispatcher or Interface()
     try:
         evidence, outcomes = certify(
-            runtime,
             targets=args.targets,
-            skip_mechanical=args.skip_mechanical,
             timestamp=args.timestamp,
             reviewed_repository=args.reviewed_repository,
             reviewed_commit=args.reviewed_commit,
@@ -1946,17 +1914,8 @@ def main(
 class Interface(PythonArgvMachineInterface):
     """Dispatcher adapter for certificate issuance."""
 
-    dispatches = {
-        "sync-blueprints": DispatchCall(
-            caller_skill="skill-certifier",
-            target_skill="skill-maker",
-            interface="skill-maker.interface.sync-blueprints",
-            smoke_args=("--check",),
-        ),
-    }
-
     def run(self, argv: list[str]) -> int:
-        return main(argv, dispatcher=self)
+        return main(argv)
 
 
 if __name__ == "__main__":

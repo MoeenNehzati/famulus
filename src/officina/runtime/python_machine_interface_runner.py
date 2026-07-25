@@ -19,11 +19,20 @@ from officina.common.atomic_files import read_regular_file_bytes
 from officina.common.blueprint_graph import (
     BlueprintGraphError,
     decode_runtime_python_package_snapshot,
-    repository_relative_path,
     snapshot_runtime_python_package,
 )
+from officina.common.repository_paths import (
+    RepositoryPathError,
+    repository_relative_path,
+    repository_relative_posix,
+)
 
-from .python_machine_interface import PythonMachineInterface, coerce_exit_code
+from .python_machine_interface import (
+    PythonMachineInterface,
+    PythonProcessTarget,
+    PythonProcessTargetError,
+    coerce_exit_code,
+)
 
 
 class InterfaceLoadError(RuntimeError):
@@ -225,13 +234,13 @@ def _read_bound_source(
 def _load_confined_package_sources(
     path: Path,
 ) -> dict[str, tuple[bytes, str, bool]] | None:
-    """Snapshot the entrypoint package without following paths outside cwd."""
+    """Snapshot the gateway package without following paths outside cwd."""
 
     root = Path(os.path.abspath(Path.cwd()))
     absolute = Path(os.path.abspath(path))
     try:
         relative = repository_relative_path(absolute, root)
-    except BlueprintGraphError as exc:
+    except RepositoryPathError as exc:
         raise InterfaceLoadError(
             f"interface module is outside allowed root {root}: {path}"
         ) from exc
@@ -251,7 +260,12 @@ def _load_confined_package_sources(
 
     sources: dict[str, tuple[bytes, str, bool]] = {}
     for source_path, source in snapshots:
-        logical_path = source_path.relative_to(root).as_posix()
+        try:
+            logical_path = repository_relative_posix(source_path, root)
+        except RepositoryPathError as exc:
+            raise InterfaceLoadError(
+                f"package source is outside allowed root {root}: {source_path}"
+            ) from exc
         module_name, is_package = _bound_module_name(logical_path)
         if module_name in sources:
             raise InterfaceLoadError(f"duplicate bound package module: {module_name}")
@@ -283,8 +297,8 @@ def _load_module_from_path(
 
     if package_sources is not None:
         try:
-            logical_path = repository_relative_path(path, Path.cwd()).as_posix()
-        except BlueprintGraphError as exc:
+            logical_path = repository_relative_posix(path, Path.cwd())
+        except RepositoryPathError as exc:
             raise InterfaceLoadError(
                 f"interface module is outside the validated package root: {path}"
             ) from exc
@@ -366,23 +380,20 @@ def _module_name_for_path(path: Path) -> str:
 
 
 def load_interface(
-    spec: str,
+    gateway_path: str | Path,
+    process_entry: str,
     *,
     source_fd: int | None = None,
     package_files: Sequence[tuple[int, str]] = (),
     _package_sources: dict[str, tuple[bytes, str, bool]] | None = None,
 ) -> PythonMachineInterface:
-    """Load and instantiate a Python machine-interface binding.
+    """Load a Python machine-interface binding from separate target fields."""
 
-    ``spec`` has the form ``path/to/module.py:ClassName``. Relative paths are
-    resolved from the current working directory, which is the skill root for
-    dispatcher command runtimes.
-    """
-
-    module_text, sep, class_name = spec.rpartition(":")
-    if sep != ":" or not module_text or not class_name:
-        raise InterfaceLoadError("interface spec must be `path/to/file.py:ClassName`")
-    module_path = Path(module_text)
+    try:
+        target = PythonProcessTarget(Path(gateway_path), process_entry)
+    except PythonProcessTargetError as exc:
+        raise InterfaceLoadError(str(exc)) from exc
+    module_path = target.gateway_path
     if not module_path.is_absolute():
         module_path = Path.cwd() / module_path
     confined_sources = None
@@ -397,12 +408,18 @@ def load_interface(
             package_files,
             package_sources=active_sources,
         )
-        interface_type = getattr(module, class_name, None)
+        interface_type = getattr(module, target.process_entry, None)
         if interface_type is None:
-            raise InterfaceLoadError(f"{spec}: class `{class_name}` not found")
+            raise InterfaceLoadError(
+                f"{target.gateway_path}: class "
+                f"`{target.process_entry}` not found"
+            )
         interface = interface_type()
         if not isinstance(interface, PythonMachineInterface):
-            raise InterfaceLoadError(f"{spec}: class must inherit PythonMachineInterface")
+            raise InterfaceLoadError(
+                f"{target.gateway_path}: class must inherit "
+                "PythonMachineInterface"
+            )
         if active_sources:
             setattr(interface, _BOUND_PACKAGE_SOURCES_ATTRIBUTE, active_sources)
         return interface
@@ -445,15 +462,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     """CLI entrypoint used by dispatcher command runtimes.
 
     Expected argv shape:
-        ``<entrypoint-spec> [interface/default args...] [caller args...]``
+        ``<gateway-path> <process-entry> [interface/default args...] [caller args...]``
 
     Example:
-        ``_rtx/_lists.py:ReadListInterface --list todo``
+        ``_rtx/_lists.py ReadListInterface --list todo``
     """
 
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
-        print("error: missing interface spec", file=sys.stderr)
+        print(
+            "error: missing Python gateway path or process entry",
+            file=sys.stderr,
+        )
         return 2
     source_fd: int | None = None
     package_files: list[tuple[int, str]] = []
@@ -504,10 +524,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    if not argv:
-        print("error: missing interface spec", file=sys.stderr)
+    if len(argv) < 2:
+        print("error: missing Python gateway path or process entry", file=sys.stderr)
         return 2
-    spec, *interface_argv = argv
+    gateway_path, process_entry, *interface_argv = argv
     try:
         if package_snapshot is not None:
             assert package_snapshot_sha256 is not None
@@ -516,18 +536,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 package_snapshot_sha256,
             )
             with _bound_package_source_imports(sources):
-                interface = load_interface(spec, _package_sources=sources)
+                interface = load_interface(
+                    gateway_path,
+                    process_entry,
+                    _package_sources=sources,
+                )
                 return run_python_machine_interface(interface, interface_argv)
         if package_files:
             with _bound_package_imports(package_files) as sources:
                 interface = load_interface(
-                    spec,
+                    gateway_path,
+                    process_entry,
                     source_fd=source_fd,
                     _package_sources=sources,
                 )
                 return run_python_machine_interface(interface, interface_argv)
         interface = load_interface(
-            spec,
+            gateway_path,
+            process_entry,
             source_fd=source_fd,
         )
         return run_python_machine_interface(interface, interface_argv)

@@ -6,28 +6,32 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_phase_entry.py:Interface
+      - _rtx/_phase_entry.py
+      - Interface
       reason: Run the phase-1 installer orchestrator through the shared Python machine-interface
         runner.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_install_scaffold.py:Interface
+      - _rtx/_install_scaffold.py
+      - Interface
       reason: Install dispatcher and invoke-skill launchers through the shared Python
         machine-interface runner.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_config_bridge.py:Interface
+      - _rtx/_config_bridge.py
+      - Interface
       reason: Wire dev-mode config links and hooks through the shared Python machine-interface
         runner.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_agent_launchers.py:Interface
+      - _rtx/_agent_launchers.py
+      - Interface
       reason: Install selected assistant launchers through the shared Python machine-interface
         runner.
     network: []

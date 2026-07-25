@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 from copy import deepcopy
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -38,6 +37,7 @@ from v4_certification_fixtures import (
     create_v4_repository,
     payload as v4_payload,
 )
+from test_support.git_repository import GitTestRepository
 
 
 SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint"
@@ -132,6 +132,7 @@ def _contract() -> dict[str, object]:
 
 
 def _repository(root: Path) -> tuple[object, dict[str, object], str]:
+    repository = GitTestRepository.initialize_existing_empty(root)
     module = root / "skills" / "demo-skill"
     module.mkdir(parents=True)
     (module / "SKILL.md").write_text("Instructions.\n", encoding="utf-8")
@@ -206,24 +207,9 @@ def _repository(root: Path) -> tuple[object, dict[str, object], str]:
     )
     basis_manifest.parent.mkdir(parents=True)
     basis_manifest.write_text('["node-hash-policy.yaml"]\n', encoding="utf-8")
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
-    subprocess.run(["git", "-C", str(root), "config", "user.name", "Tests"], check=True)
-    subprocess.run(
-        ["git", "-C", str(root), "config", "user.email", "tests@example.invalid"],
-        check=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(root), "config", "core.autocrlf", "false"],
-        check=True,
-    )
-    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
-    commit = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "fixture")
+    commit = repository.git("rev-parse", "HEAD").stdout.decode("ascii").strip()
     graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
     states = compute_node_hash_states(
         graph,
@@ -365,11 +351,9 @@ def _certifier_repository_with_provider_source(
         }
     }
     _write_yaml(module_path, module)
-    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
-    subprocess.run(
-        ["git", "-C", str(root), "commit", "-qm", "add provider client"],
-        check=True,
-    )
+    repository = GitTestRepository(root)
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "add provider client")
     return derive_repository_certification_state(root)
 
 

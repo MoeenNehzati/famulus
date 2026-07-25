@@ -20,7 +20,17 @@ PRECOMMIT_EXCLUDED_TEST_DIRS = {
     "skills/install-assistant-tools/tests",
 }
 
-SUITES = {"precommit", "full"}
+PORTABILITY_TESTS = (
+    "tests/test_officina_atomic_files.py::test_secure_append_creates_then_appends_complete_framed_records",
+    "tests/test_officina_atomic_files.py::test_windows_native_secure_create_replace_append_and_acl",
+    "tests/test_officina_dispatcher.py::test_python_process_target_keeps_gateway_and_entry_separate",
+    "tests/test_officina_git_provenance.py::test_git_test_repository_preserves_exact_bytes_under_ambient_autocrlf",
+    "skills/recurring-tasks/tests/test_schedule_backend.py::test_linux_sync_writes_units_and_enables_timer",
+    "tests/test_officina_blueprint_graph.py::test_content_ownership_accepts_equivalent_repository_alias",
+    "tests/test_validator_runner.py::test_run_all_isolates_unmerged_index_and_restores_git_environment",
+)
+
+SUITES = {"precommit", "portability", "full"}
 
 
 def _pytest_args(*, verbose: bool) -> list[str]:
@@ -37,12 +47,19 @@ def _discover_skill_test_dirs() -> list[str]:
 
 
 def _resolve_suite(name: str) -> list[str]:
-    test_dirs = [*BASE_TEST_DIRS, *_discover_skill_test_dirs()]
+    if name == "portability":
+        test_dirs = list(PORTABILITY_TESTS)
+    else:
+        test_dirs = [*BASE_TEST_DIRS, *_discover_skill_test_dirs()]
     if name == "precommit":
         test_dirs = [
             path for path in test_dirs if path not in PRECOMMIT_EXCLUDED_TEST_DIRS
         ]
-    missing = [path for path in test_dirs if not (REPO_ROOT / path).exists()]
+    missing = [
+        path
+        for path in test_dirs
+        if not (REPO_ROOT / path.split("::", 1)[0]).exists()
+    ]
     if missing:
         raise SystemExit(f"configured test paths are missing: {', '.join(missing)}")
     return test_dirs

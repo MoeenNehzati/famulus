@@ -6144,17 +6144,6 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Parses skill blueprint YAML files."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
               "reason": "Parses v4 blueprint declarations during semantic inspection."
             },
             {

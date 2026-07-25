@@ -6,19 +6,22 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_graph_builder.py:Interface
+      - _rtx/_graph_builder.py
+      - Interface
       reason: Render math dependency graph HTML from canonical JSON.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_tex_macro_reader.py:Interface
+      - _rtx/_tex_macro_reader.py
+      - Interface
       reason: Extract MathJax macro definitions from TeX sources.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_graph_server.py:Interface
+      - _rtx/_graph_server.py
+      - Interface
       reason: Serve graph HTML locally for inspection.
     network: []
 category: research-assistant

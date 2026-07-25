@@ -15,6 +15,7 @@ content:
 - oauth_json\.py
 - pooled_blueprint\.py
 - process_binding_compiler\.py
+- repository_paths\.py
 - secret_store\.py
 - toml_io\.py
 description: Shared, narrowly exported Python helpers for secure file updates, project date keys, OAuth JSON, credential storage, and controlled TOML access.
@@ -96,6 +97,13 @@ exports:
       - skill-certifier
       - skill-drift
     source_interface: common.source.pooled-blueprint.interface.python-api
+  common.interface.repository-paths:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - skill-certifier
+      - skill-maker
+    source_interface: common.source.repository-paths.interface.python-api
   common.interface.secret-store:
     access:
       allow_all_modules: false
@@ -167,6 +175,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/process-binding-compiler.yaml
+  common.source.repository-paths:
+    blueprint:
+      base: module-root
+      path: blueprints/repository-paths.yaml
   common.source.secret-store:
     blueprint:
       base: module-root

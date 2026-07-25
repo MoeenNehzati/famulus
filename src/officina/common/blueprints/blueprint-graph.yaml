@@ -7,6 +7,12 @@ dependencies:
   reason: Imports strict blueprint discovery and JSON value types from blueprint_inventory.py.
   source: common.source.blueprint-inventory
   version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/repository-paths.yaml
+  reason: Imports canonical equivalent-root and repository-relative path conversion from repository_paths.py.
+  source: common.source.repository-paths
+  version: 1
 description: Loads legacy or typed blueprint nodes into validated skill and repository graphs, enforces ownership, relationship, platform, cycle, and runtime-file constraints, and resolves exports and runtime authority.
 gateway:
   language: Python

@@ -17,9 +17,11 @@ Module-level suggested permissions are checked as well.
 from __future__ import annotations
 
 import ast
-import subprocess
+import re
 import sys
 from pathlib import Path
+
+import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SRC_ROOT = _REPO_ROOT / "src"
@@ -30,9 +32,9 @@ from officina.common.blueprint_graph import (  # noqa: E402
     BlueprintGraphError,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
-    repository_relative_path,
 )
 from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
+from officina.common.repository_paths import repository_relative_path  # noqa: E402
 
 
 FORBIDDEN_SUFFIXES = {".sh", ".bash", ".bat", ".cmd", ".ps1"}
@@ -78,21 +80,26 @@ _CROSS_PLATFORM_ADAPTER_FILES = {
 
 _SKIP_PARTS = {"tests", "validators", "__pycache__", ".git", ".claude-plugin", ".codex-plugin", "logs"}
 _SUBPROCESS_ATTRS = {"run", "Popen", "call", "check_call", "check_output"}
-
-
-def _tracked_files(repo_root: Path) -> set[Path] | None:
-    result = subprocess.run(
-        ["git", "ls-files"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="surrogateescape",
-        check=False,
-    )
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
-    return {repo_root / p for p in result.stdout.splitlines()}
+_RAW_GIT_CATEGORIES = {
+    "ambient-config",
+    "hooks",
+    "object-format",
+    "index-stages",
+    "validator-isolation",
+    "run-git-contract",
+}
+_RAW_GIT_ANNOTATION = re.compile(
+    r"^\s*# famulus-raw-git: category=([^;]+); reason=(.+?)\s*$"
+)
+_COMPOSITE_PYTHON_TARGET = re.compile(
+    r"(?<![A-Za-z0-9_./-])"
+    r"_rtx/[A-Za-z0-9_./-]+\.py:[A-Za-z_][A-Za-z0-9_]*"
+)
+_PYTHON_RUNNER = "officina.runtime.python_machine_interface_runner"
+_LEGACY_COMPOSITE_FUNCTION = (
+    Path("src/officina/common/interface_injection_migration.py"),
+    "_legacy_gateway",
+)
 
 
 def _is_excluded(rel_path: Path) -> bool:
@@ -102,19 +109,46 @@ def _is_excluded(rel_path: Path) -> bool:
 
 
 def _iter_skill_files(repo_root: Path):
-    tracked = _tracked_files(repo_root)
     skills_root = repo_root / "skills"
     if not skills_root.is_dir():
         return
     for path in skills_root.rglob("*"):
         if not path.is_file():
             continue
-        if tracked is not None and path not in tracked:
-            continue
         rel_path = path.relative_to(repo_root)
         if _is_excluded(rel_path):
             continue
         yield path
+
+
+def _iter_ordinary_test_files(repo_root: Path):
+    tests_root = repo_root / "tests"
+    if tests_root.is_dir():
+        yield from sorted(tests_root.rglob("*.py"))
+    skills_root = repo_root / "skills"
+    if skills_root.is_dir():
+        for tests_dir in sorted(skills_root.glob("*/tests")):
+            yield from sorted(tests_dir.rglob("*.py"))
+
+
+def _iter_live_python_files(repo_root: Path):
+    roots = (
+        repo_root / "src",
+        repo_root / "validators",
+        repo_root / "scripts",
+        repo_root / "docs_tooling",
+        repo_root / "skills",
+    )
+    seen: set[Path] = set()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*.py")):
+            rel_path = path.relative_to(repo_root)
+            if "tests" in rel_path.parts or path in seen:
+                continue
+            seen.add(path)
+            yield path
 
 
 def _is_runtime_script(rel_path: Path) -> bool:
@@ -237,6 +271,15 @@ def _literal_string_tokens(node: ast.AST) -> list[str] | None:
     return tokens
 
 
+def _literal_command_tokens(node: ast.AST) -> list[str] | None:
+    tokens = _literal_string_tokens(node)
+    if tokens is not None:
+        return tokens
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value.split()
+    return None
+
+
 def _is_true_constant(node: ast.AST) -> bool:
     return isinstance(node, ast.Constant) and node.value is True
 
@@ -249,6 +292,175 @@ def _is_subprocess_call(node: ast.Call) -> bool:
         and func.value.id == "subprocess"
         and func.attr in _SUBPROCESS_ATTRS
     )
+
+
+def _is_direct_run_git_call(node: ast.Call) -> bool:
+    func = node.func
+    return (
+        isinstance(func, ast.Name)
+        and func.id == "run_git"
+    ) or (
+        isinstance(func, ast.Attribute)
+        and func.attr == "run_git"
+    )
+
+
+def _raw_git_kind(node: ast.Call) -> str | None:
+    if _is_direct_run_git_call(node):
+        return "direct run_git"
+    if not _is_subprocess_call(node) or not node.args:
+        return None
+    tokens = _literal_command_tokens(node.args[0])
+    if tokens and Path(tokens[0]).name.lower() in {"git", "git.exe"}:
+        return "raw Git"
+    return None
+
+
+def _nearest_statement(
+    node: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+) -> ast.stmt | None:
+    current: ast.AST | None = node
+    while current is not None:
+        if isinstance(current, ast.stmt):
+            return current
+        current = parents.get(current)
+    return None
+
+
+def _validate_raw_git_test(path: Path, rel_path: Path) -> list[str]:
+    try:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+    except (OSError, UnicodeError, SyntaxError):
+        return []
+    lines = source.splitlines()
+    parents = {
+        child: parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+    errors: list[str] = []
+    checked_statements: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        kind = _raw_git_kind(node)
+        if kind is None:
+            continue
+        statement = _nearest_statement(node, parents)
+        if statement is None or id(statement) in checked_statements:
+            continue
+        checked_statements.add(id(statement))
+        annotation_line = statement.lineno - 2
+        annotation = (
+            _RAW_GIT_ANNOTATION.fullmatch(lines[annotation_line])
+            if 0 <= annotation_line < len(lines)
+            else None
+        )
+        if annotation is None:
+            errors.append(
+                f"{rel_path}:{node.lineno}: {kind} call requires an immediately "
+                "preceding famulus-raw-git annotation"
+            )
+            continue
+        category = annotation.group(1).strip()
+        reason = annotation.group(2).strip()
+        if category not in _RAW_GIT_CATEGORIES:
+            errors.append(
+                f"{rel_path}:{node.lineno}: unknown famulus-raw-git category "
+                f"`{category}`"
+            )
+        elif not reason:
+            errors.append(
+                f"{rel_path}:{node.lineno}: famulus-raw-git reason must not be empty"
+            )
+    return errors
+
+
+def _validate_composite_python_targets(
+    path: Path,
+    rel_path: Path,
+) -> list[str]:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, UnicodeError, SyntaxError):
+        return []
+    parents = {
+        child: parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+    errors: list[str] = []
+    for node in ast.walk(tree):
+        if (
+            not isinstance(node, ast.Constant)
+            or not isinstance(node.value, str)
+            or _COMPOSITE_PYTHON_TARGET.search(node.value) is None
+        ):
+            continue
+        if rel_path == _LEGACY_COMPOSITE_FUNCTION[0]:
+            current = parents.get(node)
+            while current is not None:
+                if (
+                    isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and current.name == _LEGACY_COMPOSITE_FUNCTION[1]
+                ):
+                    break
+                current = parents.get(current)
+            else:
+                current = None
+            if current is not None:
+                continue
+        errors.append(
+            f"{rel_path}:{node.lineno}: composite Python process target is not "
+            "allowed; carry gateway path and process entry separately"
+        )
+    return errors
+
+
+def _iter_nested_lists(value: object):
+    if isinstance(value, list):
+        yield value
+        for item in value:
+            yield from _iter_nested_lists(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _iter_nested_lists(item)
+
+
+def _validate_runner_permission_documents(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    paths = [
+        *sorted((repo_root / "skills").glob("*/blueprint.yaml")),
+        *sorted((repo_root / "skills").glob("*/.pooled-blueprint-review.yaml")),
+    ]
+    for path in paths:
+        try:
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, yaml.YAMLError):
+            continue
+        for tokens in _iter_nested_lists(document):
+            if (
+                _PYTHON_RUNNER not in tokens
+                or not all(isinstance(token, str) for token in tokens)
+            ):
+                continue
+            composite = next(
+                (
+                    token
+                    for token in tokens
+                    if _COMPOSITE_PYTHON_TARGET.search(token)
+                ),
+                None,
+            )
+            if composite is not None:
+                rel_path = path.relative_to(repo_root)
+                errors.append(
+                    f"{rel_path}: composite runner permission target "
+                    f"`{composite}` is not allowed"
+                )
+    return errors
 
 
 def _is_os_system(node: ast.Call) -> bool:
@@ -331,6 +543,21 @@ def validate(repo_root: Path) -> list[str]:
             continue
         if path.suffix == PYTHON_SUFFIX:
             errors.extend(_validate_python(path, rel_path))
+    for path in _iter_ordinary_test_files(repo_root):
+        errors.extend(
+            _validate_raw_git_test(
+                path,
+                path.relative_to(repo_root),
+            )
+        )
+    for path in _iter_live_python_files(repo_root):
+        errors.extend(
+            _validate_composite_python_targets(
+                path,
+                path.relative_to(repo_root),
+            )
+        )
+    errors.extend(_validate_runner_permission_documents(repo_root))
     return errors
 
 

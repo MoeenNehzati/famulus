@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.util
 import shutil
 import stat
-import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -34,6 +33,7 @@ from v4_certification_fixtures import (
     create_v4_repository,
     write_yaml,
 )
+from test_support.git_repository import GitTestRepository
 
 SPEC = importlib.util.spec_from_file_location("skill_certifier_certifier", MODULE_PATH)
 certifier = importlib.util.module_from_spec(SPEC)
@@ -74,19 +74,10 @@ def test_repository_fixture_preserves_exact_bytes_under_ambient_autocrlf(
     tracked = repository / "exact-bytes.txt"
     tracked.write_bytes(b"exact\r\nbytes\r\n")
 
-    subprocess.run(
-        ["git", "-C", str(repository), "add", "exact-bytes.txt"],
-        check=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(repository), "commit", "-qm", "exact bytes"],
-        check=True,
-    )
-    committed = subprocess.run(
-        ["git", "-C", str(repository), "show", "HEAD:exact-bytes.txt"],
-        check=True,
-        capture_output=True,
-    ).stdout
+    git = GitTestRepository(repository)
+    git.git("add", "exact-bytes.txt")
+    git.git("commit", "-qm", "exact bytes")
+    committed = git.git("show", "HEAD:exact-bytes.txt").stdout
 
     assert committed == tracked.read_bytes()
 
@@ -163,11 +154,9 @@ def _add_cross_owner_contract(repo: Path):
         "fragment": "#",
     }
     write_yaml(gateway_path, gateway)
-    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
-    subprocess.run(
-        ["git", "-C", str(repo), "commit", "-qm", "add contract source"],
-        check=True,
-    )
+    repository = GitTestRepository(repo)
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "add contract source")
     return certifier.load_repository_blueprint_graph(
         repo,
         schema_root=repo / "references" / "blueprint",
@@ -294,27 +283,16 @@ def test_private_writer_aborts_pre_append_races(
             path = tmp_path / "skills" / "demo-skill" / "SKILL.md"
             path.chmod(path.stat().st_mode | stat.S_IXUSR)
         elif race == "index-mode":
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(tmp_path),
-                    "update-index",
-                    "--chmod=+x",
-                    "skills/demo-skill/SKILL.md",
-                ],
-                check=True,
+            GitTestRepository(tmp_path).git(
+                "update-index",
+                "--chmod=+x",
+                "skills/demo-skill/SKILL.md",
             )
         elif race == "head":
             (tmp_path / "race.txt").write_text("race\n", encoding="utf-8")
-            subprocess.run(
-                ["git", "-C", str(tmp_path), "add", "race.txt"],
-                check=True,
-            )
-            subprocess.run(
-                ["git", "-C", str(tmp_path), "commit", "-qm", "race"],
-                check=True,
-            )
+            repository = GitTestRepository(tmp_path)
+            repository.git("add", "race.txt")
+            repository.git("commit", "-qm", "race")
         elif race == "untracked-file":
             (tmp_path / "unexpected.txt").write_text(
                 "race\n",
@@ -499,11 +477,9 @@ def test_private_writer_fails_closed_without_current_certifier(
 ) -> None:
     create_v4_repository(tmp_path)
     shutil.rmtree(tmp_path / "skills" / "skill-certifier")
-    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "commit", "-qm", "remove certifier"],
-        check=True,
-    )
+    repository = GitTestRepository(tmp_path)
+    repository.git("add", "-A")
+    repository.git("commit", "-qm", "remove certifier")
 
     with pytest.raises(certifier.CertificationError, match="certifier"):
         _certify(tmp_path)
@@ -642,30 +618,19 @@ def test_private_writer_rederives_every_final_state_after_append(
             path = tmp_path / "skills" / "demo-skill" / "SKILL.md"
             path.chmod(path.stat().st_mode | stat.S_IXUSR)
         elif race == "index-mode":
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(tmp_path),
-                    "update-index",
-                    "--chmod=+x",
-                    "skills/demo-skill/SKILL.md",
-                ],
-                check=True,
+            GitTestRepository(tmp_path).git(
+                "update-index",
+                "--chmod=+x",
+                "skills/demo-skill/SKILL.md",
             )
         elif race == "head":
             (tmp_path / "head-race.txt").write_text(
                 "race\n",
                 encoding="utf-8",
             )
-            subprocess.run(
-                ["git", "-C", str(tmp_path), "add", "head-race.txt"],
-                check=True,
-            )
-            subprocess.run(
-                ["git", "-C", str(tmp_path), "commit", "-qm", "head race"],
-                check=True,
-            )
+            repository = GitTestRepository(tmp_path)
+            repository.git("add", "head-race.txt")
+            repository.git("commit", "-qm", "head race")
         elif race == "basis":
             policy = (
                 tmp_path
@@ -883,15 +848,30 @@ def test_certifier_route_audit_batches_unique_source_entrypoints(
             ),
         },
     )
-    batch_calls: list[tuple[Path, tuple[tuple[Path, str], ...]]] = []
+    target = certifier.PythonProcessTarget(
+        Path("_rtx/worker.py"),
+        "Interface",
+    )
+    batch_calls: list[
+        tuple[
+            Path,
+            tuple[tuple[Path, certifier.PythonProcessTarget], ...],
+        ]
+    ] = []
 
     def trace_batch(
         repo_root: Path,
-        specifications: tuple[tuple[Path, str], ...],
-    ) -> dict[tuple[Path, str], tuple[Path, ...]]:
+        specifications: tuple[
+            tuple[Path, certifier.PythonProcessTarget],
+            ...,
+        ],
+    ) -> dict[
+        tuple[Path, certifier.PythonProcessTarget],
+        tuple[Path, ...],
+    ]:
         batch_calls.append((repo_root, tuple(specifications)))
         return {
-            (source.skill_root.resolve(), "_rtx/worker.py:Interface"): (worker,)
+            (source.skill_root.resolve(), target): (worker,)
         }
 
     monkeypatch.setattr(
@@ -916,10 +896,10 @@ def test_certifier_route_audit_batches_unique_source_entrypoints(
     assert batch_calls == [
         (
             tmp_path,
-            ((source.skill_root, "_rtx/worker.py:Interface"),),
+            ((source.skill_root, target),),
         )
     ]
-    assert result == ((source_id, "_rtx/worker.py:Interface", ()),)
+    assert result == ((source_id, target, ()),)
 
 
 def test_private_writer_route_audit_failure_precedes_every_append(
@@ -991,22 +971,14 @@ def test_private_writer_rechecks_forced_untracked_input_after_append(
     write_yaml(policy_path, policy)
     local_input = tmp_path / "skills" / "demo-skill" / "local.txt"
     local_input.write_text("forced local input\n", encoding="utf-8")
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(tmp_path),
-            "add",
-            str(source_blueprint),
-            str(module_blueprint),
-            str(policy_path),
-        ],
-        check=True,
+    repository = GitTestRepository(tmp_path)
+    repository.git(
+        "add",
+        str(source_blueprint),
+        str(module_blueprint),
+        str(policy_path),
     )
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "commit", "-qm", "add local input policy"],
-        check=True,
-    )
+    repository.git("commit", "-qm", "add local input policy")
 
     def mutate(_node_id: str) -> None:
         local_input.write_text("changed local input\n", encoding="utf-8")
@@ -1086,11 +1058,9 @@ def test_completeness_findings_block_structural_draft_signing(
         yaml.safe_dump(declaration, sort_keys=False),
         encoding="utf-8",
     )
-    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "commit", "-qm", "draft"],
-        check=True,
-    )
+    repository = GitTestRepository(tmp_path)
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "draft")
     graph = certifier.load_repository_blueprint_graph(
         tmp_path,
         schema_root=tmp_path / "references" / "blueprint",
@@ -1103,13 +1073,43 @@ def test_completeness_findings_block_structural_draft_signing(
         _certify(tmp_path)
 
 
-class RejectingDispatcher:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, dict[str, object]]] = []
+def _passed_mechanical_result() -> certifier.CommandResult:
+    return certifier.CommandResult(
+        name="validators",
+        command=[sys.executable, "validators/runner.py"],
+        exit_code=0,
+        stdout="",
+        stderr="",
+    )
 
-    def dispatch(self, key: str, **kwargs: object):
-        self.calls.append((key, kwargs))
-        pytest.fail(f"unexpected dispatch: {key}")
+
+def test_mechanical_gate_runs_only_the_validator_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, list[str], Path]] = []
+
+    def run(
+        name: str,
+        command: list[str],
+        *,
+        repo_root: Path,
+    ) -> certifier.CommandResult:
+        calls.append((name, command, repo_root))
+        return _passed_mechanical_result()
+
+    monkeypatch.setattr(certifier, "run_local_command", run)
+
+    result = certifier.run_v4_mechanical_checks(tmp_path)
+
+    assert result == _passed_mechanical_result()
+    assert calls == [
+        (
+            "validators",
+            [sys.executable, "validators/runner.py"],
+            tmp_path,
+        )
+    ]
 
 
 def test_cli_propagates_explicit_non_atomic_fallback(
@@ -1118,9 +1118,9 @@ def test_cli_propagates_explicit_non_atomic_fallback(
 ) -> None:
     calls: list[dict[str, object]] = []
 
-    def issue(_dispatcher: object, **kwargs: object):
+    def issue(**kwargs: object):
         calls.append(dict(kwargs))
-        return [], []
+        return [_passed_mechanical_result()], []
 
     monkeypatch.setattr(certifier, "certify", issue)
 
@@ -1134,7 +1134,6 @@ def test_cli_propagates_explicit_non_atomic_fallback(
             "--reviewed-commit",
             "a" * 40,
         ],
-        dispatcher=RejectingDispatcher(),
     )
 
     assert exit_code == 0
@@ -1156,18 +1155,19 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
         )
 
     monkeypatch.setattr(certifier, "_certify_v4_repository", issue)
+    monkeypatch.setattr(
+        certifier,
+        "run_v4_mechanical_checks",
+        lambda _repo_root: _passed_mechanical_result(),
+    )
 
-    dispatcher = RejectingDispatcher()
     evidence, outcomes = certifier.certify(
-        dispatcher,
         targets=("demo-skill",),
-        skip_mechanical=True,
         reviewed_repository=tmp_path,
         reviewed_commit=commit,
     )
 
-    assert evidence == []
-    assert dispatcher.calls == []
+    assert evidence == [_passed_mechanical_result()]
     assert len(calls) == 1
     assert calls[0]["repo_root"] == tmp_path.resolve()
     assert calls[0]["allow_non_atomic"] is False
@@ -1203,11 +1203,14 @@ def test_public_certification_propagates_explicit_non_atomic_fallback(
         )
 
     monkeypatch.setattr(certifier, "_certify_v4_repository", issue)
+    monkeypatch.setattr(
+        certifier,
+        "run_v4_mechanical_checks",
+        lambda _repo_root: _passed_mechanical_result(),
+    )
 
     certifier.certify(
-        RejectingDispatcher(),
         targets=("demo-skill",),
-        skip_mechanical=True,
         reviewed_repository=tmp_path,
         reviewed_commit=commit,
         allow_non_atomic=True,
@@ -1241,17 +1244,18 @@ def test_public_certification_without_targets_selects_all_reviewed_modules(
         )
 
     monkeypatch.setattr(certifier, "_certify_v4_repository", issue)
+    monkeypatch.setattr(
+        certifier,
+        "run_v4_mechanical_checks",
+        lambda _repo_root: _passed_mechanical_result(),
+    )
 
-    dispatcher = RejectingDispatcher()
     _evidence, outcomes = certifier.certify(
-        dispatcher,
         targets=(),
-        skip_mechanical=True,
         reviewed_repository=tmp_path,
         reviewed_commit=commit,
     )
 
-    assert dispatcher.calls == []
     assert len(calls) == 1
     assert {outcome.module for outcome in outcomes} == set(expected_modules)
     assert {outcome.source for outcome in outcomes} == {"reviewed-repository"}
@@ -1320,7 +1324,7 @@ def test_reviewed_target_resolution_supports_distinct_module_id_and_name(
     assert by_name == (renamed,)
 
 
-def test_public_skip_mechanical_cannot_skip_route_audit(
+def test_public_mechanical_gate_precedes_route_audit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1351,16 +1355,49 @@ def test_public_skip_mechanical_cannot_skip_route_audit(
 
     monkeypatch.setattr(certifier, "audit_route_smoke_dependencies", audit)
     monkeypatch.setattr(certifier, "_certify_v4_repository", issue)
+    monkeypatch.setattr(
+        certifier,
+        "run_v4_mechanical_checks",
+        lambda _repo_root: _passed_mechanical_result(),
+    )
 
-    dispatcher = RejectingDispatcher()
     evidence, _outcomes = certifier.certify(
-        dispatcher,
         targets=("demo-skill",),
-        skip_mechanical=True,
         reviewed_repository=tmp_path,
         reviewed_commit=commit,
     )
 
-    assert evidence == []
-    assert dispatcher.calls == []
+    assert evidence == [_passed_mechanical_result()]
     assert len(audit_scopes) == 2
+
+
+def test_public_certification_has_no_mechanical_bypass(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _graph, _states, commit = create_v4_repository(tmp_path)
+    signed = False
+
+    def fail_mechanical(_repo_root: Path) -> certifier.CommandResult:
+        raise certifier.CertificationError("mechanical certification checks failed")
+
+    def issue(*_args: object, **_kwargs: object) -> object:
+        nonlocal signed
+        signed = True
+        pytest.fail("signing ran after the mechanical gate failed")
+
+    monkeypatch.setattr(certifier, "run_v4_mechanical_checks", fail_mechanical)
+    monkeypatch.setattr(certifier, "_certify_v4_repository", issue)
+
+    with pytest.raises(
+        certifier.CertificationError,
+        match="mechanical certification checks failed",
+    ):
+        certifier.certify(
+            targets=("demo-skill",),
+            reviewed_repository=tmp_path,
+            reviewed_commit=commit,
+        )
+
+    assert not signed
+    assert "--skip-mechanical" not in certifier.build_parser().format_help()

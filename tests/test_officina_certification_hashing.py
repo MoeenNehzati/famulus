@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from dataclasses import fields
 from pathlib import Path
 
@@ -16,6 +17,9 @@ from officina.common.certification_hashing import (
     resolve_certification_basis_paths,
 )
 from v4_certification_fixtures import create_v4_repository
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_hash_owner_does_not_expose_legacy_health_authority() -> None:
@@ -128,3 +132,35 @@ def test_v4_basis_and_certifier_identity_are_derived_from_one_state(
             "findings": [],
         },
     )
+
+
+def test_validator_repository_imports_are_certification_basis_covered() -> None:
+    basis = {
+        path.relative_to(REPO_ROOT)
+        for path in resolve_certification_basis_paths(REPO_ROOT)
+    }
+    imported_paths: set[Path] = set()
+    validator_paths = [
+        *sorted((REPO_ROOT / "validators").glob("*.py")),
+        *sorted((REPO_ROOT / "skills/skill-maker/validators").glob("*.py")),
+    ]
+    for validator_path in validator_paths:
+        tree = ast.parse(
+            validator_path.read_text(encoding="utf-8"),
+            filename=str(validator_path),
+        )
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or node.module is None:
+                continue
+            if node.module.startswith("officina."):
+                relative = Path("src", *node.module.split(".")).with_suffix(".py")
+            elif node.module.startswith("docs_tooling."):
+                relative = Path(*node.module.split(".")).with_suffix(".py")
+            elif node.module.startswith("validators."):
+                relative = Path(*node.module.split(".")).with_suffix(".py")
+            else:
+                continue
+            imported_paths.add(relative)
+
+    assert imported_paths
+    assert imported_paths <= basis

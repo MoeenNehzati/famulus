@@ -30,7 +30,7 @@ def test_interface_build_parser_accepts_project_dir() -> None:
 def test_shared_runner_loads_interface_from_skill_root(monkeypatch) -> None:
     monkeypatch.chdir(_HOST_LINKS.parents[1])
 
-    interface = load_interface("_rtx/_host_links.py:Interface")
+    interface = load_interface("_rtx/_host_links.py", "Interface")
 
     assert isinstance(interface, PythonMachineInterface)
 

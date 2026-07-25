@@ -10,7 +10,8 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_check_drift_state.py:Interface
+      - _rtx/_check_drift_state.py
+      - Interface
       reason: Read certificate currentness and canonical node hashes.
     network: []
 category: skill-making-development-assistant

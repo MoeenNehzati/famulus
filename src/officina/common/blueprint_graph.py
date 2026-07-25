@@ -24,6 +24,11 @@ from .blueprint_inventory import (
     _StrictBlueprintLoader,
     iter_blueprints as iter_inventory_blueprints,
 )
+from .repository_paths import (
+    RepositoryPathError,
+    equivalent_root_relative_path,
+    repository_relative_path,
+)
 
 
 class BlueprintGraphError(ValueError):
@@ -187,28 +192,10 @@ def descriptor_safe_open_supported() -> bool:
     return _descriptor_safe_open_supported()
 
 
-def _relative_to_equivalent_root(path: Path, root: Path) -> Path:
+def _graph_repository_relative_path(path: Path, repo_root: Path) -> Path:
     try:
-        return path.relative_to(root)
-    except ValueError as lexical_error:
-        for ancestor in (path, *path.parents):
-            try:
-                equivalent = ancestor.samefile(root)
-            except OSError:
-                continue
-            if equivalent:
-                return path.relative_to(ancestor)
-        raise lexical_error
-
-
-def repository_relative_path(path: Path, repo_root: Path) -> Path:
-    """Return a path relative to a filesystem-equivalent repository root."""
-
-    absolute = Path(os.path.abspath(path))
-    root = Path(os.path.abspath(repo_root))
-    try:
-        return _relative_to_equivalent_root(absolute, root)
-    except ValueError as exc:
+        return repository_relative_path(path, repo_root)
+    except RepositoryPathError as exc:
         raise BlueprintGraphError(
             f"{path}: runtime input must be under {repo_root}"
         ) from exc
@@ -223,12 +210,12 @@ def _runtime_relative_path(
     owner_absolute = Path(os.path.abspath(owner_root))
     path_absolute = Path(os.path.abspath(path))
     try:
-        _relative_to_equivalent_root(path_absolute, owner_absolute)
-    except ValueError as exc:
+        equivalent_root_relative_path(path_absolute, owner_absolute)
+    except RepositoryPathError as exc:
         raise BlueprintGraphError(
             f"{path}: runtime input must be under its owning root {owner_root}"
         ) from exc
-    relative = repository_relative_path(path_absolute, repo_absolute)
+    relative = _graph_repository_relative_path(path_absolute, repo_absolute)
     if not relative.parts:
         raise BlueprintGraphError(f"{path}: runtime input must name a file")
     return path_absolute, relative
@@ -504,7 +491,7 @@ def encode_runtime_python_package_snapshot(
                 "invalid package snapshot: source content must be bytes"
             )
         logical_path = _runtime_python_snapshot_path(
-            repository_relative_path(source_path, owner_root).as_posix()
+            _graph_repository_relative_path(source_path, owner_root).as_posix()
         )
         records.append(
             {
@@ -829,8 +816,8 @@ def resolved_node_content_paths(
     repo_root = Path(os.path.abspath(repo_root))
     owner_root = Path(os.path.abspath(node.skill_root))
     try:
-        _relative_to_equivalent_root(owner_root, repo_root)
-    except ValueError as exc:
+        equivalent_root_relative_path(owner_root, repo_root)
+    except RepositoryPathError as exc:
         raise BlueprintGraphError(
             f"{node.blueprint_path}: content ownership root must be inside the repository"
         ) from exc

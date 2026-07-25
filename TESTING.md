@@ -16,6 +16,12 @@ Run the full Python suite, including installation tests:
 python3 scripts/run-python-tests.py --suite full --verbose
 ```
 
+Run the fast cross-platform boundary sentinel:
+
+```bash
+python3 scripts/run-python-tests.py --suite portability --verbose
+```
+
 Run validators directly:
 
 ```bash
@@ -54,6 +60,13 @@ This suite runs:
 This suite runs everything in `precommit`, plus:
 
 - `skills/install-assistant-tools/tests/`
+
+### `portability`
+
+This is an early-failure subset of `full`, not additional coverage. It checks
+native atomic writes, the Windows atomic path, separated Python process
+targets, hostile Git line-ending configuration, a foreign-platform scheduler
+artifact, equivalent repository roots, and isolated index stages.
 
 `skills/initialize-tdd/assets/python/tests/` is not part of this repo's own test suite. It is a scaffold template for new projects.
 
@@ -94,9 +107,10 @@ Each job runs, in order:
 4. `pip install pytest pyyaml jsonschema keyring`
 5. install Claude and Codex CLIs
 6. `python3 validators/runner.py`
-7. `python3 scripts/run-python-tests.py --suite full --verbose`
-8. macOS and Windows only: `FAMULUS_REQUIRE_NATIVE_KEYRING=1 python3 -m pytest -q tests/test_officina_secret_store.py::test_default_backend_native_roundtrip_when_available`
-9. macOS and Windows only: `FAMULUS_RUN_SCHEDULER_SMOKE=1 python3 -m pytest -q skills/recurring-tasks/tests/test_scheduler_live_smoke.py`
+7. `python3 scripts/run-python-tests.py --suite portability --verbose`
+8. `python3 scripts/run-python-tests.py --suite full --verbose`
+9. macOS and Windows only: `FAMULUS_REQUIRE_NATIVE_KEYRING=1 python3 -m pytest -q tests/test_officina_secret_store.py::test_default_backend_native_roundtrip_when_available`
+10. macOS and Windows only: `FAMULUS_RUN_SCHEDULER_SMOKE=1 python3 -m pytest -q skills/recurring-tasks/tests/test_scheduler_live_smoke.py`
 
 Validators and tests intentionally share the same CI worker so setup happens once per operating system.
 

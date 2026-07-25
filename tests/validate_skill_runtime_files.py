@@ -2,10 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
-import os
 from pathlib import Path
-
-import pytest
 
 _VALIDATOR = Path(__file__).resolve().parents[1] / "validators" / "skill_runtime_files.py"
 _spec = importlib.util.spec_from_file_location("skill_runtime_files", _VALIDATOR)
@@ -152,17 +149,12 @@ def test_nonhidden_runtime_health_lookalike_is_rejected(tmp_path: Path) -> None:
     )
 
 
-def test_cx_command_file_must_be_executable(tmp_path: Path) -> None:
-    if os.name == "nt":
-        # famulus-skip: category=platform-contract; reason=Windows has no POSIX executable mode bit; alternate=Linux and macOS enforce the tracked command-mode contract
-        pytest.skip("POSIX executable mode is unavailable")
+def test_cx_command_mode_is_owned_by_blueprint_validator(tmp_path: Path) -> None:
     command = tmp_path / "skills" / "demo-skill" / "_cx" / "run-task"
     _write(command)
     command.chmod(0o644)
 
-    errors = _mod.validate(tmp_path)
-
-    assert any("_cx command file must be executable" in error for error in errors)
+    assert _mod.validate(tmp_path) == []
 
 
 def test_case_insensitive_runtime_name_collision_is_rejected(tmp_path: Path, monkeypatch) -> None:

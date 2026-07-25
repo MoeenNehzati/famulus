@@ -22,6 +22,8 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+from test_support.git_repository import GitTestRepository
+
 ROOT_DIR = Path(__file__).resolve().parents[3]
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "_rtx"
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -29,6 +31,19 @@ sys.path.insert(0, str(ROOT_DIR / "tests"))
 import _config_bridge as dev_link  # noqa: E402
 from _state_record import Manifest  # noqa: E402
 from install_test_utils import can_create_symlink  # noqa: E402
+
+
+def _raw_git_config(
+    repo_root: Path,
+    *args: str,
+    check: bool = True,
+) -> subprocess.CompletedProcess[bytes]:
+    # famulus-raw-git: category=hooks; reason=the test must observe the configured hooksPath without the shared helper's hooksPath override
+    return subprocess.run(
+        ["git", "-C", str(repo_root), "config", *args],
+        capture_output=True,
+        check=check,
+    )
 
 
 class SetupSymlinksTests(unittest.TestCase):
@@ -46,6 +61,7 @@ class SetupSymlinksTests(unittest.TestCase):
 
     def make_repo_root(self, base: Path) -> Path:
         repo_root = base / "repo"
+        GitTestRepository.create(repo_root)
         (repo_root / "skills").mkdir(parents=True)
         (repo_root / "references").mkdir()
         (repo_root / "agents").mkdir()
@@ -62,7 +78,6 @@ class SetupSymlinksTests(unittest.TestCase):
                 f"name = {name!r}\n",
                 encoding="utf-8",
             )
-        subprocess.run(["git", "init", "-q"], cwd=repo_root, check=True)
         return repo_root
 
     def test_creates_expected_links_in_empty_directories(self) -> None:
@@ -384,11 +399,11 @@ class SetupSymlinksTests(unittest.TestCase):
                 dry_run=False,
             )
 
-            result = subprocess.run(
-                ["git", "-C", str(repo_root), "config", "core.hooksPath"],
-                capture_output=True, text=True,
+            result = _raw_git_config(repo_root, "core.hooksPath")
+            self.assertEqual(
+                result.stdout.decode("utf-8").strip(),
+                ".githooks",
             )
-            self.assertEqual(result.stdout.strip(), ".githooks")
 
     def test_run_skips_git_hooks_when_repo_root_is_not_a_git_checkout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

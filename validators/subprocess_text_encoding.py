@@ -9,7 +9,6 @@ policy locally at the call site.
 from __future__ import annotations
 
 import ast
-import subprocess
 import sys
 from pathlib import Path
 
@@ -26,31 +25,12 @@ _SKIP_PARTS = {
 _SUBPROCESS_ATTRS = {"run", "Popen", "call", "check_call", "check_output"}
 
 
-def _tracked_files(repo_root: Path) -> set[Path] | None:
-    result = subprocess.run(
-        ["git", "ls-files", "-z"],
-        cwd=repo_root,
-        capture_output=True,
-        check=False,
-    )
-    if result.returncode != 0 or not result.stdout:
-        return None
-    return {
-        repo_root / rel
-        for rel in result.stdout.decode("utf-8", errors="surrogateescape").split("\0")
-        if rel
-    }
-
-
 def _iter_python_files(repo_root: Path):
-    tracked = _tracked_files(repo_root)
     for root_name in _CHECK_ROOTS:
         root = repo_root / root_name
         if not root.exists():
             continue
         for path in root.rglob("*.py"):
-            if tracked is not None and path not in tracked:
-                continue
             rel_path = path.relative_to(repo_root)
             if any(part in _SKIP_PARTS for part in rel_path.parts):
                 continue

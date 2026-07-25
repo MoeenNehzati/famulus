@@ -12,6 +12,7 @@ from officina.common.certification_view import CertificationDecision
 import officina.dispatcher.core as dispatcher_core
 from officina.dispatcher.core import (
     InvocationError,
+    ResolvedInvocationMetadata,
     dispatch,
     resolve_dispatch,
     resolve_dispatch_metadata,
@@ -66,6 +67,21 @@ def test_public_dispatcher_apis_accept_only_canonical_target() -> None:
         assert "script_interface" not in parameters
         assert "certification_view" not in parameters
         assert "_certification_view" not in parameters
+
+
+def test_non_python_metadata_emits_null_python_target(tmp_path: Path) -> None:
+    metadata = ResolvedInvocationMetadata(
+        caller_skill="caller",
+        target_skill="target",
+        script_interface="default",
+        target="target.interface.default",
+        pattern="default",
+        cwd=tmp_path,
+        command=["opaque"],
+        stdin=False,
+    )
+
+    assert metadata.as_payload()["python_target"] is None
 
 
 @pytest.mark.parametrize(
@@ -349,8 +365,9 @@ def test_v4_export_uses_source_gateway_language_and_process_entry(tmp_path: Path
     )
 
     assert metadata.target == "demo-skill.interface.run"
-    assert metadata.command[-6:] == [
-        "_rtx/_worker.py:Interface",
+    assert metadata.command[-7:] == [
+        "_rtx/_worker.py",
+        "Interface",
         "prefix",
         "run",
         "value",
@@ -398,8 +415,9 @@ def test_v4_route_smoke_bypasses_required_caller_arguments(tmp_path: Path) -> No
         repo_root=tmp_path,
     )
 
-    assert metadata.command[-4:] == [
-        "_rtx/_worker.py:Interface",
+    assert metadata.command[-5:] == [
+        "_rtx/_worker.py",
+        "Interface",
         "prefix",
         "run",
         "--route-smoke",
@@ -485,6 +503,35 @@ def test_v4_python_runtime_preserves_utf8_and_descriptor_confinement(
         assert "--source-fd" in resolved.command
         assert "--package-file" in resolved.command
         assert resolved.pass_fds
+
+
+def test_python_process_target_keeps_gateway_and_entry_separate(
+    tmp_path: Path,
+) -> None:
+    _write_v4_module(tmp_path)
+    _write_v4_caller(tmp_path)
+
+    with resolve_dispatch(
+        caller_skill="caller-skill",
+        target="demo-skill.interface.run",
+        args=["value"],
+        repo_root=tmp_path,
+    ) as resolved:
+        assert resolved.python_target.gateway_path == Path("_rtx/_worker.py")
+        assert resolved.python_target.process_entry == "Interface"
+        assert resolved.metadata().as_payload()["python_target"] == {
+            "gateway_path": "_rtx/_worker.py",
+            "process_entry": "Interface",
+        }
+        logical = resolved.metadata().command
+        runner_index = logical.index(
+            "officina.runtime.python_machine_interface_runner"
+        )
+        assert logical[runner_index + 1 : runner_index + 3] == [
+            "_rtx/_worker.py",
+            "Interface",
+        ]
+        assert all("_worker.py:Interface" not in token for token in logical)
 
 
 def test_v4_python_runtime_falls_back_to_confined_path_snapshot(

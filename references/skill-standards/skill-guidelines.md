@@ -505,6 +505,8 @@ storage and display formats in the first-party helpers under
 `officina.common.dates` instead of retyping ad hoc formatting logic in each
 skill. This is mechanically checked by `validators/portable_dates.py`.
 
+Repository-relative path conversion must use `officina.common.repository_paths`; do not duplicate containment or equivalent-root logic. Python process targets must carry the `_rtx/*.py` gateway path and process-entry identifier as separate values through dispatch, tracing, runner arguments, and permission arrays. Composite `path.py:Entry` targets are migration input only. These boundaries are mechanically checked by `validators/cross_platform.py`.
+
 ## 14. Shared skill content must stay neutral about which specific AI-assistant host it runs under, and must mention operating systems only in explicit platform-support metadata or platform-named implementation files.
 
 **14. Shared skill content must stay neutral about which specific AI-assistant
@@ -546,6 +548,8 @@ Mechanical repository checks run on every commit via `validators/runner.py` (cal
 
 - **`skills/skill-maker/validators/`** — skill-system checks
 
+`validators/runner.py` is the sole execution path for repository validators. Hooks and certification select canonical validator IDs through that runner. The runner discovers and imports validators and their repository dependencies from the staged Git index mirror; validators must not independently enumerate the live worktree or index.
+
 ## Adding a new validator
 
 ### Adding a new validator
@@ -574,3 +578,5 @@ The runner picks up the new file automatically — no registration needed.
 
 - Use `importlib.util.spec_from_file_location` to load validators in tests —
   avoids package naming collisions and works regardless of working directory.
+
+Ordinary Git-backed tests under `tests/**` and `skills/*/tests/**` use `test_support.git_repository.GitTestRepository` for deterministic identity, branch, line endings, file mode, and isolated Git execution. A test whose subject requires raw Git or direct `run_git` must annotate the immediately following AST statement with `# famulus-raw-git: category=<category>; reason=<nonempty reason>`, where category is one of `ambient-config`, `hooks`, `object-format`, `index-stages`, `validator-isolation`, or `run-git-contract`. This is mechanically checked by `validators/cross_platform.py`.

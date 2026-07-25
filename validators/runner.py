@@ -1,51 +1,26 @@
-"""Discover and run all validator modules in both validator packages.
-
-Each validator module must export:
-    validate(repo_root: Path) -> list[str]
-
-Validator packages:
-  - validators/  (repo-wide checks)
-  - skills/skill-maker/validators/  (skill-system checks)
-
-Validator discovery and validator input come from different places:
-
-- discovery loads live `.py` modules from the real `validators/` and
-  `skills/skill-maker/validators/` directories
-- validation passes those modules a *mirror* of the repo containing only
-  git-tracked (indexed) file content, not the real working tree
-
-This separation keeps every validator's filesystem walk (`iterdir`, `rglob`,
-`glob`, ...) insensitive to local, gitignored clutter under skills/ — a
-personal scratch skill, a platform's own bundled built-ins, an editor cache,
-etc. Individual validators don't need their own git-awareness; they just
-walk `repo_root` like normal and get the filtered view for free.
-
-Consequence: an untracked validator module in one of the live validator
-packages still gets discovered and can affect commit-time validation, even
-though ordinary file scanning inside `validate(...)` sees only tracked repo
-content. If git is unavailable for some reason, we fall back to the real
-repo root so validation still runs (matching prior behavior).
-"""
+"""Run repository validators against the exact staged Git index."""
 from __future__ import annotations
 
+import argparse
 import importlib.util
+import json
 import os
+from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
+from typing import Callable, NamedTuple, Sequence
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-_VALIDATOR_PACKAGES = [
-    REPO_ROOT / "validators",
-    REPO_ROOT / "skills" / "skill-maker" / "validators",
-]
-
-_SKIP = {"__init__.py", "runner.py"}
+_VALIDATOR_PACKAGES = (
+    ("repo", Path("validators")),
+    ("skill-maker", Path("skills/skill-maker/validators")),
+)
+_SKIP = {"__init__.py", "runner.py", "skill_md_body.py"}
+_REGULAR_MODES = {"100644", "100755"}
+_SUPPORTED_MODES = {*_REGULAR_MODES, "120000"}
 _GIT_REPOSITORY_ENV = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -57,8 +32,19 @@ _GIT_REPOSITORY_ENV = (
 )
 
 
+class ValidatorRunnerError(RuntimeError):
+    """Raised when validators cannot run against one exact staged view."""
+
+
+class _IndexEntry(NamedTuple):
+    mode: str
+    object_id: str
+    stage: str
+    relative_path: str
+
+
 def _source_git_environment() -> dict[str, str]:
-    """Return an environment that resolves Git from the requested cwd only."""
+    """Return an environment whose Git repository comes only from cwd."""
 
     env = os.environ.copy()
     for name in _GIT_REPOSITORY_ENV:
@@ -66,164 +52,468 @@ def _source_git_environment() -> dict[str, str]:
     return env
 
 
-def _build_tracked_mirror(repo_root: Path) -> Path | None:
-    """Copy every git-tracked (indexed) file into a temp dir mirroring repo_root.
+def _run_source_git(
+    repo_root: Path,
+    *args: str,
+    input_bytes: bytes | None = None,
+) -> subprocess.CompletedProcess[bytes]:
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=repo_root,
+            env=_source_git_environment(),
+            input=input_bytes,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise ValidatorRunnerError(f"cannot execute Git: {exc}") from exc
 
-    Uses `git ls-files`, which reflects the index — so staged-but-uncommitted
-    new files are included (this is what's about to be committed), while
-    untracked files (tracked-and-gitignored or simply not yet `git add`ed)
-    are excluded. Returns None if git isn't available, so callers can fall
-    back to validating the real repo root.
-    """
-    result = subprocess.run(
-        ["git", "ls-files", "-z"],
-        cwd=repo_root,
-        env=_source_git_environment(),
-        capture_output=True,
-        check=False,
-    )
+
+def _index_entries(repo_root: Path) -> tuple[_IndexEntry, ...]:
+    result = _run_source_git(repo_root, "ls-files", "--stage", "-z")
     if result.returncode != 0:
-        return None
-
-    mirror_root = Path(tempfile.mkdtemp(prefix="ai-repo-validator-mirror-"))
-    for rel in result.stdout.decode("utf-8", errors="surrogateescape").split("\0"):
-        if not rel:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValidatorRunnerError(f"cannot enumerate staged files: {detail}")
+    entries: list[_IndexEntry] = []
+    seen_stage_zero: set[str] = set()
+    for raw_record in result.stdout.split(b"\0"):
+        if not raw_record:
             continue
-        src = repo_root / rel
-        if not src.is_file():
-            continue
-        dst = mirror_root / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
+        metadata, separator, raw_path = raw_record.partition(b"\t")
+        fields = metadata.split()
+        if not separator or len(fields) != 3 or not raw_path:
+            raise ValidatorRunnerError("malformed Git index record")
+        mode_bytes, object_id_bytes, stage_bytes = fields
         try:
-            shutil.copy2(src, dst)
-        except OSError:
-            continue
-    return mirror_root
+            mode = mode_bytes.decode("ascii")
+            object_id = object_id_bytes.decode("ascii")
+            stage = stage_bytes.decode("ascii")
+            relative_path = raw_path.decode("utf-8", errors="surrogateescape")
+        except UnicodeError as exc:
+            raise ValidatorRunnerError("malformed Git index encoding") from exc
+        if mode not in _SUPPORTED_MODES:
+            raise ValidatorRunnerError(
+                f"{relative_path}: unsupported staged Git mode {mode}"
+            )
+        if stage not in {"0", "1", "2", "3"}:
+            raise ValidatorRunnerError(
+                f"{relative_path}: unsupported Git index stage {stage}"
+            )
+        if stage == "0":
+            if relative_path in seen_stage_zero:
+                raise ValidatorRunnerError(
+                    f"{relative_path}: duplicate stage-0 Git index entry"
+                )
+            seen_stage_zero.add(relative_path)
+        entries.append(_IndexEntry(mode, object_id, stage, relative_path))
+    return tuple(entries)
 
 
-def _build_isolated_git_dir(repo_root: Path, mirror_root: Path) -> Path | None:
-    """Create mirror-local Git metadata containing only the source index state."""
+def _safe_mirror_path(mirror_root: Path, relative_path: str) -> Path:
+    logical = PurePosixPath(relative_path)
+    if logical.is_absolute() or not logical.parts or ".." in logical.parts:
+        raise ValidatorRunnerError(
+            f"{relative_path}: unsafe staged repository path"
+        )
+    return mirror_root.joinpath(*logical.parts)
 
-    result = subprocess.run(
-        ["git", "rev-parse", "--absolute-git-dir"],
-        cwd=repo_root,
-        env=_source_git_environment(),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-        check=False,
+
+def _read_regular_blobs(
+    repo_root: Path,
+    entries: Sequence[_IndexEntry],
+) -> tuple[bytes, ...]:
+    if not entries:
+        return ()
+    request = b"".join(
+        entry.object_id.encode("ascii") + b"\n" for entry in entries
     )
+    result = _run_source_git(repo_root, "cat-file", "--batch", input_bytes=request)
     if result.returncode != 0:
-        return None
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValidatorRunnerError(f"cannot read staged blobs: {detail}")
+    output = memoryview(result.stdout)
+    offset = 0
+    blobs: list[bytes] = []
+    for entry in entries:
+        line_end = result.stdout.find(b"\n", offset)
+        if line_end < 0:
+            raise ValidatorRunnerError(
+                f"{entry.relative_path}: missing Git blob header"
+            )
+        header = bytes(output[offset:line_end]).split()
+        if len(header) != 3 or header[0].decode("ascii") != entry.object_id:
+            raise ValidatorRunnerError(
+                f"{entry.relative_path}: unexpected Git blob header"
+            )
+        if header[1] != b"blob":
+            raise ValidatorRunnerError(
+                f"{entry.relative_path}: staged object is not a blob"
+            )
+        try:
+            size = int(header[2])
+        except ValueError as exc:
+            raise ValidatorRunnerError(
+                f"{entry.relative_path}: invalid Git blob size"
+            ) from exc
+        start = line_end + 1
+        end = start + size
+        if end >= len(output) or output[end] != ord("\n"):
+            raise ValidatorRunnerError(
+                f"{entry.relative_path}: truncated Git blob"
+            )
+        blobs.append(bytes(output[start:end]))
+        offset = end + 1
+    if offset != len(output):
+        raise ValidatorRunnerError("unexpected trailing Git blob output")
+    return tuple(blobs)
 
-    source_git_dir = Path(result.stdout.strip())
-    isolated_git_dir = mirror_root / ".git"
-    (isolated_git_dir / "objects").mkdir(parents=True)
-    (isolated_git_dir / "refs" / "heads").mkdir(parents=True)
-    (isolated_git_dir / "refs" / "tags").mkdir(parents=True)
-    (isolated_git_dir / "HEAD").write_text(
-        "ref: refs/heads/validator-mirror\n",
-        encoding="utf-8",
+
+def _materialize_tracked_mirror(
+    repo_root: Path,
+) -> tuple[Path, tuple[_IndexEntry, ...]]:
+    entries = _index_entries(repo_root)
+    mirror_root = Path(tempfile.mkdtemp(prefix="ai-repo-validator-mirror-"))
+    regular = tuple(
+        entry
+        for entry in entries
+        if entry.stage == "0" and entry.mode in _REGULAR_MODES
     )
-    (isolated_git_dir / "config").write_text(
-        "[core]\n"
-        "\trepositoryformatversion = 0\n"
-        "\tfilemode = true\n"
-        "\tbare = false\n"
-        "\tlogallrefupdates = false\n",
-        encoding="utf-8",
-    )
+    try:
+        for entry, content in zip(
+            regular,
+            _read_regular_blobs(repo_root, regular),
+            strict=True,
+        ):
+            destination = _safe_mirror_path(mirror_root, entry.relative_path)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+            if os.name == "posix":
+                destination.chmod(0o755 if entry.mode == "100755" else 0o644)
+        return mirror_root, entries
+    except BaseException:
+        shutil.rmtree(mirror_root, ignore_errors=True)
+        raise
+
+
+def _source_git_dir(repo_root: Path) -> Path:
+    result = _run_source_git(repo_root, "rev-parse", "--absolute-git-dir")
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValidatorRunnerError(f"cannot locate Git metadata: {detail}")
+    try:
+        return Path(result.stdout.decode("utf-8", errors="strict").strip())
+    except UnicodeError as exc:
+        raise ValidatorRunnerError("Git metadata path is not UTF-8") from exc
+
+
+def _build_isolated_git_dir(repo_root: Path, mirror_root: Path) -> Path:
+    source_git_dir = _source_git_dir(repo_root)
     source_index = source_git_dir / "index"
-    if source_index.is_file():
+    if not source_index.is_file():
+        raise ValidatorRunnerError("source Git index is unavailable")
+    isolated_git_dir = mirror_root / ".git"
+    try:
+        (isolated_git_dir / "objects").mkdir(parents=True)
+        (isolated_git_dir / "refs" / "heads").mkdir(parents=True)
+        (isolated_git_dir / "refs" / "tags").mkdir(parents=True)
+        (isolated_git_dir / "HEAD").write_text(
+            "ref: refs/heads/validator-mirror\n",
+            encoding="utf-8",
+        )
+        (isolated_git_dir / "config").write_text(
+            "[core]\n"
+            "\trepositoryformatversion = 0\n"
+            "\tfilemode = true\n"
+            "\tbare = false\n"
+            "\tlogallrefupdates = false\n",
+            encoding="utf-8",
+        )
         shutil.copy2(source_index, isolated_git_dir / "index")
-    for shared_index in source_git_dir.glob("sharedindex.*"):
-        if shared_index.is_file():
-            shutil.copy2(shared_index, isolated_git_dir / shared_index.name)
+        for shared_index in source_git_dir.glob("sharedindex.*"):
+            if shared_index.is_file():
+                shutil.copy2(shared_index, isolated_git_dir / shared_index.name)
+    except OSError as exc:
+        raise ValidatorRunnerError(
+            f"cannot construct isolated Git metadata: {exc}"
+        ) from exc
     return isolated_git_dir
 
 
-def _load_validators():
-    """Yield (name, validate_fn) for every eligible validator module."""
-    for package_dir in _VALIDATOR_PACKAGES:
+def _validator_paths(
+    repo_root: Path,
+) -> dict[str, Path]:
+    paths: dict[str, Path] = {}
+    for package_id, relative_package in _VALIDATOR_PACKAGES:
+        package_dir = repo_root / relative_package
         if not package_dir.is_dir():
             continue
         for path in sorted(package_dir.glob("*.py")):
             if path.name in _SKIP:
                 continue
-            module_name = f"_validator_{package_dir.name}_{path.stem}"
-            spec = importlib.util.spec_from_file_location(module_name, path)
-            if spec is None or spec.loader is None:
-                continue
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            validate_fn = getattr(module, "validate", None)
-            if callable(validate_fn):
-                yield path.stem, validate_fn
+            validator_id = f"{package_id}/{path.stem}"
+            if validator_id in paths:
+                raise ValidatorRunnerError(
+                    f"duplicate validator ID: {validator_id}"
+                )
+            paths[validator_id] = path
+    return paths
 
 
-def run_all(repo_root: Path = REPO_ROOT) -> dict[str, list[str]]:
-    """Run all validators and return {module_stem: [errors]}.
+def _selected_validator_paths(
+    repo_root: Path,
+    validator_ids: Sequence[str] | None,
+) -> tuple[tuple[str, Path], ...]:
+    available = _validator_paths(repo_root)
+    if validator_ids is None:
+        selected = tuple(sorted(available))
+    else:
+        if len(set(validator_ids)) != len(validator_ids):
+            raise ValidatorRunnerError("duplicate validator selection")
+        unknown = sorted(set(validator_ids) - set(available))
+        if unknown:
+            raise ValidatorRunnerError(
+                "unknown validator: " + ", ".join(unknown)
+            )
+        selected = tuple(sorted(validator_ids))
+    return tuple((validator_id, available[validator_id]) for validator_id in selected)
 
-    Validators run against a git-tracked mirror of repo_root (see
-    `_build_tracked_mirror`), not repo_root itself. Error messages are
-    rewritten afterward to reference real repo_root paths so output stays
-    readable regardless of where validation actually ran.
-    """
-    mirror_root = _build_tracked_mirror(repo_root)
-    validation_root = mirror_root if mirror_root is not None else repo_root
-    previous_git_environment = {
-        name: os.environ.get(name) for name in _GIT_REPOSITORY_ENV
-    }
+
+def _load_validator(
+    validator_id: str,
+    path: Path,
+) -> Callable[[Path], list[str]]:
+    module_name = "_validator_" + validator_id.replace("/", "_").replace("-", "_")
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ValidatorRunnerError(f"{validator_id}: cannot load validator module")
+    module = importlib.util.module_from_spec(spec)
     try:
-        for name in _GIT_REPOSITORY_ENV:
-            os.environ.pop(name, None)
-        if mirror_root is not None:
-            isolated_git_dir = _build_isolated_git_dir(repo_root, mirror_root)
-            if isolated_git_dir is not None:
-                os.environ["GIT_DIR"] = str(isolated_git_dir)
-                os.environ["GIT_WORK_TREE"] = str(mirror_root)
-        results: dict[str, list[str]] = {}
-        for name, validate_fn in _load_validators():
-            errors = validate_fn(validation_root)
-            if errors:
-                if mirror_root is not None:
-                    mirror_prefix = str(mirror_root)
-                    real_prefix = str(repo_root)
-                    errors = [e.replace(mirror_prefix, real_prefix) for e in errors]
-                results[name] = errors
+        spec.loader.exec_module(module)
+    except BaseException as exc:
+        raise ValidatorRunnerError(
+            f"{validator_id}: validator import failed: {exc}"
+        ) from exc
+    validate_fn = getattr(module, "validate", None)
+    if not callable(validate_fn):
+        raise ValidatorRunnerError(
+            f"{validator_id}: validator has no callable validate"
+        )
+    return validate_fn
+
+
+def _run_tracked_validators(
+    tracked_root: Path,
+    display_root: Path,
+    validator_ids: Sequence[str] | None,
+) -> dict[str, list[str]]:
+    mirror_paths = [str(tracked_root), str(tracked_root / "src")]
+    sys.path[:] = mirror_paths + [
+        entry
+        for entry in sys.path
+        if entry
+        and not Path(entry).is_relative_to(REPO_ROOT)
+        and entry not in mirror_paths
+    ]
+    results: dict[str, list[str]] = {}
+    for validator_id, path in _selected_validator_paths(
+        tracked_root,
+        validator_ids,
+    ):
+        validate_fn = _load_validator(validator_id, path)
+        try:
+            errors = validate_fn(tracked_root)
+        except BaseException as exc:
+            raise ValidatorRunnerError(
+                f"{validator_id}: validator execution failed: {exc}"
+            ) from exc
+        if not isinstance(errors, list) or not all(
+            isinstance(error, str) for error in errors
+        ):
+            raise ValidatorRunnerError(
+                f"{validator_id}: validate must return list[str]"
+            )
+        if errors:
+            mirror_prefix = str(tracked_root)
+            display_prefix = str(display_root)
+            results[validator_id] = [
+                error.replace(mirror_prefix, display_prefix) for error in errors
+            ]
+    return results
+
+
+def _tracked_child_environment(
+    mirror_root: Path,
+    isolated_git_dir: Path,
+) -> dict[str, str]:
+    env = _source_git_environment()
+    env.update(
+        {
+            "GIT_DIR": str(isolated_git_dir),
+            "GIT_WORK_TREE": str(mirror_root),
+            "PYTHONPATH": os.pathsep.join(
+                (str(mirror_root), str(mirror_root / "src"))
+            ),
+            "PYTHONIOENCODING": "utf-8:strict",
+            "PYTHONNOUSERSITE": "1",
+        }
+    )
+    return env
+
+
+def _run_tracked_child(
+    repo_root: Path,
+    mirror_root: Path,
+    isolated_git_dir: Path,
+    validator_ids: Sequence[str] | None,
+) -> dict[str, list[str]]:
+    runner_path = mirror_root / "validators" / "runner.py"
+    if not runner_path.is_file():
+        raise ValidatorRunnerError(
+            "staged repository does not contain validators/runner.py"
+        )
+    descriptor, raw_result_path = tempfile.mkstemp(
+        prefix="ai-repo-validator-result-",
+        suffix=".json",
+    )
+    os.close(descriptor)
+    result_path = Path(raw_result_path)
+    command = [
+        sys.executable,
+        str(runner_path),
+        "--tracked-root",
+        str(mirror_root),
+        "--display-root",
+        str(repo_root),
+        "--result-path",
+        str(result_path),
+    ]
+    for validator_id in validator_ids or ():
+        command.extend(("--validator", validator_id))
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=mirror_root,
+            env=_tracked_child_environment(mirror_root, isolated_git_dir),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise ValidatorRunnerError(
+                f"tracked validator runner failed: {detail}"
+            )
+        try:
+            payload = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValidatorRunnerError(
+                "tracked validator runner returned no valid result"
+            ) from exc
+        results = payload.get("results")
+        if not isinstance(results, dict):
+            raise ValidatorRunnerError(
+                "tracked validator runner returned an invalid result"
+            )
+        if not all(
+            isinstance(key, str)
+            and isinstance(value, list)
+            and all(isinstance(error, str) for error in value)
+            for key, value in results.items()
+        ):
+            raise ValidatorRunnerError(
+                "tracked validator runner returned invalid findings"
+            )
         return results
     finally:
-        for name, previous_value in previous_git_environment.items():
-            if previous_value is None:
-                os.environ.pop(name, None)
-            else:
-                os.environ[name] = previous_value
-        if mirror_root is not None:
-            shutil.rmtree(mirror_root, ignore_errors=True)
+        result_path.unlink(missing_ok=True)
 
 
-def main(argv: list[str] | None = None) -> int:
-    import argparse
+def run_all(
+    repo_root: Path = REPO_ROOT,
+    validator_ids: Sequence[str] | None = None,
+) -> dict[str, list[str]]:
+    """Run validators from and against the exact staged repository view."""
 
-    parser = argparse.ArgumentParser(description="Run all validators")
-    parser.add_argument(
-        "--repo-root",
-        type=Path,
-        default=REPO_ROOT,
-        help="Root of the repository to validate (default: auto-detected from script location)",
-    )
-    args = parser.parse_args(argv)
+    root = Path(repo_root).resolve()
+    mirror_root, _entries = _materialize_tracked_mirror(root)
+    try:
+        isolated_git_dir = _build_isolated_git_dir(root, mirror_root)
+        return _run_tracked_child(
+            root,
+            mirror_root,
+            isolated_git_dir,
+            validator_ids,
+        )
+    finally:
+        shutil.rmtree(mirror_root, ignore_errors=True)
 
-    results = run_all(repo_root=args.repo_root)
+
+def _write_tracked_result(
+    tracked_root: Path,
+    display_root: Path,
+    result_path: Path,
+    validator_ids: Sequence[str] | None,
+) -> int:
+    try:
+        results = _run_tracked_validators(
+            tracked_root,
+            display_root,
+            validator_ids,
+        )
+        result_path.write_text(
+            json.dumps({"results": results}, sort_keys=True),
+            encoding="utf-8",
+        )
+        return 0
+    except (OSError, UnicodeError, ValidatorRunnerError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+
+def _render_findings(results: dict[str, list[str]]) -> int:
     if not results:
         return 0
-
     for name, errors in results.items():
         print(f"error: {name} found {len(errors)} issue(s):", file=sys.stderr)
         for error in errors:
             print(f"  {error}", file=sys.stderr)
     return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
+    parser.add_argument("--validator", action="append", dest="validator_ids")
+    parser.add_argument("--tracked-root", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--display-root", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--result-path", type=Path, help=argparse.SUPPRESS)
+    args = parser.parse_args(argv)
+
+    if args.tracked_root is not None:
+        if args.display_root is None or args.result_path is None:
+            parser.error(
+                "--tracked-root requires --display-root and --result-path"
+            )
+        return _write_tracked_result(
+            args.tracked_root.resolve(),
+            args.display_root.resolve(),
+            args.result_path,
+            args.validator_ids,
+        )
+    if args.display_root is not None or args.result_path is not None:
+        parser.error("--display-root and --result-path are private child options")
+    try:
+        results = run_all(
+            repo_root=args.repo_root,
+            validator_ids=args.validator_ids,
+        )
+    except ValidatorRunnerError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return _render_findings(results)
 
 
 if __name__ == "__main__":

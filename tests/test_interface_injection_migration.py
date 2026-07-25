@@ -5,7 +5,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import subprocess
 
 import pytest
 import yaml
@@ -22,6 +21,7 @@ from officina.common.interface_injection_migration import (
     InterfaceInjectionMigrationError,
     build_interface_injection_migration_report,
 )
+from test_support.git_repository import GitTestRepository
 
 
 _EXACT_PYTHON_PACKAGE_SUPPORT_POLICY = {
@@ -1272,6 +1272,7 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
         "common.interface.git-provenance",
         "common.interface.oauth-json",
         "common.interface.pooled-blueprint",
+        "common.interface.repository-paths",
         "common.interface.secret-store",
         "common.interface.toml-io",
     }
@@ -1280,9 +1281,10 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
             "atomic-files",
             "blueprint-graph",
             "git-provenance",
+            "repository-paths",
         },
         "certificate-records": {"atomic-files", "secret-store"},
-        "blueprint-graph": {"blueprint-inventory"},
+        "blueprint-graph": {"blueprint-inventory", "repository-paths"},
         "blueprint-inventory": {"atomic-files", "git-provenance"},
         "blueprint-template": set(),
         "certification-view": {
@@ -1292,8 +1294,9 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
             "blueprint-graph",
             "blueprint-template",
             "git-provenance",
+            "repository-paths",
         },
-        "git-provenance": {"atomic-files"},
+        "git-provenance": {"atomic-files", "repository-paths"},
         "pooled-blueprint": {
             "blueprint-graph",
             "certification-view",
@@ -1305,6 +1308,7 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
         "codex-toml",
         "dates",
         "oauth-json",
+        "repository-paths",
         "secret-store",
         "toml-io",
     }
@@ -1391,9 +1395,10 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
             "common.interface.certificate-records",
             "common.interface.blueprint-graph",
             "common.interface.certification-view",
-            "common.interface.pooled-blueprint",
-            "common.interface.git-provenance",
-        },
+                "common.interface.pooled-blueprint",
+                "common.interface.git-provenance",
+                "common.interface.repository-paths",
+            },
         "skill-drift": {
             "common.interface.certification-hashing",
             "common.interface.certificate-records",
@@ -1780,6 +1785,7 @@ def test_active_reference_check_reports_only_nonhistorical_tracked_references(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
+    repository = GitTestRepository.create(repo)
     active = repo / "src" / "active.py"
     historical = repo / "docs" / "plans" / "history" / "old.md"
     migration_test = repo / "tests" / "test_interface_injection_migration.py"
@@ -1791,8 +1797,7 @@ def test_active_reference_check_reports_only_nonhistorical_tracked_references(
     )
     historical.write_text("demo.machine.run\n", encoding="utf-8")
     migration_test.write_text("demo.machine.run\n", encoding="utf-8")
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    repository.git("add", ".")
     migration_map = {
         "documents": [
             {
@@ -1826,6 +1831,7 @@ def test_active_reference_check_reports_mixed_case_legacy_markers(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
+    repository = GitTestRepository.create(repo)
     active = repo / "src" / "active.py"
     legacy_path = repo / "References" / "Blueprint" / "Health.Schema.Json"
     active.parent.mkdir(parents=True)
@@ -1835,8 +1841,7 @@ def test_active_reference_check_reports_mixed_case_legacy_markers(
         encoding="utf-8",
     )
     legacy_path.write_text("{}\n", encoding="utf-8")
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    repository.git("add", ".")
 
     findings = migration.check_active_migration_references(repo, {})
 
@@ -1866,17 +1871,14 @@ def test_active_reference_check_reports_legacy_paths_without_reading_untracked_f
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
+    repository = GitTestRepository.create(repo)
     tracked = repo / "references" / "blueprint" / "health.schema.json"
     untracked = repo / "src" / "untracked.py"
     tracked.parent.mkdir(parents=True)
     untracked.parent.mkdir(parents=True)
     tracked.write_text("{}\n", encoding="utf-8")
     untracked.write_text('TARGET = "demo.llm.default"\n', encoding="utf-8")
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    subprocess.run(
-        ["git", "-C", str(repo), "add", "references/blueprint/health.schema.json"],
-        check=True,
-    )
+    repository.git("add", "references/blueprint/health.schema.json")
 
     findings = migration.check_active_migration_references(repo, {})
 
@@ -1894,11 +1896,11 @@ def test_active_reference_check_ignores_tracked_files_deleted_from_worktree(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
+    repository = GitTestRepository.create(repo)
     retired = repo / "references" / "blueprint" / "health.schema.json"
     retired.parent.mkdir(parents=True)
     retired.write_text("{}\n", encoding="utf-8")
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    repository.git("add", ".")
     retired.unlink()
 
     assert migration.check_active_migration_references(repo, {}) == ()
@@ -1908,6 +1910,7 @@ def test_post_adoption_cli_checks_map_and_references_without_materializing_candi
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = tmp_path / "repo"
+    repository = GitTestRepository.create(repo)
     map_path = repo / "docs" / "plans" / "unified-architecture-migration-map.yaml"
     map_path.parent.mkdir(parents=True)
     map_path.write_text(
@@ -1925,8 +1928,7 @@ def test_post_adoption_cli_checks_map_and_references_without_materializing_candi
         ),
         encoding="utf-8",
     )
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    repository.git("add", ".")
     script_path = (
         Path(__file__).resolve().parents[1] / "scripts" / "migrate-blueprints-v4.py"
     )
@@ -1954,7 +1956,7 @@ def test_live_cutover_inventory_is_v4_only_and_has_unique_public_ids() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     graph = migration.load_repository_blueprint_graph(repo_root)
 
-    assert len(graph.nodes) == 170
+    assert len(graph.nodes) == 171
     assert all(node.declaration["schema_version"] == 4 for node in graph.nodes.values())
     assert len(graph.exports) == len(set(graph.exports))
 
@@ -2056,6 +2058,7 @@ def test_candidate_conversion_rejects_symlinked_parent(tmp_path: Path) -> None:
 
 
 def _write_candidate_certifier_api_fixture(root: Path) -> str:
+    repository = GitTestRepository.initialize_existing_empty(root)
     certifier = root / "skills" / "skill-certifier" / "_rtx" / "_node_certifier.py"
     certifier.parent.mkdir(parents=True)
     (root / "src" / "officina").mkdir(parents=True)
@@ -2102,35 +2105,13 @@ def certify_v4_migration_candidate(root, *, reviewed_commit, certified_at):
 """,
         encoding="utf-8",
     )
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
-    subprocess.run(
-        ["git", "-C", str(root), "config", "user.name", "Test"], check=True
-    )
-    subprocess.run(
-        ["git", "-C", str(root), "config", "user.email", "test@example.invalid"],
-        check=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(root), "config", "core.autocrlf", "false"],
-        check=True,
-    )
-    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
-    subprocess.run(
-        ["git", "-C", str(root), "commit", "-qm", "candidate"], check=True
-    )
-    commit = subprocess.check_output(
-        ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
-    ).strip()
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(root),
-            "update-ref",
-            "refs/famulus/blueprint-v4-mechanical",
-            commit,
-        ],
-        check=True,
+    repository.git("add", "-A")
+    repository.git("commit", "-qm", "candidate")
+    commit = repository.git("rev-parse", "HEAD").stdout.decode().strip()
+    repository.git(
+        "update-ref",
+        "refs/famulus/blueprint-v4-mechanical",
+        commit,
     )
     return commit
 
@@ -2149,16 +2130,10 @@ def test_candidate_fixture_preserves_exact_head_under_ambient_autocrlf(
         candidate / "skills" / "skill-certifier" / "_rtx" / "_node_certifier.py"
     )
     certifier_path.unlink()
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(candidate),
-            "checkout",
-            "--",
-            certifier_path.relative_to(candidate).as_posix(),
-        ],
-        check=True,
+    GitTestRepository(candidate).git(
+        "checkout",
+        "--",
+        certifier_path.relative_to(candidate).as_posix(),
     )
 
     inspection = migration.inspect_candidate_v4(candidate)
@@ -2171,7 +2146,7 @@ def test_candidate_source_materialization_excludes_ignored_private_state(
 ) -> None:
     source = tmp_path / "source"
     candidate = tmp_path / "candidate"
-    source.mkdir()
+    repository = GitTestRepository.create(source)
     candidate.mkdir()
     (source / "skills/demo").mkdir(parents=True)
     (source / "skills/demo/tracked.txt").write_text("tracked\n")
@@ -2180,30 +2155,12 @@ def test_candidate_source_materialization_excludes_ignored_private_state(
     (source / "reviewed-local.txt").write_text("reviewed\n")
     (source / "reviewed-local.txt").chmod(0o775)
     (source / ".gitignore").write_text("skills/demo/state/\n")
-    subprocess.run(["git", "init", "-q", str(source)], check=True)
-    subprocess.run(
-        ["git", "-C", str(source), "config", "core.autocrlf", "false"],
-        check=True,
+    repository.git(
+        "add",
+        ".gitignore",
+        "skills/demo/tracked.txt",
     )
-    subprocess.run(
-        ["git", "-C", str(source), "config", "user.name", "Test"], check=True
-    )
-    subprocess.run(
-        ["git", "-C", str(source), "config", "user.email", "test@example.invalid"],
-        check=True,
-    )
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(source),
-            "add",
-            ".gitignore",
-            "skills/demo/tracked.txt",
-        ],
-        check=True,
-    )
-    subprocess.run(["git", "-C", str(source), "commit", "-qm", "source"], check=True)
+    repository.git("commit", "-qm", "source")
     plan = migration.CompiledMigrationPlan(
         module_renames={},
         local_source_includes=(Path("reviewed-local.txt"),),
@@ -2224,15 +2181,12 @@ def test_candidate_source_materialization_excludes_ignored_private_state(
 def test_candidate_source_rejects_undeclared_tracked_change(tmp_path: Path) -> None:
     source = tmp_path / "source"
     candidate = tmp_path / "candidate"
-    source.mkdir()
+    repository = GitTestRepository.create(source)
     candidate.mkdir()
     tracked = source / "tracked.txt"
     tracked.write_text("before\n")
-    subprocess.run(["git", "init", "-q", str(source)], check=True)
-    subprocess.run(["git", "-C", str(source), "config", "user.name", "Test"], check=True)
-    subprocess.run(["git", "-C", str(source), "config", "user.email", "test@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(source), "add", "tracked.txt"], check=True)
-    subprocess.run(["git", "-C", str(source), "commit", "-qm", "source"], check=True)
+    repository.git("add", "tracked.txt")
+    repository.git("commit", "-qm", "source")
     tracked.write_text("after\n")
 
     with pytest.raises(InterfaceInjectionMigrationError, match="overlay policy"):
@@ -2247,15 +2201,12 @@ def test_candidate_source_rejects_every_staged_overlay_state(
 ) -> None:
     source = tmp_path / "source"
     candidate = tmp_path / "candidate"
-    source.mkdir()
+    repository = GitTestRepository.create(source)
     candidate.mkdir()
     tracked = source / "tracked.txt"
     tracked.write_text("before\n")
-    subprocess.run(["git", "init", "-q", str(source)], check=True)
-    subprocess.run(["git", "-C", str(source), "config", "user.name", "Test"], check=True)
-    subprocess.run(["git", "-C", str(source), "config", "user.email", "test@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(source), "add", "tracked.txt"], check=True)
-    subprocess.run(["git", "-C", str(source), "commit", "-qm", "source"], check=True)
+    repository.git("add", "tracked.txt")
+    repository.git("commit", "-qm", "source")
     relative = Path("tracked.txt")
     expected = "modified"
     if staged_state == "modified":
@@ -2267,7 +2218,7 @@ def test_candidate_source_rejects_every_staged_overlay_state(
     else:
         tracked.unlink()
         expected = "deleted"
-    subprocess.run(["git", "-C", str(source), "add", "-A"], check=True)
+    repository.git("add", "-A")
     plan = migration.CompiledMigrationPlan(
         {}, (), authorized_overlay={relative: expected}
     )
@@ -2281,15 +2232,12 @@ def test_candidate_source_accepts_only_unstaged_worktree_deletion(
 ) -> None:
     source = tmp_path / "source"
     candidate = tmp_path / "candidate"
-    source.mkdir()
+    repository = GitTestRepository.create(source)
     candidate.mkdir()
     tracked = source / "tracked.txt"
     tracked.write_text("before\n")
-    subprocess.run(["git", "init", "-q", str(source)], check=True)
-    subprocess.run(["git", "-C", str(source), "config", "user.name", "Test"], check=True)
-    subprocess.run(["git", "-C", str(source), "config", "user.email", "test@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(source), "add", "tracked.txt"], check=True)
-    subprocess.run(["git", "-C", str(source), "commit", "-qm", "source"], check=True)
+    repository.git("add", "tracked.txt")
+    repository.git("commit", "-qm", "source")
     tracked.unlink()
     plan = migration.CompiledMigrationPlan(
         {}, (), authorized_overlay={Path("tracked.txt"): "deleted"}
@@ -2307,18 +2255,11 @@ def test_candidate_source_rejects_escaping_overlay_symlink(
 ) -> None:
     source = tmp_path / "source"
     candidate = tmp_path / "candidate"
-    source.mkdir()
+    repository = GitTestRepository.create(source)
     candidate.mkdir()
     (source / ".gitignore").write_text("# tracked\n")
-    subprocess.run(["git", "init", "-q", str(source)], check=True)
-    subprocess.run(
-        ["git", "-C", str(source), "config", "core.autocrlf", "false"],
-        check=True,
-    )
-    subprocess.run(["git", "-C", str(source), "config", "user.name", "Test"], check=True)
-    subprocess.run(["git", "-C", str(source), "config", "user.email", "test@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(source), "add", ".gitignore"], check=True)
-    subprocess.run(["git", "-C", str(source), "commit", "-qm", "source"], check=True)
+    repository.git("add", ".gitignore")
+    repository.git("commit", "-qm", "source")
     link = source / "overlay-link"
     link.symlink_to(target)
     plan = migration.CompiledMigrationPlan(
@@ -2333,15 +2274,12 @@ def test_candidate_source_rejects_escaping_overlay_symlink(
 def test_candidate_source_rejects_ignored_authorized_include(tmp_path: Path) -> None:
     source = tmp_path / "source"
     candidate = tmp_path / "candidate"
-    source.mkdir()
+    repository = GitTestRepository.create(source)
     candidate.mkdir()
     (source / ".gitignore").write_text("private.txt\n")
     (source / "private.txt").write_text("secret\n")
-    subprocess.run(["git", "init", "-q", str(source)], check=True)
-    subprocess.run(["git", "-C", str(source), "config", "user.name", "Test"], check=True)
-    subprocess.run(["git", "-C", str(source), "config", "user.email", "test@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(source), "add", ".gitignore"], check=True)
-    subprocess.run(["git", "-C", str(source), "commit", "-qm", "source"], check=True)
+    repository.git("add", ".gitignore")
+    repository.git("commit", "-qm", "source")
     plan = migration.CompiledMigrationPlan(
         {},
         (Path("private.txt"),),
@@ -2354,24 +2292,12 @@ def test_candidate_source_rejects_ignored_authorized_include(tmp_path: Path) -> 
 def test_candidate_source_snapshot_detects_post_capture_mutation(tmp_path: Path) -> None:
     source = tmp_path / "source"
     candidate = tmp_path / "candidate"
-    source.mkdir()
+    repository = GitTestRepository.create(source)
     candidate.mkdir()
     tracked = source / "tracked.txt"
     tracked.write_text("before\n")
-    subprocess.run(["git", "init", "-q", str(source)], check=True)
-    subprocess.run(
-        ["git", "-C", str(source), "config", "core.autocrlf", "false"],
-        check=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(source), "config", "user.name", "Test"], check=True
-    )
-    subprocess.run(
-        ["git", "-C", str(source), "config", "user.email", "test@example.invalid"],
-        check=True,
-    )
-    subprocess.run(["git", "-C", str(source), "add", "tracked.txt"], check=True)
-    subprocess.run(["git", "-C", str(source), "commit", "-qm", "source"], check=True)
+    repository.git("add", "tracked.txt")
+    repository.git("commit", "-qm", "source")
     plan = migration.CompiledMigrationPlan({}, ())
     snapshot = migration._copy_candidate_tree(source.resolve(), candidate, plan)
     tracked.write_text("after\n")
@@ -2387,21 +2313,19 @@ def test_cutover_manifest_rejects_paths_without_map_derived_authority(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
+    repository = GitTestRepository.create(repo)
     (repo / "skills/old").mkdir(parents=True)
     (repo / "skills/old/SKILL.md").write_text("old\n")
     (repo / "approved.py").write_text("before\n")
     (repo / "unreviewed.py").write_text("before\n")
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test"], check=True)
-    subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
-    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "base"], check=True)
-    base = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "base")
+    base = repository.git("rev-parse", "HEAD").stdout.decode().strip()
     (repo / "skills/old").rename(repo / "skills/new")
     (repo / "approved.py").write_text("after\n")
-    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
-    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "final"], check=True)
-    final = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+    repository.git("add", "-A")
+    repository.git("commit", "-qm", "final")
+    final = repository.git("rev-parse", "HEAD").stdout.decode().strip()
     plan = migration.CompiledMigrationPlan(
         {"old": "new"},
         (),
@@ -2490,12 +2414,10 @@ def test_candidate_inspection_and_finalization_reject_non_atomic_provenance(
     candidate = tmp_path / "candidate"
     candidate.mkdir()
     commit = _write_candidate_certifier_api_fixture(candidate)
-    subprocess.run(
-        [
-            "git", "-C", str(candidate), "config",
-            "famulus.candidateAtomicGuarantee", "false",
-        ],
-        check=True,
+    GitTestRepository(candidate).git(
+        "config",
+        "famulus.candidateAtomicGuarantee",
+        "false",
     )
 
     with pytest.raises(InterfaceInjectionMigrationError, match="non-certifiable"):

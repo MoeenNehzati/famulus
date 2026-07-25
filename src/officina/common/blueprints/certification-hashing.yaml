@@ -19,6 +19,12 @@ dependencies:
   reason: Imports Git snapshots and file provenance from git_provenance.py.
   source: common.source.git-provenance
   version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/repository-paths.yaml
+  reason: Imports canonical repository-relative path conversion from repository_paths.py.
+  source: common.source.repository-paths
+  version: 1
 description: Resolves the canonical certification basis and node inputs, computes deterministic v4 node hashes and dependency-first target order, maps already observed route-smoke paths to declared authority, and derives certifier identity and expected checks.
 gateway:
   language: Python

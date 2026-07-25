@@ -22,6 +22,7 @@ from officina.common.blueprint_graph import (
     load_repository_blueprint_graph,
 )
 from officina.common.git_provenance import git_file_provenance
+from test_support.git_repository import GitTestRepository
 
 
 SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint"
@@ -165,11 +166,8 @@ def _write_module(
     )
 
 
-def _git(root: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
-
-
 def _repository(tmp_path: Path) -> tuple[Path, Path]:
+    repository = GitTestRepository.initialize_existing_empty(tmp_path)
     _write_module(tmp_path, "provider-skill")
     _write_module(
         tmp_path,
@@ -196,11 +194,8 @@ def _repository(tmp_path: Path) -> tuple[Path, Path]:
             ],
         },
     )
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, "config", "user.name", "Tests")
-    _git(tmp_path, "config", "user.email", "tests@example.invalid")
-    _git(tmp_path, "add", ".")
-    _git(tmp_path, "commit", "-qm", "fixture")
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "fixture")
     return tmp_path, policy
 
 
@@ -404,8 +399,9 @@ def test_repository_root_contract_reference_targets_exact_file_owner(
         }
     ]
     _write_yaml(consumer_path, consumer)
-    _git(root, "add", ".")
-    _git(root, "commit", "-qm", "add shared contract")
+    repository = GitTestRepository(root)
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "add shared contract")
 
     states = _states(root, policy)
     consumer_state = states["consumer-skill.source.gateway"]

@@ -6,34 +6,39 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_yaml_store.py:Interface
+      - _rtx/_yaml_store.py
+      - Interface
       reason: Core list operations; supports --cloud flag to handle cloud transport
         via the shared dispatcher automatically.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_yaml_store.py:DescribeSchemaInterface
+      - _rtx/_yaml_store.py
+      - DescribeSchemaInterface
       reason: Read-only schema descriptor exposed through the shared Python machine-interface
         runner.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_list_beautify.py:BeautifyListInterface
+      - _rtx/_list_beautify.py
+      - BeautifyListInterface
       reason: Pure formatter used for user-facing rendering of YAML output.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_render_bridge.py:Interface
+      - _rtx/_render_bridge.py
+      - Interface
       reason: Default human-facing read path for lists; supports --cloud flag for
         cloud-backed lists.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_legacy_importer.py:Interface
+      - _rtx/_legacy_importer.py
+      - Interface
       reason: One-time migration utility for importing legacy Markdown lists.
     network: []
 category: productivity-general-assistant

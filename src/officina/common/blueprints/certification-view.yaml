@@ -37,6 +37,12 @@ dependencies:
   reason: Imports snapshot capture and commit readiness from git_provenance.py.
   source: common.source.git-provenance
   version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/repository-paths.yaml
+  reason: Imports canonical repository-relative path serialization from repository_paths.py.
+  source: common.source.repository-paths
+  version: 1
 description: Evaluates signed certificate logs against current v4 node hashes, dependency state, source commit, certifier identity, and checks, then exposes read-only module-export and source-certificate decisions.
 gateway:
   language: Python

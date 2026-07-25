@@ -6,58 +6,67 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_envelope_gate.py:Interface
+      - _rtx/_envelope_gate.py
+      - Interface
       reason: Filters email-client mail-list JSON to strictly-after-watermark envelopes.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_mail_envelope_stream.py:Interface
+      - _rtx/_mail_envelope_stream.py
+      - Interface
       reason: Fetches mail-list envelopes through the declared boundary and emits
         only strictly-after-watermark results.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_watermark_floor.py:Interface
+      - _rtx/_watermark_floor.py
+      - Interface
       reason: Suggested approval for the email triage runtime.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_watermark_writer.py:Interface
+      - _rtx/_watermark_writer.py
+      - Interface
       reason: Suggested approval for the email triage runtime.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_decision_sink.py:Interface
+      - _rtx/_decision_sink.py
+      - Interface
       reason: Suggested approval for the email triage runtime.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_log_compactor.py:Interface
+      - _rtx/_log_compactor.py
+      - Interface
       reason: Suggested approval for the email triage runtime.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_failure_sentinel.py:Interface
+      - _rtx/_failure_sentinel.py
+      - Interface
       reason: Records a failed triage run so update-watermark refuses to advance and
         the scheduled health check can report it.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_failure_clearer.py:Interface
+      - _rtx/_failure_clearer.py
+      - Interface
       reason: Clears a latched triage failure after its cause is fixed without advancing
         the watermark.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_write_metrics.py:Interface
+      - _rtx/_write_metrics.py
+      - Interface
       reason: Writes metrics (scanned, added, skipped counts) from a triage run to
         status.json for visibility.
     network: []

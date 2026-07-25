@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import subprocess
 import sys
 from copy import deepcopy
 from pathlib import Path
 
 import yaml
 import pytest
+from test_support.git_repository import GitTestRepository
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -303,9 +303,11 @@ def test_committed_template_describes_the_live_v4_layout() -> None:
 
 
 def test_schema_family_examples_create_complete_valid_documents(tmp_path: Path) -> None:
+    repository = GitTestRepository.create(tmp_path / "repo")
+    repo_root = repository.root
     examples = yaml.safe_load(Path("references/blueprint/template.yaml").read_text())["examples"]
-    skill = tmp_path / "skills" / "example-skill"
-    references = tmp_path / "references"
+    skill = repo_root / "skills" / "example-skill"
+    references = repo_root / "references"
 
     schemas = {
         name: load_schema(Path("references/blueprint") / name)
@@ -423,8 +425,7 @@ def test_schema_family_examples_create_complete_valid_documents(tmp_path: Path) 
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(source_path.read_bytes())
 
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "add", "skills", "references"], cwd=tmp_path, check=True)
+    repository.git("add", "skills", "references")
 
     generated_outputs = yaml.safe_load(Path("references/blueprint/template.yaml").read_text())["generated_outputs"]
     assert generated_outputs == [
@@ -433,9 +434,7 @@ def test_schema_family_examples_create_complete_valid_documents(tmp_path: Path) 
     ]
     assert "<!-- BEGIN BLUEPRINT CONTRACT -->" in skill_md.read_text(encoding="utf-8")
     assert "<!-- BEGIN BLUEPRINT INTERFACES -->" in skill_md.read_text(encoding="utf-8")
-    tracked = subprocess.run(
-        ["git", "ls-files"], cwd=tmp_path, check=True, capture_output=True, text=True
-    ).stdout.splitlines()
+    tracked = repository.git("ls-files").stdout.decode("utf-8").splitlines()
     assert {
         "skills/example-skill/SKILL.md",
         "skills/example-skill/blueprint.yaml",

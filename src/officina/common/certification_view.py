@@ -37,6 +37,7 @@ from .blueprint_graph import (
 )
 from .blueprint_template import load_schema, schema_validator
 from .git_provenance import capture_git_snapshot, check_commit_readiness
+from .repository_paths import RepositoryPathError, repository_relative_posix
 
 
 @dataclass(frozen=True)
@@ -170,8 +171,8 @@ def _relative_path(path: Path | None, repo_root: Path) -> str | None:
     if path is None:
         return None
     try:
-        return path.relative_to(repo_root).as_posix()
-    except ValueError as exc:
+        return repository_relative_posix(path, repo_root)
+    except RepositoryPathError as exc:
         raise ValueError(f"certificate subject path is outside repository: {path}") from exc
 
 

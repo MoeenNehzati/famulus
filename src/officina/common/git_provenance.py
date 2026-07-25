@@ -16,6 +16,7 @@ from .atomic_files import (
     atomic_replace_bytes,
     read_regular_file_bytes,
 )
+from .repository_paths import RepositoryPathError, repository_relative_posix
 
 
 _REGULAR_FILE_MODES = {"100644", "100755"}
@@ -457,15 +458,6 @@ def snapshot_head_matches(snapshot: GitSnapshot | None) -> bool:
     return current.returncode == 0 and _output_text(current) == snapshot.commit
 
 
-def _repository_relative_path(path: Path, repo_root: Path) -> str | None:
-    raw_path = path if path.is_absolute() else repo_root / path
-    normalized = Path(os.path.abspath(raw_path))
-    try:
-        return normalized.relative_to(repo_root).as_posix()
-    except ValueError:
-        return None
-
-
 def _tree_entry(
     snapshot: GitSnapshot, relative_path: str
 ) -> tuple[str, str] | None:
@@ -509,8 +501,9 @@ def git_file_provenance_batch(
     normalized: dict[Path, str] = {}
     for path in paths:
         candidate = Path(path)
-        relative_path = _repository_relative_path(candidate, root)
-        if relative_path is None:
+        try:
+            relative_path = repository_relative_posix(candidate, root)
+        except RepositoryPathError:
             raise ValueError(f"{path}: input is outside repository {root}")
         raw_path = candidate if candidate.is_absolute() else root / candidate
         normalized[Path(os.path.abspath(raw_path))] = relative_path
@@ -733,8 +726,9 @@ def check_commit_readiness(
     reasons: set[str] = set()
     relative_paths: set[str] = set()
     for path in input_paths:
-        relative_path = _repository_relative_path(path, snapshot.repo_root)
-        if relative_path is None:
+        try:
+            relative_path = repository_relative_posix(path, snapshot.repo_root)
+        except RepositoryPathError:
             reasons.add("input-outside-repository")
         else:
             relative_paths.add(relative_path)

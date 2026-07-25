@@ -6,19 +6,22 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_plan_orchestrate.py:Interface
+      - _rtx/_plan_orchestrate.py
+      - Interface
       reason: Main orchestration script for plan generation via dispatcher.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_render_plan.py:Interface
+      - _rtx/_render_plan.py
+      - Interface
       reason: Plan rendering helper for display formatting.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_state_patch.py:Interface
+      - _rtx/_state_patch.py
+      - Interface
       reason: Apply plan-local or master-list-backed mutations and show the refreshed
         plan.
     network: []

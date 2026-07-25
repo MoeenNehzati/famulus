@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import subprocess
 from pathlib import Path
 
 
@@ -13,30 +12,12 @@ _ALLOWED_REL = Path("src/officina/common/toml_io.py")
 _ALLOWED_COMMON_TOML_DIR = Path("src/officina/common")
 
 
-def _tracked_files(repo_root: Path) -> set[Path] | None:
-    result = subprocess.run(
-        ["git", "ls-files"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="surrogateescape",
-        check=False,
-    )
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
-    return {repo_root / path for path in result.stdout.splitlines()}
-
-
 def _iter_python_files(repo_root: Path):
-    tracked = _tracked_files(repo_root)
     for root_name in _CHECK_ROOTS:
         root = repo_root / root_name
         if not root.exists():
             continue
         for path in root.rglob("*.py"):
-            if tracked is not None and path not in tracked:
-                continue
             rel_path = path.relative_to(repo_root)
             if rel_path == _ALLOWED_REL or _is_common_toml_helper(rel_path):
                 continue

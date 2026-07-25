@@ -20,6 +20,43 @@ class PythonRouteSmokeTraceError(RuntimeError):
     """Raised when a Python route-smoke dependency trace cannot complete."""
 
 
+class PythonProcessTargetError(ValueError):
+    """Raised when a Python gateway and process entry are not canonical."""
+
+
+@dataclass(frozen=True)
+class PythonProcessTarget:
+    """A validated Python gateway path and entry class."""
+
+    gateway_path: Path
+    process_entry: str
+
+    def __post_init__(self) -> None:
+        path = self.gateway_path
+        if (
+            not isinstance(path, Path)
+            or path.is_absolute()
+            or len(path.parts) < 2
+            or path.parts[0] != "_rtx"
+            or "." in path.parts
+            or ".." in path.parts
+            or path.suffix != ".py"
+        ):
+            raise PythonProcessTargetError(
+                "Python gateway path must be a relative `_rtx/*.py` path "
+                "without current- or parent-directory traversal"
+            )
+        entry = self.process_entry
+        if (
+            not isinstance(entry, str)
+            or entry != entry.strip()
+            or not entry.isidentifier()
+        ):
+            raise PythonProcessTargetError(
+                "Python process entry must be one non-empty Python identifier"
+            )
+
+
 @dataclass(frozen=True)
 class DispatchCallDeclaration:
     """One alias-resolved DispatchCall declaration in a Python syntax tree."""
@@ -114,19 +151,19 @@ def analyze_dispatch_call_declarations(
 
 def _normalize_route_smoke_trace_specifications(
     repo_root: Path,
-    specifications: Iterable[tuple[Path, str]],
-) -> tuple[tuple[Path, str], ...]:
+    specifications: Iterable[tuple[Path, PythonProcessTarget]],
+) -> tuple[tuple[Path, PythonProcessTarget], ...]:
     """Validate and canonicalize route-smoke trace specifications."""
 
     repository_root = repo_root.resolve()
-    normalized: set[tuple[Path, str]] = set()
+    normalized: set[tuple[Path, PythonProcessTarget]] = set()
     for specification in specifications:
         if not isinstance(specification, tuple) or len(specification) != 2:
             raise ValueError(
                 "route-smoke trace specifications must be "
-                "(skill_root, entrypoint) pairs"
+                "(skill_root, PythonProcessTarget) pairs"
             )
-        skill_dir, entrypoint = specification
+        skill_dir, python_target = specification
         try:
             skill_root = Path(skill_dir).resolve()
         except TypeError as exc:
@@ -139,39 +176,32 @@ def _normalize_route_smoke_trace_specifications(
             ) from exc
         if not skill_root.is_dir():
             raise ValueError(f"route-smoke skill root is not a directory: {skill_root}")
-        if not isinstance(entrypoint, str) or entrypoint != entrypoint.strip():
-            raise ValueError("route-smoke entrypoints must be non-empty strings")
-        module_text, separator, class_name = entrypoint.partition(":")
-        module_path = Path(module_text)
-        if (
-            separator != ":"
-            or not module_text
-            or not class_name
-            or not class_name.isidentifier()
-            or module_path.is_absolute()
-            or ".." in module_path.parts
-            or not module_path.parts
-            or module_path.parts[0] != "_rtx"
-            or module_path.suffix != ".py"
-        ):
+        if not isinstance(python_target, PythonProcessTarget):
             raise ValueError(
-                "route-smoke entrypoints must be "
-                "`_rtx/path.py:ClassName` without parent traversal"
+                "route-smoke targets must be PythonProcessTarget values"
             )
-        normalized_module = Path(*module_path.parts).as_posix()
-        if not (skill_root / normalized_module).is_file():
+        if not (skill_root / python_target.gateway_path).is_file():
             raise ValueError(
-                f"route-smoke entrypoint does not exist: "
-                f"{skill_root / normalized_module}"
+                f"route-smoke gateway does not exist: "
+                f"{skill_root / python_target.gateway_path}"
             )
-        normalized.add((skill_root, f"{normalized_module}:{class_name}"))
-    return tuple(sorted(normalized, key=lambda item: (item[0].as_posix(), item[1])))
+        normalized.add((skill_root, python_target))
+    return tuple(
+        sorted(
+            normalized,
+            key=lambda item: (
+                item[0].as_posix(),
+                item[1].gateway_path.as_posix(),
+                item[1].process_entry,
+            ),
+        )
+    )
 
 
 def trace_python_route_smoke_dependencies_batch(
     repo_root: Path,
-    specifications: Iterable[tuple[Path, str]],
-) -> dict[tuple[Path, str], tuple[Path, ...]]:
+    specifications: Iterable[tuple[Path, PythonProcessTarget]],
+) -> dict[tuple[Path, PythonProcessTarget], tuple[Path, ...]]:
     """Return isolated loaded-path traces from one Python child process."""
 
     repository_root = repo_root.resolve()
@@ -204,12 +234,7 @@ from pathlib import Path
 src_root = Path(sys.argv[1]).resolve()
 repo_root = Path(sys.argv[2]).resolve()
 schema_root = Path(sys.argv[3]).resolve()
-specifications = [
-    (Path(skill_root).resolve(), entrypoint)
-    for skill_root, entrypoint in json.loads(sys.argv[4])
-]
 officina_root = src_root / "officina"
-skills_root = repo_root / "skills"
 sys.path.insert(0, str(src_root))
 
 from officina.common.blueprint_graph import (
@@ -218,8 +243,22 @@ from officina.common.blueprint_graph import (
     load_repository_blueprint_graph,
 )
 from officina.common.blueprint_inventory import iter_blueprints
-from officina.runtime.python_machine_interface import DispatchDependencyResolver
+from officina.runtime.python_machine_interface import (
+    DispatchDependencyResolver,
+    PythonProcessTarget,
+)
 from officina.runtime.python_machine_interface_runner import load_interface, run_python_machine_interface
+
+specifications = [
+    (
+        Path(item["skill_root"]).resolve(),
+        PythonProcessTarget(
+            Path(item["python_target"]["gateway_path"]),
+            item["python_target"]["process_entry"],
+        ),
+    )
+    for item in json.loads(sys.argv[4])
+]
 
 def is_under(path, root):
     try:
@@ -322,7 +361,7 @@ def restore_module_baseline():
             sys.modules[name] = module
 
 results = []
-for skill_dir, entrypoint in specifications:
+for skill_dir, python_target in specifications:
     os.chdir(base_cwd)
     sys.path[:] = base_sys_path
     restore_module_baseline()
@@ -331,20 +370,16 @@ for skill_dir, entrypoint in specifications:
     try:
         os.chdir(skill_dir)
         with contextlib.redirect_stdout(io.StringIO()):
-            interface = load_interface(entrypoint)
+            interface = load_interface(
+                python_target.gateway_path,
+                python_target.process_entry,
+            )
             run_python_machine_interface(interface, ["--route-smoke"])
             collect_loaded_paths(paths, before)
             dependencies = resolver.collect(interface)
             collect_loaded_paths(paths, before)
             for dependency in dependencies:
                 invocation = dependency.resolved
-                for token in invocation.command:
-                    candidate = Path(token)
-                    if not candidate.is_absolute():
-                        candidate = invocation.cwd / candidate
-                    candidate = candidate.resolve()
-                    if candidate.exists() and is_under(candidate, skills_root):
-                        paths.add(candidate.as_posix())
                 target_interface = resolver.load_resolved_python_interface(invocation)
                 if target_interface is not None:
                     previous_cwd = Path.cwd()
@@ -364,7 +399,10 @@ for skill_dir, entrypoint in specifications:
     results.append(
         {
             "skill_root": skill_dir.as_posix(),
-            "entrypoint": entrypoint,
+            "python_target": {
+                "gateway_path": python_target.gateway_path.as_posix(),
+                "process_entry": python_target.process_entry,
+            },
             "paths": sorted(paths),
         }
     )
@@ -388,8 +426,14 @@ print(json.dumps(results))
             str(schema_root),
             json.dumps(
                 [
-                    [skill_root.as_posix(), entrypoint]
-                    for skill_root, entrypoint in normalized
+                    {
+                        "skill_root": skill_root.as_posix(),
+                        "python_target": {
+                            "gateway_path": python_target.gateway_path.as_posix(),
+                            "process_entry": python_target.process_entry,
+                        },
+                    }
+                    for skill_root, python_target in normalized
                 ],
                 ensure_ascii=False,
                 separators=(",", ":"),
@@ -406,7 +450,7 @@ print(json.dumps(results))
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         subject = (
-            normalized[0][1]
+            normalized[0][1].gateway_path.as_posix()
             if len(normalized) == 1
             else f"{len(normalized)} route-smoke specifications"
         )
@@ -417,7 +461,7 @@ print(json.dumps(results))
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         subject = (
-            normalized[0][1]
+            normalized[0][1].gateway_path.as_posix()
             if len(normalized) == 1
             else f"{len(normalized)} route-smoke specifications"
         )
@@ -426,7 +470,7 @@ print(json.dumps(results))
         ) from exc
     expected = set(normalized)
     expected_order = list(normalized)
-    traces: dict[tuple[Path, str], tuple[Path, ...]] = {}
+    traces: dict[tuple[Path, PythonProcessTarget], tuple[Path, ...]] = {}
     if not isinstance(payload, list):
         raise PythonRouteSmokeTraceError(
             "route-smoke dependency trace returned invalid batch results"
@@ -434,18 +478,21 @@ print(json.dumps(results))
     for index, item in enumerate(payload):
         if not isinstance(item, dict) or set(item) != {
             "skill_root",
-            "entrypoint",
+            "python_target",
             "paths",
         }:
             raise PythonRouteSmokeTraceError(
                 "route-smoke dependency trace returned invalid batch results"
             )
         skill_text = item["skill_root"]
-        entrypoint = item["entrypoint"]
+        target_payload = item["python_target"]
         path_texts = item["paths"]
         if (
             not isinstance(skill_text, str)
-            or not isinstance(entrypoint, str)
+            or not isinstance(target_payload, dict)
+            or set(target_payload) != {"gateway_path", "process_entry"}
+            or not isinstance(target_payload["gateway_path"], str)
+            or not isinstance(target_payload["process_entry"], str)
             or not isinstance(path_texts, list)
             or not all(isinstance(path, str) for path in path_texts)
             or path_texts != sorted(set(path_texts))
@@ -460,12 +507,25 @@ print(json.dumps(results))
         expected_key = expected_order[index]
         if (
             skill_text != expected_key[0].as_posix()
-            or entrypoint != expected_key[1]
+            or target_payload
+            != {
+                "gateway_path": expected_key[1].gateway_path.as_posix(),
+                "process_entry": expected_key[1].process_entry,
+            }
         ):
             raise PythonRouteSmokeTraceError(
                 "route-smoke dependency trace returned invalid batch paths"
             )
-        key = (Path(skill_text), entrypoint)
+        try:
+            python_target = PythonProcessTarget(
+                Path(target_payload["gateway_path"]),
+                target_payload["process_entry"],
+            )
+        except PythonProcessTargetError as exc:
+            raise PythonRouteSmokeTraceError(
+                "route-smoke dependency trace returned invalid target"
+            ) from exc
+        key = (Path(skill_text), python_target)
         paths = tuple(Path(path) for path in path_texts)
         if (
             key not in expected
@@ -496,14 +556,14 @@ print(json.dumps(results))
 def trace_python_route_smoke_dependencies(
     skill_dir: Path,
     repo_root: Path,
-    entrypoint: str,
+    python_target: PythonProcessTarget,
 ) -> tuple[Path, ...]:
     """Return Python files loaded by one route-smoke dependency traversal."""
 
     repository_root = repo_root.resolve()
     normalized = _normalize_route_smoke_trace_specifications(
         repository_root,
-        ((skill_dir, entrypoint),),
+        ((skill_dir, python_target),),
     )
     key = normalized[0]
     return trace_python_route_smoke_dependencies_batch(
@@ -627,14 +687,9 @@ class DispatchDependencyResolver:
 
         from officina.runtime.python_machine_interface_runner import load_interface
 
-        command = resolved.command
-        if (
-            len(command) < 4
-            or command[1:3]
-            != ["-m", "officina.runtime.python_machine_interface_runner"]
-        ):
+        python_target = resolved.python_target
+        if python_target is None:
             return None
-        entrypoint = command[3]
         previous_cwd = Path.cwd()
         try:
             for cached_name in list(sys.modules):
@@ -644,7 +699,10 @@ class DispatchDependencyResolver:
             sys.path[:] = [entry for entry in sys.path if entry != skill_path]
             sys.path.insert(0, skill_path)
             os.chdir(resolved.cwd)
-            return load_interface(entrypoint)
+            return load_interface(
+                python_target.gateway_path,
+                python_target.process_entry,
+            )
         finally:
             os.chdir(previous_cwd)
 

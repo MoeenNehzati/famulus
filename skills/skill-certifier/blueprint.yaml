@@ -16,7 +16,8 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_node_certifier.py:Interface
+      - _rtx/_node_certifier.py
+      - Interface
       reason: Run mechanical certification checks and append signed certificates.
     network: []
 category: skill-making-development-assistant

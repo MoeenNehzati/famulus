@@ -6,13 +6,15 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_source_fetcher.py:Interface
+      - _rtx/_source_fetcher.py
+      - Interface
       reason: Suggested approval for the PDF conversion runtime.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _rtx/_marker_probe.py:Interface
+      - _rtx/_marker_probe.py
+      - Interface
       reason: Suggested approval for the PDF conversion runtime.
     - command:
       - marker_single

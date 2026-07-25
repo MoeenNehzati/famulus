@@ -24,7 +24,6 @@ Legacy blueprint files retain the line-level checks below.
 from __future__ import annotations
 
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -99,22 +98,6 @@ def _forbidden_pattern_for(path: Path) -> re.Pattern[str] | None:
     return re.compile("|".join(p.pattern for p in active))
 
 
-def _tracked_files(repo_root: Path) -> set[Path] | None:
-    """Return files tracked by git, or None if not in a git repo (no filter applied)."""
-    result = subprocess.run(
-        ["git", "ls-files"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="surrogateescape",
-        check=False,
-    )
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
-    return {repo_root / p for p in result.stdout.splitlines()}
-
-
 def _v4_blueprint_paths(repo_root: Path) -> frozenset[Path]:
     """Return blueprint files validated as part of the canonical v4 graph."""
 
@@ -143,22 +126,16 @@ def _v4_blueprint_paths(repo_root: Path) -> frozenset[Path]:
 
 
 def _iter_files(repo_root: Path, *, excluded_blueprints: frozenset[Path]):
-    tracked = _tracked_files(repo_root)
     for root_name in _CHECK_ROOTS:
         root = repo_root / root_name
         if root.is_file():
-            if (
-                root.resolve() not in excluded_blueprints
-                and (tracked is None or root in tracked)
-            ):
+            if root.resolve() not in excluded_blueprints:
                 yield root
             continue
         if not root.is_dir():
             continue
         for child in root.rglob("*"):
             if not child.is_file():
-                continue
-            if tracked is not None and child not in tracked:
                 continue
             rel_parts = child.relative_to(repo_root).parts
             if any(part in _EXCLUDED_PARTS for part in rel_parts):

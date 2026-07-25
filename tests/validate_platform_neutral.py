@@ -4,8 +4,10 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+import shutil
 
 import pytest
+from test_support.git_repository import GitTestRepository
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from validators.platform_neutral import validate  # noqa: E402
@@ -61,24 +63,41 @@ def test_multiple_violations_all_reported(tmp_path: Path) -> None:
     assert len(errors) == 2
 
 
-def test_runner_fails_closed_when_repo_has_no_standards_tooling(tmp_path: Path) -> None:
+def test_runner_rejects_non_git_repository(tmp_path: Path) -> None:
     runner = Path(__file__).resolve().parents[1] / "validators" / "runner.py"
     result = subprocess.run(
         ["python3", str(runner), "--repo-root", str(tmp_path)],
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 1
-    assert "references/standards: missing standards tooling directory" in result.stderr
+    assert result.returncode == 2
+    assert "cannot enumerate staged files" in result.stderr
 
 
 def test_runner_exits_nonzero_on_violation(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    repository = GitTestRepository.initialize_existing_empty(tmp_path)
+    (tmp_path / "validators").mkdir()
+    shutil.copy2(repo_root / "validators" / "runner.py", tmp_path / "validators")
+    shutil.copy2(
+        repo_root / "validators" / "platform_neutral.py",
+        tmp_path / "validators",
+    )
+    shutil.copytree(repo_root / "src", tmp_path / "src")
     d = tmp_path / "skills" / "a-skill"
     d.mkdir(parents=True)
     (d / "SKILL.md").write_text("Use Claude here.\n")
-    runner = Path(__file__).resolve().parents[1] / "validators" / "runner.py"
+    repository.git("add", ".")
+    runner = repo_root / "validators" / "runner.py"
     result = subprocess.run(
-        ["python3", str(runner), "--repo-root", str(tmp_path)],
+        [
+            "python3",
+            str(runner),
+            "--repo-root",
+            str(tmp_path),
+            "--validator",
+            "repo/platform_neutral",
+        ],
         capture_output=True,
         text=True,
     )

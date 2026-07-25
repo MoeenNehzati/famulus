@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from test_support.git_repository import GitTestRepository
 
 from install_test_utils import REPO_ROOT, can_create_symlink, python_test_env, run_command
 
@@ -73,9 +74,8 @@ def _make_repo_for_manifest_tests(tmp_path: Path) -> Path:
     into the repo (git hooksPath) and imports llmhooks from it — the default
     (or the real live repo) must never be used here.
     """
-    import subprocess
-
     repo = tmp_path / "repo"
+    GitTestRepository.create(repo)
     (repo / "skills").mkdir(parents=True)
     (repo / "references").mkdir()
     (repo / "agents").mkdir()
@@ -85,7 +85,6 @@ def _make_repo_for_manifest_tests(tmp_path: Path) -> Path:
         "def hooks_for_host(host):\n    return []\n", encoding="utf-8"
     )
     (repo / "CLAUDE.md").write_text("repo instructions\n", encoding="utf-8")
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
     return repo
 
 

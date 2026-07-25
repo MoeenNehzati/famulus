@@ -15,11 +15,14 @@ from officina.common.blueprint_graph import (  # noqa: E402
     RepositoryBlueprintGraph,
     authored_node_input_paths,
     load_repository_blueprint_graph,
-    repository_relative_path,
     validate_runtime_file_path,
 )
 from officina.common.blueprint_inventory import (  # noqa: E402
     BlueprintInventoryError,
+)
+from officina.common.repository_paths import (  # noqa: E402
+    RepositoryPathError,
+    repository_relative_path,
 )
 
 
@@ -82,7 +85,7 @@ def _validate_authored_input_files(
                     path,
                     repo_root,
                 ).as_posix()
-            except BlueprintGraphError:
+            except RepositoryPathError:
                 relative_path = path.as_posix()
             index_entries = tracked_files.get(relative_path)
             if not index_entries:
@@ -105,6 +108,22 @@ def _validate_authored_input_files(
                     f"{node.blueprint_path}: authored source file Git index entry is not "
                     f"a regular file: {relative_path}"
                 )
+    return errors
+
+
+def _validate_command_file_modes(
+    tracked_files: dict[str, tuple[tuple[str, str], ...]],
+) -> list[str]:
+    errors: list[str] = []
+    for relative_path, entries in sorted(tracked_files.items()):
+        parts = Path(relative_path).parts
+        if len(parts) < 4 or parts[0] != "skills" or parts[2] != "_cx":
+            continue
+        if entries != (("100755", "0"),):
+            errors.append(
+                f"{relative_path}: _cx command file must have one stage-0 "
+                "executable Git index entry"
+            )
     return errors
 
 
@@ -176,6 +195,7 @@ def validate(repo_root: Path) -> list[str]:
         errors.extend(
             _validate_authored_input_files(graph, repo_root, tracked_files)
         )
+        errors.extend(_validate_command_file_modes(tracked_files))
     if errors:
         return errors
 
