@@ -8,9 +8,11 @@ import yaml
 import officina.common.blueprint_graph as blueprint_graph
 from officina.common.blueprint_graph import (
     BlueprintGraphError,
+    BlueprintNode,
     CertificationEdge,
     InterfaceExport,
     load_repository_blueprint_graph,
+    resolved_node_content_paths,
     resolve_export,
 )
 
@@ -190,6 +192,40 @@ def test_v4_schema_loading_does_not_require_posix_runtime_descriptors(
     graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
 
     assert "demo-skill" in graph.nodes
+
+
+def test_content_ownership_accepts_equivalent_repository_alias(
+    tmp_path: Path,
+) -> None:
+    physical_parent = tmp_path / "physical"
+    repository = physical_parent / "repository"
+    module = repository / "skills" / "demo-skill"
+    module.mkdir(parents=True)
+    content = module / "SKILL.md"
+    content.write_text("Instructions.\n", encoding="utf-8")
+    alias_parent = tmp_path / "alias"
+    try:
+        alias_parent.symlink_to(physical_parent, target_is_directory=True)
+    except OSError:
+        # famulus-skip: category=platform-contract; reason=some Windows runners deny directory-symlink creation; alternate=Linux and macOS exercise the repository-alias regression
+        pytest.skip("directory symlinks are unavailable")
+    node = BlueprintNode(
+        node_id="demo-skill",
+        node_type="module",
+        version=1,
+        skill_root=module,
+        blueprint_path=module / "blueprint.yaml",
+        gateway_path=content,
+        declaration={
+            "schema_version": 4,
+            "content": [r"SKILL\.md"],
+        },
+    )
+
+    assert resolved_node_content_paths(
+        node,
+        alias_parent / "repository",
+    ) == (content,)
 
 
 def test_v4_repository_graph_uses_one_generic_export_and_direct_ownership(

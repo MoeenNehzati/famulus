@@ -583,8 +583,8 @@ def resolved_node_content_paths(
         raise BlueprintGraphError(
             f"{node.blueprint_path}: content resolution requires schema_version 4"
         )
-    repo_root = Path(os.path.abspath(repo_root))
-    owner_root = Path(os.path.abspath(node.skill_root))
+    repo_root = Path(repo_root).resolve()
+    owner_root = Path(node.skill_root).resolve()
     try:
         owner_root.relative_to(repo_root)
     except ValueError as exc:
