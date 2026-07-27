@@ -4,9 +4,14 @@ authority:
     bash: []
     network: []
 category: research-assistant
+children:
+  make-tex-docstring-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
 - SKILL\.md
-description: Creates a canonical top-of-document TeX profile block from reliable document evidence and inserts it only with user approval.
+description: Creates a canonical top-of-document TeX profile block from reliable document
+  evidence and inserts it only with user approval.
 discovery:
   mechanism: skill
 exports:
@@ -20,12 +25,13 @@ gateway:
   path: SKILL.md
 id: make-tex-docstring
 kind: generator
+namespace_exports: {}
 node_type: module
 role: document-processing
-schema_version: 4
+schema_version: 5
 sources:
   make-tex-docstring.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 1
+version: 2

@@ -11,7 +11,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _state_record import Manifest
+if __package__:
+    from ._state_record import Manifest
+else:
+    from _state_record import Manifest
 
 
 def log(msg: str = "") -> None:

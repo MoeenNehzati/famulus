@@ -9,13 +9,25 @@ import pytest
 import yaml
 
 from officina.common.certification_view import CertificationDecision
+from officina.common.blueprint_graph import load_repository_blueprint_graph
 import officina.dispatcher.core as dispatcher_core
 from officina.dispatcher.core import (
     InvocationError,
+    ResolvedInvocation,
     ResolvedInvocationMetadata,
     dispatch,
     resolve_dispatch,
     resolve_dispatch_metadata,
+)
+from v5_blueprint_fixtures import copy_v5_fixture_tree
+
+
+V5_SCHEMA_ROOT = (
+    Path(__file__).resolve().parents[1] / "references" / "blueprint"
+)
+V4_SCHEMA_ROOT = V5_SCHEMA_ROOT / "migrations" / "v4"
+V5_AUTHORIZATION_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "blueprint_v5" / "authorization"
 )
 
 
@@ -26,9 +38,30 @@ class _PassingCertificationView:
 
 @pytest.fixture(autouse=True)
 def _current_test_certificates(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_load = dispatcher_core.load_repository_blueprint_graph
+
+    def load_fixture_graph(
+        root: Path,
+        *args: object,
+        **kwargs: object,
+    ) -> object:
+        if "expected_schema_version" not in kwargs:
+            for marker in Path(root).rglob("blueprint.yaml"):
+                document = yaml.safe_load(marker.read_text(encoding="utf-8"))
+                if isinstance(document, dict) and document.get("schema_version") == 4:
+                    kwargs["expected_schema_version"] = 4
+                    kwargs["schema_root"] = V4_SCHEMA_ROOT
+                    break
+        return real_load(root, *args, **kwargs)
+
+    monkeypatch.setattr(
+        dispatcher_core,
+        "load_repository_blueprint_graph",
+        load_fixture_graph,
+    )
     monkeypatch.setattr(
         "officina.dispatcher.core.repository_certification_view",
-        lambda _root: _PassingCertificationView(),
+        lambda *_args, **_kwargs: _PassingCertificationView(),
     )
 
 
@@ -71,8 +104,8 @@ def test_public_dispatcher_apis_accept_only_canonical_target() -> None:
 
 def test_non_python_metadata_emits_null_python_target(tmp_path: Path) -> None:
     metadata = ResolvedInvocationMetadata(
-        caller_skill="caller",
-        target_skill="target",
+        caller_module_id="caller",
+        target_module_id="target",
         script_interface="default",
         target="target.interface.default",
         pattern="default",
@@ -82,6 +115,27 @@ def test_non_python_metadata_emits_null_python_target(tmp_path: Path) -> None:
     )
 
     assert metadata.as_payload()["python_target"] is None
+
+
+def test_resolved_invocation_types_accept_legacy_v4_module_keywords(
+    tmp_path: Path,
+) -> None:
+    common = {
+        "caller_skill": "caller",
+        "target_skill": "target",
+        "script_interface": "run",
+        "target": "target.interface.run",
+        "pattern": "run",
+        "cwd": tmp_path,
+        "command": ["opaque"],
+        "stdin": False,
+    }
+
+    metadata = ResolvedInvocationMetadata(**common)
+    invocation = ResolvedInvocation(**common)
+
+    assert metadata.caller_module_id == invocation.caller_module_id == "caller"
+    assert metadata.target_module_id == invocation.target_module_id == "target"
 
 
 @pytest.mark.parametrize(
@@ -351,6 +405,502 @@ def _write_v4_caller(
         ),
         encoding="utf-8",
     )
+
+
+def _load_v5_dispatch_graph(tmp_path: Path):
+    root = copy_v5_fixture_tree(
+        V5_AUTHORIZATION_FIXTURE,
+        tmp_path / "repo",
+    )
+    source_blueprint = (
+        root
+        / "skills"
+        / "demo"
+        / "_rtx"
+        / "blueprints"
+        / "runtime.yaml"
+    )
+    declaration = yaml.safe_load(source_blueprint.read_text(encoding="utf-8"))
+    interface = declaration["interfaces"][
+        "demo-rtx.source.runtime.interface.execute"
+    ]
+    interface["contract"] = _v4_contract({})
+    interface["process_binding"] = {
+        "kind": "process",
+        "entry": "Interface",
+        "args_prefix": [],
+        "arguments": {},
+        "fixed": [],
+    }
+    source_blueprint.write_text(
+        yaml.safe_dump(declaration, sort_keys=False),
+        encoding="utf-8",
+    )
+    child_root = root / "skills" / "demo" / "_rtx"
+    child_blueprint = yaml.safe_load(
+        (child_root / "blueprint.yaml").read_text(encoding="utf-8")
+    )
+    child_blueprint["content"] = [
+        r"(?:__init__\.py|runtime\.py|caller\.py)"
+    ]
+    child_blueprint["sources"]["demo-rtx.source.caller"] = {
+        "blueprint": {
+            "base": "module-root",
+            "path": "blueprints/caller.yaml",
+        }
+    }
+    (child_root / "blueprint.yaml").write_text(
+        yaml.safe_dump(child_blueprint, sort_keys=False),
+        encoding="utf-8",
+    )
+    (child_root / "blueprints" / "caller.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 5,
+                "node_type": "behavioral_source",
+                "id": "demo-rtx.source.caller",
+                "version": 1,
+                "gateway": {
+                    "path": "caller.py",
+                    "language": "Python>=3.11",
+                },
+                "content": [r"caller\.py"],
+                "dependencies": [],
+                "uses_interfaces": [
+                    {"interface": "demo.interface.execute", "version": 3}
+                ],
+                "interfaces": {},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (child_root / "caller.py").write_text("", encoding="utf-8")
+    runtime = child_root / "runtime.py"
+    runtime.write_text(
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    def run(self, args):\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+    graph = load_repository_blueprint_graph(
+        root,
+        schema_root=V5_SCHEMA_ROOT,
+        expected_schema_version=5,
+    )
+    return root, graph
+
+
+def _resolve_v5_trace(
+    root: Path,
+    graph,
+    *,
+    caller_skill: str,
+    target: str,
+    caller_source_id: str | None = None,
+    target_version: int = 3,
+) -> ResolvedInvocationMetadata:
+    if caller_source_id is None:
+        caller_source_id = {
+            "demo": "demo.source.gateway",
+            "demo-rtx": "demo-rtx.source.caller",
+        }[caller_skill]
+    return dispatcher_core._resolve_dispatch_metadata_for_trace(
+        caller_module_id=caller_skill,
+        caller_source_id=caller_source_id,
+        target=target,
+        args=["--route-smoke"],
+        repo_root=root,
+        target_version=target_version,
+        certification_view=_PassingCertificationView(),
+        graph=graph,
+    )
+
+
+def test_v5_dispatch_preserves_and_validates_deepest_registered_caller(
+    tmp_path: Path,
+) -> None:
+    root, graph = _load_v5_dispatch_graph(tmp_path)
+
+    metadata = _resolve_v5_trace(
+        root,
+        graph,
+        caller_skill="demo-rtx",
+        caller_source_id="demo-rtx.source.caller",
+        target="demo.interface.execute",
+    )
+
+    assert metadata.caller_module_id == "demo-rtx"
+    assert metadata.target_module_id == "demo"
+    assert metadata.terminal_module_id == "demo-rtx"
+    assert metadata.implementing_source_id == "demo-rtx.source.runtime"
+    payload = metadata.as_payload()
+    assert payload["caller_module_id"] == "demo-rtx"
+    assert payload["target_module_id"] == "demo"
+    assert "caller_skill" not in payload
+    assert "target_skill" not in payload
+
+    with pytest.raises(InvocationError, match="caller-source-mismatch"):
+        _resolve_v5_trace(
+            root,
+            graph,
+            caller_skill="demo",
+            caller_source_id="demo-rtx.source.caller",
+            target="demo.interface.execute",
+        )
+
+
+def test_v5_dispatch_distinguishes_parent_and_code_child_callers(
+    tmp_path: Path,
+) -> None:
+    root, graph = _load_v5_dispatch_graph(tmp_path)
+
+    parent = _resolve_v5_trace(
+        root,
+        graph,
+        caller_skill="demo",
+        target="demo-rtx.interface.execute",
+    )
+    child = _resolve_v5_trace(
+        root,
+        graph,
+        caller_skill="demo-rtx",
+        target="demo.interface.execute",
+    )
+
+    assert parent.caller_module_id == "demo"
+    assert child.caller_module_id == "demo-rtx"
+
+
+def test_v5_dispatch_admits_facade_and_direct_child_only_via_shared_resolver(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, graph = _load_v5_dispatch_graph(tmp_path)
+    real_resolve = dispatcher_core.resolve_interface_authorization
+    requests = []
+
+    def recording_resolve(loaded_graph, request):
+        requests.append(request)
+        return real_resolve(loaded_graph, request)
+
+    monkeypatch.setattr(
+        dispatcher_core,
+        "resolve_interface_authorization",
+        recording_resolve,
+    )
+
+    facade = _resolve_v5_trace(
+        root,
+        graph,
+        caller_skill="demo-rtx",
+        target="demo.interface.execute",
+    )
+    direct = _resolve_v5_trace(
+        root,
+        graph,
+        caller_skill="demo",
+        target="demo-rtx.interface.execute",
+    )
+
+    assert facade.target == "demo.interface.execute"
+    assert direct.target == "demo-rtx.interface.execute"
+    assert facade.target_module_id == "demo"
+    assert direct.target_module_id == "demo-rtx"
+    assert facade.terminal_module_id == direct.terminal_module_id == "demo-rtx"
+    assert [request.interface_id for request in requests] == [
+        "demo.interface.execute",
+        "demo-rtx.interface.execute",
+    ]
+
+
+def test_v5_wrong_version_is_denied_by_exactly_one_shared_resolution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, graph = _load_v5_dispatch_graph(tmp_path)
+    real_resolve = dispatcher_core.resolve_interface_authorization
+    requests = []
+
+    def recording_resolve(loaded_graph, request):
+        requests.append(request)
+        return real_resolve(loaded_graph, request)
+
+    monkeypatch.setattr(
+        dispatcher_core,
+        "resolve_interface_authorization",
+        recording_resolve,
+    )
+
+    with pytest.raises(InvocationError, match="version-mismatch"):
+        _resolve_v5_trace(
+            root,
+            graph,
+            caller_skill="demo-rtx",
+            target="demo.interface.execute",
+            target_version=2,
+        )
+
+    assert len(requests) == 1
+    assert requests[0].version == 2
+
+
+def test_v5_certification_seam_receives_the_authorization_result(
+    tmp_path: Path,
+) -> None:
+    root, graph = _load_v5_dispatch_graph(tmp_path)
+    observed = []
+
+    class AuthorizationCertificationView:
+        def check_authorization(self, authorization):
+            observed.append(authorization)
+            return CertificationDecision(True, "current", "Current.")
+
+        def check_export(self, *_args):
+            pytest.fail("v5 authorization seam fell back to check_export")
+
+    with dispatcher_core._resolve_dispatch(
+        caller_skill="demo-rtx",
+        caller_source_id="demo-rtx.source.caller",
+        target="demo.interface.execute",
+        args=["--route-smoke"],
+        repo_root=root,
+        target_version=3,
+        certification_view=AuthorizationCertificationView(),
+        graph=graph,
+    ) as resolved:
+        metadata = resolved.metadata()
+        assert observed == [resolved.authorization]
+        assert metadata.authorization is resolved.authorization
+
+
+def test_v5_bootstrap_seam_receives_the_exact_requested_target_module(
+    tmp_path: Path,
+) -> None:
+    root, graph = _load_v5_dispatch_graph(tmp_path)
+    observed = []
+
+    class BootstrapCertificationView:
+        def check_authorization(self, _authorization):
+            return CertificationDecision(False, "stale", "Stale.")
+
+        def check_bootstrap(self, **request):
+            observed.append(request)
+            return CertificationDecision(True, "bootstrap", "Bootstrap.")
+
+    with dispatcher_core._resolve_dispatch(
+        caller_skill="demo-rtx",
+        caller_source_id="demo-rtx.source.caller",
+        target="demo.interface.execute",
+        args=["--route-smoke"],
+        repo_root=root,
+        target_version=3,
+        certification_view=BootstrapCertificationView(),
+        graph=graph,
+    ):
+        pass
+
+    assert observed == [
+        {
+            "caller_module_id": "demo-rtx",
+            "target_module_id": "demo",
+            "terminal_module_id": "demo-rtx",
+            "interface_id": "demo.interface.execute",
+            "pattern_name": None,
+            "argv": ("--route-smoke",),
+        }
+    ]
+
+
+def test_v5_host_dispatch_accepts_discoverable_parent_not_code_child(
+    tmp_path: Path,
+) -> None:
+    root, graph = _load_v5_dispatch_graph(tmp_path)
+
+    parent = dispatcher_core._resolve_host_dispatch_metadata(
+        caller_skill="demo",
+        target="demo-rtx.interface.execute",
+        args=["--route-smoke"],
+        repo_root=root,
+        target_version=3,
+        certification_view=_PassingCertificationView(),
+        graph=graph,
+    )
+
+    assert parent.caller_module_id == "demo"
+    assert parent.caller_source_id == "demo.source.gateway"
+    with pytest.raises(InvocationError, match="not a discoverable host skill"):
+        dispatcher_core._resolve_host_dispatch_metadata(
+            caller_skill="demo-rtx",
+            target="demo.interface.execute",
+            args=["--route-smoke"],
+            repo_root=root,
+            target_version=3,
+            certification_view=_PassingCertificationView(),
+            graph=graph,
+        )
+
+
+def test_v5_host_dispatch_requires_gateway_declared_interface_use(
+    tmp_path: Path,
+) -> None:
+    root, graph = _load_v5_dispatch_graph(tmp_path)
+    gateway_path = root / "skills" / "demo" / "blueprints" / "gateway.yaml"
+    gateway = yaml.safe_load(gateway_path.read_text(encoding="utf-8"))
+    gateway["uses_interfaces"] = []
+    gateway_path.write_text(
+        yaml.safe_dump(gateway, sort_keys=False),
+        encoding="utf-8",
+    )
+    graph = load_repository_blueprint_graph(
+        root,
+        schema_root=V5_SCHEMA_ROOT,
+        expected_schema_version=5,
+    )
+
+    with pytest.raises(InvocationError, match="undeclared-interface-use"):
+        dispatcher_core._resolve_host_dispatch_metadata(
+            caller_skill="demo",
+            target="demo-rtx.interface.execute",
+            args=["--route-smoke"],
+            repo_root=root,
+            target_version=3,
+            certification_view=_PassingCertificationView(),
+            graph=graph,
+        )
+
+
+def test_v5_python_runtime_uses_child_root_and_logical_package_only(
+    tmp_path: Path,
+) -> None:
+    root, graph = _load_v5_dispatch_graph(tmp_path)
+
+    with dispatcher_core._resolve_dispatch(
+        caller_skill="demo-rtx",
+        caller_source_id="demo-rtx.source.caller",
+        target="demo.interface.execute",
+        args=["--route-smoke"],
+        repo_root=root,
+        target_version=3,
+        certification_view=_PassingCertificationView(),
+        graph=graph,
+    ) as resolved:
+        child_root = root / "skills" / "demo" / "_rtx"
+        assert resolved.cwd == child_root
+        assert resolved.env is not None
+        assert str(child_root) not in resolved.env["PYTHONPATH"].split(
+            os.pathsep
+        )
+        assert resolved.python_target is not None
+        assert resolved.python_target.gateway_path == Path("runtime.py")
+        assert resolved.python_target.logical_package is not None
+        assert "--logical-package" in resolved.command
+        assert "--physical-package-prefix" in resolved.command
+        assert "--runtime-caller-module-id" in resolved.command
+        assert "--runtime-caller-source-id" in resolved.command
+        assert (
+            resolved.command[
+                resolved.command.index("--runtime-caller-module-id") + 1
+            ]
+            == "demo-rtx"
+        )
+        assert (
+            resolved.command[
+                resolved.command.index("--runtime-caller-source-id") + 1
+            ]
+            == "demo-rtx.source.runtime"
+        )
+        logical_command = resolved.metadata().command
+        assert "--runtime-caller-module-id" not in logical_command
+        assert "--runtime-caller-source-id" not in logical_command
+
+
+def test_v5_descriptor_free_snapshot_executes_logical_child_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, graph = _load_v5_dispatch_graph(tmp_path)
+    _use_descriptor_free_runtime(monkeypatch)
+    resolved = dispatcher_core._resolve_dispatch(
+        caller_skill="demo-rtx",
+        caller_source_id="demo-rtx.source.caller",
+        target="demo.interface.execute",
+        args=["--route-smoke"],
+        repo_root=root,
+        target_version=3,
+        certification_view=_PassingCertificationView(),
+        graph=graph,
+    )
+
+    completed = dispatcher_core._run_resolved_invocation(
+        resolved,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == "route-smoke ok\n"
+
+
+def test_v5_launch_cannot_shadow_the_canonical_runner_from_module_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, graph = _load_v5_dispatch_graph(tmp_path)
+    _use_descriptor_free_runtime(monkeypatch)
+    child_root = root / "skills" / "demo" / "_rtx"
+    inherited_src = Path(__file__).resolve().parents[1] / "src"
+    monkeypatch.setenv(
+        "PYTHONPATH",
+        os.pathsep.join(
+            [
+                ".",
+                "relative-bootstrap-path",
+                str(child_root),
+                str(child_root / "nested-bootstrap-path"),
+                str(inherited_src),
+            ]
+        ),
+    )
+    hostile_runner = child_root / "officina" / "runtime"
+    hostile_runner.mkdir(parents=True)
+    (child_root / "officina" / "__init__.py").write_text("", encoding="utf-8")
+    (hostile_runner / "__init__.py").write_text("", encoding="utf-8")
+    marker = child_root / "hostile-runner-loaded"
+    (hostile_runner / "python_machine_interface_runner.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('loaded', encoding='utf-8')\n"
+        "raise SystemExit(91)\n",
+        encoding="utf-8",
+    )
+    resolved = dispatcher_core._resolve_dispatch(
+        caller_skill="demo-rtx",
+        caller_source_id="demo-rtx.source.caller",
+        target="demo.interface.execute",
+        args=["--route-smoke"],
+        repo_root=root,
+        target_version=3,
+        certification_view=_PassingCertificationView(),
+        graph=graph,
+    )
+
+    assert resolved.command[1] == "-P"
+    inherited_entries = resolved.env["PYTHONPATH"].split(os.pathsep)
+    assert all(Path(entry).is_absolute() for entry in inherited_entries)
+    assert all(
+        not Path(entry).resolve().is_relative_to(child_root.resolve())
+        for entry in inherited_entries
+    )
+    assert str(inherited_src) in inherited_entries
+    completed = dispatcher_core._run_resolved_invocation(
+        resolved,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert not marker.exists()
 
 
 def test_v4_export_uses_source_gateway_language_and_process_entry(tmp_path: Path) -> None:

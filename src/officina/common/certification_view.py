@@ -35,6 +35,7 @@ from .blueprint_graph import (
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
+from .blueprint_authorization import AuthorizationResult
 from .blueprint_template import load_schema, schema_validator
 from .git_provenance import capture_git_snapshot, check_commit_readiness
 from .repository_paths import RepositoryPathError, repository_relative_posix
@@ -54,6 +55,7 @@ class CertificationDecision:
 @dataclass(frozen=True)
 class CurrentCertificate:
     node_id: str
+    version: int | None
     node_hash: str
     certificate_hash: str
     certified_at: str | None = None
@@ -77,6 +79,11 @@ class CertificateCurrentnessReport:
 
 
 class CertificationView(Protocol):
+    def check_authorization(
+        self,
+        authorization: AuthorizationResult,
+    ) -> CertificationDecision: ...
+
     def check_export(
         self,
         module_id: str,
@@ -103,10 +110,18 @@ class CertificateRecordView:
             payload = record.get("payload")
             subject = payload.get("subject") if isinstance(payload, Mapping) else None
             node_hash = payload.get("node_hash") if isinstance(payload, Mapping) else None
+            version = subject.get("version") if isinstance(subject, Mapping) else None
             certified_at = payload.get("certified_at") if isinstance(payload, Mapping) else None
             if (
                 not isinstance(subject, Mapping)
                 or subject.get("id") != node_id
+                or (
+                    version is not None
+                    and (
+                        not isinstance(version, int)
+                        or isinstance(version, bool)
+                    )
+                )
                 or not isinstance(node_hash, str)
             ):
                 continue
@@ -122,6 +137,7 @@ class CertificateRecordView:
             ).encode("utf-8")
             self._certificates[node_id] = CurrentCertificate(
                 node_id=node_id,
+                version=version,
                 node_hash=node_hash,
                 certificate_hash="sha256:" + hashlib.sha256(canonical).hexdigest(),
                 certified_at=certified_at if isinstance(certified_at, str) else None,
@@ -154,13 +170,49 @@ class CertificateRecordView:
             )
         return CertificationDecision(True, "current", "Current certificate.")
 
+    def check_authorization(
+        self,
+        authorization: AuthorizationResult,
+    ) -> CertificationDecision:
+        """Check exactly the resolver-owned v5 certificate requirement set."""
+
+        if not authorization.allowed:
+            return CertificationDecision(
+                False,
+                "authorization-denied",
+                authorization.diagnostic,
+            )
+        missing = tuple(
+            requirement
+            for requirement in sorted(authorization.required_certificates)
+            if (
+                (certificate := self.certificate_for(requirement.node_id))
+                is None
+                or certificate.version != requirement.version
+            )
+        )
+        if missing:
+            required = ", ".join(
+                f"{item.node_id}@{item.version}" for item in missing
+            )
+            return CertificationDecision(
+                False,
+                "authorization-certification-unavailable",
+                f"required current certificate unavailable: {required}",
+            )
+        return CertificationDecision(
+            True,
+            "current",
+            "All resolver-required certificates are current.",
+        )
+
 
 def certificate_log_path(node: BlueprintNode) -> Path:
     """Return the sole append-only certificate log path for one v4 node."""
 
     if any(separator in node.node_id for separator in ("/", "\\")):
         raise ValueError(f"certificate node ID contains a path separator: {node.node_id}")
-    return node.skill_root / ".certificates" / f"{node.node_id}.jsonl"
+    return node.module_root / ".certificates" / f"{node.node_id}.jsonl"
 
 
 def _default_schema_root() -> Path:
@@ -205,6 +257,7 @@ def evaluate_certificate_currentness(
     source_commit: str,
     certifier_identity: Mapping[str, object],
     checks_by_node: Mapping[str, Sequence[Mapping[str, object]]],
+    certification_basis_paths: Sequence[Path] | None = None,
     schema_root: Path | None = None,
     allow_non_atomic: bool = False,
 ) -> CertificateCurrentnessReport:
@@ -219,11 +272,17 @@ def evaluate_certificate_currentness(
     }
     try:
         snapshot = capture_git_snapshot(root)
-        global_tracked_paths = {
-            *resolve_certification_basis_paths(
+        selected_basis_paths = (
+            tuple(certification_basis_paths)
+            if certification_basis_paths is not None
+            else resolve_certification_basis_paths(
                 root,
+                expected_schema_version=graph.schema_version,
                 allow_non_atomic=allow_non_atomic,
-            ),
+            )
+        )
+        global_tracked_paths = {
+            *selected_basis_paths,
             *(node.blueprint_path for node in graph.nodes.values()),
         }
         certifier = graph.nodes.get(CERTIFIER_NODE_ID)
@@ -232,7 +291,7 @@ def evaluate_certificate_currentness(
                 node = graph.nodes.get(node_id)
                 if (
                     node is None
-                    or node.skill_root != certifier.skill_root
+                    or node.module_root != certifier.module_root
                     or not isinstance(state, NodeHashState)
                 ):
                     continue
@@ -303,7 +362,7 @@ def evaluate_certificate_currentness(
             entries = parse_certificate_log(
                 read_regular_file_bytes(
                     path,
-                    allowed_root=node.skill_root,
+                    allowed_root=node.module_root,
                     allow_non_atomic=allow_non_atomic,
                 ),
                 public_key_root,
@@ -327,6 +386,11 @@ def evaluate_certificate_currentness(
         if not isinstance(payload, Mapping):
             concerns.append("invalid-certificate-schema")
         else:
+            if (
+                graph.schema_version == 5
+                and payload.get("certificate_schema_version") == 1
+            ):
+                concerns.append("legacy-certificate-payload")
             if payload.get("subject") != _expected_subject(node, root):
                 concerns.append("subject-mismatch")
             if payload.get("source_commit") != source_commit:
@@ -418,6 +482,12 @@ class CertificateCurrentnessView:
             source_node_id,
         )
 
+    def check_authorization(
+        self,
+        authorization: AuthorizationResult,
+    ) -> CertificationDecision:
+        return self._record_view.check_authorization(authorization)
+
 
 @dataclass(frozen=True)
 class RepositoryCertificationState:
@@ -439,20 +509,38 @@ def derive_repository_certification_state(
     repo_root: Path,
     *,
     public_key_root: Path | None = None,
+    expected_schema_version: int = 5,
+    schema_root: Path | None = None,
     allow_non_atomic: bool = False,
 ) -> RepositoryCertificationState:
     """Derive the sole repository-backed certification state used by readers."""
 
     root = Path(repo_root).resolve()
-    schema_root = root / "references" / "blueprint"
+    if expected_schema_version not in {4, 5}:
+        raise ValueError("expected_schema_version must be 4 or 5")
+    selected_schema_root = (
+        Path(schema_root)
+        if schema_root is not None
+        else (
+            root / "references" / "blueprint"
+            if expected_schema_version == 5
+            else root / "references" / "blueprint" / "migrations" / "v4"
+        )
+    )
     try:
-        graph = load_repository_blueprint_graph(root, schema_root=schema_root)
+        graph = load_repository_blueprint_graph(
+            root,
+            schema_root=selected_schema_root,
+            expected_schema_version=expected_schema_version,
+        )
         if any(
-            node.declaration.get("schema_version") != 4
+            node.declaration.get("schema_version")
+            != expected_schema_version
             for node in graph.nodes.values()
         ):
             raise RepositoryCertificationError(
-                "repository certification accepts only all-v4 repositories"
+                "repository certification requires one closed schema-version "
+                f"{expected_schema_version} repository"
             )
         snapshot = capture_git_snapshot(root)
         if snapshot is None or snapshot.repo_root != root:
@@ -461,10 +549,12 @@ def derive_repository_certification_state(
             )
         basis_paths = resolve_certification_basis_paths(
             root,
+            expected_schema_version=expected_schema_version,
             allow_non_atomic=allow_non_atomic,
         )
         basis_hash = compute_certification_basis_hash(
             root,
+            expected_schema_version=expected_schema_version,
             allow_non_atomic=allow_non_atomic,
         )
         states = compute_node_hash_states(
@@ -481,7 +571,8 @@ def derive_repository_certification_state(
             snapshot.commit,
         )
         checks_by_node = {
-            node_id: expected_certifier_checks() for node_id in graph.nodes
+            node_id: expected_certifier_checks(expected_schema_version)
+            for node_id in graph.nodes
         }
         currentness = evaluate_certificate_currentness(
             graph,
@@ -495,7 +586,8 @@ def derive_repository_certification_state(
             source_commit=snapshot.commit,
             certifier_identity=certifier_identity,
             checks_by_node=checks_by_node,
-            schema_root=schema_root,
+            certification_basis_paths=basis_paths,
+            schema_root=selected_schema_root,
             allow_non_atomic=allow_non_atomic,
         )
     except RepositoryCertificationError:
@@ -523,9 +615,17 @@ def _certifier_target_postorder(
 ) -> tuple[str, ...] | None:
     """Return the exact dependency-first order for the certifier module target."""
 
+    module_ids = [CERTIFIER_NODE_ID]
+    runtime_node_id = f"{CERTIFIER_NODE_ID}-rtx"
+    if runtime_node_id in state.graph.nodes:
+        module_ids.append(runtime_node_id)
     roots = {
-        CERTIFIER_NODE_ID,
-        *state.graph.module_sources.get(CERTIFIER_NODE_ID, ()),
+        *module_ids,
+        *(
+            source_id
+            for module_id in module_ids
+            for source_id in state.graph.module_sources.get(module_id, ())
+        ),
     }
     try:
         return certification_target_postorder(
@@ -588,8 +688,9 @@ def _certifier_renewal_state_admissible(
         return False
     root = Path(repo_root).resolve()
     try:
+        schema_root = root / "references" / "blueprint"
         validator = schema_validator(
-            load_schema(root / "references" / "blueprint" / "certificate.schema.json")
+            load_schema(schema_root / "certificate.schema.json")
         )
         public_key_root = certificate_public_key_root(root)
         existing: set[str] = set()
@@ -602,7 +703,7 @@ def _certifier_renewal_state_admissible(
             entries = parse_certificate_log(
                 read_regular_file_bytes(
                     path,
-                    allowed_root=node.skill_root,
+                    allowed_root=node.module_root,
                     allow_non_atomic=allow_non_atomic,
                 ),
                 public_key_root,
@@ -654,16 +755,22 @@ class RepositoryCertificationView(CertificateCurrentnessView):
         repo_root: Path,
         source_commit: str,
         bootstrap_allowed: bool,
+        schema_version: int = 5,
     ) -> None:
         super().__init__(report)
+        if schema_version not in {4, 5}:
+            raise ValueError("schema_version must be 4 or 5")
         self.repo_root = Path(repo_root).resolve()
         self.source_commit = source_commit
         self.bootstrap_allowed = bootstrap_allowed
+        self.schema_version = schema_version
 
     def check_bootstrap(
         self,
         *,
         caller_module_id: str,
+        target_module_id: str,
+        terminal_module_id: str,
         interface_id: str,
         pattern_name: str | None,
         argv: Sequence[str],
@@ -679,14 +786,33 @@ class RepositoryCertificationView(CertificateCurrentnessView):
             return rejected
         tokens = tuple(argv)
         if interface_id == "skill-maker.interface.sync-blueprints":
-            if pattern_name == "check" and tokens == ("--check",):
+            if (
+                target_module_id == "skill-maker"
+                and terminal_module_id
+                == (
+                    "skill-maker-rtx"
+                    if self.schema_version == 5
+                    else "skill-maker"
+                )
+                and pattern_name == "check"
+                and tokens == ("--check",)
+            ):
                 return CertificationDecision(
                     True,
                     "certifier-self-certification",
                     "Bounded blueprint check for certifier self-certification.",
                 )
             return rejected
-        if interface_id != "skill-certifier.interface.certify":
+        if (
+            target_module_id != CERTIFIER_NODE_ID
+            or terminal_module_id
+            != (
+                f"{CERTIFIER_NODE_ID}-rtx"
+                if self.schema_version == 5
+                else CERTIFIER_NODE_ID
+            )
+            or interface_id != "skill-certifier.interface.certify"
+        ):
             return rejected
         if not tokens or tokens[0] != "certify":
             return rejected
@@ -723,18 +849,23 @@ class RepositoryCertificationView(CertificateCurrentnessView):
 def repository_certification_view(
     repo_root: Path,
     *,
+    expected_schema_version: int = 5,
+    schema_root: Path | None = None,
     allow_non_atomic: bool = False,
 ) -> RepositoryCertificationView:
     """Construct the canonical production view from current repository state."""
 
     state = derive_repository_certification_state(
         repo_root,
+        expected_schema_version=expected_schema_version,
+        schema_root=schema_root,
         allow_non_atomic=allow_non_atomic,
     )
     return RepositoryCertificationView(
         state.currentness,
         repo_root=repo_root,
         source_commit=state.source_commit,
+        schema_version=state.graph.schema_version,
         bootstrap_allowed=(
             _initial_certificate_state_admissible(state)
             or _certifier_renewal_state_admissible(
@@ -757,6 +888,17 @@ class RejectingCertificationView:
         source_node_id: str,
     ) -> CertificationDecision:
         del module_id, interface_id, interface_version, source_node_id
+        return CertificationDecision(
+            False,
+            "certification-unavailable",
+            "repository certification state is unavailable",
+        )
+
+    def check_authorization(
+        self,
+        authorization: AuthorizationResult,
+    ) -> CertificationDecision:
+        del authorization
         return CertificationDecision(
             False,
             "certification-unavailable",

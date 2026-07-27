@@ -8,20 +8,12 @@ description: Use when asked to triage email, process the inbox, or surface actio
 
 Category: productivity-general-assistant
 
-Skill Version: 1
+Skill Version: 3
 
 Uses Interfaces:
 - `email-triage.source.gateway -> email-triage.source.instructions-triage.interface.triage@2`
 - `email-triage.source.instructions-triage -> email-client.interface.default@3`
-- `email-triage.source.instructions-triage -> email-triage.source.rtx-decision-sink.interface.scripts-log-decision@1`
-- `email-triage.source.instructions-triage -> email-triage.source.rtx-failure-clearer.interface.scripts-clear-failure@1`
-- `email-triage.source.instructions-triage -> email-triage.source.rtx-failure-sentinel.interface.scripts-mark-failure@1`
-- `email-triage.source.instructions-triage -> email-triage.source.rtx-log-compactor.interface.scripts-prune-log@1`
-- `email-triage.source.instructions-triage -> email-triage.source.rtx-mail-envelope-stream.interface.fetch-filtered-envelopes@1`
-- `email-triage.source.instructions-triage -> email-triage.source.rtx-watermark-floor.interface.scripts-get-cutoff@1`
-- `email-triage.source.instructions-triage -> email-triage.source.rtx-watermark-writer.interface.scripts-update-watermark@1`
 - `email-triage.source.instructions-triage -> list-manager.interface.default@1`
-- `email-triage.source.rtx-mail-envelope-stream -> email-client.interface.mail-list@1`
 
 Public Interfaces:
 - `email-triage.interface.default`

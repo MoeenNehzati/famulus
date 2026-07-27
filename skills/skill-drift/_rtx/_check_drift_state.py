@@ -14,11 +14,20 @@ RTX_DIR = Path(__file__).resolve().parent
 if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
-from _skill_sources import (
-    SkillSource,
-    SkillSourceDiscoveryError,
-    observed_skill_sources,
-)
+if __package__:
+    from ._skill_sources import (
+        SkillSource,
+        SkillSourceDiscoveryError,
+        dedupe_skill_sources,
+        observed_skill_sources,
+    )
+else:
+    from _skill_sources import (
+        SkillSource,
+        SkillSourceDiscoveryError,
+        dedupe_skill_sources,
+        observed_skill_sources,
+    )
 from officina.common.certification_hashing import CertificationHashError, NodeHashState
 from officina.common.certificate_records import certificate_public_key_root
 from officina.common.blueprint_graph import (
@@ -54,6 +63,7 @@ class _V4DerivedState:
 def _v4_repository_state(
     repo_root: Path,
     *,
+    expected_schema_version: int = 5,
     allow_non_atomic: bool = False,
 ) -> tuple[
     RepositoryBlueprintGraph,
@@ -63,12 +73,18 @@ def _v4_repository_state(
     Path,
     dict[str, object],
 ]:
-    """Return the canonical all-v4 graph, hashes, basis, and certifier identity."""
+    """Return the canonical graph, hashes, basis, and certifier identity."""
 
     root = Path(repo_root).resolve()
     try:
         derived = derive_repository_certification_state(
             root,
+            expected_schema_version=expected_schema_version,
+            schema_root=(
+                root / "references" / "blueprint"
+                if expected_schema_version == 4
+                else None
+            ),
             allow_non_atomic=allow_non_atomic,
         )
     except (CertificationHashError, RepositoryCertificationError, OSError, ValueError) as exc:
@@ -78,7 +94,11 @@ def _v4_repository_state(
         dict(derived.states),
         derived.source_commit,
         derived.certification_basis_hash,
-        root / "references" / "blueprint",
+        (
+            root / "references" / "blueprint"
+            if expected_schema_version == 5
+            else root / "references" / "blueprint" / "migrations" / "v4"
+        ),
         dict(derived.certifier_identity),
     )
 
@@ -88,6 +108,7 @@ def _derive_v4_repository_state(
     target_node_ids: Sequence[str],
     *,
     public_key_root: Path,
+    expected_schema_version: int = 5,
     allow_non_atomic: bool = False,
 ) -> _V4DerivedState:
     root = Path(repo_root).resolve()
@@ -95,6 +116,12 @@ def _derive_v4_repository_state(
         derived = derive_repository_certification_state(
             root,
             public_key_root=public_key_root,
+            expected_schema_version=expected_schema_version,
+            schema_root=(
+                root / "references" / "blueprint"
+                if expected_schema_version == 4
+                else None
+            ),
             allow_non_atomic=allow_non_atomic,
         )
     except (CertificationHashError, RepositoryCertificationError, OSError, ValueError) as exc:
@@ -102,7 +129,7 @@ def _derive_v4_repository_state(
     unknown = sorted(set(target_node_ids) - set(derived.graph.nodes))
     if unknown:
         raise DriftCheckError(
-            "unknown exact v4 drift target: " + ", ".join(unknown)
+            "unknown exact drift target: " + ", ".join(unknown)
         )
     return _V4DerivedState(
         graph=derived.graph,
@@ -122,14 +149,16 @@ def _check_v4_repository(
     target_node_ids: Sequence[str],
     *,
     public_key_root: Path,
+    expected_schema_version: int = 5,
     allow_non_atomic: bool = False,
 ) -> CertificateCurrentnessReport:
-    """Return public-key-only currentness for exact v4 node IDs."""
+    """Return public-key-only currentness for exact node IDs."""
 
     return _derive_v4_repository_state(
         repo_root,
         target_node_ids,
         public_key_root=public_key_root,
+        expected_schema_version=expected_schema_version,
         allow_non_atomic=allow_non_atomic,
     ).currentness
 
@@ -328,23 +357,36 @@ def requested_scopes(args: argparse.Namespace) -> tuple[RequestedScope, ...]:
 
 def _module_node_ids(
     graph: RepositoryBlueprintGraph,
-    module_root: Path,
+    module_id: str,
 ) -> tuple[str, ...]:
-    resolved = module_root.resolve()
+    node = graph.nodes.get(module_id)
+    if node is None or getattr(node, "node_type", "module") != "module":
+        return ()
     return tuple(
         sorted(
-            node_id
-            for node_id, node in graph.nodes.items()
-            if node.skill_root.resolve() == resolved
+            {
+                module_id,
+                *graph.module_sources.get(module_id, ()),
+            }
         )
     )
 
 
-def _derive_for_source(source: SkillSource) -> _V4DerivedState:
+def _derive_for_source(
+    source: SkillSource,
+    *,
+    expected_schema_version: int = 5,
+) -> _V4DerivedState:
     try:
         derived = derive_repository_certification_state(
             source.package_root,
             public_key_root=certificate_public_key_root(source.package_root),
+            expected_schema_version=expected_schema_version,
+            schema_root=(
+                source.package_root / "references" / "blueprint"
+                if expected_schema_version == 4
+                else None
+            ),
         )
     except (CertificationHashError, RepositoryCertificationError, OSError, ValueError) as exc:
         raise DriftCheckError(str(exc)) from exc
@@ -358,6 +400,8 @@ def _derive_for_source(source: SkillSource) -> _V4DerivedState:
 
 def reports_for_scopes(
     scopes: tuple[RequestedScope, ...],
+    *,
+    expected_schema_version: int = 5,
 ) -> list[ModuleDriftReport]:
     reports: list[ModuleDriftReport] = []
     requested = {name for scope in scopes for name in scope.skill_names}
@@ -366,16 +410,22 @@ def reports_for_scopes(
     for scope in scopes:
         key = scope.source.package_root.resolve()
         for skill_name in scope.skill_names:
-            module_root = scope.source.skills_root / skill_name
-            if not (module_root / "SKILL.md").is_file():
+            if expected_schema_version == 4 and not (
+                scope.source.skills_root / skill_name / "SKILL.md"
+            ).is_file():
+                continue
+            if key not in cache:
+                cache[key] = _derive_for_source(
+                    scope.source,
+                    expected_schema_version=expected_schema_version,
+                )
+            derived = cache[key]
+            node_ids = _module_node_ids(derived.graph, skill_name)
+            if expected_schema_version == 5 and not node_ids:
                 continue
             found.add(skill_name)
-            if key not in cache:
-                cache[key] = _derive_for_source(scope.source)
-            derived = cache[key]
-            node_ids = _module_node_ids(derived.graph, module_root)
             if not node_ids:
-                raise DriftCheckError(f"{skill_name}: module owns no v4 nodes")
+                raise DriftCheckError(f"{skill_name}: module owns no nodes")
             reports.append(
                 ModuleDriftReport(
                     skill=skill_name,
@@ -405,6 +455,8 @@ def reports_for_scopes(
 
 def hash_reports_for_scopes(
     scopes: tuple[RequestedScope, ...],
+    *,
+    expected_schema_version: int = 5,
 ) -> tuple[list[SkillHashReport], list[SkillHashFailure]]:
     reports: list[SkillHashReport] = []
     failures: list[SkillHashFailure] = []
@@ -414,17 +466,23 @@ def hash_reports_for_scopes(
     for scope in scopes:
         key = scope.source.package_root.resolve()
         for skill_name in scope.skill_names:
-            module_root = scope.source.skills_root / skill_name
-            if not (module_root / "SKILL.md").is_file():
+            if expected_schema_version == 4 and not (
+                scope.source.skills_root / skill_name / "SKILL.md"
+            ).is_file():
                 continue
-            found.add(skill_name)
             try:
                 if key not in cache:
-                    cache[key] = _derive_for_source(scope.source)
+                    cache[key] = _derive_for_source(
+                        scope.source,
+                        expected_schema_version=expected_schema_version,
+                    )
                 derived = cache[key]
-                node_ids = _module_node_ids(derived.graph, module_root)
+                node_ids = _module_node_ids(derived.graph, skill_name)
+                if expected_schema_version == 5 and not node_ids:
+                    continue
+                found.add(skill_name)
                 if not node_ids:
-                    raise DriftCheckError(f"{skill_name}: module owns no v4 nodes")
+                    raise DriftCheckError(f"{skill_name}: module owns no nodes")
                 reports.append(
                     SkillHashReport(
                         skill=skill_name,

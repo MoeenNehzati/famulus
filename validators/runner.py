@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import importlib.util
 import json
 import os
@@ -10,13 +11,19 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from types import ModuleType
 from typing import Callable, NamedTuple, Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-_VALIDATOR_PACKAGES = (
-    ("repo", Path("validators")),
-    ("skill-maker", Path("skills/skill-maker/validators")),
+_REPOSITORY_VALIDATOR_PACKAGE = ("repo", Path("validators"))
+_CURRENT_SKILL_VALIDATOR_PACKAGE = (
+    "skill-maker",
+    Path("skills/skill-maker/validators"),
+)
+_FUTURE_SKILL_VALIDATOR_PACKAGE = (
+    "skill-maker",
+    Path("validators/skill"),
 )
 _SKIP = {"__init__.py", "runner.py", "skill_md_body.py"}
 _REGULAR_MODES = {"100644", "100755"}
@@ -243,8 +250,28 @@ def _build_isolated_git_dir(repo_root: Path, mirror_root: Path) -> Path:
 def _validator_paths(
     repo_root: Path,
 ) -> dict[str, Path]:
+    current_skill_dir = repo_root / _CURRENT_SKILL_VALIDATOR_PACKAGE[1]
+    future_skill_dir = repo_root / _FUTURE_SKILL_VALIDATOR_PACKAGE[1]
+    if current_skill_dir.is_dir() and future_skill_dir.is_dir():
+        raise ValidatorRunnerError(
+            "ambiguous skill validator layout: both "
+            "skills/skill-maker/validators and validators/skill exist"
+        )
+    packages = [
+        _REPOSITORY_VALIDATOR_PACKAGE,
+        *(
+            [_CURRENT_SKILL_VALIDATOR_PACKAGE]
+            if current_skill_dir.is_dir()
+            else []
+        ),
+        *(
+            [_FUTURE_SKILL_VALIDATOR_PACKAGE]
+            if future_skill_dir.is_dir()
+            else []
+        ),
+    ]
     paths: dict[str, Path] = {}
-    for package_id, relative_package in _VALIDATOR_PACKAGES:
+    for package_id, relative_package in packages:
         package_dir = repo_root / relative_package
         if not package_dir.is_dir():
             continue
@@ -282,7 +309,7 @@ def _selected_validator_paths(
 def _load_validator(
     validator_id: str,
     path: Path,
-) -> Callable[[Path], list[str]]:
+) -> tuple[ModuleType, Callable[[Path], list[str]]]:
     module_name = "_validator_" + validator_id.replace("/", "_").replace("-", "_")
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
@@ -299,7 +326,20 @@ def _load_validator(
         raise ValidatorRunnerError(
             f"{validator_id}: validator has no callable validate"
         )
-    return validate_fn
+    return module, validate_fn
+
+
+def _validated_errors(
+    validator_id: str,
+    errors: object,
+) -> list[str]:
+    if not isinstance(errors, list) or not all(
+        isinstance(error, str) for error in errors
+    ):
+        raise ValidatorRunnerError(
+            f"{validator_id}: validate must return list[str]"
+        )
+    return errors
 
 
 def _run_tracked_validators(
@@ -315,23 +355,144 @@ def _run_tracked_validators(
         and not Path(entry).is_relative_to(REPO_ROOT)
         and entry not in mirror_paths
     ]
-    results: dict[str, list[str]] = {}
-    for validator_id, path in _selected_validator_paths(
+    selected_paths = _selected_validator_paths(
         tracked_root,
         validator_ids,
-    ):
-        validate_fn = _load_validator(validator_id, path)
+    )
+    loaded = {
+        validator_id: _load_validator(validator_id, path)
+        for validator_id, path in selected_paths
+    }
+    graph_consumers = {
+        validator_id
+        for validator_id, (module, _validate_fn) in loaded.items()
+        if getattr(module, "REQUIRES_BLUEPRINT_GRAPH", False) is True
+    }
+    preflight_owner_id: str | None = None
+    preflight_graph: object | None = None
+    preflight_errors: list[str] = []
+    if graph_consumers:
+        available = _validator_paths(tracked_root)
+        owner_ids = [
+            owner_id
+            for owner_id in (
+                "skill-maker/blueprints",
+            )
+            if owner_id in available
+        ]
+        if len(owner_ids) != 1:
+            required_consumers = [
+                validator_id
+                for validator_id in graph_consumers
+                if not getattr(
+                    loaded[validator_id][0],
+                    "BLUEPRINT_GRAPH_OPTIONAL",
+                    False,
+                )
+            ]
+            if required_consumers:
+                raise ValidatorRunnerError(
+                    "graph validators require exactly one blueprint preflight owner"
+                )
+            owner_ids = []
+        if not owner_ids:
+            graph_consumers = set()
+        else:
+            preflight_owner_id = owner_ids[0]
+    if preflight_owner_id is not None:
+        if preflight_owner_id not in loaded:
+            loaded[preflight_owner_id] = _load_validator(
+                preflight_owner_id,
+                available[preflight_owner_id],
+            )
+        owner_module, _owner_validate = loaded[preflight_owner_id]
+        preflight_fn = getattr(owner_module, "preflight", None)
+        if not callable(preflight_fn):
+            raise ValidatorRunnerError(
+                f"{preflight_owner_id}: blueprint preflight is unavailable"
+            )
         try:
-            errors = validate_fn(tracked_root)
+            schema_version_fn = getattr(
+                owner_module,
+                "repository_schema_version",
+                None,
+            )
+            if callable(schema_version_fn):
+                preflight_result = preflight_fn(
+                    tracked_root,
+                    expected_schema_version=schema_version_fn(tracked_root),
+                )
+            else:
+                preflight_result = preflight_fn(tracked_root)
+        except BaseException as exc:
+            raise ValidatorRunnerError(
+                f"{preflight_owner_id}: validator execution failed: {exc}"
+            ) from exc
+        if (
+            not isinstance(preflight_result, tuple)
+            or len(preflight_result) != 2
+        ):
+            raise ValidatorRunnerError(
+                f"{preflight_owner_id}: preflight must return "
+                "tuple[list[str], graph | None]"
+            )
+        preflight_errors = _validated_errors(
+            preflight_owner_id,
+            preflight_result[0],
+        )
+        preflight_graph = preflight_result[1]
+    results: dict[str, list[str]] = {}
+    if preflight_errors and preflight_owner_id is not None:
+        mirror_prefix = str(tracked_root)
+        display_prefix = str(display_root)
+        results[preflight_owner_id] = [
+            error.replace(mirror_prefix, display_prefix)
+            for error in preflight_errors
+        ]
+    for validator_id, _path in selected_paths:
+        module, validate_fn = loaded[validator_id]
+        graph_view: object | None = None
+        pristine_graph_view: object | None = None
+        if validator_id in graph_consumers:
+            if preflight_errors or preflight_graph is None:
+                continue
+            validate_with_graph = getattr(module, "validate_with_graph", None)
+            if not callable(validate_with_graph):
+                raise ValidatorRunnerError(
+                    f"{validator_id}: graph validator has no callable "
+                    "validate_with_graph"
+                )
+            graph_view = copy.deepcopy(preflight_graph)
+            pristine_graph_view = copy.deepcopy(graph_view)
+            validate_fn = lambda root, fn=validate_with_graph: fn(
+                root,
+                graph_view,
+            )
+        elif validator_id == preflight_owner_id:
+            if preflight_errors or preflight_graph is None:
+                continue
+            validate_with_graph = getattr(module, "validate_with_graph", None)
+            if callable(validate_with_graph):
+                graph_view = copy.deepcopy(preflight_graph)
+                pristine_graph_view = copy.deepcopy(graph_view)
+                validate_fn = lambda root, fn=validate_with_graph: fn(
+                    root,
+                    graph_view,
+                )
+        try:
+            errors = _validated_errors(
+                validator_id,
+                validate_fn(tracked_root),
+            )
+        except ValidatorRunnerError:
+            raise
         except BaseException as exc:
             raise ValidatorRunnerError(
                 f"{validator_id}: validator execution failed: {exc}"
             ) from exc
-        if not isinstance(errors, list) or not all(
-            isinstance(error, str) for error in errors
-        ):
-            raise ValidatorRunnerError(
-                f"{validator_id}: validate must return list[str]"
+        if graph_view != pristine_graph_view:
+            errors.append(
+                f"{validator_id}: validator mutated its blueprint graph view"
             )
         if errors:
             mirror_prefix = str(tracked_root)

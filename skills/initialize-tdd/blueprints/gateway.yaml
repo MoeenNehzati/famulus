@@ -33,82 +33,274 @@ interfaces:
             name and implementation language.
           required: true
           sensitivity: user-private
-          type: {kind: string, sensitivity: user-private}
-      preconditions: []
-      interaction: {mode: interactive, channel: tty, unattended_outcome: clarification-required}
+          type:
+            kind: string
+            sensitivity: user-private
       caller_warnings:
-      - external-side-effect: The workflow creates a project directory, initializes Git,
-          and for Python creates a virtual environment and installs packages from the
-          configured Python package index.
-      outputs:
-      - id: response
-        audience: human
-        description: Scaffold summary, fresh verification result, or the missing input
-          or failure that prevents completion.
-        direct_io_ref: write-1
-        type: {kind: string, sensitivity: derived-private}
-        cardinality: {minimum: 1, maximum: 1}
-        ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        empty: Never empty.
-      outcomes:
-      - {id: completed, class: success, outputs: [response], effects: [project-files, git-repository, python-bootstrap, starter-tests], caller_action: Continue development in the reported project directory; no commit was created.}
-      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: Supply the missing project name or language.}
-      - {id: failed, class: partial, outputs: [response], effects: [project-files, git-repository, python-bootstrap, starter-tests], caller_action: "Resolve the reported filesystem, bootstrap, or test failure before relying on the scaffold."}
-      execution:
-        state_effect: mutating
-        lifecycle: finite
-        consistency: {live: "The response reflects filesystem, Git, bootstrap, and test results observed during this invocation."}
-        effects:
-        - {id: project-files, direct_io_ref: write-2, action: create, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [completed, failed], confirmation_evidence: {kind: direct-io, direct_io_ref: write-2}, reversibility: {reversible: Remove the newly created project directory after confirming it did not preexist.}}
-        - {id: git-repository, direct_io_ref: write-3, action: execute, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [completed, failed], confirmation_evidence: {kind: direct-io, direct_io_ref: write-3}, reversibility: {reversible: Remove only the new project .git directory if initialization must be undone.}}
-        - {id: python-bootstrap, direct_io_ref: write-4, action: execute, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [completed, failed], confirmation_evidence: {kind: direct-io, direct_io_ref: write-4}, reversibility: {reversible: Remove the generated virtual environment and reinstall dependencies.}}
-        - {id: starter-tests, direct_io_ref: write-5, action: execute, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [completed, failed], confirmation_evidence: {kind: output, output_ref: response}, reversibility: {reversible: The verification command is observational apart from disposable test caches.}}
-        mutation_safety:
-          atomicity: {non_atomic: "Directory creation, asset copies, alias creation, Git initialization, bootstrap, and tests are separate steps."}
-          concurrent_invocations: {unsafe: Concurrent initialization of the same slug can race on the project directory.}
-          idempotency: {non_idempotent: Re-running against an existing nonempty project is refused rather than treated as success.}
-          on_uncertain_completion: {verify_then_decide: "Inspect the project directory, Git state, virtual environment, and fresh pytest output before retrying."}
-          partial_effects_on_failure: {possible: "Earlier scaffold files, aliases, Git metadata, or environment files remain when a later bootstrap or test step fails."}
-          rollback_on_failure: {available: Remove only the newly created scaffold after verifying the directory did not contain prior work.}
-        verification:
-        - {method: output-schema, output_ref: response}
-        - {method: direct-io-state, direct_io_ref: write-2}
-      helpers: []
+      - external-side-effect: The workflow creates a project directory, initializes
+          Git, and for Python creates a virtual environment and installs packages
+          from the configured Python package index.
       direct_io:
         network:
         - access: request
           content: Python package index metadata
           endpoint: https://pypi.org/simple/
-          formats: [html]
+          formats:
+          - html
           id: network-1
           medium: network-request
-          reason: The generated bootstrap upgrades pip and resolves declared Python dependencies through pip's default index unless caller configuration overrides it.
+          reason: The generated bootstrap upgrades pip and resolves declared Python
+            dependencies through pip's default index unless caller configuration overrides
+            it.
           sensitivity: public
           system: pip
         - access: download
           content: Python package distributions
           endpoint: https://files.pythonhosted.org/
-          formats: [wheel, source-distribution]
+          formats:
+          - wheel
+          - source-distribution
           id: network-2
           medium: network-request
-          reason: Pip's default package host serves distributions selected from the default index; configured mirrors can replace this endpoint.
+          reason: Pip's default package host serves distributions selected from the
+            default index; configured mirrors can replace this endpoint.
           sensitivity: public
           system: pip
         reads:
-        - {id: read-1, medium: prompt, access: read, system: agent-runtime, content: project initialization request, formats: [text], sensitivity: user-private}
-        - {id: read-2, medium: local-filesystem, access: read, system: filesystem, content: common and Python scaffold assets, formats: [markdown, configuration, shell, python, text], sensitivity: public, path: $module/assets/**, path_match: glob, reason: Copy the selected templates and replace their project placeholders.}
+        - access: read
+          content: project initialization request
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        - access: read
+          content: common and Python scaffold assets
+          formats:
+          - markdown
+          - configuration
+          - shell
+          - python
+          - text
+          id: read-2
+          medium: local-filesystem
+          path: $module/assets/**
+          path_match: glob
+          reason: Copy the selected templates and replace their project placeholders.
+          sensitivity: public
+          system: filesystem
         writes:
-        - {id: write-1, medium: prompt, access: write, system: agent-runtime, content: scaffold result, formats: [markdown], sensitivity: derived-private}
-        - {id: write-2, medium: local-filesystem, access: write, system: filesystem, content: scaffolded project files and compatibility aliases, formats: [markdown, configuration, shell, python, text, symlink], sensitivity: user-private, path: <caller-cwd>/<project-slug>/**, path_match: glob, reason: Create the requested generic or Python project scaffold.}
-        - {id: write-3, medium: subprocess, access: execute, system: git, content: Git repository initialization, formats: [argv, git-metadata], sensitivity: user-private, path: <caller-cwd>/<project-slug>/.git, path_match: exact, reason: Initialize a new repository without creating a commit.}
-        - {id: write-4, medium: subprocess, access: execute, system: generated install.sh, content: Python virtual environment creation and dependency installation, formats: [argv, text], sensitivity: user-private, path: <caller-cwd>/<project-slug>/.venv, path_match: exact, reason: Bootstrap the Python starter environment.}
-        - {id: write-5, medium: subprocess, access: execute, system: pytest, content: Starter config and logger verification, formats: [argv, text], sensitivity: derived-private, path: <caller-cwd>/<project-slug>/tests, path_match: exact, reason: Verify both generated starter tests pass before reporting success.}
+        - access: write
+          content: scaffold result
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: scaffolded project files and compatibility aliases
+          formats:
+          - markdown
+          - configuration
+          - shell
+          - python
+          - text
+          - symlink
+          id: write-2
+          medium: local-filesystem
+          path: <caller-cwd>/<project-slug>/**
+          path_match: glob
+          reason: Create the requested generic or Python project scaffold.
+          sensitivity: user-private
+          system: filesystem
+        - access: execute
+          content: Git repository initialization
+          formats:
+          - argv
+          - git-metadata
+          id: write-3
+          medium: subprocess
+          path: <caller-cwd>/<project-slug>/.git
+          path_match: exact
+          reason: Initialize a new repository without creating a commit.
+          sensitivity: user-private
+          system: git
+        - access: execute
+          content: Python virtual environment creation and dependency installation
+          formats:
+          - argv
+          - text
+          id: write-4
+          medium: subprocess
+          path: <caller-cwd>/<project-slug>/.venv
+          path_match: exact
+          reason: Bootstrap the Python starter environment.
+          sensitivity: user-private
+          system: generated install.sh
+        - access: execute
+          content: Starter config and logger verification
+          formats:
+          - argv
+          - text
+          id: write-5
+          medium: subprocess
+          path: <caller-cwd>/<project-slug>/tests
+          path_match: exact
+          reason: Verify both generated starter tests pass before reporting success.
+          sensitivity: derived-private
+          system: pytest
+      execution:
+        consistency:
+          live: The response reflects filesystem, Git, bootstrap, and test results
+            observed during this invocation.
+        effects:
+        - action: create
+          confirmation_evidence:
+            direct_io_ref: write-2
+            kind: direct-io
+          direct_io_ref: write-2
+          id: project-files
+          may_occur_in_outcomes:
+          - completed
+          - failed
+          reversibility:
+            reversible: Remove the newly created project directory after confirming
+              it did not preexist.
+          value_source:
+            argument_ref: request
+            kind: argument
+        - action: execute
+          confirmation_evidence:
+            direct_io_ref: write-3
+            kind: direct-io
+          direct_io_ref: write-3
+          id: git-repository
+          may_occur_in_outcomes:
+          - completed
+          - failed
+          reversibility:
+            reversible: Remove only the new project .git directory if initialization
+              must be undone.
+          value_source:
+            argument_ref: request
+            kind: argument
+        - action: execute
+          confirmation_evidence:
+            direct_io_ref: write-4
+            kind: direct-io
+          direct_io_ref: write-4
+          id: python-bootstrap
+          may_occur_in_outcomes:
+          - completed
+          - failed
+          reversibility:
+            reversible: Remove the generated virtual environment and reinstall dependencies.
+          value_source:
+            argument_ref: request
+            kind: argument
+        - action: execute
+          confirmation_evidence:
+            kind: output
+            output_ref: response
+          direct_io_ref: write-5
+          id: starter-tests
+          may_occur_in_outcomes:
+          - completed
+          - failed
+          reversibility:
+            reversible: The verification command is observational apart from disposable
+              test caches.
+          value_source:
+            argument_ref: request
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: Directory creation, asset copies, alias creation, Git initialization,
+              bootstrap, and tests are separate steps.
+          concurrent_invocations:
+            unsafe: Concurrent initialization of the same slug can race on the project
+              directory.
+          idempotency:
+            non_idempotent: Re-running against an existing nonempty project is refused
+              rather than treated as success.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the project directory, Git state, virtual
+              environment, and fresh pytest output before retrying.
+          partial_effects_on_failure:
+            possible: Earlier scaffold files, aliases, Git metadata, or environment
+              files remain when a later bootstrap or test step fails.
+          rollback_on_failure:
+            available: Remove only the newly created scaffold after verifying the
+              directory did not contain prior work.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: response
+        - direct_io_ref: write-2
+          method: direct-io-state
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: clarification-required
+      outcomes:
+      - caller_action: Continue development in the reported project directory; no
+          commit was created.
+        class: success
+        effects:
+        - project-files
+        - git-repository
+        - python-bootstrap
+        - starter-tests
+        id: completed
+        outputs:
+        - response
+      - caller_action: Supply the missing project name or language.
+        class: refusal
+        effects: []
+        id: clarification-required
+        outputs:
+        - response
+      - caller_action: Resolve the reported filesystem, bootstrap, or test failure
+          before relying on the scaffold.
+        class: partial
+        effects:
+        - project-files
+        - git-repository
+        - python-bootstrap
+        - starter-tests
+        id: failed
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Scaffold summary, fresh verification result, or the missing input
+          or failure that prevents completion.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
     description: Create a new approval-gated TDD project scaffold from explicit project
-      name and language inputs, verify the Python starter when selected, and never commit it.
+      name and language inputs, verify the Python starter when selected, and never
+      commit it.
     version: 1
 node_type: behavioral_source
-schema_version: 4
-uses_interfaces: []
+schema_version: 5
+uses_interfaces:
+- interface: initialize-tdd.interface.setup-compat-aliases
+  version: 1
 version: 1

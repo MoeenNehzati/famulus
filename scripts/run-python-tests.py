@@ -17,6 +17,7 @@ BASE_TEST_DIRS = [
 ]
 
 PRECOMMIT_EXCLUDED_TEST_DIRS = {
+    "skills/install-assistant-tools/_rtx/tests",
     "skills/install-assistant-tools/tests",
 }
 
@@ -25,7 +26,7 @@ PORTABILITY_TESTS = (
     "tests/test_officina_atomic_files.py::test_windows_native_secure_create_replace_append_and_acl",
     "tests/test_officina_dispatcher.py::test_python_process_target_keeps_gateway_and_entry_separate",
     "tests/test_officina_git_provenance.py::test_git_test_repository_preserves_exact_bytes_under_ambient_autocrlf",
-    "skills/recurring-tasks/tests/test_schedule_backend.py::test_linux_sync_writes_units_and_enables_timer",
+    "skills/recurring-tasks/_rtx/tests/test_schedule_backend.py::test_linux_sync_writes_units_and_enables_timer",
     "tests/test_officina_blueprint_graph.py::test_content_ownership_accepts_equivalent_repository_alias",
     "tests/test_validator_runner.py::test_run_all_isolates_unmerged_index_and_restores_git_environment",
 )
@@ -41,7 +42,8 @@ def _discover_skill_test_dirs() -> list[str]:
     skills_root = REPO_ROOT / "skills"
     return sorted(
         path.relative_to(REPO_ROOT).as_posix()
-        for path in skills_root.glob("*/tests")
+        for pattern in ("*/tests", "*/_rtx/tests")
+        for path in skills_root.glob(pattern)
         if path.is_dir()
     )
 
@@ -65,6 +67,14 @@ def _resolve_suite(name: str) -> list[str]:
     return test_dirs
 
 
+def _execution_groups(test_dirs: list[str]) -> list[list[str]]:
+    nested = sorted(
+        path for path in test_dirs if "/_rtx/tests" in path
+    )
+    shared = [path for path in test_dirs if path not in nested]
+    return ([shared] if shared else []) + [[path] for path in nested]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run repo Python tests using an explicit named suite."
@@ -85,9 +95,12 @@ def main() -> int:
 
     test_dirs = _resolve_suite(args.suite)
     pytest_args = _pytest_args(verbose=args.verbose)
-    cmd = [sys.executable, "-m", "pytest", *pytest_args, *test_dirs]
-    completed = subprocess.run(cmd, cwd=REPO_ROOT)
-    return completed.returncode
+    for group in _execution_groups(test_dirs):
+        cmd = [sys.executable, "-m", "pytest", *pytest_args, *group]
+        completed = subprocess.run(cmd, cwd=REPO_ROOT)
+        if completed.returncode:
+            return completed.returncode
+    return 0
 
 
 if __name__ == "__main__":

@@ -76,8 +76,8 @@
     },
     "canonical_path": {
       "type": "string",
-      "pattern": "^references/(?:[a-z0-9._-]+/)*[a-z0-9._-]+\\.standard\\.yaml$",
-      "description": "Repository-relative path of this canonical YAML document. Renderers use this explicit identity and must not infer it from the standard ID."
+      "pattern": "^references/(?:[a-z0-9._-]+/)*[a-z0-9._-]+\\.(?:standard|candidate)\\.yaml$",
+      "description": "Repository-relative path of this standard YAML document. Canonical standards end in .standard.yaml; shadow candidates end in .candidate.yaml. Renderers use this explicit identity and must not infer it from the standard ID."
     },
     "render_mode": {
       "enum": ["semantic", "source-faithful"],

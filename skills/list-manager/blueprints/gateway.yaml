@@ -10,6 +10,8 @@ id: list-manager.source.gateway
 interfaces:
   list-manager.source.gateway.interface.default:
     contract:
+      arguments: {}
+      caller_warnings: []
       direct_io:
         network: []
         reads:
@@ -28,42 +30,87 @@ interfaces:
           id: write-1
           medium: prompt
           sensitivity: derived-private
-      arguments: {}
-      preconditions: []
-      interaction: {mode: unattended}
-      caller_warnings: []
-      outputs:
-      - id: response
-        audience: human
-        description: A response that routes list work through the declared interfaces and
-          relays rendered list output when requested.
-        direct_io_ref: write-1
-        cardinality: {minimum: 1, maximum: 1}
-        ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        empty: The response is nonempty on successful handling.
-        type: {kind: string, sensitivity: derived-private, description: Markdown response}
-      outcomes:
-      - id: success
-        class: success
-        outputs: [response]
-        effects: []
-        caller_action: Present the response to the user.
-      - id: blocked
-        class: refusal
-        outputs: [response]
-        effects: []
-        caller_action: Supply a missing required value or resolve the reported ambiguity before retrying.
       execution:
-        state_effect: read-only
+        consistency:
+          live: The response is based on the prompt and any interface results obtained
+            during this invocation.
         lifecycle: finite
-        consistency: {live: The response is based on the prompt and any interface results obtained during this invocation.}
-        verification: [{method: direct-io-state, direct_io_ref: write-1}]
+        state_effect: read-only
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
       helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Present the response to the user.
+        class: success
+        effects: []
+        id: success
+        outputs:
+        - response
+      - caller_action: Supply a missing required value or resolve the reported ambiguity
+          before retrying.
+        class: refusal
+        effects: []
+        id: blocked
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: A response that routes list work through the declared interfaces
+          and relays rendered list output when requested.
+        direct_io_ref: write-1
+        empty: The response is nonempty on successful handling.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: Markdown response
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 4
-uses_interfaces: []
+schema_version: 5
+uses_interfaces:
+- interface: list-manager.interface.beautify-list
+  version: 1
+- interface: list-manager.interface.cloud-create-entry
+  version: 1
+- interface: list-manager.interface.cloud-delete
+  version: 1
+- interface: list-manager.interface.cloud-init
+  version: 1
+- interface: list-manager.interface.cloud-list-categories
+  version: 1
+- interface: list-manager.interface.cloud-read
+  version: 1
+- interface: list-manager.interface.cloud-read-beautify
+  version: 1
+- interface: list-manager.interface.cloud-update
+  version: 1
+- interface: list-manager.interface.create-entry
+  version: 1
+- interface: list-manager.interface.describe-schema
+  version: 1
+- interface: list-manager.interface.generate-id
+  version: 1
+- interface: list-manager.interface.init-list
+  version: 1
+- interface: list-manager.interface.migrate-markdown
+  version: 1
+- interface: list-manager.interface.read-beautify
+  version: 1
+- interface: list-manager.interface.read-list
+  version: 1
+- interface: list-manager.interface.update-list
+  version: 1
 version: 1

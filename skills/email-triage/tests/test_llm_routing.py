@@ -26,7 +26,7 @@ def _source_for_export(root: dict, export_id: str) -> tuple[dict, dict]:
     return _source_for_interface(root, source_interface)
 
 
-def test_default_interface_routes_only_to_triage_v2() -> None:
+def test_default_interface_routes_to_triage_and_declares_generated_dispatches() -> None:
     root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
     default, default_interface = _source_for_export(
         root, "email-triage.interface.default"
@@ -34,6 +34,8 @@ def test_default_interface_routes_only_to_triage_v2() -> None:
 
     markdown_interfaces = []
     for export_id, export in root["exports"].items():
+        if "source_interface" not in export:
+            continue
         source, interface = _source_for_interface(root, export["source_interface"])
         if source["gateway"]["language"] == "Markdown":
             markdown_interfaces.append((export_id, interface["version"]))
@@ -42,16 +44,39 @@ def test_default_interface_routes_only_to_triage_v2() -> None:
         ("email-triage.interface.triage", 2),
     ]
     assert default_interface["version"] == 2
-    assert default["uses_interfaces"] == [
-        {
-            "interface": (
-                "email-triage.source.instructions-triage.interface.triage"
-            ),
-            "version": 2,
-        }
-    ]
-
+    declared = {
+        (entry["interface"], entry["version"])
+        for entry in default["uses_interfaces"]
+    }
     body = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    generated_block = body.split("<!-- BEGIN BLUEPRINT INTERFACES -->", 1)[
+        1
+    ].split("<!-- END BLUEPRINT INTERFACES -->", 1)[0]
+    generated_dispatch_ids = {
+        line.split("dispatcher --caller-skill email-triage ", 1)[1]
+        .split()[0]
+        .strip("`")
+        for line in generated_block.splitlines()
+        if "dispatcher --caller-skill email-triage " in line
+    }
+    generated_dispatches = {
+        (interface_id, version)
+        for interface_id, version in declared
+        if interface_id in generated_dispatch_ids
+    }
+    triage_route = (
+        "email-triage.source.instructions-triage.interface.triage",
+        2,
+    )
+
+    assert set(generated_dispatch_ids) == {
+        entry["interface"]
+        for entry in default["uses_interfaces"]
+        if entry["interface"].startswith("email-triage.interface.")
+    }
+    assert generated_dispatches <= declared
+    assert declared - generated_dispatches == {triage_route}
+
     authored = body.split("<!-- END BLUEPRINT INTERFACES -->", 1)[1]
     assert "email-triage.interface.triage" in authored
     assert "update-personal-preferences" not in authored

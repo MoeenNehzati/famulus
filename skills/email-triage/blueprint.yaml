@@ -1,97 +1,14 @@
 authority:
   owns_filesystem: []
-  suggested_permissions:
-    bash:
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_envelope_gate.py
-      - Interface
-      reason: Filters email-client mail-list JSON to strictly-after-watermark envelopes.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_mail_envelope_stream.py
-      - Interface
-      reason: Fetches mail-list envelopes through the declared boundary and emits
-        only strictly-after-watermark results.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_watermark_floor.py
-      - Interface
-      reason: Suggested approval for the email triage runtime.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_watermark_writer.py
-      - Interface
-      reason: Suggested approval for the email triage runtime.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_decision_sink.py
-      - Interface
-      reason: Suggested approval for the email triage runtime.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_log_compactor.py
-      - Interface
-      reason: Suggested approval for the email triage runtime.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_failure_sentinel.py
-      - Interface
-      reason: Records a failed triage run so update-watermark refuses to advance and
-        the scheduled health check can report it.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_failure_clearer.py
-      - Interface
-      reason: Clears a latched triage failure after its cause is fixed without advancing
-        the watermark.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_write_metrics.py
-      - Interface
-      reason: Writes metrics (scanned, added, skipped counts) from a triage run to
-        status.json for visibility.
-    network: []
 category: productivity-general-assistant
-description: Coordinates watermark-safe email triage, classification logging, failure recovery, and routing of extracted action items.
+children:
+  email-triage-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
-- CHANGES\.md
-- DEBUGGING\.md
-- SKILL\.md
-- _rtx/__init__\.py
-- _rtx/_decision_sink\.py
-- _rtx/_envelope_gate\.py
-- _rtx/_failure_clearer\.py
-- _rtx/_failure_sentinel\.py
-- _rtx/_log_compactor\.py
-- _rtx/_mail_envelope_stream\.py
-- _rtx/_watermark_floor\.py
-- _rtx/_watermark_writer\.py
-- _rtx/_write_metrics\.py
-- check\-triage\-status\.sh
-- instructions/triage\.md
-- tests/test_fetch_filtered_envelopes\.py
-- tests/test_filter_envelopes\.py
-- tests/test_llm_routing\.py
-- tests/test_watermark\.py
+- (?:CHANGES\.md|DEBUGGING\.md|SKILL\.md|instructions/triage\.md|tests/test_llm_routing\.py)
+description: Coordinates watermark-safe email triage, classification logging, failure
+  recovery, and routing of extracted action items.
 discovery:
   mechanism: skill
 exports:
@@ -104,47 +21,65 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-triage.source.rtx-mail-envelope-stream.interface.fetch-filtered-envelopes
+    facade_interface:
+      interface: email-triage-rtx.interface.fetch-filtered-envelopes
+      version: 1
   email-triage.interface.scripts-clear-failure:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-triage.source.rtx-failure-clearer.interface.scripts-clear-failure
+    facade_interface:
+      interface: email-triage-rtx.interface.scripts-clear-failure
+      version: 1
   email-triage.interface.scripts-filter-envelopes:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-triage.source.rtx-envelope-gate.interface.scripts-filter-envelopes
+    facade_interface:
+      interface: email-triage-rtx.interface.scripts-filter-envelopes
+      version: 1
   email-triage.interface.scripts-get-cutoff:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-triage.source.rtx-watermark-floor.interface.scripts-get-cutoff
+    facade_interface:
+      interface: email-triage-rtx.interface.scripts-get-cutoff
+      version: 1
   email-triage.interface.scripts-log-decision:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-triage.source.rtx-decision-sink.interface.scripts-log-decision
+    facade_interface:
+      interface: email-triage-rtx.interface.scripts-log-decision
+      version: 1
   email-triage.interface.scripts-mark-failure:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-triage.source.rtx-failure-sentinel.interface.scripts-mark-failure
+    facade_interface:
+      interface: email-triage-rtx.interface.scripts-mark-failure
+      version: 1
   email-triage.interface.scripts-prune-log:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-triage.source.rtx-log-compactor.interface.scripts-prune-log
+    facade_interface:
+      interface: email-triage-rtx.interface.scripts-prune-log
+      version: 1
   email-triage.interface.scripts-update-watermark:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-triage.source.rtx-watermark-writer.interface.scripts-update-watermark
+    facade_interface:
+      interface: email-triage-rtx.interface.scripts-update-watermark
+      version: 1
   email-triage.interface.scripts-write-metrics:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-triage.source.rtx-write-metrics.interface.scripts-write-metrics
+    facade_interface:
+      interface: email-triage-rtx.interface.scripts-write-metrics
+      version: 1
   email-triage.interface.triage:
     access:
       allow_all_modules: false
@@ -155,9 +90,10 @@ gateway:
   path: SKILL.md
 id: email-triage
 kind: triager
+namespace_exports: {}
 node_type: module
 role: productivity
-schema_version: 4
+schema_version: 5
 sources:
   email-triage.source.gateway:
     blueprint:
@@ -167,44 +103,4 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/instructions-triage.yaml
-  email-triage.source.rtx-decision-sink:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-decision-sink.yaml
-  email-triage.source.rtx-envelope-gate:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-envelope-gate.yaml
-  email-triage.source.rtx-failure-clearer:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-failure-clearer.yaml
-  email-triage.source.rtx-failure-sentinel:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-failure-sentinel.yaml
-  email-triage.source.rtx-init:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-init.yaml
-  email-triage.source.rtx-log-compactor:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-log-compactor.yaml
-  email-triage.source.rtx-mail-envelope-stream:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-mail-envelope-stream.yaml
-  email-triage.source.rtx-watermark-floor:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-watermark-floor.yaml
-  email-triage.source.rtx-watermark-writer:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-watermark-writer.yaml
-  email-triage.source.rtx-write-metrics:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-write-metrics.yaml
-version: 1
+version: 3

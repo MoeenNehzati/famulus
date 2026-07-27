@@ -1,7 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Implements the persistent loose-mode response policy until the user explicitly switches modes.
+description: Implements the persistent loose-mode response policy until the user explicitly
+  switches modes.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -10,29 +11,78 @@ interfaces:
   loose-mode.source.gateway.interface.default:
     contract:
       arguments:
-        request: {description: Question or task to explore broadly and quickly under loose-mode epistemic and presentation rules., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
-      preconditions: []
-      interaction: {mode: unattended}
+        request:
+          description: Question or task to explore broadly and quickly under loose-mode
+            epistemic and presentation rules.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
       caller_warnings: []
-      outputs:
-      - {id: response, audience: human, description: 'Short structured exploration identifying the main obstacle, promising routes, and certainty labels where useful.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty on success., type: {kind: string, sensitivity: derived-private}}
-      outcomes:
-      - {id: explored, class: success, outputs: [response], effects: [], caller_action: Choose a promising route or request tight mode for rigorous verification.}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {snapshot: The exploration reflects the context and evidence available in the current request.}
-        verification: [{method: output-schema, output_ref: response}]
-      helpers: []
       direct_io:
         network: []
         reads:
-        - {id: request, medium: prompt, access: read, system: agent-runtime, content: Broad exploration request and conversation context., formats: [text], sensitivity: user-private}
+        - access: read
+          content: Broad exploration request and conversation context.
+          formats:
+          - text
+          id: request
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
         writes:
-        - {id: response, medium: prompt, access: write, system: agent-runtime, content: Loose-mode strategic exploration., formats: [markdown], sensitivity: derived-private}
-    description: Explore a request breadth-first, label uncertainty, and present concise strategic structure without silently leaving loose mode.
+        - access: write
+          content: Loose-mode strategic exploration.
+          formats:
+          - markdown
+          id: response
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          snapshot: The exploration reflects the context and evidence available in
+            the current request.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Choose a promising route or request tight mode for rigorous
+          verification.
+        class: success
+        effects: []
+        id: explored
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Short structured exploration identifying the main obstacle, promising
+          routes, and certainty labels where useful.
+        direct_io_ref: response
+        empty: Never empty on success.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Explore a request breadth-first, label uncertainty, and present concise
+      strategic structure without silently leaving loose mode.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

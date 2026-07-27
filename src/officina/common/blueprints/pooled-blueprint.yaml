@@ -13,7 +13,8 @@ dependencies:
   reason: Imports the read-only certification view protocol from certification_view.py.
   source: common.source.certification-view
   version: 1
-description: Renders deterministic generated blueprint reviews from v4 graph declarations and current certificates without becoming graph or certification authority.
+description: Renders deterministic generated blueprint reviews from v4 graph declarations
+  and current certificates without becoming graph or certification authority.
 gateway:
   language: Python
   path: pooled_blueprint.py
@@ -22,6 +23,14 @@ interfaces:
   common.source.pooled-blueprint.interface.python-api:
     contract:
       arguments:
+        inputs:
+          description: Module root, repository graph, certification view, and optional
+            root module ID required by the selected operation.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Operation-specific Python values supplied by the caller.
+            kind: string
         operation:
           description: Pooled-review operation to perform.
           required: true
@@ -29,45 +38,74 @@ interfaces:
           type:
             kind: enum
             values:
-            - {value: review-path, description: Derive the generated pooled-review path under a module root.}
-            - {value: render-review, description: Render a deterministic review from one v4 graph and read-only current-certificate view.}
-        inputs:
-          description: Module root, repository graph, certification view, and optional root module ID required by the selected operation.
-          required: false
-          sensitivity: user-private
-          type: {kind: string, description: Operation-specific Python values supplied by the caller.}
-      preconditions: []
-      interaction: {mode: unattended}
+            - description: Derive the generated pooled-review path under a module
+                root.
+              value: review-path
+            - description: Render a deterministic review from one v4 graph and read-only
+                current-certificate view.
+              value: render-review
       caller_warnings: []
-      outputs:
-      - id: result
-        audience: machine
-        description: Generated review path or deterministic certificate-backed YAML text.
-        direct_io_ref: return-value
-        cardinality: {minimum: 1, maximum: 1}
-        ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        empty: Rendered reviews are nonempty and require a current certificate for every selected node.
-        type: {kind: string, sensitivity: user-private, description: Python Path or YAML string.}
-      outcomes:
-      - {id: completed, class: success, outputs: [result], effects: [], caller_action: Use the result only as a generated review projection.}
-      - {id: invalid-review, class: error, outputs: [], effects: [], caller_action: "Reject missing certificates, unknown roots, non-v4 graphs, and paths outside the owning module."}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {snapshot: Rendering uses only the supplied graph and read-only current-certificate view.}
-        verification:
-        - {method: output-schema, output_ref: result}
-      helpers: []
       direct_io:
+        network: []
         reads: []
         writes:
-        - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [python-object, yaml], sensitivity: user-private}
-        network: []
+        - access: write
+          content: Python return value
+          formats:
+          - python-object
+          - yaml
+          id: return-value
+          medium: local-system
+          sensitivity: user-private
+      execution:
+        consistency:
+          snapshot: Rendering uses only the supplied graph and read-only current-certificate
+            view.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the result only as a generated review projection.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - result
+      - caller_action: Reject missing certificates, unknown roots, non-v4 graphs,
+          and paths outside the owning module.
+        class: error
+        effects: []
+        id: invalid-review
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Generated review path or deterministic certificate-backed YAML
+          text.
+        direct_io_ref: return-value
+        empty: Rendered reviews are nonempty and require a current certificate for
+          every selected node.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: Python Path or YAML string.
+          kind: string
+          sensitivity: user-private
+      preconditions: []
     description: Renders certificate-backed pooled blueprint reviews for Python callers.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

@@ -1,8 +1,15 @@
-examples:
-  module: blueprint.yaml
-  behavioral_sources:
-    - blueprints/gateway.yaml
-    - blueprints/runner.yaml
-generated_outputs:
-  - SKILL.md blueprint contract block
-  - SKILL.md blueprint interface block
+schema_version: 5
+node_type: module
+id: example-skill
+version: 1
+gateway:
+  path: SKILL.md
+  language: Markdown
+content:
+  - SKILL\.md
+authority:
+  owns_filesystem: []
+sources: {}
+children: {}
+namespace_exports: {}
+exports: {}

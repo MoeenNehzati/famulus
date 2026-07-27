@@ -1,4 +1,4 @@
-"""Tests for the version-4 repository relationship validator."""
+"""Tests for canonical repository relationship validation."""
 from __future__ import annotations
 
 import importlib.util
@@ -11,9 +11,8 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = (
     REPO_ROOT
-    / "skills"
-    / "skill-maker"
     / "validators"
+    / "skill"
     / "blueprint_relationships.py"
 )
 SPEC = importlib.util.spec_from_file_location("blueprint_relationships", VALIDATOR)
@@ -122,10 +121,10 @@ def test_stale_export_version_is_rejected(tmp_path: Path) -> None:
 
     assert any(
         "provider-skill.interface.default" in error
-        and "version 2" in error
-        and "version is 1" in error
+        and "requested=2" in error
+        and "available=1" in error
         for error in errors
-    )
+    ), errors
 
 
 def test_export_access_control_is_enforced(tmp_path: Path) -> None:
@@ -142,7 +141,7 @@ def test_export_access_control_is_enforced(tmp_path: Path) -> None:
 
     errors = MOD.validate(tmp_path)
 
-    assert any("is not allowed by provider-skill.interface.default" in error for error in errors)
+    assert errors == ["unknown-caller-reference:provider-skill:other-skill"]
 
 
 def test_private_source_interface_cannot_cross_module(tmp_path: Path) -> None:

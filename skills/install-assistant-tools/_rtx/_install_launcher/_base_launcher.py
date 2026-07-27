@@ -9,8 +9,14 @@ from typing import Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from _fs_links import make_link
-from _state_record import Manifest
+if __package__ and __package__.count('.') >= 1:
+    from .._fs_links import make_link
+else:
+    from _fs_links import make_link
+if __package__ and __package__.count('.') >= 1:
+    from .._state_record import Manifest
+else:
+    from _state_record import Manifest
 
 LauncherFileMode = Literal["generate", "copy", "link"]
 LauncherStatus = Literal["installed", "would-install", "unsupported", "skipped", "failed"]

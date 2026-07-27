@@ -1,0 +1,15 @@
+content:
+- jobs\.yaml
+dependencies: []
+description: Defines the named recurring jobs, their descriptions, shell-free command
+  strings, schedules, and enabled state consumed by recurring-task management and
+  execution sources.
+gateway:
+  language: YAML
+  path: jobs.yaml
+id: recurring-tasks-rtx.source.jobs-config
+interfaces: {}
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces: []
+version: 1

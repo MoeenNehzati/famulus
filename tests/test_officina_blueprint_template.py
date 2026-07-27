@@ -10,6 +10,10 @@ from test_support.git_repository import GitTestRepository
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import officina.common.blueprint_template as blueprint_template  # noqa: E402
+from officina.common.blueprint_graph import (  # noqa: E402
+    load_repository_blueprint_graph,
+)
 from officina.common.blueprint_template import (  # noqa: E402
     load_schema,
     refresh_blueprint_documentation,
@@ -222,20 +226,20 @@ def test_refresh_preserves_extra_valid_fields_at_the_end() -> None:
     assert refreshed.rstrip().endswith("extra: kept")
 
 
-def test_live_module_template_renders_parseable_v4_yaml() -> None:
+def test_live_module_template_renders_parseable_v5_yaml() -> None:
     schema = load_schema(Path("references/blueprint/module.schema.json"))
 
     text = render_blueprint_template(schema)
 
     loaded = yaml.safe_load(text)
-    assert loaded["schema_version"] == 4
+    assert loaded["schema_version"] == 5
     assert loaded["node_type"] == "module"
     schema_validator(load_schema(Path("references/blueprint/schema.json"))).validate(
         loaded
     )
 
 
-def test_generated_v4_templates_validate_against_live_authoring_schemas() -> None:
+def test_generated_v5_templates_validate_against_live_authoring_schemas() -> None:
     for path in (
         Path("references/blueprint/module.schema.json"),
         Path("references/blueprint/behavioral-source.schema.json"),
@@ -247,13 +251,11 @@ def test_generated_v4_templates_validate_against_live_authoring_schemas() -> Non
             schema_validator(schema).validate(yaml.safe_load(text))
 
 
-def test_annotated_authoring_schema_routes_only_live_v4_nodes() -> None:
+def test_annotated_authoring_schema_routes_only_live_v5_nodes() -> None:
     schema = load_schema(Path("references/blueprint/schema.annotated-draft.json"))
 
-    assert [branch["$ref"] for branch in schema["oneOf"]] == [
-        "module.schema.json",
-        "behavioral-source.schema.json",
-    ]
+    assert schema["$ref"] == "schema.json"
+    assert "Canonical authoring entry point" in schema["description"]
     assert list(
         schema_validator(schema).iter_errors(
             {
@@ -275,7 +277,7 @@ def test_each_live_schema_generates_a_valid_authoring_template() -> None:
         schema_validator(schema).validate(yaml.safe_load(rendered))
 
 
-def test_compatibility_entry_rejects_pre_v4_authoring_values() -> None:
+def test_compatibility_entry_rejects_pre_v5_authoring_values() -> None:
     schema = load_schema(Path("references/blueprint/schema.json"))
 
     with pytest.raises(ValueError, match="module or behavioral_source"):
@@ -285,165 +287,24 @@ def test_compatibility_entry_rejects_pre_v4_authoring_values() -> None:
         )
 
 
-def test_committed_template_describes_the_live_v4_layout() -> None:
+def test_committed_template_is_a_complete_live_v5_module() -> None:
     committed = yaml.safe_load(Path("references/blueprint/template.yaml").read_text())
 
-    assert committed["examples"] == {
-        "module": "blueprint.yaml",
-        "behavioral_sources": [
-            "blueprints/gateway.yaml",
-            "blueprints/runner.yaml",
-        ],
-    }
-    assert committed["generated_outputs"] == [
-        "SKILL.md blueprint contract block",
-        "SKILL.md blueprint interface block",
-    ]
-    assert set(committed) == {"examples", "generated_outputs"}
+    assert committed["schema_version"] == 5
+    assert committed["node_type"] == "module"
+    assert committed["children"] == {}
+    assert committed["namespace_exports"] == {}
+    schema_validator(
+        load_schema(Path("references/blueprint/module.schema.json"))
+    ).validate(committed)
 
 
 def test_schema_family_examples_create_complete_valid_documents(tmp_path: Path) -> None:
-    repository = GitTestRepository.create(tmp_path / "repo")
-    repo_root = repository.root
-    examples = yaml.safe_load(Path("references/blueprint/template.yaml").read_text())["examples"]
-    skill = repo_root / "skills" / "example-skill"
-    references = repo_root / "references"
-
-    schemas = {
-        name: load_schema(Path("references/blueprint") / name)
-        for name in ["module.schema.json", "behavioral-source.schema.json"]
-    }
-    root = yaml.safe_load(render_blueprint_template(schemas["module.schema.json"]))
-    gateway = yaml.safe_load(
-        render_blueprint_template(schemas["behavioral-source.schema.json"])
-    )
-    runner = yaml.safe_load(
-        render_blueprint_template(schemas["behavioral-source.schema.json"])
-    )
-
-    root.update(
-        {
-            "id": "example-skill",
-            "content": ["SKILL\\.md", "_rtx/_runner\\.py"],
-            "sources": {
-                "example-skill.source.gateway": {
-                    "blueprint": {
-                        "base": "module-root",
-                        "path": examples["behavioral_sources"][0],
-                    }
-                },
-                "example-skill.source.runner": {
-                    "blueprint": {
-                        "base": "module-root",
-                        "path": examples["behavioral_sources"][1],
-                    }
-                },
-            },
-            "exports": {
-                "example-skill.interface.default": {
-                    "source_interface": (
-                        "example-skill.source.gateway.interface.default"
-                    ),
-                    "access": {
-                        "allow_all_modules": True,
-                        "allowed_callers": [],
-                    },
-                },
-                "example-skill.interface.run": {
-                    "source_interface": "example-skill.source.runner.interface.run",
-                    "access": {
-                        "allow_all_modules": False,
-                        "allowed_callers": [],
-                    },
-                },
-            },
-        }
-    )
-    gateway.update(
-        {
-            "id": "example-skill.source.gateway",
-            "interfaces": {
-                "example-skill.source.gateway.interface.default": {"version": 1}
-            },
-        }
-    )
-    runner.update(
-        {
-            "id": "example-skill.source.runner",
-            "gateway": {"path": "_rtx/_runner.py", "language": "Python>=3.11"},
-            "content": ["_rtx/_runner\\.py"],
-            "interfaces": {
-                "example-skill.source.runner.interface.run": {"version": 1}
-            },
-        }
-    )
-    documents = [
-        (schemas["module.schema.json"], root, skill / examples["module"]),
-        (
-            schemas["behavioral-source.schema.json"],
-            gateway,
-            skill / examples["behavioral_sources"][0],
-        ),
-        (
-            schemas["behavioral-source.schema.json"],
-            runner,
-            skill / examples["behavioral_sources"][1],
-        ),
-    ]
-    for schema, document, path in documents:
-        schema_validator(schema).validate(document)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
-    schema_validator(load_schema(Path("references/blueprint/schema.json"))).validate(root)
-
-    skill_md = skill / "SKILL.md"
-    skill_md.parent.mkdir(parents=True, exist_ok=True)
-    skill_md.write_text(
-        "---\nname: example-skill\n---\n"
-        "<!-- BEGIN BLUEPRINT CONTRACT -->\n"
-        "> Generated from `blueprint.yaml`. Do not edit this block by hand.\n"
-        "<!-- END BLUEPRINT CONTRACT -->\n"
-        "<!-- BEGIN BLUEPRINT INTERFACES -->\n"
-        "> Generated from `blueprint.yaml`. Do not edit this block by hand.\n"
-        "<!-- END BLUEPRINT INTERFACES -->\n"
-        "Hand-authored instructions.\n",
-        encoding="utf-8",
-    )
-    runner_path = skill / "_rtx" / "_runner.py"
-    runner_path.parent.mkdir(parents=True, exist_ok=True)
-    runner_path.write_text("class Interface: pass\n", encoding="utf-8")
-    source_schema_root = Path("references/blueprint")
-    fixture_schema_root = references / "blueprint"
-    for source_path in [
-        *source_schema_root.glob("*.schema.json"),
-        source_schema_root / "schema.annotated-draft.json",
-        source_schema_root / "schema.json",
-        source_schema_root / "schema-meta.json",
-        source_schema_root / "template.yaml",
-    ]:
-        destination = fixture_schema_root / source_path.name
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(source_path.read_bytes())
-
-    repository.git("add", "skills", "references")
-
-    generated_outputs = yaml.safe_load(Path("references/blueprint/template.yaml").read_text())["generated_outputs"]
-    assert generated_outputs == [
-        "SKILL.md blueprint contract block",
-        "SKILL.md blueprint interface block",
-    ]
-    assert "<!-- BEGIN BLUEPRINT CONTRACT -->" in skill_md.read_text(encoding="utf-8")
-    assert "<!-- BEGIN BLUEPRINT INTERFACES -->" in skill_md.read_text(encoding="utf-8")
-    tracked = repository.git("ls-files").stdout.decode("utf-8").splitlines()
-    assert {
-        "skills/example-skill/SKILL.md",
-        "skills/example-skill/blueprint.yaml",
-        "skills/example-skill/blueprints/gateway.yaml",
-        "skills/example-skill/blueprints/runner.yaml",
-        "skills/example-skill/_rtx/_runner.py",
-    } <= set(tracked)
-
-    assert all(path.is_file() for _, _, path in documents)
+    del tmp_path
+    for name in ("module.schema.json", "behavioral-source.schema.json"):
+        schema = load_schema(Path("references/blueprint") / name)
+        rendered = yaml.safe_load(render_blueprint_template(schema))
+        schema_validator(schema).validate(rendered)
 
 
 def test_real_blueprint_refresh_preserves_loaded_values() -> None:
@@ -481,7 +342,7 @@ def test_write_regenerated_skill_blueprint_writes_tmp_output(tmp_path: Path) -> 
     assert "# @schema-doc path=name" in output.read_text(encoding="utf-8")
 
 
-def test_regeneration_rejects_pre_v4_blueprints(tmp_path: Path) -> None:
+def test_regeneration_rejects_pre_v5_blueprints(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     skill_dir = repo / "skills" / "demo-skill"
     schema_dir = repo / "references" / "blueprint"
@@ -510,7 +371,7 @@ def test_regeneration_rejects_pre_v4_blueprints(tmp_path: Path) -> None:
         __import__("json").dumps(authoring_schema("typed marker")), encoding="utf-8"
     )
 
-    with pytest.raises(ValueError, match="schema_version 4"):
+    with pytest.raises(ValueError, match="schema_version 5"):
         write_regenerated_skill_blueprint(
             "demo-skill",
             repo_root=repo,
@@ -518,14 +379,14 @@ def test_regeneration_rejects_pre_v4_blueprints(tmp_path: Path) -> None:
         )
 
 
-def test_v4_regeneration_selects_existing_module_schema_owner(tmp_path: Path) -> None:
+def test_v5_regeneration_selects_existing_module_schema_owner(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     module_dir = repo / "skills" / "demo-skill"
     schema_dir = repo / "references" / "blueprint"
     module_dir.mkdir(parents=True)
     schema_dir.mkdir(parents=True)
     blueprint = {
-        "schema_version": 4,
+        "schema_version": 5,
         "node_type": "module",
         "id": "demo-skill",
     }
@@ -551,7 +412,7 @@ def test_v4_regeneration_selects_existing_module_schema_owner(tmp_path: Path) ->
         encoding="utf-8",
     )
     (schema_dir / "module.schema.json").write_text(
-        __import__("json").dumps(authoring_schema("module marker", 4, "module")),
+        __import__("json").dumps(authoring_schema("module marker", 5, "module")),
         encoding="utf-8",
     )
 
@@ -562,3 +423,191 @@ def test_v4_regeneration_selects_existing_module_schema_owner(tmp_path: Path) ->
     text = output.read_text(encoding="utf-8")
     assert "module marker" in text
     assert "legacy marker" not in text
+
+
+def test_v5_repository_managed_skill_generator_creates_parent_and_code_child(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    schema_root = Path("references/blueprint").resolve()
+    skill_file = repo / "skills" / "demo-skill" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text(
+        "---\nname: demo-skill\n---\nDemo.\n",
+        encoding="utf-8",
+    )
+
+    outputs = blueprint_template.write_repository_managed_skill_blueprints(
+        "demo-skill",
+        category="development-assistant",
+        repo_root=repo,
+        schema_root=schema_root,
+    )
+
+    parent_path = repo / "skills" / "demo-skill" / "blueprint.yaml"
+    child_path = repo / "skills" / "demo-skill" / "_rtx" / "blueprint.yaml"
+    init_path = repo / "skills" / "demo-skill" / "_rtx" / "__init__.py"
+    assert outputs == (parent_path, child_path, init_path)
+    assert all(path.is_file() for path in outputs)
+
+    parent = yaml.safe_load(parent_path.read_text(encoding="utf-8"))
+    child = yaml.safe_load(child_path.read_text(encoding="utf-8"))
+    assert parent["id"] == "demo-skill"
+    assert parent["category"] == "development-assistant"
+    assert parent["discovery"] == {"mechanism": "skill"}
+    assert parent["children"] == {
+        "demo-skill-rtx": {
+            "base": "module-root",
+            "path": "_rtx/blueprint.yaml",
+        }
+    }
+    assert child["id"] == "demo-skill-rtx"
+    assert "discovery" not in child
+    assert child["gateway"] == {
+        "path": "__init__.py",
+        "language": "Python>=3.11",
+    }
+    assert init_path.read_text(encoding="utf-8") == ""
+    validator = schema_validator(load_schema(schema_root / "module.schema.json"))
+    validator.validate(parent)
+    validator.validate(child)
+    graph = load_repository_blueprint_graph(
+        repo,
+        schema_root=schema_root,
+        expected_schema_version=5,
+    )
+    assert set(graph.nodes) == {"demo-skill", "demo-skill-rtx"}
+    assert graph.module_children == {
+        "demo-skill": ("demo-skill-rtx",),
+        "demo-skill-rtx": (),
+    }
+
+
+def test_v5_repository_managed_skill_generator_requires_parent_skill_file(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    skill_root = repo / "skills" / "demo-skill"
+
+    with pytest.raises(
+        FileNotFoundError,
+        match=r"missing parent SKILL\.md",
+    ):
+        blueprint_template.write_repository_managed_skill_blueprints(
+            "demo-skill",
+            category="development-assistant",
+            repo_root=repo,
+            schema_root=Path("references/blueprint").resolve(),
+        )
+
+    assert not (skill_root / "blueprint.yaml").exists()
+    assert not (skill_root / "_rtx" / "blueprint.yaml").exists()
+    assert not (skill_root / "_rtx" / "__init__.py").exists()
+
+
+def test_v5_repository_managed_skill_generator_rolls_back_and_retries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    skill_root = repo / "skills" / "demo-skill"
+    skill_file = skill_root / "SKILL.md"
+    child_root = skill_root / "_rtx"
+    parent_path = skill_root / "blueprint.yaml"
+    child_path = child_root / "blueprint.yaml"
+    init_path = child_root / "__init__.py"
+    outputs = (parent_path, child_path, init_path)
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text(
+        "---\nname: demo-skill\n---\nDemo.\n",
+        encoding="utf-8",
+    )
+
+    original_write_text = Path.write_text
+    failed = False
+
+    def fail_child_write_once(
+        path: Path,
+        data: str,
+        *args: object,
+        **kwargs: object,
+    ) -> int:
+        nonlocal failed
+        if path == child_path and not failed:
+            failed = True
+            assert parent_path.is_file()
+            original_write_text(path, "partial", *args, **kwargs)
+            raise OSError("injected child blueprint write failure")
+        return original_write_text(path, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_child_write_once)
+
+    with pytest.raises(OSError, match="injected child blueprint write failure"):
+        blueprint_template.write_repository_managed_skill_blueprints(
+            "demo-skill",
+            category="development-assistant",
+            repo_root=repo,
+            schema_root=Path("references/blueprint").resolve(),
+        )
+
+    assert failed
+    assert not any(path.exists() for path in outputs)
+    assert not child_root.exists()
+
+    retried = blueprint_template.write_repository_managed_skill_blueprints(
+        "demo-skill",
+        category="development-assistant",
+        repo_root=repo,
+        schema_root=Path("references/blueprint").resolve(),
+    )
+
+    assert retried == outputs
+    assert all(path.is_file() for path in outputs)
+
+
+def test_v5_repository_managed_skill_generator_preserves_preexisting_child_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    skill_root = repo / "skills" / "demo-skill"
+    skill_file = skill_root / "SKILL.md"
+    child_root = skill_root / "_rtx"
+    parent_path = skill_root / "blueprint.yaml"
+    child_path = child_root / "blueprint.yaml"
+    init_path = child_root / "__init__.py"
+    outputs = (parent_path, child_path, init_path)
+    child_root.mkdir(parents=True)
+    skill_file.write_text(
+        "---\nname: demo-skill\n---\nDemo.\n",
+        encoding="utf-8",
+    )
+    user_file = child_root / "user.py"
+    user_file.write_text("USER_VALUE = 1\n", encoding="utf-8")
+
+    original_write_text = Path.write_text
+
+    def fail_child_write(
+        path: Path,
+        data: str,
+        *args: object,
+        **kwargs: object,
+    ) -> int:
+        if path == child_path:
+            original_write_text(path, "partial", *args, **kwargs)
+            raise OSError("injected child blueprint write failure")
+        return original_write_text(path, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_child_write)
+
+    with pytest.raises(OSError, match="injected child blueprint write failure"):
+        blueprint_template.write_repository_managed_skill_blueprints(
+            "demo-skill",
+            category="development-assistant",
+            repo_root=repo,
+            schema_root=Path("references/blueprint").resolve(),
+        )
+
+    assert child_root.is_dir()
+    assert user_file.read_text(encoding="utf-8") == "USER_VALUE = 1\n"
+    assert not any(path.exists() for path in outputs)

@@ -119,7 +119,7 @@ class LinuxScheduleBackend:
             enabled_names.add(job.name)
             calendar = cron_to_systemd_calendar(job.schedule)
             svc_name = f"{PREFIX}{job.name}.service"
-            executor = context.skill_dir / "_rtx" / "_job_executor.py"
+            executor = context.skill_dir / "_job_executor.py"
 
             (unit_dir / svc_name).write_text(
                 service_content(job.name, job.description, context.jobs_file, executor)

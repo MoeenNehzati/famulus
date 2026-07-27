@@ -1,7 +1,8 @@
 content:
 - codex_toml\.py
 dependencies: []
-description: Defines the canonical Codex user-configuration filename without performing file I/O.
+description: Defines the canonical Codex user-configuration filename without performing
+  file I/O.
 gateway:
   language: Python
   path: codex_toml.py
@@ -10,37 +11,60 @@ interfaces:
   common.source.codex-toml.interface.python-api:
     contract:
       arguments: {}
-      preconditions: []
-      interaction: {mode: unattended}
       caller_warnings: []
-      outputs:
-      - id: filename
-        audience: machine
-        description: The literal Codex configuration filename config.toml.
-        direct_io_ref: return-value
-        cardinality: {minimum: 1, maximum: 1}
-        ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        empty: Never empty.
-        type: {kind: string, sensitivity: public, format: {named: literal}}
-      outcomes:
-      - {id: completed, class: success, outputs: [filename], effects: [], caller_action: Join the filename to the caller-selected Codex configuration directory.}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {snapshot: The constant is fixed for this interface version.}
-        verification:
-        - {method: output-schema, output_ref: filename}
-      helpers: []
       direct_io:
+        network: []
         reads: []
         writes:
-        - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [string], sensitivity: public}
-        network: []
+        - access: write
+          content: Python return value
+          formats:
+          - string
+          id: return-value
+          medium: local-system
+          sensitivity: public
+      execution:
+        consistency:
+          snapshot: The constant is fixed for this interface version.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: filename
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Join the filename to the caller-selected Codex configuration
+          directory.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - filename
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: The literal Codex configuration filename config.toml.
+        direct_io_ref: return-value
+        empty: Never empty.
+        id: filename
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: literal
+          kind: string
+          sensitivity: public
+      preconditions: []
     description: Provides Codex TOML operations to Python callers.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

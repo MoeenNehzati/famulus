@@ -26,7 +26,7 @@ except ImportError:
     HAS_JSONSCHEMA = False
     FormatChecker = None
 
-SCHEMAS_DIR = Path(__file__).parent.parent / "schemas"
+SCHEMAS_DIR = Path(__file__).parent / "schemas"
 
 # Maps a list schema name to the type schema file that defines its entries.
 # Falls back to entry.json (no state/enum fields) for anything not listed.

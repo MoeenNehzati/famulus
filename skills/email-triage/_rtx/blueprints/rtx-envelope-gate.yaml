@@ -1,0 +1,207 @@
+content:
+- _envelope_gate\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: email-triage-rtx.source.rtx-init
+  version: 1
+description: Filters email envelope JSON against the exact stored triage watermark
+  and records recoverable state warnings.
+gateway:
+  language: Python
+  path: _envelope_gate.py
+id: email-triage-rtx.source.rtx-envelope-gate
+interfaces:
+  email-triage-rtx.source.rtx-envelope-gate.interface.scripts-filter-envelopes:
+    contract:
+      arguments:
+        account:
+          description: Email account name used in the no-new-mail message
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+        envelopes:
+          description: JSON array of mail-list envelopes supplied on standard input
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              named: json
+            kind: string
+      caller_warnings:
+      - external-side-effect: Missing or stale state can rewrite status.json while
+          preserving the watermark.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: email
+          formats:
+          - json
+          id: read-1
+          medium: stdin
+          sensitivity: user-private
+        - access: read
+          content: watermark
+          formats:
+          - text
+          id: read-2
+          medium: local-filesystem
+          path: state/last_run
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: diagnostic-report
+          formats:
+          - json
+          id: read-3
+          medium: local-filesystem
+          path: state/status.json
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        writes:
+        - access: write
+          content: email
+          formats:
+          - json
+          id: write-1
+          medium: stdout
+          sensitivity: user-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - json
+          id: write-2
+          medium: local-filesystem
+          path: state/status.json
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-3
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Filters against the exact watermark read during this invocation.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-2
+            kind: direct-io
+          direct_io_ref: write-2
+          id: update-status
+          may_occur_in_outcomes:
+          - filtered
+          reversibility:
+            reversible: A later successful run may replace the warning or stale error
+              status.
+          value_source:
+            direct_io_ref: write-2
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: At most one status document is rewritten before output.
+          concurrent_invocations:
+            unsafe: Concurrent triage runs can overwrite shared status state.
+          idempotency:
+            non_idempotent: Fallback dates and stale-status handling depend on invocation
+              time and current state.
+          on_uncertain_completion:
+            verify_then_decide: Inspect status.json and preserve the watermark before
+              retrying.
+          partial_effects_on_failure:
+            possible: Status may be updated before later input parsing fails.
+          rollback_on_failure:
+            unavailable: The prior status document is not retained.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: filtered-envelopes
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Process only the returned envelopes.
+        class: success
+        effects:
+        - update-status
+        id: filtered
+        outputs:
+        - filtered-envelopes
+        - diagnostic
+      - caller_action: Report invalid envelope JSON and do not advance the watermark.
+        class: error
+        effects: []
+        id: invalid-input
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Filtered envelope JSON or the established no-new-email text
+        direct_io_ref: write-1
+        empty: A no-new-email message is emitted when no envelopes remain.
+        id: filtered-envelopes
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-3
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Filter JSON envelopes (from email-client's mail-list, piped via stdin)
+      to those strictly after the triage watermark.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: true
+        allowed_flags:
+        - -a
+        flag_patterns:
+          -a: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+        required_flags:
+        - -a
+    usage: -a <account>   < envelopes.json
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces: []
+version: 1

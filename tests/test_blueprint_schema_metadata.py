@@ -7,7 +7,8 @@ import jsonschema
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
+V5_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
+SCHEMA_ROOT = V5_SCHEMA_ROOT / "migrations" / "v4"
 V4_TYPED_SCHEMAS = ("module.schema.json", "behavioral-source.schema.json")
 REQUIRED_RULES = {
     "access-control",
@@ -34,6 +35,10 @@ REQUIRED_RULES = {
 
 def _load(name: str) -> dict:
     return json.loads((SCHEMA_ROOT / name).read_text(encoding="utf-8"))
+
+
+def _load_v5(name: str) -> dict:
+    return json.loads((V5_SCHEMA_ROOT / name).read_text(encoding="utf-8"))
 
 
 def test_v4_schema_fields_contain_complete_authoring_metadata() -> None:
@@ -141,7 +146,7 @@ def test_schema_meta_contains_only_v4_repository_validation_authority() -> None:
 
 
 def test_validation_rule_catalog_points_to_existing_enforcement_and_tests() -> None:
-    protocol = _load("schema-meta.json")
+    protocol = _load_v5("schema-meta.json")
     catalog = protocol["x-famulus"]["validation_rule_catalog"]
     entry_schema = dict(protocol["definitions"]["repositoryValidationRule"])
     entry_schema["definitions"] = protocol["definitions"]
@@ -225,3 +230,67 @@ def test_runtime_dependency_platforms_are_documented_as_applicability() -> None:
     assert "where each dependency applies" in wording
     assert "required interface" in wording
     assert "required dependency" not in wording
+
+
+def test_v5_schema_fields_carry_shadow_authoring_metadata() -> None:
+    protocol = _load_v5("schema-meta.json")
+    catalog = protocol["x-famulus"]["validation_rule_catalog"]
+
+    for name in V4_TYPED_SCHEMAS:
+        schema = _load_v5(name)
+        jsonschema.Draft7Validator(protocol).validate(schema)
+        required = set(schema["required"])
+        for field, definition in schema["properties"].items():
+            metadata = definition.get("x-famulus")
+            assert isinstance(metadata, dict), f"{name}:{field} missing x-famulus"
+            assert metadata["field_status"] == (
+                "required" if field in required else "optional"
+            )
+            assert set(metadata["related_validation_rules"]) <= set(catalog)
+
+    module = _load_v5("module.schema.json")
+    assert {"children", "namespace_exports"} <= set(module["required"])
+    assert module["properties"]["children"]["x-famulus"][
+        "related_validation_rules"
+    ] == ["nested-topology"]
+    assert module["properties"]["namespace_exports"]["x-famulus"][
+        "related_validation_rules"
+    ] == ["namespace-export"]
+
+
+def test_v5_schema_meta_declares_nested_relationships_and_schema_rules() -> None:
+    metadata = _load_v5("schema-meta.json")["x-famulus"]
+    assert metadata["relationship_matrix"] == {
+        "module": {
+            "contains-module": ["module"],
+            "contains-source": ["behavioral_source"],
+            "exports-interface": ["behavioral_source"],
+            "facades-child-export": ["module"],
+            "facades-implementing-source": ["behavioral_source"],
+            "references-cross-owner-contract": ["module", "behavioral_source"],
+            "routes-child-namespace": ["module"],
+            "routes-terminal-module": ["module"],
+        },
+        "behavioral_source": {
+            "uses-source": ["behavioral_source"],
+            "uses-private-interface": ["behavioral_source"],
+            "uses-export": ["module"],
+            "references-cross-owner-contract": ["module", "behavioral_source"],
+        },
+    }
+    catalog = metadata["validation_rule_catalog"]
+    assert {
+        "nested-topology",
+        "namespace-export",
+        "facade-export",
+        "relative-caller",
+    } <= set(catalog)
+    for rule_id in (
+        "nested-topology",
+        "namespace-export",
+        "facade-export",
+        "relative-caller",
+    ):
+        rule = catalog[rule_id]
+        assert rule["enforcement"]["state"] == "current"
+        assert rule["tests"] == ["tests/test_nested_module_v5_schemas.py"]

@@ -14,10 +14,13 @@ from validators.skill_runtime_files import (
     EXEMPT_RTX_DIRNAMES,
     EXEMPT_RTX_FILENAMES,
     RTX_DIR_NAME,
+    _registered_child_artifact,
 )
 from validators.skill_md_body import hand_authored_skill_body
 
-_EXCLUDED_PARTS = {"tests", "assets", ".system"}
+_EXCLUDED_PARTS = {"tests", "assets", ".system", RTX_DIR_NAME}
+REQUIRES_BLUEPRINT_GRAPH = True
+BLUEPRINT_GRAPH_OPTIONAL = True
 _WORD = r"A-Za-z0-9_"
 _SUFFIX_ALT = "|".join(re.escape(s) for s in sorted(ALLOWED_RTX_SUFFIXES))
 _OLD_RUNTIME_PATH_RE = re.compile(
@@ -39,12 +42,17 @@ def _iter_skill_markdown(repo_root: Path):
             yield md_path, rel_path
 
 
-def _runtime_stems_for_skill(skill_dir: Path) -> list[str]:
+def _runtime_stems_for_skill(
+    skill_dir: Path,
+    graph: object | None,
+) -> list[str]:
     rtx_dir = skill_dir / RTX_DIR_NAME
     if not rtx_dir.is_dir():
         return []
     stems: set[str] = set()
     for path in sorted(rtx_dir.rglob("*")):
+        if _registered_child_artifact(path, graph):
+            continue
         if path.is_dir():
             if path.name in EXEMPT_RTX_DIRNAMES:
                 continue
@@ -91,14 +99,14 @@ def _suffix_patterns_for_stem(stem: str) -> list[re.Pattern[str]]:
     ]
 
 
-def validate(repo_root: Path) -> list[str]:
+def _validate(repo_root: Path, graph: object | None) -> list[str]:
     errors: list[str] = []
     skills_root = repo_root / "skills"
     if not skills_root.is_dir():
         return errors
 
     stems_by_skill = {
-        skill_dir.name: _runtime_stems_for_skill(skill_dir)
+        skill_dir.name: _runtime_stems_for_skill(skill_dir, graph)
         for skill_dir in sorted(skills_root.iterdir())
         if skill_dir.is_dir() and skill_dir.name != ".system"
     }
@@ -142,6 +150,14 @@ def validate(repo_root: Path) -> list[str]:
                     break
 
     return errors
+
+
+def validate_with_graph(repo_root: Path, graph: object) -> list[str]:
+    return _validate(repo_root, graph)
+
+
+def validate(repo_root: Path) -> list[str]:
+    return _validate(repo_root, None)
 
 
 def main() -> int:

@@ -8,15 +8,9 @@ description: Use when reading signed certificate currentness or canonical node h
 
 Category: skill-making-development-assistant
 
-Skill Version: 1
+Skill Version: 2
 
-Uses Interfaces:
-- `skill-drift.source.gateway -> skill-drift.interface.compute-hashes@1`
-- `skill-drift.source.gateway -> skill-drift.interface.drift-status@1`
-- `skill-drift.source.rtx-check-drift-state -> common.interface.blueprint-graph@1`
-- `skill-drift.source.rtx-check-drift-state -> common.interface.certificate-records@1`
-- `skill-drift.source.rtx-check-drift-state -> common.interface.certification-hashing@1`
-- `skill-drift.source.rtx-check-drift-state -> common.interface.certification-view@1`
+Uses Interfaces: none
 
 Public Interfaces:
 - `skill-drift.interface.compute-hashes`
@@ -29,9 +23,9 @@ Public Interfaces:
 Dispatcher Interfaces:
 
 Use the installed `dispatcher` command for these process-bound interfaces:
-- `skill-drift.interface.compute-hashes` — Compute canonical certification-basis and v4 node hashes for exact or installed modules.
+- `skill-drift.interface.compute-hashes` — Compute canonical certification-basis and v5 node hashes for exact or installed modules.
   - `dispatcher --caller-skill skill-drift skill-drift.interface.compute-hashes compute-hashes [target ...] [--skill-root ROOT] [--json]`
-- `skill-drift.interface.drift-status` — Read signed certificate currentness for exact or installed v4 modules without writing certification state.
+- `skill-drift.interface.drift-status` — Read signed certificate currentness for exact or installed v5 modules without writing certification state.
   - `dispatcher --caller-skill skill-drift skill-drift.interface.drift-status status [target ...] [--all] [--skill-root ROOT] [--json]`
 
 Instruction Interfaces:
@@ -43,7 +37,7 @@ Use `skill-drift.interface.drift-status` to read signed certificate
 currentness and `skill-drift.interface.compute-hashes` to read the canonical
 certification-basis and node hashes.
 
-Both routes accept only v4 repository graphs. They derive state through the
+Both routes accept only canonical v5 repository graphs. They derive state through the
 shared certification view and never create keys, sign payloads, append
 certificates, run validators, or execute target code.
 

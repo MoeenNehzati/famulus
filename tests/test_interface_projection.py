@@ -10,6 +10,21 @@ from officina.common.blueprint_graph import (
     InterfaceExport,
     load_repository_blueprint_graph,
 )
+
+_canonical_load_repository_blueprint_graph = load_repository_blueprint_graph
+
+
+def load_repository_blueprint_graph(repo_root: Path, **kwargs: object):
+    kwargs.setdefault("expected_schema_version", 4)
+    kwargs.setdefault(
+        "schema_root",
+        Path(__file__).resolve().parents[1]
+        / "references"
+        / "blueprint"
+        / "migrations"
+        / "v4",
+    )
+    return _canonical_load_repository_blueprint_graph(repo_root, **kwargs)
 from officina.common.blueprint_template import load_schema, schema_validator
 from officina.common.certification_view import CertificationDecision, RejectingCertificationView
 from officina.common.interface_projection import (
@@ -17,6 +32,15 @@ from officina.common.interface_projection import (
     _validate_helper_target,
     project_consumer_interfaces,
     standalone_export_size,
+)
+from v5_blueprint_fixtures import copy_v5_fixture_tree
+
+
+V5_SCHEMA_ROOT = (
+    Path(__file__).resolve().parents[1] / "references" / "blueprint"
+)
+V5_AUTHORIZATION_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "blueprint_v5" / "authorization"
 )
 
 
@@ -265,6 +289,210 @@ def _repository(root: Path, *, oversized: bool = False) -> None:
         },
         {},
     )
+
+
+def _v5_projection_repository(
+    tmp_path: Path,
+    *,
+    with_helper: bool = False,
+) -> Path:
+    root = copy_v5_fixture_tree(
+        V5_AUTHORIZATION_FIXTURE,
+        tmp_path / "repo",
+    )
+    gateway_path = root / "skills" / "demo" / "blueprints" / "gateway.yaml"
+    gateway = yaml.safe_load(gateway_path.read_text(encoding="utf-8"))
+    gateway["uses_interfaces"] = [
+        {"interface": "demo.interface.execute", "version": 3}
+    ]
+    gateway_path.write_text(
+        yaml.safe_dump(gateway, sort_keys=False),
+        encoding="utf-8",
+    )
+    child_root = root / "skills" / "demo" / "_rtx"
+    child_marker = child_root / "blueprint.yaml"
+    child = yaml.safe_load(child_marker.read_text(encoding="utf-8"))
+    child["content"] = [
+        r"(?:__init__\.py|runtime\.py|lookup\.py|result\.schema\.json)"
+    ]
+
+    runtime_path = child_root / "blueprints" / "runtime.yaml"
+    runtime = yaml.safe_load(runtime_path.read_text(encoding="utf-8"))
+    runtime["content"] = [r"runtime\.py", r"result\.schema\.json"]
+    execute = runtime["interfaces"]["demo-rtx.source.runtime.interface.execute"]
+    execute["contract"] = _contract(schema_path="result.schema.json")
+    execute["process_binding"] = _process_binding()
+
+    if with_helper:
+        lookup_export = "demo-rtx.interface.lookup"
+        helper = {
+            "id": "lookup",
+            "role": "Supplies names.",
+            "interface": lookup_export,
+            "version": 1,
+            "inputs": {},
+            "result": {
+                "output_ref": "result",
+                "selector": {"kind": "whole-output"},
+            },
+            "route": {"kind": "argument-enum", "target": "name"},
+            "empty": {"outcome": "success", "caller_action": "Stop."},
+            "failure": {"outcome": "success"},
+        }
+        execute["contract"] = _contract(
+            helper=helper,
+            schema_path="result.schema.json",
+        )
+        runtime["uses_interfaces"] = [
+            {"interface": lookup_export, "version": 1}
+        ]
+        lookup_source_interface = (
+            "demo-rtx.source.lookup.interface.lookup"
+        )
+        child["sources"]["demo-rtx.source.lookup"] = {
+            "blueprint": {
+                "base": "module-root",
+                "path": "blueprints/lookup.yaml",
+            }
+        }
+        child["exports"][lookup_export] = {
+            "source_interface": lookup_source_interface,
+            "access": {
+                "allow_all_modules": False,
+                "allowed_callers": [],
+            },
+        }
+        _write_yaml(
+            child_root / "blueprints" / "lookup.yaml",
+            {
+                "schema_version": 5,
+                "node_type": "behavioral_source",
+                "id": "demo-rtx.source.lookup",
+                "version": 1,
+                "gateway": {
+                    "path": "lookup.py",
+                    "language": "Python>=3.11",
+                },
+                "content": [r"lookup\.py"],
+                "dependencies": [],
+                "uses_interfaces": [],
+                "interfaces": {
+                    lookup_source_interface: {
+                        "version": 1,
+                        "description": "Lookup names.",
+                        "contract": _contract(),
+                        "process_binding": _process_binding(),
+                    }
+                },
+            },
+        )
+        (child_root / "lookup.py").write_text(
+            "class Interface:\n    pass\n",
+            encoding="utf-8",
+        )
+
+    child_marker.write_text(
+        yaml.safe_dump(child, sort_keys=False),
+        encoding="utf-8",
+    )
+    runtime_path.write_text(
+        yaml.safe_dump(runtime, sort_keys=False),
+        encoding="utf-8",
+    )
+    (child_root / "result.schema.json").write_text(
+        '{"type":"string"}',
+        encoding="utf-8",
+    )
+    return root
+
+
+def _load_v5_projection_graph(root: Path):
+    return load_repository_blueprint_graph(
+        root,
+        schema_root=V5_SCHEMA_ROOT,
+        expected_schema_version=5,
+    )
+
+
+def test_v5_projection_derives_facade_contract_from_terminal_child(
+    tmp_path: Path,
+) -> None:
+    root = _v5_projection_repository(tmp_path)
+    certification = _PassingView()
+
+    projection = project_consumer_interfaces(
+        _load_v5_projection_graph(root),
+        "demo.source.gateway",
+        certification,
+    )
+
+    projected = projection.document["interfaces"]["demo.interface.execute"]
+    assert projected["id"] == "demo.interface.execute"
+    assert projected["version"] == 3
+    assert projected["source_module"] == "demo-rtx"
+    assert projected["source_interface"] == (
+        "demo-rtx.source.runtime.interface.execute"
+    )
+    assert projected["gateway"] == {
+        "path": "runtime.py",
+        "language": "Python>=3.11",
+    }
+    assert projected["process_binding"] == _process_binding()
+    assert {
+        definition["source_module"]
+        for definition in projection.document["definitions"].values()
+    } == {"demo-rtx"}
+    assert certification.checked == ["demo.interface.execute"]
+
+
+def test_v5_projection_follows_helper_closure_through_facade(
+    tmp_path: Path,
+) -> None:
+    root = _v5_projection_repository(tmp_path, with_helper=True)
+
+    projection = project_consumer_interfaces(
+        _load_v5_projection_graph(root),
+        "demo.source.gateway",
+        _PassingView(),
+    )
+
+    assert list(projection.document["helper_interfaces"]) == [
+        "demo-rtx.interface.lookup"
+    ]
+    helper = projection.document["helper_interfaces"][
+        "demo-rtx.interface.lookup"
+    ]
+    assert helper["source_module"] == "demo-rtx"
+    assert helper["source_interface"] == (
+        "demo-rtx.source.lookup.interface.lookup"
+    )
+
+
+def test_v5_projection_rejects_denied_authorization_result(
+    tmp_path: Path,
+) -> None:
+    root = _v5_projection_repository(tmp_path)
+    graph = _load_v5_projection_graph(root)
+    terminal = graph.exports["demo-rtx.interface.execute"]
+    assert isinstance(terminal.export_declaration, dict)
+    terminal.export_declaration["access"] = {
+        "allow_all_modules": False,
+        "allowed_callers": [],
+    }
+
+    with pytest.raises(
+        InterfaceProjectionError,
+        match=(
+            r"demo\.interface\.execute: authorization rejected "
+            r"\[caller-filtered:terminal-export:"
+            r"demo-rtx\.interface\.execute\]"
+        ),
+    ):
+        project_consumer_interfaces(
+            graph,
+            "demo.source.gateway",
+            _PassingView(),
+        )
 
 
 def test_projection_selects_generic_exports_and_helper_closure(tmp_path: Path) -> None:

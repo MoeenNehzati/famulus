@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 import shutil
+from types import SimpleNamespace
 
 import pytest
 from test_support.git_repository import GitTestRepository
@@ -37,6 +38,23 @@ def test_excluded_install_path_skipped(tmp_path: Path) -> None:
     d = tmp_path / "skills" / "install-assistant-tools"
     d.mkdir(parents=True)
     (d / "SKILL.md").write_text("Install Claude Code here.\n")
+    assert validate(tmp_path) == []
+
+
+def test_standard_documents_are_excluded(
+    tmp_path: Path,
+) -> None:
+    standards = tmp_path / "references" / "skill-standards"
+    standards.mkdir(parents=True)
+    for name in (
+        "skill-guidelines.standard.yaml",
+        "skill-guidelines.md",
+    ):
+        (standards / name).write_text(
+            "Supports Linux, macOS, Windows, Codex, and Claude.\n",
+            encoding="utf-8",
+        )
+
     assert validate(tmp_path) == []
 
 
@@ -201,6 +219,24 @@ def test_blueprint_platform_support_metadata_is_allowed(tmp_path: Path) -> None:
     assert validate(tmp_path) == []
 
 
+def test_validated_v5_child_blueprint_metadata_is_excluded_from_text_scan(
+    tmp_path: Path,
+) -> None:
+    blueprint = tmp_path / "skills" / "demo" / "_rtx" / "blueprint.yaml"
+    blueprint.parent.mkdir(parents=True)
+    blueprint.write_text(
+        "description: Runtime selects Windows adapters.\n",
+        encoding="utf-8",
+    )
+    graph = SimpleNamespace(
+        nodes={
+            "demo-rtx": SimpleNamespace(blueprint_path=blueprint),
+        }
+    )
+
+    assert validate.__globals__["validate_with_graph"](tmp_path, graph) == []
+
+
 def test_typed_blueprint_sidecar_platform_support_metadata_is_allowed(
     tmp_path: Path,
 ) -> None:
@@ -222,7 +258,7 @@ def test_blueprint_generic_platform_prose_is_still_rejected(tmp_path: Path) -> N
     assert "Linux-specific" in errors[0]
 
 
-def test_v4_blueprint_metadata_does_not_mask_owned_content(
+def test_frozen_v4_blueprint_metadata_and_owned_content_are_line_checked(
     tmp_path: Path,
 ) -> None:
     d = tmp_path / "skills" / "a-skill"
@@ -258,9 +294,13 @@ def test_v4_blueprint_metadata_does_not_mask_owned_content(
 
     errors = validate(tmp_path)
 
-    assert len(errors) == 1
-    assert "skills/a-skill/_rtx/shared.py" in errors[0]
-    assert "Calls Claude directly" in errors[0]
+    assert len(errors) == 2
+    assert any("skills/a-skill/blueprint.yaml:10" in error for error in errors)
+    assert any(
+        "skills/a-skill/_rtx/shared.py" in error
+        and "Calls Claude directly" in error
+        for error in errors
+    )
 
 
 def test_blueprint_reference_docs_can_define_platform_metadata(tmp_path: Path) -> None:

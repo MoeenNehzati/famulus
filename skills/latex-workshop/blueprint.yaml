@@ -10,9 +10,14 @@ authority:
       reason: Suggested approval for LaTeX Workshop-compatible builds.
     network: []
 category: research-assistant
+children:
+  latex-workshop-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
 - SKILL\.md
-description: Reconstructs and runs the effective VS Code LaTeX Workshop build for a target TeX document, then reads artifacts from the configured output location.
+description: Reconstructs and runs the effective VS Code LaTeX Workshop build for
+  a target TeX document, then reads artifacts from the configured output location.
 discovery:
   mechanism: skill
 exports:
@@ -26,12 +31,13 @@ gateway:
   path: SKILL.md
 id: latex-workshop
 kind: builder
+namespace_exports: {}
 node_type: module
 role: document-processing
-schema_version: 4
+schema_version: 5
 sources:
   latex-workshop.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 1
+version: 2

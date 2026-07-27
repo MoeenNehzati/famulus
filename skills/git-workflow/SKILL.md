@@ -8,7 +8,7 @@ description: Use when working in any git repo — committing, staging, checking 
 
 Category: development-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces: none
 

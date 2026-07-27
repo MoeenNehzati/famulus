@@ -1,0 +1,41 @@
+# Shadow fixture template; tests materialize this as blueprint.yaml.
+schema_version: 5
+node_type: module
+id: root
+version: 1
+gateway:
+  path: README.md
+  language: Markdown
+content:
+  - (?:README\.md|runtime\.py|alpha/.*|beta/.*)
+authority:
+  owns_filesystem: []
+sources:
+  root.source.runtime:
+    blueprint:
+      base: module-root
+      path: blueprints/runtime.yaml
+children:
+  alpha:
+    base: module-root
+    path: alpha/blueprint.yaml
+  beta:
+    base: module-root
+    path: beta/blueprint.yaml
+namespace_exports:
+  alpha:
+    version: 1
+    access:
+      allow_all_modules: false
+      allowed_callers:
+        - outsider
+    surface:
+      only:
+        leaf.interface.run: 1
+exports:
+  root.interface.admin:
+    source_interface: root.source.runtime.interface.admin
+    access:
+      allow_all_modules: false
+      allowed_callers:
+        - .beta.beta-leaf

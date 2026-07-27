@@ -79,6 +79,225 @@ def test_run_all_returns_canonical_ids_and_rejects_unknown_selection(
         _RUNNER.run_all(repo, validator_ids=["repo/missing"])
 
 
+def test_skill_validator_discovery_supports_each_layout_with_explicit_ids(
+    tmp_path: Path,
+) -> None:
+    current = tmp_path / "current"
+    (current / "validators").mkdir(parents=True)
+    (current / "skills" / "skill-maker" / "validators").mkdir(parents=True)
+    (current / "skills" / "skill-maker" / "validators" / "probe.py").write_text(
+        "def validate(repo_root): return []\n",
+        encoding="utf-8",
+    )
+    future = tmp_path / "future"
+    (future / "validators" / "skill").mkdir(parents=True)
+    (future / "validators" / "skill" / "probe.py").write_text(
+        "def validate(repo_root): return []\n",
+        encoding="utf-8",
+    )
+
+    assert set(_RUNNER._validator_paths(current)) == {"skill-maker/probe"}
+    assert set(_RUNNER._validator_paths(future)) == {"skill-maker/probe"}
+
+
+def test_skill_validator_discovery_rejects_ambiguous_dual_layout(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "validators" / "skill").mkdir(parents=True)
+    (tmp_path / "skills" / "skill-maker" / "validators").mkdir(parents=True)
+
+    with pytest.raises(
+        _RUNNER.ValidatorRunnerError,
+        match="ambiguous skill validator layout",
+    ):
+        _RUNNER._validator_paths(tmp_path)
+
+
+def test_selected_graph_consumers_share_one_automatic_blueprint_preflight(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    validators = _initialize_runner_repository(repo)
+    skill_validators = repo / "skills" / "skill-maker" / "validators"
+    skill_validators.mkdir(parents=True)
+    counter = tmp_path / "preflight-count"
+    (skill_validators / "blueprints.py").write_text(
+        "from pathlib import Path\n"
+        f"COUNTER = Path({str(counter)!r})\n"
+        "def preflight(repo_root):\n"
+        "    count = int(COUNTER.read_text() or '0') if COUNTER.exists() else 0\n"
+        "    COUNTER.write_text(str(count + 1))\n"
+        "    return [], {'token': 'shared'}\n"
+        "def validate_with_graph(repo_root, graph):\n"
+        "    return [] if graph == {'token': 'shared'} else ['wrong graph']\n"
+        "def validate(repo_root): return ['duplicate graph load']\n",
+        encoding="utf-8",
+    )
+    for name in ("blueprint_relationships", "interface_ids"):
+        (skill_validators / f"{name}.py").write_text(
+            "REQUIRES_BLUEPRINT_GRAPH = True\n"
+            "def validate_with_graph(repo_root, graph):\n"
+            "    return [] if graph == {'token': 'shared'} else ['wrong graph']\n"
+            "def validate(repo_root): return ['duplicate topology error']\n",
+            encoding="utf-8",
+        )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    results = _RUNNER.run_all(
+        repo,
+        validator_ids=[
+            "skill-maker/blueprint_relationships",
+            "skill-maker/interface_ids",
+        ],
+    )
+
+    assert results == {}
+    assert counter.read_text(encoding="utf-8") == "1"
+
+
+def test_blueprint_preflight_receives_detected_repository_schema_version(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _initialize_runner_repository(repo)
+    skill_validators = repo / "skills" / "skill-maker" / "validators"
+    skill_validators.mkdir(parents=True)
+    evidence = tmp_path / "schema-version"
+    (skill_validators / "blueprints.py").write_text(
+        "from pathlib import Path\n"
+        f"EVIDENCE = Path({str(evidence)!r})\n"
+        "def repository_schema_version(repo_root): return 5\n"
+        "def preflight(repo_root, *, expected_schema_version):\n"
+        "    EVIDENCE.write_text(str(expected_schema_version))\n"
+        "    return [], {'token': 'shared'}\n"
+        "def validate_with_graph(repo_root, graph): return []\n"
+        "def validate(repo_root): return ['duplicate graph load']\n",
+        encoding="utf-8",
+    )
+    (skill_validators / "interface_ids.py").write_text(
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        "def validate_with_graph(repo_root, graph): return []\n"
+        "def validate(repo_root): return ['duplicate graph load']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    results = _RUNNER.run_all(
+        repo,
+        validator_ids=["skill-maker/interface_ids"],
+    )
+
+    assert results == {}
+    assert evidence.read_text(encoding="utf-8") == "5"
+
+
+def test_graph_preflight_errors_are_reported_only_by_blueprint_owner(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _initialize_runner_repository(repo)
+    skill_validators = repo / "skills" / "skill-maker" / "validators"
+    skill_validators.mkdir(parents=True)
+    (skill_validators / "blueprints.py").write_text(
+        "def preflight(repo_root): return ['topology error'], None\n"
+        "def validate(repo_root): return ['duplicate topology error']\n",
+        encoding="utf-8",
+    )
+    for name in ("blueprint_relationships", "interface_ids"):
+        (skill_validators / f"{name}.py").write_text(
+            "REQUIRES_BLUEPRINT_GRAPH = True\n"
+            "def validate_with_graph(repo_root, graph): return ['consumer ran']\n"
+            "def validate(repo_root): return ['duplicate topology error']\n",
+            encoding="utf-8",
+        )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    assert _RUNNER.run_all(
+        repo,
+        validator_ids=[
+            "skill-maker/blueprint_relationships",
+            "skill-maker/interface_ids",
+        ],
+    ) == {
+        "skill-maker/blueprints": ["topology error"],
+    }
+
+
+def test_selected_graph_consumer_is_a_noop_when_preflight_has_no_graph(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _initialize_runner_repository(repo)
+    skill_validators = repo / "skills" / "skill-maker" / "validators"
+    skill_validators.mkdir(parents=True)
+    (skill_validators / "blueprints.py").write_text(
+        "def preflight(repo_root): return [], None\n"
+        "def validate(repo_root): return []\n",
+        encoding="utf-8",
+    )
+    (skill_validators / "interface_ids.py").write_text(
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        "def validate_with_graph(repo_root, graph): return ['must not run']\n"
+        "def validate(repo_root): return []\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    assert _RUNNER.run_all(
+        repo,
+        validator_ids=["skill-maker/interface_ids"],
+    ) == {}
+
+
+def test_graph_consumer_mutation_is_reported_and_not_shared_with_later_consumer(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _initialize_runner_repository(repo)
+    skill_validators = repo / "skills" / "skill-maker" / "validators"
+    skill_validators.mkdir(parents=True)
+    observation = tmp_path / "later-observation"
+    (skill_validators / "blueprints.py").write_text(
+        "def preflight(repo_root): return [], {'items': []}\n"
+        "def validate(repo_root): return []\n",
+        encoding="utf-8",
+    )
+    (skill_validators / "a_mutator.py").write_text(
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        "def validate_with_graph(repo_root, graph):\n"
+        "    graph['items'].append('poison')\n"
+        "    return []\n"
+        "def validate(repo_root): return []\n",
+        encoding="utf-8",
+    )
+    (skill_validators / "z_observer.py").write_text(
+        "from pathlib import Path\n"
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        f"OBSERVATION = Path({str(observation)!r})\n"
+        "def validate_with_graph(repo_root, graph):\n"
+        "    OBSERVATION.write_text(repr(graph['items']))\n"
+        "    return []\n"
+        "def validate(repo_root): return []\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    results = _RUNNER.run_all(
+        repo,
+        validator_ids=[
+            "skill-maker/a_mutator",
+            "skill-maker/z_observer",
+        ],
+    )
+
+    assert results == {
+        "skill-maker/a_mutator": [
+            "skill-maker/a_mutator: validator mutated its blueprint graph view"
+        ]
+    }
+    assert observation.read_text(encoding="utf-8") == "[]"
+
+
 def test_run_all_excludes_the_repository_validator_helper(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     validators = _initialize_runner_repository(repo)

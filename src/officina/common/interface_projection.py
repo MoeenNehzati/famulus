@@ -13,8 +13,14 @@ from typing import Mapping
 
 import yaml
 
+from .blueprint_authorization import (
+    AuthorizationRequest,
+    AuthorizationResult,
+    resolve_interface_authorization,
+)
 from .blueprint_graph import (
     BlueprintGraphError,
+    BlueprintNode,
     HelperEdge,
     InterfaceExport,
     RepositoryBlueprintGraph,
@@ -365,7 +371,7 @@ def _project_v4_consumer_interfaces(
         resolver = resolvers.setdefault(
             module.node_id,
             _DefinitionResolver(
-                module.skill_root,
+                module.module_root,
                 module.node_id,
                 source_field="source_module",
             ),
@@ -458,6 +464,280 @@ def _project_v4_consumer_interfaces(
     return InterfaceProjection(consumer_id, document, frozenset(vocabulary))
 
 
+def _project_v5_consumer_interfaces(
+    graph: RepositoryBlueprintGraph,
+    consumer_id: str,
+    certification: CertificationView,
+) -> InterfaceProjection:
+    consumer = graph.nodes.get(consumer_id)
+    consumer_module_id = graph.source_modules.get(consumer_id)
+    if (
+        consumer is None
+        or consumer.node_type != "behavioral_source"
+        or consumer_module_id is None
+    ):
+        raise InterfaceProjectionError(
+            f"unknown behavioral-source consumer {consumer_id!r}"
+        )
+    raw_uses = consumer.declaration.get("uses_interfaces", [])
+    if not isinstance(raw_uses, list):
+        raise InterfaceProjectionError(
+            f"{consumer_id}: uses_interfaces must be a list"
+        )
+
+    interfaces: dict[str, JsonValue] = {}
+    helper_interfaces: dict[str, JsonValue] = {}
+    resolvers: dict[str, _DefinitionResolver] = {}
+    vocabulary: set[str] = set()
+    helper_visiting: set[str] = set()
+
+    def resolve_target(
+        interface_id: str,
+        version: int,
+        *,
+        caller_module_id: str,
+        caller_source_id: str,
+    ) -> tuple[
+        BlueprintNode,
+        BlueprintNode,
+        Mapping[str, JsonValue],
+        str,
+        AuthorizationResult | None,
+    ]:
+        private = graph.source_interfaces.get(interface_id)
+        if private is not None:
+            if (
+                private.module_node_id != caller_module_id
+                or private.version != version
+                or private.source_node_id is None
+                or private.source_interface_id is None
+            ):
+                raise InterfaceProjectionError(
+                    f"{caller_source_id}: unavailable private interface "
+                    f"{interface_id}@{version}"
+                )
+            source = graph.nodes[private.source_node_id]
+            return (
+                graph.nodes[private.module_node_id],
+                source,
+                private.declaration,
+                private.source_interface_id,
+                None,
+            )
+
+        authorization = resolve_interface_authorization(
+            graph,
+            AuthorizationRequest(
+                caller_module_id=caller_module_id,
+                caller_source_id=caller_source_id,
+                interface_id=interface_id,
+                version=version,
+            ),
+        )
+        if not authorization.allowed:
+            raise InterfaceProjectionError(
+                f"{interface_id}: authorization rejected "
+                f"[{authorization.diagnostic}]"
+            )
+        terminal_module_id = authorization.terminal_module_id
+        source_id = authorization.implementing_source_id
+        terminal_interface_id = authorization.terminal_interface_id
+        if (
+            terminal_module_id is None
+            or source_id is None
+            or terminal_interface_id is None
+        ):
+            raise InterfaceProjectionError(
+                f"{interface_id}: authorization omitted terminal binding"
+            )
+        terminal_export = graph.exports.get(terminal_interface_id)
+        source = graph.nodes.get(source_id)
+        module = graph.nodes.get(terminal_module_id)
+        if (
+            terminal_export is None
+            or terminal_export.source_interface_id is None
+            or source is None
+            or source.node_type != "behavioral_source"
+            or module is None
+            or module.node_type != "module"
+        ):
+            raise InterfaceProjectionError(
+                f"{interface_id}: authorization terminal binding is unavailable"
+            )
+        return (
+            module,
+            source,
+            terminal_export.declaration,
+            terminal_export.source_interface_id,
+            authorization,
+        )
+
+    def project(
+        interface_id: str,
+        version: int,
+        *,
+        caller_module_id: str,
+        caller_source_id: str,
+    ) -> dict[str, JsonValue]:
+        module, source, declaration, source_interface_id, authorization = (
+            resolve_target(
+                interface_id,
+                version,
+                caller_module_id=caller_module_id,
+                caller_source_id=caller_source_id,
+            )
+        )
+        certification_owner = (
+            authorization.requested_owner_module_id
+            if authorization is not None
+            else module.node_id
+        )
+        assert certification_owner is not None
+        decision = certification.check_export(
+            certification_owner,
+            interface_id,
+            version,
+            source.node_id,
+        )
+        if not decision.certified:
+            raise InterfaceProjectionError(
+                f"{interface_id}: certification rejected "
+                f"[{decision.code}]: {decision.message}"
+            )
+        resolver = resolvers.setdefault(
+            module.node_id,
+            _DefinitionResolver(
+                module.module_root,
+                module.node_id,
+                source_field="source_module",
+            ),
+        )
+        gateway = source.declaration.get("gateway")
+        contract = declaration.get("contract")
+        if not isinstance(gateway, Mapping) or not isinstance(contract, Mapping):
+            raise InterfaceProjectionError(
+                f"{interface_id}: source gateway and contract are required"
+            )
+        projection: dict[str, JsonValue] = {
+            "id": interface_id,
+            "version": version,
+            "description": str(declaration.get("description", "")),
+            "source_module": module.node_id,
+            "source_interface": source_interface_id,
+            "gateway": resolver.transform(deepcopy(gateway)),
+            "contract": resolver.transform(deepcopy(contract)),
+        }
+        process_binding = declaration.get("process_binding")
+        if isinstance(process_binding, Mapping):
+            projection["process_binding"] = resolver.transform(
+                deepcopy(process_binding)
+            )
+        _collect_v4_vocabulary(declaration, vocabulary)
+        _enforce_standalone_export_size(interface_id, projection)
+        return projection
+
+    def include_helper_closure(interface_id: str) -> None:
+        if interface_id in helper_visiting:
+            raise InterfaceProjectionError(
+                f"helper cycle includes {interface_id}"
+            )
+        source_interface = graph.exports.get(interface_id)
+        if source_interface is None:
+            source_interface = graph.source_interfaces.get(interface_id)
+        if source_interface is None or source_interface.source_node_id is None:
+            raise InterfaceProjectionError(
+                f"{interface_id}: helper source binding is unavailable"
+            )
+        helper_caller_source_id = source_interface.source_node_id
+        helper_caller_module_id = graph.source_modules.get(
+            helper_caller_source_id
+        )
+        if helper_caller_module_id is None:
+            raise InterfaceProjectionError(
+                f"{interface_id}: helper caller module is unavailable"
+            )
+        helper_visiting.add(interface_id)
+        for edge in graph.helper_edges:
+            if edge.source_export_id != interface_id:
+                continue
+            module, source, declaration, source_interface_id, _authorization = (
+                resolve_target(
+                    edge.target_interface_id,
+                    edge.target_version,
+                    caller_module_id=helper_caller_module_id,
+                    caller_source_id=helper_caller_source_id,
+                )
+            )
+            target = InterfaceExport(
+                interface_id=edge.target_interface_id,
+                version=edge.target_version,
+                local_name=edge.target_interface_id.rsplit(
+                    ".interface.", 1
+                )[-1],
+                module_node_id=module.node_id,
+                declaration=declaration,
+                source_node_id=source.node_id,
+                source_interface_id=source_interface_id,
+            )
+            _validate_helper_target(edge, target)
+            if (
+                edge.target_interface_id not in helper_interfaces
+                and edge.target_interface_id not in interfaces
+            ):
+                helper_interfaces[edge.target_interface_id] = project(
+                    edge.target_interface_id,
+                    edge.target_version,
+                    caller_module_id=helper_caller_module_id,
+                    caller_source_id=helper_caller_source_id,
+                )
+                include_helper_closure(edge.target_interface_id)
+        helper_visiting.remove(interface_id)
+
+    for index, entry in enumerate(raw_uses):
+        if not isinstance(entry, Mapping):
+            raise InterfaceProjectionError(
+                f"{consumer_id}.uses_interfaces[{index}] must be a mapping"
+            )
+        target_id = entry.get("interface")
+        version = entry.get("version")
+        if not isinstance(target_id, str) or not isinstance(version, int):
+            raise InterfaceProjectionError(
+                f"{consumer_id}.uses_interfaces[{index}] requires "
+                "interface and version"
+            )
+        interfaces[target_id] = project(
+            target_id,
+            version,
+            caller_module_id=consumer_module_id,
+            caller_source_id=consumer_id,
+        )
+        include_helper_closure(target_id)
+
+    definitions = {
+        key: value
+        for resolver in resolvers.values()
+        for key, value in resolver.definitions.items()
+    }
+    document: dict[str, JsonValue] = {
+        "schema_version": 2,
+        "consumer": consumer_id,
+        "interfaces": dict(sorted(interfaces.items())),
+        "helper_interfaces": dict(sorted(helper_interfaces.items())),
+        "definitions": dict(sorted(definitions.items())),
+    }
+    size = len(_canonical_yaml_bytes(document))
+    if size > _COMBINED_LIMIT:
+        raise InterfaceProjectionError(
+            f"{consumer_id}: combined interface projection is {size} bytes; "
+            f"limit is {_COMBINED_LIMIT}"
+        )
+    return InterfaceProjection(
+        consumer_id,
+        document,
+        frozenset(vocabulary),
+    )
+
+
 def project_consumer_interfaces(
     repository_graph: RepositoryBlueprintGraph,
     consumer_id: str,
@@ -465,6 +745,12 @@ def project_consumer_interfaces(
 ) -> InterfaceProjection:
     """Select one behavioral source's direct interface uses and bounded helpers."""
 
+    if repository_graph.schema_version == 5:
+        return _project_v5_consumer_interfaces(
+            repository_graph,
+            consumer_id,
+            certification,
+        )
     return _project_v4_consumer_interfaces(
         repository_graph, consumer_id, certification
     )

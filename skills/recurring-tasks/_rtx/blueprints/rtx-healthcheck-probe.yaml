@@ -1,0 +1,297 @@
+content:
+- _healthcheck_probe\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/jobs-config.yaml
+  reason: Reads enabled job definitions from the shared jobs configuration.
+  source: recurring-tasks-rtx.source.jobs-config
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: recurring-tasks-rtx.source.rtx-init
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-schedule-backend-init.yaml
+  reason: Imports Python source from _rtx/_schedule_backend/__init__.py.
+  source: recurring-tasks-rtx.source.rtx-schedule-backend-init
+  version: 1
+description: Checks scheduler availability, agent command resolution, and recent enabled-job
+  runs, logging and notifying the result.
+gateway:
+  language: Python
+  path: _healthcheck_probe.py
+id: recurring-tasks-rtx.source.rtx-healthcheck-probe
+interfaces:
+  recurring-tasks-rtx.source.rtx-healthcheck-probe.interface.scripts-healthcheck:
+    contract:
+      arguments: {}
+      caller_warnings:
+      - external-side-effect: Appends a healthcheck log and may send a desktop notification.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: config
+          formats:
+          - yaml
+          id: read-1
+          medium: local-filesystem
+          path: jobs.yaml
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: log
+          formats:
+          - text
+          id: read-2
+          medium: local-filesystem
+          path: logs/*/run.log
+          path_match: glob
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: scheduler-status
+          formats:
+          - text
+          id: read-3
+          medium: local-system
+          sensitivity: derived-private
+          system: native-scheduler
+        writes:
+        - access: write
+          content: log
+          formats:
+          - text
+          id: write-1
+          medium: local-filesystem
+          path: logs/healthcheck/run.log
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+        - access: send
+          content: notification
+          formats:
+          - text
+          id: write-3
+          medium: local-system
+          sensitivity: derived-private
+          system: desktop-notification
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-4
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Probes the current scheduler manager and current enabled-job log freshness.
+        effects:
+        - action: append
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: append-healthcheck
+          may_occur_in_outcomes:
+          - healthy
+          - unhealthy
+          - config-error
+          reversibility:
+            compensatable: Remove appended healthcheck lines manually.
+          value_source:
+            kind: output
+            output_ref: report
+        - action: send
+          confirmation_evidence:
+            direct_io_ref: write-3
+            kind: direct-io
+          direct_io_ref: write-3
+          id: notify-user
+          may_occur_in_outcomes:
+          - healthy
+          - unhealthy
+          reversibility:
+            irreversible: A delivered desktop notification cannot be recalled.
+          value_source:
+            kind: output
+            output_ref: report
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: Logging and notification are independent effects.
+          concurrent_invocations:
+            unsafe: Concurrent checks can interleave appended log lines and notifications.
+          idempotency:
+            non_idempotent: Each call appends timestamps and sends a new notification.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the healthcheck log before rerunning.
+          partial_effects_on_failure:
+            possible: Logging may succeed when notification delivery fails.
+          rollback_on_failure:
+            unavailable: The interface does not retract prior output or notifications.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: report
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: No corrective action is required.
+        class: success
+        effects:
+        - append-healthcheck
+        - notify-user
+        id: healthy
+        outputs:
+        - report
+      - caller_action: Inspect the listed failures and job logs.
+        class: success
+        effects:
+        - append-healthcheck
+        - notify-user
+        id: unhealthy
+        outputs:
+        - report
+      - caller_action: Repair jobs.yaml or its runtime dependencies.
+        class: error
+        effects:
+        - append-healthcheck
+        id: config-error
+        outputs:
+        - report
+      - caller_action: Invoke the healthcheck without arguments.
+        class: error
+        effects: []
+        id: invalid-arguments
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: null
+          minimum: 1
+        description: Line-oriented scheduler and enabled-job health report
+        direct_io_ref: write-2
+        empty: Start and completion lines are always printed.
+        id: report
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-4
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Run pre-flight and per-job health checks for all enabled recurring
+      tasks; sends a desktop notification on failure.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: false
+        name: owner
+    usage: ''
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: binary
+  name: journalctl
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Reports recent service logs for failing jobs.
+  version: any
+- kind: binary
+  name: launchctl
+  platforms:
+    linux: false
+    macos: true
+    windows: false
+  reason: Checks generated user scheduler health.
+  version: any
+- kind: binary
+  name: schtasks
+  platforms:
+    linux: false
+    macos: false
+    windows: true
+  reason: Checks generated user scheduler health.
+  version: any
+- kind: binary
+  name: systemctl
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Checks user service and timer health.
+  version: any
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Reads jobs.yaml for enabled jobs.
+  version: '>=6'
+- kind: system-service
+  name: launchd
+  platforms:
+    linux: false
+    macos: true
+    windows: false
+  reason: Provides the per-user scheduler state checked by health probes.
+  version: any
+- kind: system-service
+  name: systemd-user
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Provides the user service and timer state checked by health probes.
+  version: any
+- kind: system-service
+  name: task-scheduler
+  platforms:
+    linux: false
+    macos: false
+    windows: true
+  reason: Provides the per-user scheduler state checked by health probes.
+  version: any
+schema_version: 5
+uses_interfaces: []
+version: 1

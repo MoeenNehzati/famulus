@@ -1,0 +1,20 @@
+# Shadow fixture template; tests materialize this as blueprint.yaml.
+schema_version: 5
+node_type: module
+id: beta-leaf
+version: 1
+gateway:
+  path: README.md
+  language: Markdown
+content:
+  - (?:README\.md|caller\.py)
+authority:
+  owns_filesystem: []
+sources:
+  beta-leaf.source.caller:
+    blueprint:
+      base: module-root
+      path: blueprints/caller.yaml
+children: {}
+namespace_exports: {}
+exports: {}

@@ -1,0 +1,153 @@
+content:
+- _graph_server\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: math-dependency-graph-rtx.source.rtx-init
+  version: 1
+description: Serves one graph directory through a no-cache local HTTP server until
+  interrupted.
+gateway:
+  language: Python
+  path: _graph_server.py
+id: math-dependency-graph-rtx.source.rtx-graph-server
+interfaces:
+  math-dependency-graph-rtx.source.rtx-graph-server.interface.scripts-serve-graph:
+    contract:
+      arguments:
+        directory:
+          description: Directory served over local HTTP and defaulting to the caller
+            working directory.
+          direct_io_ref: read-1
+          required: false
+          sensitivity: user-private
+          type:
+            access: read
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        host:
+          default: 127.0.0.1
+          description: Host or interface to bind and defaulting to 127.0.0.1.
+          required: false
+          sensitivity: public
+          type:
+            kind: string
+        port:
+          default: 8765
+          description: TCP port to bind and defaulting to 8765.
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            maximum: 65535
+            minimum: 1
+      caller_warnings:
+      - external-side-effect: Binding a non-loopback host exposes every readable file
+          beneath directory to reachable clients.
+      direct_io:
+        network:
+        - access: configure
+          content: graph files and directory listings
+          endpoint: http://<host>:<port>/
+          formats:
+          - http
+          id: network-1
+          medium: network
+          sensitivity: user-private
+          system: local-http-server
+        reads:
+        - access: read
+          content: files beneath served directory
+          formats:
+          - binary
+          id: read-1
+          medium: local-filesystem
+          path: <directory>/**
+          path_match: glob
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: server readiness metadata
+          formats:
+          - json
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Each HTTP request reads current files from the served directory.
+        lifecycle: long-running
+        long_running:
+          ready_when:
+            kind: output-match
+            matcher:
+              dialect: python
+              kind: regex
+              matching: prefix
+              pattern: '"url"'
+            output_ref: ready
+          startup_failure_outcome: bind-failed
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: ready
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Open the reported URL and cancel the process when inspection
+          is complete.
+        class: success
+        effects: []
+        id: serving
+        outputs:
+        - ready
+      - caller_action: Select an available host and port or correct directory access.
+        class: error
+        effects: []
+        id: bind-failed
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: JSON object containing served directory and URL and cache policy.
+        direct_io_ref: write-1
+        empty: Never empty after successful bind.
+        id: ready
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: json
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Serve graph HTML from a local directory with no-cache headers for
+      repeated browser inspection.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        name: owner
+    usage: '[--directory <path>] [--host <host>] [--port <port>]'
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces: []
+version: 1

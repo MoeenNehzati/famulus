@@ -12,12 +12,15 @@ from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-SKILL_DIR = Path(__file__).parent.parent
+SKILL_DIR = Path(__file__).parent
 RTX_DIR = Path(__file__).resolve().parent
 if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
-from _schedule_backend import ScheduleBackendUnsupported, platform_schedule_backend  # noqa: E402
+if __package__:
+    from ._schedule_backend import ScheduleBackendUnsupported, platform_schedule_backend
+else:
+    from _schedule_backend import ScheduleBackendUnsupported, platform_schedule_backend  # noqa: E402
 
 JOBS_FILE = SKILL_DIR / "jobs.yaml"
 LOG_DIR = SKILL_DIR / "logs"

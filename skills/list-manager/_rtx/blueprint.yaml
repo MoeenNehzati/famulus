@@ -1,0 +1,199 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _yaml_store.py
+      - Interface
+      reason: Core list operations; supports --cloud flag to handle cloud transport
+        via the shared dispatcher automatically.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _yaml_store.py
+      - DescribeSchemaInterface
+      reason: Read-only schema descriptor exposed through the shared Python machine-interface
+        runner.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _list_beautify.py
+      - BeautifyListInterface
+      reason: Pure formatter used for user-facing rendering of YAML output.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _render_bridge.py
+      - Interface
+      reason: Default human-facing read path for lists; supports --cloud flag for
+        cloud-backed lists.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _legacy_importer.py
+      - Interface
+      reason: One-time migration utility for importing legacy Markdown lists.
+    network: []
+children: {}
+content:
+- _category_cache\.py
+- __init__\.py
+- _cloud_transport\.py
+- _get_schema\.py
+- _legacy_importer\.py
+- _list_beautify\.py
+- _render_bridge\.py
+- _yaml_store\.py
+- schemas/lists/default\.json
+- schemas/lists/task\-list\-personal\.json
+- schemas/lists/task\-list\.json
+- schemas/lists/todo\.json
+- schemas/lists/triage\.json
+- schemas/types/action\.json
+- schemas/types/entry\.json
+- schemas/types/task_entry\.json
+- schemas/types/triage_action\.json
+- tests/.*
+description: Code module for the list-manager skill.
+exports:
+  list-manager-rtx.interface.beautify-list:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-list-beautify.interface.beautify-list
+  list-manager-rtx.interface.cloud-create-entry:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-yaml-store.interface.cloud-create-entry
+  list-manager-rtx.interface.cloud-delete:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-yaml-store.interface.cloud-delete
+  list-manager-rtx.interface.cloud-init:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-yaml-store.interface.cloud-init
+  list-manager-rtx.interface.cloud-list-categories:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-category-cache.interface.cloud-list-categories
+  list-manager-rtx.interface.cloud-read:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-yaml-store.interface.cloud-read
+  list-manager-rtx.interface.cloud-read-beautify:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-render-bridge.interface.cloud-read-beautify
+  list-manager-rtx.interface.cloud-update:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-yaml-store.interface.cloud-update
+  list-manager-rtx.interface.create-entry:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-yaml-store.interface.create-entry
+  list-manager-rtx.interface.describe-schema:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-yaml-store.interface.describe-schema
+  list-manager-rtx.interface.generate-id:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-yaml-store.interface.generate-id
+  list-manager-rtx.interface.init-list:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-yaml-store.interface.init-list
+  list-manager-rtx.interface.migrate-markdown:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-legacy-importer.interface.migrate-markdown
+  list-manager-rtx.interface.read-beautify:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - daily-plan
+      - daily-plan-rtx
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-render-bridge.interface.read-beautify
+  list-manager-rtx.interface.read-list:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - daily-plan
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-yaml-store.interface.read-list
+  list-manager-rtx.interface.update-list:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - daily-plan
+      - daily-plan-rtx
+      - list-manager
+    source_interface: list-manager-rtx.source.rtx-yaml-store.interface.update-list
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: list-manager-rtx
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  list-manager-rtx.source.rtx-category-cache:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-category-cache.yaml
+  list-manager-rtx.source.rtx-init:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-init.yaml
+  list-manager-rtx.source.rtx-legacy-importer:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-legacy-importer.yaml
+  list-manager-rtx.source.rtx-list-beautify:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-list-beautify.yaml
+  list-manager-rtx.source.rtx-render-bridge:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-render-bridge.yaml
+  list-manager-rtx.source.rtx-yaml-store:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-yaml-store.yaml
+version: 1

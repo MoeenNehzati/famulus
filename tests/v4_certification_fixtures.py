@@ -30,9 +30,11 @@ from test_support.git_repository import GitTestRepository
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_SCHEMA_ROOT = PROJECT_ROOT / "references" / "blueprint"
+SOURCE_SCHEMA_ROOT = (
+    PROJECT_ROOT / "references" / "blueprint" / "migrations" / "v4"
+)
 SOURCE_CERTIFICATION_ROOT = PROJECT_ROOT / "references" / "certification"
-CHECKS = expected_certifier_checks()
+CHECKS = expected_certifier_checks(expected_schema_version=4)
 
 
 class MemorySecretBackend:
@@ -247,13 +249,23 @@ def create_v4_repository(
     commit = repository.git("rev-parse", "HEAD").stdout.decode("ascii").strip()
     pin_blueprint_v4_mechanical_commit(root, commit)
     pin_blueprint_v4_source_overlay_commit(root, commit)
-    graph = load_repository_blueprint_graph(root, schema_root=schema_root)
-    basis_paths = resolve_certification_basis_paths(root)
+    graph = load_repository_blueprint_graph(
+        root,
+        schema_root=schema_root,
+        expected_schema_version=4,
+    )
+    basis_paths = resolve_certification_basis_paths(
+        root,
+        expected_schema_version=4,
+    )
     states = compute_node_hash_states(
         graph,
         repo_root=root,
         policy_path=root / CANONICAL_NODE_HASH_POLICY,
-        certification_basis_hash=compute_certification_basis_hash(root),
+        certification_basis_hash=compute_certification_basis_hash(
+            root,
+            expected_schema_version=4,
+        ),
         certification_basis_paths=basis_paths,
     )
     return graph, states, commit

@@ -1,5 +1,6 @@
 authority:
   owns_filesystem: []
+children: {}
 content:
 - interface\-design\.md
 - skill\-guidelines\-semantic\-review\.md
@@ -7,14 +8,16 @@ content:
 - skill\-guidelines\.standard\.yaml
 - skill\-refactoring\.md
 - skill\-refactoring\.standard\.yaml
-description: Owns the canonical authored and structured standards for skill design and refactoring.
+description: Owns the canonical authored and structured standards for skill design
+  and refactoring.
 exports: {}
 gateway:
   language: YAML
   path: skill-guidelines.standard.yaml
 id: skill-standards
+namespace_exports: {}
 node_type: module
-schema_version: 4
+schema_version: 5
 sources:
   skill-standards.source.interface-design:
     blueprint:

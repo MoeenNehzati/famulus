@@ -25,6 +25,8 @@ import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SRC_ROOT = _REPO_ROOT / "src"
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
@@ -35,6 +37,7 @@ from officina.common.blueprint_graph import (  # noqa: E402
 )
 from officina.common.blueprint_inventory import BlueprintInventoryError  # noqa: E402
 from officina.common.repository_paths import repository_relative_path  # noqa: E402
+from validators.skill_runtime_files import _registered_child_artifact  # noqa: E402
 
 
 FORBIDDEN_SUFFIXES = {".sh", ".bash", ".bat", ".cmd", ".ps1"}
@@ -100,6 +103,8 @@ _LEGACY_COMPOSITE_FUNCTION = (
     Path("src/officina/common/interface_injection_migration.py"),
     "_legacy_gateway",
 )
+REQUIRES_BLUEPRINT_GRAPH = True
+BLUEPRINT_GRAPH_OPTIONAL = True
 
 
 def _is_excluded(rel_path: Path) -> bool:
@@ -108,7 +113,10 @@ def _is_excluded(rel_path: Path) -> bool:
     return False
 
 
-def _iter_skill_files(repo_root: Path):
+def _iter_skill_files(
+    repo_root: Path,
+    graph: RepositoryBlueprintGraph | None,
+):
     skills_root = repo_root / "skills"
     if not skills_root.is_dir():
         return
@@ -117,6 +125,8 @@ def _iter_skill_files(repo_root: Path):
             continue
         rel_path = path.relative_to(repo_root)
         if _is_excluded(rel_path):
+            continue
+        if _registered_child_artifact(path, graph):
             continue
         yield path
 
@@ -127,7 +137,12 @@ def _iter_ordinary_test_files(repo_root: Path):
         yield from sorted(tests_root.rglob("*.py"))
     skills_root = repo_root / "skills"
     if skills_root.is_dir():
-        for tests_dir in sorted(skills_root.glob("*/tests")):
+        for tests_dir in sorted(
+            (
+                *skills_root.glob("*/tests"),
+                *skills_root.glob("*/_rtx/tests"),
+            )
+        ):
             yield from sorted(tests_dir.rglob("*.py"))
 
 
@@ -190,9 +205,9 @@ def _validate_v4_blueprints(
     repo_root = repo_root.resolve()
     for node in graph.nodes.values():
         rel_path = repository_relative_path(node.blueprint_path, repo_root)
-        owner_relative = repository_relative_path(node.skill_root, repo_root)
+        owner_relative = repository_relative_path(node.module_root, repo_root)
         is_skill_node = (
-            len(owner_relative.parts) == 2
+            len(owner_relative.parts) >= 2
             and owner_relative.parts[0] == "skills"
         )
         if (
@@ -229,12 +244,24 @@ def _validate_v4_blueprints(
                             f"{rel_path}: authority.suggested_permissions."
                             f"bash[{index}]"
                         )
+                        tokens = [*command, *args_prefix]
                         errors.extend(
                             _command_violations(
-                                [*command, *args_prefix],
+                                tokens,
                                 context,
                             )
                         )
+                        if (
+                            _PYTHON_RUNNER in tokens
+                            and any(
+                                _COMPOSITE_PYTHON_TARGET.search(token)
+                                for token in tokens
+                            )
+                        ):
+                            errors.append(
+                                f"{context}: composite runner permission "
+                                "target is not allowed"
+                            )
             continue
         if (
             node.node_type != "behavioral_source"
@@ -507,10 +534,13 @@ def _validate_python(path: Path, rel_path: Path) -> list[str]:
     return errors
 
 
-def validate(repo_root: Path) -> list[str]:
+def _validate(
+    repo_root: Path,
+    repository_graph: RepositoryBlueprintGraph | None,
+) -> list[str]:
     errors: list[str] = []
     skills_root = repo_root / "skills"
-    if skills_root.is_dir() and any(
+    if repository_graph is None and skills_root.is_dir() and any(
         skills_root.glob("*/blueprint.yaml")
     ):
         schema_root = repo_root / "references" / "blueprint"
@@ -534,7 +564,9 @@ def validate(repo_root: Path) -> list[str]:
             errors.extend(
                 _validate_v4_blueprints(repository_graph, repo_root)
             )
-    for path in _iter_skill_files(repo_root):
+    elif repository_graph is not None:
+        errors.extend(_validate_v4_blueprints(repository_graph, repo_root))
+    for path in _iter_skill_files(repo_root, repository_graph):
         rel_path = path.relative_to(repo_root)
         if path.suffix in FORBIDDEN_SUFFIXES and _is_runtime_script(rel_path):
             errors.append(f"{rel_path}: shell scripts are not allowed in shared skills")
@@ -559,6 +591,17 @@ def validate(repo_root: Path) -> list[str]:
         )
     errors.extend(_validate_runner_permission_documents(repo_root))
     return errors
+
+
+def validate_with_graph(
+    repo_root: Path,
+    graph: RepositoryBlueprintGraph,
+) -> list[str]:
+    return _validate(repo_root, graph)
+
+
+def validate(repo_root: Path) -> list[str]:
+    return _validate(repo_root, None)
 
 
 def main() -> int:

@@ -7,7 +7,8 @@ dependencies:
   reason: Apply the user's optional routing preferences.
   source: connect-google.source.personal-preferences-default
   version: 1
-description: Selects client creation or service connection based on the canonical client-status check and optional user routing preferences.
+description: Selects client creation or service connection based on the canonical
+  client-status check and optional user routing preferences.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -16,23 +17,17 @@ interfaces:
   connect-google.source.gateway.interface.default:
     contract:
       arguments:
-        request: {description: User request to prepare Google authentication or connect one or more supported services., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
-      preconditions: []
-      interaction: {mode: interactive, channel: tty, unattended_outcome: clarification-required}
+        request:
+          description: User request to prepare Google authentication or connect one
+            or more supported services.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
       caller_warnings:
-      - external-side-effect: Delegated service owners may open browser authorization and write private OAuth configuration.
-      outputs:
-      - {id: response, audience: human, description: The selected Google onboarding route and its result or next required action., direct_io_ref: write-1, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
-      outcomes:
-      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Continue with the connected service.}
-      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: Identify the target services or supply the local Desktop-client JSON path.}
-      - {id: failed, class: error, outputs: [], effects: [], caller_action: Report the failing owner skill and retain the private client file.}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {per_source: Client status and delegated service results are observed at invocation time.}
-        verification: [{method: output-schema, output_ref: response}]
-      helpers: []
+      - external-side-effect: Delegated service owners may open browser authorization
+          and write private OAuth configuration.
       direct_io:
         network: []
         reads:
@@ -47,17 +42,79 @@ interfaces:
           sensitivity: user-private
           system: agent-runtime
         writes:
-        - {id: write-1, medium: prompt, access: write, system: agent-runtime, content: onboarding response, formats: [markdown], sensitivity: derived-private}
+        - access: write
+          content: onboarding response
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          per_source: Client status and delegated service results are observed at
+            invocation time.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: clarification-required
+      outcomes:
+      - caller_action: Continue with the connected service.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Identify the target services or supply the local Desktop-client
+          JSON path.
+        class: refusal
+        effects: []
+        id: clarification-required
+        outputs:
+        - response
+      - caller_action: Report the failing owner skill and retain the private client
+          file.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: The selected Google onboarding route and its result or next required
+          action.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
     description: Route Google OAuth-client preparation according to whether a valid
       Desktop client is already installed.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces:
-- interface: connect-google.source.rtx-client-config.interface.client-status
+- interface: connect-google.interface.client-status
   version: 1
 - interface: connect-google.source.instructions-connect-services.interface.connect-services
   version: 1
 - interface: connect-google.source.instructions-create-client.interface.create-client
   version: 1
-version: 1
+- interface: connect-google.interface.install-client
+  version: 1
+version: 2

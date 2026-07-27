@@ -1,7 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Owns the LLM-facing cloud-files instructions and routes storage requests to caller-scoped machine interfaces.
+description: Owns the LLM-facing cloud-files instructions and routes storage requests
+  to caller-scoped machine interfaces.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -14,31 +15,11 @@ interfaces:
           description: User request for cloud-file setup or storage guidance.
           required: true
           sensitivity: user-private
-          type: {kind: string}
-      preconditions: []
-      interaction: {mode: unattended}
+          type:
+            kind: string
       caller_warnings:
-      - external-side-effect: Storage workflows may create, replace, or delete remote files through separately declared interfaces.
-      outputs:
-      - id: response
-        audience: both
-        description: Markdown response describing or reporting the requested cloud-files workflow.
-        direct_io_ref: write-1
-        type: {kind: string}
-        cardinality: {minimum: 1, maximum: 1}
-        ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        empty: The interface always returns a response.
-      outcomes:
-      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Use the response and any separately returned file content.}
-      - {id: failed, class: error, outputs: [response], effects: [], caller_action: Report the setup or storage failure.}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {live: The response reflects the workflow state observed during this invocation.}
-        verification: [{method: output-schema, output_ref: response}]
-      helpers: []
+      - external-side-effect: Storage workflows may create, replace, or delete remote
+          files through separately declared interfaces.
       direct_io:
         network: []
         reads:
@@ -57,13 +38,71 @@ interfaces:
           id: write-1
           medium: prompt
           sensitivity: derived-private
+      execution:
+        consistency:
+          live: The response reflects the workflow state observed during this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the response and any separately returned file content.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Report the setup or storage failure.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - response
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Markdown response describing or reporting the requested cloud-files
+          workflow.
+        direct_io_ref: write-1
+        empty: The interface always returns a response.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+      preconditions: []
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces:
-- interface: cloud-files.source.rtx-oauth-bootstrap.interface.setup-oauth
+- interface: cloud-files.interface.setup-oauth
   version: 1
 - interface: connect-google.interface.default
   version: 1
-version: 1
+- interface: cloud-files.interface.ensure-oauth
+  version: 1
+- interface: cloud-files.interface.lists-delete
+  version: 1
+- interface: cloud-files.interface.lists-read
+  version: 1
+- interface: cloud-files.interface.lists-write
+  version: 1
+- interface: cloud-files.interface.plans-delete
+  version: 1
+- interface: cloud-files.interface.plans-read
+  version: 1
+- interface: cloud-files.interface.plans-write
+  version: 1
+- interface: cloud-files.interface.write-config
+  version: 1
+version: 2

@@ -1,0 +1,15 @@
+schema_version: 5
+node_type: behavioral_source
+id: demo-rtx.source.runtime
+version: 1
+gateway:
+  path: runtime.py
+  language: Python>=3.11
+content:
+  - runtime\.py
+dependencies: []
+uses_interfaces: []
+interfaces:
+  demo-rtx.source.runtime.interface.execute:
+    version: 3
+    description: Execute the demo.

@@ -1,37 +1,14 @@
 authority:
   owns_filesystem: []
-  suggested_permissions:
-    bash:
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_source_fetcher.py
-      - Interface
-      reason: Suggested approval for the PDF conversion runtime.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_marker_probe.py
-      - Interface
-      reason: Suggested approval for the PDF conversion runtime.
-    - command:
-      - marker_single
-      reason: Suggested approval for the PDF conversion runtime.
-    network:
-    - kind: web_search
-      reason: Suggested approval for the PDF conversion runtime.
-    - domains:
-      - arxiv.org
-      kind: web_fetch
-      reason: Suggested approval for the PDF conversion runtime.
 category: system-assistant
+children:
+  pdf-to-markdown-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
 - SKILL\.md
-- _rtx/_marker_probe\.py
-- _rtx/_source_fetcher\.py
-description: Obtains readable research-paper source by preferring extracted LaTeX archives and otherwise guiding PDF-to-Markdown conversion.
+description: Obtains readable research-paper source by preferring extracted LaTeX
+  archives and otherwise guiding PDF-to-Markdown conversion.
 discovery:
   mechanism: skill
 exports:
@@ -44,31 +21,28 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: pdf-to-markdown.source.rtx-marker-probe.interface.scripts-check-marker-models
+    facade_interface:
+      interface: pdf-to-markdown-rtx.interface.scripts-check-marker-models
+      version: 1
   pdf-to-markdown.interface.scripts-fetch-arxiv-source:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: pdf-to-markdown.source.rtx-source-fetcher.interface.scripts-fetch-arxiv-source
+    facade_interface:
+      interface: pdf-to-markdown-rtx.interface.scripts-fetch-arxiv-source
+      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: pdf-to-markdown
 kind: converter
+namespace_exports: {}
 node_type: module
 role: document-processing
-schema_version: 4
+schema_version: 5
 sources:
   pdf-to-markdown.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  pdf-to-markdown.source.rtx-marker-probe:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-marker-probe.yaml
-  pdf-to-markdown.source.rtx-source-fetcher:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-source-fetcher.yaml
-version: 1
+version: 2

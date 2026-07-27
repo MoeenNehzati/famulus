@@ -6144,7 +6144,7 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Parses v4 blueprint declarations during semantic inspection."
+              "reason": "Parses v5 blueprint declarations during semantic inspection."
             },
             {
               "kind": "python-package",

@@ -22,7 +22,7 @@ def _short_task_name(name: str) -> str:
 
 
 def executor_command(job: ScheduleJob, context: ScheduleContext) -> str:
-    executor = context.skill_dir / "_rtx" / "_job_executor.py"
+    executor = context.skill_dir / "_job_executor.py"
     return subprocess.list2cmdline(
         [
             sys.executable,

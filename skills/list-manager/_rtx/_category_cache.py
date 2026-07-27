@@ -11,10 +11,13 @@ import yaml
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-from _rtx import _cloud_transport as cloud_transport
+if __package__:
+    from . import _cloud_transport as cloud_transport
+else:
+    from _rtx import _cloud_transport as cloud_transport
 
 
-CACHE_DIR = Path(__file__).resolve().parents[1] / "tmp"
+CACHE_DIR = Path(__file__).resolve().parents[0] / "tmp"
 DEFAULT_REMAINING_USES = 20
 
 

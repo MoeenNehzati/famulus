@@ -118,7 +118,7 @@ class OSXScheduleBackend:
         unit_dir = context.unit_dir or default_launch_agents_dir()
         unit_dir.mkdir(parents=True, exist_ok=True)
         enabled_names: set[str] = set()
-        executor = context.skill_dir / "_rtx" / "_job_executor.py"
+        executor = context.skill_dir / "_job_executor.py"
 
         for job in jobs:
             if not job.enabled:

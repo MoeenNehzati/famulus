@@ -1,0 +1,188 @@
+content:
+- _category_cache\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: list-manager-rtx.source.rtx-init
+  version: 1
+description: Python source that caches cloud-list category paths and refreshes them
+  through the cloud-files list-read interface.
+gateway:
+  language: Python
+  path: _category_cache.py
+id: list-manager-rtx.source.rtx-category-cache
+interfaces:
+  list-manager-rtx.source.rtx-category-cache.interface.cloud-list-categories:
+    contract:
+      arguments:
+        name:
+          description: Cloud list name whose category paths should be returned
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              named: identifier
+            kind: string
+        refresh:
+          default: false
+          description: Force a cloud refresh instead of consuming the cached use count
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+      caller_warnings:
+      - may-wait: A cache miss, expired cache, or explicit refresh waits for the cloud
+          list read.
+      - rate-limited: Cache refreshes consume Google Drive API quota through cloud-files.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: metadata
+          formats:
+          - yaml
+          id: read-1
+          medium: local-filesystem
+          path: skills/list-manager/tmp/categories.<name>.yaml
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: metadata
+          formats:
+          - yaml
+          id: write-1
+          medium: local-filesystem
+          path: skills/list-manager/tmp/categories.<name>.yaml
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: metadata
+          formats:
+          - yaml
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          eventually_consistent: Cached results can lag remote changes until refresh
+            or countdown expiry.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: cache-write
+          may_occur_in_outcomes:
+          - success
+          reversibility:
+            reversible: A later refresh replaces the cache with current category paths.
+          value_source:
+            argument_ref: name
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: The cache file is rewritten as one local effect after
+              a successful refresh or use-count update.
+          concurrent_invocations:
+            unsafe: Concurrent cache refreshes or decrements are not serialized.
+          idempotency:
+            non_idempotent: Ordinary reads decrement remaining_uses, while refresh
+              rewrites the cache.
+          on_uncertain_completion:
+            retry: A failed cache update can be retried because remote list content
+              is not changed.
+          partial_effects_on_failure:
+            possible: Remote reading can succeed before the local cache update fails.
+          rollback_on_failure:
+            unavailable: The interface does not retain a transactional cache backup.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: categories
+        - direct_io_ref: write-1
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use only the returned category paths.
+        class: success
+        effects:
+        - cache-write
+        id: success
+        outputs:
+        - categories
+      - caller_action: Report the cache or cloud-read error and do not invent a category
+          path.
+        class: error
+        effects: []
+        id: error
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: YAML list of current category paths for the named cloud list.
+        direct_io_ref: write-2
+        empty: A list with no categories produces an empty YAML sequence.
+        id: categories
+        ordering: sorted
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: yaml
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Return cached cloud-list category paths, refreshing them after the
+      local use countdown expires or on request.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        allowed_flags:
+        - --cloud
+        - --refresh
+        max_positionals: 1
+        min_positionals: 1
+        notes: Returns category paths from the local cache; refreshes from cloud storage
+          on first use, after twenty lookups, or with --refresh.
+        positional_patterns:
+          '0': ^[a-zA-Z0-9_-]+$
+        required_flags:
+        - --cloud
+    usage: <name> --cloud [--refresh]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Reads cloud list YAML and stores local category-cache YAML.
+  version: '>=6'
+schema_version: 5
+uses_interfaces:
+- interface: cloud-files.interface.lists-read
+  version: 1
+- interface: cloud-files.interface.lists-write
+  version: 1
+version: 1

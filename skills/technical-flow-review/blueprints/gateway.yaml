@@ -28,34 +28,121 @@ interfaces:
   technical-flow-review.source.gateway.interface.default:
     contract:
       arguments:
-        request: {description: "Technical-flow review request plus the target document and any known purpose, audience, field, genre, or length constraints.", required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
-      preconditions: []
-      interaction: {mode: unattended}
+        request:
+          description: Technical-flow review request plus the target document and
+            any known purpose, audience, field, genre, or length constraints.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
       caller_warnings: []
-      outputs:
-      - {id: response, audience: human, description: 'Concise document profile and diagnosis of big-picture flow, section roles, ordering, bridges, milestones, detail allocation, and a smallest useful restructure.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty on success., type: {kind: string, sensitivity: derived-private}}
-      outcomes:
-      - {id: reviewed, class: success, outputs: [response], effects: [], caller_action: Review the profile-dependent structural diagnosis before requesting any rewrite or file edit.}
-      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: Supply the target document or the profile fields that cannot be inferred reliably.}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {snapshot: "The review reflects the document, inferred profile, selected baselines, and constraints available in this invocation."}
-        verification:
-        - {method: output-schema, output_ref: response}
-      helpers: []
       direct_io:
         network: []
         reads:
-        - {id: request, medium: prompt, access: read, system: agent-runtime, content: Flow-review request and supplied document-profile context., formats: [text], sensitivity: user-private}
-        - {id: document, medium: local-filesystem, access: read, content: 'Target technical document, top-of-document profile comment, and relevant companion context when files are named.', formats: [tex, markdown, text, html], sensitivity: user-private, reason: Diagnose actual whole-document and section-level reader flow.}
-        - {id: profile-standard, medium: repository-filesystem, access: read, path: references/document-standards/document-profile.md, path_match: exact, content: Canonical document-profile fields and normalization rules., formats: [markdown], sensitivity: public, reason: Identify the document profile before judging flow.}
-        - {id: local-baselines, medium: repository-filesystem, access: read, path: skills/technical-flow-review/references/**, path_match: glob, content: 'Closest general document-type baseline, field-specific deviations, and conditional audience-familiarity overlay.', formats: [markdown], sensitivity: public, reason: Calibrate flow expectations without loading or merging irrelevant conventions.}
+        - access: read
+          content: Flow-review request and supplied document-profile context.
+          formats:
+          - text
+          id: request
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        - access: read
+          content: Target technical document, top-of-document profile comment, and
+            relevant companion context when files are named.
+          formats:
+          - tex
+          - markdown
+          - text
+          - html
+          id: document
+          medium: local-filesystem
+          reason: Diagnose actual whole-document and section-level reader flow.
+          sensitivity: user-private
+        - access: read
+          content: Canonical document-profile fields and normalization rules.
+          formats:
+          - markdown
+          id: profile-standard
+          medium: repository-filesystem
+          path: references/document-standards/document-profile.md
+          path_match: exact
+          reason: Identify the document profile before judging flow.
+          sensitivity: public
+        - access: read
+          content: Closest general document-type baseline, field-specific deviations,
+            and conditional audience-familiarity overlay.
+          formats:
+          - markdown
+          id: local-baselines
+          medium: repository-filesystem
+          path: skills/technical-flow-review/references/**
+          path_match: glob
+          reason: Calibrate flow expectations without loading or merging irrelevant
+            conventions.
+          sensitivity: public
         writes:
-        - {id: response, medium: prompt, access: write, system: agent-runtime, content: Profile-aware technical-flow diagnosis and candidate structural direction., formats: [markdown], sensitivity: derived-private}
-    description: Diagnose technical-document flow relative to its inferred profile and propose structural direction without unapproved rewriting.
+        - access: write
+          content: Profile-aware technical-flow diagnosis and candidate structural
+            direction.
+          formats:
+          - markdown
+          id: response
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          snapshot: The review reflects the document, inferred profile, selected baselines,
+            and constraints available in this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Review the profile-dependent structural diagnosis before requesting
+          any rewrite or file edit.
+        class: success
+        effects: []
+        id: reviewed
+        outputs:
+        - response
+      - caller_action: Supply the target document or the profile fields that cannot
+          be inferred reliably.
+        class: refusal
+        effects: []
+        id: clarification-required
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Concise document profile and diagnosis of big-picture flow, section
+          roles, ordering, bridges, milestones, detail allocation, and a smallest
+          useful restructure.
+        direct_io_ref: response
+        empty: Never empty on success.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Diagnose technical-document flow relative to its inferred profile
+      and propose structural direction without unapproved rewriting.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

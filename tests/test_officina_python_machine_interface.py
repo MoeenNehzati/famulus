@@ -21,6 +21,7 @@ from officina.common.blueprint_graph import (  # noqa: E402
     load_repository_blueprint_graph,
 )
 from officina.dispatcher.core import ResolvedInvocationMetadata  # noqa: E402
+import officina.dispatcher.core as dispatcher_core  # noqa: E402
 import officina.runtime.python_machine_interface as python_interface  # noqa: E402
 import officina.runtime.python_machine_interface_runner as python_runner  # noqa: E402
 from officina.runtime.python_machine_interface import (  # noqa: E402
@@ -36,6 +37,36 @@ from officina.runtime.python_machine_interface_runner import (  # noqa: E402
     main,
     run_python_machine_interface,
 )
+
+SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint"
+V4_SCHEMA_ROOT = SCHEMA_ROOT / "migrations" / "v4"
+
+
+@pytest.fixture(autouse=True)
+def _select_frozen_v4_for_historical_fixtures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_load = dispatcher_core.load_repository_blueprint_graph
+
+    def load_fixture_graph(
+        root: Path,
+        *args: object,
+        **kwargs: object,
+    ) -> object:
+        if "expected_schema_version" not in kwargs:
+            for marker in Path(root).rglob("blueprint.yaml"):
+                document = yaml.safe_load(marker.read_text(encoding="utf-8"))
+                if isinstance(document, dict) and document.get("schema_version") == 4:
+                    kwargs["expected_schema_version"] = 4
+                    kwargs["schema_root"] = V4_SCHEMA_ROOT
+                    break
+        return real_load(root, *args, **kwargs)
+
+    monkeypatch.setattr(
+        dispatcher_core,
+        "load_repository_blueprint_graph",
+        load_fixture_graph,
+    )
 
 
 class _PassingCertificationView:
@@ -56,6 +87,54 @@ def _target(
     return PythonProcessTarget(Path(gateway_path), process_entry)
 
 
+def _logical_target(module_id: str) -> PythonProcessTarget:
+    package = python_interface.logical_python_package_name(module_id)
+    return PythonProcessTarget(
+        Path("runtime.py"),
+        "Interface",
+        logical_package=package,
+        logical_entrypoint=f"{package}.runtime",
+    )
+
+
+def _write_logical_runtime(
+    module_root: Path,
+    *,
+    value: str,
+) -> None:
+    module_root.mkdir(parents=True)
+    (module_root / "__init__.py").write_text("", encoding="utf-8")
+    (module_root / "helper.py").write_text(
+        f"VALUE = {value!r}\n",
+        encoding="utf-8",
+    )
+    (module_root / "late_helper.py").write_text(
+        f"LATE_VALUE = 'late-{value}'\n",
+        encoding="utf-8",
+    )
+    (module_root / "resource.txt").write_text(
+        f"resource-{value}",
+        encoding="utf-8",
+    )
+    (module_root / "runtime.py").write_text(
+        "from pathlib import Path\n"
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "from .helper import VALUE\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    value = VALUE\n"
+        "    physical_file = Path(__file__).resolve()\n"
+        "    compiled_file = Path(__code__.co_filename).resolve() if False else None\n"
+        "    resource = Path(__file__).with_name('resource.txt').read_text(encoding='utf-8')\n"
+        "    def route_smoke(self):\n"
+        "        assert self.value\n"
+        "    def run(self, args):\n"
+        "        from .late_helper import LATE_VALUE\n"
+        "        self.late_value = LATE_VALUE\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+
+
 @pytest.mark.parametrize(
     ("gateway_path", "process_entry"),
     [
@@ -73,6 +152,33 @@ def test_python_process_target_rejects_noncanonical_fields(
 ) -> None:
     with pytest.raises(PythonProcessTargetError):
         PythonProcessTarget(gateway_path, process_entry)
+
+
+def test_logical_process_target_accepts_module_root_relative_gateway() -> None:
+    package = python_interface.logical_python_package_name("demo-rtx")
+
+    target = PythonProcessTarget(
+        Path("runtime.py"),
+        "Interface",
+        logical_package=package,
+        logical_entrypoint=f"{package}.runtime",
+    )
+
+    assert target.gateway_path == Path("runtime.py")
+    assert target.logical_package == package
+    assert target.logical_entrypoint == f"{package}.runtime"
+
+
+def test_logical_package_identity_is_injective_and_import_safe() -> None:
+    first = python_interface.logical_python_package_name("alpha-rtx")
+    second = python_interface.logical_python_package_name("alpha2-rtx")
+
+    assert first != second
+    assert first.isidentifier()
+    assert second.isidentifier()
+    assert bytes.fromhex(first.removeprefix("_officina_module_")).decode(
+        "utf-8"
+    ) == "alpha-rtx"
 
 
 def _v4_runtime_contract() -> dict[str, object]:
@@ -265,6 +371,24 @@ def test_dispatch_call_analyzer_resolves_aliases_in_nested_imports() -> None:
     assert [item.interface for item in declarations] == ["read", "write", "delete"]
 
 
+def test_dispatch_call_analyzer_reads_canonical_v5_module_ids() -> None:
+    tree = ast.parse(
+        "from officina.runtime.python_machine_interface import DispatchCall\n"
+        "call = DispatchCall(\n"
+        "    caller_module_id='demo-rtx',\n"
+        "    target_module_id='cloud-files-rtx',\n"
+        "    interface='read',\n"
+        ")\n"
+    )
+
+    declaration = python_interface.analyze_dispatch_call_declarations(tree)[0]
+
+    assert declaration.caller_module_id == "demo-rtx"
+    assert declaration.target_module_id == "cloud-files-rtx"
+    assert declaration.interface == "read"
+    assert declaration.legacy_v4 is False
+
+
 def write_interface(path: Path) -> None:
     path.write_text(
         "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
@@ -361,8 +485,8 @@ def test_dependency_loader_uses_structured_target_not_command(
     runtime.mkdir()
     write_interface(runtime / "_demo.py")
     resolved = ResolvedInvocationMetadata(
-        caller_skill="caller-skill",
-        target_skill="demo-skill",
+        caller_module_id="caller-skill",
+        target_module_id="demo-skill",
         script_interface="run",
         target="demo-skill.interface.run",
         pattern="run",
@@ -421,6 +545,26 @@ def test_route_smoke_batch_uses_one_child_and_isolates_loaded_paths(
     assert (second / "_rtx" / "_dependency.py").resolve() not in traces[first_key]
     assert (second / "_rtx" / "_dependency.py").resolve() in traces[second_key]
     assert (first / "_rtx" / "_dependency.py").resolve() not in traces[second_key]
+
+
+def test_v4_route_smoke_trace_reports_loaded_not_merely_bound_sources(
+    tmp_path: Path,
+) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    write_traced_interface(skill, "loaded")
+    unused = skill / "_rtx" / "_unused.py"
+    unused.write_text("UNUSED = True\n", encoding="utf-8")
+    target = _target("_rtx/_worker.py")
+
+    paths = python_interface.trace_python_route_smoke_dependencies(
+        skill,
+        tmp_path,
+        target,
+    )
+
+    assert (skill / "_rtx" / "_worker.py").resolve() in paths
+    assert (skill / "_rtx" / "_dependency.py").resolve() in paths
+    assert unused.resolve() not in paths
 
 
 def test_route_smoke_batch_isolates_lazy_officina_imports_between_specs(
@@ -559,6 +703,8 @@ def test_route_smoke_batch_rejects_invalid_blueprint_outside_skills(
         python_interface.trace_python_route_smoke_dependencies_batch(
             tmp_path,
             ((skill, _target("_rtx/_worker.py")),),
+            expected_schema_version=4,
+            schema_root=V4_SCHEMA_ROOT,
         )
 
 
@@ -647,6 +793,50 @@ def test_route_smoke_batch_empty_input_launches_no_child(
     assert batch_tracer(tmp_path, []) == {}
 
 
+def test_route_smoke_schema_version_is_explicit_and_defaults_to_v5(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skill = tmp_path / "skills" / "demo" / "_rtx"
+    _write_logical_runtime(skill, value="demo")
+    target = _logical_target("demo-rtx")
+    commands: list[list[str]] = []
+    payload = [
+        {
+            "skill_root": skill.resolve().as_posix(),
+            "python_target": python_interface._python_process_target_payload(
+                target
+            ),
+            "paths": [(skill / "runtime.py").resolve().as_posix()],
+        }
+    ]
+
+    def capture_run(command, **_kwargs):
+        commands.append(list(command))
+        return python_interface.subprocess.CompletedProcess(
+            args=command,
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    monkeypatch.setattr(python_interface.subprocess, "run", capture_run)
+
+    python_interface.trace_python_route_smoke_dependencies_batch(
+        tmp_path,
+        ((skill, target),),
+    )
+    python_interface.trace_python_route_smoke_dependencies_batch(
+        tmp_path,
+        ((skill, target),),
+        expected_schema_version=5,
+    )
+
+    assert [command[-1] for command in commands] == ["5", "5"]
+    assert Path(commands[0][5]).name == "blueprint"
+    assert Path(commands[1][5]).name == "blueprint"
+
+
 def test_scalar_route_smoke_trace_delegates_to_batch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -664,6 +854,7 @@ def test_scalar_route_smoke_trace_delegates_to_batch(
     def trace_batch(
         repo_root: Path,
         specifications: tuple[tuple[Path, PythonProcessTarget], ...],
+        **_options: object,
     ) -> dict[tuple[Path, PythonProcessTarget], tuple[Path, ...]]:
         normalized = tuple(specifications)
         calls.append((repo_root, normalized))
@@ -695,7 +886,11 @@ def test_route_smoke_trace_prefers_candidate_local_officina_source(
     write_interface(runtime / "_demo.py")
     live_source = Path(python_interface.__file__).resolve().parents[2]
     candidate_source = tmp_path / "src"
-    shutil.copytree(live_source / "officina", candidate_source / "officina")
+    shutil.copytree(
+        live_source / "officina",
+        candidate_source / "officina",
+        ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),
+    )
 
     paths = python_interface.trace_python_route_smoke_dependencies(
         skill,
@@ -768,6 +963,334 @@ def test_load_interface_ignores_conflicting_cached_package(
     assert interface.value == "ok"
     sys.modules.pop("_rtx", None)
     sys.modules.pop("_rtx._demo", None)
+
+
+def test_logical_loader_preserves_relative_imports_physical_file_and_resources(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module_root = tmp_path / "skills" / "demo" / "_rtx"
+    _write_logical_runtime(module_root, value="demo")
+    target = _logical_target("demo-rtx")
+    monkeypatch.chdir(module_root)
+    sys.modules.pop("runtime", None)
+    sys.modules.pop("helper", None)
+
+    interface = load_interface(
+        target.gateway_path,
+        target.process_entry,
+        logical_package=target.logical_package,
+        logical_entrypoint=target.logical_entrypoint,
+    )
+
+    assert interface.value == "demo"
+    assert interface.physical_file == (module_root / "runtime.py").resolve()
+    assert Path(interface.run.__func__.__code__.co_filename) == (
+        module_root / "runtime.py"
+    ).resolve()
+    assert interface.resource == "resource-demo"
+    assert "runtime" not in sys.modules
+    assert "helper" not in sys.modules
+
+
+def test_logical_loader_replaces_hostile_cached_package_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module_root = tmp_path / "skills" / "demo" / "_rtx"
+    _write_logical_runtime(module_root, value="trusted")
+    target = _logical_target("demo-rtx")
+    hostile = type(sys)(target.logical_package)
+    hostile.VALUE = "hostile"
+    hostile.__file__ = str(tmp_path / "hostile.py")
+    sys.modules[target.logical_package] = hostile
+    monkeypatch.chdir(module_root)
+
+    interface = load_interface(
+        target.gateway_path,
+        target.process_entry,
+        logical_package=target.logical_package,
+        logical_entrypoint=target.logical_entrypoint,
+    )
+
+    assert interface.value == "trusted"
+    assert sys.modules[target.logical_package] is hostile
+    assert run_python_machine_interface(interface, []) == 0
+    assert interface.late_value == "late-trusted"
+    assert sys.modules[target.logical_package] is hostile
+
+
+def test_main_attaches_runtime_dispatch_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    class Interface(PythonMachineInterface):
+        def run(self, args):
+            context = python_interface.runtime_dispatch_context(self)
+            captured["caller_module_id"] = context.caller_module_id
+            captured["caller_source_id"] = context.caller_source_id
+            captured["repo_root"] = context.repo_root
+            return 0
+
+    def fake_load_interface(*_args, **_kwargs):
+        return Interface()
+
+    monkeypatch.setattr(python_runner, "load_interface", fake_load_interface)
+
+    result = main(
+        [
+            "--runtime-caller-module-id",
+            "demo-rtx",
+            "--runtime-caller-source-id",
+            "demo-rtx.source.runtime",
+            "--runtime-repo-root",
+            str(tmp_path),
+            "_rtx/_demo.py",
+            "Interface",
+        ]
+    )
+
+    assert result == 0
+    assert captured == {
+        "caller_module_id": "demo-rtx",
+        "caller_source_id": "demo-rtx.source.runtime",
+        "repo_root": tmp_path,
+    }
+
+
+def test_logical_descriptor_and_snapshot_sources_have_identical_identities(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from officina.common.blueprint_graph import (
+        encode_runtime_python_package_snapshot,
+    )
+
+    module_root = tmp_path / "skills" / "demo" / "_rtx"
+    _write_logical_runtime(module_root, value="same")
+    target = _logical_target("demo-rtx")
+    monkeypatch.chdir(module_root)
+    paths = (module_root / "__init__.py", module_root / "helper.py", module_root / "runtime.py")
+    descriptors = [os.open(path, os.O_RDONLY) for path in paths]
+    try:
+        descriptor_sources = python_runner._load_bound_package_sources(
+                tuple(
+                    (descriptor, path.relative_to(module_root.parent).as_posix())
+                    for descriptor, path in zip(descriptors, paths, strict=True)
+                ),
+                logical_package=target.logical_package,
+                physical_package_prefix=module_root.name,
+        )
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
+
+    snapshots = tuple((path, path.read_bytes()) for path in paths)
+    payload = encode_runtime_python_package_snapshot(
+        snapshots,
+        module_root.parent,
+    )
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_bytes(payload)
+    snapshot_sources = python_runner._load_package_snapshot_sources(
+        snapshot,
+        hashlib.sha256(payload).hexdigest(),
+        logical_package=target.logical_package,
+        physical_package_prefix=module_root.name,
+    )
+
+    assert descriptor_sources == snapshot_sources
+    assert target.logical_entrypoint in descriptor_sources
+    assert descriptor_sources[target.logical_entrypoint][1] == str(
+        (module_root / "runtime.py").resolve()
+    )
+
+
+@pytest.mark.parametrize("transport", ["descriptor", "snapshot"])
+def test_logical_bound_transport_rejects_bare_sibling_import_after_live_swap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    transport: str,
+) -> None:
+    from officina.common.blueprint_graph import (
+        encode_runtime_python_package_snapshot,
+    )
+
+    module_root = tmp_path / "skills" / "demo" / "_rtx"
+    module_root.mkdir(parents=True)
+    (module_root / "__init__.py").write_text("", encoding="utf-8")
+    helper = module_root / "helper.py"
+    helper.write_text("VALUE = 'trusted'\n", encoding="utf-8")
+    runtime = module_root / "runtime.py"
+    runtime.write_text(
+        "import helper\n"
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    value = helper.VALUE\n"
+        "    def run(self, args): return 0\n",
+        encoding="utf-8",
+    )
+    target = _logical_target("demo-rtx")
+    paths = (module_root / "__init__.py", helper, runtime)
+    monkeypatch.chdir(module_root)
+    sys.modules.pop("helper", None)
+    original_sys_path = list(sys.path)
+    sys.path.insert(0, str(module_root))
+    sys.path.insert(0, "")
+
+    if transport == "descriptor":
+        descriptors = [os.open(path, os.O_RDONLY) for path in paths]
+        try:
+            helper.replace(module_root / "captured-helper.py")
+            helper.write_text(
+                "raise AssertionError('hostile live helper executed')\n",
+                encoding="utf-8",
+            )
+            sources = python_runner._load_bound_package_sources(
+                tuple(
+                    (descriptor, path.relative_to(module_root.parent).as_posix())
+                    for descriptor, path in zip(descriptors, paths, strict=True)
+                ),
+                logical_package=target.logical_package,
+                physical_package_prefix=module_root.name,
+            )
+        finally:
+            for descriptor in descriptors:
+                os.close(descriptor)
+    else:
+        payload = encode_runtime_python_package_snapshot(
+            tuple((path, path.read_bytes()) for path in paths),
+            module_root.parent,
+        )
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_bytes(payload)
+        helper.replace(module_root / "captured-helper.py")
+        helper.write_text(
+            "raise AssertionError('hostile live helper executed')\n",
+            encoding="utf-8",
+        )
+        sources = python_runner._load_package_snapshot_sources(
+            snapshot,
+            hashlib.sha256(payload).hexdigest(),
+            logical_package=target.logical_package,
+            physical_package_prefix=module_root.name,
+        )
+
+    try:
+        with pytest.raises(ModuleNotFoundError, match="helper"):
+            load_interface(
+                target.gateway_path,
+                target.process_entry,
+                logical_package=target.logical_package,
+                logical_entrypoint=target.logical_entrypoint,
+                _package_sources=sources,
+            )
+    finally:
+        sys.path[:] = original_sys_path
+
+
+def test_logical_in_process_loader_and_route_smoke_confine_and_restore_sys_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module_root = tmp_path / "skills" / "demo" / "_rtx"
+    module_root.mkdir(parents=True)
+    target = _logical_target("demo-rtx")
+    physical_runtime = (module_root / "runtime.py").resolve()
+    source = (
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "ROOT = Path(os.getcwd()).resolve()\n"
+        "def assert_confined():\n"
+        "    assert all(Path(entry or os.getcwd()).resolve() != ROOT for entry in sys.path)\n"
+        "assert_confined()\n"
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    def route_smoke(self): assert_confined()\n"
+        "    def run(self, args): return 0\n"
+    ).encode("utf-8")
+    (module_root / "__init__.py").write_bytes(b"")
+    (module_root / "runtime.py").write_bytes(source)
+    monkeypatch.chdir(module_root)
+    sources = python_runner._index_bound_package_sources(
+        (
+            (b"", "__init__.py"),
+            (source, "runtime.py"),
+        ),
+        logical_package=target.logical_package,
+    )
+    assert sources[target.logical_entrypoint][1] == str(physical_runtime)
+    sys.path.insert(0, str(module_root))
+    sys.path.insert(0, "")
+    before = list(sys.path)
+
+    interface = load_interface(
+        target.gateway_path,
+        target.process_entry,
+        logical_package=target.logical_package,
+        logical_entrypoint=target.logical_entrypoint,
+        _package_sources=sources,
+    )
+    assert sys.path == before
+
+    assert run_python_machine_interface(interface, ["--route-smoke"]) == 0
+    assert sys.path == before
+
+
+def test_bound_interface_reuses_the_same_trusted_module_state_across_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = tmp_path / "_rtx"
+    runtime.mkdir()
+    (runtime / "__init__.py").write_text("", encoding="utf-8")
+    (runtime / "state.py").write_text("VALUE = 0\n", encoding="utf-8")
+    (runtime / "worker.py").write_text(
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "from . import state\n"
+        "class Interface(PythonMachineInterface):\n"
+        "    def __init__(self): state.VALUE = 1\n"
+        "    def run(self, args):\n"
+        "        from . import state\n"
+        "        assert state.VALUE == 1\n"
+        "        return 0\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    interface = load_interface("_rtx/worker.py", "Interface")
+
+    assert run_python_machine_interface(interface, []) == 0
+
+
+def test_route_smoke_trace_isolates_two_nested_rtx_logical_packages(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "skills" / "first" / "_rtx"
+    second = tmp_path / "skills" / "second" / "_rtx"
+    _write_logical_runtime(first, value="first")
+    _write_logical_runtime(second, value="second")
+    first_target = _logical_target("first-rtx")
+    second_target = _logical_target("second-rtx")
+
+    traces = python_interface.trace_python_route_smoke_dependencies_batch(
+        tmp_path,
+        ((first, first_target), (second, second_target)),
+        expected_schema_version=5,
+    )
+
+    assert (first / "helper.py").resolve() in traces[(first.resolve(), first_target)]
+    assert (second / "helper.py").resolve() not in traces[
+        (first.resolve(), first_target)
+    ]
+    assert (second / "helper.py").resolve() in traces[
+        (second.resolve(), second_target)
+    ]
+    assert (first / "helper.py").resolve() not in traces[
+        (second.resolve(), second_target)
+    ]
 
 
 def test_load_interface_uses_shared_reader_without_posix_descriptors(
@@ -1031,6 +1554,119 @@ def test_declared_dispatch_uses_generic_export_id_without_legacy_rewrite(
     assert "target_skill" not in captured
 
 
+def test_declared_v5_dispatch_builds_target_from_module_and_local_interface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_dispatch(**kwargs):
+        captured.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr("officina.dispatcher.dispatch", fake_dispatch)
+
+    class Interface(PythonMachineInterface):
+        dispatches = {
+            "read": DispatchCall(
+                caller_module_id="demo-rtx",
+                target_module_id="cloud-files-rtx",
+                interface="read",
+            )
+        }
+
+    assert Interface().dispatch("read") == "ok"
+    assert captured["caller_skill"] == "demo-rtx"
+    assert captured["target"] == "cloud-files-rtx.interface.read"
+
+
+def test_declared_v5_dispatch_uses_runtime_source_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_resolve = {}
+    captured_run = {}
+    sentinel = object()
+
+    def fake_resolve(**kwargs):
+        captured_resolve.update(kwargs)
+        return sentinel
+
+    def fake_run(resolved, **kwargs):
+        captured_run["resolved"] = resolved
+        captured_run.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(
+        "officina.dispatcher.core._resolve_dispatch",
+        fake_resolve,
+    )
+    monkeypatch.setattr(
+        "officina.dispatcher.core._run_resolved_invocation",
+        fake_run,
+    )
+
+    class Interface(PythonMachineInterface):
+        dispatches = {
+            "read": DispatchCall(
+                caller_module_id="demo-rtx",
+                target_module_id="cloud-files-rtx",
+                interface="read",
+            )
+        }
+
+    interface = Interface()
+    python_interface.set_runtime_dispatch_context(
+        interface,
+        caller_module_id="daily-plan-rtx",
+        caller_source_id="daily-plan-rtx.source.rtx-plan-orchestrate",
+        repo_root=tmp_path,
+    )
+
+    assert (
+        interface.dispatch("read", args=["todo"], stdin="payload", text=True)
+        == "ok"
+    )
+    assert captured_resolve["caller_skill"] == "daily-plan-rtx"
+    assert (
+        captured_resolve["caller_source_id"]
+        == "daily-plan-rtx.source.rtx-plan-orchestrate"
+    )
+    assert captured_resolve["target"] == "cloud-files-rtx.interface.read"
+    assert captured_resolve["repo_root"] == tmp_path
+    assert captured_resolve["host_caller"] is False
+    assert captured_run["resolved"] is sentinel
+    assert captured_run["stdin"] == "payload"
+    assert captured_run["text"] is True
+
+
+def test_dependency_resolver_builds_v5_target_from_local_interface(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+    sentinel = object()
+
+    def resolve_for_trace(**kwargs):
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(
+        "officina.dispatcher.core._resolve_dispatch_metadata_for_trace",
+        resolve_for_trace,
+    )
+    call = DispatchCall(
+        caller_module_id="demo-rtx",
+        target_module_id="cloud-files-rtx",
+        interface="read",
+    )
+
+    result = DispatchDependencyResolver(repo_root=tmp_path).resolve_call(call)
+
+    assert result is sentinel
+    assert captured["caller_module_id"] == "demo-rtx"
+    assert captured["target"] == "cloud-files-rtx.interface.read"
+
+
 def test_dependency_resolver_uses_private_trace_certification_seam(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1124,7 +1760,11 @@ def test_preloaded_graph_resolves_transitive_dispatches_without_reloading(
         "leaf-skill",
         allowed_callers=("middle-skill",),
     )
-    graph = load_repository_blueprint_graph(tmp_path)
+    graph = load_repository_blueprint_graph(
+        tmp_path,
+        expected_schema_version=4,
+        schema_root=V4_SCHEMA_ROOT,
+    )
     inventory_calls = 0
     graph_calls = 0
 

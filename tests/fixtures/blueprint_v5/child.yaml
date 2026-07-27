@@ -1,0 +1,28 @@
+schema_version: 5
+node_type: module
+id: demo-skill-rtx
+version: 1
+description: Owns the demo skill executable behavior.
+gateway:
+  path: __init__.py
+  language: Python>=3.11,<4
+content:
+  - __init__\.py
+  - runtime\.py
+authority:
+  owns_filesystem: []
+sources:
+  demo-skill-rtx.source.runtime:
+    blueprint:
+      base: module-root
+      path: blueprints/runtime.yaml
+children: {}
+namespace_exports: {}
+exports:
+  demo-skill-rtx.interface.execute:
+    source_interface: demo-skill-rtx.source.runtime.interface.execute
+    access:
+      allow_all_modules: false
+      allowed_callers:
+        - demo-skill
+        - ..peer

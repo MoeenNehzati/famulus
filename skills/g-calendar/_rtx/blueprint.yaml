@@ -1,0 +1,79 @@
+authority:
+  owns_filesystem:
+  - allowed_readers:
+    - g-calendar.interface.ensure-oauth
+    - g-calendar.interface.scripts-gcal
+    match: exact
+    path: $home/.config/g-calendar/credentials.json
+    reason: setup-oauth is the declared writer for regenerated calendar OAuth credentials.
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _oauth_bootstrap.py
+      - Interface
+      reason: OAuth setup tool.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _ensure_oauth.py
+      - Interface
+      reason: Check OAuth status and guide setup (relocated from install-assistant-tools).
+    network: []
+children: {}
+content:
+- _ensure_oauth\.py
+- _gcal_client\.py
+- __init__\.py
+- _oauth_bootstrap\.py
+- tests/.*
+description: Code module for the g-calendar skill.
+exports:
+  g-calendar-rtx.interface.ensure-oauth:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - g-calendar
+    source_interface: g-calendar-rtx.source.rtx-ensure-oauth.interface.ensure-oauth
+  g-calendar-rtx.interface.scripts-gcal:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - daily-plan
+      - daily-plan-rtx
+      - g-calendar
+    source_interface: g-calendar-rtx.source.rtx-gcal-client.interface.scripts-gcal
+  g-calendar-rtx.interface.setup-oauth:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - g-calendar
+    source_interface: g-calendar-rtx.source.rtx-oauth-bootstrap.interface.setup-oauth
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: g-calendar-rtx
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  g-calendar-rtx.source.rtx-ensure-oauth:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-ensure-oauth.yaml
+  g-calendar-rtx.source.rtx-gcal-client:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-gcal-client.yaml
+  g-calendar-rtx.source.rtx-init:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-init.yaml
+  g-calendar-rtx.source.rtx-oauth-bootstrap:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-oauth-bootstrap.yaml
+version: 1

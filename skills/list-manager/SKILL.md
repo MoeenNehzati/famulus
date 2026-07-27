@@ -14,11 +14,9 @@ description: |
 
 Category: productivity-general-assistant
 
-Skill Version: 1
+Skill Version: 2
 
-Uses Interfaces:
-- `list-manager.source.rtx-init -> cloud-files.interface.lists-read@1`
-- `list-manager.source.rtx-init -> cloud-files.interface.lists-write@1`
+Uses Interfaces: none
 
 Public Interfaces:
 - `list-manager.interface.beautify-list`

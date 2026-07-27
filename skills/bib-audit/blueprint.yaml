@@ -1,46 +1,14 @@
 authority:
   owns_filesystem: []
-  suggested_permissions:
-    bash:
-    - command:
-      - biber
-      reason: Suggested approval for bibliography audit helpers.
-    - command:
-      - bibtex-check
-      reason: Suggested approval for bibliography audit helpers.
-    - command:
-      - bibtex-update
-      reason: Suggested approval for bibliography audit helpers.
-    - args_prefix:
-      - --caller-skill
-      - bib-audit
-      - bib-audit.interface.scripts-bib-similarity
-      command:
-      - dispatcher
-      reason: Runs the local bib-audit duplicate/version candidate detector through
-        the shared dispatcher runtime.
-    - args_prefix:
-      - --caller-skill
-      - bib-audit
-      - bib-audit.interface.scripts-bib-validate-bibtex
-      command:
-      - dispatcher
-      reason: Runs the local bib-audit BibTeX/natbib validator through the shared
-        dispatcher runtime.
-    network: []
 category: research-assistant
+children:
+  bib-audit-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
-- SKILL\.md
-- _rtx/_reference_pairs\.py
-- _rtx/_syntax_checker\.py
-- test/test_biblatex\.bib
-- test/test_modification\.bib
-- test/test_modification\.tex
-- test/test_multifile_main\.tex
-- test/test_multifile_section\.tex
-- test/test_natbib\.bib
-- test/test_natbib_commands\.tex
-description: Audits bibliography files for local validity, metadata conflicts, duplicate or version relationships, and explicitly approved project-aware corrections.
+- (?:SKILL\.md|test/test_biblatex\.bib|test/test_modification\.bib|test/test_modification\.tex|test/test_multifile_main\.tex|test/test_multifile_section\.tex|test/test_natbib\.bib|test/test_natbib_commands\.tex)
+description: Audits bibliography files for local validity, metadata conflicts, duplicate
+  or version relationships, and explicitly approved project-aware corrections.
 discovery:
   mechanism: skill
 exports:
@@ -53,31 +21,28 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: bib-audit.source.rtx-reference-pairs.interface.scripts-bib-similarity
+    facade_interface:
+      interface: bib-audit-rtx.interface.scripts-bib-similarity
+      version: 1
   bib-audit.interface.scripts-bib-validate-bibtex:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: bib-audit.source.rtx-syntax-checker.interface.scripts-bib-validate-bibtex
+    facade_interface:
+      interface: bib-audit-rtx.interface.scripts-bib-validate-bibtex
+      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: bib-audit
 kind: auditor
+namespace_exports: {}
 node_type: module
 role: document-processing
-schema_version: 4
+schema_version: 5
 sources:
   bib-audit.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  bib-audit.source.rtx-reference-pairs:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-reference-pairs.yaml
-  bib-audit.source.rtx-syntax-checker:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-syntax-checker.yaml
-version: 1
+version: 2

@@ -9,8 +9,8 @@ dependencies:
   source: skill-standards.source.skill-guidelines
   version: 1
 description: Guides creation and editing of personal skills under the canonical skill-module
-  standards, including research choice, branch safety, interfaces, validators, and generated
-  contract synchronization.
+  standards, including research choice, branch safety, interfaces, validators, and
+  generated contract synchronization.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -20,71 +20,213 @@ interfaces:
     contract:
       arguments:
         request:
-          description: User request to create or edit a personal skill in the shared skills directory.
+          description: User request to create or edit a personal skill in the shared
+            skills directory.
           required: true
           sensitivity: user-private
-          type: {kind: string, sensitivity: user-private}
-      preconditions: []
-      interaction: {mode: interactive, channel: tty, unattended_outcome: clarification-required}
+          type:
+            kind: string
+            sensitivity: user-private
       caller_warnings:
-      - external-side-effect: An approved workflow may create or edit skill files and
-          refresh generated blueprint artifacts.
-      outputs:
-      - id: response
-        audience: human
-        description: Implemented skill change, validation result, or the decision needed
-          before work can continue.
-        direct_io_ref: write-1
-        type: {kind: string, sensitivity: derived-private}
-        cardinality: {minimum: 1, maximum: 1}
-        ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        empty: Never empty.
-      outcomes:
-      - {id: completed, class: success, outputs: [response], effects: [skill-change, verification-run], caller_action: Review the changed skill and validation evidence.}
-      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: Choose whether to research external sources or provide the missing design decision.}
-      - {id: failed, class: partial, outputs: [response], effects: [skill-change, verification-run], caller_action: "Resolve the reported branch, contract, or validation failure."}
-      execution:
-        state_effect: mutating
-        lifecycle: finite
-        consistency: {live: The response reflects the repository and validation state observed during this invocation.}
-        effects:
-        - {id: skill-change, direct_io_ref: write-2, action: update, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [completed, failed], confirmation_evidence: {kind: output, output_ref: response}, reversibility: {reversible: Restore only the reviewed skill-related diff after checking for overlap.}}
-        - {id: verification-run, direct_io_ref: write-3, action: execute, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [completed, failed], confirmation_evidence: {kind: output, output_ref: response}, reversibility: {reversible: Validation is observational apart from disposable caches or generated artifacts named in the response.}}
-        mutation_safety:
-          atomicity: {non_atomic: "Skill source, tests, sidecars, and generated artifacts are separate updates."}
-          concurrent_invocations: {unsafe: Concurrent edits can conflict within the same skill or generated artifacts.}
-          idempotency: {non_idempotent: Reapplying an authoring request can duplicate or overwrite skill content.}
-          on_uncertain_completion: {verify_then_decide: Inspect the exact diff and rerun the reported focused validators before proceeding.}
-          partial_effects_on_failure: {possible: Skill files may change before synchronization or a later validator fails.}
-          rollback_on_failure: {available: Restore only current-session skill changes after checking ownership and overlap.}
-        verification:
-        - {method: output-schema, output_ref: response}
-        - {method: direct-io-state, direct_io_ref: read-2}
-      helpers: []
+      - external-side-effect: An approved workflow may create or edit skill files
+          and refresh generated blueprint artifacts.
       direct_io:
         network:
         - access: request
           content: user-approved skill-authoring documentation and comparable references
           endpoint: User-approved documentation URLs selected for the requested skill
-          formats: [html, markdown, json]
+          formats:
+          - html
+          - markdown
+          - json
           id: network-1
           medium: network-request
           reason: Research occurs only when the user chooses the online-research option.
           sensitivity: public
           system: web
         reads:
-        - {id: read-1, medium: prompt, access: read, system: agent-runtime, content: skill-authoring request and decisions, formats: [text], sensitivity: user-private}
-        - {id: read-2, medium: repository-filesystem, access: read, system: filesystem, content: "target skill, canonical standards, schemas, validators, tests, branch, and current diff", formats: [markdown, yaml, json, python, git-metadata, text], sensitivity: user-private, path: "$repo/{skills,references/skill-standards,references/blueprint,validators,tests,.git}/**", path_match: glob, reason: Derive the requested change from exact live contracts and preserve unrelated work.}
+        - access: read
+          content: skill-authoring request and decisions
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        - access: read
+          content: target skill, canonical standards, schemas, validators, tests,
+            branch, and current diff
+          formats:
+          - markdown
+          - yaml
+          - json
+          - python
+          - git-metadata
+          - text
+          id: read-2
+          medium: repository-filesystem
+          path: $repo/{skills,references/skill-standards,references/blueprint,validators,tests,.git}/**
+          path_match: glob
+          reason: Derive the requested change from exact live contracts and preserve
+            unrelated work.
+          sensitivity: user-private
+          system: filesystem
         writes:
-        - {id: write-1, medium: prompt, access: write, system: agent-runtime, content: skill-authoring result, formats: [markdown], sensitivity: derived-private}
-        - {id: write-2, medium: repository-filesystem, access: write, system: filesystem, content: "approved skill source, blueprint, tests, runtime, and generated contract artifacts", formats: [markdown, yaml, json, python, shell, text], sensitivity: user-private, path: $repo/skills/<skill-name>/**, path_match: glob, reason: Implement the requested personal skill change under the canonical module standards.}
-        - {id: write-3, medium: subprocess, access: execute, system: repository validators and test runners, content: "branch check, blueprint synchronization, focused validators, and tests", formats: [argv, text], sensitivity: derived-private, path: "$repo/{skills/skill-maker/_rtx/_blueprint_syncer.py,validators/runner.py,tests,skills/<skill-name>/tests}", path_match: glob, reason: "Verify branch safety, contract synchronization, and behavior before reporting completion."}
-    description: Create or edit a personal skill under the repository's canonical module,
-      interface, validation, and Git-safety standards.
+        - access: write
+          content: skill-authoring result
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: approved skill source, blueprint, tests, runtime, and generated
+            contract artifacts
+          formats:
+          - markdown
+          - yaml
+          - json
+          - python
+          - shell
+          - text
+          id: write-2
+          medium: repository-filesystem
+          path: $repo/skills/<skill-name>/**
+          path_match: glob
+          reason: Implement the requested personal skill change under the canonical
+            module standards.
+          sensitivity: user-private
+          system: filesystem
+        - access: execute
+          content: branch check, blueprint synchronization, focused validators, and
+            tests
+          formats:
+          - argv
+          - text
+          id: write-3
+          medium: subprocess
+          path: $repo/{skills/skill-maker/_rtx/_blueprint_syncer.py,validators/runner.py,tests,skills/<skill-name>/tests}
+          path_match: glob
+          reason: Verify branch safety, contract synchronization, and behavior before
+            reporting completion.
+          sensitivity: derived-private
+          system: repository validators and test runners
+      execution:
+        consistency:
+          live: The response reflects the repository and validation state observed
+            during this invocation.
+        effects:
+        - action: update
+          confirmation_evidence:
+            kind: output
+            output_ref: response
+          direct_io_ref: write-2
+          id: skill-change
+          may_occur_in_outcomes:
+          - completed
+          - failed
+          reversibility:
+            reversible: Restore only the reviewed skill-related diff after checking
+              for overlap.
+          value_source:
+            argument_ref: request
+            kind: argument
+        - action: execute
+          confirmation_evidence:
+            kind: output
+            output_ref: response
+          direct_io_ref: write-3
+          id: verification-run
+          may_occur_in_outcomes:
+          - completed
+          - failed
+          reversibility:
+            reversible: Validation is observational apart from disposable caches or
+              generated artifacts named in the response.
+          value_source:
+            argument_ref: request
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: Skill source, tests, sidecars, and generated artifacts are
+              separate updates.
+          concurrent_invocations:
+            unsafe: Concurrent edits can conflict within the same skill or generated
+              artifacts.
+          idempotency:
+            non_idempotent: Reapplying an authoring request can duplicate or overwrite
+              skill content.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the exact diff and rerun the reported focused
+              validators before proceeding.
+          partial_effects_on_failure:
+            possible: Skill files may change before synchronization or a later validator
+              fails.
+          rollback_on_failure:
+            available: Restore only current-session skill changes after checking ownership
+              and overlap.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: response
+        - direct_io_ref: read-2
+          method: direct-io-state
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: clarification-required
+      outcomes:
+      - caller_action: Review the changed skill and validation evidence.
+        class: success
+        effects:
+        - skill-change
+        - verification-run
+        id: completed
+        outputs:
+        - response
+      - caller_action: Choose whether to research external sources or provide the
+          missing design decision.
+        class: refusal
+        effects: []
+        id: clarification-required
+        outputs:
+        - response
+      - caller_action: Resolve the reported branch, contract, or validation failure.
+        class: partial
+        effects:
+        - skill-change
+        - verification-run
+        id: failed
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Implemented skill change, validation result, or the decision
+          needed before work can continue.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Create or edit a personal skill under the repository's canonical
+      module, interface, validation, and Git-safety standards.
     version: 1
 node_type: behavioral_source
-schema_version: 4
-uses_interfaces: []
+schema_version: 5
+uses_interfaces:
+- interface: skill-maker.interface.sync-blueprints
+  version: 1
 version: 1

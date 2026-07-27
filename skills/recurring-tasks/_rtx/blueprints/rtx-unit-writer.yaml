@@ -1,0 +1,235 @@
+content:
+- _unit_writer\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/jobs-config.yaml
+  reason: Reads the shared jobs configuration while generating scheduler entries.
+  source: recurring-tasks-rtx.source.jobs-config
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: recurring-tasks-rtx.source.rtx-init
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-schedule-backend-init.yaml
+  reason: Imports Python source from _rtx/_schedule_backend/__init__.py, _rtx/_schedule_backend/_linux_backend.py.
+  source: recurring-tasks-rtx.source.rtx-schedule-backend-init
+  version: 1
+description: Reconciles jobs.yaml with native per-user scheduler entries for the current
+  host.
+gateway:
+  language: Python
+  path: _unit_writer.py
+id: recurring-tasks-rtx.source.rtx-unit-writer
+interfaces:
+  recurring-tasks-rtx.source.rtx-unit-writer.interface.scripts-sync:
+    contract:
+      arguments:
+        jobs-file:
+          default: jobs.yaml
+          description: Jobs YAML file used as the reconciliation source
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+        unit-dir:
+          default: ''
+          description: Optional scheduler-entry directory override that suppresses
+            live scheduler commands
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+      caller_warnings:
+      - external-side-effect: Live mode creates and removes native scheduler entries
+          to match enabled jobs.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: config
+          formats:
+          - yaml
+          id: read-1
+          medium: local-filesystem
+          path: jobs.yaml
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: configure
+          content: scheduler-config
+          formats:
+          - text
+          id: write-1
+          medium: local-system
+          sensitivity: user-private
+          system: native-scheduler
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: Reconciles the native scheduler against one jobs.yaml load.
+        effects:
+        - action: configure
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: sync-scheduler
+          may_occur_in_outcomes:
+          - synced
+          - failed
+          reversibility:
+            reversible: Restore jobs.yaml and run synchronization again.
+          value_source:
+            direct_io_ref: read-1
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: Scheduler entries are created removed and enabled in multiple
+              operations.
+          concurrent_invocations:
+            unsafe: Concurrent reconciliation can race on entry files and scheduler
+              commands.
+          idempotency:
+            idempotent: Repeating against unchanged jobs.yaml converges to the same
+              enabled entry set.
+          on_uncertain_completion:
+            verify_then_decide: Query native scheduler state and generated entries
+              before retrying.
+          partial_effects_on_failure:
+            possible: Some entries may be updated before a later scheduler command
+              fails.
+          rollback_on_failure:
+            unavailable: Automatic rollback across native scheduler operations is
+              not provided.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Treat native entries as reconciled with jobs.yaml.
+        class: success
+        effects:
+        - sync-scheduler
+        id: synced
+        outputs:
+        - result
+      - caller_action: Inspect partial scheduler state before retrying.
+        class: error
+        effects:
+        - sync-scheduler
+        id: failed
+        outputs: []
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: null
+          minimum: 0
+        description: Per-job synchronization messages and final live-mode confirmation
+        direct_io_ref: write-2
+        empty: An empty alternate jobs file in non-live mode may print no lines.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+      preconditions: []
+    description: Regenerate native scheduler entries from jobs.yaml.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --unit-dir
+        - --jobs-file
+        flag_patterns:
+          --jobs-file: ^.+$
+          --unit-dir: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+    usage: ''
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: binary
+  name: launchctl
+  platforms:
+    linux: false
+    macos: true
+    windows: false
+  reason: Loads generated user scheduler entries.
+  version: any
+- kind: binary
+  name: schtasks
+  platforms:
+    linux: false
+    macos: false
+    windows: true
+  reason: Creates or updates generated user scheduler entries.
+  version: any
+- kind: binary
+  name: systemctl
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Reloads and enables generated user timers.
+  version: any
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Reads jobs.yaml while generating unit files.
+  version: '>=6'
+- kind: system-service
+  name: launchd
+  platforms:
+    linux: false
+    macos: true
+    windows: false
+  reason: Provides the per-user scheduler that loads generated entries.
+  version: any
+- kind: system-service
+  name: systemd-user
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Provides the user timer manager that loads generated unit files.
+  version: any
+- kind: system-service
+  name: task-scheduler
+  platforms:
+    linux: false
+    macos: false
+    windows: true
+  reason: Provides the per-user scheduler that loads generated entries.
+  version: any
+schema_version: 5
+uses_interfaces: []
+version: 1

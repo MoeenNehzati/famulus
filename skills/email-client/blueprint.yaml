@@ -1,87 +1,60 @@
 authority:
   owns_filesystem: []
-  suggested_permissions:
-    bash:
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_smtp_transport.py
-      - Interface
-      reason: Send-side SMTP client (compose/send), stdlib SMTP plus shared secret
-        store.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_imap_gateway.py
-      - Interface
-      reason: Read-side IMAP client (list/read/folders), stdlib-only, no external
-        binary.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_email_accounts.py
-      - Interface
-      reason: 'Account registry: add/update/remove/list nicknames and set credentials.'
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_email_smoke.py
-      - Interface
-      reason: Explicit live provider smoke checks for configured email accounts.
-    network: []
 category: productivity-general-assistant
+children:
+  email-client-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
 - SKILL\.md
-- _rtx/__init__\.py
-- _rtx/_email_accounts\.py
-- _rtx/_email_smoke\.py
-- _rtx/_imap_gateway\.py
-- _rtx/_oauth_tokens\.py
-- _rtx/_smtp_transport\.py
-- tests/test_accounts\.py
-- tests/test_mail\.py
-- tests/test_oauth_tokens\.py
-- tests/test_smoke\.py
-discovery:
-  mechanism: skill
 description: Read, search, download from, configure, verify, and send email through
   registered IMAP and SMTP accounts while keeping credentials in the host credential
   store.
+discovery:
+  mechanism: skill
 exports:
   email-client.interface.accounts-add:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-client.source.rtx-email-accounts.interface.accounts-add
+    facade_interface:
+      interface: email-client-rtx.interface.accounts-add
+      version: 1
   email-client.interface.accounts-list:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-client.source.rtx-email-accounts.interface.accounts-list
+    facade_interface:
+      interface: email-client-rtx.interface.accounts-list
+      version: 1
   email-client.interface.accounts-remove:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-client.source.rtx-email-accounts.interface.accounts-remove
+    facade_interface:
+      interface: email-client-rtx.interface.accounts-remove
+      version: 1
   email-client.interface.accounts-set-password:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-client.source.rtx-email-accounts.interface.accounts-set-password
+    facade_interface:
+      interface: email-client-rtx.interface.accounts-set-password
+      version: 1
   email-client.interface.accounts-setup-oauth:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-client.source.rtx-email-accounts.interface.accounts-setup-oauth
+    facade_interface:
+      interface: email-client-rtx.interface.accounts-setup-oauth
+      version: 1
   email-client.interface.accounts-update:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-client.source.rtx-email-accounts.interface.accounts-update
+    facade_interface:
+      interface: email-client-rtx.interface.accounts-update
+      version: 1
   email-client.interface.default:
     access:
       allow_all_modules: true
@@ -91,69 +64,65 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-client.source.rtx-email-smoke.interface.live-smoke
+    facade_interface:
+      interface: email-client-rtx.interface.live-smoke
+      version: 1
   email-client.interface.mail-attachments:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-client.source.rtx-imap-gateway.interface.mail-attachments
+    facade_interface:
+      interface: email-client-rtx.interface.mail-attachments
+      version: 1
   email-client.interface.mail-folders:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-client.source.rtx-imap-gateway.interface.mail-folders
+    facade_interface:
+      interface: email-client-rtx.interface.mail-folders
+      version: 1
   email-client.interface.mail-list:
     access:
       allow_all_modules: false
       allowed_callers:
       - email-triage
-    source_interface: email-client.source.rtx-imap-gateway.interface.mail-list
+      - email-triage-rtx
+    facade_interface:
+      interface: email-client-rtx.interface.mail-list
+      version: 1
   email-client.interface.mail-read:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-client.source.rtx-imap-gateway.interface.mail-read
+    facade_interface:
+      interface: email-client-rtx.interface.mail-read
+      version: 1
   email-client.interface.mail-save-attachments:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-client.source.rtx-imap-gateway.interface.mail-save-attachments
+    facade_interface:
+      interface: email-client-rtx.interface.mail-save-attachments
+      version: 1
   email-client.interface.send-email:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: email-client.source.rtx-smtp-transport.interface.send-email
+    facade_interface:
+      interface: email-client-rtx.interface.send-email
+      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: email-client
 kind: client
+namespace_exports: {}
 node_type: module
 role: productivity
-schema_version: 4
+schema_version: 5
 sources:
   email-client.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  email-client.source.rtx-email-accounts:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-email-accounts.yaml
-  email-client.source.rtx-email-smoke:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-email-smoke.yaml
-  email-client.source.rtx-imap-gateway:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-imap-gateway.yaml
-  email-client.source.rtx-init:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-init.yaml
-  email-client.source.rtx-smtp-transport:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-smtp-transport.yaml
-version: 1
+version: 2

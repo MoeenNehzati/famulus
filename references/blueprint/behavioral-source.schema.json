@@ -2,14 +2,14 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "behavioral-source.schema.json",
   "title": "Behavioral Source Blueprint",
-  "description": "Closed version 4 contract for one source-owned behavioral implementation and its intrinsic interfaces.",
+  "description": "Closed version 5 contract for one source-owned behavioral implementation and its intrinsic interfaces.",
   "type": "object",
   "required": ["schema_version", "node_type", "id", "version", "gateway", "content", "dependencies", "uses_interfaces", "interfaces"],
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": 4,
-      "x-famulus": {"field_status": "required", "template": {"include": true, "example": 4}, "doc": {"authoring": ["Use unified blueprint schema version 4."]}, "related_validation_rules": ["schema-shape"]}
+      "const": 5,
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": 5}, "doc": {"authoring": ["Use unified blueprint schema version 5."]}, "related_validation_rules": ["schema-shape"]}
     },
     "node_type": {
       "const": "behavioral_source",

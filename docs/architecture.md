@@ -1,6 +1,6 @@
 # Famulus Architecture
 
-> **Status:** Adopted version-4 architecture. The live schemas, validators, and
+> **Status:** Adopted version-5 architecture. The live schemas, validators, and
 > implementation provide the executable details of this contract.
 
 ## Scope
@@ -297,23 +297,45 @@ contract and graph facts; a generic interface namespace does not erase them.
 
 Behavioral sources within the same module may interact through their internal
 gateways and interfaces. Famulus-mediated interaction across modules must use
-an interface exported by the target module gateway, including when the physical
+an interface exported by the target module, including when the physical
 mechanism is a language-native import. An authored non-invocation reference may
 instead create an exact cross-module source dependency, but does not bypass
 module authority or expose the target source as a public Famulus interface.
 
-The interaction path for an exported call is:
+Modules may register direct child modules. Registration establishes physical
+containment and makes the child addressable inside the registered subtree; it
+does not expose that namespace outside the parent. A `namespace_exports`
+declaration routes selected child or descendant interface IDs across the parent
+boundary without renaming them. Every target-side boundary crossed from outside
+its subtree needs its own namespace route.
+
+A parent may separately export a facade under a parent-owned interface ID. A
+facade derives one exact child export's contract and version; it cannot export
+a private child interface or widen the child's access policy. The original
+caller must pass both the facade policy and the child export policy. Direct
+access to the child export is a distinct request: a parent or sibling already
+inside the registered subtree does not cross the common parent's outward
+namespace filter, but still needs authorization from the child.
+
+Caller allowlists use either globally unique module IDs or Python-style
+leading-dot references resolved against the certified registration tree.
+`._rtx` names a module's code child; `..parser` names its sibling `parser`.
+Relative references are exact identities, not globs or implicit descendant
+grants.
+
+The interaction path for a facade call is:
 
 ```text
 calling behavioral-source gateway
   -> declared cross-module interface use
-  -> target module export
-  -> target module gateway
-  -> target behavioral-source gateway
+  -> parent facade export
+  -> child module export
+  -> child behavioral-source gateway
 ```
 
 The dispatcher or equivalent boundary mechanism attributes the call to the
-calling module and enforces the target export's access policy. Source-level
+calling module and applies the canonical authorization resolver to direct
+exports, namespace routes, and facades. Source-level
 `uses_interfaces` agreement is a static graph invariant; the public dispatcher
 does not need to trust a caller-supplied source identity. The implementation may
 collapse redundant local routing steps, but the graph must preserve the same
@@ -335,7 +357,9 @@ because it does not explain how discovery occurs.
 Combining the blueprints produces the repository graph. The graph contains:
 
 - module-containment edges;
+- registered-child and namespace-route edges;
 - interface-definition and module-export edges;
+- parent-facade to child-export edges;
 - behavioral-source dependency edges;
 - interface-use edges;
 - access-control relationships;

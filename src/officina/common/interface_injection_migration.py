@@ -40,6 +40,13 @@ from .git_provenance import (
     snapshot_head_matches,
     _tree_symlink_is_confined,
 )
+from .migration_candidate import (
+    CutoverChange,
+    MigrationCandidateError,
+    atomic_candidate_write,
+    candidate_commit,
+    candidate_cutover_manifest,
+)
 from officina.runtime.python_machine_interface import (
     analyze_dispatch_call_declarations,
 )
@@ -187,13 +194,6 @@ class BlueprintV4Candidate:
     cutover_manifest: tuple["CutoverChange", ...] = ()
     cutover_paths: tuple[Path, ...] = ()
     atomic_guarantee: bool = True
-
-
-@dataclass(frozen=True)
-class CutoverChange:
-    status: str
-    path: Path
-    source_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -5110,18 +5110,15 @@ def _atomic_candidate_write(
     *,
     context: str,
 ) -> None:
-    target = _ensure_real_parent(candidate_root, relative, context=context)
-    if target.is_symlink() or (target.exists() and not target.is_file()):
-        raise InterfaceInjectionMigrationError(
-            f"unsafe {context} target: {relative.as_posix()}"
-        )
-    mode = target.stat().st_mode & 0o777 if target.exists() else 0o644
     try:
-        atomic_replace_bytes(target, content, allowed_root=candidate_root, mode=mode)
-    except AtomicWriteError as exc:
-        raise InterfaceInjectionMigrationError(
-            f"cannot atomically write {context}: {relative.as_posix()}: {exc}"
-        ) from exc
+        atomic_candidate_write(
+            candidate_root,
+            relative,
+            content,
+            context=context,
+        )
+    except MigrationCandidateError as exc:
+        raise InterfaceInjectionMigrationError(str(exc)) from exc
 
 
 def _apply_candidate_conversion(
@@ -5866,79 +5863,23 @@ def finalize_candidate_v4(
 def _candidate_commit(
     candidate_root: Path, message: str, paths: Iterable[Path]
 ) -> str:
-    selected = tuple(sorted(set(paths)))
-    if not selected:
-        raise InterfaceInjectionMigrationError("candidate commit requires produced paths")
-    expanded: set[Path] = set()
-    for path in selected:
-        tracked = run_git(
-            candidate_root, "ls-files", "-z", "--", path.as_posix(), check=False
-        )
-        if tracked.returncode != 0:
-            raise InterfaceInjectionMigrationError(
-                f"cannot resolve produced path: {path.as_posix()}"
-            )
-        expanded.update(
-            Path(os.fsdecode(raw))
-            for raw in tracked.stdout.rstrip(b"\0").split(b"\0")
-            if raw
-        )
-        current = candidate_root / path
-        if current.is_dir() and not current.is_symlink():
-            expanded.update(
-                entry.relative_to(candidate_root)
-                for entry in current.rglob("*")
-                if entry.is_file() or entry.is_symlink()
-            )
-        elif current.exists() or current.is_symlink():
-            expanded.add(path)
-    run_git(
-        candidate_root,
-        "update-index",
-        "--add",
-        "--remove",
-        "-z",
-        "--stdin",
-        input_bytes=b"\0".join(
-            os.fsencode(path.as_posix()) for path in sorted(expanded)
-        )
-        + b"\0",
-    )
-    run_git(candidate_root, "commit", "-qm", message)
-    return run_git(candidate_root, "rev-parse", "HEAD").stdout.decode("utf-8").strip()
+    try:
+        return candidate_commit(candidate_root, message, paths)
+    except MigrationCandidateError as exc:
+        raise InterfaceInjectionMigrationError(str(exc)) from exc
 
 
 def _candidate_cutover_manifest(
     candidate_root: Path, legacy_commit: str, v4_commit: str
 ) -> tuple[CutoverChange, ...]:
-    result = run_git(
-        candidate_root,
-        "diff",
-        "--name-status",
-        "--no-renames",
-        "-z",
-        legacy_commit,
-        v4_commit,
-    )
-    fields = result.stdout.rstrip(b"\0").split(b"\0") if result.stdout else []
-    changes: list[CutoverChange] = []
-    index = 0
-    while index < len(fields):
-        status = fields[index].decode("ascii")
-        index += 1
-        if status.startswith(("R", "C")):
-            if index + 1 >= len(fields):
-                raise InterfaceInjectionMigrationError("invalid Git cutover manifest")
-            source = Path(os.fsdecode(fields[index]))
-            path = Path(os.fsdecode(fields[index + 1]))
-            index += 2
-            changes.append(CutoverChange(status, path, source))
-        else:
-            if index >= len(fields):
-                raise InterfaceInjectionMigrationError("invalid Git cutover manifest")
-            changes.append(CutoverChange(status, Path(os.fsdecode(fields[index]))))
-            index += 1
-    return tuple(changes)
+    try:
+        return candidate_cutover_manifest(
+            candidate_root,
+            legacy_commit,
+            v4_commit,
+        )
+    except MigrationCandidateError as exc:
+        raise InterfaceInjectionMigrationError(str(exc)) from exc
 
 
 def _assert_cutover_manifest_authorized(

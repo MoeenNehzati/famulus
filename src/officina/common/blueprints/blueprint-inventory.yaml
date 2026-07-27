@@ -13,13 +13,15 @@ dependencies:
   reason: Imports ignored-path discovery from git_provenance.py.
   source: common.source.git-provenance
   version: 1
-description: Discovers canonical module blueprints and their owned behavioral-source sidecars without following symlinks, normalizes YAML into JSON-compatible declarations, and reports duplicate, malformed, or misplaced blueprint files.
+description: Discovers canonical module blueprints and their owned behavioral-source
+  sidecars without following symlinks, normalizes YAML into JSON-compatible declarations,
+  and reports duplicate, malformed, or misplaced blueprint files.
 gateway:
   language: Python
   path: blueprint_inventory.py
 id: common.source.blueprint-inventory
 interfaces: {}
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

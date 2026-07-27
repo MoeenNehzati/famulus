@@ -1,0 +1,273 @@
+content:
+- _plan_orchestrate\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: daily-plan-rtx.source.rtx-init
+  version: 1
+description: Generates today's plan when absent or forced, otherwise refreshes its
+  rendered list sections and prints it.
+gateway:
+  language: Python
+  path: _plan_orchestrate.py
+id: daily-plan-rtx.source.rtx-plan-orchestrate
+interfaces:
+  daily-plan-rtx.source.rtx-plan-orchestrate.interface.orchestrate:
+    contract:
+      arguments:
+        forced:
+          default: false
+          description: Regenerate even when today's plan already exists.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+      caller_warnings:
+      - external-side-effect: Every successful invocation rewrites today's plan metadata
+          and rendered Markdown through delegated storage.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: dated plan
+          formats:
+          - markdown
+          id: read-1
+          medium: remote-filesystem
+          path: plans/<today>.md
+          path_match: exact
+          sensitivity: user-private
+          system: google-drive
+        - access: read
+          content: plan metadata
+          formats:
+          - json
+          id: read-2
+          medium: remote-filesystem
+          path: plans/<today>.meta.json
+          path_match: exact
+          sensitivity: user-private
+          system: google-drive
+        - access: read
+          content: master list
+          formats:
+          - yaml
+          id: read-3
+          medium: remote-filesystem
+          path: lists/<todo-or-triage>.yaml
+          path_match: exact
+          sensitivity: user-private
+          system: google-drive
+        writes:
+        - access: write
+          content: plan
+          formats:
+          - markdown
+          id: write-1
+          medium: stdout
+          sensitivity: user-private
+        - access: write
+          content: dated plan
+          formats:
+          - markdown
+          id: write-2
+          medium: remote-filesystem
+          path: plans/<today>.md
+          path_match: exact
+          sensitivity: user-private
+          system: google-drive
+        - access: write
+          content: plan metadata
+          formats:
+          - json
+          id: write-3
+          medium: remote-filesystem
+          path: plans/<today>.meta.json
+          path_match: exact
+          sensitivity: user-private
+          system: google-drive
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-4
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          per_source: Calendar and weather and list and stored-plan inputs are observed
+            during their delegated calls.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-3
+            kind: direct-io
+          direct_io_ref: write-3
+          id: plan-metadata-update
+          may_occur_in_outcomes:
+          - completed
+          - partial
+          reversibility:
+            compensatable: A later orchestration can rewrite metadata, but this interface
+              retains no previous metadata.
+          value_source:
+            direct_io_ref: write-3
+            kind: direct-io
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-2
+            kind: direct-io
+          direct_io_ref: write-2
+          id: dated-plan-update
+          may_occur_in_outcomes:
+          - completed
+          - partial
+          reversibility:
+            compensatable: A later orchestration can rewrite the plan, but this interface
+              retains no previous Markdown.
+          value_source:
+            kind: output
+            output_ref: plan
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: Metadata and rendered plan are written as separate delegated
+              operations.
+          concurrent_invocations:
+            unsafe: Concurrent runs can derive and write plans from different upstream
+              snapshots.
+          idempotency:
+            idempotent: Repeating against unchanged calendar, weather, list, and stored-plan
+              inputs produces equivalent persisted state.
+          on_uncertain_completion:
+            verify_then_decide: Re-read today's metadata and plan before retrying.
+          partial_effects_on_failure:
+            possible: Metadata can be written before a later rendered-plan write fails.
+          rollback_on_failure:
+            unavailable: Previous remote metadata and plan values are not retained.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: plan
+        - direct_io_ref: write-2
+          method: direct-io-state
+        - direct_io_ref: write-3
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Present the plan exactly as returned.
+        class: success
+        effects:
+        - plan-metadata-update
+        - dated-plan-update
+        id: completed
+        outputs:
+        - plan
+      - caller_action: Report the failing calendar or weather or list or storage dependency.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - diagnostic
+      - caller_action: Re-read today's metadata and plan before deciding whether to
+          retry.
+        class: partial
+        effects:
+        - plan-metadata-update
+        - dated-plan-update
+        id: partial
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Current display-ready daily plan Markdown.
+        direct_io_ref: write-1
+        empty: Never empty on success.
+        id: plan
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: user-private
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-4
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Generate today's plan (or show the existing one, refreshing its Todo/Triage
+      blocks from current list state). Pass --forced to regenerate even if a plan
+      already exists.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        allowed_flags: []
+        max_positionals: 0
+        min_positionals: 0
+      - allow_stdin: false
+        allowed_flags:
+        - --forced
+        max_positionals: 0
+        min_positionals: 0
+        required_flags:
+        - --forced
+    usage: '[--forced]'
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: false
+  windows: false
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Reads and writes YAML plan/list data through plan_runtime.
+  version: '>=6'
+schema_version: 5
+uses_interfaces:
+- interface: cloud-files.interface.lists-read
+  version: 1
+- interface: cloud-files.interface.lists-write
+  version: 1
+- interface: cloud-files.interface.plans-read
+  version: 1
+- interface: cloud-files.interface.plans-write
+  version: 1
+- interface: common.interface.dates
+  version: 1
+- interface: g-calendar.interface.scripts-gcal
+  version: 1
+- interface: get-weather.interface.scripts-weather
+  version: 1
+- interface: list-manager.interface.read-beautify
+  version: 1
+- interface: list-manager.interface.update-list
+  version: 1
+version: 1

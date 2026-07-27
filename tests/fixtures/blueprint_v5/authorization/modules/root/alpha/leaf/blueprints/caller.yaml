@@ -1,0 +1,14 @@
+schema_version: 5
+node_type: behavioral_source
+id: leaf.source.caller
+version: 1
+gateway:
+  path: caller.py
+  language: Python>=3.11
+content:
+  - caller\.py
+dependencies: []
+uses_interfaces:
+  - interface: leaf.interface.run
+    version: 1
+interfaces: {}

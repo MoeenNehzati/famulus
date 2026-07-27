@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import base64
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -14,6 +16,7 @@ from officina.common.certificate_records import (
     certificate_public_key_root,
     certificate_entry_hash,
     load_or_create_certificate_signing_key,
+    parse_certificate_log,
     rotate_certificate_signing_key,
     sign_certificate_payload,
 )
@@ -22,16 +25,22 @@ from officina.common.blueprint_graph import (
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
+from officina.common.blueprint_authorization import (
+    AuthorizationResult,
+    CertificateRequirement,
+)
 from officina.common.certification_view import (
     CertificateNodeCurrentness,
     CertificateCurrentnessReport,
     CertificateCurrentnessView,
+    CertificateRecordView,
     RepositoryCertificationView,
     RepositoryCertificationState,
     certificate_log_path,
     derive_repository_certification_state,
     evaluate_certificate_currentness,
     repository_certification_view,
+    RejectingCertificationView,
 )
 from v4_certification_fixtures import (
     create_v4_repository,
@@ -40,7 +49,14 @@ from v4_certification_fixtures import (
 from test_support.git_repository import GitTestRepository
 
 
-SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint"
+CANONICAL_SCHEMA_ROOT = (
+    Path(__file__).resolve().parents[1] / "references" / "blueprint"
+)
+SCHEMA_ROOT = (
+    CANONICAL_SCHEMA_ROOT
+    / "migrations"
+    / "v4"
+)
 CERTIFIER = {
     "interface": "skill-certifier.interface.certify",
     "version": 1,
@@ -55,6 +71,46 @@ CHECKS = (
         "findings": [],
     },
 )
+
+
+def _authorization_result(
+    *requirements: tuple[str, int],
+) -> AuthorizationResult:
+    return AuthorizationResult(
+        caller_module_id="caller",
+        caller_source_id=None,
+        requested_interface_id="target.interface.run",
+        requested_version=1,
+        requested_owner_module_id="target",
+        terminal_interface_id="target.interface.run",
+        terminal_version=1,
+        terminal_module_id="target",
+        implementing_source_id="target.source.gateway",
+        caller_ancestry=("caller",),
+        target_ancestry=("target",),
+        terminal_ancestry=("target",),
+        lca_module_id=None,
+        crossed_namespace_gates=(),
+        resolved_callers=(),
+        effective_filters=(),
+        allowed=True,
+        diagnostic="authorized",
+        relations=(),
+        required_certificates=frozenset(
+            CertificateRequirement(node_id, version)
+            for node_id, version in requirements
+        ),
+    )
+
+
+def _certificate_record(node_id: str, version: int) -> dict[str, object]:
+    return {
+        "payload": {
+            "subject": {"id": node_id, "version": version},
+            "node_hash": "sha256:" + "a" * 64,
+        },
+        "signature": {},
+    }
 
 
 class MemorySecretBackend:
@@ -76,6 +132,122 @@ class MemorySecretBackend:
 def _write_yaml(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+
+
+def test_authorization_check_consumes_exact_required_certificates_only() -> None:
+    authorization = _authorization_result(("route-owner", 2), ("target", 3))
+    view = CertificateRecordView(
+        {
+            "route-owner": _certificate_record("route-owner", 2),
+            "target": _certificate_record("target", 3),
+        }
+    )
+
+    assert view.check_authorization(authorization).certified
+
+    wrong_version = CertificateRecordView(
+        {
+            "route-owner": _certificate_record("route-owner", 1),
+            "target": _certificate_record("target", 3),
+            "unrelated-sibling": _certificate_record(
+                "unrelated-sibling",
+                99,
+            ),
+        }
+    )
+    decision = wrong_version.check_authorization(authorization)
+
+    assert not decision.certified
+    assert decision.code == "authorization-certification-unavailable"
+    assert "route-owner@2" in decision.message
+
+
+def test_authorization_currentness_ignores_unrelated_stale_nodes_only() -> None:
+    authorization = _authorization_result(("route-owner", 2), ("target", 3))
+
+    def report(*, route_current: bool) -> CertificateCurrentnessReport:
+        return CertificateCurrentnessReport(
+            nodes={
+                "route-owner": CertificateNodeCurrentness(
+                    node_id="route-owner",
+                    current=route_current,
+                    concerns=() if route_current else ("node-hash-mismatch",),
+                    certificate=_certificate_record("route-owner", 2),
+                ),
+                "target": CertificateNodeCurrentness(
+                    node_id="target",
+                    current=True,
+                    concerns=(),
+                    certificate=_certificate_record("target", 3),
+                ),
+                "unrelated-sibling": CertificateNodeCurrentness(
+                    node_id="unrelated-sibling",
+                    current=False,
+                    concerns=("node-hash-mismatch",),
+                    certificate=_certificate_record("unrelated-sibling", 1),
+                ),
+            }
+        )
+
+    assert CertificateCurrentnessView(
+        report(route_current=True)
+    ).check_authorization(authorization).certified
+    assert not CertificateCurrentnessView(
+        report(route_current=False)
+    ).check_authorization(authorization).certified
+
+
+def test_rejecting_view_has_an_explicit_v5_authorization_seam() -> None:
+    decision = RejectingCertificationView().check_authorization(
+        _authorization_result(("target", 1))
+    )
+
+    assert not decision.certified
+    assert decision.code == "certification-unavailable"
+
+
+def test_v5_certifier_bootstrap_roots_parent_runtime_child_and_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed = []
+
+    def capture_postorder(graph, states, requested):
+        observed.append((graph, states, tuple(requested)))
+        return ("ordered",)
+
+    monkeypatch.setattr(
+        certification_view_module,
+        "certification_target_postorder",
+        capture_postorder,
+    )
+    graph = SimpleNamespace(
+        nodes={
+            "skill-certifier": object(),
+            "skill-certifier-rtx": object(),
+            "skill-certifier.source.gateway": object(),
+            "skill-certifier-rtx.source.certifier": object(),
+            "unrelated": object(),
+        },
+        module_sources={
+            "skill-certifier": ("skill-certifier.source.gateway",),
+            "skill-certifier-rtx": (
+                "skill-certifier-rtx.source.certifier",
+            ),
+        },
+    )
+    state = SimpleNamespace(graph=graph, states={"state": object()})
+
+    assert certification_view_module._certifier_target_postorder(state) == (
+        "ordered",
+    )
+    assert observed[0][0] is graph
+    assert observed[0][1] is state.states
+    assert set(observed[0][2]) == {
+        "skill-certifier",
+        "skill-certifier-rtx",
+        "skill-certifier.source.gateway",
+        "skill-certifier-rtx.source.certifier",
+    }
 
 
 def _contract() -> dict[str, object]:
@@ -210,7 +382,11 @@ def _repository(root: Path) -> tuple[object, dict[str, object], str]:
     repository.git("add", ".")
     repository.git("commit", "-qm", "fixture")
     commit = repository.git("rev-parse", "HEAD").stdout.decode("ascii").strip()
-    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
+    graph = load_repository_blueprint_graph(
+        root,
+        schema_root=SCHEMA_ROOT,
+        expected_schema_version=4,
+    )
     states = compute_node_hash_states(
         graph,
         repo_root=root,
@@ -299,6 +475,107 @@ def _fixture(root: Path) -> tuple[object, dict[str, object], str, Path, MemorySe
     return graph, states, commit, public_key_root, backend, key
 
 
+def _rewrite_payload_version_chain(
+    root: Path,
+    graph: object,
+    states: dict[str, object],
+    commit: str,
+    public_key_root: Path,
+    key: object,
+    versions: tuple[int, ...],
+) -> None:
+    for node_id in _postorder(graph):
+        first = parse_certificate_log(
+            certificate_log_path(graph.nodes[node_id]).read_bytes(),
+            public_key_root,
+        )[0]
+        entries = [first]
+        previous_hash = certificate_entry_hash(first)
+        for version in versions[1:]:
+            payload = _payload(
+                root,
+                graph,
+                states,
+                node_id,
+                commit,
+                key.key_id,
+            )
+            payload["certificate_schema_version"] = version
+            payload["previous_entry_hash"] = previous_hash
+            envelope = sign_certificate_payload(payload, key)
+            entries.append(envelope)
+            previous_hash = certificate_entry_hash(envelope)
+        _write_log(graph, node_id, entries)
+
+
+def _evaluate_as_v5(
+    root: Path,
+    graph: object,
+    states: dict[str, object],
+    commit: str,
+    public_key_root: Path,
+) -> CertificateCurrentnessReport:
+    return evaluate_certificate_currentness(
+        replace(graph, schema_version=5),
+        states,
+        repo_root=root,
+        public_key_root=public_key_root,
+        source_commit=commit,
+        certifier_identity=CERTIFIER,
+        checks_by_node={node_id: CHECKS for node_id in graph.nodes},
+        certification_basis_paths=(),
+        schema_root=CANONICAL_SCHEMA_ROOT,
+    )
+
+
+def test_v5_currentness_accepts_each_closed_v1_v2_entry_without_monotonicity(
+    tmp_path: Path,
+) -> None:
+    graph, states, commit, public_key_root, _backend, key = _fixture(tmp_path)
+    _rewrite_payload_version_chain(
+        tmp_path,
+        graph,
+        states,
+        commit,
+        public_key_root,
+        key,
+        (1, 2, 1, 2),
+    )
+
+    report = _evaluate_as_v5(
+        tmp_path,
+        graph,
+        states,
+        commit,
+        public_key_root,
+    )
+
+    assert report.current, {
+        node_id: status.concerns
+        for node_id, status in report.nodes.items()
+    }
+
+
+def test_v5_currentness_marks_a_final_v1_entry_stale(
+    tmp_path: Path,
+) -> None:
+    graph, states, commit, public_key_root, _backend, _key = _fixture(tmp_path)
+
+    report = _evaluate_as_v5(
+        tmp_path,
+        graph,
+        states,
+        commit,
+        public_key_root,
+    )
+
+    assert not report.current
+    assert all(
+        "legacy-certificate-payload" in status.concerns
+        for status in report.nodes.values()
+    )
+
+
 def _certifier_repository_with_provider_source(
     root: Path,
 ) -> RepositoryCertificationState:
@@ -354,7 +631,7 @@ def _certifier_repository_with_provider_source(
     repository = GitTestRepository(root)
     repository.git("add", ".")
     repository.git("commit", "-qm", "add provider client")
-    return derive_repository_certification_state(root)
+    return derive_repository_certification_state(root, expected_schema_version=4, schema_root=SCHEMA_ROOT)
 
 
 def _evaluate(
@@ -611,10 +888,13 @@ def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
         repo_root=tmp_path,
         source_commit="a" * 40,
         bootstrap_allowed=True,
+        schema_version=4,
     )
 
     assert view.check_bootstrap(
         caller_module_id="skill-certifier",
+        target_module_id="skill-certifier",
+        terminal_module_id="skill-certifier",
         interface_id="skill-certifier.interface.certify",
         pattern_name=None,
         argv=(
@@ -628,6 +908,31 @@ def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
     ).certified
     assert view.check_bootstrap(
         caller_module_id="skill-certifier",
+        target_module_id="skill-maker",
+        terminal_module_id="skill-maker",
+        interface_id="skill-maker.interface.sync-blueprints",
+        pattern_name="check",
+        argv=("--check",),
+    ).certified
+    assert not view.check_bootstrap(
+        caller_module_id="skill-certifier",
+        target_module_id="skill-maker",
+        terminal_module_id="skill-maker",
+        interface_id="skill-certifier.interface.certify",
+        pattern_name=None,
+        argv=(
+            "certify",
+            "skill-certifier",
+            "--reviewed-repository",
+            str(tmp_path),
+            "--reviewed-commit",
+            "a" * 40,
+        ),
+    ).certified
+    assert not view.check_bootstrap(
+        caller_module_id="skill-certifier",
+        target_module_id="skill-certifier",
+        terminal_module_id="skill-certifier",
         interface_id="skill-maker.interface.sync-blueprints",
         pattern_name="check",
         argv=("--check",),
@@ -706,10 +1011,70 @@ def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
     for caller, interface_id, pattern_name, argv in rejected:
         assert not view.check_bootstrap(
             caller_module_id=caller,
+            target_module_id=(
+                "skill-maker"
+                if interface_id == "skill-maker.interface.sync-blueprints"
+                else "skill-certifier"
+            ),
+            terminal_module_id=(
+                "skill-maker"
+                if interface_id == "skill-maker.interface.sync-blueprints"
+                else "skill-certifier"
+            ),
             interface_id=interface_id,
             pattern_name=pattern_name,
             argv=argv,
         ).certified
+
+
+def test_v5_bootstrap_mutation_requires_runtime_child_terminal(
+    tmp_path: Path,
+) -> None:
+    view = RepositoryCertificationView(
+        CertificateCurrentnessReport(nodes={}),
+        repo_root=tmp_path,
+        source_commit="a" * 40,
+        bootstrap_allowed=True,
+        schema_version=5,
+    )
+    request = {
+        "caller_module_id": "skill-certifier",
+        "target_module_id": "skill-certifier",
+        "interface_id": "skill-certifier.interface.certify",
+        "pattern_name": None,
+        "argv": (
+            "certify",
+            "skill-certifier",
+            "--reviewed-repository",
+            str(tmp_path),
+            "--reviewed-commit",
+            "a" * 40,
+        ),
+    }
+
+    assert view.check_bootstrap(
+        terminal_module_id="skill-certifier-rtx",
+        **request,
+    ).certified
+    assert not view.check_bootstrap(
+        terminal_module_id="skill-certifier",
+        **request,
+    ).certified
+    sync_request = {
+        "caller_module_id": "skill-certifier",
+        "target_module_id": "skill-maker",
+        "interface_id": "skill-maker.interface.sync-blueprints",
+        "pattern_name": "check",
+        "argv": ("--check",),
+    }
+    assert view.check_bootstrap(
+        terminal_module_id="skill-maker-rtx",
+        **sync_request,
+    ).certified
+    assert not view.check_bootstrap(
+        terminal_module_id="skill-maker",
+        **sync_request,
+    ).certified
 
 
 def test_repository_view_never_bootstraps_when_initial_state_is_not_clean(
@@ -720,10 +1085,13 @@ def test_repository_view_never_bootstraps_when_initial_state_is_not_clean(
         repo_root=tmp_path,
         source_commit="a" * 40,
         bootstrap_allowed=False,
+        schema_version=4,
     )
 
     decision = view.check_bootstrap(
         caller_module_id="skill-certifier",
+        target_module_id="skill-drift",
+        terminal_module_id="skill-drift",
         interface_id="skill-drift.interface.compute-hashes",
         pattern_name=None,
         argv=("compute-hashes", "--json"),
@@ -744,12 +1112,12 @@ def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_
         public_key_root,
         secret_backend=backend,
     )
-    certifier_root = graph.nodes["skill-certifier"].skill_root
+    certifier_root = graph.nodes["skill-certifier"].module_root
     certifier_targets = tuple(
         sorted(
             node_id
             for node_id, node in graph.nodes.items()
-            if node.skill_root == certifier_root
+            if node.module_root == certifier_root
         )
     )
     signed: dict[str, dict] = {}
@@ -768,7 +1136,7 @@ def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_
         _write_log(graph, node_id, [signed[node_id]])
     rotate_certificate_signing_key(public_key_root, secret_backend=backend)
 
-    view = repository_certification_view(tmp_path)
+    view = repository_certification_view(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT)
     assert all(
         "suspect-certificate-log" in view.report.nodes[node_id].concerns
         for node_id in certifier_targets
@@ -783,12 +1151,16 @@ def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_
     )
     assert view.check_bootstrap(
         caller_module_id="skill-certifier",
+        target_module_id="skill-certifier",
+        terminal_module_id="skill-certifier",
         interface_id="skill-certifier.interface.certify",
         pattern_name=None,
         argv=exact,
     ).certified
     assert not view.check_bootstrap(
         caller_module_id="skill-certifier",
+        target_module_id="skill-certifier",
+        terminal_module_id="skill-certifier",
         interface_id="skill-certifier.interface.certify",
         pattern_name=None,
         argv=(
@@ -808,8 +1180,10 @@ def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_
     ).decode("ascii")
     _write_log(graph, corrupt_node_id, [corrupt])
 
-    assert not repository_certification_view(tmp_path).check_bootstrap(
+    assert not repository_certification_view(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT).check_bootstrap(
         caller_module_id="skill-certifier",
+        target_module_id="skill-certifier",
+        terminal_module_id="skill-certifier",
         interface_id="skill-certifier.interface.certify",
         pattern_name=None,
         argv=exact,
@@ -829,7 +1203,7 @@ def test_partial_certifier_multi_root_closure_keeps_only_read_only_sync_fallback
                 else "behavioral_source"
             ),
             version=1,
-            skill_root=(
+            module_root=(
                 certifier_root
                 if node_id.startswith("skill-certifier")
                 else tmp_path / "skills" / "skill-maker"
@@ -920,16 +1294,21 @@ def test_partial_certifier_multi_root_closure_keeps_only_read_only_sync_fallback
         bootstrap_allowed=certification_view_module._initial_certificate_state_admissible(
             partial
         ),
+        schema_version=4,
     )
 
     assert view.check_bootstrap(
         caller_module_id="skill-certifier",
+        target_module_id="skill-maker",
+        terminal_module_id="skill-maker",
         interface_id="skill-maker.interface.sync-blueprints",
         pattern_name="check",
         argv=("--check",),
     ).certified
     assert not view.check_bootstrap(
         caller_module_id="skill-certifier",
+        target_module_id="skill-maker",
+        terminal_module_id="skill-maker",
         interface_id="skill-maker.interface.sync-blueprints",
         pattern_name="sync",
         argv=(),
@@ -975,7 +1354,30 @@ def test_renewal_rejects_nonprefix_second_root_provider_history(
                 )
             ],
         )
-    state = derive_repository_certification_state(tmp_path)
+    state = derive_repository_certification_state(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT)
+
+    assert not certification_view_module._certifier_renewal_state_admissible(
+        state,
+        repo_root=tmp_path,
+    )
+
+
+def test_v5_renewal_accepts_empty_migrated_prefix_and_rejects_corrupt_history(
+    tmp_path: Path,
+) -> None:
+    state = _certifier_repository_with_provider_source(tmp_path)
+    state = replace(state, graph=replace(state.graph, schema_version=5))
+
+    assert certification_view_module._certifier_renewal_state_admissible(
+        state,
+        repo_root=tmp_path,
+    )
+
+    order = certification_view_module._certifier_target_postorder(state)
+    assert order
+    path = certificate_log_path(state.graph.nodes[order[0]])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{}\n", encoding="utf-8")
 
     assert not certification_view_module._certifier_renewal_state_admissible(
         state,
@@ -987,7 +1389,7 @@ def test_renewal_rejects_signed_entry_for_different_log_subject(
     tmp_path: Path,
 ) -> None:
     create_v4_repository(tmp_path)
-    state = derive_repository_certification_state(tmp_path)
+    state = derive_repository_certification_state(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT)
     public_key_root = certificate_public_key_root(tmp_path)
     public_key_root.mkdir(parents=True)
     key = load_or_create_certificate_signing_key(
@@ -1012,7 +1414,7 @@ def test_renewal_rejects_signed_entry_for_different_log_subject(
             )
         ],
     )
-    state = derive_repository_certification_state(tmp_path)
+    state = derive_repository_certification_state(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT)
     assert "subject-mismatch" in state.currentness.nodes[log_node_id].concerns
 
     assert not certification_view_module._certifier_renewal_state_admissible(

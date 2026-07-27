@@ -1,0 +1,182 @@
+content:
+- _watermark_floor\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: email-triage-rtx.source.rtx-init
+  version: 1
+description: Computes the conservative date-level cutoff used for email retrieval
+  and records missing-watermark warnings.
+gateway:
+  language: Python
+  path: _watermark_floor.py
+id: email-triage-rtx.source.rtx-watermark-floor
+interfaces:
+  email-triage-rtx.source.rtx-watermark-floor.interface.scripts-get-cutoff:
+    contract:
+      arguments:
+        days:
+          description: Optional explicit lookback days used instead of the stored
+            watermark
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            minimum: 0
+            unit: days
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: watermark
+          formats:
+          - text
+          id: read-1
+          medium: local-filesystem
+          path: state/last_run
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: watermark
+          formats:
+          - text
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - json
+          id: write-2
+          medium: local-filesystem
+          path: state/status.json
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-3
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Uses the current date and the watermark visible at invocation time.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-2
+            kind: direct-io
+          direct_io_ref: write-2
+          id: record-warning
+          may_occur_in_outcomes:
+          - defaulted
+          reversibility:
+            reversible: A later successful run may replace the warning status.
+          value_source:
+            direct_io_ref: write-2
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: The missing-watermark fallback rewrites one status document.
+          concurrent_invocations:
+            unsafe: Concurrent status writers can overwrite one another.
+          idempotency:
+            non_idempotent: The computed fallback date changes with the current date.
+          on_uncertain_completion:
+            verify_then_decide: Inspect status.json and rerun without advancing the
+              watermark.
+          partial_effects_on_failure:
+            possible: Warning status can be written even if downstream triage later
+              fails.
+          rollback_on_failure:
+            unavailable: The prior status document is not retained.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: cutoff
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Pass the date to fetch-filtered-envelopes.
+        class: success
+        effects: []
+        id: computed
+        outputs:
+        - cutoff
+      - caller_action: Continue with the fallback and report the warning.
+        class: success
+        effects:
+        - record-warning
+        id: defaulted
+        outputs:
+        - cutoff
+        - diagnostic
+      - caller_action: Report the invalid watermark or argument and do not ask the
+          user for a replacement date.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Conservative date-level cutoff for email-client mail-list
+        direct_io_ref: write-1
+        empty: A cutoff date is always printed on success.
+        id: cutoff
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          date_formats:
+          - YYYY-MM-DD
+          kind: date
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-3
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Return the cutoff date for the current triage run, with a fallback
+      if no watermark exists.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        name: owner
+    usage: ''
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces: []
+version: 1

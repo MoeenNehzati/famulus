@@ -12,12 +12,10 @@ description: |
 
 Category: system-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces:
-- `cloud-files.source.gateway -> cloud-files.source.rtx-oauth-bootstrap.interface.setup-oauth@1`
 - `cloud-files.source.gateway -> connect-google.interface.default@1`
-- `cloud-files.source.rtx-oauth-bootstrap -> common.interface.oauth-json@1`
 
 Public Interfaces:
 - `cloud-files.interface.default`

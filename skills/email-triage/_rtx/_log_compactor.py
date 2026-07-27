@@ -17,7 +17,7 @@ from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-LOGFILE = Path(__file__).resolve().parent.parent / "triage.log"
+LOGFILE = Path(__file__).resolve().parent / "triage.log"
 CUTOFF_DAYS = 30
 
 

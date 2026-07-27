@@ -7,7 +7,8 @@ dependencies:
   reason: Apply the user's optional client-installation and service-selection preferences.
   source: connect-google.source.personal-preferences-connect-services
   version: 1
-description: Instructs the agent to install or reuse the shared Desktop OAuth client and delegate each selected service's authorization setup.
+description: Instructs the agent to install or reuse the shared Desktop OAuth client
+  and delegate each selected service's authorization setup.
 gateway:
   language: Markdown
   path: instructions/connect-services.md
@@ -16,24 +17,33 @@ interfaces:
   connect-google.source.instructions-connect-services.interface.connect-services:
     contract:
       arguments:
-        services: {description: Supported Google services the user wants to connect., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
-        client-json-path: {description: Local Desktop OAuth client JSON path when no valid canonical client is installed., required: false, sensitivity: secret, direct_io_ref: read-1, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, content_type: {kind: string, sensitivity: secret, format: {named: json}}}}
-      preconditions: []
-      interaction: {mode: interactive, channel: tty, unattended_outcome: clarification-required}
+        client-json-path:
+          description: Local Desktop OAuth client JSON path when no valid canonical
+            client is installed.
+          direct_io_ref: read-1
+          required: false
+          sensitivity: secret
+          type:
+            access: read
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: secret
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        services:
+          description: Supported Google services the user wants to connect.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
       caller_warnings:
-      - external-side-effect: Service owners may write credentials and open a browser authorization flow.
-      outputs:
-      - {id: response, audience: human, description: Per-service connection result and next action., direct_io_ref: write-1, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
-      outcomes:
-      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Continue with each connected service.}
-      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: Supply target services or the missing client JSON path.}
-      - {id: failed, class: error, outputs: [], effects: [], caller_action: Report the owning service and failure without exposing OAuth secrets.}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {per_source: Each service owner reports the connection state it observes.}
-        verification: [{method: output-schema, output_ref: response}]
-      helpers: []
+      - external-side-effect: Service owners may write credentials and open a browser
+          authorization flow.
       direct_io:
         network: []
         reads:
@@ -48,15 +58,72 @@ interfaces:
           sensitivity: user-private
           system: agent-runtime
         writes:
-        - {id: write-1, medium: prompt, access: write, system: agent-runtime, content: service connection response, formats: [markdown], sensitivity: derived-private}
+        - access: write
+          content: service connection response
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          per_source: Each service owner reports the connection state it observes.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: clarification-required
+      outcomes:
+      - caller_action: Continue with each connected service.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Supply target services or the missing client JSON path.
+        class: refusal
+        effects: []
+        id: clarification-required
+        outputs:
+        - response
+      - caller_action: Report the owning service and failure without exposing OAuth
+          secrets.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Per-service connection result and next action.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
     description: Install or reuse a Google Desktop OAuth client and hand selected
       Google services to their owning skills.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces:
-- interface: connect-google.source.rtx-client-config.interface.client-status
+- interface: connect-google.interface.client-status
   version: 1
-- interface: connect-google.source.rtx-client-config.interface.install-client
+- interface: connect-google.interface.install-client
   version: 1
-version: 1
+version: 2

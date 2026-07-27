@@ -1,0 +1,21 @@
+# Shadow fixture template; tests materialize this as blueprint.yaml.
+schema_version: 5
+node_type: module
+id: demo
+version: 1
+gateway:
+  path: SKILL.md
+  language: Markdown
+content:
+  - SKILL\.md
+discovery:
+  mechanism: skill
+authority:
+  owns_filesystem: []
+sources: {}
+children:
+  demo-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
+namespace_exports: {}
+exports: {}

@@ -1,7 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Converts a natural-language weather request into concrete dates and location arguments, then summarizes hourly forecast JSON for practical planning.
+description: Converts a natural-language weather request into concrete dates and location
+  arguments, then summarizes hourly forecast JSON for practical planning.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -11,53 +12,14 @@ interfaces:
     contract:
       arguments:
         request:
-          description: User weather request including any named location, relative or exact dates, and planning context.
+          description: User weather request including any named location, relative
+            or exact dates, and planning context.
           required: true
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
-      preconditions: []
-      interaction:
-        mode: unattended
       caller_warnings: []
-      outputs:
-      - id: response
-        audience: human
-        description: Concise day-by-day forecast summary with conditions, temperature range, notable rain or wind, and practical guidance.
-        direct_io_ref: write-1
-        type:
-          kind: string
-          sensitivity: derived-private
-        cardinality:
-          minimum: 1
-          maximum: 1
-        ordering: stable
-        pagination:
-          kind: none
-        truncation:
-          kind: none
-        empty: Never empty on success.
-      outcomes:
-      - id: completed
-        class: success
-        outputs: [response]
-        effects: []
-        caller_action: Present the forecast and echo resolved dates and location when the user supplied them.
-      - id: lookup-failed
-        class: error
-        outputs: []
-        effects: []
-        caller_action: Report the interface error plainly without guessing another date or location.
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency:
-          live: The summary is derived from the live location resolution and hourly forecast returned for this request.
-        verification:
-        - method: output-schema
-          output_ref: response
-      helpers: []
       direct_io:
         network: []
         reads:
@@ -76,9 +38,56 @@ interfaces:
           id: write-1
           medium: prompt
           sensitivity: derived-private
+      execution:
+        consistency:
+          live: The summary is derived from the live location resolution and hourly
+            forecast returned for this request.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Present the forecast and echo resolved dates and location when
+          the user supplied them.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Report the interface error plainly without guessing another
+          date or location.
+        class: error
+        effects: []
+        id: lookup-failed
+        outputs: []
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Concise day-by-day forecast summary with conditions, temperature
+          range, notable rain or wind, and practical guidance.
+        direct_io_ref: write-1
+        empty: Never empty on success.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 4
-uses_interfaces: []
+schema_version: 5
+uses_interfaces:
+- interface: get-weather.interface.scripts-weather
+  version: 1
 version: 1

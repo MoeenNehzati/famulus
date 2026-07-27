@@ -1,7 +1,8 @@
 content:
 - instructions/triage\.md
 dependencies: []
-description: Owns the LLM-directed, watermark-safe email triage workflow and its routing decisions.
+description: Owns the LLM-directed, watermark-safe email triage workflow and its routing
+  decisions.
 gateway:
   language: Markdown
   path: instructions/triage.md
@@ -10,30 +11,9 @@ interfaces:
   email-triage.source.instructions-triage.interface.triage:
     contract:
       arguments: {}
-      preconditions: []
-      interaction: {mode: unattended}
       caller_warnings:
-      - external-side-effect: The workflow may add action items, append decisions, update status, and advance the watermark through separately declared interfaces.
-      outputs:
-      - id: response
-        audience: both
-        description: Markdown triage summary and any failure information.
-        direct_io_ref: write-1
-        type: {kind: string}
-        cardinality: {minimum: 1, maximum: 1}
-        ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        empty: The workflow always reports its result.
-      outcomes:
-      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Present the triage summary.}
-      - {id: failed, class: error, outputs: [response], effects: [], caller_action: Preserve the watermark and report the failed step.}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {live: The summary reflects the emails and interface results observed during this run.}
-        verification: [{method: output-schema, output_ref: response}]
-      helpers: []
+      - external-side-effect: The workflow may add action items, append decisions,
+          update status, and advance the watermark through separately declared interfaces.
       direct_io:
         network: []
         reads: []
@@ -45,28 +25,70 @@ interfaces:
           id: write-1
           medium: prompt
           sensitivity: derived-private
+      execution:
+        consistency:
+          live: The summary reflects the emails and interface results observed during
+            this run.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Present the triage summary.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Preserve the watermark and report the failed step.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - response
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Markdown triage summary and any failure information.
+        direct_io_ref: write-1
+        empty: The workflow always reports its result.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+      preconditions: []
     description: Scans emails received since the last triage run and routes extracted
       action items to the right list.
     version: 2
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces:
 - interface: email-client.interface.default
   version: 3
-- interface: email-triage.source.rtx-mail-envelope-stream.interface.fetch-filtered-envelopes
+- interface: email-triage.interface.fetch-filtered-envelopes
   version: 1
-- interface: email-triage.source.rtx-failure-clearer.interface.scripts-clear-failure
+- interface: email-triage.interface.scripts-clear-failure
   version: 1
-- interface: email-triage.source.rtx-watermark-floor.interface.scripts-get-cutoff
+- interface: email-triage.interface.scripts-get-cutoff
   version: 1
-- interface: email-triage.source.rtx-decision-sink.interface.scripts-log-decision
+- interface: email-triage.interface.scripts-log-decision
   version: 1
-- interface: email-triage.source.rtx-failure-sentinel.interface.scripts-mark-failure
+- interface: email-triage.interface.scripts-mark-failure
   version: 1
-- interface: email-triage.source.rtx-log-compactor.interface.scripts-prune-log
+- interface: email-triage.interface.scripts-prune-log
   version: 1
-- interface: email-triage.source.rtx-watermark-writer.interface.scripts-update-watermark
+- interface: email-triage.interface.scripts-update-watermark
   version: 1
 - interface: list-manager.interface.default
   version: 1
-version: 1
+version: 2

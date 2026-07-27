@@ -1,6 +1,8 @@
 # Certification and Drift
 
-This document defines the live version-4 certification contract.
+This document defines the live version-5 certification contract. Version-4
+schemas remain only as immutable converter input under
+`references/blueprint/migrations/v4/`.
 
 Certification is repository-bound. The public certifier requires an explicit
 reviewed repository and commit and derives the complete certifiable graph from
@@ -10,7 +12,7 @@ graph.
 
 ## Nodes and dependencies
 
-Version 4 has two authored node types:
+Version 5 has two authored node types:
 
 - A `module` owns discovery, filesystem authority, contained behavioral
   sources, and exported interfaces.
@@ -18,11 +20,11 @@ Version 4 has two authored node types:
   intrinsic interface contracts, source dependencies, and interface uses.
 
 The blueprint graph derives certification dependencies from source use,
-private-interface use, module-export use, and cross-owner contract references.
-Containment assigns ownership but adds no certification edge. An edge records
-the target node and its exact version. A node's local hash does not recursively
-include dependency bytes; certificates record
-the direct dependency node hashes separately.
+private-interface use, module-export use, namespace routing, facades, topology
+proofs, and cross-owner contract references. Containment assigns ownership but
+adds no certification edge. An edge records the target node and its exact
+version. A node's local hash does not recursively include dependency bytes;
+certificates record direct dependency node hashes separately.
 
 Every authored node has one blueprint. Every behavioral source has one
 whole-file gateway. A module with discovery also has a whole-file gateway; a
@@ -32,18 +34,18 @@ never add graph edges.
 
 ## Structural validity and certifiability
 
-A version-4 blueprint may be structurally valid before it is certifiable.
+A version-5 blueprint may be structurally valid before it is certifiable.
 Structural validation requires canonical identity, a resolvable whole-file
 gateway, containment and relationship shape, safe paths, and closed shapes for
 every semantic value that is present. It does not manufacture semantic facts
 or assert that an interface is complete.
 
-Mechanical migration preserves every authored fact in the generic v4
-vocabulary. Facts that the old declaration did not contain remain absent; they
-must not be filled with permissive argv rules, generic success outcomes, or
-other guessed defaults merely to satisfy a schema. Missing descriptions,
-contract sections, invocation details, direct-I/O facts, or compatibility
-claims are certifier findings.
+The one-time converter preserves every authored fact while registering nested
+modules, moving code ownership, and rewriting exact identities. Facts absent
+from the source remain absent; migration must not invent permissive argv rules,
+generic success outcomes, or other guessed defaults merely to satisfy a
+schema. Missing descriptions, contract sections, invocation details,
+direct-I/O facts, or compatibility claims are certifier findings.
 
 The certifier-owned workflow reviews such a draft against the gateway and node
 content. It may repair the candidate blueprint, but each repair invalidates the

@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "common.schema.json",
-  "title": "Version 4 Blueprint Common Definitions",
+  "title": "Version 5 Blueprint Common Definitions",
   "definitions": {
     "requirement": {
       "type": "string",
@@ -16,6 +16,18 @@
     "moduleId": {
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "relativeModuleReference": {
+      "type": "string",
+      "pattern": "^\\.+(?:_rtx|[a-z0-9]+(?:-[a-z0-9]+)*)(?:\\.(?:_rtx|[a-z0-9]+(?:-[a-z0-9]+)*))*$",
+      "description": "An exact module reference relative to the declaration owner. The first dot starts at the owner and each additional leading dot ascends one registered parent."
+    },
+    "callerReference": {
+      "oneOf": [
+        {"$ref": "#/definitions/moduleId"},
+        {"$ref": "#/definitions/relativeModuleReference"}
+      ],
+      "description": "One exact global module ID or leading-dot relative module reference."
     },
     "behavioralSourceId": {
       "type": "string",
@@ -48,7 +60,7 @@
       "items": {"type": "string", "minLength": 1},
       "description": "Case-sensitive Python regular expressions matched with re.fullmatch against normalized POSIX paths under the node ownership root."
     },
-    "v4BlueprintLocator": {
+    "v5BlueprintLocator": {
       "type": "object",
       "required": ["base", "path"],
       "additionalProperties": false,
@@ -69,6 +81,34 @@
             "template": {"include": true, "example": "blueprints/gateway.yaml"},
             "doc": {"authoring": ["Name the target blueprint without parent traversal."]},
             "related_validation_rules": ["gateway-file"]
+          }
+        }
+      }
+    },
+    "childBlueprintLocator": {
+      "type": "object",
+      "required": ["base", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "base": {
+          "const": "module-root",
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "module-root"},
+            "doc": {"authoring": ["Resolve every direct-child marker from its parent module root."]},
+            "related_validation_rules": ["nested-topology"]
+          }
+        },
+        "path": {
+          "allOf": [
+            {"$ref": "#/definitions/relativePath"},
+            {"pattern": "(?:^|/)blueprint\\.yaml$"}
+          ],
+          "x-famulus": {
+            "field_status": "required",
+            "template": {"include": true, "example": "_rtx/blueprint.yaml"},
+            "doc": {"authoring": ["Name the direct child's canonical blueprint.yaml marker without parent traversal."]},
+            "related_validation_rules": ["nested-topology"]
           }
         }
       }
@@ -114,7 +154,7 @@
       "additionalProperties": false,
       "properties": {
         "blueprint": {
-          "$ref": "#/definitions/v4BlueprintLocator",
+          "$ref": "#/definitions/v5BlueprintLocator",
           "x-famulus": {
             "field_status": "required",
             "template": {"include": true, "example": {"base": "module-root", "path": "blueprints/gateway.yaml"}},
@@ -148,7 +188,7 @@
           }
         },
         "blueprint": {
-          "$ref": "#/definitions/v4BlueprintLocator",
+          "$ref": "#/definitions/v5BlueprintLocator",
           "x-famulus": {
             "field_status": "required",
             "template": {"include": true, "example": {"base": "module-root", "path": "blueprints/policy.yaml"}},

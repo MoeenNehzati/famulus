@@ -1,0 +1,4 @@
+# Shadow fixture template; tests materialize this as blueprint.yaml.
+schema_version: 4
+node_type: module
+id: deliberately-invalid-host-marker

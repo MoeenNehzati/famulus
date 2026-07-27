@@ -1,7 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Implements diagnosis-first document-level notation review and proposes the smallest coherent candidate scheme without unrequested rewriting.
+description: Implements diagnosis-first document-level notation review and proposes
+  the smallest coherent candidate scheme without unrequested rewriting.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -10,31 +11,97 @@ interfaces:
   notation-review.source.gateway.interface.default:
     contract:
       arguments:
-        request: {description: 'Mathematical notation-review request plus the target passage, document, or local convention context.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
-      preconditions: []
-      interaction: {mode: unattended}
+        request:
+          description: Mathematical notation-review request plus the target passage,
+            document, or local convention context.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
       caller_warnings: []
-      outputs:
-      - {id: response, audience: human, description: 'Concise notation diagnosis and candidate scheme identifying what to remove, unify, distinguish, preserve, or centralize in macros.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty on success., type: {kind: string, sensitivity: derived-private}}
-      outcomes:
-      - {id: reviewed, class: success, outputs: [response], effects: [], caller_action: 'Choose which proposed notation changes, if any, should be applied.'}
-      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: 'Supply the notation, mathematical roles, or surrounding document needed to judge consistency.'}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {snapshot: 'The audit reflects the document scope, local conventions, and mathematical relationships available in this invocation.'}
-        verification: [{method: output-schema, output_ref: response}]
-      helpers: []
       direct_io:
         network: []
         reads:
-        - {id: request, medium: prompt, access: read, system: agent-runtime, content: Notation-review request and supplied mathematical context., formats: [text, tex], sensitivity: user-private}
-        - {id: document, medium: local-filesystem, access: read, content: 'Target mathematical document, definitions, formulas, and macro declarations when files are named.', formats: [tex, text, markdown], sensitivity: user-private, reason: Audit notation across scope without creating local inconsistency.}
+        - access: read
+          content: Notation-review request and supplied mathematical context.
+          formats:
+          - text
+          - tex
+          id: request
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        - access: read
+          content: Target mathematical document, definitions, formulas, and macro
+            declarations when files are named.
+          formats:
+          - tex
+          - text
+          - markdown
+          id: document
+          medium: local-filesystem
+          reason: Audit notation across scope without creating local inconsistency.
+          sensitivity: user-private
         writes:
-        - {id: response, medium: prompt, access: write, system: agent-runtime, content: Notation findings and candidate unified scheme., formats: [markdown, tex], sensitivity: derived-private}
-    description: Diagnose notation at the requested scope and propose a light, coherent scheme without changing the document.
+        - access: write
+          content: Notation findings and candidate unified scheme.
+          formats:
+          - markdown
+          - tex
+          id: response
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          snapshot: The audit reflects the document scope, local conventions, and
+            mathematical relationships available in this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Choose which proposed notation changes, if any, should be applied.
+        class: success
+        effects: []
+        id: reviewed
+        outputs:
+        - response
+      - caller_action: Supply the notation, mathematical roles, or surrounding document
+          needed to judge consistency.
+        class: refusal
+        effects: []
+        id: clarification-required
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Concise notation diagnosis and candidate scheme identifying what
+          to remove, unify, distinguish, preserve, or centralize in macros.
+        direct_io_ref: response
+        empty: Never empty on success.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Diagnose notation at the requested scope and propose a light, coherent
+      scheme without changing the document.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

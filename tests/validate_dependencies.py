@@ -4,15 +4,33 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import shutil
+from types import SimpleNamespace
 
+import pytest
 import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_VALIDATOR = _REPO_ROOT / "skills" / "skill-maker" / "validators" / "dependencies.py"
+_VALIDATOR = _REPO_ROOT / "validators" / "skill" / "dependencies.py"
 _spec = importlib.util.spec_from_file_location("dependencies", _VALIDATOR)
 _mod = importlib.util.module_from_spec(_spec)
 assert _spec.loader is not None
 _spec.loader.exec_module(_mod)
+_REAL_LOAD_GRAPH = _mod.load_repository_blueprint_graph
+_V4_SCHEMA_ROOT = _REPO_ROOT / "references" / "blueprint" / "migrations" / "v4"
+
+
+@pytest.fixture(autouse=True)
+def _select_frozen_v4_loader(monkeypatch: pytest.MonkeyPatch) -> None:
+    def load_v4_graph(repo_root: Path, **kwargs: object) -> object:
+        kwargs["expected_schema_version"] = 4
+        kwargs["schema_root"] = _V4_SCHEMA_ROOT
+        return _REAL_LOAD_GRAPH(repo_root, **kwargs)
+
+    monkeypatch.setattr(
+        _mod,
+        "load_repository_blueprint_graph",
+        load_v4_graph,
+    )
 
 
 def _write_yaml(path: Path, value: dict) -> None:
@@ -177,3 +195,42 @@ def test_disallowed_parent_path_is_rejected(tmp_path: Path) -> None:
     _module(tmp_path, "my-skill", body="Read ../../private/file.md.\n")
     errors = _mod.validate(tmp_path)
     assert any("parent paths in SKILL.md" in error for error in errors)
+
+
+def test_parent_dependency_accounting_includes_registered_child_sources() -> None:
+    child_source = SimpleNamespace(
+        declaration={
+            "uses_interfaces": [
+                {"interface": "other-skill.interface.default"},
+            ],
+        }
+    )
+    graph = SimpleNamespace(
+        module_sources={
+            "my-skill": ("my-skill.source.gateway",),
+            "my-skill-rtx": ("my-skill-rtx.source.runtime",),
+            "other-skill": ("other-skill.source.gateway",),
+        },
+        module_ancestry={
+            "my-skill": ("my-skill",),
+            "my-skill-rtx": ("my-skill", "my-skill-rtx"),
+            "other-skill": ("other-skill",),
+        },
+        nodes={
+            "my-skill.source.gateway": SimpleNamespace(
+                declaration={"uses_interfaces": []}
+            ),
+            "my-skill-rtx.source.runtime": child_source,
+            "other-skill.source.gateway": SimpleNamespace(
+                declaration={"uses_interfaces": []}
+            ),
+        },
+        exports={
+            "other-skill.interface.default": SimpleNamespace(
+                module_node_id="other-skill",
+            ),
+        },
+        node_edges=(),
+    )
+
+    assert _mod._used_module_ids(graph, "my-skill") == {"other-skill"}

@@ -86,7 +86,7 @@ def _source() -> BlueprintNode:
         node_id="demo-skill.source.worker",
         node_type="behavioral_source",
         version=1,
-        skill_root=root,
+        module_root=root,
         blueprint_path=root / "blueprints" / "worker.yaml",
         gateway_path=root / "_rtx" / "_worker.py",
         declaration={"gateway": {"path": "_rtx/_worker.py", "language": "Python"}},
@@ -100,7 +100,7 @@ def _v4_export() -> tuple[BlueprintNode, InterfaceExport]:
         node_id=source_id,
         node_type="behavioral_source",
         version=1,
-        skill_root=root,
+        module_root=root,
         blueprint_path=root / "blueprints" / "worker.yaml",
         gateway_path=root / "_rtx" / "worker.py",
         declaration={

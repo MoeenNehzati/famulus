@@ -10,7 +10,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = (
-    REPO_ROOT / "skills" / "skill-maker" / "validators" / "interface_ids.py"
+    REPO_ROOT / "validators" / "skill" / "interface_ids.py"
 )
 SPEC = importlib.util.spec_from_file_location("interface_ids", VALIDATOR)
 assert SPEC is not None and SPEC.loader is not None

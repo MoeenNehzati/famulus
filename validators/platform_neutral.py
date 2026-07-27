@@ -16,10 +16,10 @@ This lets a module hold real per-platform logic without a blanket per-skill
 exemption: put platform-specific parts in a file named after that platform
 (plus the __init__.py that wires them together), keep everything else
 (SKILL.md, first-party shared packages, and any generically-named script) free
-of platform references. Schema-v4 blueprint files are descriptive graph
+of platform references. Validated blueprint files are descriptive graph
 artifacts rather than module content; once the canonical graph validates them,
 this text guard scans their owned files instead of their declaration metadata.
-Legacy blueprint files retain the line-level checks below.
+Frozen version-4 blueprint fixtures retain the line-level checks below.
 """
 from __future__ import annotations
 
@@ -64,6 +64,8 @@ _HOST_PATTERN = re.compile(r"(?i:(\.claude|claude|\.codex|codex))")
 _PLATFORM_METADATA_LINE_RE = re.compile(
     r"^\s*(?:#\s*)?[\"']?(?:linux|macos|windows)[\"']?\s*:\s*(?:true|false|\{)"
 )
+REQUIRES_BLUEPRINT_GRAPH = True
+BLUEPRINT_GRAPH_OPTIONAL = True
 
 
 def _is_allowed_platform_metadata_line(rel_path: Path, line: str) -> bool:
@@ -98,18 +100,22 @@ def _forbidden_pattern_for(path: Path) -> re.Pattern[str] | None:
     return re.compile("|".join(p.pattern for p in active))
 
 
-def _v4_blueprint_paths(repo_root: Path) -> frozenset[Path]:
-    """Return blueprint files validated as part of the canonical v4 graph."""
+def _validated_blueprint_paths(graph: object) -> frozenset[Path]:
+    """Return blueprint files already validated by the canonical graph."""
+    return frozenset(
+        node.blueprint_path.resolve()
+        for node in graph.nodes.values()
+    )
+
+
+def _canonical_blueprint_paths(repo_root: Path) -> frozenset[Path]:
+    """Load blueprint files validated by the canonical version-5 graph."""
 
     schema_root = repo_root / "references" / "blueprint"
     try:
         graph = load_repository_blueprint_graph(
             repo_root,
-            schema_root=(
-                schema_root
-                if (schema_root / "module.schema.json").is_file()
-                else None
-            ),
+            schema_root=schema_root,
         )
     except (
         BlueprintGraphError,
@@ -118,11 +124,7 @@ def _v4_blueprint_paths(repo_root: Path) -> frozenset[Path]:
         UnicodeError,
     ):
         return frozenset()
-    return frozenset(
-        node.blueprint_path.resolve()
-        for node in graph.nodes.values()
-        if node.declaration.get("schema_version") == 4
-    )
+    return _validated_blueprint_paths(graph)
 
 
 def _iter_files(repo_root: Path, *, excluded_blueprints: frozenset[Path]):
@@ -148,12 +150,14 @@ def _iter_files(repo_root: Path, *, excluded_blueprints: frozenset[Path]):
             yield child
 
 
-def validate(repo_root: Path) -> list[str]:
+def _validate(
+    repo_root: Path,
+    excluded_blueprints: frozenset[Path],
+) -> list[str]:
     """Return error strings for every platform-specific reference found in shared content."""
     repo_root = repo_root.resolve()
-    v4_blueprints = _v4_blueprint_paths(repo_root)
     errors: list[str] = []
-    for path in _iter_files(repo_root, excluded_blueprints=v4_blueprints):
+    for path in _iter_files(repo_root, excluded_blueprints=excluded_blueprints):
         pattern = _forbidden_pattern_for(path)
         if pattern is None:
             continue
@@ -168,6 +172,14 @@ def validate(repo_root: Path) -> list[str]:
             if pattern.search(line):
                 errors.append(f"{rel.as_posix()}:{lineno}: {line.strip()}")
     return errors
+
+
+def validate_with_graph(repo_root: Path, graph: object) -> list[str]:
+    return _validate(repo_root, _validated_blueprint_paths(graph))
+
+
+def validate(repo_root: Path) -> list[str]:
+    return _validate(repo_root, _canonical_blueprint_paths(repo_root))
 
 
 def main() -> int:

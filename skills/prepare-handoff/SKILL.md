@@ -8,7 +8,7 @@ description: Use when the user explicitly invokes this skill to prepare a handof
 
 Category: workflow-general-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces: none
 

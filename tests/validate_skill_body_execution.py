@@ -1,4 +1,4 @@
-"""Tests for skills/skill-maker/validators/skill_body_execution.py."""
+"""Tests for validators/skill/skill_body_execution.py."""
 from __future__ import annotations
 
 import importlib.util
@@ -6,7 +6,7 @@ from pathlib import Path
 
 _VALIDATOR = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "skill-maker" / "validators" / "skill_body_execution.py"
+    / "validators" / "skill" / "skill_body_execution.py"
 )
 _spec = importlib.util.spec_from_file_location("skill_body_execution", _VALIDATOR)
 _mod = importlib.util.module_from_spec(_spec)

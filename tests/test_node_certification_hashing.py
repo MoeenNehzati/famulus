@@ -23,9 +23,33 @@ from officina.common.blueprint_graph import (
 )
 from officina.common.git_provenance import git_file_provenance
 from test_support.git_repository import GitTestRepository
+from v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
-SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint"
+CANONICAL_SCHEMA_ROOT = (
+    Path(__file__).resolve().parents[1] / "references" / "blueprint"
+)
+SCHEMA_ROOT = CANONICAL_SCHEMA_ROOT / "migrations" / "v4"
+V5_SCHEMA_ROOT = CANONICAL_SCHEMA_ROOT
+V5_AUTHORIZATION_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "blueprint_v5" / "authorization"
+)
+_canonical_load_repository_blueprint_graph = load_repository_blueprint_graph
+
+
+def load_repository_blueprint_graph(
+    repo_root: Path,
+    *,
+    schema_root: Path | None = None,
+    expected_schema_version: int = 4,
+):
+    """Keep frozen-v4 hashing fixtures explicit."""
+
+    return _canonical_load_repository_blueprint_graph(
+        repo_root,
+        schema_root=schema_root,
+        expected_schema_version=expected_schema_version,
+    )
 
 
 def _write_yaml(path: Path, value: object) -> None:
@@ -212,6 +236,125 @@ def _states(
         policy_path=policy,
         certification_basis_hash="sha256:" + "b" * 64,
         certification_basis_paths=certification_basis_paths,
+    )
+
+
+def test_v5_hashes_record_static_route_and_facade_edges_without_containment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = GitTestRepository.initialize_existing_empty(tmp_path)
+    copy_v5_fixture_tree(
+        V5_AUTHORIZATION_FIXTURE / "modules",
+        tmp_path / "modules",
+    )
+    copy_v5_fixture_tree(
+        V5_AUTHORIZATION_FIXTURE / "skills",
+        tmp_path / "skills",
+    )
+    policy = tmp_path / "node-hash-policy.yaml"
+    _write_yaml(
+        policy,
+        {
+            "policy_version": 1,
+            "path_syntax": "gitignore",
+            "starting_set": "git-tracked-directly-owned-regular-files",
+            "rules": [{"action": "exclude", "pattern": "**/.certificates/**"}],
+        },
+    )
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "v5 fixture")
+    graph = load_repository_blueprint_graph(
+        tmp_path,
+        schema_root=V5_SCHEMA_ROOT,
+        expected_schema_version=5,
+    )
+    real_manifests = certification_hashing._v4_node_input_manifests
+
+    def manifests_with_legacy_contract_dependency(*args, **kwargs):
+        manifests, contract_dependencies = real_manifests(*args, **kwargs)
+        return manifests, {
+            **contract_dependencies,
+            "root": {"leaf"},
+        }
+
+    monkeypatch.setattr(
+        certification_hashing,
+        "_v4_node_input_manifests",
+        manifests_with_legacy_contract_dependency,
+    )
+
+    states = compute_node_hash_states(
+        graph,
+        repo_root=tmp_path,
+        policy_path=policy,
+        certification_basis_hash="sha256:" + "b" * 64,
+    )
+    dependencies = {
+        node_id: {
+            (item["relation"], item["target"])
+            for item in state.dependency_hashes
+        }
+        for node_id, state in states.items()
+    }
+    dependency_triples = {
+        node_id: {
+            (item["relation"], item["target"], item["version"])
+            for item in state.dependency_hashes
+        }
+        for node_id, state in states.items()
+    }
+    expected_triples = {node_id: set() for node_id in graph.nodes}
+    for edge in graph.certification_edges:
+        expected_triples[edge.source_node_id].add(
+            (edge.relation, edge.target_node_id, edge.target_version)
+        )
+    expected_triples["root"].add(
+        ("references-cross-owner-contract", "leaf", graph.nodes["leaf"].version)
+    )
+
+    assert dependency_triples == expected_triples
+    assert {
+        ("routes-child-namespace", "alpha"),
+        ("routes-terminal-module", "leaf"),
+    } <= dependencies["root"]
+    assert {
+        ("routes-child-namespace", "leaf"),
+        ("routes-terminal-module", "leaf"),
+    } <= dependencies["alpha"]
+    assert {
+        ("facades-child-export", "demo-rtx"),
+        ("facades-implementing-source", "demo-rtx.source.runtime"),
+    } <= dependencies["demo"]
+    assert all(
+        relation != "contains-module"
+        for node_dependencies in dependencies.values()
+        for relation, _target in node_dependencies
+    )
+
+    root_hash = states["root"].node_hash
+    alpha_hash = states["alpha"].node_hash
+    leaf_runtime = (
+        tmp_path
+        / "modules"
+        / "root"
+        / "alpha"
+        / "leaf"
+        / "runtime.py"
+    )
+    leaf_runtime.write_text("VALUE = 'changed child bytes'\n", encoding="utf-8")
+    changed = compute_node_hash_states(
+        graph,
+        repo_root=tmp_path,
+        policy_path=policy,
+        certification_basis_hash="sha256:" + "b" * 64,
+    )
+
+    assert changed["root"].node_hash == root_hash
+    assert changed["alpha"].node_hash == alpha_hash
+    assert (
+        changed["leaf.source.runtime"].node_hash
+        != states["leaf.source.runtime"].node_hash
     )
 
 
@@ -759,6 +902,121 @@ def test_route_smoke_rejects_unmapped_loaded_path(tmp_path: Path) -> None:
             certification_basis_paths=[],
             repo_root=root,
         )
+
+
+def test_v5_route_smoke_maps_runtime_package_init_to_containing_module(
+    tmp_path: Path,
+) -> None:
+    repository = GitTestRepository.initialize_existing_empty(tmp_path)
+    copy_v5_fixture_tree(
+        V5_AUTHORIZATION_FIXTURE / "modules",
+        tmp_path / "modules",
+    )
+    copy_v5_fixture_tree(
+        V5_AUTHORIZATION_FIXTURE / "skills",
+        tmp_path / "skills",
+    )
+    policy = tmp_path / "node-hash-policy.yaml"
+    _write_yaml(
+        policy,
+        {
+            "policy_version": 1,
+            "path_syntax": "gitignore",
+            "starting_set": "git-tracked-directly-owned-regular-files",
+            "rules": [{"action": "exclude", "pattern": "**/.certificates/**"}],
+        },
+    )
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "v5 fixture")
+    graph = load_repository_blueprint_graph(
+        tmp_path,
+        schema_root=V5_SCHEMA_ROOT,
+        expected_schema_version=5,
+    )
+    states = compute_node_hash_states(
+        graph,
+        repo_root=tmp_path,
+        policy_path=policy,
+        certification_basis_hash="sha256:" + "b" * 64,
+    )
+
+    mappings = map_route_smoke_dependencies(
+        graph,
+        states,
+        source_node_id="demo-rtx.source.runtime",
+        loaded_paths=[
+            tmp_path / "skills" / "demo" / "_rtx" / "__init__.py",
+            tmp_path / "skills" / "demo" / "_rtx" / "runtime.py",
+        ],
+        certification_basis_paths=[],
+        repo_root=tmp_path,
+    )
+
+    assert [
+        (mapping.path, mapping.authority, mapping.target_node_id)
+        for mapping in mappings
+    ] == [
+        (
+            "skills/demo/_rtx/__init__.py",
+            "module-package-input",
+            "demo-rtx",
+        ),
+        (
+            "skills/demo/_rtx/runtime.py",
+            "direct-input",
+            "demo-rtx.source.runtime",
+        ),
+    ]
+
+    dependency_mappings = map_route_smoke_dependencies(
+        graph,
+        states,
+        source_node_id="demo.source.gateway",
+        loaded_paths=[
+            tmp_path / "skills" / "demo" / "_rtx" / "__init__.py",
+            tmp_path / "skills" / "demo" / "_rtx" / "runtime.py",
+        ],
+        certification_basis_paths=[],
+        repo_root=tmp_path,
+    )
+
+    assert [
+        (mapping.path, mapping.authority, mapping.target_node_id)
+        for mapping in dependency_mappings
+    ] == [
+        (
+            "skills/demo/_rtx/__init__.py",
+            "module-package-input",
+            "demo-rtx",
+        ),
+        (
+            "skills/demo/_rtx/runtime.py",
+            "certification-dependency",
+            "demo-rtx.source.runtime",
+        ),
+    ]
+
+    dependency_mappings = map_route_smoke_dependencies(
+        graph,
+        states,
+        source_node_id="demo.source.gateway",
+        loaded_paths=[
+            tmp_path / "skills" / "demo" / "_rtx" / "__init__.py",
+        ],
+        certification_basis_paths=[],
+        repo_root=tmp_path,
+    )
+
+    assert [
+        (mapping.path, mapping.authority, mapping.target_node_id)
+        for mapping in dependency_mappings
+    ] == [
+        (
+            "skills/demo/_rtx/__init__.py",
+            "module-package-input",
+            "demo-rtx",
+        ),
+    ]
 
 
 def test_compute_node_hash_states_does_not_trace_route_smoke_dependencies(

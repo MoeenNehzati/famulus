@@ -1,85 +1,14 @@
 authority:
   owns_filesystem: []
-  suggested_permissions:
-    bash:
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_phase_entry.py
-      - Interface
-      reason: Run the phase-1 installer orchestrator through the shared Python machine-interface
-        runner.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_install_scaffold.py
-      - Interface
-      reason: Install dispatcher and invoke-skill launchers through the shared Python
-        machine-interface runner.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_config_bridge.py
-      - Interface
-      reason: Wire dev-mode config links and hooks through the shared Python machine-interface
-        runner.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_agent_launchers.py
-      - Interface
-      reason: Install selected assistant launchers through the shared Python machine-interface
-        runner.
-    network: []
 category: skill-making-development-assistant
-description: Installs or refreshes assistant launchers, shared dispatcher tooling, and optional development-checkout configuration links across supported hosts.
+children:
+  install-assistant-tools-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
-- SKILL\.md
-- _rtx/__init__\.py
-- _rtx/_agent_launchers\.py
-- _rtx/_config_bridge\.py
-- _rtx/_fs_links\.py
-- _rtx/_install_launcher/__init__\.py
-- _rtx/_install_launcher/_base_launcher\.py
-- _rtx/_install_launcher/_linux_launcher\.py
-- _rtx/_install_launcher/_osx_launcher\.py
-- _rtx/_install_launcher/_windows_launcher\.py
-- _rtx/_install_scaffold\.py
-- _rtx/_install_uninstall\.py
-- _rtx/_phase_entry\.py
-- _rtx/_shell_block\.py
-- _rtx/_state_record\.py
-- agents/openai\.yaml
-- bin/_agent_launch\.py
-- bin/assistant
-- bin/assistant\.bat
-- bin/coauthor
-- bin/coauthor\.bat
-- bin/collab
-- bin/collab\.bat
-- bin/tmux\-workspace
-- tests/install_test_utils\.py
-- tests/test_agent_launch\.py
-- tests/test_claude_github_install\.py
-- tests/test_claude_install\.py
-- tests/test_codex_github_install\.py
-- tests/test_codex_install\.py
-- tests/test_dev_link\.py
-- tests/test_dev_link_hooks\.py
-- tests/test_e2e_lifecycle\.py
-- tests/test_install\.py
-- tests/test_install_launcher\.py
-- tests/test_install_manifest\.py
-- tests/test_install_test_utils\.py
-- tests/test_launchers\.py
-- tests/test_link_utils\.py
-- tests/test_rc_block\.py
-- tests/test_scaffold\.py
-- tests/test_uninstall\.py
+- (?:SKILL\.md|agents/openai\.yaml)
+description: Installs or refreshes assistant launchers, shared dispatcher tooling,
+  and optional development-checkout configuration links across supported hosts.
 discovery:
   mechanism: skill
 exports:
@@ -92,57 +21,42 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: install-assistant-tools.source.rtx-config-bridge.interface.scripts-dev-link
+    facade_interface:
+      interface: install-assistant-tools-rtx.interface.scripts-dev-link
+      version: 2
   install-assistant-tools.interface.scripts-install:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: install-assistant-tools.source.rtx-phase-entry.interface.scripts-install
+    facade_interface:
+      interface: install-assistant-tools-rtx.interface.scripts-install
+      version: 2
   install-assistant-tools.interface.scripts-launchers:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: install-assistant-tools.source.rtx-agent-launchers.interface.scripts-launchers
+    facade_interface:
+      interface: install-assistant-tools-rtx.interface.scripts-launchers
+      version: 2
   install-assistant-tools.interface.scripts-scaffold:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: install-assistant-tools.source.rtx-install-scaffold.interface.scripts-scaffold
+    facade_interface:
+      interface: install-assistant-tools-rtx.interface.scripts-scaffold
+      version: 2
 gateway:
   language: Markdown
   path: SKILL.md
 id: install-assistant-tools
 kind: installer
+namespace_exports: {}
 node_type: module
 role: system-operations
-schema_version: 4
+schema_version: 5
 sources:
   install-assistant-tools.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  install-assistant-tools.source.rtx-agent-launchers:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-agent-launchers.yaml
-  install-assistant-tools.source.rtx-config-bridge:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-config-bridge.yaml
-  install-assistant-tools.source.rtx-init:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-init.yaml
-  install-assistant-tools.source.rtx-install-launcher-init:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-install-launcher-init.yaml
-  install-assistant-tools.source.rtx-install-scaffold:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-install-scaffold.yaml
-  install-assistant-tools.source.rtx-phase-entry:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-phase-entry.yaml
-version: 1
+version: 3

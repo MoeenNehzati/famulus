@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "schema-meta.json",
-  "title": "Version 4 Blueprint Schema Annotation Protocol",
-  "description": "Metadata required on canonical module and behavioral-source schemas so schema files define authoring and enforcement links.",
+  "title": "Version 5 Blueprint Schema Annotation Protocol",
+  "description": "Metadata required on canonical version-5 module and behavioral-source schemas so schema files define authoring and enforcement links.",
   "type": "object",
   "required": ["$schema", "$id", "title", "description", "required", "properties", "x-famulus"],
   "properties": {
@@ -79,18 +79,18 @@
     "validation_rule_catalog": {
       "schema-shape": {
         "rule_kind": "repository-validation",
-        "description": "Validate required fields, values, and unknown-field rejection through the selected version 4 JSON Schema.",
+        "description": "Validate required fields, values, and unknown-field rejection through the selected version 5 JSON Schema.",
         "creation": "Render each module and behavioral-source document from its concrete schema and reject values outside that schema before graph construction.",
         "validator": "references/blueprint/schema.json",
-        "tests": ["tests/test_typed_blueprint_schemas.py", "tests/test_officina_blueprint_template.py"],
+        "tests": ["tests/test_nested_module_v5_schemas.py"],
         "template": "Render every module and behavioral source from its concrete schema.",
-        "enforcement": {"state": "schema", "task": "current", "acceptance": "schema", "note": "The version 4 JSON Schemas are the structural acceptance component."}
+        "enforcement": {"state": "schema", "task": "current", "acceptance": "schema", "note": "The version 5 JSON Schemas are the structural acceptance component."}
       },
       "canonical-id": {
         "rule_kind": "repository-validation",
         "description": "Validate module, behavioral-source, source-interface, and export IDs and namespaces.",
         "creation": "Use the canonical module, source, source-interface, or export namespace required by the concrete schema.",
-        "validator": "skills/skill-maker/validators/interface_ids.py",
+        "validator": "validators/skill/interface_ids.py",
         "tests": ["tests/validate_interface_ids.py"],
         "template": "Use example-skill, example-skill.source.gateway, and example-skill.interface.run in the example graph.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "The interface-ID validator enforces the unified namespaces."}
@@ -108,7 +108,7 @@
         "rule_kind": "repository-validation",
         "description": "Require positive versions and exact edge-to-target version matches.",
         "creation": "Use positive versions and pin every declared source or interface edge to the target version.",
-        "validator": "skills/skill-maker/validators/blueprint_relationships.py",
+        "validator": "validators/skill/blueprint_relationships.py",
         "tests": ["tests/validate_blueprint_relationships.py"],
         "template": "Every example edge pins version 1.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Relationship validation checks exact target versions."}
@@ -117,7 +117,7 @@
         "rule_kind": "repository-validation",
         "description": "Require every node to name an existing regular whole-file gateway inside its ownership scope.",
         "creation": "Name one file relative to the node ownership root and include it in the node content patterns.",
-        "validator": "skills/skill-maker/validators/blueprints.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": ["tests/test_officina_blueprint_graph.py", "tests/validate_blueprints.py"],
         "template": "Create each gateway before validating the example graph.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Graph and source validation require an existing regular gateway included in content."}
@@ -126,7 +126,7 @@
         "rule_kind": "repository-validation",
         "description": "Resolve every content regex to the files in its node ownership scope and require the gateway to match.",
         "creation": "Use node-relative regular expressions that match the node's complete owned file set.",
-        "validator": "skills/skill-maker/validators/blueprints.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": ["tests/test_officina_blueprint_graph.py", "tests/validate_blueprints.py"],
         "template": "Each example content list matches its gateway and any additional directly owned files.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Graph and source validation compile content expressions and require gateway inclusion."}
@@ -135,7 +135,7 @@
         "rule_kind": "repository-validation",
         "description": "Require each directly owned content file to belong to exactly one node.",
         "creation": "Partition direct ownership between a module and its contained behavioral sources without overlapping matches.",
-        "validator": "skills/skill-maker/validators/blueprints.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": ["tests/test_officina_blueprint_graph.py", "tests/validate_blueprints.py"],
         "template": "Contained sources own their implementation files and the module owns the residual files.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Repository graph validation rejects overlapping direct ownership."}
@@ -144,7 +144,7 @@
         "rule_kind": "repository-validation",
         "description": "Require gateways and directly owned content to be regular files without symlink traversal.",
         "creation": "Use regular files under the node ownership root and reject symlink components, endpoints, and non-regular files.",
-        "validator": "skills/skill-maker/validators/blueprints.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": ["tests/validate_blueprints.py", "tests/test_officina_blueprint_graph.py"],
         "template": "The example graph uses regular gateway and content files.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Graph and source validation reject unsafe runtime file paths."}
@@ -153,7 +153,7 @@
         "rule_kind": "repository-validation",
         "description": "Resolve containment, source dependency, private-interface, export, and contract-reference edges.",
         "creation": "Declare only canonical, version-pinned graph edges with the required locator or target interface.",
-        "validator": "skills/skill-maker/validators/blueprint_relationships.py",
+        "validator": "validators/skill/blueprint_relationships.py",
         "tests": ["tests/validate_blueprint_relationships.py", "tests/test_officina_blueprint_graph.py"],
         "template": "The example module contains one source and exports one of its interfaces.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Relationship and graph validation reject unresolved, duplicate, unauthorized, and cyclic edges."}
@@ -162,7 +162,7 @@
         "rule_kind": "repository-validation",
         "description": "Validate unrestricted, allowlisted, and private module export access.",
         "creation": "Set allow_all_modules or enumerate exact caller module IDs; an empty false allowlist denies all external callers.",
-        "validator": "skills/skill-maker/validators/blueprint_relationships.py",
+        "validator": "validators/skill/blueprint_relationships.py",
         "tests": ["tests/validate_blueprint_relationships.py", "tests/test_officina_blueprint_graph.py"],
         "template": "The example export chooses one explicit access policy.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Graph validation enforces module export access and private-interface ownership."}
@@ -180,7 +180,7 @@
         "rule_kind": "repository-validation",
         "description": "Validate module filesystem ownership and authorized generic interface readers.",
         "creation": "Give each writable path one module owner and enumerate authorized source or export interfaces.",
-        "validator": "skills/skill-maker/validators/blueprints.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": ["tests/validate_blueprints.py", "tests/test_officina_blueprint_graph.py"],
         "template": "The example declares no owned filesystem paths.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Source and graph validation enforce ownership, reader authorization, and overlap rules."}
@@ -189,7 +189,7 @@
         "rule_kind": "repository-validation",
         "description": "Require behavioral-source dependency targets, exact versions, locators, and consumer-local reasons.",
         "creation": "Use a version-pinned behavioral-source blueprint locator and state the consumer-local reason.",
-        "validator": "skills/skill-maker/validators/blueprint_relationships.py",
+        "validator": "validators/skill/blueprint_relationships.py",
         "tests": ["tests/test_typed_blueprint_schemas.py", "tests/validate_blueprint_relationships.py"],
         "template": "The example source declares its direct source dependencies.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Relationship validation resolves and types direct source dependencies."}
@@ -216,7 +216,7 @@
         "rule_kind": "repository-validation",
         "description": "Require generated SKILL.md contract and interface blocks to match the discoverable module and its exports.",
         "creation": "Generate both blocks from the module and source declarations; do not hand-maintain them.",
-        "validator": "skills/skill-maker/validators/blueprints.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": ["tests/validate_blueprints.py", "tests/validate_skill_body_execution.py"],
         "template": "The example discoverable module includes both generated marker blocks.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Blueprint and skill-body validation compare generated blocks with the unified graph."}
@@ -225,7 +225,7 @@
         "rule_kind": "repository-validation",
         "description": "Require behavioral-source bodies to use declared source interfaces or module exports.",
         "creation": "Name declared generic interface IDs and never invoke another module through an implementation path.",
-        "validator": "skills/skill-maker/validators/dependencies.py",
+        "validator": "validators/skill/dependencies.py",
         "tests": ["tests/validate_dependencies.py"],
         "template": "The example body contains no undeclared interface reference.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-validator", "note": "Dependency validation checks source bodies against declared generic interface uses."}
@@ -239,6 +239,42 @@
         "template": "The example uses containment, source dependency, private-interface, and export relations only.",
         "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-graph", "note": "Graph validation rejects relation and target-kind combinations outside the matrix."}
       },
+      "nested-topology": {
+        "rule_kind": "repository-validation",
+        "description": "Require explicit direct-child registration with module-root-relative canonical blueprint.yaml locators.",
+        "creation": "Declare children explicitly, including an empty mapping, and locate each direct child from its parent module root.",
+        "validator": "references/blueprint/module.schema.json",
+        "tests": ["tests/test_nested_module_v5_schemas.py"],
+        "template": "The example module declares an explicit children mapping.",
+        "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-graph", "note": "The canonical module schema and repository graph enforce closed registration and parent-child reconciliation."}
+      },
+      "namespace-export": {
+        "rule_kind": "repository-validation",
+        "description": "Require each namespace route to pin one direct child, an access filter, and exactly one all or only surface.",
+        "creation": "Declare namespace_exports explicitly and use closed all or nonempty exact-interface only surfaces.",
+        "validator": "references/blueprint/module.schema.json",
+        "tests": ["tests/test_nested_module_v5_schemas.py"],
+        "template": "The example module declares an explicit namespace_exports mapping.",
+        "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-graph", "note": "The canonical module schema and authorization resolver reject malformed surfaces and enforce attenuation."}
+      },
+      "facade-export": {
+        "rule_kind": "repository-validation",
+        "description": "Require each export to be exactly one source export or one exact facade target and version.",
+        "creation": "Choose source_interface or facade_interface and never mix the two forms.",
+        "validator": "references/blueprint/module.schema.json",
+        "tests": ["tests/test_nested_module_v5_schemas.py"],
+        "template": "Each example export selects one closed export form.",
+        "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-graph", "note": "The canonical module schema and repository graph enforce the source-or-facade choice and prove the target."}
+      },
+      "relative-caller": {
+        "rule_kind": "repository-validation",
+        "description": "Accept only exact global module IDs or leading-dot relative module references with a nonempty suffix.",
+        "creation": "Use a globally unique module ID or a relative reference such as ._rtx or ..parser.",
+        "validator": "references/blueprint/common.schema.json",
+        "tests": ["tests/test_nested_module_v5_schemas.py"],
+        "template": "Caller allowlists use exact global or leading-dot relative references.",
+        "enforcement": {"state": "current", "task": "current", "acceptance": "isolated-graph", "note": "The common schema rejects malformed references and the repository graph resolves them through certified topology."}
+      },
       "canonical-pooled-review": {
         "rule_kind": "repository-validation",
         "description": "Treat pooled blueprint review as a certificate-backed generated projection rather than graph authority.",
@@ -251,9 +287,14 @@
     },
     "relationship_matrix": {
       "module": {
+        "contains-module": ["module"],
         "contains-source": ["behavioral_source"],
         "exports-interface": ["behavioral_source"],
-        "references-cross-owner-contract": ["module", "behavioral_source"]
+        "facades-child-export": ["module"],
+        "facades-implementing-source": ["behavioral_source"],
+        "references-cross-owner-contract": ["module", "behavioral_source"],
+        "routes-child-namespace": ["module"],
+        "routes-terminal-module": ["module"]
       },
       "behavioral_source": {
         "uses-source": ["behavioral_source"],

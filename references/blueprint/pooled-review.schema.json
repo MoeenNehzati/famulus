@@ -58,6 +58,6 @@
     "authority": "generated-review-only",
     "graph_input": false,
     "health_authority": false,
-    "canonical_source": "version 4 graph plus current node certificates"
+    "canonical_source": "version 5 graph plus current node certificates"
   }
 }

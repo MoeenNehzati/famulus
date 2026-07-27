@@ -2,7 +2,7 @@
 
 # Skill Module Standards
 
-Source-faithful repository standards for skill identity, interfaces, runtime boundaries, state, portability, instruction design, workflow, and validation.
+Canonical repository standards for version-5 nested modules, interface boundaries, runtime ownership, and validation.
 
 ## A skill is a software module.
 
@@ -10,23 +10,25 @@ Source-faithful repository standards for skill identity, interfaces, runtime bou
 boundary: identity, interfaces, allowed dependencies, runtime ownership, and
 import discipline. They are structural requirements, not style preferences.
 
-## Version 4 modules and behavioral sources
+## Version 5 nested modules and behavioral sources
 
 This family is the sole live blueprint and interface authoring authority.
 
-Every new or edited blueprint uses `schema_version: 4` and exactly one live `node_type`: `node_type: module` or `node_type: behavioral_source`. A skill is an autodiscoverable module, expressed by `discovery: {mechanism: skill}`, and uses `SKILL.md` as its module gateway; `skill` is not a node type or schema family.
+Every new or edited blueprint uses `schema_version: 5` and exactly one live `node_type`: `node_type: module` or `node_type: behavioral_source`. Every repository-managed discoverable skill has exactly one direct non-discoverable code child with global ID `<skill-id>-rtx`, rooted at `_rtx/`, with marker `_rtx/blueprint.yaml` and gateway `_rtx/__init__.py`. The child has no `discovery`, and there are no version-5 modules below `_rtx`.
 
-A module is declared by `blueprint.yaml`. Each contained behavioral source is declared under `blueprints/`, for example `blueprints/gateway.yaml`. Do not author hidden blueprint sidecars.
+Every module declares explicit `children` and `namespace_exports` mappings, including empty mappings. `children` registers each direct child by global ID and canonical `base: module-root` `blueprint.yaml` locator. Containment chooses ownership; declarations choose authority.
 
-Every node declares one whole-file `gateway` with `path` and `language`, plus optional alternative `machines`. `content` contains case-sensitive regular expressions for the files the node owns; the gateway must be included. The project node-input policy selects certification hash inputs from that ownership; `content` is not a second hash policy. Gateway fragments, symbols, and pre-v4 gateway kinds do not belong in version 4 gateway declarations.
+Ownership selects the deepest registered module first and then its matching behavioral source. Parent content prunes registered child roots. Each node hashes only directly owned inputs. Hash what you own; certify what you depend on.
 
-A module declares `authority`, `sources`, and `exports`. `sources` maps each contained source ID to its blueprint locator. `exports` maps a public `<module>.interface.<name>` ID to one `source_interface` and its module-level access policy. The module does not copy the source interface version, contract, or process binding.
+Each `exports` value is exactly one closed form: a source export has `source_interface` and `access`; a facade export has one exact `facade_interface` target and version plus `access`. A facade derives the child contract and binding. Facades preserve names, not permissions.
 
-A behavioral source declares `dependencies`, `uses_interfaces`, and `interfaces`. `dependencies` names direct behavioral-source dependencies with exact versions, locators, and reasons. `uses_interfaces` names exact versions of sibling private interfaces or module exports. `interfaces` defines source-owned contracts under `<module>.source.<source>.interface.<name>`; each interface owns its version, description, semantic contract, and optional process binding.
+A `namespace_exports` route pins one registered direct-child version, an access filter, and exactly one `all` or nonempty exact-interface `only` surface. Child exports are the authority ceiling. Registration reveals internally; namespace export routes outward.
 
-Cross-module interface use goes through the callee module's `exports` and is authorized by that export's `access`. A source may use an unexported source interface only inside its own module. Interfaces are source-owned contracts and module exports are their public relation; neither machine nor LLM is an interface node type or ID namespace.
+Caller allowlists contain exact global module IDs or leading-dot relative references with nonempty suffixes. `._rtx` names a skill's code child and `..parser` names the owner's sibling parser. Relative references resolve through the certified registration tree and are never globs.
 
-The v4 module/source graph is authored authority. Generated `SKILL.md` contract blocks, interface views, runtime-dependency manifests, certification records, and other projections must be derived from that graph and must not become a parallel declaration source.
+Source/facade access, namespace filters, and interface-specific filters intersect and never widen authority. Graph validation, projection, dispatch, tracing, and currentness consume one authorization result. Resolve once; enforce everywhere.
+
+Dispatch and runtime metadata use internal `caller_module_id` and `target_module_id` identities. The host-facing `--caller-skill` compatibility is limited to discoverable parent callers only; non-discoverable children and all internal routes assert exact module identities.
 
 ## 1. Skill identity and contract come first
 
@@ -45,15 +47,15 @@ email-client
 
 Do not create one-word skill names such as `lists`, `weather`, or `email`.
 
-## Blueprint authoring — REQUIRED: Use the version 4 schemas
+## Blueprint authoring — REQUIRED: Use the version 5 schemas
 
-**Blueprint authoring — REQUIRED: Use the version 4 schemas**
+**Blueprint authoring — REQUIRED: Use the version 5 schemas**
 
 Generate module roots from `references/blueprint/module.schema.json`
 and behavioral sources from
 `references/blueprint/behavioral-source.schema.json`. Do not copy
 `references/blueprint/template.yaml` into a module; it documents the
-artifact layout rather than a complete declaration.
+complete explicit version-5 module declaration shape.
 
 ## Canonical interface names
 
@@ -68,7 +70,8 @@ Every blueprint interface has a canonical fully qualified name:
 The local `<name>` is the final component of the interface ID.
 It must be dash-separated and must **not** contain `.`.
 
-The canonical invocation form for a process-bound module export is:
+The host-facing compatibility invocation form for a process-bound
+export is permitted only for a discoverable parent caller:
 
 ```bash
 dispatcher --caller-skill daily-plan list-manager.interface.read-list /tmp/todo.yaml
@@ -85,8 +88,8 @@ from officina.runtime.python_machine_interface import DispatchCall, PythonMachin
 class Interface(PythonMachineInterface):
     dispatches = {
         "read-list": DispatchCall(
-            caller_skill="daily-plan",
-            target_skill="list-manager",
+            caller_module_id="daily-plan",
+            target_module_id="list-manager",
             interface="read-list",
         )
     }
@@ -103,10 +106,8 @@ invoke the `dispatcher` CLI from Python skill code, and do not modify `sys.path`
 to reach dispatcher internals.
 
 This is mechanically checked by
-`skills/skill-maker/validators/dispatcher_usage.py`, which rejects raw
-dispatcher imports and CLI dispatch from skill runtime code, and
-`skills/skill-maker/validators/dispatch_caller_skill.py`, which verifies every
-`DispatchCall(caller_skill=...)` statically resolves to the owning skill name.
+`validators/skill/dispatcher_usage.py`, which rejects raw
+dispatcher imports and CLI dispatch from skill runtime code.
 
 ## Dispatcher role
 
@@ -120,7 +121,7 @@ dispatcher runtime's job is to:
 
 1. Parse the canonical target `<module>.interface.<name>`
 
-2. Load the callee's version 4 module graph and resolve the export
+2. Load the callee's version 5 registered module graph and resolve the export
 
 3. Verify the export's module-level access policy
 
@@ -136,15 +137,15 @@ The graph and process-binding approach enables static validation: git hooks veri
 that only authorized modules use restricted exports, catching misuse
 before deployment rather than only at runtime.
 
-Use `--dry-run` to inspect the resolved invocation without executing it:
+A discoverable parent caller may use `--dry-run` with the host-facing compatibility flag to inspect the resolved invocation without executing it:
 
 ```bash
 dispatcher --dry-run --caller-skill daily-plan \
   list-manager.interface.read-list /tmp/todo.yaml
 ```
 
-Every `DispatchCall(...)` declaration must include `caller_skill` set to the
-owning skill's exact name; that value must be a string literal or a module-level
+Every `DispatchCall(...)` declaration must include `caller_module_id` set to the declaring module's exact global ID and `target_module_id` set to
+the target module's exact global ID. Each value must be a string literal or a module-level
 string constant that resolves statically.
 
 ## Private runtime files
@@ -197,7 +198,7 @@ they are defining or checking the convention.
 
 This is mechanically checked by `validators/skill_runtime_files.py` and
 `validators/skill_runtime_doc_references.py`, plus
-`skills/skill-maker/validators/skill_body_execution.py` for executable-file
+`validators/skill/skill_body_execution.py` for executable-file
 references used in execution contexts in hand-authored `SKILL.md` bodies, with
 behavior tests in
 `tests/validate_skill_runtime_files.py` and
@@ -235,8 +236,7 @@ This is the intended model:
   `PythonMachineInterface.dispatch()`
 
 The dispatch discipline is mechanically checked by
-`skills/skill-maker/validators/dispatcher_usage.py` and
-`skills/skill-maker/validators/dispatch_caller_skill.py`.
+`validators/skill/dispatcher_usage.py`.
 
 Because Python behavioral-source gateways run with the module root on
 `PYTHONPATH`, files
@@ -335,8 +335,8 @@ checks are enforced on every commit by `validators/runner.py` (called from
 
 ## 2. Skill taxonomy
 
-**2. Skill taxonomy** — autodiscoverable modules declare `category`, `role`,
-and `kind` in `blueprint.yaml` using the typed fields in
+**2. Skill taxonomy** — autodiscoverable parent modules declare `category`,
+`role`, and `kind` in `blueprint.yaml` using the typed fields in
 `references/blueprint/module.schema.json`. These fields provide user-facing
 documentation and graph taxonomy.
 
@@ -457,17 +457,18 @@ commit, and push to `origin`.
 ## 10. No code in SKILL.md — runtime files only, with one exception
 
 **10. No code in SKILL.md — runtime files only, with one exception** — skill files
-must not contain executable code logic. Any logic belongs in a dedicated file
-under `_rtx/`, except when the skill's purpose is to provide an interface to
+must not contain executable code logic. Any logic belongs in the registered
+`_rtx` child, except when the skill's purpose is to provide an interface to
 a specific external tool and that tool is declared in frontmatter `tools:`.
 Hand-authored `SKILL.md` bodies must also avoid executable-file names and paths
 in execution contexts, such as `run tmp.py`, `python helper.py`, `use
 install.sh`, or `launch tool.exe`. If normal operation requires execution, put
 the mechanics behind a process-bound behavioral-source interface exported by
-the module and refer to the export name and outcome in prose. Generated
-blueprint interface blocks may contain invocation details because they are
-derived from the version 4 graph. Opaque `_cx/...` paths are forbidden anywhere
-in the hand-authored body, even outside an explicit execution sentence.
+the `_rtx` child and exposed through a parent facade; refer to the parent export
+name and outcome in prose. Generated blueprint interface blocks may contain
+invocation details because they are derived from the version 5 graph. Opaque
+`_cx/...` paths are forbidden anywhere in the hand-authored body, even outside
+an explicit execution sentence.
 
 ## 11. State data lives under the skill's directory
 
@@ -546,7 +547,7 @@ Mechanical repository checks run on every commit via `validators/runner.py` (cal
 
 - **`validators/`** — repo-wide checks
 
-- **`skills/skill-maker/validators/`** — skill-system checks
+- **`validators/skill/`** — skill-system checks
 
 `validators/runner.py` is the sole execution path for repository validators. Hooks and certification select canonical validator IDs through that runner. The runner discovers and imports validators and their repository dependencies from the staged Git index mirror; validators must not independently enumerate the live worktree or index.
 
@@ -555,7 +556,7 @@ Mechanical repository checks run on every commit via `validators/runner.py` (cal
 ### Adding a new validator
 
 1. Create `validators/<name>.py` or
-   `skills/skill-maker/validators/<name>.py`.
+   `validators/skill/<name>.py`.
 
 2. Export exactly one function: `validate(repo_root: Path) -> list[str]`.
 

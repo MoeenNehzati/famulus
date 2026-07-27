@@ -1,0 +1,152 @@
+content:
+- _decision_sink\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: email-triage-rtx.source.rtx-init
+  version: 1
+description: Appends one timestamped email-classification decision to the skill-local
+  triage log.
+gateway:
+  language: Python
+  path: _decision_sink.py
+id: email-triage-rtx.source.rtx-decision-sink
+interfaces:
+  email-triage-rtx.source.rtx-decision-sink.interface.scripts-log-decision:
+    contract:
+      arguments:
+        account:
+          description: Email account nickname
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+        decision:
+          description: Classification label selected by the triage workflow
+          required: true
+          sensitivity: derived-private
+          type:
+            kind: enum
+            values:
+            - description: Subject-only skip.
+              value: SKIP
+            - description: Read with no action.
+              value: NO_ACTION
+            - description: Directed action.
+              value: TODO
+            - description: Optional action.
+              value: POTENTIAL
+            - description: Existing destination item.
+              value: DEDUP
+        message-id:
+          description: Provider message identifier
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+        reason:
+          description: One-sentence classification rationale
+          required: true
+          sensitivity: derived-private
+          type:
+            kind: string
+        sender:
+          description: Sender displayed for the decision
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+        subject:
+          description: Message subject displayed for the decision
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - access: write
+          content: decision
+          formats:
+          - text
+          id: write-1
+          medium: local-filesystem
+          path: triage.log
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+      execution:
+        consistency:
+          live: Appends after the current end of triage.log.
+        effects:
+        - action: append
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: append-decision
+          may_occur_in_outcomes:
+          - logged
+          reversibility:
+            compensatable: Remove the appended line manually if it was recorded incorrectly.
+          value_source:
+            argument_ref: decision
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: One formatted decision line is appended per invocation.
+          concurrent_invocations:
+            unsafe: Concurrent appends are not explicitly serialized.
+          idempotency:
+            non_idempotent: Repeating a call appends a duplicate decision.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the end of triage.log before retrying.
+          partial_effects_on_failure:
+            possible: A partial line may remain after an interrupted append.
+          rollback_on_failure:
+            unavailable: The interface does not edit prior log content on failure.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Continue triage processing.
+        class: success
+        effects:
+        - append-decision
+        id: logged
+        outputs: []
+      - caller_action: Report that the audit decision was not recorded.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs: []
+      preconditions: []
+    description: Append a triage classification decision for one email to triage.log.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - max_positionals: 6
+        min_positionals: 6
+        name: owner
+    usage: <account> <id> <from> <subject> <DECISION> <reason>
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces: []
+version: 1

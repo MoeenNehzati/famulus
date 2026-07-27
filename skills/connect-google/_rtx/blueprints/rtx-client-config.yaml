@@ -1,0 +1,315 @@
+content:
+- _client_config\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: connect-google-rtx.source.rtx-init
+  version: 1
+description: Validates, reports, and atomically installs the canonical Google Desktop
+  OAuth client configuration without printing credential values.
+gateway:
+  language: Python
+  path: _client_config.py
+id: connect-google-rtx.source.rtx-client-config
+interfaces:
+  connect-google-rtx.source.rtx-client-config.interface.client-status:
+    contract:
+      arguments:
+        home:
+          description: Home directory used to resolve canonical and legacy client
+            paths; defaults to the host home.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: config
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: $HOME/.config/connect-google/client.json
+          path_match: exact
+          reason: Validate the installed OAuth client without returning its contents.
+          sensitivity: secret
+          system: filesystem
+        - access: read
+          content: config
+          formats:
+          - json
+          id: read-2
+          medium: local-filesystem
+          path: $HOME/.config/cloud-files/client.json
+          path_match: exact
+          reason: Discover a valid legacy Drive OAuth client that the user may choose
+            to import.
+          sensitivity: secret
+          system: filesystem
+        - access: read
+          content: config
+          formats:
+          - json
+          id: read-3
+          medium: local-filesystem
+          path: $HOME/.config/g-calendar/client.json
+          path_match: exact
+          reason: Discover a valid legacy Calendar OAuth client that the user may
+            choose to import.
+          sensitivity: secret
+          system: filesystem
+        writes:
+        - access: write
+          content: metadata
+          formats:
+          - json
+          id: write-1
+          medium: stdout
+          reason: Return status, client type, and canonical path only.
+          sensitivity: user-private
+          system: agent-runtime
+      execution:
+        consistency:
+          snapshot: Canonical and legacy candidate files are checked during this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: status
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Route valid or missing or invalid status without exposing client-file
+          contents.
+        class: success
+        effects: []
+        id: reported
+        outputs:
+        - status
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: One JSON object containing status and client_type and canonical
+          path and optional legacy-candidate metadata without secret values.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: status
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: json
+          kind: string
+          sensitivity: user-private
+      preconditions: []
+    description: Report whether the canonical Google Desktop OAuth client is missing,
+      valid, or invalid without exposing its secrets.
+    process_binding:
+      entry: ClientStatusInterface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --home
+        flag_patterns:
+          --home: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+    usage: '[--home <dir>]'
+    version: 1
+  connect-google-rtx.source.rtx-client-config.interface.install-client:
+    contract:
+      arguments:
+        from-json:
+          description: Existing Google Desktop OAuth client JSON to validate and install.
+          direct_io_ref: read-1
+          required: true
+          sensitivity: secret
+          type:
+            access: read
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: secret
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        home:
+          description: Home directory used to resolve the canonical client destination;
+            defaults to the host home.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        replace:
+          default: false
+          description: Permit replacement when a different or invalid canonical client
+            already exists.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+      caller_warnings:
+      - external-side-effect: Installs or replaces the private canonical OAuth client
+          file.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: config
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: <client-json>
+          path_match: exact
+          reason: Validate the user-selected Desktop OAuth client.
+          sensitivity: secret
+          system: filesystem
+        writes:
+        - access: write
+          content: config
+          formats:
+          - json
+          id: write-1
+          medium: local-filesystem
+          path: $HOME/.config/connect-google/client.json
+          path_match: exact
+          reason: Install the canonical private client atomically.
+          sensitivity: secret
+          system: filesystem
+        - access: write
+          content: metadata
+          formats:
+          - json
+          id: write-2
+          medium: stdout
+          reason: Return installation status, client type, and canonical path only.
+          sensitivity: user-private
+          system: agent-runtime
+      execution:
+        consistency:
+          live: Source and destination are validated immediately before installation.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: client-file
+          may_occur_in_outcomes:
+          - installed
+          reversibility:
+            irreversible: A replaced prior client is not retained.
+          value_source:
+            argument_ref: from-json
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            atomic: The canonical JSON is replaced through the shared secure atomic
+              writer.
+          concurrent_invocations:
+            unsafe: Concurrent installers are not serialized.
+          idempotency:
+            idempotent: Reinstalling equivalent validated JSON returns unchanged.
+          on_uncertain_completion:
+            verify_then_decide: Run client-status before retrying.
+          partial_effects_on_failure:
+            possible: Parent directories may remain even when final replacement fails.
+          rollback_on_failure:
+            unavailable: No prior client backup is retained.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: status
+        - direct_io_ref: write-1
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Continue with service-specific authorization.
+        class: success
+        effects:
+        - client-file
+        id: installed
+        outputs:
+        - status
+      - caller_action: Reuse the already equivalent canonical client.
+        class: no-op
+        effects: []
+        id: unchanged
+        outputs:
+        - status
+      - caller_action: Supply a Desktop client without token fields or explicitly
+          approve replacement.
+        class: refusal
+        effects: []
+        id: rejected
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: One JSON object reporting installed or replaced or unchanged
+          status and desktop client type and canonical path.
+        direct_io_ref: write-2
+        empty: Never empty on success.
+        id: status
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: json
+          kind: string
+          sensitivity: user-private
+      preconditions: []
+    description: Validate a Google Desktop OAuth client JSON and atomically install
+      a private canonical copy.
+    process_binding:
+      entry: InstallClientInterface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --from-json
+        - --replace
+        - --home
+        flag_patterns:
+          --from-json: ^.+$
+          --home: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        required_flags:
+        - --from-json
+    usage: --from-json <client-json> [--replace] [--home <dir>]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces:
+- interface: common.interface.oauth-json
+  version: 1
+version: 1

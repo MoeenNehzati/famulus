@@ -16,10 +16,13 @@ from officina.common.certification_hashing import (
     normalize_node_checks,
     resolve_certification_basis_paths,
 )
+from test_support.git_repository import GitTestRepository
 from v4_certification_fixtures import create_v4_repository
+from v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+V5_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
 
 
 def test_hash_owner_does_not_expose_legacy_health_authority() -> None:
@@ -100,8 +103,14 @@ def test_v4_basis_and_certifier_identity_are_derived_from_one_state(
 ) -> None:
     graph, states, commit = create_v4_repository(tmp_path)
 
-    basis_paths = resolve_certification_basis_paths(tmp_path)
-    basis_hash = compute_certification_basis_hash(tmp_path)
+    basis_paths = resolve_certification_basis_paths(
+        tmp_path,
+        expected_schema_version=4,
+    )
+    basis_hash = compute_certification_basis_hash(
+        tmp_path,
+        expected_schema_version=4,
+    )
     identity = derive_certifier_identity(graph, states, commit)
 
     assert basis_paths
@@ -112,7 +121,7 @@ def test_v4_basis_and_certifier_identity_are_derived_from_one_state(
         "node_hash": states["skill-certifier"].node_hash,
         "source_commit": commit,
     }
-    assert expected_certifier_checks() == (
+    assert expected_certifier_checks(expected_schema_version=4) == (
         {
             "id": "blueprint-accuracy",
             "version": 1,
@@ -134,6 +143,51 @@ def test_v4_basis_and_certifier_identity_are_derived_from_one_state(
     )
 
 
+def test_v5_check_registry_and_canonical_basis_are_selected() -> None:
+    assert expected_certifier_checks(expected_schema_version=5) == (
+        {
+            "id": "blueprint-accuracy",
+            "version": 2,
+            "passed": True,
+            "findings": [],
+        },
+        {
+            "id": "route-smoke-dependencies",
+            "version": 2,
+            "passed": True,
+            "findings": [],
+        },
+        {
+            "id": "v5-deterministic",
+            "version": 1,
+            "passed": True,
+            "findings": [],
+        },
+    )
+
+    basis = {
+        path.relative_to(REPO_ROOT)
+        for path in resolve_certification_basis_paths(
+            REPO_ROOT,
+            expected_schema_version=5,
+        )
+    }
+    assert Path(
+        "references/certification/certification-basis-roots.json"
+    ) in basis
+    assert Path("src/officina/common/blueprint_authorization.py") in basis
+    validator_paths = {
+        path.relative_to(REPO_ROOT)
+        for root in (
+            REPO_ROOT / "validators",
+            REPO_ROOT / "validators" / "skill",
+        )
+        for path in root.rglob("*.py")
+    }
+    assert validator_paths
+    assert validator_paths <= basis
+
+
 def test_validator_repository_imports_are_certification_basis_covered() -> None:
     basis = {
         path.relative_to(REPO_ROOT)
@@ -142,8 +196,12 @@ def test_validator_repository_imports_are_certification_basis_covered() -> None:
     imported_paths: set[Path] = set()
     validator_paths = [
         *sorted((REPO_ROOT / "validators").glob("*.py")),
-        *sorted((REPO_ROOT / "skills/skill-maker/validators").glob("*.py")),
+        *sorted((REPO_ROOT / "validators/skill").glob("*.py")),
     ]
+    assert {
+        path.relative_to(REPO_ROOT)
+        for path in validator_paths
+    } <= basis
     for validator_path in validator_paths:
         tree = ast.parse(
             validator_path.read_text(encoding="utf-8"),

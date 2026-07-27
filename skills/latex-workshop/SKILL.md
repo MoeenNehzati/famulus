@@ -8,7 +8,7 @@ description: Follow VS Code LaTeX Workshop build behavior for TeX/LaTeX document
 
 Category: research-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces: none
 

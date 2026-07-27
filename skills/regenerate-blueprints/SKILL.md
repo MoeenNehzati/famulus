@@ -8,10 +8,9 @@ description: Use when the user wants a refreshed blueprint.yaml for an existing 
 
 Category: skill-making-development-assistant
 
-Skill Version: 1
+Skill Version: 2
 
-Uses Interfaces:
-- `regenerate-blueprints.source.rtx-blueprint-regenerator -> common.interface.blueprint-template@1`
+Uses Interfaces: none
 
 Public Interfaces:
 - `regenerate-blueprints.interface.default`

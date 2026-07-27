@@ -4,28 +4,22 @@ authority:
     - skill-drift.interface.drift-status
     match: regex
     path: ^\.certificates/public-keys/(active-key-id|[0-9a-f]{64}\.pub)$
-    reason: Retained Ed25519 public keys are read-only verification material for certificate consumers.
+    reason: Retained Ed25519 public keys are read-only verification material for certificate
+      consumers.
   - allowed_readers:
     - skill-drift.interface.drift-status
     match: regex
     path: ^\.certificates/[^/]+\.jsonl$
     reason: The certifier is the sole writer of append-only node certificate histories.
-  suggested_permissions:
-    bash:
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_node_certifier.py
-      - Interface
-      reason: Run mechanical certification checks and append signed certificates.
-    network: []
 category: skill-making-development-assistant
-description: Certifies exact v4 module targets after mechanical checks and semantic review, then issues append-only Ed25519 certificates for the exact reviewed commit.
+children:
+  skill-certifier-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
 - SKILL\.md
-- _rtx/_node_certifier\.py
-- tests/test_certifier\.py
+description: Certifies exact v5 module targets after mechanical checks and semantic
+  review, then issues append-only Ed25519 certificates for the exact reviewed commit.
 discovery:
   mechanism: skill
 exports:
@@ -33,7 +27,9 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: skill-certifier.source.rtx-certifier.interface.certify
+    facade_interface:
+      interface: skill-certifier-rtx.interface.certify
+      version: 1
   skill-certifier.interface.default:
     access:
       allow_all_modules: true
@@ -44,16 +40,13 @@ gateway:
   path: SKILL.md
 id: skill-certifier
 kind: certifier
+namespace_exports: {}
 node_type: module
 role: meta-skill
-schema_version: 4
+schema_version: 5
 sources:
   skill-certifier.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  skill-certifier.source.rtx-certifier:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-certifier.yaml
-version: 1
+version: 2

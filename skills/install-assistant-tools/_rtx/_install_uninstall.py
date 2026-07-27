@@ -35,8 +35,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _state_record import Manifest, manifest_path  # noqa: E402
-from _shell_block import (  # noqa: E402
+if __package__:
+    from ._state_record import Manifest, manifest_path
+else:
+    from _state_record import Manifest, manifest_path  # noqa: E402
+if __package__:
+    from ._shell_block import BLOCK_BEGIN, BLOCK_END
+else:
+    from _shell_block import (  # noqa: E402
     BLOCK_BEGIN,
     BLOCK_END,
 )

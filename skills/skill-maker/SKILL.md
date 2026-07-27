@@ -8,11 +8,9 @@ description: Use when creating or editing a personal skill in the shared skills 
 
 Category: skill-making-development-assistant
 
-Skill Version: 1
+Skill Version: 2
 
-Uses Interfaces:
-- `skill-maker.source.rtx-blueprint-syncer -> common.interface.atomic-files@1`
-- `skill-maker.source.rtx-blueprint-syncer -> common.interface.blueprint-graph@1`
+Uses Interfaces: none
 
 Public Interfaces:
 - `skill-maker.interface.default`

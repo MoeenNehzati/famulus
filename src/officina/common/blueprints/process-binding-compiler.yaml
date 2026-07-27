@@ -7,13 +7,15 @@ dependencies:
   reason: Imports blueprint node and export types from blueprint_graph.py.
   source: common.source.blueprint-graph
   version: 1
-description: Validates typed or authored process-binding layouts, parses caller argv against their declared grammar, and compiles deterministic gateway invocation plans without executing them.
+description: Validates typed or authored process-binding layouts, parses caller argv
+  against their declared grammar, and compiles deterministic gateway invocation plans
+  without executing them.
 gateway:
   language: Python
   path: process_binding_compiler.py
 id: common.source.process-binding-compiler
 interfaces: {}
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

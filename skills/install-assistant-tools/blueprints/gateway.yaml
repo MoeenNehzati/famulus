@@ -1,7 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Guides the user through selecting installer mode and delegates the requested installation phase to the Python interfaces.
+description: Guides the user through selecting installer mode and delegates the requested
+  installation phase to the Python interfaces.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -10,32 +11,97 @@ interfaces:
   install-assistant-tools.source.gateway.interface.default:
     contract:
       arguments:
-        request: {description: User request to install or update or repair or propagate the assistant tools., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
-      preconditions: []
-      interaction: {mode: interactive, channel: tty, unattended_outcome: clarification-required}
+        request:
+          description: User request to install or update or repair or propagate the
+            assistant tools.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
       caller_warnings:
-      - external-side-effect: Approved installer phases may create launchers, configuration links, shell startup blocks, and Git hook settings.
-      outputs:
-      - {id: response, audience: human, description: Installation choices and approval request or final phase result., direct_io_ref: write-1, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
-      outcomes:
-      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Review the reported installed paths and any follow-up instructions.}
-      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: Supply the missing mode and host or target choice.}
-      - {id: failed, class: error, outputs: [], effects: [], caller_action: Report the failed installer phase without claiming later phases completed.}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {per_source: Installer phase results reflect the state observed by each delegated interface.}
-        verification: [{method: output-schema, output_ref: response}]
-      helpers: []
+      - external-side-effect: Approved installer phases may create launchers, configuration
+          links, shell startup blocks, and Git hook settings.
       direct_io:
         network: []
         reads:
-        - {id: read-1, medium: prompt, access: read, content: installation request, formats: [text], sensitivity: user-private}
+        - access: read
+          content: installation request
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
         writes:
-        - {id: write-1, medium: prompt, access: write, content: installation response, formats: [markdown], sensitivity: derived-private}
+        - access: write
+          content: installation response
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+      execution:
+        consistency:
+          per_source: Installer phase results reflect the state observed by each delegated
+            interface.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: clarification-required
+      outcomes:
+      - caller_action: Review the reported installed paths and any follow-up instructions.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Supply the missing mode and host or target choice.
+        class: refusal
+        effects: []
+        id: clarification-required
+        outputs:
+        - response
+      - caller_action: Report the failed installer phase without claiming later phases
+          completed.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Installation choices and approval request or final phase result.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
     description: Primary LLM-facing skill instructions.
     version: 2
 node_type: behavioral_source
-schema_version: 4
-uses_interfaces: []
+schema_version: 5
+uses_interfaces:
+- interface: install-assistant-tools.interface.scripts-dev-link
+  version: 2
+- interface: install-assistant-tools.interface.scripts-install
+  version: 2
+- interface: install-assistant-tools.interface.scripts-launchers
+  version: 2
+- interface: install-assistant-tools.interface.scripts-scaffold
+  version: 2
 version: 1

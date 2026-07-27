@@ -1,7 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Directs source-first paper extraction, model-cache consent checks, and PDF fallback conversion into LLM-readable text.
+description: Directs source-first paper extraction, model-cache consent checks, and
+  PDF fallback conversion into LLM-readable text.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -11,67 +12,18 @@ interfaces:
     contract:
       arguments:
         request:
-          description: Research-paper conversion request with the paper identity or PDF and any requested conversion options.
+          description: Research-paper conversion request with the paper identity or
+            PDF and any requested conversion options.
           required: true
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
-      preconditions: []
-      interaction:
-        mode: interactive
-        channel: tty
-        unattended_outcome: confirmation-required
       caller_warnings:
-      - may-incur-cost: Math-heavy Marker conversion may use a configured paid LLM provider.
-      - external-side-effect: Marker may download several gigabytes of missing model data only after the user confirms.
-      outputs:
-      - id: response
-        audience: human
-        description: Extracted source guidance, converted paper text, or a request for required download or paid-service confirmation.
-        direct_io_ref: write-1
-        type:
-          kind: string
-          sensitivity: derived-private
-        cardinality:
-          minimum: 1
-          maximum: 1
-        ordering: stable
-        pagination:
-          kind: none
-        truncation:
-          kind: none
-        empty: Never empty.
-      outcomes:
-      - id: completed
-        class: success
-        outputs: [response]
-        effects: []
-        caller_action: Use the extracted LaTeX source or converted Markdown for the requested analysis.
-      - id: confirmation-required
-        class: refusal
-        outputs: [response]
-        effects: []
-        caller_action: Confirm the missing-model download or paid math-heavy conversion before continuing.
-      - id: source-unavailable
-        class: partial
-        outputs: [response]
-        effects: []
-        caller_action: Continue to the PDF fallback after source searches fail.
-      - id: failed
-        class: error
-        outputs: []
-        effects: []
-        caller_action: Report the source-fetch or conversion failure and preserve the original paper.
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency:
-          snapshot: The response reflects the source search and conversion artifacts inspected during this run.
-        verification:
-        - method: output-schema
-          output_ref: response
-      helpers: []
+      - may-incur-cost: Math-heavy Marker conversion may use a configured paid LLM
+          provider.
+      - external-side-effect: Marker may download several gigabytes of missing model
+          data only after the user confirms.
       direct_io:
         network: []
         reads:
@@ -90,9 +42,73 @@ interfaces:
           id: write-1
           medium: prompt
           sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: The response reflects the source search and conversion artifacts
+            inspected during this run.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: confirmation-required
+      outcomes:
+      - caller_action: Use the extracted LaTeX source or converted Markdown for the
+          requested analysis.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Confirm the missing-model download or paid math-heavy conversion
+          before continuing.
+        class: refusal
+        effects: []
+        id: confirmation-required
+        outputs:
+        - response
+      - caller_action: Continue to the PDF fallback after source searches fail.
+        class: partial
+        effects: []
+        id: source-unavailable
+        outputs:
+        - response
+      - caller_action: Report the source-fetch or conversion failure and preserve
+          the original paper.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Extracted source guidance, converted paper text, or a request
+          for required download or paid-service confirmation.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 4
-uses_interfaces: []
+schema_version: 5
+uses_interfaces:
+- interface: pdf-to-markdown.interface.scripts-check-marker-models
+  version: 1
+- interface: pdf-to-markdown.interface.scripts-fetch-arxiv-source
+  version: 1
 version: 1

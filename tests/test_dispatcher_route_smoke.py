@@ -89,8 +89,17 @@ def _dispatcher_env() -> dict[str, str]:
     return env
 
 
-def _runner_interfaces(repo_root: Path = REPO_ROOT) -> list[RouteSmokeCase]:
-    graph = load_repository_blueprint_graph(repo_root)
+def _runner_interfaces(
+    repo_root: Path = REPO_ROOT,
+    *,
+    expected_schema_version: int = 5,
+    schema_root: Path | None = None,
+) -> list[RouteSmokeCase]:
+    graph = load_repository_blueprint_graph(
+        repo_root,
+        expected_schema_version=expected_schema_version,
+        schema_root=schema_root,
+    )
     cases: list[RouteSmokeCase] = []
     for export_id, export in sorted(graph.exports.items()):
         if export.source_node_id is None:
@@ -107,8 +116,17 @@ def _runner_interfaces(repo_root: Path = REPO_ROOT) -> list[RouteSmokeCase]:
     return cases
 
 
-def _route_smoke_cases(repo_root: Path = REPO_ROOT) -> list[RouteSmokeCase]:
-    return _runner_interfaces(repo_root)
+def _route_smoke_cases(
+    repo_root: Path = REPO_ROOT,
+    *,
+    expected_schema_version: int = 5,
+    schema_root: Path | None = None,
+) -> list[RouteSmokeCase]:
+    return _runner_interfaces(
+        repo_root,
+        expected_schema_version=expected_schema_version,
+        schema_root=schema_root,
+    )
 
 
 def _run_dispatcher(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -221,7 +239,11 @@ def test_route_smoke_discovers_v4_python_process_exports(
     expected = [
         RouteSmokeCase("demo-skill.interface.run")
     ] if included else []
-    assert _route_smoke_cases(tmp_path) == expected
+    assert _route_smoke_cases(
+        tmp_path,
+        expected_schema_version=4,
+        schema_root=REPO_ROOT / "references" / "blueprint" / "migrations" / "v4",
+    ) == expected
 
 
 def test_route_smoke_does_not_fall_back_when_v4_inventory_is_malformed(
@@ -239,7 +261,11 @@ def test_route_smoke_does_not_fall_back_when_v4_inventory_is_malformed(
     )
 
     with pytest.raises(BlueprintInventoryError):
-        _route_smoke_cases(tmp_path)
+        _route_smoke_cases(
+            tmp_path,
+            expected_schema_version=4,
+            schema_root=REPO_ROOT / "references" / "blueprint" / "migrations" / "v4",
+        )
 
 
 def test_live_blueprints_have_runner_interfaces_to_smoke_or_skip() -> None:
@@ -265,11 +291,28 @@ def test_python_machine_runner_interfaces_accept_route_smoke() -> None:
         source = graph.nodes[export.source_node_id]
         gateway = source.declaration["gateway"]
         binding = export.declaration["process_binding"]
-        target = python_interface.PythonProcessTarget(
-            Path(gateway["path"]),
-            binding["entry"],
+        module_id = graph.source_modules[source.node_id]
+        logical_package = python_interface.logical_python_package_name(module_id)
+        module_path = Path(gateway["path"])
+        physical_parts = (
+            module_path.parent.parts
+            if module_path.name == "__init__.py"
+            else (*module_path.parent.parts, module_path.stem)
         )
-        specifications.append((source.skill_root, target))
+        suffix = ".".join(
+            part for part in physical_parts if part not in {"", "."}
+        )
+        target = python_interface.PythonProcessTarget(
+            module_path,
+            binding["entry"],
+            logical_package=logical_package,
+            logical_entrypoint=(
+                logical_package
+                if not suffix
+                else f"{logical_package}.{suffix}"
+            ),
+        )
+        specifications.append((source.module_root, target))
 
     batch_tracer = getattr(
         python_interface,

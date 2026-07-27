@@ -7,18 +7,24 @@ from argparse import ArgumentParser
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-SKILL_DIR = Path(__file__).resolve().parent.parent
+SKILL_DIR = Path(__file__).resolve().parent
 RTX_DIR = Path(__file__).resolve().parent
 if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
-from _schedule_backend import (  # noqa: E402
+if __package__:
+    from ._schedule_backend import ScheduleBackend, ScheduleContext, platform_schedule_backend, schedule_jobs_from_mappings
+else:
+    from _schedule_backend import (  # noqa: E402
     ScheduleBackend,
     ScheduleContext,
     platform_schedule_backend,
     schedule_jobs_from_mappings,
 )
-from _schedule_backend._linux_backend import (  # noqa: E402
+if __package__:
+    from ._schedule_backend._linux_backend import cron_to_systemd_calendar, default_unit_dir, service_content, timer_content
+else:
+    from _schedule_backend._linux_backend import (  # noqa: E402
     cron_to_systemd_calendar,
     default_unit_dir,
     service_content,

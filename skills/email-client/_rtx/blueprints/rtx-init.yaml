@@ -1,0 +1,17 @@
+content:
+- __init__\.py
+- _oauth_tokens\.py
+dependencies: []
+description: Package support source for email-client OAuth token handling; it exposes
+  no caller-facing interface.
+gateway:
+  language: Python
+  path: __init__.py
+id: email-client-rtx.source.rtx-init
+interfaces: {}
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces:
+- interface: common.interface.secret-store
+  version: 1
+version: 1

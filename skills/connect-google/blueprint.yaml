@@ -1,28 +1,14 @@
 authority:
-  owns_filesystem:
-  - allowed_readers:
-    - cloud-files.interface.setup-oauth
-    - connect-google.interface.client-status
-    - email-client.interface.accounts-setup-oauth
-    - g-calendar.interface.setup-oauth
-    match: exact
-    path: $HOME/.config/connect-google/client.json
-    reason: This interface is the only writer of the shared OAuth client; service
-      setup interfaces may read it for authorization.
+  owns_filesystem: []
 category: workflow-general-assistant
-description: Prepares a shared Google Desktop OAuth client and routes service-specific connection setup without exposing client credentials in prompts.
+children:
+  connect-google-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
-- SKILL\.md
-- _rtx/__init__\.py
-- _rtx/_client_config\.py
-- instructions/connect\-services\.md
-- instructions/create\-client\.md
-- personal\-preferences/connect\-services\.md
-- personal\-preferences/create\-client\.md
-- personal\-preferences/default\.md
-- tests/test_client_config\.py
-- tests/test_connect_google_llm_routing\.py
-- tests/test_service_delegation\.py
+- (?:SKILL\.md|instructions/connect\-services\.md|instructions/create\-client\.md|personal\-preferences/connect\-services\.md|personal\-preferences/create\-client\.md|personal\-preferences/default\.md)
+description: Prepares a shared Google Desktop OAuth client and routes service-specific
+  connection setup without exposing client credentials in prompts.
 discovery:
   mechanism: skill
 exports:
@@ -31,7 +17,9 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - connect-google
-    source_interface: connect-google.source.rtx-client-config.interface.client-status
+    facade_interface:
+      interface: connect-google-rtx.interface.client-status
+      version: 1
   connect-google.interface.connect-services:
     access:
       allow_all_modules: false
@@ -54,15 +42,18 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - connect-google
-    source_interface: connect-google.source.rtx-client-config.interface.install-client
+    facade_interface:
+      interface: connect-google-rtx.interface.install-client
+      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: connect-google
 kind: setup
+namespace_exports: {}
 node_type: module
 role: integration
-schema_version: 4
+schema_version: 5
 sources:
   connect-google.source.gateway:
     blueprint:
@@ -88,12 +79,4 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/personal-preferences-default.yaml
-  connect-google.source.rtx-client-config:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-client-config.yaml
-  connect-google.source.rtx-init:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-init.yaml
-version: 1
+version: 2

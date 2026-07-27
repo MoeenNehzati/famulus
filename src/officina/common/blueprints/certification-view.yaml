@@ -43,7 +43,9 @@ dependencies:
   reason: Imports canonical repository-relative path serialization from repository_paths.py.
   source: common.source.repository-paths
   version: 1
-description: Evaluates signed certificate logs against current v4 node hashes, dependency state, source commit, certifier identity, and checks, then exposes read-only module-export and source-certificate decisions.
+description: Evaluates signed certificate logs against current v4 node hashes, dependency
+  state, source commit, certifier identity, and checks, then exposes read-only module-export
+  and source-certificate decisions.
 gateway:
   language: Python
   path: certification_view.py
@@ -52,6 +54,14 @@ interfaces:
   common.source.certification-view.interface.python-api:
     contract:
       arguments:
+        graph:
+          description: Repository graph and current node-hash states required for
+            currentness evaluation.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Python RepositoryBlueprintGraph plus operation-specific mappings.
+            kind: string
         operation:
           description: Certification-view operation to perform.
           required: true
@@ -59,62 +69,128 @@ interfaces:
           type:
             kind: enum
             values:
-            - {value: certificate-log-path, description: Derive the canonical append-only certificate-log path for one node.}
-            - {value: evaluate-currentness, description: Evaluate every v4 node certificate against current derived graph state and Git inputs.}
-            - {value: build-record-view, description: Build a read-only view over already verified current certificate records.}
-            - {value: check-export, description: Require current certificates for both an exporting module and its implementing source.}
-            - {value: lookup-certificate, description: Return current certificate identity for one node when available.}
-        graph:
-          description: Repository graph and current node-hash states required for currentness evaluation.
-          required: false
-          sensitivity: user-private
-          type: {kind: string, description: Python RepositoryBlueprintGraph plus operation-specific mappings.}
+            - description: Derive the canonical append-only certificate-log path for
+                one node.
+              value: certificate-log-path
+            - description: Evaluate every v4 node certificate against current derived
+                graph state and Git inputs.
+              value: evaluate-currentness
+            - description: Build a read-only view over already verified current certificate
+                records.
+              value: build-record-view
+            - description: Require current certificates for both an exporting module
+                and its implementing source.
+              value: check-export
+            - description: Return current certificate identity for one node when available.
+              value: lookup-certificate
         repository-root:
-          description: Repository root containing schemas, certification-basis inputs, and node certificate logs.
-          required: false
-          sensitivity: user-private
+          description: Repository root containing schemas, certification-basis inputs,
+            and node certificate logs.
           direct_io_ref: certification-inputs
-          type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}
-        selector:
-          description: Operation-specific node, module, interface, version, source ID, public-key root, commit, certifier identity, checks, or verified records.
           required: false
           sensitivity: user-private
-          type: {kind: string, description: Operation-specific Python scalar or mapping.}
-      preconditions: []
-      interaction: {mode: unattended}
+          type:
+            access: read
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        selector:
+          description: Operation-specific node, module, interface, version, source
+            ID, public-key root, commit, certifier identity, checks, or verified records.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Operation-specific Python scalar or mapping.
+            kind: string
       caller_warnings: []
-      outputs:
-      - id: result
-        audience: machine
-        description: Certificate-log path, currentness report, certification decision, current certificate, or read-only certification view.
-        direct_io_ref: return-value
-        cardinality: {minimum: 1, maximum: 1}
-        ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        empty: Certificate lookup returns no value when the requested node has no admitted current certificate.
-        type: {kind: string, sensitivity: user-private, description: "Operation-specific Python path, dataclass, protocol adapter, or optional certificate."}
-      outcomes:
-      - {id: completed, class: success, outputs: [result], effects: [], caller_action: Honor the returned currentness or export decision without bypassing missing source certification.}
-      - {id: suspect-input, class: error, outputs: [], effects: [], caller_action: "Treat malformed certificate logs, invalid signatures or schemas, unsafe paths, and inconsistent derived state as uncertified."}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {snapshot: Currentness is evaluated against the supplied node states and source commit plus Git and certificate files observed during the call.}
-        verification:
-        - {method: output-schema, output_ref: result}
-      helpers: []
       direct_io:
-        reads:
-        - {id: certification-inputs, medium: repository-filesystem, access: read, content: "certificate logs, retained public keys, certificate schema, certification-basis files, node inputs, and Git-indexed source state", formats: [jsonl, pem, json-schema, yaml, json, text, binary], sensitivity: user-private, path: "<repository-root>/**", path_match: glob}
-        - {id: git-state, medium: local-system, access: read, content: "source commit, index, tracked blobs, and worktree readiness", formats: [git], sensitivity: derived-private, system: git}
-        writes:
-        - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [python-object], sensitivity: user-private}
         network: []
+        reads:
+        - access: read
+          content: certificate logs, retained public keys, certificate schema, certification-basis
+            files, node inputs, and Git-indexed source state
+          formats:
+          - jsonl
+          - pem
+          - json-schema
+          - yaml
+          - json
+          - text
+          - binary
+          id: certification-inputs
+          medium: repository-filesystem
+          path: <repository-root>/**
+          path_match: glob
+          sensitivity: user-private
+        - access: read
+          content: source commit, index, tracked blobs, and worktree readiness
+          formats:
+          - git
+          id: git-state
+          medium: local-system
+          sensitivity: derived-private
+          system: git
+        writes:
+        - access: write
+          content: Python return value
+          formats:
+          - python-object
+          id: return-value
+          medium: local-system
+          sensitivity: user-private
+      execution:
+        consistency:
+          snapshot: Currentness is evaluated against the supplied node states and
+            source commit plus Git and certificate files observed during the call.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Honor the returned currentness or export decision without bypassing
+          missing source certification.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - result
+      - caller_action: Treat malformed certificate logs, invalid signatures or schemas,
+          unsafe paths, and inconsistent derived state as uncertified.
+        class: error
+        effects: []
+        id: suspect-input
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Certificate-log path, currentness report, certification decision,
+          current certificate, or read-only certification view.
+        direct_io_ref: return-value
+        empty: Certificate lookup returns no value when the requested node has no
+          admitted current certificate.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: Operation-specific Python path, dataclass, protocol adapter,
+            or optional certificate.
+          kind: string
+          sensitivity: user-private
+      preconditions: []
     description: Evaluates current certificate state and export certification for
       Python callers.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

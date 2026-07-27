@@ -1,42 +1,14 @@
 authority:
   owns_filesystem: []
-  suggested_permissions:
-    bash:
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_plan_orchestrate.py
-      - Interface
-      reason: Main orchestration script for plan generation via dispatcher.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_render_plan.py
-      - Interface
-      reason: Plan rendering helper for display formatting.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_state_patch.py
-      - Interface
-      reason: Apply plan-local or master-list-backed mutations and show the refreshed
-        plan.
-    network: []
 category: workflow-general-assistant
-description: Builds, persists, refreshes, renders, and mutates a daily plan from calendar, weather, todo, and triage data.
+children:
+  daily-plan-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
 - SKILL\.md
-- _rtx/__init__\.py
-- _rtx/_day_model\.py
-- _rtx/_plan_orchestrate\.py
-- _rtx/_plan_storage\.py
-- _rtx/_render_plan\.py
-- _rtx/_state_patch\.py
-- tests/test_dispatch_contract\.py
-- tests/test_plan_runtime\.py
+description: Builds, persists, refreshes, renders, and mutates a daily plan from calendar,
+  weather, todo, and triage data.
 discovery:
   mechanism: skill
 exports:
@@ -49,53 +21,42 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: daily-plan.source.rtx-state-patch.interface.mutate-plan
+    facade_interface:
+      interface: daily-plan-rtx.interface.mutate-plan
+      version: 1
   daily-plan.interface.orchestrate:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: daily-plan.source.rtx-plan-orchestrate.interface.orchestrate
+    facade_interface:
+      interface: daily-plan-rtx.interface.orchestrate
+      version: 1
   daily-plan.interface.plan-storage:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: daily-plan.source.rtx-plan-storage.interface.plan-storage
+    facade_interface:
+      interface: daily-plan-rtx.interface.plan-storage
+      version: 1
   daily-plan.interface.render-plan:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: daily-plan.source.rtx-render-plan.interface.render-plan
+    facade_interface:
+      interface: daily-plan-rtx.interface.render-plan
+      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: daily-plan
 kind: planner
+namespace_exports: {}
 node_type: module
 role: productivity
-schema_version: 4
+schema_version: 5
 sources:
   daily-plan.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  daily-plan.source.rtx-init:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-init.yaml
-  daily-plan.source.rtx-plan-orchestrate:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-plan-orchestrate.yaml
-  daily-plan.source.rtx-plan-storage:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-plan-storage.yaml
-  daily-plan.source.rtx-render-plan:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-render-plan.yaml
-  daily-plan.source.rtx-state-patch:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-state-patch.yaml
-version: 1
+version: 2

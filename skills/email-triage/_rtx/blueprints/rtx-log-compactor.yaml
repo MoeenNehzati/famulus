@@ -1,0 +1,146 @@
+content:
+- _log_compactor\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: email-triage-rtx.source.rtx-init
+  version: 1
+description: Rewrites the skill-local triage log after retaining recent and unparseable
+  entries.
+gateway:
+  language: Python
+  path: _log_compactor.py
+id: email-triage-rtx.source.rtx-log-compactor
+interfaces:
+  email-triage-rtx.source.rtx-log-compactor.interface.scripts-prune-log:
+    contract:
+      arguments: {}
+      caller_warnings:
+      - external-side-effect: Permanently removes parseable triage-log entries older
+          than 30 days.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: log
+          formats:
+          - text
+          id: read-1
+          medium: local-filesystem
+          path: triage.log
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: log
+          formats:
+          - text
+          id: write-1
+          medium: local-filesystem
+          path: triage.log
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: Reads the log once and rewrites the entries retained by that snapshot.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: rewrite-log
+          may_occur_in_outcomes:
+          - pruned
+          reversibility:
+            irreversible: Removed log lines are not retained by this interface.
+          value_source:
+            direct_io_ref: read-1
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: The complete retained line set is written in one direct
+              rewrite.
+          concurrent_invocations:
+            unsafe: Concurrent appends can be lost during the read-then-rewrite window.
+          idempotency:
+            idempotent: Repeating immediately preserves the already-pruned set.
+          on_uncertain_completion:
+            verify_then_decide: Inspect triage.log before retrying.
+          partial_effects_on_failure:
+            possible: An interrupted direct rewrite can truncate the log.
+          rollback_on_failure:
+            unavailable: Pruned lines are not backed up.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: summary
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Retain the summary for run reporting.
+        class: success
+        effects:
+        - rewrite-log
+        id: pruned
+        outputs:
+        - summary
+      - caller_action: Continue because there was no log to prune.
+        class: no-op
+        effects: []
+        id: absent
+        outputs:
+        - summary
+      - caller_action: Report the file error without claiming old entries were removed.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: One-line count of pruned and retained log entries
+        direct_io_ref: write-2
+        empty: A zero-count summary is printed when the log is absent.
+        id: summary
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+      preconditions: []
+    description: Drop triage.log entries older than 30 days and print a one-line summary.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        name: owner
+    usage: ''
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces: []
+version: 1

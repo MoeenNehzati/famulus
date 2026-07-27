@@ -1,0 +1,26 @@
+# Shadow fixture template; tests materialize this as blueprint.yaml.
+schema_version: 5
+node_type: module
+id: demo-rtx
+version: 1
+gateway:
+  path: __init__.py
+  language: Python>=3.11
+content:
+  - (?:__init__\.py|runtime\.py)
+authority:
+  owns_filesystem: []
+sources:
+  demo-rtx.source.runtime:
+    blueprint:
+      base: module-root
+      path: blueprints/runtime.yaml
+children: {}
+namespace_exports: {}
+exports:
+  demo-rtx.interface.execute:
+    source_interface: demo-rtx.source.runtime.interface.execute
+    access:
+      allow_all_modules: false
+      allowed_callers:
+        - demo

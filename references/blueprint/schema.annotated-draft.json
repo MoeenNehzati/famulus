@@ -2,16 +2,10 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "schema.annotated-draft.json",
   "title": "Famulus Blueprint Authoring Schema",
-  "description": "Live authoring entry point for version-4 module and behavioral-source blueprints. Field-level guidance is owned by the selected concrete schema.",
-  "oneOf": [
-    {
-      "$ref": "module.schema.json"
-    },
-    {
-      "$ref": "behavioral-source.schema.json"
-    }
-  ],
+  "description": "Canonical authoring entry point for version-5 module and behavioral-source blueprints. Field-level guidance is owned by the selected concrete schema.",
+  "$ref": "schema.json",
   "x-famulus": {
-    "authoring": "Select module or behavioral_source with node_type and author schema_version 4. Pre-v4 schemas are migration inputs only."
+    "schema_version": 5,
+    "authoring": "Select module or behavioral_source with node_type and author schema_version 5. Older schemas are migration inputs only."
   }
 }

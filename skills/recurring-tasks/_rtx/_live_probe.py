@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-SKILL_DIR = Path(__file__).parent.parent
+SKILL_DIR = Path(__file__).parent
 SCRIPTS = SKILL_DIR / 'scripts'
 DEFAULT_JOBS = SKILL_DIR / 'jobs.yaml'
 LOG_DIR = SKILL_DIR / 'logs'

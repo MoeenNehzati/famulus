@@ -1,0 +1,64 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _source_fetcher.py
+      - Interface
+      reason: Suggested approval for the PDF conversion runtime.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _marker_probe.py
+      - Interface
+      reason: Suggested approval for the PDF conversion runtime.
+    - command:
+      - marker_single
+      reason: Suggested approval for the PDF conversion runtime.
+    network:
+    - kind: web_search
+      reason: Suggested approval for the PDF conversion runtime.
+    - domains:
+      - arxiv.org
+      kind: web_fetch
+      reason: Suggested approval for the PDF conversion runtime.
+children: {}
+content:
+- _marker_probe\.py
+- _source_fetcher\.py
+- __init__\.py
+description: Code module for the pdf-to-markdown skill.
+exports:
+  pdf-to-markdown-rtx.interface.scripts-check-marker-models:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - pdf-to-markdown
+    source_interface: pdf-to-markdown-rtx.source.rtx-marker-probe.interface.scripts-check-marker-models
+  pdf-to-markdown-rtx.interface.scripts-fetch-arxiv-source:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - pdf-to-markdown
+    source_interface: pdf-to-markdown-rtx.source.rtx-source-fetcher.interface.scripts-fetch-arxiv-source
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: pdf-to-markdown-rtx
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  pdf-to-markdown-rtx.source.rtx-marker-probe:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-marker-probe.yaml
+  pdf-to-markdown-rtx.source.rtx-source-fetcher:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-source-fetcher.yaml
+version: 1

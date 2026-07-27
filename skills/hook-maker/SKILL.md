@@ -8,7 +8,7 @@ description: Use when designing, creating, installing, or refactoring assistant 
 
 Category: skill-making-development-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces: none
 

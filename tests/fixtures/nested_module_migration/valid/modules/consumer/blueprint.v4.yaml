@@ -1,0 +1,24 @@
+schema_version: 4
+node_type: module
+id: consumer
+version: 6
+description: Unchanged non-skill caller.
+gateway:
+  path: README.md
+  language: Markdown
+content:
+  - README\.md
+authority:
+  owns_filesystem: []
+sources:
+  consumer.source.read:
+    blueprint:
+      base: module-root
+      path: blueprints/read.yaml
+exports:
+  consumer.interface.read:
+    source_interface: consumer.source.read.interface.read
+    access:
+      allow_all_modules: false
+      allowed_callers:
+        - producer

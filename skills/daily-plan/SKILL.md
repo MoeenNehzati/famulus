@@ -11,18 +11,9 @@ description: |
 
 Category: workflow-general-assistant
 
-Skill Version: 1
+Skill Version: 2
 
-Uses Interfaces:
-- `daily-plan.source.rtx-init -> cloud-files.interface.lists-read@1`
-- `daily-plan.source.rtx-init -> cloud-files.interface.lists-write@1`
-- `daily-plan.source.rtx-init -> cloud-files.interface.plans-read@1`
-- `daily-plan.source.rtx-init -> cloud-files.interface.plans-write@1`
-- `daily-plan.source.rtx-init -> common.interface.dates@1`
-- `daily-plan.source.rtx-init -> g-calendar.interface.scripts-gcal@1`
-- `daily-plan.source.rtx-init -> get-weather.interface.scripts-weather@1`
-- `daily-plan.source.rtx-init -> list-manager.interface.read-beautify@1`
-- `daily-plan.source.rtx-init -> list-manager.interface.update-list@1`
+Uses Interfaces: none
 
 Public Interfaces:
 - `daily-plan.interface.default`

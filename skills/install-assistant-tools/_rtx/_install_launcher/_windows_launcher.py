@@ -4,7 +4,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from _state_record import Manifest
+if __package__ and __package__.count('.') >= 1:
+    from .._state_record import Manifest
+else:
+    from _state_record import Manifest
 
 from ._base_launcher import (
     DISPATCHER_WORKFLOWS,

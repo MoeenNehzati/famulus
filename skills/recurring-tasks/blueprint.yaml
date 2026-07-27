@@ -1,90 +1,14 @@
 authority:
   owns_filesystem: []
-  suggested_permissions:
-    bash:
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_setup_runner.py
-      - Interface
-      reason: 'Initial setup: syncs unit files, installs healthcheck cron entry.'
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_unit_writer.py
-      - Interface
-      reason: Write/remove systemd user unit files to match jobs.yaml.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_job_control.py
-      - Interface
-      reason: 'Consolidated interface: enable/disable/test/view-logs jobs.'
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_healthcheck_probe.py
-      - Interface
-      reason: Run pre-flight and per-job health checks.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_ensure_agent_env.py
-      - Interface
-      reason: Ensure recurring-tasks' systemd AI_AGENT_COMMAND_TEMPLATE is in place.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_job_utils.py
-      - Interface
-      reason: Expose legacy recurring job helper module through the dispatcher runtime
-        contract.
-    - command:
-      - systemctl
-      reason: Manage systemd user units.
-    - command:
-      - journalctl
-      reason: Read systemd journal for job diagnostics.
 category: system-assistant
-description: Defines, installs, controls, and health-checks recurring assistant jobs through the host's native per-user scheduler.
+children:
+  recurring-tasks-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
-- \.gitignore
-- SKILL\.md
-- _rtx/__init__\.py
-- _rtx/_assistant_desktop_notify\.py
-- _rtx/_ensure_agent_env\.py
-- _rtx/_healthcheck_probe\.py
-- _rtx/_job_control\.py
-- _rtx/_job_executor\.py
-- _rtx/_job_utils\.py
-- _rtx/_live_probe\.py
-- _rtx/_schedule_backend/__init__\.py
-- _rtx/_schedule_backend/_base_backend\.py
-- _rtx/_schedule_backend/_linux_backend\.py
-- _rtx/_schedule_backend/_osx_backend\.py
-- _rtx/_schedule_backend/_windows_backend\.py
-- _rtx/_setup_runner\.py
-- _rtx/_unit_writer\.py
-- jobs\.yaml
-- lessons/2026\-07\-06\.md
-- skill\.mmd
-- tests/test_assistant_desktop_notify\.py
-- tests/test_enable_disable\.py
-- tests/test_ensure_agent_env\.py
-- tests/test_healthcheck\.py
-- tests/test_job_executor\.py
-- tests/test_manage_job\.py
-- tests/test_no_posix_entrypoints\.py
-- tests/test_schedule_backend\.py
-- tests/test_scheduler_live_smoke\.py
-- tests/test_setup_runner\.py
-- tests/test_sync_units\.py
+- (?:\.gitignore|SKILL\.md|lessons/2026\-07\-06\.md|skill\.mmd)
+description: Defines, installs, controls, and health-checks recurring assistant jobs
+  through the host's native per-user scheduler.
 discovery:
   mechanism: skill
 exports:
@@ -97,103 +21,84 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: recurring-tasks.source.rtx-job-control.interface.scripts-disable
+    facade_interface:
+      interface: recurring-tasks-rtx.interface.scripts-disable
+      version: 1
   recurring-tasks.interface.scripts-enable:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: recurring-tasks.source.rtx-job-control.interface.scripts-enable
+    facade_interface:
+      interface: recurring-tasks-rtx.interface.scripts-enable
+      version: 1
   recurring-tasks.interface.scripts-ensure-agent-env:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: recurring-tasks.source.rtx-ensure-agent-env.interface.scripts-ensure-agent-env
+    facade_interface:
+      interface: recurring-tasks-rtx.interface.scripts-ensure-agent-env
+      version: 1
   recurring-tasks.interface.scripts-healthcheck:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: recurring-tasks.source.rtx-healthcheck-probe.interface.scripts-healthcheck
+    facade_interface:
+      interface: recurring-tasks-rtx.interface.scripts-healthcheck
+      version: 1
   recurring-tasks.interface.scripts-job-utils:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: recurring-tasks.source.rtx-job-utils.interface.scripts-job-utils
+    facade_interface:
+      interface: recurring-tasks-rtx.interface.scripts-job-utils
+      version: 1
   recurring-tasks.interface.scripts-setup:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: recurring-tasks.source.rtx-setup-runner.interface.scripts-setup
+    facade_interface:
+      interface: recurring-tasks-rtx.interface.scripts-setup
+      version: 1
   recurring-tasks.interface.scripts-status:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: recurring-tasks.source.rtx-job-control.interface.scripts-status
+    facade_interface:
+      interface: recurring-tasks-rtx.interface.scripts-status
+      version: 1
   recurring-tasks.interface.scripts-sync:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: recurring-tasks.source.rtx-unit-writer.interface.scripts-sync
+    facade_interface:
+      interface: recurring-tasks-rtx.interface.scripts-sync
+      version: 1
   recurring-tasks.interface.scripts-test:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: recurring-tasks.source.rtx-job-control.interface.scripts-test
+    facade_interface:
+      interface: recurring-tasks-rtx.interface.scripts-test
+      version: 1
   recurring-tasks.interface.scripts-view-logs:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: recurring-tasks.source.rtx-job-control.interface.scripts-view-logs
+    facade_interface:
+      interface: recurring-tasks-rtx.interface.scripts-view-logs
+      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: recurring-tasks
 kind: scheduler
+namespace_exports: {}
 node_type: module
 role: system-operations
-schema_version: 4
+schema_version: 5
 sources:
   recurring-tasks.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  recurring-tasks.source.jobs-config:
-    blueprint:
-      base: module-root
-      path: blueprints/jobs-config.yaml
-  recurring-tasks.source.rtx-ensure-agent-env:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-ensure-agent-env.yaml
-  recurring-tasks.source.rtx-healthcheck-probe:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-healthcheck-probe.yaml
-  recurring-tasks.source.rtx-init:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-init.yaml
-  recurring-tasks.source.rtx-job-control:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-job-control.yaml
-  recurring-tasks.source.rtx-job-executor:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-job-executor.yaml
-  recurring-tasks.source.rtx-job-utils:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-job-utils.yaml
-  recurring-tasks.source.rtx-schedule-backend-init:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-schedule-backend-init.yaml
-  recurring-tasks.source.rtx-setup-runner:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-setup-runner.yaml
-  recurring-tasks.source.rtx-unit-writer:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-unit-writer.yaml
-version: 1
+version: 3

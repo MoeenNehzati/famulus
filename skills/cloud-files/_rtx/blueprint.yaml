@@ -1,0 +1,169 @@
+authority:
+  owns_filesystem:
+  - allowed_readers:
+    - cloud-files.interface.ensure-oauth
+    match: exact
+    path: $home/.config/cloud-files/config.json
+    reason: write-config is the declared writer for the cloud-files config.
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _read_llm_file.py
+      - Interface
+      reason: Read files from cloud storage under LLM root.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _write_llm_file.py
+      - Interface
+      reason: Write files to cloud storage under LLM root.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _delete_llm_file.py
+      - Interface
+      reason: Delete files from cloud storage under LLM root.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _ls_llm.py
+      - Interface
+      reason: List/check files in cloud storage.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _oauth_bootstrap.py
+      - Interface
+      reason: OAuth setup for cloud access.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _ensure_oauth.py
+      - Interface
+      reason: Check OAuth status and write config.json (relocated from install-assistant-tools).
+    network: []
+children: {}
+content:
+- _delete_llm_file\.py
+- _ensure_oauth\.py
+- __init__\.py
+- _cp_llm\.py
+- _drive_gateway\.py
+- _ls_llm\.py
+- _read_remote\.py
+- _rm_llm\.py
+- _oauth_bootstrap\.py
+- _read_llm_file\.py
+- _write_llm_file\.py
+- tests/.*
+description: Code module for the cloud-files skill.
+exports:
+  cloud-files-rtx.interface.ensure-oauth:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+    source_interface: cloud-files-rtx.source.rtx-ensure-oauth.interface.ensure-oauth
+  cloud-files-rtx.interface.lists-delete:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+      - list-manager
+    source_interface: cloud-files-rtx.source.rtx-delete-llm-file.interface.lists-delete
+  cloud-files-rtx.interface.lists-read:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+      - daily-plan
+      - daily-plan-rtx
+      - list-manager
+      - list-manager-rtx
+    source_interface: cloud-files-rtx.source.rtx-read-llm-file.interface.lists-read
+  cloud-files-rtx.interface.lists-write:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+      - daily-plan
+      - daily-plan-rtx
+      - list-manager
+      - list-manager-rtx
+    source_interface: cloud-files-rtx.source.rtx-write-llm-file.interface.lists-write
+  cloud-files-rtx.interface.plans-delete:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+      - daily-plan
+    source_interface: cloud-files-rtx.source.rtx-delete-llm-file.interface.plans-delete
+  cloud-files-rtx.interface.plans-read:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+      - daily-plan
+      - daily-plan-rtx
+    source_interface: cloud-files-rtx.source.rtx-read-llm-file.interface.plans-read
+  cloud-files-rtx.interface.plans-write:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+      - daily-plan
+      - daily-plan-rtx
+    source_interface: cloud-files-rtx.source.rtx-write-llm-file.interface.plans-write
+  cloud-files-rtx.interface.setup-oauth:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+    source_interface: cloud-files-rtx.source.rtx-oauth-bootstrap.interface.setup-oauth
+  cloud-files-rtx.interface.write-config:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+    source_interface: cloud-files-rtx.source.rtx-ensure-oauth.interface.write-config
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: cloud-files-rtx
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  cloud-files-rtx.source.rtx-delete-llm-file:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-delete-llm-file.yaml
+  cloud-files-rtx.source.rtx-ensure-oauth:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-ensure-oauth.yaml
+  cloud-files-rtx.source.rtx-init:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-init.yaml
+  cloud-files-rtx.source.rtx-oauth-bootstrap:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-oauth-bootstrap.yaml
+  cloud-files-rtx.source.rtx-read-llm-file:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-read-llm-file.yaml
+  cloud-files-rtx.source.rtx-write-llm-file:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-write-llm-file.yaml
+version: 1

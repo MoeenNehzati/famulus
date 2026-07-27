@@ -4,11 +4,14 @@ authority:
     bash: []
     network: []
 category: skill-making-development-assistant
+children:
+  update-skill-guidelines-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
-- SKILL\.md
-- agents/openai\.yaml
-description: Maintains the canonical skill-writing standard, its generated view,
-  and the mechanical skill-hook enforcement that must remain aligned with it.
+- (?:SKILL\.md|agents/openai\.yaml)
+description: Maintains the canonical skill-writing standard, its generated view, and
+  the mechanical skill-hook enforcement that must remain aligned with it.
 discovery:
   mechanism: skill
 exports:
@@ -22,12 +25,13 @@ gateway:
   path: SKILL.md
 id: update-skill-guidelines
 kind: maintenance
+namespace_exports: {}
 node_type: module
 role: meta-skill
-schema_version: 4
+schema_version: 5
 sources:
   update-skill-guidelines.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 1
+version: 2

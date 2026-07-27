@@ -25,7 +25,7 @@ description: |
 
 Category: research-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces: none
 

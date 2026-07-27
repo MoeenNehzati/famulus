@@ -24,9 +24,9 @@ try:
 except ImportError:
     import _cloud_transport as cloud_transport
 
-SKILL_ROOT = Path(__file__).resolve().parents[1]
-LISTS_PY = SKILL_ROOT / "_rtx" / "_yaml_store.py"
-BEAUTIFY_PY = SKILL_ROOT / "_rtx" / "_list_beautify.py"
+SKILL_ROOT = Path(__file__).resolve().parents[0]
+LISTS_PY = SKILL_ROOT / "_yaml_store.py"
+BEAUTIFY_PY = SKILL_ROOT / "_list_beautify.py"
 
 
 def download_list(list_name: str, dest_path: Path) -> None:

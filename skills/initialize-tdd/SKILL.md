@@ -8,7 +8,7 @@ description: Use when starting a brand new project that should follow a staged, 
 
 Category: coding-development-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces: none
 

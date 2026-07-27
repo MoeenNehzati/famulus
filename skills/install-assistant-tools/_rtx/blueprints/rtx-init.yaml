@@ -1,0 +1,18 @@
+content:
+- __init__\.py
+- _fs_links\.py
+- _install_uninstall\.py
+- _shell_block\.py
+- _state_record\.py
+dependencies: []
+description: Marks the installer runtime directory as a Python package and exposes
+  no callable interface.
+gateway:
+  language: Python
+  path: __init__.py
+id: install-assistant-tools-rtx.source.rtx-init
+interfaces: {}
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces: []
+version: 1

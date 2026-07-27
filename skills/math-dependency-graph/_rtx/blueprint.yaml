@@ -1,0 +1,78 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _graph_builder.py
+      - Interface
+      reason: Render math dependency graph HTML from canonical JSON.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _tex_macro_reader.py
+      - Interface
+      reason: Extract MathJax macro definitions from TeX sources.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _graph_server.py
+      - Interface
+      reason: Serve graph HTML locally for inspection.
+    network: []
+children: {}
+content:
+- _graph_builder\.py
+- _graph_server\.py
+- __init__\.py
+- _tex_macro_reader\.py
+- tests/.*
+description: Code module for the math-dependency-graph skill.
+exports:
+  math-dependency-graph-rtx.interface.scripts-build-math-dependency-graph:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph-rtx.source.rtx-graph-builder.interface.scripts-build-math-dependency-graph
+  math-dependency-graph-rtx.interface.scripts-extract-mathjax-macros:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph-rtx.source.rtx-tex-macro-reader.interface.scripts-extract-mathjax-macros
+  math-dependency-graph-rtx.interface.scripts-serve-graph:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph-rtx.source.rtx-graph-server.interface.scripts-serve-graph
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: math-dependency-graph-rtx
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  math-dependency-graph-rtx.source.rtx-graph-builder:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-graph-builder.yaml
+  math-dependency-graph-rtx.source.rtx-graph-server:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-graph-server.yaml
+  math-dependency-graph-rtx.source.rtx-init:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-init.yaml
+  math-dependency-graph-rtx.source.rtx-tex-macro-reader:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-tex-macro-reader.yaml
+version: 1

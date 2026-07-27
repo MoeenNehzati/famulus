@@ -1,0 +1,15 @@
+schema_version: 4
+node_type: behavioral_source
+id: consumer.source.read
+version: 3
+description: Stable non-skill export used by a source moving into a code child.
+gateway:
+  path: README.md
+  language: Markdown
+content:
+  - README\.md
+dependencies: []
+uses_interfaces: []
+interfaces:
+  consumer.source.read.interface.read:
+    version: 5

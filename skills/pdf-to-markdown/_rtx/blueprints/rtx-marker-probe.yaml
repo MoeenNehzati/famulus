@@ -1,0 +1,134 @@
+content:
+- _marker_probe\.py
+dependencies: []
+description: Checks the Marker model-cache directory for the five Surya checkpoints
+  required by the configured Marker installation.
+gateway:
+  language: Python
+  path: _marker_probe.py
+id: pdf-to-markdown-rtx.source.rtx-marker-probe
+interfaces:
+  pdf-to-markdown-rtx.source.rtx-marker-probe.interface.scripts-check-marker-models:
+    contract:
+      arguments: {}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: checkpoint
+          id: read-1
+          medium: local-filesystem
+          path: $home/.cache/datalab/models/
+          path_match: exact
+          sensitivity: user-private
+          system: model-cache
+        writes:
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-2
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: The result reflects checkpoint existence in the configured cache
+            during this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: status
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Proceed with Marker conversion.
+        class: success
+        effects: []
+        id: all-cached
+        outputs:
+        - status
+      - caller_action: Warn about the model download and obtain confirmation before
+          running Marker.
+        class: refusal
+        effects: []
+        id: models-missing
+        outputs:
+        - status
+      - caller_action: Report that marker-pdf or Surya is unavailable.
+        class: error
+        effects: []
+        id: marker-unavailable
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Cache status stating either that all models are present or naming
+          the missing model groups.
+        direct_io_ref: write-1
+        empty: Empty only when the Surya settings module is unavailable.
+        id: status
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Installation diagnostic emitted when the Surya settings module
+          cannot be imported.
+        direct_io_ref: write-2
+        empty: Empty when the Marker installation can be inspected.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Check whether required Marker/Surya models are downloaded and cached
+      locally.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - name: owner
+    usage: ''
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: false
+  windows: false
+runtime_dependencies:
+- kind: python-package
+  name: marker-pdf
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Provides the Surya settings module used to locate Marker model checkpoints.
+  version: any
+schema_version: 5
+uses_interfaces: []
+version: 1

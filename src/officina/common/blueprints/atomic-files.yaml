@@ -1,7 +1,9 @@
 content:
 - atomic_files\.py
 dependencies: []
-description: Implements confined regular-file reads and secure replace, create, append, and compare-and-append byte operations on POSIX and Windows, with an explicit non-atomic fallback.
+description: Implements confined regular-file reads and secure replace, create, append,
+  and compare-and-append byte operations on POSIX and Windows, with an explicit non-atomic
+  fallback.
 gateway:
   language: Python
   path: atomic_files.py
@@ -10,6 +12,49 @@ interfaces:
   common.source.atomic-files.interface.python-api:
     contract:
       arguments:
+        allow-non-atomic:
+          default: false
+          description: Permit the confined fallback only when secure native operations
+            are unavailable.
+          required: false
+          sensitivity: public
+          type:
+            kind: boolean
+        allowed-root:
+          description: Directory boundary that must contain path.
+          direct_io_ref: target-file
+          required: true
+          sensitivity: user-private
+          type:
+            access: read-write
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        data:
+          description: Bytes written or appended by mutation operations.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Python bytes value; omitted for read.
+            kind: string
+        expected-previous-bytes:
+          description: Complete expected predecessor bytes, or null when absence is
+            expected, for compare-and-append.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Python bytes value or null.
+            kind: string
+        mode:
+          default: 384
+          description: Requested file permission bits for mutation operations.
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            maximum: 4095
+            minimum: 0
         operation:
           description: Atomic-files function to call.
           required: true
@@ -17,100 +62,146 @@ interfaces:
           type:
             kind: enum
             values:
-            - {value: read, description: Read one confined regular file as bytes.}
-            - {value: replace, description: Replace one confined file with supplied bytes.}
-            - {value: create, description: Create one confined file only if absent.}
-            - {value: append, description: Append one complete byte frame.}
-            - {value: compare-and-append, description: Append only when the complete predecessor bytes match.}
+            - description: Read one confined regular file as bytes.
+              value: read
+            - description: Replace one confined file with supplied bytes.
+              value: replace
+            - description: Create one confined file only if absent.
+              value: create
+            - description: Append one complete byte frame.
+              value: append
+            - description: Append only when the complete predecessor bytes match.
+              value: compare-and-append
         path:
           description: Destination or source file confined beneath allowed-root.
+          direct_io_ref: target-file
           required: true
           sensitivity: user-private
-          direct_io_ref: target-file
-          type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: false, access: read-write, opaque_content: true}
-        allowed-root:
-          description: Directory boundary that must contain path.
-          required: true
-          sensitivity: user-private
-          direct_io_ref: target-file
-          type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read-write}
-        data:
-          description: Bytes written or appended by mutation operations.
-          required: false
-          sensitivity: user-private
-          type: {kind: string, description: Python bytes value; omitted for read.}
-        expected-previous-bytes:
-          description: Complete expected predecessor bytes, or null when absence is expected, for compare-and-append.
-          required: false
-          sensitivity: user-private
-          type: {kind: string, description: Python bytes value or null.}
-        mode:
-          description: Requested file permission bits for mutation operations.
-          required: false
-          default: 384
-          sensitivity: public
-          type: {kind: integer, minimum: 0, maximum: 4095}
-        allow-non-atomic:
-          description: Permit the confined fallback only when secure native operations are unavailable.
-          required: false
-          default: false
-          sensitivity: public
-          type: {kind: boolean}
-      preconditions:
-      - id: confined-path
-        description: path must resolve beneath allowed-root without an unsafe symlink or non-regular final entry.
-        check: {kind: argument, argument_ref: path, predicate: present}
-        unmet_outcome: rejected
-        caller_action: Pass a regular-file path beneath an existing allowed root.
-      interaction: {mode: unattended}
+          type:
+            access: read-write
+            kind: file
+            must_exist: false
+            opaque_content: true
+            relative_to: caller-cwd
+            syntax: literal
       caller_warnings:
-      - external-side-effect: Mutation operations create or change a local file; compare-and-append may fail when another writer changes it.
-      outputs:
-      - id: result
-        audience: machine
-        description: Read bytes, the create boolean, or successful completion for void mutation operations.
-        direct_io_ref: target-file
-        cardinality: {minimum: 1, maximum: 1}
-        ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        empty: Void mutation operations return no value after verification.
-        type: {kind: string, sensitivity: user-private, description: Python return value whose concrete type depends on operation.}
-      outcomes:
-      - {id: completed, class: success, outputs: [result], effects: [file-state], caller_action: Use the returned bytes or boolean and continue after a void mutation.}
-      - {id: rejected, class: refusal, outputs: [], effects: [], caller_action: Correct confinement and path type and argument type and platform-capability requirements before retrying.}
-      - {id: conflict, class: error, outputs: [], effects: [], caller_action: Reread the file and decide whether to retry compare-and-append.}
-      execution:
-        state_effect: mutating
-        lifecycle: finite
-        consistency: {live: Reads and mutations operate on the file state observed during the call.}
-        effects:
-        - id: file-state
-          direct_io_ref: target-file
-          action: update
-          value_source: {kind: argument, argument_ref: data}
-          may_occur_in_outcomes: [completed]
-          confirmation_evidence: {kind: direct-io, direct_io_ref: target-file}
-          reversibility: {irreversible: The helper does not retain the previous bytes for rollback.}
-        mutation_safety:
-          atomicity: {per_effect_only: Secure operations are atomic per file; the explicit fallback is confined but non-atomic.}
-          concurrent_invocations: {safe: Native create and replace and append and compare-and-append use platform synchronization and final-state checks.}
-          idempotency: {non_idempotent: Append operations add another frame when repeated.}
-          on_uncertain_completion: {verify_then_decide: Read the confined file and compare its complete bytes before retrying.}
-          partial_effects_on_failure: {possible: The explicit non-atomic fallback or a late durability failure can leave changed file state.}
-          rollback_on_failure: {unavailable: No previous content is retained.}
-        verification:
-        - {method: direct-io-state, direct_io_ref: target-file}
-      helpers: []
+      - external-side-effect: Mutation operations create or change a local file; compare-and-append
+          may fail when another writer changes it.
       direct_io:
-        reads:
-        - {id: target-file, medium: local-filesystem, access: read, content: confined regular-file bytes, formats: [binary], sensitivity: user-private, path: <path> beneath <allowed-root>}
-        writes:
-        - {id: target-file, medium: local-filesystem, access: read-write, content: confined regular-file bytes, formats: [binary], sensitivity: user-private, path: <path> beneath <allowed-root>}
         network: []
+        reads:
+        - access: read
+          content: confined regular-file bytes
+          formats:
+          - binary
+          id: target-file
+          medium: local-filesystem
+          path: <path> beneath <allowed-root>
+          sensitivity: user-private
+        writes:
+        - access: read-write
+          content: confined regular-file bytes
+          formats:
+          - binary
+          id: target-file
+          medium: local-filesystem
+          path: <path> beneath <allowed-root>
+          sensitivity: user-private
+      execution:
+        consistency:
+          live: Reads and mutations operate on the file state observed during the
+            call.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: target-file
+            kind: direct-io
+          direct_io_ref: target-file
+          id: file-state
+          may_occur_in_outcomes:
+          - completed
+          reversibility:
+            irreversible: The helper does not retain the previous bytes for rollback.
+          value_source:
+            argument_ref: data
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: Secure operations are atomic per file; the explicit fallback
+              is confined but non-atomic.
+          concurrent_invocations:
+            safe: Native create and replace and append and compare-and-append use
+              platform synchronization and final-state checks.
+          idempotency:
+            non_idempotent: Append operations add another frame when repeated.
+          on_uncertain_completion:
+            verify_then_decide: Read the confined file and compare its complete bytes
+              before retrying.
+          partial_effects_on_failure:
+            possible: The explicit non-atomic fallback or a late durability failure
+              can leave changed file state.
+          rollback_on_failure:
+            unavailable: No previous content is retained.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: target-file
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the returned bytes or boolean and continue after a void
+          mutation.
+        class: success
+        effects:
+        - file-state
+        id: completed
+        outputs:
+        - result
+      - caller_action: Correct confinement and path type and argument type and platform-capability
+          requirements before retrying.
+        class: refusal
+        effects: []
+        id: rejected
+        outputs: []
+      - caller_action: Reread the file and decide whether to retry compare-and-append.
+        class: error
+        effects: []
+        id: conflict
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Read bytes, the create boolean, or successful completion for
+          void mutation operations.
+        direct_io_ref: target-file
+        empty: Void mutation operations return no value after verification.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: Python return value whose concrete type depends on operation.
+          kind: string
+          sensitivity: user-private
+      preconditions:
+      - caller_action: Pass a regular-file path beneath an existing allowed root.
+        check:
+          argument_ref: path
+          kind: argument
+          predicate: present
+        description: path must resolve beneath allowed-root without an unsafe symlink
+          or non-regular final entry.
+        id: confined-path
+        unmet_outcome: rejected
     description: Provides atomic file operations to Python callers.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

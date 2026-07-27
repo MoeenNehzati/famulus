@@ -1,0 +1,91 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _plan_orchestrate.py
+      - Interface
+      reason: Main orchestration script for plan generation via dispatcher.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _render_plan.py
+      - Interface
+      reason: Plan rendering helper for display formatting.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _state_patch.py
+      - Interface
+      reason: Apply plan-local or master-list-backed mutations and show the refreshed
+        plan.
+    network: []
+children: {}
+content:
+- __init__\.py
+- _day_model\.py
+- _plan_orchestrate\.py
+- _plan_storage\.py
+- _render_plan\.py
+- _state_patch\.py
+- tests/.*
+description: Code module for the daily-plan skill.
+exports:
+  daily-plan-rtx.interface.mutate-plan:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - daily-plan
+    source_interface: daily-plan-rtx.source.rtx-state-patch.interface.mutate-plan
+  daily-plan-rtx.interface.orchestrate:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - daily-plan
+    source_interface: daily-plan-rtx.source.rtx-plan-orchestrate.interface.orchestrate
+  daily-plan-rtx.interface.plan-storage:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - daily-plan
+    source_interface: daily-plan-rtx.source.rtx-plan-storage.interface.plan-storage
+  daily-plan-rtx.interface.render-plan:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - daily-plan
+    source_interface: daily-plan-rtx.source.rtx-render-plan.interface.render-plan
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: daily-plan-rtx
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  daily-plan-rtx.source.rtx-init:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-init.yaml
+  daily-plan-rtx.source.rtx-plan-orchestrate:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-plan-orchestrate.yaml
+  daily-plan-rtx.source.rtx-plan-storage:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-plan-storage.yaml
+  daily-plan-rtx.source.rtx-render-plan:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-render-plan.yaml
+  daily-plan-rtx.source.rtx-state-patch:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-state-patch.yaml
+version: 1

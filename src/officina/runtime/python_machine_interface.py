@@ -24,20 +24,37 @@ class PythonProcessTargetError(ValueError):
     """Raised when a Python gateway and process entry are not canonical."""
 
 
+def logical_python_package_name(module_id: str) -> str:
+    """Return a reversible, import-safe package name for one global module ID."""
+
+    if not isinstance(module_id, str) or not module_id:
+        raise PythonProcessTargetError(
+            "logical Python package identity needs a non-empty module ID"
+        )
+    return f"_officina_module_{module_id.encode('utf-8').hex()}"
+
+
 @dataclass(frozen=True)
 class PythonProcessTarget:
     """A validated Python gateway path and entry class."""
 
     gateway_path: Path
     process_entry: str
+    logical_package: str | None = None
+    logical_entrypoint: str | None = None
 
     def __post_init__(self) -> None:
         path = self.gateway_path
+        has_logical_identity = (
+            self.logical_package is not None
+            or self.logical_entrypoint is not None
+        )
         if (
             not isinstance(path, Path)
             or path.is_absolute()
-            or len(path.parts) < 2
-            or path.parts[0] != "_rtx"
+            or (not has_logical_identity and (
+                len(path.parts) < 2 or path.parts[0] != "_rtx"
+            ))
             or "." in path.parts
             or ".." in path.parts
             or path.suffix != ".py"
@@ -46,6 +63,32 @@ class PythonProcessTarget:
                 "Python gateway path must be a relative `_rtx/*.py` path "
                 "without current- or parent-directory traversal"
             )
+        package = self.logical_package
+        entrypoint = self.logical_entrypoint
+        if (package is None) != (entrypoint is None):
+            raise PythonProcessTargetError(
+                "logical package and entrypoint must be provided together"
+            )
+        if package is not None and entrypoint is not None:
+            if not all(part.isidentifier() for part in package.split(".")):
+                raise PythonProcessTargetError(
+                    "logical Python package must be a dotted identifier"
+                )
+            physical_parts = (
+                path.parent.parts
+                if path.name == "__init__.py"
+                else (*path.parent.parts, path.stem)
+            )
+            suffix = ".".join(
+                part for part in physical_parts if part not in {"", "."}
+            )
+            expected_entrypoint = (
+                package if not suffix else f"{package}.{suffix}"
+            )
+            if entrypoint != expected_entrypoint:
+                raise PythonProcessTargetError(
+                    "logical Python entrypoint must match the physical gateway path"
+                )
         entry = self.process_entry
         if (
             not isinstance(entry, str)
@@ -58,14 +101,66 @@ class PythonProcessTarget:
 
 
 @dataclass(frozen=True)
+class RuntimeDispatchContext:
+    """Runtime identity of the Python interface currently being executed."""
+
+    caller_module_id: str | None = None
+    caller_source_id: str | None = None
+    repo_root: Path | None = None
+
+
+_RUNTIME_DISPATCH_CONTEXT_ATTRIBUTE = "_officina_runtime_dispatch_context"
+
+
+def set_runtime_dispatch_context(
+    interface: "PythonMachineInterface",
+    *,
+    caller_module_id: str | None = None,
+    caller_source_id: str | None = None,
+    repo_root: Path | None = None,
+) -> None:
+    """Attach dispatcher-resolved runtime identity to one loaded interface."""
+
+    setattr(
+        interface,
+        _RUNTIME_DISPATCH_CONTEXT_ATTRIBUTE,
+        RuntimeDispatchContext(
+            caller_module_id=caller_module_id,
+            caller_source_id=caller_source_id,
+            repo_root=repo_root,
+        ),
+    )
+
+
+def runtime_dispatch_context(
+    interface: "PythonMachineInterface",
+) -> RuntimeDispatchContext:
+    """Return dispatcher-resolved runtime identity for one loaded interface."""
+
+    context = getattr(interface, _RUNTIME_DISPATCH_CONTEXT_ATTRIBUTE, None)
+    if isinstance(context, RuntimeDispatchContext):
+        return context
+    return RuntimeDispatchContext()
+
+
+@dataclass(frozen=True)
 class DispatchCallDeclaration:
     """One alias-resolved DispatchCall declaration in a Python syntax tree."""
 
-    caller_skill: str | None
-    target_skill: str | None
+    caller_module_id: str | None
+    target_module_id: str | None
     interface: str | None
     lineno: int
     keywords: Mapping[str, ast.Constant]
+    legacy_v4: bool = False
+
+    @property
+    def caller_skill(self) -> str | None:
+        return self.caller_module_id
+
+    @property
+    def target_skill(self) -> str | None:
+        return self.target_module_id
 
 
 def analyze_dispatch_call_declarations(
@@ -139,11 +234,21 @@ def analyze_dispatch_call_declarations(
         values = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg}
         declarations.append(
             DispatchCallDeclaration(
-                caller_skill=resolved(values.get("caller_skill")),
-                target_skill=resolved(values.get("target_skill")),
+                caller_module_id=(
+                    resolved(values.get("caller_module_id"))
+                    or resolved(values.get("caller_skill"))
+                ),
+                target_module_id=(
+                    resolved(values.get("target_module_id"))
+                    or resolved(values.get("target_skill"))
+                ),
                 interface=resolved(values.get("interface")),
                 lineno=getattr(node, "lineno", 0),
                 keywords=keywords,
+                legacy_v4=(
+                    "caller_module_id" not in values
+                    and "target_module_id" not in values
+                ),
             )
         )
     return tuple(declarations)
@@ -198,12 +303,33 @@ def _normalize_route_smoke_trace_specifications(
     )
 
 
+def _python_process_target_payload(
+    target: PythonProcessTarget,
+) -> dict[str, str]:
+    payload = {
+        "gateway_path": target.gateway_path.as_posix(),
+        "process_entry": target.process_entry,
+    }
+    if (
+        target.logical_package is not None
+        and target.logical_entrypoint is not None
+    ):
+        payload["logical_package"] = target.logical_package
+        payload["logical_entrypoint"] = target.logical_entrypoint
+    return payload
+
+
 def trace_python_route_smoke_dependencies_batch(
     repo_root: Path,
     specifications: Iterable[tuple[Path, PythonProcessTarget]],
+    *,
+    expected_schema_version: int = 5,
+    schema_root: Path | None = None,
 ) -> dict[tuple[Path, PythonProcessTarget], tuple[Path, ...]]:
     """Return isolated loaded-path traces from one Python child process."""
 
+    if expected_schema_version not in {4, 5}:
+        raise ValueError("expected_schema_version must be 4 or 5")
     repository_root = repo_root.resolve()
     normalized = _normalize_route_smoke_trace_specifications(
         repository_root,
@@ -217,12 +343,21 @@ def trace_python_route_smoke_dependencies_batch(
         if (candidate_source_root / "officina").is_dir()
         else Path(__file__).resolve().parents[2]
     )
-    candidate_schema_root = repository_root / "references" / "blueprint"
-    schema_root = (
-        candidate_schema_root
-        if (candidate_schema_root / "module.schema.json").is_file()
-        else Path(__file__).resolve().parents[3] / "references" / "blueprint"
-    )
+    if schema_root is None:
+        candidate_schema_root = repository_root / "references" / "blueprint"
+        package_schema_root = (
+            Path(__file__).resolve().parents[3] / "references" / "blueprint"
+        )
+        if expected_schema_version == 4:
+            candidate_schema_root /= "migrations" / "v4"
+            package_schema_root /= "migrations" / "v4"
+        selected_schema_root = (
+            candidate_schema_root
+            if (candidate_schema_root / "module.schema.json").is_file()
+            else package_schema_root
+        )
+    else:
+        selected_schema_root = schema_root.resolve()
     trace_code = r"""
 import contextlib
 import io
@@ -234,6 +369,7 @@ from pathlib import Path
 src_root = Path(sys.argv[1]).resolve()
 repo_root = Path(sys.argv[2]).resolve()
 schema_root = Path(sys.argv[3]).resolve()
+expected_schema_version = int(sys.argv[5])
 officina_root = src_root / "officina"
 sys.path.insert(0, str(src_root))
 
@@ -255,6 +391,8 @@ specifications = [
         PythonProcessTarget(
             Path(item["python_target"]["gateway_path"]),
             item["python_target"]["process_entry"],
+            logical_package=item["python_target"].get("logical_package"),
+            logical_entrypoint=item["python_target"].get("logical_entrypoint"),
         ),
     )
     for item in json.loads(sys.argv[4])
@@ -293,6 +431,22 @@ def collect_loaded_paths(paths, before):
         if before.get(name) != path:
             paths.add(path.as_posix())
 
+def collect_bound_paths(paths, interface):
+    sources = getattr(interface, "_officina_bound_package_sources", {})
+    if not isinstance(sources, dict):
+        return
+    executed_modules = getattr(sources, "executed_modules", set())
+    if not isinstance(executed_modules, set):
+        return
+    for module_name in executed_modules:
+        source = sources.get(module_name)
+        if source is None:
+            continue
+        _source, physical_path, _is_package = source
+        path = Path(physical_path).resolve()
+        if path.suffix == ".py" and path.is_file() and is_under(path, repo_root):
+            paths.add(path.as_posix())
+
 from officina.common.certification_view import CertificationDecision
 
 class TraceCertificationView:
@@ -303,7 +457,11 @@ class TraceCertificationView:
         return None
 
 try:
-    graph = load_repository_blueprint_graph(repo_root, schema_root=schema_root)
+    graph = load_repository_blueprint_graph(
+        repo_root,
+        schema_root=schema_root,
+        expected_schema_version=expected_schema_version,
+    )
 except BlueprintGraphError as exc:
     if tuple(iter_blueprints(repo_root)):
         raise
@@ -373,10 +531,34 @@ for skill_dir, python_target in specifications:
             interface = load_interface(
                 python_target.gateway_path,
                 python_target.process_entry,
+                logical_package=python_target.logical_package,
+                logical_entrypoint=python_target.logical_entrypoint,
             )
             run_python_machine_interface(interface, ["--route-smoke"])
+            collect_bound_paths(paths, interface)
             collect_loaded_paths(paths, before)
-            dependencies = resolver.collect(interface)
+            physical_gateway = (
+                skill_dir / python_target.gateway_path
+            ).resolve()
+            caller_sources = [
+                source_id
+                for source_id, source in graph.nodes.items()
+                if source.node_type == "behavioral_source"
+                and source.gateway_path == physical_gateway
+            ]
+            caller_source_id = (
+                caller_sources[0] if len(caller_sources) == 1 else None
+            )
+            caller_module_id = (
+                graph.source_modules.get(caller_source_id)
+                if caller_source_id is not None
+                else None
+            )
+            dependencies = resolver.collect(
+                interface,
+                caller_module_id=caller_module_id,
+                caller_source_id=caller_source_id,
+            )
             collect_loaded_paths(paths, before)
             for dependency in dependencies:
                 invocation = dependency.resolved
@@ -389,6 +571,7 @@ for skill_dir, python_target in specifications:
                             target_interface,
                             ["--route-smoke"],
                         )
+                        collect_bound_paths(paths, target_interface)
                     finally:
                         os.chdir(previous_cwd)
                 collect_loaded_paths(paths, before)
@@ -400,8 +583,14 @@ for skill_dir, python_target in specifications:
         {
             "skill_root": skill_dir.as_posix(),
             "python_target": {
-                "gateway_path": python_target.gateway_path.as_posix(),
-                "process_entry": python_target.process_entry,
+                key: value
+                for key, value in {
+                    "gateway_path": python_target.gateway_path.as_posix(),
+                    "process_entry": python_target.process_entry,
+                    "logical_package": python_target.logical_package,
+                    "logical_entrypoint": python_target.logical_entrypoint,
+                }.items()
+                if value is not None
             },
             "paths": sorted(paths),
         }
@@ -423,21 +612,21 @@ print(json.dumps(results))
             trace_code,
             str(source_root),
             str(repository_root),
-            str(schema_root),
+            str(selected_schema_root),
             json.dumps(
                 [
                     {
                         "skill_root": skill_root.as_posix(),
-                        "python_target": {
-                            "gateway_path": python_target.gateway_path.as_posix(),
-                            "process_entry": python_target.process_entry,
-                        },
+                        "python_target": _python_process_target_payload(
+                            python_target
+                        ),
                     }
                     for skill_root, python_target in normalized
                 ],
                 ensure_ascii=False,
                 separators=(",", ":"),
             ),
+            str(expected_schema_version),
         ],
         cwd=repository_root,
         capture_output=True,
@@ -490,9 +679,23 @@ print(json.dumps(results))
         if (
             not isinstance(skill_text, str)
             or not isinstance(target_payload, dict)
-            or set(target_payload) != {"gateway_path", "process_entry"}
+            or not {"gateway_path", "process_entry"} <= set(target_payload)
+            or not set(target_payload) <= {
+                "gateway_path",
+                "process_entry",
+                "logical_package",
+                "logical_entrypoint",
+            }
             or not isinstance(target_payload["gateway_path"], str)
             or not isinstance(target_payload["process_entry"], str)
+            or (
+                target_payload.get("logical_package") is not None
+                and not isinstance(target_payload["logical_package"], str)
+            )
+            or (
+                target_payload.get("logical_entrypoint") is not None
+                and not isinstance(target_payload["logical_entrypoint"], str)
+            )
             or not isinstance(path_texts, list)
             or not all(isinstance(path, str) for path in path_texts)
             or path_texts != sorted(set(path_texts))
@@ -507,11 +710,7 @@ print(json.dumps(results))
         expected_key = expected_order[index]
         if (
             skill_text != expected_key[0].as_posix()
-            or target_payload
-            != {
-                "gateway_path": expected_key[1].gateway_path.as_posix(),
-                "process_entry": expected_key[1].process_entry,
-            }
+            or target_payload != _python_process_target_payload(expected_key[1])
         ):
             raise PythonRouteSmokeTraceError(
                 "route-smoke dependency trace returned invalid batch paths"
@@ -520,6 +719,8 @@ print(json.dumps(results))
             python_target = PythonProcessTarget(
                 Path(target_payload["gateway_path"]),
                 target_payload["process_entry"],
+                logical_package=target_payload.get("logical_package"),
+                logical_entrypoint=target_payload.get("logical_entrypoint"),
             )
         except PythonProcessTargetError as exc:
             raise PythonRouteSmokeTraceError(
@@ -557,6 +758,9 @@ def trace_python_route_smoke_dependencies(
     skill_dir: Path,
     repo_root: Path,
     python_target: PythonProcessTarget,
+    *,
+    expected_schema_version: int = 5,
+    schema_root: Path | None = None,
 ) -> tuple[Path, ...]:
     """Return Python files loaded by one route-smoke dependency traversal."""
 
@@ -566,22 +770,89 @@ def trace_python_route_smoke_dependencies(
         ((skill_dir, python_target),),
     )
     key = normalized[0]
+    options = {}
+    if expected_schema_version != 4:
+        options["expected_schema_version"] = expected_schema_version
+    if schema_root is not None:
+        options["schema_root"] = schema_root
     return trace_python_route_smoke_dependencies_batch(
         repository_root,
         normalized,
+        **options,
     )[key]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class DispatchCall:
     """One declared cross-skill dispatch available to a machine interface."""
 
-    caller_skill: str
-    target_skill: str
+    caller_module_id: str
+    target_module_id: str
     interface: str
     version: int = 1
     smoke_args: tuple[str, ...] = ("--route-smoke",)
     smoke_stdin: bool = False
+    legacy_v4: bool = False
+
+    def __init__(
+        self,
+        caller_module_id: str | None = None,
+        target_module_id: str | None = None,
+        interface: str = "",
+        version: int = 1,
+        smoke_args: tuple[str, ...] = ("--route-smoke",),
+        smoke_stdin: bool = False,
+        *,
+        caller_skill: str | None = None,
+        target_skill: str | None = None,
+    ) -> None:
+        uses_legacy_keywords = caller_skill is not None or target_skill is not None
+        if uses_legacy_keywords and (
+            caller_module_id is not None or target_module_id is not None
+        ):
+            raise TypeError(
+                "canonical module IDs and legacy skill aliases cannot be mixed"
+            )
+        caller = (
+            caller_skill if uses_legacy_keywords else caller_module_id
+        )
+        target = (
+            target_skill if uses_legacy_keywords else target_module_id
+        )
+        if not isinstance(caller, str) or not caller:
+            raise TypeError("caller_module_id is required")
+        if not isinstance(target, str) or not target:
+            raise TypeError("target_module_id is required")
+        if not isinstance(interface, str) or not interface:
+            raise TypeError("interface is required")
+        if not uses_legacy_keywords and ".interface." in interface:
+            raise ValueError(
+                "canonical DispatchCall.interface must be a local interface name"
+            )
+        for name, value in (
+            ("caller_module_id", caller),
+            ("target_module_id", target),
+            ("interface", interface),
+            ("version", version),
+            ("smoke_args", smoke_args),
+            ("smoke_stdin", smoke_stdin),
+            ("legacy_v4", uses_legacy_keywords),
+        ):
+            object.__setattr__(self, name, value)
+
+    @property
+    def caller_skill(self) -> str:
+        return self.caller_module_id
+
+    @property
+    def target_skill(self) -> str:
+        return self.target_module_id
+
+    @property
+    def target_interface_id(self) -> str:
+        if self.legacy_v4:
+            return self.interface
+        return f"{self.target_module_id}.interface.{self.interface}"
 
 
 @dataclass(frozen=True)
@@ -609,14 +880,27 @@ class DispatchDependencyResolver:
         self.certification_view = certification_view
         self.graph = graph
 
-    def collect(self, interface: "PythonMachineInterface") -> list[ResolvedDispatchDependency]:
+    def collect(
+        self,
+        interface: "PythonMachineInterface",
+        *,
+        caller_module_id: str | None = None,
+        caller_source_id: str | None = None,
+    ) -> list[ResolvedDispatchDependency]:
         """Return all dispatch dependencies reachable from an interface."""
 
-        return self.collect_from_dispatches(interface.dispatches)
+        return self.collect_from_dispatches(
+            interface.dispatches,
+            caller_module_id=caller_module_id,
+            caller_source_id=caller_source_id,
+        )
 
     def collect_from_dispatches(
         self,
         dispatches: Mapping[str, DispatchCall],
+        *,
+        caller_module_id: str | None = None,
+        caller_source_id: str | None = None,
     ) -> list[ResolvedDispatchDependency]:
         """Return all dispatch dependencies reachable from a declared dispatch map."""
 
@@ -627,6 +911,8 @@ class DispatchDependencyResolver:
             depth=0,
             results=results,
             visited_interfaces=visited_interfaces,
+            caller_module_id=caller_module_id,
+            caller_source_id=caller_source_id,
         )
         return results
 
@@ -637,12 +923,18 @@ class DispatchDependencyResolver:
         depth: int,
         results: list[ResolvedDispatchDependency],
         visited_interfaces: set[tuple[str, str]],
+        caller_module_id: str | None,
+        caller_source_id: str | None,
     ) -> None:
         for key, call in sorted(dispatches.items()):
-            resolved = self.resolve_call(call)
+            resolved = self.resolve_call(
+                call,
+                caller_module_id=caller_module_id,
+                caller_source_id=caller_source_id,
+            )
             dependency = ResolvedDispatchDependency(key=key, call=call, resolved=resolved, depth=depth)
             results.append(dependency)
-            identity = (resolved.target_skill, resolved.target)
+            identity = (resolved.target_module_id, resolved.target)
             if identity in visited_interfaces:
                 continue
             visited_interfaces.add(identity)
@@ -654,27 +946,37 @@ class DispatchDependencyResolver:
                 depth=depth + 1,
                 results=results,
                 visited_interfaces=visited_interfaces,
+                caller_module_id=resolved.terminal_module_id,
+                caller_source_id=resolved.implementing_source_id,
             )
 
-    def resolve_call(self, call: DispatchCall) -> "ResolvedInvocationMetadata":
+    def resolve_call(
+        self,
+        call: DispatchCall,
+        *,
+        caller_module_id: str | None = None,
+        caller_source_id: str | None = None,
+    ) -> "ResolvedInvocationMetadata":
         """Resolve one declared dispatch through the canonical dispatcher checks."""
 
         from officina.dispatcher.core import _resolve_dispatch_metadata_for_trace
 
         kwargs = {
-            "caller_skill": call.caller_skill,
+            "caller_module_id": caller_module_id or call.caller_module_id,
+            "caller_source_id": caller_source_id,
             "args": list(call.smoke_args),
             "stdin_requested": call.smoke_stdin,
             "target_version": call.version,
             "repo_root": self.repo_root,
             "certification_view": self.certification_view,
         }
-        if ".interface." not in call.interface:
+        target_interface_id = call.target_interface_id
+        if ".interface." not in target_interface_id:
             raise ValueError(
                 "dispatch dependencies require a fully qualified "
                 "`<module>.interface.<name>` target"
             )
-        kwargs["target"] = call.interface
+        kwargs["target"] = target_interface_id
         if self.graph is not None:
             kwargs["graph"] = self.graph
         return _resolve_dispatch_metadata_for_trace(**kwargs)
@@ -691,20 +993,24 @@ class DispatchDependencyResolver:
         if python_target is None:
             return None
         previous_cwd = Path.cwd()
+        previous_sys_path = list(sys.path)
         try:
-            for cached_name in list(sys.modules):
-                if cached_name == "_rtx" or cached_name.startswith("_rtx."):
-                    del sys.modules[cached_name]
-            skill_path = str(resolved.cwd)
-            sys.path[:] = [entry for entry in sys.path if entry != skill_path]
-            sys.path.insert(0, skill_path)
+            if python_target.logical_package is None:
+                module_path = str(resolved.cwd)
+                sys.path[:] = [
+                    entry for entry in sys.path if entry != module_path
+                ]
+                sys.path.insert(0, module_path)
             os.chdir(resolved.cwd)
             return load_interface(
                 python_target.gateway_path,
                 python_target.process_entry,
+                logical_package=python_target.logical_package,
+                logical_entrypoint=python_target.logical_entrypoint,
             )
         finally:
             os.chdir(previous_cwd)
+            sys.path[:] = previous_sys_path
 
 class PythonMachineInterface:
     """Base class for Python bindings of dispatcher machine interfaces.
@@ -786,16 +1092,44 @@ class PythonMachineInterface:
             known = ", ".join(sorted(self.dispatches)) or "none"
             raise KeyError(f"unknown dispatch key `{key}`; known keys: {known}") from exc
 
-        from officina.dispatcher import dispatch
-
-        if ".interface." not in call.interface:
+        target_interface_id = call.target_interface_id
+        if ".interface." not in target_interface_id:
             raise ValueError(
                 "dispatch dependencies require a fully qualified "
                 "`<module>.interface.<name>` target"
             )
+        context = runtime_dispatch_context(self)
+        if context.caller_module_id is not None or context.caller_source_id is not None:
+            from officina.dispatcher.core import (
+                _resolve_dispatch,
+                _run_resolved_invocation,
+            )
+
+            resolved = _resolve_dispatch(
+                caller_skill=context.caller_module_id or call.caller_module_id,
+                caller_source_id=context.caller_source_id,
+                target=target_interface_id,
+                args=list(args or []),
+                stdin_requested=stdin is not None,
+                repo_root=repo_root if repo_root is not None else context.repo_root,
+                target_version=call.version,
+                certification_view=None,
+                host_caller=False,
+            )
+            return _run_resolved_invocation(
+                resolved,
+                stdin=stdin,
+                timeout=timeout,
+                capture_output=capture_output,
+                check=check,
+                text=text,
+            )
+
+        from officina.dispatcher import dispatch
+
         return dispatch(
-            caller_skill=call.caller_skill,
-            target=call.interface,
+            caller_skill=call.caller_module_id,
+            target=target_interface_id,
             args=list(args or []),
             stdin=stdin,
             target_version=call.version,

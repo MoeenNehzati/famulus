@@ -1,4 +1,4 @@
-"""Smoke tests for skills/skill-maker/validators/boundaries.py."""
+"""Smoke tests for validators/skill/boundaries.py."""
 from __future__ import annotations
 
 import importlib.util
@@ -6,7 +6,7 @@ from pathlib import Path
 
 _VALIDATOR = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "skill-maker" / "validators" / "boundaries.py"
+    / "validators" / "skill" / "boundaries.py"
 )
 _spec = importlib.util.spec_from_file_location("boundaries", _VALIDATOR)
 _mod = importlib.util.module_from_spec(_spec)

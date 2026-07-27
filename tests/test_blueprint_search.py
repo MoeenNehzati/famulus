@@ -18,10 +18,42 @@ from officina.blueprint_search import (  # noqa: E402
     select_values,
     strip_selected_paths,
 )
+from v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CLI = REPO_ROOT / "scripts" / "search_blueprints.py"
+V5_AUTHORIZATION_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "blueprint_v5" / "authorization"
+)
+_canonical_iter_blueprints = iter_blueprints
+_canonical_search_blueprints = search_blueprints
+
+
+def iter_blueprints(
+    repo_root: Path | str,
+    *,
+    include_hidden: bool = False,
+    schema_version: int = 4,
+):
+    """Keep frozen-v4 search fixtures explicit in this mixed module."""
+
+    return _canonical_iter_blueprints(
+        repo_root,
+        include_hidden=include_hidden,
+        schema_version=schema_version,
+    )
+
+
+def search_blueprints(
+    repo_root: Path | str,
+    query: dict[str, object] | None = None,
+):
+    """Keep frozen-v4 search fixtures explicit in this mixed module."""
+
+    selected = dict(query or {})
+    selected.setdefault("schema_version", 4)
+    return _canonical_search_blueprints(repo_root, selected)
 
 
 def _write_blueprint(root: Path, skill: str, body: str) -> None:
@@ -259,6 +291,49 @@ def test_v4_default_search_result_uses_generic_node_metadata(tmp_path: Path) -> 
             "id": "demo-module.source.runner",
             "node_type": "behavioral_source",
             "path": "skills/demo-module/blueprints/runner.yaml",
+        },
+    ]
+
+
+def test_v5_search_uses_global_module_ids_and_registered_ancestry(
+    tmp_path: Path,
+) -> None:
+    root = copy_v5_fixture_tree(
+        V5_AUTHORIZATION_FIXTURE,
+        tmp_path / "repo",
+    )
+
+    rows = search_blueprints(
+        root,
+        {
+            "schema_version": 5,
+            "filter": {
+                "path": "$ancestry",
+                "op": "contains",
+                "value": "demo-rtx",
+            },
+            "select": ["module", "ancestry", "id", "node_type", "path"],
+        },
+    )
+
+    assert rows == [
+        {
+            "module": "demo-rtx",
+            "ancestry": ["demo", "demo-rtx"],
+            "path": "skills/demo/_rtx/blueprint.yaml",
+            "values": {
+                "id": "demo-rtx",
+                "node_type": "module",
+            },
+        },
+        {
+            "module": "demo-rtx",
+            "ancestry": ["demo", "demo-rtx"],
+            "path": "skills/demo/_rtx/blueprints/runtime.yaml",
+            "values": {
+                "id": "demo-rtx.source.runtime",
+                "node_type": "behavioral_source",
+            },
         },
     ]
 
@@ -681,6 +756,7 @@ def test_cli_reads_yaml_query_file_and_emits_json(tmp_path: Path) -> None:
     query_file.write_text(
         yaml.safe_dump(
             {
+                "schema_version": 4,
                 "filter": {"path": "category", "op": "regex", "pattern": "coding"},
                 "select": ["module", "category"],
             },

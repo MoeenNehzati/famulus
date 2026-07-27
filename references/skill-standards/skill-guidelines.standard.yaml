@@ -1,11 +1,11 @@
 schema_version: 6
-standard_version: 1.0.0
-revision: 3
+standard_version: 2.0.0
+revision: 1
 id: skill-guidelines
 canonical_path: references/skill-standards/skill-guidelines.standard.yaml
 render_mode: source-faithful
 title: Skill Module Standards
-purpose: Source-faithful repository standards for skill identity, interfaces, runtime boundaries, state, portability, instruction design, workflow, and validation.
+purpose: Canonical repository standards for version-5 nested modules, interface boundaries, runtime ownership, and validation.
 standards:
 - kind: family
   id: skill-guidelines.module-boundary
@@ -22,87 +22,93 @@ standards:
 
       import discipline. They are structural requirements, not style preferences.'
 - kind: family
-  id: skill-guidelines.module-behavioral-source-v4
-  title: Version 4 modules and behavioral sources
+  id: skill-guidelines.module-behavioral-source-v5
+  title: Version 5 nested modules and behavioral sources
   summary: This family is the sole live blueprint and interface authoring authority.
   children:
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v4.node-kinds
+    id: skill-guidelines.module-behavioral-source-v5.node-kinds
     assertions:
     - id: unified-types
       modality: required
-      statement: 'Every new or edited blueprint uses `schema_version: 4` and exactly
+      statement: 'Every new or edited blueprint uses `schema_version: 5` and exactly
         one live `node_type`: `node_type: module` or `node_type: behavioral_source`.
-        A skill is an autodiscoverable module, expressed by `discovery: {mechanism:
-        skill}`, and uses `SKILL.md` as its module gateway; `skill` is not a node
-        type or schema family.'
+        Every repository-managed discoverable skill has exactly one direct
+        non-discoverable code child with global ID `<skill-id>-rtx`, rooted at
+        `_rtx/`, with marker `_rtx/blueprint.yaml` and gateway
+        `_rtx/__init__.py`. The child has no `discovery`, and there are no version-5
+        modules below `_rtx`.'
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v4.layout
+    id: skill-guidelines.module-behavioral-source-v5.topology
     assertions:
-    - id: canonical-files
+    - id: explicit-registration
       modality: required
-      statement: 'A module is declared by `blueprint.yaml`. Each contained behavioral
-        source is declared under `blueprints/`, for example
-        `blueprints/gateway.yaml`. Do not author hidden blueprint sidecars.'
+      statement: 'Every module declares explicit `children` and `namespace_exports`
+        mappings, including empty mappings. `children` registers each direct child by
+        global ID and canonical `base: module-root` `blueprint.yaml` locator.
+        Containment chooses ownership; declarations choose authority.'
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v4.gateway-content
+    id: skill-guidelines.module-behavioral-source-v5.ownership
     assertions:
-    - id: whole-file-gateway
+    - id: direct-ownership
       modality: required
-      statement: 'Every node declares one whole-file `gateway` with `path` and
-        `language`, plus optional alternative `machines`. `content` contains
-        case-sensitive regular expressions for the files the node owns; the gateway
-        must be included. The project node-input policy selects certification hash
-        inputs from that ownership; `content` is not a second hash policy. Gateway
-        fragments, symbols, and pre-v4 gateway kinds do not belong in version 4
-        gateway declarations.'
+      statement: 'Ownership selects the deepest registered module first and then its
+        matching behavioral source. Parent content prunes registered child roots.
+        Each node hashes only directly owned inputs. Hash what you own; certify what
+        you depend on.'
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v4.module-contract
+    id: skill-guidelines.module-behavioral-source-v5.exports
     assertions:
-    - id: containment-and-exports
+    - id: closed-export-forms
       modality: required
-      statement: 'A module declares `authority`, `sources`, and `exports`. `sources`
-        maps each contained source ID to its blueprint locator. `exports` maps a
-        public `<module>.interface.<name>` ID to one `source_interface` and its
-        module-level access policy. The module does not copy the source interface
-        version, contract, or process binding.'
+      statement: 'Each `exports` value is exactly one closed form: a source export
+        has `source_interface` and `access`; a facade export has one exact
+        `facade_interface` target and version plus `access`. A facade derives the
+        child contract and binding. Facades preserve names, not permissions.'
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v4.source-contract
+    id: skill-guidelines.module-behavioral-source-v5.namespace-routing
     assertions:
-    - id: source-owned-interfaces
+    - id: child-authority-ceiling
       modality: required
-      statement: 'A behavioral source declares `dependencies`, `uses_interfaces`,
-        and `interfaces`. `dependencies` names direct behavioral-source dependencies
-        with exact versions, locators, and reasons. `uses_interfaces` names exact
-        versions of sibling private interfaces or module exports. `interfaces`
-        defines source-owned contracts under
-        `<module>.source.<source>.interface.<name>`; each interface owns its version,
-        description, semantic contract, and optional process binding.'
+      statement: 'A `namespace_exports` route pins one registered direct-child
+        version, an access filter, and exactly one `all` or nonempty exact-interface
+        `only` surface. Child exports are the authority ceiling. Registration
+        reveals internally; namespace export routes outward.'
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v4.authorization
+    id: skill-guidelines.module-behavioral-source-v5.callers
     assertions:
-    - id: cross-module-exports
+    - id: exact-callers
       modality: required
-      statement: 'Cross-module interface use goes through the callee module''s
-        `exports` and is authorized by that export''s `access`. A source may use an
-        unexported source interface only inside its own module. Interfaces are
-        source-owned contracts and module exports are their public relation; neither
-        machine nor LLM is an interface node type or ID namespace.'
+      statement: 'Caller allowlists contain exact global module IDs or leading-dot
+        relative references with nonempty suffixes. `._rtx` names a skill''s code
+        child and `..parser` names the owner''s sibling parser. Relative references
+        resolve through the certified registration tree and are never globs.'
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v4.derived-artifacts
+    id: skill-guidelines.module-behavioral-source-v5.authorization
     assertions:
-    - id: graph-authority
+    - id: one-resolver
       modality: required
-      statement: 'The v4 module/source graph is authored authority. Generated
-        `SKILL.md` contract blocks, interface views, runtime-dependency manifests,
-        certification records, and other projections must be derived from that graph
-        and must not become a parallel declaration source.'
+      statement: 'Source/facade access, namespace filters, and interface-specific
+        filters intersect and never widen authority. Graph validation, projection,
+        dispatch, tracing, and currentness consume one authorization result. Resolve
+        once; enforce everywhere.'
+      atomicity: pending
+  - kind: rule
+    id: skill-guidelines.module-behavioral-source-v5.runtime-identities
+    assertions:
+    - id: module-identities
+      modality: required
+      statement: 'Dispatch and runtime metadata use internal `caller_module_id` and
+        `target_module_id` identities. The host-facing `--caller-skill`
+        compatibility is limited to discoverable parent callers only;
+        non-discoverable children and all internal routes assert exact module
+        identities.'
       atomicity: pending
 - kind: family
   id: skill-guidelines.identity-contract
@@ -140,14 +146,14 @@ standards:
       atomicity: pending
 - kind: family
   id: skill-guidelines.blueprint-authoring
-  title: "Blueprint authoring \u2014 REQUIRED: Use the version 4 schemas"
+  title: "Blueprint authoring \u2014 REQUIRED: Use the version 5 schemas"
   children:
   - kind: rule
     id: skill-guidelines.blueprint-authoring.requirement-001
     assertions:
     - id: source-block
       modality: required
-      statement: "**Blueprint authoring \u2014 REQUIRED: Use the version 4 schemas**"
+      statement: "**Blueprint authoring \u2014 REQUIRED: Use the version 5 schemas**"
       atomicity: pending
   - kind: rule
     id: skill-guidelines.blueprint-authoring.requirement-002
@@ -162,7 +168,7 @@ standards:
 
         `references/blueprint/template.yaml` into a module; it documents the
 
-        artifact layout rather than a complete declaration.'
+        complete explicit version-5 module declaration shape.'
       atomicity: pending
 - kind: family
   id: skill-guidelines.canonical-interface-names
@@ -191,7 +197,9 @@ standards:
       atomicity: pending
   - kind: guidance
     id: skill-guidelines.canonical-interface-names.guidance-005
-    statement: 'The canonical invocation form for a process-bound module export is:'
+    statement: 'The host-facing compatibility invocation form for a process-bound
+
+      export is permitted only for a discoverable parent caller:'
   - kind: guidance
     id: skill-guidelines.canonical-interface-names.example-001
     statement: '```bash
@@ -212,7 +220,7 @@ standards:
       atomicity: pending
   - kind: guidance
     id: skill-guidelines.canonical-interface-names.example-002
-    statement: "```python\nfrom officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface\n\n\nclass Interface(PythonMachineInterface):\n    dispatches = {\n        \"read-list\": DispatchCall(\n            caller_skill=\"daily-plan\",\n            target_skill=\"list-manager\",\n            interface=\"read-list\",\n        )\n    }\n```"
+    statement: "```python\nfrom officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface\n\n\nclass Interface(PythonMachineInterface):\n    dispatches = {\n        \"read-list\": DispatchCall(\n            caller_module_id=\"daily-plan\",\n            target_module_id=\"list-manager\",\n            interface=\"read-list\",\n        )\n    }\n```"
   - kind: guidance
     id: skill-guidelines.canonical-interface-names.guidance-006
     statement: 'Then execute by key:'
@@ -238,13 +246,9 @@ standards:
     id: skill-guidelines.canonical-interface-names.guidance-007
     statement: 'This is mechanically checked by
 
-      `skills/skill-maker/validators/dispatcher_usage.py`, which rejects raw
+      `validators/skill/dispatcher_usage.py`, which rejects raw
 
-      dispatcher imports and CLI dispatch from skill runtime code, and
-
-      `skills/skill-maker/validators/dispatch_caller_skill.py`, which verifies every
-
-      `DispatchCall(caller_skill=...)` statically resolves to the owning skill name.'
+      dispatcher imports and CLI dispatch from skill runtime code.'
 - kind: family
   id: skill-guidelines.dispatcher-role
   title: Dispatcher role
@@ -272,7 +276,7 @@ standards:
     statement: 1. Parse the canonical target `<module>.interface.<name>`
   - kind: guidance
     id: skill-guidelines.dispatcher-role.guidance-003
-    statement: 2. Load the callee's version 4 module graph and resolve the export
+    statement: 2. Load the callee's version 5 registered module graph and resolve the export
   - kind: guidance
     id: skill-guidelines.dispatcher-role.guidance-004
     statement: 3. Verify the export's module-level access policy
@@ -301,7 +305,9 @@ standards:
       atomicity: pending
   - kind: guidance
     id: skill-guidelines.dispatcher-role.guidance-009
-    statement: 'Use `--dry-run` to inspect the resolved invocation without executing it:'
+    statement: 'A discoverable parent caller may use `--dry-run` with the
+      host-facing compatibility flag to inspect the resolved invocation without
+      executing it:'
   - kind: guidance
     id: skill-guidelines.dispatcher-role.example-001
     statement: "```bash\ndispatcher --dry-run --caller-skill daily-plan \\\n  list-manager.interface.read-list /tmp/todo.yaml\n```"
@@ -310,9 +316,11 @@ standards:
     assertions:
     - id: source-block
       modality: required
-      statement: 'Every `DispatchCall(...)` declaration must include `caller_skill` set to the
+      statement: 'Every `DispatchCall(...)` declaration must include `caller_module_id`
+        set to the declaring module''s exact global ID and `target_module_id` set to
 
-        owning skill''s exact name; that value must be a string literal or a module-level
+        the target module''s exact global ID. Each value must be a string literal
+        or a module-level
 
         string constant that resolves statically.'
       atomicity: pending
@@ -428,7 +436,7 @@ standards:
 
       `validators/skill_runtime_doc_references.py`, plus
 
-      `skills/skill-maker/validators/skill_body_execution.py` for executable-file
+      `validators/skill/skill_body_execution.py` for executable-file
 
       references used in execution contexts in hand-authored `SKILL.md` bodies, with
 
@@ -494,9 +502,7 @@ standards:
     id: skill-guidelines.import-discipline.guidance-012
     statement: 'The dispatch discipline is mechanically checked by
 
-      `skills/skill-maker/validators/dispatcher_usage.py` and
-
-      `skills/skill-maker/validators/dispatch_caller_skill.py`.'
+      `validators/skill/dispatcher_usage.py`.'
   - kind: rule
     id: skill-guidelines.import-discipline.requirement-003
     assertions:
@@ -661,7 +667,7 @@ standards:
     assertions:
     - id: source-block
       modality: required
-      statement: "**2. Skill taxonomy** \u2014 autodiscoverable modules declare `category`, `role`,\nand `kind` in `blueprint.yaml` using the typed fields in\n`references/blueprint/module.schema.json`. These fields provide user-facing\ndocumentation and graph taxonomy."
+      statement: "**2. Skill taxonomy** \u2014 autodiscoverable parent modules declare `category`,\n`role`, and `kind` in `blueprint.yaml` using the typed fields in\n`references/blueprint/module.schema.json`. These fields provide user-facing\ndocumentation and graph taxonomy."
       atomicity: pending
   - kind: guidance
     id: skill-guidelines.skill-taxonomy.guidance-001
@@ -853,7 +859,7 @@ standards:
     assertions:
     - id: source-block
       modality: required
-      statement: "**10. No code in SKILL.md \u2014 runtime files only, with one exception** \u2014 skill files\nmust not contain executable code logic. Any logic belongs in a dedicated file\nunder `_rtx/`, except when the skill's purpose is to provide an interface to\na specific external tool and that tool is declared in frontmatter `tools:`.\nHand-authored `SKILL.md` bodies must also avoid executable-file names and paths\nin execution contexts, such as `run tmp.py`, `python helper.py`, `use\ninstall.sh`, or `launch tool.exe`. If normal operation requires execution, put\nthe mechanics behind a process-bound behavioral-source interface exported by\nthe module and refer to the export name and outcome in prose. Generated\nblueprint interface blocks may contain invocation details because they are\nderived from the version 4 graph. Opaque `_cx/...` paths are forbidden anywhere\nin the hand-authored body, even outside an explicit execution sentence."
+      statement: "**10. No code in SKILL.md \u2014 runtime files only, with one exception** \u2014 skill files\nmust not contain executable code logic. Any logic belongs in the registered\n`_rtx` child, except when the skill's purpose is to provide an interface to\na specific external tool and that tool is declared in frontmatter `tools:`.\nHand-authored `SKILL.md` bodies must also avoid executable-file names and paths\nin execution contexts, such as `run tmp.py`, `python helper.py`, `use\ninstall.sh`, or `launch tool.exe`. If normal operation requires execution, put\nthe mechanics behind a process-bound behavioral-source interface exported by\nthe `_rtx` child and exposed through a parent facade; refer to the parent export\nname and outcome in prose. Generated blueprint interface blocks may contain\ninvocation details because they are derived from the version 5 graph. Opaque\n`_cx/...` paths are forbidden anywhere in the hand-authored body, even outside\nan explicit execution sentence."
       atomicity: pending
 - kind: family
   id: skill-guidelines.state-ownership
@@ -1015,7 +1021,7 @@ standards:
     statement: "- **`validators/`** \u2014 repo-wide checks"
   - kind: guidance
     id: skill-guidelines.validator-test-conventions.guidance-004
-    statement: "- **`skills/skill-maker/validators/`** \u2014 skill-system checks"
+    statement: "- **`validators/skill/`** \u2014 skill-system checks"
   - kind: rule
     id: skill-guidelines.validator-test-conventions.requirement-001
     assertions:
@@ -1036,7 +1042,7 @@ standards:
     statement: '### Adding a new validator'
   - kind: guidance
     id: skill-guidelines.adding-validator.guidance-002
-    statement: "1. Create `validators/<name>.py` or\n   `skills/skill-maker/validators/<name>.py`."
+    statement: "1. Create `validators/<name>.py` or\n   `validators/skill/<name>.py`."
   - kind: guidance
     id: skill-guidelines.adding-validator.guidance-003
     statement: '2. Export exactly one function: `validate(repo_root: Path) -> list[str]`.'
@@ -1087,7 +1093,7 @@ artifacts:
     roles:
     - validator
   artifact.blueprints-validator:
-    path: skills/skill-maker/validators/blueprints.py
+    path: validators/skill/blueprints.py
     format: python
     roles:
     - validator
@@ -1106,17 +1112,12 @@ artifacts:
     format: python
     roles:
     - test
-  artifact.validate-dispatch-caller-skill-pytest-file:
-    path: tests/validate_dispatch_caller_skill.py
-    format: python
-    roles:
-    - test
   artifact.module-schema-schema:
     path: references/blueprint/module.schema.json
     format: json
     roles:
     - schema
-  artifact.behavioral-source-v4-schema-schema:
+  artifact.behavioral-source-v5-schema-schema:
     path: references/blueprint/behavioral-source.schema.json
     format: json
     roles:
@@ -1147,7 +1148,7 @@ artifacts:
     roles:
     - test
   artifact.blueprint-relationships-validator:
-    path: skills/skill-maker/validators/blueprint_relationships.py
+    path: validators/skill/blueprint_relationships.py
     format: python
     roles:
     - validator
@@ -1157,12 +1158,12 @@ artifacts:
     roles:
     - validator
   artifact.names-validator:
-    path: skills/skill-maker/validators/names.py
+    path: validators/skill/names.py
     format: python
     roles:
     - validator
   artifact.dispatcher-usage-validator:
-    path: skills/skill-maker/validators/dispatcher_usage.py
+    path: validators/skill/dispatcher_usage.py
     format: python
     roles:
     - validator
@@ -1207,12 +1208,7 @@ artifacts:
     roles:
     - test
   artifact.skill-body-execution-validator:
-    path: skills/skill-maker/validators/skill_body_execution.py
-    format: python
-    roles:
-    - validator
-  artifact.dispatch-caller-skill-validator:
-    path: skills/skill-maker/validators/dispatch_caller_skill.py
+    path: validators/skill/skill_body_execution.py
     format: python
     roles:
     - validator
@@ -1227,7 +1223,7 @@ artifacts:
     roles:
     - test
   artifact.skill-metadata-validator:
-    path: skills/skill-maker/validators/skill_metadata.py
+    path: validators/skill/skill_metadata.py
     format: python
     roles:
     - validator
@@ -1252,12 +1248,12 @@ artifacts:
     roles:
     - test
   artifact.boundaries-validator:
-    path: skills/skill-maker/validators/boundaries.py
+    path: validators/skill/boundaries.py
     format: python
     roles:
     - validator
   artifact.skill-md-dispatch-validator:
-    path: skills/skill-maker/validators/skill_md_dispatch.py
+    path: validators/skill/skill_md_dispatch.py
     format: python
     roles:
     - validator
@@ -1267,7 +1263,7 @@ artifacts:
     roles:
     - test
   artifact.interface-ids-validator:
-    path: skills/skill-maker/validators/interface_ids.py
+    path: validators/skill/interface_ids.py
     format: python
     roles:
     - validator
@@ -1277,7 +1273,7 @@ artifacts:
     roles:
     - test
   artifact.dependencies-validator:
-    path: skills/skill-maker/validators/dependencies.py
+    path: validators/skill/dependencies.py
     format: python
     roles:
     - validator

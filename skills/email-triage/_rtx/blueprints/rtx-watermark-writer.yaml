@@ -1,0 +1,197 @@
+content:
+- _watermark_writer\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: email-triage-rtx.source.rtx-init
+  version: 1
+description: Advances the exact triage watermark only when no failed-run status is
+  latched.
+gateway:
+  language: Python
+  path: _watermark_writer.py
+id: email-triage-rtx.source.rtx-watermark-writer
+interfaces:
+  email-triage-rtx.source.rtx-watermark-writer.interface.scripts-update-watermark:
+    contract:
+      arguments: {}
+      caller_warnings:
+      - external-side-effect: Advances the exact mail watermark only when status.json
+          does not contain a latched error.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: diagnostic-report
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: state/status.json
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        writes:
+        - access: write
+          content: watermark
+          formats:
+          - text
+          id: write-1
+          medium: local-filesystem
+          path: state/last_run
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: diagnostic-report
+          formats:
+          - json
+          id: write-2
+          medium: local-filesystem
+          path: state/status.json
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-3
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-4
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Checks current failure state immediately before writing a new local
+            timestamp.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: advance-watermark
+          may_occur_in_outcomes:
+          - advanced
+          reversibility:
+            compensatable: Restore a previously retained watermark timestamp.
+          value_source:
+            direct_io_ref: write-1
+            kind: direct-io
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-2
+            kind: direct-io
+          direct_io_ref: write-2
+          id: update-status
+          may_occur_in_outcomes:
+          - advanced
+          reversibility:
+            compensatable: Restore a previously retained status document.
+          value_source:
+            direct_io_ref: write-2
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: Watermark and status are written sequentially as separate
+              files.
+          concurrent_invocations:
+            unsafe: Concurrent runs can overwrite timestamps and status fields.
+          idempotency:
+            non_idempotent: Each successful call writes the current time.
+          on_uncertain_completion:
+            verify_then_decide: Inspect both watermark and status before retrying.
+          partial_effects_on_failure:
+            possible: The watermark may advance before the status update fails.
+          rollback_on_failure:
+            unavailable: The interface does not retain old file contents automatically.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
+        - direct_io_ref: write-2
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the new watermark on the next triage run.
+        class: success
+        effects:
+        - advance-watermark
+        - update-status
+        id: advanced
+        outputs:
+        - result
+      - caller_action: Preserve the old watermark and resolve the latched failure.
+        class: refusal
+        effects: []
+        id: blocked
+        outputs:
+        - diagnostic
+      - caller_action: Treat advancement as unconfirmed and inspect both state files.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Confirmation containing the new watermark timestamp
+        direct_io_ref: write-3
+        empty: A confirmation line is printed on success.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-4
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Advance the triage watermark to the current timestamp. Refuses if
+      scripts-mark-failure was called earlier in this run.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        name: owner
+    usage: ''
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces: []
+version: 1

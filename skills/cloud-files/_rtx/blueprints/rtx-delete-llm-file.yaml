@@ -1,0 +1,279 @@
+content:
+- _delete_llm_file\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: cloud-files-rtx.source.rtx-init
+  version: 1
+description: Deletes a caller-authorized list or plan file beneath the configured
+  Google Drive root.
+gateway:
+  language: Python
+  path: _delete_llm_file.py
+id: cloud-files-rtx.source.rtx-delete-llm-file
+interfaces:
+  cloud-files-rtx.source.rtx-delete-llm-file.interface.lists-delete:
+    contract:
+      arguments:
+        path:
+          description: Relative list path beginning with lists/.
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              regex:
+                dialect: python
+                example: lists/todo.yaml
+                matching: full
+                pattern: ^lists/.+
+            kind: string
+      caller_warnings:
+      - external-side-effect: Permanently deletes the selected Google Drive file;
+          no backup is made.
+      - rate-limited: Google Drive API quotas apply.
+      direct_io:
+        network:
+        - access: delete
+          auth:
+            kind: google-drive-oauth
+            mode: uses-existing
+          content: list
+          endpoint: https://www.googleapis.com/drive/v3/files
+          formats:
+          - text
+          id: network-1
+          medium: network-request
+          sensitivity: user-private
+          system: google-drive
+        - access: request
+          auth:
+            kind: google-drive-oauth
+            mode: uses-existing
+          content: credential
+          endpoint: https://oauth2.googleapis.com/token
+          formats:
+          - json
+          id: network-2
+          medium: network-request
+          sensitivity: secret
+          system: oauth
+        reads: []
+        writes:
+        - access: delete
+          auth:
+            kind: google-drive-oauth
+            mode: uses-existing
+          content: list
+          formats:
+          - text
+          id: write-1
+          medium: remote-filesystem
+          path: lists/<path>
+          path_match: exact
+          sensitivity: user-private
+          system: google-drive
+      execution:
+        consistency:
+          live: Resolves and deletes against current Google Drive state.
+        effects:
+        - action: delete
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: delete-file
+          may_occur_in_outcomes:
+          - deleted
+          reversibility:
+            irreversible: This interface does not retain deleted content or expose
+              restoration.
+          value_source:
+            argument_ref: path
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: One resolved Drive file is deleted.
+          concurrent_invocations:
+            unsafe: Concurrent operations can race with path resolution or deletion.
+          idempotency:
+            non_idempotent: Repeating deletion after success reports the file as absent.
+          on_uncertain_completion:
+            verify_then_decide: Attempt a read or listing before retrying.
+          partial_effects_on_failure:
+            possible: Network interruption can leave deletion completion uncertain.
+          rollback_on_failure:
+            unavailable: Deleted content is not retained by this interface.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Remove any local reference that assumed the file still exists.
+        class: success
+        effects:
+        - delete-file
+        id: deleted
+        outputs: []
+      - caller_action: Report stderr and verify remote state before retrying an interrupted
+          request.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs: []
+      preconditions: []
+    description: Delete a file from cloud storage under the lists/ directory.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        max_positionals: 1
+        min_positionals: 1
+        notes: Delete list files from cloud storage. Restricted to lists/ directory.
+        positional_patterns:
+          '0': ^lists/.*
+    usage: lists/<path>
+    version: 1
+  cloud-files-rtx.source.rtx-delete-llm-file.interface.plans-delete:
+    contract:
+      arguments:
+        path:
+          description: Relative plan path beginning with plans/.
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              regex:
+                dialect: python
+                example: plans/2026-07-22.md
+                matching: full
+                pattern: ^plans/.+
+            kind: string
+      caller_warnings:
+      - external-side-effect: Permanently deletes the selected Google Drive file;
+          no backup is made.
+      - rate-limited: Google Drive API quotas apply.
+      direct_io:
+        network:
+        - access: delete
+          auth:
+            kind: google-drive-oauth
+            mode: uses-existing
+          content: plan
+          endpoint: https://www.googleapis.com/drive/v3/files
+          formats:
+          - text
+          id: network-1
+          medium: network-request
+          sensitivity: user-private
+          system: google-drive
+        - access: request
+          auth:
+            kind: google-drive-oauth
+            mode: uses-existing
+          content: credential
+          endpoint: https://oauth2.googleapis.com/token
+          formats:
+          - json
+          id: network-2
+          medium: network-request
+          sensitivity: secret
+          system: oauth
+        reads: []
+        writes:
+        - access: delete
+          auth:
+            kind: google-drive-oauth
+            mode: uses-existing
+          content: plan
+          formats:
+          - text
+          id: write-1
+          medium: remote-filesystem
+          path: plans/<path>
+          path_match: exact
+          sensitivity: user-private
+          system: google-drive
+      execution:
+        consistency:
+          live: Resolves and deletes against current Google Drive state.
+        effects:
+        - action: delete
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: delete-file
+          may_occur_in_outcomes:
+          - deleted
+          reversibility:
+            irreversible: This interface does not retain deleted content or expose
+              restoration.
+          value_source:
+            argument_ref: path
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: One resolved Drive file is deleted.
+          concurrent_invocations:
+            unsafe: Concurrent operations can race with path resolution or deletion.
+          idempotency:
+            non_idempotent: Repeating deletion after success reports the file as absent.
+          on_uncertain_completion:
+            verify_then_decide: Attempt a read or listing before retrying.
+          partial_effects_on_failure:
+            possible: Network interruption can leave deletion completion uncertain.
+          rollback_on_failure:
+            unavailable: Deleted content is not retained by this interface.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Remove any local reference that assumed the file still exists.
+        class: success
+        effects:
+        - delete-file
+        id: deleted
+        outputs: []
+      - caller_action: Report stderr and verify remote state before retrying an interrupted
+          request.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs: []
+      preconditions: []
+    description: Delete a file from cloud storage under the plans/ directory.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        max_positionals: 1
+        min_positionals: 1
+        notes: Delete plan files from cloud storage. Restricted to plans/ directory.
+        positional_patterns:
+          '0': ^plans/.*
+    usage: plans/<path>
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces: []
+version: 1

@@ -17,7 +17,7 @@ EXPECTED_PORTABILITY_TESTS = (
     "tests/test_officina_atomic_files.py::test_windows_native_secure_create_replace_append_and_acl",
     "tests/test_officina_dispatcher.py::test_python_process_target_keeps_gateway_and_entry_separate",
     "tests/test_officina_git_provenance.py::test_git_test_repository_preserves_exact_bytes_under_ambient_autocrlf",
-    "skills/recurring-tasks/tests/test_schedule_backend.py::test_linux_sync_writes_units_and_enables_timer",
+    "skills/recurring-tasks/_rtx/tests/test_schedule_backend.py::test_linux_sync_writes_units_and_enables_timer",
     "tests/test_officina_blueprint_graph.py::test_content_ownership_accepts_equivalent_repository_alias",
     "tests/test_validator_runner.py::test_run_all_isolates_unmerged_index_and_restores_git_environment",
 )
@@ -41,13 +41,22 @@ def test_precommit_discovers_skill_tests_except_install_tests(
     mkdir(tmp_path / "tests")
     mkdir(tmp_path / "hooks" / "tests")
     mkdir(tmp_path / "skills" / "new-skill" / "tests")
+    mkdir(tmp_path / "skills" / "new-skill" / "_rtx" / "tests")
     mkdir(tmp_path / "skills" / "skill-drift" / "tests")
     mkdir(tmp_path / "skills" / "install-assistant-tools" / "tests")
+    mkdir(
+        tmp_path
+        / "skills"
+        / "install-assistant-tools"
+        / "_rtx"
+        / "tests"
+    )
     monkeypatch.setattr(runner, "REPO_ROOT", tmp_path)
 
     assert runner._resolve_suite("precommit") == [
         "tests",
         "hooks/tests",
+        "skills/new-skill/_rtx/tests",
         "skills/new-skill/tests",
         "skills/skill-drift/tests",
     ]
@@ -57,14 +66,46 @@ def test_full_discovers_install_tests(tmp_path: Path, monkeypatch) -> None:
     mkdir(tmp_path / "tests")
     mkdir(tmp_path / "hooks" / "tests")
     mkdir(tmp_path / "skills" / "new-skill" / "tests")
+    mkdir(tmp_path / "skills" / "new-skill" / "_rtx" / "tests")
     mkdir(tmp_path / "skills" / "install-assistant-tools" / "tests")
+    mkdir(
+        tmp_path
+        / "skills"
+        / "install-assistant-tools"
+        / "_rtx"
+        / "tests"
+    )
     monkeypatch.setattr(runner, "REPO_ROOT", tmp_path)
 
     assert runner._resolve_suite("full") == [
         "tests",
         "hooks/tests",
+        "skills/install-assistant-tools/_rtx/tests",
         "skills/install-assistant-tools/tests",
+        "skills/new-skill/_rtx/tests",
         "skills/new-skill/tests",
+    ]
+
+
+def test_nested_module_tests_run_in_isolated_pytest_processes() -> None:
+    assert runner._execution_groups(
+        [
+            "tests",
+            "hooks/tests",
+            "skills/alpha/_rtx/tests",
+            "skills/alpha/tests",
+            "skills/beta/_rtx/tests",
+            "skills/beta/tests",
+        ]
+    ) == [
+        [
+            "tests",
+            "hooks/tests",
+            "skills/alpha/tests",
+            "skills/beta/tests",
+        ],
+        ["skills/alpha/_rtx/tests"],
+        ["skills/beta/_rtx/tests"],
     ]
 
 

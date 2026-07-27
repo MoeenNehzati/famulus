@@ -8,7 +8,7 @@ description: Manage recurring AI job automation via systemd timers. Define jobs 
 
 Category: system-assistant
 
-Skill Version: 1
+Skill Version: 3
 
 Uses Interfaces:
 - `recurring-tasks.source.gateway -> install-assistant-tools.interface.default@2`

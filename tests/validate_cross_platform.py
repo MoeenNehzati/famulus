@@ -1,10 +1,11 @@
-"""Tests for the version-4 cross-platform validator."""
+"""Tests for the canonical cross-platform validator."""
 from __future__ import annotations
 
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -42,13 +43,13 @@ def test_empty_repo_passes(tmp_path: Path) -> None:
     assert validate(tmp_path) == []
 
 
-def test_clean_v4_python_module_passes(tmp_path: Path) -> None:
+def test_clean_python_module_passes(tmp_path: Path) -> None:
     _copy_module(tmp_path)
 
     assert validate(tmp_path) == []
 
 
-def test_clean_v4_module_passes_through_symlinked_repository_root(
+def test_clean_module_passes_through_symlinked_repository_root(
     tmp_path: Path,
 ) -> None:
     physical_parent = tmp_path / "physical-parent"
@@ -79,7 +80,7 @@ def test_module_permission_shell_command_is_rejected(tmp_path: Path) -> None:
     skill = _copy_module(tmp_path, "loose-mode")
     path = skill / "blueprint.yaml"
     module = yaml.safe_load(path.read_text(encoding="utf-8"))
-    module["authority"]["suggested_permissions"]["bash"] = [
+    module["authority"].setdefault("suggested_permissions", {})["bash"] = [
         {
             "command": ["grep"],
             "reason": "Invalid portable permission.",
@@ -114,7 +115,7 @@ def test_module_permission_shell_script_argument_is_rejected(
 
 def test_all_platform_source_binary_is_rejected(tmp_path: Path) -> None:
     skill = _copy_module(tmp_path)
-    source_path = skill / "blueprints" / "rtx-weather-client.yaml"
+    source_path = skill / "_rtx" / "blueprints" / "rtx-weather-client.yaml"
     source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
     source["runtime_dependencies"] = [
         {
@@ -237,6 +238,109 @@ def test_direct_run_git_in_ordinary_test_requires_annotation(tmp_path: Path) -> 
     assert any("direct run_git call requires" in error for error in errors)
 
 
+def test_direct_run_git_in_child_runtime_test_requires_annotation(
+    tmp_path: Path,
+) -> None:
+    test = (
+        tmp_path
+        / "skills"
+        / "demo"
+        / "_rtx"
+        / "tests"
+        / "test_git.py"
+    )
+    test.parent.mkdir(parents=True)
+    test.write_text(
+        "from officina.common.git_provenance import run_git\n"
+        "run_git(repo, 'status')\n",
+        encoding="utf-8",
+    )
+
+    errors = validate(tmp_path)
+
+    assert any("direct run_git call requires" in error for error in errors)
+
+
+def test_registered_child_blueprint_authority_and_runtime_are_validated(
+    tmp_path: Path,
+) -> None:
+    child_root = tmp_path / "skills" / "demo" / "_rtx"
+    graph = SimpleNamespace(
+        nodes={
+            "demo-rtx": SimpleNamespace(
+                node_type="module",
+                blueprint_path=child_root / "blueprint.yaml",
+                module_root=child_root,
+                declaration={
+                    "authority": {
+                        "suggested_permissions": {
+                            "bash": [{"command": ["grep"]}],
+                        }
+                    }
+                },
+            ),
+            "demo-rtx.source.runtime": SimpleNamespace(
+                node_type="behavioral_source",
+                blueprint_path=child_root / "blueprints" / "runtime.yaml",
+                module_root=child_root,
+                declaration={
+                    "runtime_dependencies": [
+                        {
+                            "kind": "binary",
+                            "name": "grep",
+                            "platforms": {
+                                "linux": True,
+                                "macos": True,
+                                "windows": True,
+                            },
+                        }
+                    ]
+                },
+            ),
+        }
+    )
+
+    errors = validate.__globals__["_validate_v4_blueprints"](graph, tmp_path)
+
+    assert len([error for error in errors if "command `grep`" in error]) == 2
+
+
+def test_registered_child_artifacts_are_not_runtime_but_executables_still_are(
+    tmp_path: Path,
+) -> None:
+    child_root = tmp_path / "skills" / "demo" / "_rtx"
+    (child_root / "assets").mkdir(parents=True)
+    (child_root / "assets" / "fixture.sh").write_text(
+        "#!/bin/sh\n", encoding="utf-8"
+    )
+    (child_root / "schemas").mkdir()
+    (child_root / "schemas" / "generator.py").write_text(
+        "import subprocess\nsubprocess.run(['grep'])\n",
+        encoding="utf-8",
+    )
+    (child_root / "_bad_runtime.py").write_text(
+        "import subprocess\nsubprocess.run(['grep'])\n",
+        encoding="utf-8",
+    )
+    graph = SimpleNamespace(
+        nodes={
+            "demo-rtx": SimpleNamespace(
+                node_type="module",
+                blueprint_path=child_root / "blueprint.yaml",
+                module_root=child_root,
+                declaration={},
+            )
+        },
+        module_parents={"demo-rtx": "demo"},
+    )
+
+    errors = validate.__globals__["validate_with_graph"](tmp_path, graph)
+
+    assert not any("fixture.sh" in error for error in errors)
+    assert not any("generator.py" in error for error in errors)
+    assert any("_bad_runtime.py" in error for error in errors)
+
+
 def test_live_python_composite_target_is_rejected(tmp_path: Path) -> None:
     runtime = tmp_path / "skills" / "demo" / "_rtx"
     runtime.mkdir(parents=True)
@@ -292,6 +396,30 @@ def test_composite_runner_permission_is_rejected_in_live_blueprint(
     assert any("composite runner permission target" in error for error in errors)
 
 
+def test_composite_runner_permission_is_rejected_in_registered_child(
+    tmp_path: Path,
+) -> None:
+    skill = _copy_module(tmp_path, "loose-mode")
+    path = skill / "_rtx" / "blueprint.yaml"
+    module = yaml.safe_load(path.read_text(encoding="utf-8"))
+    module["authority"].setdefault("suggested_permissions", {})["bash"] = [
+        {
+            "command": [
+                "python3",
+                "-m",
+                "officina.runtime.python_machine_interface_runner",
+                "_rtx/_worker.py:Interface",
+            ],
+            "reason": "Legacy composite target.",
+        }
+    ]
+    _write_yaml(path, module)
+
+    errors = validate(tmp_path)
+
+    assert any("composite runner permission target" in error for error in errors)
+
+
 def test_composite_runner_permission_is_rejected_in_generated_projection(
     tmp_path: Path,
 ) -> None:
@@ -330,7 +458,22 @@ def test_runner_reports_cross_platform_errors(tmp_path: Path) -> None:
         REPO_ROOT / "validators" / "cross_platform.py",
         tmp_path / "validators",
     )
+    shutil.copy2(
+        REPO_ROOT / "validators" / "skill_runtime_files.py",
+        tmp_path / "validators",
+    )
+    skill_validators = tmp_path / "validators" / "skill"
+    skill_validators.mkdir(parents=True)
+    shutil.copy2(
+        REPO_ROOT / "validators" / "skill" / "blueprints.py",
+        skill_validators,
+    )
     shutil.copytree(REPO_ROOT / "src", tmp_path / "src")
+    _copy_module(tmp_path)
+    shutil.copy2(
+        REPO_ROOT / "references" / "blueprint" / "blueprint.yaml",
+        tmp_path / "references" / "blueprint" / "blueprint.yaml",
+    )
     runtime = tmp_path / "skills" / "bad-skill" / "_rtx"
     runtime.mkdir(parents=True)
     (runtime / "run.sh").write_text("#!/bin/sh\necho hi\n", encoding="utf-8")

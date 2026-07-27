@@ -25,7 +25,10 @@ dependencies:
   reason: Imports canonical repository-relative path conversion from repository_paths.py.
   source: common.source.repository-paths
   version: 1
-description: Resolves the canonical certification basis and node inputs, computes deterministic v4 node hashes and dependency-first target order, maps already observed route-smoke paths to declared authority, and derives certifier identity and expected checks.
+description: Resolves the canonical certification basis and node inputs, computes
+  deterministic v4 node hashes and dependency-first target order, maps already observed
+  route-smoke paths to declared authority, and derives certifier identity and expected
+  checks.
 gateway:
   language: Python
   path: certification_hashing.py
@@ -34,6 +37,14 @@ interfaces:
   common.source.certification-hashing.interface.python-api:
     contract:
       arguments:
+        inputs:
+          description: Operation-specific graph, node state, policy path, source commit,
+            or route-smoke data.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Operation-specific Python values supplied by the caller.
+            kind: string
         operation:
           description: Canonical v4 hashing operation to perform.
           required: true
@@ -41,58 +52,120 @@ interfaces:
           type:
             kind: enum
             values:
-            - {value: map-route-smoke, description: "Map loaded route-smoke files to declared node, dependency, or certification-basis authority."}
-            - {value: resolve-certification-basis, description: Resolve the repository-owned certification-basis manifest.}
-            - {value: hash-certification-basis, description: Hash the resolved certification-basis inputs.}
-            - {value: expected-checks, description: Return the exact versioned checks owned by the certifier.}
-            - {value: derive-certifier-identity, description: "Derive certifier identity from the v4 graph, node state, and source commit."}
-            - {value: hash-nodes, description: Compute canonical v4 node hash states from the graph and node-input policy.}
-            - {value: order-certification-targets, description: Order exact targets after their canonical certification dependencies.}
+            - description: Map loaded route-smoke files to declared node, dependency,
+                or certification-basis authority.
+              value: map-route-smoke
+            - description: Resolve the repository-owned certification-basis manifest.
+              value: resolve-certification-basis
+            - description: Hash the resolved certification-basis inputs.
+              value: hash-certification-basis
+            - description: Return the exact versioned checks owned by the certifier.
+              value: expected-checks
+            - description: Derive certifier identity from the v4 graph, node state,
+                and source commit.
+              value: derive-certifier-identity
+            - description: Compute canonical v4 node hash states from the graph and
+                node-input policy.
+              value: hash-nodes
+            - description: Order exact targets after their canonical certification
+                dependencies.
+              value: order-certification-targets
         repository-root:
-          description: Exact repository root for policy, Git provenance, and certification-basis operations.
-          required: false
-          sensitivity: user-private
+          description: Exact repository root for policy, Git provenance, and certification-basis
+            operations.
           direct_io_ref: repository-inputs
-          type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}
-        inputs:
-          description: Operation-specific graph, node state, policy path, source commit, or route-smoke data.
           required: false
           sensitivity: user-private
-          type: {kind: string, description: Operation-specific Python values supplied by the caller.}
-      preconditions: []
-      interaction: {mode: unattended}
+          type:
+            access: read
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
       caller_warnings: []
-      outputs:
-      - id: result
-        audience: machine
-        description: Canonical hash, resolved path tuple, node-state mapping, route-smoke mapping, check tuple, or certifier identity.
-        direct_io_ref: return-value
-        cardinality: {minimum: 1, maximum: 1}
-        ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        empty: Collection-valued operations can return an empty collection when no matching input exists.
-        type: {kind: string, sensitivity: user-private, description: Operation-specific immutable Python value or mapping.}
-      outcomes:
-      - {id: completed, class: success, outputs: [result], effects: [], caller_action: Consume the canonical result without creating a parallel hash or certification authority.}
-      - {id: invalid-input, class: error, outputs: [], effects: [], caller_action: "Correct graph, policy, path, Git, hash, or route-smoke inputs before retrying."}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {snapshot: "Each operation derives its result from the graph, files, and Git state observed during that call."}
-        verification:
-        - {method: output-schema, output_ref: result}
-      helpers: []
       direct_io:
-        reads:
-        - {id: repository-inputs, medium: repository-filesystem, access: read, content: "node-owned files, blueprints, schemas, hash policy, and certification-basis inputs", formats: [yaml, json, text, binary], sensitivity: user-private, path: "<repository-root>/**", path_match: glob}
-        - {id: git-state, medium: local-system, access: read, content: "tracked paths, ignored-path matching, source commit, and file provenance", formats: [git], sensitivity: derived-private, system: git}
-        writes:
-        - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [python-object], sensitivity: user-private}
         network: []
-    description: Computes canonical v4 certification state and dependency-first target order, and maps already observed route-smoke paths for Python callers.
+        reads:
+        - access: read
+          content: node-owned files, blueprints, schemas, hash policy, and certification-basis
+            inputs
+          formats:
+          - yaml
+          - json
+          - text
+          - binary
+          id: repository-inputs
+          medium: repository-filesystem
+          path: <repository-root>/**
+          path_match: glob
+          sensitivity: user-private
+        - access: read
+          content: tracked paths, ignored-path matching, source commit, and file provenance
+          formats:
+          - git
+          id: git-state
+          medium: local-system
+          sensitivity: derived-private
+          system: git
+        writes:
+        - access: write
+          content: Python return value
+          formats:
+          - python-object
+          id: return-value
+          medium: local-system
+          sensitivity: user-private
+      execution:
+        consistency:
+          snapshot: Each operation derives its result from the graph, files, and Git
+            state observed during that call.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Consume the canonical result without creating a parallel hash
+          or certification authority.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - result
+      - caller_action: Correct graph, policy, path, Git, hash, or route-smoke inputs
+          before retrying.
+        class: error
+        effects: []
+        id: invalid-input
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Canonical hash, resolved path tuple, node-state mapping, route-smoke
+          mapping, check tuple, or certifier identity.
+        direct_io_ref: return-value
+        empty: Collection-valued operations can return an empty collection when no
+          matching input exists.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: Operation-specific immutable Python value or mapping.
+          kind: string
+          sensitivity: user-private
+      preconditions: []
+    description: Computes canonical v4 certification state and dependency-first target
+      order, and maps already observed route-smoke paths for Python callers.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

@@ -8,18 +8,9 @@ description: Use when mechanical checks and semantic review should issue fresh n
 
 Category: skill-making-development-assistant
 
-Skill Version: 1
+Skill Version: 2
 
-Uses Interfaces:
-- `skill-certifier.source.gateway -> skill-certifier.source.rtx-certifier.interface.certify@1`
-- `skill-certifier.source.rtx-certifier -> common.interface.atomic-files@1`
-- `skill-certifier.source.rtx-certifier -> common.interface.blueprint-graph@1`
-- `skill-certifier.source.rtx-certifier -> common.interface.certificate-records@1`
-- `skill-certifier.source.rtx-certifier -> common.interface.certification-hashing@1`
-- `skill-certifier.source.rtx-certifier -> common.interface.certification-view@1`
-- `skill-certifier.source.rtx-certifier -> common.interface.git-provenance@1`
-- `skill-certifier.source.rtx-certifier -> common.interface.pooled-blueprint@1`
-- `skill-certifier.source.rtx-certifier -> common.interface.repository-paths@1`
+Uses Interfaces: none
 
 Public Interfaces:
 - `skill-certifier.interface.certify`
@@ -31,7 +22,7 @@ Public Interfaces:
 Dispatcher Interfaces:
 
 Use the installed `dispatcher` command for these process-bound interfaces:
-- `skill-certifier.interface.certify` — Certify exact v4 module closures by appending signed certificate histories for an explicit reviewed repository commit.
+- `skill-certifier.interface.certify` — Certify exact v5 module closures by appending signed certificate histories for an explicit reviewed repository commit.
   - `dispatcher --caller-skill skill-certifier skill-certifier.interface.certify certify [target ...] --reviewed-repository ROOT --reviewed-commit COMMIT [--json] [--allow-non-atomic]`
 
 Instruction Interfaces:

@@ -10,7 +10,9 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
+SCHEMA_ROOT = (
+    REPO_ROOT / "references" / "blueprint" / "migrations" / "v4"
+)
 CERTIFICATION_ROOT = REPO_ROOT / "references" / "certification"
 
 
@@ -80,7 +82,7 @@ def test_caller_contract_scopes_relative_paths_to_module_roots() -> None:
     assert list(path_type.iter_errors(value))
 
 
-def test_live_v4_schema_closure_has_no_legacy_node_schema_reference() -> None:
+def test_frozen_v4_schema_closure_has_no_legacy_node_schema_reference() -> None:
     live_schemas = {
         "schema.json",
         "module.schema.json",
@@ -570,7 +572,7 @@ def test_v4_module_filesystem_authority_uses_generic_interface_readers() -> None
     assert _errors(document, "module.schema.json")
 
 
-def test_live_schema_routes_only_v4_nodes_after_cutover() -> None:
+def test_frozen_schema_routes_only_v4_nodes() -> None:
     assert _errors(_valid_v4_module(), "module.schema.json") == []
     assert _errors(
         _valid_v4_behavioral_source(), "behavioral-source.schema.json"
@@ -586,14 +588,27 @@ def test_live_schema_routes_only_v4_nodes_after_cutover() -> None:
     ]
 
 
-def test_dispatch_schema_accepts_live_v4_blueprints() -> None:
+def test_dispatch_schema_accepts_live_v5_blueprints() -> None:
     document = yaml.safe_load(
         (REPO_ROOT / "skills" / "skill-drift" / "blueprint.yaml").read_text(
             encoding="utf-8"
         )
     )
 
-    assert _errors(document) == []
+    canonical_root = REPO_ROOT / "references" / "blueprint"
+    schema = json.loads(
+        (canonical_root / "schema.json").read_text(encoding="utf-8")
+    )
+    store = {
+        child.name: json.loads(child.read_text(encoding="utf-8"))
+        for child in canonical_root.glob("*.schema.json")
+    }
+    resolver = jsonschema.RefResolver(
+        base_uri=(canonical_root / "schema.json").resolve().as_uri(),
+        referrer=schema,
+        store=store,
+    )
+    assert list(jsonschema.Draft7Validator(schema, resolver=resolver).iter_errors(document)) == []
 
 
 def test_node_hash_policy_schema_enforces_ordered_include_exclude_rules() -> None:

@@ -1,4 +1,4 @@
-"""Smoke tests for skills/skill-maker/validators/dispatcher_usage.py."""
+"""Smoke tests for validators/skill/dispatcher_usage.py."""
 from __future__ import annotations
 
 import importlib.util
@@ -7,7 +7,7 @@ from pathlib import Path
 
 _VALIDATOR = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "skill-maker" / "validators" / "dispatcher_usage.py"
+    / "validators" / "skill" / "dispatcher_usage.py"
 )
 _spec = importlib.util.spec_from_file_location("dispatcher_usage", _VALIDATOR)
 _mod = importlib.util.module_from_spec(_spec)
@@ -101,3 +101,22 @@ def test_other_skills_not_exempt(tmp_path: Path) -> None:
     )
     errors = _mod.validate(tmp_path)
     assert any("do not modify sys.path" in error for error in errors)
+
+
+def test_registered_child_tests_may_import_and_call_dispatcher_core(
+    tmp_path: Path,
+) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    test_file = skill / "_rtx" / "tests" / "test_dispatch.py"
+    test_file.parent.mkdir(parents=True)
+    (skill / "blueprint.yaml").write_text(
+        "name: demo-skill\n", encoding="utf-8"
+    )
+    test_file.write_text(
+        "from officina.dispatcher.core import dispatch\n"
+        "dispatch(caller_skill='fixture', target_skill='other', "
+        "script_interface='x')\n",
+        encoding="utf-8",
+    )
+
+    assert _mod.validate(tmp_path) == []

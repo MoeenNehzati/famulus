@@ -8,8 +8,12 @@ import yaml
 ROOT = Path(__file__).parents[1]
 FIXTURES = ROOT / "tests/fixtures/standards"
 GUIDELINES = ROOT / "references/skill-standards/skill-guidelines.standard.yaml"
+FROZEN_GUIDELINES = FIXTURES / "skill-guidelines.v1.standard.yaml"
+FROZEN_GUIDELINES_VIEW = FIXTURES / "skill-guidelines.v1.md"
 PROFILE = ROOT / "references/document-standards/document-profile.standard.yaml"
 GUIDELINES_VIEW = ROOT / "references/skill-standards/skill-guidelines.md"
+GUIDELINES_V2 = GUIDELINES
+GUIDELINES_V2_VIEW = GUIDELINES_VIEW
 PROFILE_VIEW = ROOT / "references/document-standards/document-profile.md"
 SOURCE_DIGESTS = {
     "skill-guidelines.md": "2ed65f9c5b93832221181a330a16ca72871c364925416c7d4712d42b18b52307",
@@ -43,10 +47,10 @@ def test_standards_validate_and_generated_views_are_fresh():
         document = yaml.safe_load(standard.read_text(encoding="utf-8")); rendered = renderer.render_document(document)
         assert rendered == renderer.render_document(document) == view.read_text(encoding="utf-8")
 
-def test_skill_guidelines_make_v4_the_only_live_blueprint_authoring_family():
+def test_skill_guidelines_make_v5_the_only_live_blueprint_authoring_family():
     document = yaml.safe_load(GUIDELINES.read_text(encoding="utf-8"))
     families = {family["id"]: family for family in document["standards"]}
-    live = families["skill-guidelines.module-behavioral-source-v4"]
+    live = families["skill-guidelines.module-behavioral-source-v5"]
     assert "sole live blueprint and interface authoring authority" in live["summary"]
 
     serialized = yaml.safe_dump(live, sort_keys=False)
@@ -55,10 +59,10 @@ def test_skill_guidelines_make_v4_the_only_live_blueprint_authoring_family():
         for rule in live["children"]
         for assertion in rule["assertions"]
     )
-    assert "uses `SKILL.md` as its module gateway" in statements
-    assert "project node-input policy selects certification hash inputs" in statements
+    assert "exactly one direct non-discoverable code child" in statements
+    assert "Hash what you own; certify what you depend on." in statements
     for required in (
-        "schema_version: 4",
+        "schema_version: 5",
         "node_type: module",
         "node_type: behavioral_source",
         "discovery",
@@ -67,11 +71,6 @@ def test_skill_guidelines_make_v4_the_only_live_blueprint_authoring_family():
         "sources",
         "exports",
         "source_interface",
-        "dependencies",
-        "uses_interfaces",
-        "interfaces",
-        ".interface.",
-        "blueprints/",
     ):
         assert required in serialized
 
@@ -105,7 +104,7 @@ def test_skill_guidelines_make_v4_the_only_live_blueprint_authoring_family():
         assert not [marker for marker in legacy_markers if marker in text], path
 
     rendered = GUIDELINES_VIEW.read_text(encoding="utf-8")
-    assert rendered.index("## Version 4 modules and behavioral sources") < rendered.index(
+    assert rendered.index("## Version 5 nested modules and behavioral sources") < rendered.index(
         "## 1. Skill identity and contract come first"
     )
 
@@ -148,9 +147,9 @@ def test_interface_design_is_one_source_owned_authority():
     assert "references/skill-standards/interface-design.md" in consumer
     assert "skill-standards.source.interface-design" in consumer_blueprint
 
-def test_skill_hooks_describe_the_live_v4_guideline_contract():
+def test_skill_hooks_describe_the_live_v5_guideline_contract():
     blueprint_hook = (ROOT / ".githooks/skill/check-blueprints").read_text(encoding="utf-8")
-    assert "v4 module/source" in blueprint_hook
+    assert "v5 module/source" in blueprint_hook
     assert "v3" not in blueprint_hook
     assert "machine" "-module" not in blueprint_hook
 
@@ -169,7 +168,7 @@ def test_render_mode_is_schema_checked_and_defaults_to_semantic():
 
 def test_every_source_block_is_exactly_preserved_once():
     for fixture_name, map_name, standard in (
-        ("skill-guidelines.md", "skill-guidelines-source-map.yaml", GUIDELINES),
+        ("skill-guidelines.md", "skill-guidelines-source-map.yaml", FROZEN_GUIDELINES),
         ("document-profile-schema.md", "document-profile-source-map.yaml", PROFILE),
     ):
         fixture = FIXTURES / fixture_name; lines = fixture.read_text(encoding="utf-8").splitlines(); mapping = yaml.safe_load((FIXTURES / map_name).read_text(encoding="utf-8"))
@@ -192,14 +191,14 @@ def test_every_source_block_is_exactly_preserved_once():
         assert set(covered) == expected and len(covered) == len(set(covered))
 
 def test_guideline_headings_are_preserved_as_families_and_view_is_readable():
-    document = yaml.safe_load(GUIDELINES.read_text(encoding="utf-8")); titles = {family["title"] for family in document["standards"]}
+    document = yaml.safe_load(FROZEN_GUIDELINES.read_text(encoding="utf-8")); titles = {family["title"] for family in document["standards"]}
     assert document["render_mode"] == "source-faithful"
     source = (FIXTURES / "skill-guidelines.md").read_text(encoding="utf-8")
     markdown_titles = {m.group(1) for m in re.finditer(r"^#{1,6}\s+(.+)$", source, re.M)}
     markdown_titles.discard("Skill Module Standards")
     bold_titles = {m.group(1) for m in re.finditer(r"^\*\*(.+?)\*\*", source, re.M)}
     assert markdown_titles | bold_titles <= titles
-    rendered = GUIDELINES_VIEW.read_text(encoding="utf-8")
+    rendered = FROZEN_GUIDELINES_VIEW.read_text(encoding="utf-8")
     for phrase in ("A skill is a software module", "Blueprint authoring", "Dispatcher role", "Validator and test conventions"):
         assert phrase in rendered
     assert not re.search(r"^#{2,6} (?:Requirement|Guidance|Example|Procedure) [0-9]{3}$", rendered, re.M)
@@ -217,7 +216,7 @@ def test_every_fenced_source_block_is_one_verbatim_unit_and_contiguous_in_view()
     source = (FIXTURES / "skill-guidelines.md").read_text(encoding="utf-8")
     fenced = re.findall(r"^```[^\n]*\n.*?^```$", source, re.M | re.S)
     assert fenced
-    rendered = GUIDELINES_VIEW.read_text(encoding="utf-8")
+    rendered = FROZEN_GUIDELINES_VIEW.read_text(encoding="utf-8")
     mapping = yaml.safe_load((FIXTURES / "skill-guidelines-source-map.yaml").read_text(encoding="utf-8"))["units"]
     semantic_text = {unit["text"] for unit in mapping if unit["kind"] == "semantic"}
     for block in fenced:
@@ -255,3 +254,101 @@ def test_document_profile_scope_fields_template_and_normalization():
         assert field in rendered and f"% {field}:" in rendered
     for phrase in ("may be left unspecified", "may be left blank when irrelevant", "Infer fields only", "Reader familiarity", "journal-article", "conference-article", "research-presentation", "research-notes"):
         assert phrase in rendered
+
+
+def test_v2_guidelines_are_canonical_after_cutover() -> None:
+    assert validator.validate_file(GUIDELINES_V2, ROOT) == []
+    document = yaml.safe_load(GUIDELINES_V2.read_text(encoding="utf-8"))
+    assert document["standard_version"] == "2.0.0"
+    assert document["revision"] == 1
+    assert document["canonical_path"] == (
+        "references/skill-standards/skill-guidelines.standard.yaml"
+    )
+    assert document["purpose"] == (
+        "Canonical repository standards for version-5 nested modules, "
+        "interface boundaries, runtime ownership, and validation."
+    )
+
+    families = {family["id"]: family for family in document["standards"]}
+    assert "skill-guidelines.module-behavioral-source-v4" not in families
+    candidate = families["skill-guidelines.module-behavioral-source-v5"]
+    assert candidate["summary"] == (
+        "This family is the sole live blueprint and interface authoring authority."
+    )
+    rendered = renderer.render_document(document)
+    assert rendered == renderer.render_document(document)
+    assert rendered == GUIDELINES_V2_VIEW.read_text(encoding="utf-8")
+    assert "## Version 5 nested modules and behavioral sources" in rendered
+    assert "## Version 4 modules and behavioral sources" not in rendered
+    assert "sole live blueprint and interface authoring authority" in rendered
+
+
+def test_shadow_v2_defines_complete_rtx_and_module_identity_contract() -> None:
+    document = yaml.safe_load(GUIDELINES_V2.read_text(encoding="utf-8"))
+    families = {family["id"]: family for family in document["standards"]}
+    candidate = families["skill-guidelines.module-behavioral-source-v5"]
+    statements = "\n".join(
+        assertion["statement"]
+        for rule in candidate["children"]
+        for assertion in rule["assertions"]
+    )
+    for required in (
+        "`schema_version: 5`",
+        "`children`",
+        "`namespace_exports`",
+        "`source_interface`",
+        "`facade_interface`",
+        "`._rtx`",
+        "`..parser`",
+        "Child exports are the authority ceiling.",
+        "Facades preserve names, not permissions.",
+        "exactly one direct non-discoverable code child",
+        "global ID `<skill-id>-rtx`",
+        "rooted at `_rtx/`",
+        "marker `_rtx/blueprint.yaml`",
+        "gateway `_rtx/__init__.py`",
+        "has no `discovery`",
+        "no version-5 modules below `_rtx`",
+        "internal `caller_module_id` and `target_module_id`",
+        "host-facing `--caller-skill` compatibility",
+        "discoverable parent callers only",
+    ):
+        assert required in statements
+    assert "`caller_skill`" not in statements
+    assert "`target_skill`" not in statements
+
+
+def test_shadow_v2_has_no_obsolete_v4_caller_identity_contract() -> None:
+    contents = {
+        "standard": GUIDELINES_V2.read_text(encoding="utf-8"),
+        "rendered view": GUIDELINES_V2_VIEW.read_text(encoding="utf-8"),
+    }
+    obsolete = ("caller_skill", "target_skill", "dispatch_caller_skill")
+    violations = {
+        name: [token for token in obsolete if token in content]
+        for name, content in contents.items()
+    }
+    assert violations == {"standard": [], "rendered view": []}
+    for content in contents.values():
+        assert "caller_module_id" in content
+        assert "target_module_id" in content
+        assert "--caller-skill" in content
+        assert "discoverable parent callers only" in content
+
+
+def test_canonical_v2_preserves_frozen_v1_source_fixtures() -> None:
+    canonical = yaml.safe_load(GUIDELINES.read_text(encoding="utf-8"))
+    assert canonical["standard_version"] == "2.0.0"
+    assert canonical["revision"] == 1
+    frozen = yaml.safe_load(FROZEN_GUIDELINES.read_text(encoding="utf-8"))
+    assert frozen["standard_version"] == "1.0.0"
+    assert frozen["revision"] == 3
+    assert any(
+        family["id"] == "skill-guidelines.module-behavioral-source-v4"
+        for family in frozen["standards"]
+    )
+    for fixture_name, digest in SOURCE_DIGESTS.items():
+        assert (
+            hashlib.sha256((FIXTURES / fixture_name).read_bytes()).hexdigest()
+            == digest
+        )

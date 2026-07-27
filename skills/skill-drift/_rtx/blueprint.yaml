@@ -1,0 +1,54 @@
+authority:
+  owns_filesystem:
+  - allowed_readers: []
+    match: regex
+    path: ^_build/certificate-drift-[0-9]{8}-[0-9]{6}\.md$
+    reason: Drift status is the sole writer of its generated Markdown reports.
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _check_drift_state.py
+      - Interface
+      reason: Read certificate currentness and canonical node hashes.
+    network: []
+children: {}
+content:
+- _check_drift_state\.py
+- _skill_sources/__init__\.py
+- _skill_sources/_claude_skill_source\.py
+- _skill_sources/_codex_skill_source\.py
+- _skill_sources/_skill_source_common\.py
+- tests/.*
+- __init__\.py
+description: Code module for the skill-drift skill.
+exports:
+  skill-drift-rtx.interface.compute-hashes:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: skill-drift-rtx.source.rtx-check-drift-state.interface.compute-hashes
+  skill-drift-rtx.interface.drift-status:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: skill-drift-rtx.source.rtx-check-drift-state.interface.drift-status
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: skill-drift-rtx
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  skill-drift-rtx.source.rtx-check-drift-state:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-check-drift-state.yaml
+  skill-drift-rtx.source.rtx-skill-sources-init:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-skill-sources-init.yaml
+version: 1

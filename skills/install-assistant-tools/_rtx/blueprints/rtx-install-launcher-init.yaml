@@ -1,0 +1,18 @@
+content:
+- _install_launcher/__init__\.py
+- _install_launcher/_base_launcher\.py
+- _install_launcher/_linux_launcher\.py
+- _install_launcher/_osx_launcher\.py
+- _install_launcher/_windows_launcher\.py
+dependencies: []
+description: Marks the platform-launcher implementation directory as a Python package
+  and exposes no callable interface.
+gateway:
+  language: Python
+  path: _install_launcher/__init__.py
+id: install-assistant-tools-rtx.source.rtx-install-launcher-init
+interfaces: {}
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces: []
+version: 1

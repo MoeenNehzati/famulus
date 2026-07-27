@@ -23,9 +23,8 @@ This made the "3 emails" question hard to answer without grepping logs.
    - Metrics are written before watermark is advanced
    - Old logs are still pruned to keep things clean
 
-3. **New diagnostic tools**
+3. **New diagnostic documentation**
    - `DEBUGGING.md` — complete troubleshooting guide
-   - `check-triage-status.sh` — view last run metrics at a glance (if present)
 
 ### Example: Before vs After
 
@@ -36,9 +35,7 @@ tail -50 triage.log | grep "Scanned"
 ```
 
 **After:**
-```bash
-$ ./check-triage-status.sh
-# Shows:
+```json
 {
   "result": "ok",
   "metrics": {

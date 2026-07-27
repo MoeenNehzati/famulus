@@ -1,0 +1,16 @@
+# Shadow fixture template; tests materialize this as blueprint.yaml.
+schema_version: 5
+node_type: module
+id: demo-rtx
+version: 1
+gateway:
+  path: __init__.py
+  language: Python>=3.11,<4
+content:
+  - __init__\.py
+authority:
+  owns_filesystem: []
+sources: {}
+children: {}
+namespace_exports: {}
+exports: {}

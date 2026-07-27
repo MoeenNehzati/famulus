@@ -8,13 +8,9 @@ description: Install or update the assistant, collab, coauthor, and tw/tmux-work
 
 Category: skill-making-development-assistant
 
-Skill Version: 1
+Skill Version: 3
 
-Uses Interfaces:
-- `install-assistant-tools.source.rtx-agent-launchers -> common.interface.toml-io@1`
-- `install-assistant-tools.source.rtx-config-bridge -> common.interface.codex-toml@1`
-- `install-assistant-tools.source.rtx-config-bridge -> common.interface.toml-io@1`
-- `install-assistant-tools.source.rtx-install-scaffold -> common.interface.certificate-records@1`
+Uses Interfaces: none
 
 Public Interfaces:
 - `install-assistant-tools.interface.default`
@@ -67,11 +63,12 @@ bin/
   collab             Python launcher — claude --agent collab or codex --profile collab
   coauthor           Python launcher — claude --agent coauthor or codex --profile coauthor
   tmux-workspace     Bash script for tw / tmux-workspace (Unix only)
-  _agent_launch.py   Shared launcher logic imported by the three launchers above.
-                     Resolves its own repo root via Path(__file__).resolve()
-                     (works in plugin mode too, no $AI dependency); builds the
-                     Claude --agents JSON inline from agents/<agent>.md instead
-                     of requiring $CLAUDE_HOME/agents/<agent>.md.
+  shared runtime     Shared launcher logic used by the three launchers above.
+                     Resolves its own repository root from the installed
+                     launcher location (works in plugin mode too, with no $AI
+                     dependency); builds the Claude --agents JSON inline from
+                     agents/<agent>.md instead of requiring
+                     $CLAUDE_HOME/agents/<agent>.md.
   assistant.bat      Windows wrapper (delegates to assistant via py.exe)
   collab.bat         Windows wrapper (delegates to collab via py.exe)
   coauthor.bat       Windows wrapper (delegates to coauthor via py.exe)
@@ -276,7 +273,7 @@ Do not modify scripts speculatively.
 | User rc | `~/.zshrc` (zsh) or `~/.bashrc` (bash/other) — auto-detected; Windows uses registry |
 | System rc | `/etc/bash.bashrc` (skipped on Windows) |
 | Bin dir | `$HOME/Documents/scripts/bin` |
-| Repo root | Dev mode: the path the user supplied. Plugin mode: derived from wherever the plugin is running from. `$AI` itself is only exported by `dev-link` (dev-mode only) — plugin-mode installs never set it; `_agent_launch.py` and `dispatcher` resolve their own repo root from their own file location instead. |
+| Repo root | Dev mode: the path the user supplied. Plugin mode: derived from wherever the plugin is running from. `$AI` itself is only exported by `dev-link` (dev-mode only) — plugin-mode installs never set it; the launcher runtime and dispatcher resolve their own repo root from their installed location instead. |
 | Workers | `<repo-root>/workers/{assistant,collab,coauthor}` |
 | Codex home | `$CODEX_HOME`, or `$HOME/.codex` |
 | Claude home | `$CLAUDE_HOME`, or `$HOME/.claude` |
@@ -337,7 +334,7 @@ What they cover:
 - `test_scaffold.py`: dispatcher/invoke-skill launcher installation and PATH.
 - `test_launchers.py`: per-agent bin/profile/worker-dir/`ASSISTANT_DEFAULT`
   installation.
-- `test_agent_launch.py`: agent `.md` frontmatter/prompt parsing and repo-root
+- launcher runtime tests: agent `.md` frontmatter/prompt parsing and repo-root
   resolution used by the installed `assistant`/`collab`/`coauthor` launchers.
 - `test_dev_link.py`: dry-run behavior, conflict preservation, `skills/`
   migration, symlink replacement, idempotent already-linked paths,
@@ -362,9 +359,9 @@ Known handoff caveat / TODO:
 **`assistant: command not found`** — bin dir not on PATH. Check the managed rc
 block or Windows user environment and then open a new shell.
 
-**`ModuleNotFoundError: No module named '_agent_launch'`** — `_agent_launch.py`
-is missing from the bin dir. Re-run the installer and check
-`install_bin_for_agent` in `launchers.py`.
+**An assistant launcher reports a missing shared runtime** — the launcher
+bundle is incomplete. Re-run the installer and verify the selected assistant
+launchers were installed together.
 
 **`tw: command not found` on Windows** — expected; tmux is not available on
 Windows.

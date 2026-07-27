@@ -1,0 +1,14 @@
+content:
+- __init__\.py
+dependencies: []
+description: Marks the email-triage runtime directory as a Python package for sibling
+  behavioral sources.
+gateway:
+  language: Python
+  path: __init__.py
+id: email-triage-rtx.source.rtx-init
+interfaces: {}
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces: []
+version: 1

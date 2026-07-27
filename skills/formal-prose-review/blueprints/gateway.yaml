@@ -1,7 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Implements diagnosis-first sentence-level prose review calibrated to the document profile and the user's settled wording preferences.
+description: Implements diagnosis-first sentence-level prose review calibrated to
+  the document profile and the user's settled wording preferences.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -10,32 +11,107 @@ interfaces:
   formal-prose-review.source.gateway.interface.default:
     contract:
       arguments:
-        request: {description: Technical passage or document-review request with any profile context and local wording preferences., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
-      preconditions: []
-      interaction: {mode: unattended}
+        request:
+          description: Technical passage or document-review request with any profile
+            context and local wording preferences.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
       caller_warnings: []
-      outputs:
-      - {id: response, audience: human, description: 'Concise prose diagnosis, minimal corrections, or a requested polished version that preserves substantive content.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty on success., type: {kind: string, sensitivity: derived-private}}
-      outcomes:
-      - {id: reviewed, class: success, outputs: [response], effects: [], caller_action: Apply the proposed surface edits after confirming that notation and claim strength remain unchanged.}
-      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: 'Supply the missing passage, document profile, or requested degree of rewriting.'}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {snapshot: The review reflects the supplied passage or document state and the preferences available in this invocation.}
-        verification: [{method: output-schema, output_ref: response}]
-      helpers: []
       direct_io:
         network: []
         reads:
-        - {id: request, medium: prompt, access: read, system: agent-runtime, content: Prose-review request and supplied text or context., formats: [text], sensitivity: user-private}
-        - {id: document, medium: local-filesystem, access: read, content: Target technical document and any top-of-document profile comment when a file is named., formats: [text, tex, markdown], sensitivity: user-private, reason: Review exact prose and calibrate style without altering mathematical substance.}
-        - {id: profile-standard, medium: repository-filesystem, access: read, path: references/document-standards/document-profile.md, path_match: exact, content: Canonical document-profile schema., formats: [markdown], sensitivity: public, reason: Validate a profile block before using it.}
+        - access: read
+          content: Prose-review request and supplied text or context.
+          formats:
+          - text
+          id: request
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        - access: read
+          content: Target technical document and any top-of-document profile comment
+            when a file is named.
+          formats:
+          - text
+          - tex
+          - markdown
+          id: document
+          medium: local-filesystem
+          reason: Review exact prose and calibrate style without altering mathematical
+            substance.
+          sensitivity: user-private
+        - access: read
+          content: Canonical document-profile schema.
+          formats:
+          - markdown
+          id: profile-standard
+          medium: repository-filesystem
+          path: references/document-standards/document-profile.md
+          path_match: exact
+          reason: Validate a profile block before using it.
+          sensitivity: public
         writes:
-        - {id: response, medium: prompt, access: write, system: agent-runtime, content: Prose findings and proposed edits., formats: [markdown], sensitivity: derived-private}
-    description: Review grammar, clarity, concision, and formal tone without silently changing mathematical or substantive content.
+        - access: write
+          content: Prose findings and proposed edits.
+          formats:
+          - markdown
+          id: response
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          snapshot: The review reflects the supplied passage or document state and
+            the preferences available in this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Apply the proposed surface edits after confirming that notation
+          and claim strength remain unchanged.
+        class: success
+        effects: []
+        id: reviewed
+        outputs:
+        - response
+      - caller_action: Supply the missing passage, document profile, or requested
+          degree of rewriting.
+        class: refusal
+        effects: []
+        id: clarification-required
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Concise prose diagnosis, minimal corrections, or a requested
+          polished version that preserves substantive content.
+        direct_io_ref: response
+        empty: Never empty on success.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Review grammar, clarity, concision, and formal tone without silently
+      changing mathematical or substantive content.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

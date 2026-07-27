@@ -1,0 +1,191 @@
+content:
+- _weather_client\.py
+dependencies: []
+description: Resolves a named place or the caller's current IP location and requests
+  hourly Open-Meteo forecast data for an inclusive date range.
+gateway:
+  language: Python
+  path: _weather_client.py
+id: get-weather-rtx.source.rtx-weather-client
+interfaces:
+  get-weather-rtx.source.rtx-weather-client.interface.scripts-weather:
+    contract:
+      arguments:
+        date:
+          default: current-local-date
+          description: Inclusive forecast start date, defaulting to the local current
+            date.
+          required: false
+          sensitivity: public
+          type:
+            date_formats:
+            - YYYY-MM-DD
+            kind: date
+        end-date:
+          description: Inclusive forecast end date, defaulting to the start date.
+          required: false
+          sensitivity: public
+          type:
+            date_formats:
+            - YYYY-MM-DD
+            kind: date
+        location:
+          description: Optional named location; when omitted, the interface geolocates
+            the caller's public IP address.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings: []
+      direct_io:
+        network:
+        - access: request
+          content: location
+          endpoint: https://geocoding-api.open-meteo.com/v1/search?name=<location>&count=1
+          formats:
+          - json
+          id: network-1
+          medium: network-request
+          sensitivity: user-private
+          system: open-meteo-geocoding
+        - access: request
+          content: location
+          endpoint: http://ip-api.com/json/
+          formats:
+          - json
+          id: network-2
+          medium: network-request
+          sensitivity: user-private
+          system: ip-geolocation
+        - access: request
+          content: forecast
+          endpoint: https://api.open-meteo.com/v1/forecast
+          formats:
+          - json
+          id: network-3
+          medium: network-request
+          sensitivity: user-private
+          system: open-meteo-forecast
+        reads: []
+        writes:
+        - access: write
+          content: forecast
+          formats:
+          - json
+          id: write-1
+          medium: stdout
+          sensitivity: user-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-2
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Location and forecast values are obtained from the external services
+            during this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: forecast
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Interpret the hourly arrays into the requested planning-oriented
+          summary.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - forecast
+      - caller_action: Supply an end date that is not before the start date.
+        class: error
+        effects: []
+        id: invalid-date-range
+        outputs:
+        - diagnostic
+      - caller_action: Report the unresolved named location without substituting another
+          result.
+        class: error
+        effects: []
+        id: location-not-found
+        outputs:
+        - diagnostic
+      - caller_action: Report the geolocation, forecast, or network error and stop.
+        class: error
+        effects: []
+        id: service-failed
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: One compact JSON object containing resolved dates, place, coordinates,
+          timezone, and hourly weather arrays.
+        direct_io_ref: write-1
+        empty: Empty when validation, geolocation, geocoding, or forecast retrieval
+          fails.
+        id: forecast
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: json
+          kind: string
+          sensitivity: user-private
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Plain error identifying an invalid date range, unresolved location,
+          geolocation failure, or forecast-service failure.
+        direct_io_ref: write-2
+        empty: Empty after a successful forecast lookup.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Fetch weather data for a location and date range, returning hourly
+      forecast JSON.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        allowed_flags:
+        - --date
+        - --end-date
+        - --location
+        flag_patterns:
+          --date: ^\d{4}-\d{2}-\d{2}$
+          --end-date: ^\d{4}-\d{2}-\d{2}$
+          --location: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+    usage: '[--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] [--location <loc>]'
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces: []
+version: 1

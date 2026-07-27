@@ -1,16 +1,19 @@
-"""Focused tests for the version-4 blueprint source validator."""
+"""Focused tests for the canonical blueprint source validator."""
 from __future__ import annotations
 
 import importlib.util
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
 
+from v5_blueprint_fixtures import copy_v5_fixture_tree
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-VALIDATOR = REPO_ROOT / "skills" / "skill-maker" / "validators" / "blueprints.py"
+VALIDATOR = REPO_ROOT / "validators" / "skill" / "blueprints.py"
 SPEC = importlib.util.spec_from_file_location("blueprints_validator", VALIDATOR)
 assert SPEC is not None and SPEC.loader is not None
 MOD = importlib.util.module_from_spec(SPEC)
@@ -25,7 +28,7 @@ def _copy_schema_root(repo_root: Path) -> None:
     )
 
 
-def _copy_v4_skill(repo_root: Path) -> Path:
+def _copy_canonical_skill(repo_root: Path) -> Path:
     _copy_schema_root(repo_root)
     target = repo_root / "skills" / "loose-mode"
     shutil.copytree(REPO_ROOT / "skills" / "loose-mode", target)
@@ -40,23 +43,159 @@ def _tracked(repo_root: Path) -> dict[str, tuple[tuple[str, str], ...]]:
     }
 
 
-def test_v4_skill_passes(
+@pytest.mark.parametrize("version", [4, 5])
+def test_repository_schema_version_reads_canonical_bootstrap_marker(
+    tmp_path: Path,
+    version: int,
+) -> None:
+    marker = tmp_path / "references" / "blueprint" / "blueprint.yaml"
+    marker.parent.mkdir(parents=True)
+    marker.write_text(
+        f"schema_version: {version}\nnode_type: module\n",
+        encoding="utf-8",
+    )
+
+    assert MOD.repository_schema_version(tmp_path) == version
+
+
+def test_repository_schema_version_rejects_missing_marker(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="canonical schema marker is missing"):
+        MOD.repository_schema_version(tmp_path)
+
+
+def test_canonical_skill_passes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _copy_v4_skill(tmp_path)
+    _copy_canonical_skill(tmp_path)
     monkeypatch.setattr(MOD, "_git_tracked_files", lambda _root: _tracked(tmp_path))
 
     assert MOD.validate(tmp_path) == []
 
 
-def test_v4_skill_passes_through_equivalent_repository_alias(
+def test_preflight_explicitly_selects_v5_for_an_all_v5_staged_tree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _copy_schema_root(tmp_path)
+    fixture = REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
+    copy_v5_fixture_tree(fixture / "modules", tmp_path / "modules")
+    copy_v5_fixture_tree(fixture / "skills", tmp_path / "skills")
+    monkeypatch.setattr(MOD, "_validate_generated_markers", lambda _path: [])
+
+    errors, graph = MOD.preflight(tmp_path, expected_schema_version=5)
+
+    assert errors == []
+    assert graph is not None
+    assert graph.schema_version == 5
+
+
+def test_preflight_defaults_to_v5_for_an_all_v5_tree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _copy_schema_root(tmp_path)
+    fixture = REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
+    copy_v5_fixture_tree(fixture / "modules", tmp_path / "modules")
+    copy_v5_fixture_tree(fixture / "skills", tmp_path / "skills")
+    monkeypatch.setattr(MOD, "_validate_generated_markers", lambda _path: [])
+
+    errors, graph = MOD.preflight(tmp_path)
+
+    assert errors == []
+    assert graph is not None
+    assert graph.schema_version == 5
+
+
+def test_full_v5_validate_checks_generated_views_with_v5_syncer_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _copy_schema_root(tmp_path)
+    fixture = REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
+    copy_v5_fixture_tree(fixture / "modules", tmp_path / "modules")
+    copy_v5_fixture_tree(fixture / "skills", tmp_path / "skills")
+    sync_script = (
+        tmp_path
+        / "skills"
+        / "skill-maker"
+        / "_rtx"
+        / "_blueprint_syncer.py"
+    )
+    sync_script.parent.mkdir(parents=True)
+    sync_script.write_text("", encoding="utf-8")
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(MOD, "_validate_generated_markers", lambda _path: [])
+    monkeypatch.setattr(MOD, "_git_tracked_files", lambda _root: _tracked(tmp_path))
+    monkeypatch.setattr(
+        MOD,
+        "_validate_authored_input_files",
+        lambda _graph, _root, _tracked_files: [],
+    )
+
+    def _run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        commands.append(command)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(MOD.subprocess, "run", _run)
+
+    assert MOD.validate(tmp_path, expected_schema_version=5) == []
+    assert commands == [
+        [
+            MOD.sys.executable,
+            str(sync_script),
+            "--check",
+            "--schema-version",
+            "5",
+        ]
+    ]
+
+
+def test_default_validate_uses_v5_syncer_argv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _copy_canonical_skill(tmp_path)
+    sync_script = (
+        tmp_path
+        / "skills"
+        / "skill-maker"
+        / "_rtx"
+        / "_blueprint_syncer.py"
+    )
+    sync_script.parent.mkdir(parents=True)
+    sync_script.write_text("", encoding="utf-8")
+    commands: list[list[str]] = []
+    monkeypatch.setattr(MOD, "_git_tracked_files", lambda _root: _tracked(tmp_path))
+
+    def _run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        commands.append(command)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(MOD.subprocess, "run", _run)
+
+    assert MOD.validate(tmp_path) == []
+    assert commands == [
+        [
+            MOD.sys.executable,
+            str(sync_script),
+            "--check",
+            "--schema-version",
+            "5",
+        ]
+    ]
+
+
+def test_canonical_skill_passes_through_equivalent_repository_alias(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     physical_parent = tmp_path / "physical"
     repository = physical_parent / "repository"
-    _copy_v4_skill(repository)
+    _copy_canonical_skill(repository)
     alias_parent = tmp_path / "alias"
     try:
         alias_parent.symlink_to(physical_parent, target_is_directory=True)
@@ -91,7 +230,7 @@ def test_canonical_module_marker_requires_module_node_type(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    skill = _copy_v4_skill(tmp_path)
+    skill = _copy_canonical_skill(tmp_path)
     declaration = yaml.safe_load(
         (skill / "blueprint.yaml").read_text(encoding="utf-8")
     )
@@ -111,7 +250,7 @@ def test_unbalanced_generated_markers_are_rejected(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    skill = _copy_v4_skill(tmp_path)
+    skill = _copy_canonical_skill(tmp_path)
     skill_file = skill / "SKILL.md"
     skill_file.write_text(
         skill_file.read_text(encoding="utf-8").replace(
@@ -131,7 +270,7 @@ def test_authored_inputs_must_be_tracked(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _copy_v4_skill(tmp_path)
+    _copy_canonical_skill(tmp_path)
     monkeypatch.setattr(MOD, "_git_tracked_files", lambda _root: {})
 
     errors = MOD.validate(tmp_path)
@@ -157,7 +296,7 @@ def test_malformed_v4_source_is_reported(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    skill = _copy_v4_skill(tmp_path)
+    skill = _copy_canonical_skill(tmp_path)
     (skill / "blueprints" / "gateway.yaml").write_text(
         "schema_version: 4\nnode_type: [\n",
         encoding="utf-8",

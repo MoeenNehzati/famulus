@@ -1,75 +1,14 @@
 authority:
-  owns_filesystem:
-  - allowed_readers:
-    - cloud-files.interface.ensure-oauth
-    match: exact
-    path: $home/.config/cloud-files/config.json
-    reason: write-config is the declared writer for the cloud-files config.
-  suggested_permissions:
-    bash:
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_read_llm_file.py
-      - Interface
-      reason: Read files from cloud storage under LLM root.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_write_llm_file.py
-      - Interface
-      reason: Write files to cloud storage under LLM root.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_delete_llm_file.py
-      - Interface
-      reason: Delete files from cloud storage under LLM root.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_ls_llm.py
-      - Interface
-      reason: List/check files in cloud storage.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_oauth_bootstrap.py
-      - Interface
-      reason: OAuth setup for cloud access.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_ensure_oauth.py
-      - Interface
-      reason: Check OAuth status and write config.json (relocated from install-assistant-tools).
-    network: []
+  owns_filesystem: []
 category: system-assistant
-description: Provides caller-scoped read, write, and delete access to list and plan files stored under the configured Google Drive root.
+children:
+  cloud-files-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
 - SKILL\.md
-- _rtx/__init__\.py
-- _rtx/_cp_llm\.py
-- _rtx/_delete_llm_file\.py
-- _rtx/_drive_gateway\.py
-- _rtx/_ensure_oauth\.py
-- _rtx/_ls_llm\.py
-- _rtx/_oauth_bootstrap\.py
-- _rtx/_read_llm_file\.py
-- _rtx/_read_remote\.py
-- _rtx/_rm_llm\.py
-- _rtx/_write_llm_file\.py
-- tests/test_cloud_files\.py
-- tests/test_cloud_files_ensure_oauth\.py
-- tests/test_oauth_transaction\.py
-- tests/test_script_entrypoints\.py
-- tests/test_setup_oauth\.py
+description: Provides caller-scoped read, write, and delete access to list and plan
+  files stored under the configured Google Drive root.
 discovery:
   mechanism: skill
 exports:
@@ -82,90 +21,91 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: cloud-files.source.rtx-ensure-oauth.interface.ensure-oauth
+    facade_interface:
+      interface: cloud-files-rtx.interface.ensure-oauth
+      version: 1
   cloud-files.interface.lists-delete:
     access:
       allow_all_modules: false
       allowed_callers:
       - list-manager
-    source_interface: cloud-files.source.rtx-delete-llm-file.interface.lists-delete
+    facade_interface:
+      interface: cloud-files-rtx.interface.lists-delete
+      version: 1
   cloud-files.interface.lists-read:
     access:
       allow_all_modules: false
       allowed_callers:
       - daily-plan
+      - daily-plan-rtx
       - list-manager
-    source_interface: cloud-files.source.rtx-read-llm-file.interface.lists-read
+      - list-manager-rtx
+    facade_interface:
+      interface: cloud-files-rtx.interface.lists-read
+      version: 1
   cloud-files.interface.lists-write:
     access:
       allow_all_modules: false
       allowed_callers:
       - daily-plan
+      - daily-plan-rtx
       - list-manager
-    source_interface: cloud-files.source.rtx-write-llm-file.interface.lists-write
+      - list-manager-rtx
+    facade_interface:
+      interface: cloud-files-rtx.interface.lists-write
+      version: 1
   cloud-files.interface.plans-delete:
     access:
       allow_all_modules: false
       allowed_callers:
       - daily-plan
-    source_interface: cloud-files.source.rtx-delete-llm-file.interface.plans-delete
+    facade_interface:
+      interface: cloud-files-rtx.interface.plans-delete
+      version: 1
   cloud-files.interface.plans-read:
     access:
       allow_all_modules: false
       allowed_callers:
       - daily-plan
-    source_interface: cloud-files.source.rtx-read-llm-file.interface.plans-read
+      - daily-plan-rtx
+    facade_interface:
+      interface: cloud-files-rtx.interface.plans-read
+      version: 1
   cloud-files.interface.plans-write:
     access:
       allow_all_modules: false
       allowed_callers:
       - daily-plan
-    source_interface: cloud-files.source.rtx-write-llm-file.interface.plans-write
+      - daily-plan-rtx
+    facade_interface:
+      interface: cloud-files-rtx.interface.plans-write
+      version: 1
   cloud-files.interface.setup-oauth:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: cloud-files.source.rtx-oauth-bootstrap.interface.setup-oauth
+    facade_interface:
+      interface: cloud-files-rtx.interface.setup-oauth
+      version: 1
   cloud-files.interface.write-config:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: cloud-files.source.rtx-ensure-oauth.interface.write-config
+    facade_interface:
+      interface: cloud-files-rtx.interface.write-config
+      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: cloud-files
 kind: storage
+namespace_exports: {}
 node_type: module
 role: integration
-schema_version: 4
+schema_version: 5
 sources:
   cloud-files.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  cloud-files.source.rtx-delete-llm-file:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-delete-llm-file.yaml
-  cloud-files.source.rtx-ensure-oauth:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-ensure-oauth.yaml
-  cloud-files.source.rtx-init:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-init.yaml
-  cloud-files.source.rtx-oauth-bootstrap:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-oauth-bootstrap.yaml
-  cloud-files.source.rtx-read-llm-file:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-read-llm-file.yaml
-  cloud-files.source.rtx-write-llm-file:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-write-llm-file.yaml
-version: 1
+version: 2

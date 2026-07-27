@@ -1,0 +1,150 @@
+content:
+- _failure_clearer\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: email-triage-rtx.source.rtx-init
+  version: 1
+description: Clears a latched triage error while deliberately leaving the mail watermark
+  unchanged.
+gateway:
+  language: Python
+  path: _failure_clearer.py
+id: email-triage-rtx.source.rtx-failure-clearer
+interfaces:
+  email-triage-rtx.source.rtx-failure-clearer.interface.scripts-clear-failure:
+    contract:
+      arguments:
+        reason:
+          default: operator confirmed recovery
+          description: Operator recovery explanation stored in status.json
+          required: false
+          sensitivity: derived-private
+          type:
+            kind: string
+      caller_warnings:
+      - external-side-effect: Clears the latched error status but deliberately leaves
+          the mail watermark unchanged.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: diagnostic-report
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: state/status.json
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        writes:
+        - access: write
+          content: diagnostic-report
+          formats:
+          - json
+          id: write-1
+          medium: local-filesystem
+          path: state/status.json
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Replaces the current status document with an operator-confirmed recovery
+            message.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: clear-failure
+          may_occur_in_outcomes:
+          - cleared
+          reversibility:
+            reversible: The failure can be marked again with the original reason.
+          value_source:
+            argument_ref: reason
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: One status document is rewritten.
+          concurrent_invocations:
+            unsafe: Concurrent status writers can overwrite one another.
+          idempotency:
+            idempotent: Repeating the same reason converges to the same recovery document.
+          on_uncertain_completion:
+            verify_then_decide: Read status.json before retrying.
+          partial_effects_on_failure:
+            possible: A direct write can leave malformed status after interruption.
+          rollback_on_failure:
+            unavailable: No prior status backup is retained.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Start a fresh triage run without advancing the old watermark
+          first.
+        class: success
+        effects:
+        - clear-failure
+        id: cleared
+        outputs:
+        - result
+      - caller_action: Keep the failure latched and report the write error.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Success confirmation written to stdout.
+        direct_io_ref: write-2
+        empty: A confirmation line is emitted on success.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Clear a latched triage failure after its cause is fixed, without
+      advancing the watermark.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        name: owner
+    usage: '[reason]'
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces: []
+version: 1

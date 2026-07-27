@@ -14,9 +14,9 @@ class Interface(PythonMachineInterface):
     prog = "fetch-filtered-envelopes"
     dispatches = {
         "mail-list": DispatchCall(
-            caller_skill="email-triage",
-            target_skill="email-client",
-            interface="email-client.interface.mail-list",
+            caller_module_id="email-triage-rtx",
+            target_module_id="email-client",
+            interface="mail-list",
         )
     }
 

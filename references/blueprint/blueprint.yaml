@@ -1,5 +1,6 @@
 authority:
   owns_filesystem: []
+children: {}
 content:
 - README\.md
 - behavioral\-source\.schema\.json
@@ -15,14 +16,16 @@ content:
 - schema\.annotated\-draft\.json
 - schema\.json
 - template\.yaml
-description: Owns the repository's version 4 blueprint schemas, templates, and schema metadata.
+description: Owns the repository's version 4 blueprint schemas, templates, and schema
+  metadata.
 exports: {}
 gateway:
   language: JSON-Schema
   path: schema.json
 id: blueprint
+namespace_exports: {}
 node_type: module
-schema_version: 4
+schema_version: 5
 sources:
   blueprint.source.schema-annotated-draft:
     blueprint:

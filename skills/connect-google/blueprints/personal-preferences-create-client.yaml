@@ -8,6 +8,6 @@ gateway:
 id: connect-google.source.personal-preferences-create-client
 interfaces: {}
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

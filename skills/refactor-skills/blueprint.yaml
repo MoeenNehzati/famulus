@@ -4,10 +4,14 @@ authority:
     bash: []
     network: []
 category: skill-making-development-assistant
+children:
+  refactor-skills-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
 - SKILL\.md
-description: Characterizes existing skill behavior, diagnoses structural smells,
-  and applies approved behavior-preserving refactoring moves with verification.
+description: Characterizes existing skill behavior, diagnoses structural smells, and
+  applies approved behavior-preserving refactoring moves with verification.
 discovery:
   mechanism: skill
 exports:
@@ -21,12 +25,13 @@ gateway:
   path: SKILL.md
 id: refactor-skills
 kind: maintenance
+namespace_exports: {}
 node_type: module
 role: meta-skill
-schema_version: 4
+schema_version: 5
 sources:
   refactor-skills.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 1
+version: 2

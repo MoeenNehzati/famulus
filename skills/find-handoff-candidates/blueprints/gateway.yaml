@@ -1,7 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Defines the caller rules for relaying mechanically selected handoff candidates without opening, summarizing, or re-judging their transcripts.
+description: Defines the caller rules for relaying mechanically selected handoff candidates
+  without opening, summarizing, or re-judging their transcripts.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -11,74 +12,86 @@ interfaces:
     contract:
       arguments:
         request:
-          description: Request to identify unhandled work sessions or recalibrate the mechanical gap thresholds.
+          description: Request to identify unhandled work sessions or recalibrate
+            the mechanical gap thresholds.
           required: true
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
-      preconditions: []
-      interaction:
-        mode: unattended
       caller_warnings: []
-      outputs:
-      - id: response
-        audience: human
-        description: Verbatim candidate records or calibration guidance derived from the selected machine interface.
-        direct_io_ref: write-1
-        type:
-          kind: string
-          sensitivity: derived-private
-        cardinality:
-          minimum: 1
-          maximum: 1
-        ordering: stable
-        pagination:
-          kind: none
-        truncation:
-          kind: none
-        empty: A response is returned even when no sessions meet the threshold.
-      outcomes:
-      - id: completed
-        class: success
-        outputs: [response]
-        effects: []
-        caller_action: Relay the machine result without opening or re-evaluating any flagged transcript.
-      - id: failed
-        class: error
-        outputs: []
-        effects: []
-        caller_action: Report the scan or calibration failure without inspecting session content manually.
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency:
-          per_source: Candidate selection reflects the transcript files and thresholds observed by each configured parser during the invocation.
-        verification:
-        - method: output-schema
-          output_ref: response
-      helpers: []
       direct_io:
         network: []
         reads:
         - access: read
           content: handoff-scan-request
-          formats: [text]
+          formats:
+          - text
           id: read-1
           medium: prompt
           sensitivity: user-private
         writes:
         - access: write
           content: handoff-candidate-response
-          formats: [markdown]
+          formats:
+          - markdown
           id: write-1
           medium: prompt
           sensitivity: derived-private
+      execution:
+        consistency:
+          per_source: Candidate selection reflects the transcript files and thresholds
+            observed by each configured parser during the invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Relay the machine result without opening or re-evaluating any
+          flagged transcript.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Report the scan or calibration failure without inspecting session
+          content manually.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Verbatim candidate records or calibration guidance derived from
+          the selected machine interface.
+        direct_io_ref: write-1
+        empty: A response is returned even when no sessions meet the threshold.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces:
 - interface: prepare-handoff.interface.default
+  version: 1
+- interface: find-handoff-candidates.interface.calibrate
+  version: 1
+- interface: find-handoff-candidates.interface.scan
   version: 1
 version: 1

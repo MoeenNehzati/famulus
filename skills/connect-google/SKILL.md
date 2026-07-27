@@ -8,16 +8,12 @@ description: Use when a Google service needs a shared OAuth client prepared, or 
 
 Category: workflow-general-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces:
 - `connect-google.source.gateway -> connect-google.source.instructions-connect-services.interface.connect-services@1`
 - `connect-google.source.gateway -> connect-google.source.instructions-create-client.interface.create-client@1`
-- `connect-google.source.gateway -> connect-google.source.rtx-client-config.interface.client-status@1`
-- `connect-google.source.instructions-connect-services -> connect-google.source.rtx-client-config.interface.client-status@1`
-- `connect-google.source.instructions-connect-services -> connect-google.source.rtx-client-config.interface.install-client@1`
 - `connect-google.source.instructions-create-client -> connect-google.source.instructions-connect-services.interface.connect-services@1`
-- `connect-google.source.rtx-client-config -> common.interface.oauth-json@1`
 
 Public Interfaces:
 - `connect-google.interface.client-status`

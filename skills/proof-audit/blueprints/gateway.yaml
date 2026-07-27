@@ -11,33 +11,109 @@ interfaces:
   proof-audit.source.gateway.interface.default:
     contract:
       arguments:
-        request: {description: "Proof-audit request plus the statement, argument, surrounding document, and any facts the user explicitly asks to treat as given.", required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
-      preconditions: []
-      interaction: {mode: interactive, channel: tty, unattended_outcome: diagnosis-only}
+        request:
+          description: Proof-audit request plus the statement, argument, surrounding
+            document, and any facts the user explicitly asks to treat as given.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
       caller_warnings: []
-      outputs:
-      - {id: response, audience: human, description: 'Concise labeled verdict separating soundness, coherence, and redundancy, with decomposition, exact gaps, edge cases, counterexamples, or a candidate repair direction as needed.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty on success., type: {kind: string, sensitivity: derived-private}}
-      outcomes:
-      - {id: audited, class: success, outputs: [response], effects: [], caller_action: Use the verdict and exact diagnosis before deciding whether to request a repaired proof.}
-      - {id: diagnosis-only, class: success, outputs: [response], effects: [], caller_action: Confirm or reject the diagnosed gap before asking for a detailed repair.}
-      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: "Supply the missing statement, proof component, standing assumptions, or surrounding scope."}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {snapshot: "The verdict reflects the supplied proof, active standing assumptions, and local results available in this invocation."}
-        verification:
-        - {method: output-schema, output_ref: response}
-      helpers: []
       direct_io:
         network: []
         reads:
-        - {id: request, medium: prompt, access: read, system: agent-runtime, content: Proof-audit request and supplied mathematical context., formats: [text, tex], sensitivity: user-private}
-        - {id: document, medium: local-filesystem, access: read, content: 'Target statement, proof, standing assumptions, notation, and earlier local results when a document is named.', formats: [tex, markdown, text], sensitivity: user-private, reason: Audit the argument in its actual scope before alleging a missing hypothesis or invoking an external theorem.}
+        - access: read
+          content: Proof-audit request and supplied mathematical context.
+          formats:
+          - text
+          - tex
+          id: request
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        - access: read
+          content: Target statement, proof, standing assumptions, notation, and earlier
+            local results when a document is named.
+          formats:
+          - tex
+          - markdown
+          - text
+          id: document
+          medium: local-filesystem
+          reason: Audit the argument in its actual scope before alleging a missing
+            hypothesis or invoking an external theorem.
+          sensitivity: user-private
         writes:
-        - {id: response, medium: prompt, access: write, system: agent-runtime, content: Labeled proof-audit verdict and diagnosis., formats: [markdown, tex], sensitivity: derived-private}
-    description: Audit a proof in its document context and diagnose the first material issue without silently rewriting the argument.
+        - access: write
+          content: Labeled proof-audit verdict and diagnosis.
+          formats:
+          - markdown
+          - tex
+          id: response
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          snapshot: The verdict reflects the supplied proof, active standing assumptions,
+            and local results available in this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: diagnosis-only
+      outcomes:
+      - caller_action: Use the verdict and exact diagnosis before deciding whether
+          to request a repaired proof.
+        class: success
+        effects: []
+        id: audited
+        outputs:
+        - response
+      - caller_action: Confirm or reject the diagnosed gap before asking for a detailed
+          repair.
+        class: success
+        effects: []
+        id: diagnosis-only
+        outputs:
+        - response
+      - caller_action: Supply the missing statement, proof component, standing assumptions,
+          or surrounding scope.
+        class: refusal
+        effects: []
+        id: clarification-required
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Concise labeled verdict separating soundness, coherence, and
+          redundancy, with decomposition, exact gaps, edge cases, counterexamples,
+          or a candidate repair direction as needed.
+        direct_io_ref: response
+        empty: Never empty on success.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Audit a proof in its document context and diagnose the first material
+      issue without silently rewriting the argument.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

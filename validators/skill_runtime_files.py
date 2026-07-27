@@ -7,12 +7,28 @@ from collections import defaultdict
 from pathlib import Path
 
 RTX_DIR_NAME = "_rtx"
-ALLOWED_RTX_SUFFIXES = {".py", ".sh"}
+ALLOWED_RTX_SUFFIXES = {".py"}
 EXEMPT_RTX_FILENAMES = {"__init__.py"}
 EXEMPT_RTX_DIRNAMES = {"__pycache__"}
 RUNTIME_STEM_RE = re.compile(r"^_[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$")
 
 _SKIP_SKILLS = {".system"}
+_CHILD_ARTIFACT_DIRS = {
+    "assets",
+    "blueprints",
+    "schemas",
+    "state",
+    "tests",
+    ".certificates",
+    ".certificate-history",
+}
+_CHILD_ARTIFACT_FILENAMES = {
+    "blueprint.yaml",
+    ".pooled-blueprint-review.yaml",
+    ".pooled-blueprint-review.health.json",
+}
+REQUIRES_BLUEPRINT_GRAPH = True
+BLUEPRINT_GRAPH_OPTIONAL = True
 
 
 def _iter_skill_files(repo_root: Path):
@@ -70,7 +86,45 @@ def _validate_rtx_path(path: Path, rel_path: Path) -> list[str]:
     return errors
 
 
-def validate(repo_root: Path) -> list[str]:
+def _registered_child_artifact(path: Path, graph: object | None) -> bool:
+    if graph is None:
+        return False
+    nodes = getattr(graph, "nodes", {})
+    module_parents = getattr(graph, "module_parents", {})
+    matching_roots: list[Path] = []
+    for module_id, parent_id in module_parents.items():
+        if parent_id is None:
+            continue
+        node = nodes.get(module_id)
+        module_root = getattr(node, "module_root", None)
+        if isinstance(module_root, Path) and path.is_relative_to(module_root):
+            matching_roots.append(module_root)
+    if not matching_roots:
+        return False
+    relative = path.relative_to(max(matching_roots, key=lambda root: len(root.parts)))
+    fixed_artifact = (
+        relative.parent == Path(".")
+        and relative.name in _CHILD_ARTIFACT_FILENAMES
+        or bool(relative.parts)
+        and relative.parts[0] in _CHILD_ARTIFACT_DIRS
+    )
+    if fixed_artifact:
+        return True
+
+    direct_file_owners = getattr(graph, "direct_file_owners", {})
+    owner_id = direct_file_owners.get(path)
+    owner = nodes.get(owner_id)
+    if getattr(owner, "node_type", None) != "behavioral_source":
+        return False
+    if getattr(owner, "gateway_path", None) != path:
+        return False
+    declaration = getattr(owner, "declaration", {})
+    gateway = declaration.get("gateway") if isinstance(declaration, dict) else None
+    language = gateway.get("language") if isinstance(gateway, dict) else None
+    return isinstance(language, str) and not language.startswith("Python")
+
+
+def _validate(repo_root: Path, graph: object | None) -> list[str]:
     errors: list[str] = []
     seen_by_parent: dict[tuple[str, ...], dict[str, tuple[str, ...]]] = defaultdict(dict)
 
@@ -84,6 +138,8 @@ def validate(repo_root: Path) -> list[str]:
             continue
 
         if len(parts) >= 4 and parts[2] == RTX_DIR_NAME:
+            if _registered_child_artifact(path, graph):
+                continue
             errors.extend(_validate_rtx_path(path, rel_path))
 
             for depth in range(3, len(parts)):
@@ -105,6 +161,14 @@ def validate(repo_root: Path) -> list[str]:
                 else:
                     seen_by_parent[parent][folded] = component_parts
     return errors
+
+
+def validate_with_graph(repo_root: Path, graph: object) -> list[str]:
+    return _validate(repo_root, graph)
+
+
+def validate(repo_root: Path) -> list[str]:
+    return _validate(repo_root, None)
 
 
 def main() -> int:

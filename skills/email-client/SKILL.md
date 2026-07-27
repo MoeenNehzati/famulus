@@ -8,15 +8,10 @@ description: Use when reading, listing, searching, or sending email for the user
 
 Category: productivity-general-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces:
 - `email-client.source.gateway -> connect-google.interface.default@1`
-- `email-client.source.gateway -> email-client.source.rtx-email-accounts.interface.accounts-setup-oauth@1`
-- `email-client.source.rtx-email-accounts -> common.interface.secret-store@1`
-- `email-client.source.rtx-imap-gateway -> common.interface.secret-store@1`
-- `email-client.source.rtx-init -> common.interface.secret-store@1`
-- `email-client.source.rtx-smtp-transport -> common.interface.secret-store@1`
 
 Public Interfaces:
 - `email-client.interface.accounts-add`

@@ -1,8 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: LLM-facing routing and safety instructions for account configuration, IMAP
-  reads, attachment handling, SMTP sends, OAuth setup, and live checks.
+description: LLM-facing routing and safety instructions for account configuration,
+  IMAP reads, attachment handling, SMTP sends, OAuth setup, and live checks.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -10,6 +10,11 @@ id: email-client.source.gateway
 interfaces:
   email-client.source.gateway.interface.default:
     contract:
+      arguments: {}
+      caller_warnings:
+      - external-side-effect: Routed account changes, attachment downloads, OAuth
+          setup, smoke self-sends, and email sends may change local or remote state;
+          the gateway must use the matching bounded interface.
       direct_io:
         network: []
         reads:
@@ -28,49 +33,83 @@ interfaces:
           id: write-1
           medium: prompt
           sensitivity: derived-private
-      arguments: {}
-      preconditions: []
-      interaction: {mode: unattended}
-      caller_warnings:
-      - external-side-effect: Routed account changes, attachment downloads, OAuth setup,
-          smoke self-sends, and email sends may change local or remote state; the gateway
-          must use the matching bounded interface.
-      outputs:
-      - id: response
-        audience: human
-        description: A response that routes the requested email operation through the
-          declared account, IMAP, SMTP, OAuth, or smoke-check interface.
-        direct_io_ref: write-1
-        cardinality: {minimum: 1, maximum: 1}
-        ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        empty: The response is nonempty on successful handling.
-        type: {kind: string, sensitivity: derived-private, description: Markdown response}
-      outcomes:
-      - id: success
-        class: success
-        outputs: [response]
-        effects: []
-        caller_action: Present the response to the user.
-      - id: blocked
-        class: refusal
-        outputs: [response]
-        effects: []
-        caller_action: Resolve the missing account, credential, consent, or required message detail before retrying.
       execution:
-        state_effect: read-only
+        consistency:
+          live: The response is based on the prompt and any interface results obtained
+            during this invocation.
         lifecycle: finite
-        consistency: {live: The response is based on the prompt and any interface results obtained during this invocation.}
-        verification: [{method: direct-io-state, direct_io_ref: write-1}]
+        state_effect: read-only
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
       helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Present the response to the user.
+        class: success
+        effects: []
+        id: success
+        outputs:
+        - response
+      - caller_action: Resolve the missing account, credential, consent, or required
+          message detail before retrying.
+        class: refusal
+        effects: []
+        id: blocked
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: A response that routes the requested email operation through
+          the declared account, IMAP, SMTP, OAuth, or smoke-check interface.
+        direct_io_ref: write-1
+        empty: The response is nonempty on successful handling.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: Markdown response
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
     description: Primary LLM-facing skill instructions.
     version: 3
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces:
 - interface: connect-google.interface.default
   version: 1
-- interface: email-client.source.rtx-email-accounts.interface.accounts-setup-oauth
+- interface: email-client.interface.accounts-setup-oauth
   version: 1
-version: 1
+- interface: email-client.interface.accounts-add
+  version: 1
+- interface: email-client.interface.accounts-list
+  version: 1
+- interface: email-client.interface.accounts-remove
+  version: 1
+- interface: email-client.interface.accounts-set-password
+  version: 1
+- interface: email-client.interface.accounts-update
+  version: 1
+- interface: email-client.interface.live-smoke
+  version: 1
+- interface: email-client.interface.mail-attachments
+  version: 1
+- interface: email-client.interface.mail-folders
+  version: 1
+- interface: email-client.interface.mail-list
+  version: 1
+- interface: email-client.interface.mail-read
+  version: 1
+- interface: email-client.interface.mail-save-attachments
+  version: 1
+- interface: email-client.interface.send-email
+  version: 1
+version: 2

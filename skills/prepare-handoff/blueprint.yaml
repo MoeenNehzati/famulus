@@ -4,9 +4,12 @@ authority:
     bash: []
     network: []
 category: workflow-general-assistant
+children:
+  prepare-handoff-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
-- SKILL\.md
-- agents/openai\.yaml
+- (?:SKILL\.md|agents/openai\.yaml)
 description: Prepares approval-gated project handoffs by separating repository workflow
   and documentation updates, residual lessons, and optional memory candidates.
 discovery:
@@ -22,12 +25,13 @@ gateway:
   path: SKILL.md
 id: prepare-handoff
 kind: generator
+namespace_exports: {}
 node_type: module
 role: automation
-schema_version: 4
+schema_version: 5
 sources:
   prepare-handoff.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 1
+version: 2

@@ -21,7 +21,7 @@ try:
 except ImportError:
     HAS_OFFICINA = False
 
-SKILL_DIR = Path(__file__).resolve().parent.parent
+SKILL_DIR = Path(__file__).resolve().parent
 STATE_DIR = Path(os.environ["EMAIL_TRIAGE_STATE_DIR"]) if os.environ.get("EMAIL_TRIAGE_STATE_DIR") else SKILL_DIR / "state"
 STATUS_FILE = STATE_DIR / "status.json"
 

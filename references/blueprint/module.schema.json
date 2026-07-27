@@ -2,14 +2,14 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "module.schema.json",
   "title": "Module Blueprint",
-  "description": "Closed version 4 contract for one module ownership, authority, discovery, containment, and export boundary.",
+  "description": "Closed version 5 contract for one module ownership, authority, explicit child topology, routing, and export boundary.",
   "type": "object",
-  "required": ["schema_version", "node_type", "id", "version", "gateway", "content", "authority", "sources", "exports"],
+  "required": ["schema_version", "node_type", "id", "version", "gateway", "content", "authority", "sources", "children", "namespace_exports", "exports"],
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": 4,
-      "x-famulus": {"field_status": "required", "template": {"include": true, "example": 4}, "doc": {"authoring": ["Use unified blueprint schema version 4."]}, "related_validation_rules": ["schema-shape"]}
+      "const": 5,
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": 5}, "doc": {"authoring": ["Use unified blueprint schema version 5."]}, "related_validation_rules": ["schema-shape"]}
     },
     "node_type": {
       "const": "module",
@@ -65,6 +65,18 @@
       "propertyNames": {"$ref": "common.schema.json#/definitions/behavioralSourceId"},
       "additionalProperties": {"$ref": "common.schema.json#/definitions/sourceContainment"},
       "x-famulus": {"field_status": "required", "template": {"include": true, "example": {}}, "doc": {"authoring": ["Contain behavioral sources by canonical ID and blueprint only; source versions remain source-owned."]}, "related_validation_rules": ["relationship-edge"]}
+    },
+    "children": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.schema.json#/definitions/moduleId"},
+      "additionalProperties": {"$ref": "common.schema.json#/definitions/childBlueprintLocator"},
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": {}}, "doc": {"authoring": ["Register every direct child by global module ID and its module-root-relative canonical blueprint.yaml marker. Use an explicit empty mapping when there are no children."]}, "related_validation_rules": ["nested-topology"]}
+    },
+    "namespace_exports": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.schema.json#/definitions/moduleId"},
+      "additionalProperties": {"$ref": "#/definitions/namespaceExport"},
+      "x-famulus": {"field_status": "required", "template": {"include": true, "example": {}}, "doc": {"authoring": ["Route selected exports of registered direct children without widening child authority. Use an explicit empty mapping when there are no routes."]}, "related_validation_rules": ["namespace-export"]}
     },
     "exports": {
       "type": "object",
@@ -197,19 +209,81 @@
       "additionalProperties": false,
       "properties": {
         "allow_all_modules": {"type": "boolean"},
-        "allowed_callers": {"type": "array", "uniqueItems": true, "items": {"$ref": "common.schema.json#/definitions/moduleId"}}
+        "allowed_callers": {"type": "array", "uniqueItems": true, "items": {"$ref": "common.schema.json#/definitions/callerReference"}}
       },
       "allOf": [
         {"if": {"properties": {"allow_all_modules": {"const": true}}}, "then": {"properties": {"allowed_callers": {"maxItems": 0}}}}
       ]
     },
-    "export": {
+    "sourceExport": {
       "type": "object",
       "required": ["source_interface", "access"],
       "additionalProperties": false,
       "properties": {
         "source_interface": {"$ref": "common.schema.json#/definitions/sourceInterfaceId"},
         "access": {"$ref": "#/definitions/access"}
+      }
+    },
+    "facadeTarget": {
+      "type": "object",
+      "required": ["interface", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "interface": {"$ref": "common.schema.json#/definitions/exportInterfaceId"},
+        "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"}
+      }
+    },
+    "facadeExport": {
+      "type": "object",
+      "required": ["facade_interface", "access"],
+      "additionalProperties": false,
+      "properties": {
+        "facade_interface": {"$ref": "#/definitions/facadeTarget"},
+        "access": {"$ref": "#/definitions/access"}
+      }
+    },
+    "export": {
+      "oneOf": [
+        {"$ref": "#/definitions/sourceExport"},
+        {"$ref": "#/definitions/facadeExport"}
+      ]
+    },
+    "namespaceSurface": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["all"],
+          "additionalProperties": false,
+          "properties": {"all": {"const": true}}
+        },
+        {
+          "type": "object",
+          "required": ["only"],
+          "additionalProperties": false,
+          "properties": {
+            "only": {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": {"$ref": "common.schema.json#/definitions/exportInterfaceId"},
+              "additionalProperties": {"$ref": "common.schema.json#/definitions/interfaceVersion"}
+            }
+          }
+        }
+      ]
+    },
+    "namespaceExport": {
+      "type": "object",
+      "required": ["version", "access", "surface"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
+        "access": {"$ref": "#/definitions/access"},
+        "surface": {"$ref": "#/definitions/namespaceSurface"},
+        "interface_access": {
+          "type": "object",
+          "propertyNames": {"$ref": "common.schema.json#/definitions/exportInterfaceId"},
+          "additionalProperties": {"$ref": "#/definitions/access"}
+        }
       }
     }
   },

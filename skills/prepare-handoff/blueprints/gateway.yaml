@@ -1,8 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Implements the staged handoff review, approval, repository-update,
-  residual-lesson, memory-candidate, and sentinel protocol.
+description: Implements the staged handoff review, approval, repository-update, residual-lesson,
+  memory-candidate, and sentinel protocol.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -11,47 +11,175 @@ interfaces:
   prepare-handoff.source.gateway.interface.default:
     contract:
       arguments:
-        request: {description: Explicit or transition-triggered handoff request together with the recent project-work context to preserve., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
-      preconditions: []
-      interaction: {mode: interactive, channel: tty, unattended_outcome: approval-required}
+        request:
+          description: Explicit or transition-triggered handoff request together with
+            the recent project-work context to preserve.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
       caller_warnings:
-      - external-side-effect: After explicit approval, the handoff may edit repository workflow or documentation files and append a dated residual lesson.
-      outputs:
-      - {id: response, audience: human, description: 'Handoff diagnosis and plan, clarification request, approval request, or final report with the required sentinel.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
-      outcomes:
-      - {id: plan-presented, class: success, outputs: [response], effects: [], caller_action: "Review the proposed workflow, documentation, lesson, risk, and memory-candidate buckets and approve or revise them."}
-      - {id: approval-required, class: refusal, outputs: [response], effects: [], caller_action: Explicitly approve the handoff plan before any repository or lesson write.}
-      - {id: completed, class: success, outputs: [response], effects: [handoff-write], caller_action: "Review the named repository changes, residual lessons, memory candidates, and completion sentinel."}
-      - {id: completed-without-writes, class: no-op, outputs: [response], effects: [], caller_action: Treat the handoff as closed with no repository writes.}
-      - {id: partial, class: partial, outputs: [response], effects: [handoff-write], caller_action: Preserve completed approved writes and resolve the reported remaining handoff item before closing.}
-      execution:
-        state_effect: mutating
-        lifecycle: finite
-        consistency: {live: The plan and final report reflect the recent conversation plus repository state observed at each approved stage.}
-        effects:
-        - {id: handoff-write, direct_io_ref: approved-write, action: update, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [completed, partial], confirmation_evidence: {kind: output, output_ref: response}, reversibility: {reversible: Restore only the approved handoff edits after checking for overlapping work.}}
-        mutation_safety:
-          atomicity: {non_atomic: "Workflow, documentation, and lesson files are separate writes."}
-          concurrent_invocations: {unsafe: Concurrent handoff edits can overlap the same repository or dated lesson file.}
-          idempotency: {non_idempotent: Repeating an approved handoff can duplicate lesson entries or reapply documentation edits.}
-          on_uncertain_completion: {verify_then_decide: Inspect the named files and sentinel-bearing report before retrying.}
-          partial_effects_on_failure: {possible: Earlier approved files may be written before a later update fails.}
-          rollback_on_failure: {available: Restore only this invocation's verified writes after checking ownership and overlap.}
-        verification:
-        - {method: output-schema, output_ref: response}
-        - {method: direct-io-state, direct_io_ref: repository-state}
-      helpers: []
+      - external-side-effect: After explicit approval, the handoff may edit repository
+          workflow or documentation files and append a dated residual lesson.
       direct_io:
         network: []
         reads:
-        - {id: request, medium: prompt, access: read, system: agent-runtime, content: Handoff request and recent project-work context., formats: [text], sensitivity: user-private}
-        - {id: repository-state, medium: repository-filesystem, access: read, content: 'Current workflow files, documentation, existing lessons layout, and relevant project state.', formats: [markdown, yaml, json, code, text], sensitivity: user-private, reason: Decide what a future developer would still lack and verify approved updates.}
+        - access: read
+          content: Handoff request and recent project-work context.
+          formats:
+          - text
+          id: request
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        - access: read
+          content: Current workflow files, documentation, existing lessons layout,
+            and relevant project state.
+          formats:
+          - markdown
+          - yaml
+          - json
+          - code
+          - text
+          id: repository-state
+          medium: repository-filesystem
+          reason: Decide what a future developer would still lack and verify approved
+            updates.
+          sensitivity: user-private
         writes:
-        - {id: response, medium: prompt, access: write, system: agent-runtime, content: 'Handoff plan, approval gate, final report, memory candidates, and exact sentinels.', formats: [markdown], sensitivity: derived-private}
-        - {id: approved-write, medium: repository-filesystem, access: write, content: 'Explicitly approved workflow, documentation, and residual lesson updates.', formats: [markdown, yaml, json, code, text], sensitivity: user-private, reason: Persist only approved project-continuity information in the repository.}
-    description: Review recent work, obtain approval, encode project-local continuity, and close with exact machine-readable sentinels.
+        - access: write
+          content: Handoff plan, approval gate, final report, memory candidates, and
+            exact sentinels.
+          formats:
+          - markdown
+          id: response
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: Explicitly approved workflow, documentation, and residual lesson
+            updates.
+          formats:
+          - markdown
+          - yaml
+          - json
+          - code
+          - text
+          id: approved-write
+          medium: repository-filesystem
+          reason: Persist only approved project-continuity information in the repository.
+          sensitivity: user-private
+      execution:
+        consistency:
+          live: The plan and final report reflect the recent conversation plus repository
+            state observed at each approved stage.
+        effects:
+        - action: update
+          confirmation_evidence:
+            kind: output
+            output_ref: response
+          direct_io_ref: approved-write
+          id: handoff-write
+          may_occur_in_outcomes:
+          - completed
+          - partial
+          reversibility:
+            reversible: Restore only the approved handoff edits after checking for
+              overlapping work.
+          value_source:
+            argument_ref: request
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: Workflow, documentation, and lesson files are separate writes.
+          concurrent_invocations:
+            unsafe: Concurrent handoff edits can overlap the same repository or dated
+              lesson file.
+          idempotency:
+            non_idempotent: Repeating an approved handoff can duplicate lesson entries
+              or reapply documentation edits.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the named files and sentinel-bearing report
+              before retrying.
+          partial_effects_on_failure:
+            possible: Earlier approved files may be written before a later update
+              fails.
+          rollback_on_failure:
+            available: Restore only this invocation's verified writes after checking
+              ownership and overlap.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: response
+        - direct_io_ref: repository-state
+          method: direct-io-state
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: approval-required
+      outcomes:
+      - caller_action: Review the proposed workflow, documentation, lesson, risk,
+          and memory-candidate buckets and approve or revise them.
+        class: success
+        effects: []
+        id: plan-presented
+        outputs:
+        - response
+      - caller_action: Explicitly approve the handoff plan before any repository or
+          lesson write.
+        class: refusal
+        effects: []
+        id: approval-required
+        outputs:
+        - response
+      - caller_action: Review the named repository changes, residual lessons, memory
+          candidates, and completion sentinel.
+        class: success
+        effects:
+        - handoff-write
+        id: completed
+        outputs:
+        - response
+      - caller_action: Treat the handoff as closed with no repository writes.
+        class: no-op
+        effects: []
+        id: completed-without-writes
+        outputs:
+        - response
+      - caller_action: Preserve completed approved writes and resolve the reported
+          remaining handoff item before closing.
+        class: partial
+        effects:
+        - handoff-write
+        id: partial
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Handoff diagnosis and plan, clarification request, approval request,
+          or final report with the required sentinel.
+        direct_io_ref: response
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Review recent work, obtain approval, encode project-local continuity,
+      and close with exact machine-readable sentinels.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

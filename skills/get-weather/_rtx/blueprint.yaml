@@ -1,0 +1,36 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _weather_client.py
+      - Interface
+      reason: Weather lookup tool.
+    network: []
+children: {}
+content:
+- _weather_client\.py
+- __init__\.py
+description: Code module for the get-weather skill.
+exports:
+  get-weather-rtx.interface.scripts-weather:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: get-weather-rtx.source.rtx-weather-client.interface.scripts-weather
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: get-weather-rtx
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  get-weather-rtx.source.rtx-weather-client:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-weather-client.yaml
+version: 1

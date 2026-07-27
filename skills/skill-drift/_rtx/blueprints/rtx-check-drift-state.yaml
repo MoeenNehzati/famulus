@@ -1,0 +1,467 @@
+content:
+- _check_drift_state\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-skill-sources-init.yaml
+  reason: Imports installed-source discovery from _rtx/_skill_sources/__init__.py.
+  source: skill-drift-rtx.source.rtx-skill-sources-init
+  version: 1
+description: Resolves exact or installed v5 modules, derives canonical node hashes
+  and certificate currentness through the shared certification view, and optionally
+  saves a Markdown report.
+gateway:
+  language: Python
+  path: _check_drift_state.py
+id: skill-drift-rtx.source.rtx-check-drift-state
+interfaces:
+  skill-drift-rtx.source.rtx-check-drift-state.interface.compute-hashes:
+    contract:
+      arguments:
+        json:
+          default: false
+          description: Emit one machine-readable JSON document instead of Markdown.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        skill-root:
+          description: Exact installed module root to hash instead of discovering
+            installed copies.
+          direct_io_ref: read-1
+          required: false
+          sensitivity: user-private
+          type:
+            access: read
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        targets:
+          default: []
+          description: Optional installed module names or path-like exact module roots;
+            omission scans every observed blueprint-backed module.
+          required: false
+          sensitivity: user-private
+          type:
+            element_type:
+              kind: string
+              sensitivity: user-private
+            kind: list
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: selected v5 graph, node inputs, hash policy, certification basis,
+            and certificate verification material
+          formats:
+          - yaml
+          - json
+          - markdown
+          - python
+          - text
+          - binary
+          - pem
+          - jsonl
+          id: read-1
+          medium: local-filesystem
+          path: $target/**
+          path_match: glob
+          reason: Derive canonical repository node hashes without importing target
+            code.
+          sensitivity: derived-private
+          system: filesystem
+        - access: read
+          content: installed module roots and active plugin registry
+          formats:
+          - json
+          - directory
+          id: read-2
+          medium: home-filesystem
+          path: $HOME/{.codex/skills,.claude/skills,.claude/plugins/installed_plugins.json}
+          path_match: glob
+          reason: Resolve installed copies when exact overrides are absent.
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: repository identity, source commit, index, and tracked source state
+          formats:
+          - git
+          id: read-3
+          medium: local-system
+          path: $target/repository
+          path_match: exact
+          reason: Derive commit-backed hash inputs.
+          sensitivity: derived-private
+          system: git
+        writes:
+        - access: write
+          content: hash report
+          formats:
+          - json
+          - markdown
+          id: write-1
+          medium: stdout
+          reason: Return canonical node hashes.
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: error
+          formats:
+          - text
+          id: write-2
+          medium: stderr
+          reason: Report hash failures.
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          snapshot: Hashes are derived through one shared repository certification-state
+            snapshot per source.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: hash-report
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Consume the canonical hashes without reading certificate records
+          directly.
+        class: success
+        effects: []
+        id: computed
+        outputs:
+        - hash-report
+      - caller_action: Use successful target hashes and report each failed target;
+          the process exits nonzero.
+        class: partial
+        effects: []
+        id: partial
+        outputs:
+        - hash-report
+        - error
+      - caller_action: Correct target discovery, v5 blueprint, Git, or safe-read failures
+          before retrying.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - error
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Deterministically ordered JSON or Markdown containing each target's
+          certification-basis hash and canonical node hashes.
+        direct_io_ref: write-1
+        empty: Never empty when at least one module resolves.
+        id: hash-report
+        ordering: sorted
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: JSON when --json is present, otherwise Markdown.
+          kind: string
+          sensitivity: derived-private
+      - audience: human
+        cardinality:
+          maximum: null
+          minimum: 0
+        description: Target-resolution or per-target hash failure.
+        direct_io_ref: write-2
+        empty: Empty when every requested target hashes successfully.
+        id: error
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Compute canonical certification-basis and v5 node hashes for exact
+      or installed modules.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        allow_stdin: false
+        allowed_flags:
+        - --json
+        - --skill-root
+        flag_patterns:
+          --skill-root: ^.+$
+        min_positionals: 1
+        positional_patterns:
+          '0': ^compute-hashes$
+    usage: compute-hashes [target ...] [--skill-root ROOT] [--json]
+    version: 1
+  skill-drift-rtx.source.rtx-check-drift-state.interface.drift-status:
+    contract:
+      arguments:
+        all:
+          default: false
+          description: Check all observed installed modules and reject combination
+            with named targets.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        json:
+          default: false
+          description: Emit JSON and suppress the saved Markdown report.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        skill-root:
+          description: Exact installed module root to inspect instead of discovering
+            installed copies.
+          direct_io_ref: read-1
+          required: false
+          sensitivity: user-private
+          type:
+            access: read
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        targets:
+          default: []
+          description: Optional installed module names or path-like exact module roots;
+            omission scans every observed installed module.
+          required: false
+          sensitivity: user-private
+          type:
+            element_type:
+              kind: string
+              sensitivity: user-private
+            kind: list
+      caller_warnings:
+      - external-side-effect: Non-JSON mode writes a timestamped derived Markdown
+          report below skill-drift/_build.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: selected v5 graph, node inputs, hash policy, certification basis,
+            retained public keys, and certificate histories
+          formats:
+          - yaml
+          - json
+          - markdown
+          - python
+          - text
+          - binary
+          - pem
+          - jsonl
+          id: read-1
+          medium: local-filesystem
+          path: $target/**
+          path_match: glob
+          reason: Evaluate signed certificate currentness without private-key access
+            or certificate writes.
+          sensitivity: derived-private
+          system: filesystem
+        - access: read
+          content: installed module roots and active plugin registry
+          formats:
+          - json
+          - directory
+          id: read-2
+          medium: home-filesystem
+          path: $HOME/{.codex/skills,.claude/skills,.claude/plugins/installed_plugins.json}
+          path_match: glob
+          reason: Resolve installed copies when exact overrides are absent.
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: repository identity, source commit, index, and tracked source state
+          formats:
+          - git
+          id: read-3
+          medium: local-system
+          path: $target/repository
+          path_match: exact
+          reason: Evaluate commit-backed certificate inputs.
+          sensitivity: derived-private
+          system: git
+        writes:
+        - access: write
+          content: derived certificate drift report
+          formats:
+          - markdown
+          id: write-1
+          medium: local-filesystem
+          path: _build/certificate-drift-*.md
+          path_match: glob
+          reason: Save the optional human-readable report.
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: certificate status report
+          formats:
+          - json
+          - markdown
+          id: write-2
+          medium: stdout
+          reason: Return exact module and node currentness.
+          sensitivity: derived-private
+          system: agent-runtime
+        - access: write
+          content: error
+          formats:
+          - text
+          id: write-3
+          medium: stderr
+          reason: Report invocation-wide failures.
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          snapshot: Certificate currentness and hashes come from one shared repository
+            certification-state snapshot per source.
+        effects:
+        - action: create
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: markdown-report
+          may_occur_in_outcomes:
+          - reported
+          reversibility:
+            reversible: The derived local report can be deleted without changing certification
+              state.
+          value_source:
+            kind: output
+            output_ref: status-report
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: The report directory and timestamped report are written directly.
+          concurrent_invocations:
+            unsafe: Invocations in the same second can target the same derived report
+              path.
+          idempotency:
+            non_idempotent: Repeated non-JSON invocations normally create timestamp-named
+              reports.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the reported _build path before rerunning.
+          partial_effects_on_failure:
+            possible: Report-directory creation can precede a write error.
+          rollback_on_failure:
+            unavailable: The checker does not remove an already written derived report.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: status-report
+        - direct_io_ref: write-1
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Relay certificate-current or certificate-stale with exact node
+          concerns.
+        class: success
+        effects:
+        - markdown-report
+        id: reported
+        outputs:
+        - status-report
+      - caller_action: Consume the JSON result; no Markdown report was written.
+        class: success
+        effects: []
+        id: reported-json
+        outputs:
+        - status-report
+      - caller_action: Report the error without writing or certifying certificate
+          state.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - error
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: JSON or Markdown containing certificate currentness and exact
+          concerns for each selected module and node.
+        direct_io_ref: write-2
+        empty: Never empty when at least one module resolves.
+        id: status-report
+        ordering: sorted
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: JSON when --json is present, otherwise Markdown plus the saved-report
+            path.
+          kind: string
+          sensitivity: derived-private
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Invocation-wide target, discovery, Git, blueprint, or certificate-read
+          error.
+        direct_io_ref: write-3
+        empty: Empty on success.
+        id: error
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Read signed certificate currentness for exact or installed v5 modules
+      without writing certification state.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        allow_stdin: false
+        allowed_flags:
+        - --json
+        - --all
+        - --skill-root
+        flag_patterns:
+          --skill-root: ^.+$
+        min_positionals: 1
+        positional_patterns:
+          '0': ^status$
+    usage: status [target ...] [--all] [--skill-root ROOT] [--json]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces:
+- interface: common.interface.certification-hashing
+  version: 1
+- interface: common.interface.certificate-records
+  version: 1
+- interface: common.interface.blueprint-graph
+  version: 1
+- interface: common.interface.certification-view
+  version: 1
+version: 1

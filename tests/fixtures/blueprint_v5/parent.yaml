@@ -1,0 +1,48 @@
+schema_version: 5
+node_type: module
+id: demo-skill
+version: 2
+description: Provides the discoverable demo skill.
+category: development-assistant
+role: automation
+kind: tool
+gateway:
+  path: SKILL.md
+  language: Markdown
+content:
+  - SKILL\.md
+discovery:
+  mechanism: skill
+authority:
+  owns_filesystem: []
+sources: {}
+children:
+  demo-skill-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
+namespace_exports:
+  demo-skill-rtx:
+    version: 1
+    access:
+      allow_all_modules: false
+      allowed_callers:
+        - trusted-client
+        - ._rtx
+        - ..peer
+    surface:
+      only:
+        demo-skill-rtx.interface.execute: 3
+    interface_access:
+      demo-skill-rtx.interface.execute:
+        allow_all_modules: false
+        allowed_callers:
+          - trusted-client
+exports:
+  demo-skill.interface.execute:
+    facade_interface:
+      interface: demo-skill-rtx.interface.execute
+      version: 3
+    access:
+      allow_all_modules: false
+      allowed_callers:
+        - trusted-client

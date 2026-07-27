@@ -8,7 +8,7 @@ description: Use when you need a mechanical, non-interpretive scan of today's (o
 
 Category: workflow-general-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces:
 - `find-handoff-candidates.source.gateway -> prepare-handoff.interface.default@1`

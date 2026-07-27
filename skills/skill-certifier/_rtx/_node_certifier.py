@@ -26,6 +26,7 @@ from officina.common.certification_hashing import (
     certification_target_postorder,
     compute_node_hash_states,
     compute_certification_basis_hash,
+    certifier_check_registry,
     derive_certifier_identity,
     expected_certifier_checks,
     map_route_smoke_dependencies,
@@ -87,6 +88,7 @@ from officina.runtime.python_machine_interface import (
     PythonProcessTarget,
     PythonProcessTargetError,
     PythonRouteSmokeTraceError,
+    logical_python_package_name,
     trace_python_route_smoke_dependencies_batch,
 )
 
@@ -403,7 +405,9 @@ def _python_route_smoke_trace_specs(
         if not isinstance(interfaces, Mapping):
             continue
         try:
-            gateway_path = node.gateway_path.relative_to(node.skill_root).as_posix()
+            gateway_path = node.gateway_path.relative_to(
+                node.module_root
+            ).as_posix()
         except ValueError as exc:
             raise CertificationHashError(
                 f"{node_id}: Python gateway must remain inside its module"
@@ -421,9 +425,32 @@ def _python_route_smoke_trace_specs(
                 and isinstance(entry, str)
             ):
                 try:
+                    logical_package = None
+                    logical_entrypoint = None
+                    if graph.schema_version == 5:
+                        module_id = graph.source_modules[node_id]
+                        logical_package = logical_python_package_name(module_id)
+                        path = Path(gateway_path)
+                        physical_parts = (
+                            path.parent.parts
+                            if path.name == "__init__.py"
+                            else (*path.parent.parts, path.stem)
+                        )
+                        suffix = ".".join(
+                            part
+                            for part in physical_parts
+                            if part not in {"", "."}
+                        )
+                        logical_entrypoint = (
+                            logical_package
+                            if not suffix
+                            else f"{logical_package}.{suffix}"
+                        )
                     python_target = PythonProcessTarget(
                         Path(gateway_path),
                         entry,
+                        logical_package=logical_package,
+                        logical_entrypoint=logical_entrypoint,
                     )
                 except PythonProcessTargetError as exc:
                     raise CertificationHashError(
@@ -453,6 +480,7 @@ def audit_route_smoke_dependencies(
     repo_root: Path,
     certification_basis_paths: Sequence[Path],
     certification_node_ids: Sequence[str],
+    schema_root: Path | None = None,
 ) -> RouteSmokeAuditResult:
     """Run the certifier-owned scoped Python route-smoke dependency audit."""
 
@@ -462,13 +490,24 @@ def audit_route_smoke_dependencies(
         certification_node_ids,
     )
     specifications = tuple(
-        (graph.nodes[node_id].skill_root, python_target)
+        (graph.nodes[node_id].module_root, python_target)
         for node_id, _interface_id, python_target in trace_specs
     )
     try:
+        trace_options = {}
+        if graph.schema_version == 5:
+            trace_options = {
+                "expected_schema_version": 5,
+                "schema_root": (
+                    Path(schema_root)
+                    if schema_root is not None
+                    else root / "references" / "blueprint" / "v5"
+                ),
+            }
         traces = trace_python_route_smoke_dependencies_batch(
             root,
             specifications,
+            **trace_options,
         )
     except (PythonRouteSmokeTraceError, ValueError) as exc:
         raise CertificationHashError(str(exc)) from exc
@@ -480,7 +519,7 @@ def audit_route_smoke_dependencies(
         ]
     ] = []
     for node_id, _interface_id, python_target in trace_specs:
-        key = (graph.nodes[node_id].skill_root.resolve(), python_target)
+        key = (graph.nodes[node_id].module_root.resolve(), python_target)
         mappings = map_route_smoke_dependencies(
             graph,
             states,
@@ -506,14 +545,21 @@ def _v4_route_smoke_audit(
     repo_root: Path,
     certification_basis_paths: Sequence[Path],
     certification_node_ids: Sequence[str],
+    schema_root: Path | None = None,
 ) -> RouteSmokeAuditResult:
     try:
+        schema_options = (
+            {"schema_root": schema_root}
+            if graph.schema_version == 5
+            else {}
+        )
         return audit_route_smoke_dependencies(
             graph,
             states,
             repo_root=repo_root,
             certification_basis_paths=certification_basis_paths,
             certification_node_ids=certification_node_ids,
+            **schema_options,
         )
     except CertificationHashError as exc:
         raise CertificationError(str(exc)) from exc
@@ -531,13 +577,16 @@ def _v4_payload(
     certifier_identity: Mapping[str, object],
     checks: Sequence[Mapping[str, object]],
     certified_at: str,
+    expected_schema_version: int = 4,
 ) -> dict[str, object]:
     node = graph.nodes[node_id]
     state = states[node_id]
     if node.gateway_path is None:
         raise CertificationError(f"{node_id}: certificate subject requires a gateway path")
     return {
-        "certificate_schema_version": 1,
+        "certificate_schema_version": (
+            2 if expected_schema_version == 5 else 1
+        ),
         "subject": {
             "id": node.node_id,
             "node_type": node.node_type,
@@ -590,9 +639,18 @@ def _v4_gate_snapshot(
     )
 
 
-def _passed_v4_check(gate_name: str) -> dict[str, object]:
+def _passed_v4_check(
+    gate_name: str,
+    *,
+    expected_schema_version: int = 4,
+) -> dict[str, object]:
+    registry = (
+        CERTIFIER_CHECK_REGISTRY
+        if expected_schema_version == 4
+        else certifier_check_registry(expected_schema_version)
+    )
     try:
-        check_id, version = CERTIFIER_CHECK_REGISTRY[gate_name]
+        check_id, version = registry[gate_name]
     except KeyError as exc:
         raise CertificationError(f"{gate_name} gate is unavailable") from exc
     return {
@@ -608,6 +666,7 @@ def _v4_deterministic_check(
     *,
     graph: RepositoryBlueprintGraph,
     states: Mapping[str, NodeHashState],
+    expected_schema_version: int = 4,
 ) -> dict[str, object]:
     """Assert that the owned derived state is exactly the state being signed."""
 
@@ -628,19 +687,26 @@ def _v4_deterministic_check(
         for finding in v4_certification_completeness_findings(graph)
     ):
         raise CertificationError(f"{snapshot.node_id}: deterministic completeness failed")
-    return _passed_v4_check("deterministic")
+    return _passed_v4_check(
+        "deterministic",
+        expected_schema_version=expected_schema_version,
+    )
 
 
 def _v4_semantic_attestation(
     snapshot: V4GateSnapshot,
     *,
     reviewed_commit: str,
+    expected_schema_version: int = 4,
 ) -> dict[str, object]:
     """Record that the LLM attested this exact committed snapshot."""
 
     if not reviewed_commit or snapshot.source_commit != reviewed_commit:
         raise CertificationError(f"{snapshot.node_id}: semantic review does not match HEAD")
-    return _passed_v4_check("semantic-review")
+    return _passed_v4_check(
+        "semantic-review",
+        expected_schema_version=expected_schema_version,
+    )
 
 
 def _v4_blueprint_paths(
@@ -736,6 +802,7 @@ def _validate_v4_semantic_attestation(
             mechanical_graph = load_repository_blueprint_graph(
                 mechanical_root,
                 schema_root=mechanical_root / "references" / "blueprint",
+                expected_schema_version=4,
             )
         except (GitMaterializationError, CertificationHashError, OSError, ValueError) as exc:
             raise CertificationError(f"mechanical commit cannot be reconstructed: {exc}") from exc
@@ -807,6 +874,13 @@ def _verify_executing_candidate_certifier(
     ]
     if len(owners) != 1:
         raise CertificationError("executing certifier bytes have no unique candidate owner")
+    if (
+        graph.schema_version == 5
+        and graph.source_modules.get(owners[0]) != "skill-certifier-rtx"
+    ):
+        raise CertificationError(
+            "executing v5 certifier source must belong to skill-certifier-rtx"
+        )
     executing_digest = "sha256:" + hashlib.sha256(executing.read_bytes()).hexdigest()
     owner_state = states.get(owners[0])
     if not isinstance(owner_state, NodeHashState) or not any(
@@ -829,9 +903,11 @@ def _certify_v4_repository(
     after_append: object | None = None,
     allow_non_atomic: bool = False,
     require_candidate_execution: bool = False,
-    require_migration_review: bool = True,
+    require_migration_review: bool = False,
+    expected_schema_version: int = 5,
+    schema_root: Path | None = None,
 ) -> V4CertificationResult:
-    """Certify exact v4 targets from one committed repository snapshot.
+    """Certify exact version-selected targets from one committed repository snapshot.
 
     Migration candidates additionally require the reserved mechanical baseline
     and protected semantic-review transition. The live v4 route uses the same
@@ -840,6 +916,12 @@ def _certify_v4_repository(
     """
 
     root = Path(repo_root).resolve()
+    if expected_schema_version not in {4, 5}:
+        raise CertificationError(
+            f"unsupported certification schema version: {expected_schema_version}"
+        )
+    if require_migration_review and expected_schema_version != 4:
+        raise CertificationError("the frozen migration writer accepts only v4")
     if require_migration_review:
         atomic = run_git(
             root, "config", "--bool", "--get", "famulus.candidateAtomicGuarantee",
@@ -897,7 +979,15 @@ def _certify_v4_repository(
             raise CertificationError(
                 f"candidate mechanical baseline is unavailable: {exc}"
             ) from exc
-    selected_schema_root = root / "references" / "blueprint"
+    selected_schema_root = (
+        Path(schema_root)
+        if schema_root is not None
+        else (
+            root / "references" / "blueprint"
+            if expected_schema_version == 5
+            else root / "references" / "blueprint" / "migrations" / "v4"
+        )
+    )
     policy_path = root / CANONICAL_NODE_HASH_POLICY
 
     def derive() -> tuple[
@@ -908,28 +998,35 @@ def _certify_v4_repository(
         dict[str, object],
     ]:
         try:
-            graph = load_repository_blueprint_graph(root, schema_root=selected_schema_root)
+            graph = load_repository_blueprint_graph(
+                root,
+                schema_root=selected_schema_root,
+                expected_schema_version=expected_schema_version,
+            )
             if not graph.nodes or any(
-                node.declaration.get("schema_version") != 4
+                node.declaration.get("schema_version") != expected_schema_version
                 for node in graph.nodes.values()
             ):
                 raise CertificationError(
-                    "private certificate writer accepts only all-v4 repositories"
+                    "private certificate writer accepts only a closed "
+                    f"all-v{expected_schema_version} repository"
                 )
             completeness = v4_certification_completeness_findings(graph)
             if completeness:
                 first = completeness[0]
                 raise CertificationError(
-                    "v4 certification completeness failed: "
+                    f"v{expected_schema_version} certification completeness failed: "
                     f"{first.subject_id}:{first.field} "
                     f"({len(completeness)} finding(s))"
                 )
             basis_paths = resolve_certification_basis_paths(
                 root,
+                expected_schema_version=expected_schema_version,
                 allow_non_atomic=allow_non_atomic,
             )
             basis_hash = compute_certification_basis_hash(
                 root,
+                expected_schema_version=expected_schema_version,
                 allow_non_atomic=allow_non_atomic,
             )
             states = compute_node_hash_states(
@@ -978,6 +1075,7 @@ def _certify_v4_repository(
         repo_root=root,
         certification_basis_paths=basis_paths,
         certification_node_ids=order,
+        schema_root=selected_schema_root,
     )
     repeated_route_smoke_audit = _v4_route_smoke_audit(
         graph,
@@ -985,6 +1083,7 @@ def _certify_v4_repository(
         repo_root=root,
         certification_basis_paths=basis_paths,
         certification_node_ids=order,
+        schema_root=selected_schema_root,
     )
     if repeated_route_smoke_audit != initial_route_smoke_audit:
         raise CertificationError(
@@ -1010,7 +1109,7 @@ def _certify_v4_repository(
     ordered_tracked_paths = tuple(sorted(tracked_paths))
     pooled_review_relatives = {
         repository_relative_path(
-            pooled_review_path(node.skill_root),
+            pooled_review_path(node.module_root),
             root,
         )
         for node in graph.nodes.values()
@@ -1069,6 +1168,13 @@ def _certify_v4_repository(
     except BlueprintGraphError as exc:
         raise CertificationError("certificate public-key root is outside repository") from exc
 
+    def is_pooled_review_temp(relative: Path) -> bool:
+        name = relative.name
+        if not name.startswith("..pooled-blueprint-review.yaml.tmp-"):
+            return False
+        final = relative.parent / ".pooled-blueprint-review.yaml"
+        return final in pooled_review_relatives
+
     def require_frozen_tracked_inputs(phase: str) -> None:
         current_preexisting_records: set[bytes] = set()
         for record in porcelain_status_records(phase):
@@ -1090,6 +1196,8 @@ def _certify_v4_repository(
                 relative.as_posix() in local_claims
             ) or (
                 relative in pooled_review_relatives
+            ) or (
+                is_pooled_review_temp(relative)
             ):
                 continue
             raise CertificationError(
@@ -1148,7 +1256,7 @@ def _certify_v4_repository(
             certificate_root.mkdir(mode=0o700)
         try:
             metadata = certificate_root.lstat()
-            certificate_root.resolve().relative_to(graph.nodes[node_id].skill_root.resolve())
+            certificate_root.resolve().relative_to(graph.nodes[node_id].module_root.resolve())
         except (OSError, ValueError) as exc:
             raise CertificationError(f"unsafe certificate output root: {certificate_root}") from exc
         if certificate_root.is_symlink() or not stat.S_ISDIR(metadata.st_mode):
@@ -1158,7 +1266,7 @@ def _certify_v4_repository(
         if log_path.exists():
             old_bytes = read_regular_file_bytes(
                 log_path,
-                allowed_root=graph.nodes[node_id].skill_root,
+                allowed_root=graph.nodes[node_id].module_root,
                 allow_non_atomic=allow_non_atomic,
             )
             previous_entries = parse_certificate_log(
@@ -1175,15 +1283,26 @@ def _certify_v4_repository(
             certifier_identity=certifier_identity,
         )
         gate_records = (
-            _v4_deterministic_check(gate_snapshot, graph=graph, states=states),
-            _passed_v4_check("route-smoke"),
+            _v4_deterministic_check(
+                gate_snapshot,
+                graph=graph,
+                states=states,
+                expected_schema_version=expected_schema_version,
+            ),
+            _passed_v4_check(
+                "route-smoke",
+                expected_schema_version=expected_schema_version,
+            ),
             _v4_semantic_attestation(
                 gate_snapshot,
                 reviewed_commit=reviewed_commit,
+                expected_schema_version=expected_schema_version,
             ),
         )
         normalized_checks[node_id] = normalize_node_checks(gate_records)
-        if normalized_checks[node_id] != expected_certifier_checks():
+        if normalized_checks[node_id] != expected_certifier_checks(
+            expected_schema_version
+        ):
             raise CertificationError(f"{node_id}: certifier gate registry changed")
         if callable(before_append):
             before_append(node_id)
@@ -1196,7 +1315,7 @@ def _certify_v4_repository(
                 old_bytes is None
                 or read_regular_file_bytes(
                     log_path,
-                    allowed_root=graph.nodes[node_id].skill_root,
+                    allowed_root=graph.nodes[node_id].module_root,
                     allow_non_atomic=allow_non_atomic,
                 )
                 != old_bytes
@@ -1215,6 +1334,7 @@ def _certify_v4_repository(
             certifier_identity=certifier_identity,
             checks=normalized_checks[node_id],
             certified_at=certified_at,
+            expected_schema_version=expected_schema_version,
         )
         envelope = sign_certificate_payload(payload, key)
         frame = canonical_certificate_envelope_bytes(envelope) + b"\n"
@@ -1223,7 +1343,7 @@ def _certify_v4_repository(
                 log_path,
                 frame,
                 expected_previous_bytes=old_bytes,
-                allowed_root=graph.nodes[node_id].skill_root,
+                allowed_root=graph.nodes[node_id].module_root,
                 mode=0o600,
                 allow_non_atomic=allow_non_atomic,
             )
@@ -1244,7 +1364,9 @@ def _certify_v4_repository(
             or final_snapshot.commit != snapshot.commit
         ):
             raise CertificationError("HEAD changed after certificate append")
-        if normalized_checks[node_id] != expected_certifier_checks():
+        if normalized_checks[node_id] != expected_certifier_checks(
+            expected_schema_version
+        ):
             raise CertificationError("certifier checks changed after certificate append")
         require_frozen_tracked_inputs("after certificate append")
         require_local_claims("after certificate append")
@@ -1262,7 +1384,7 @@ def _certify_v4_repository(
         if (
             read_regular_file_bytes(
                 log_path,
-                allowed_root=graph.nodes[node_id].skill_root,
+                    allowed_root=graph.nodes[node_id].module_root,
                 allow_non_atomic=allow_non_atomic,
             )
             != expected_log_bytes
@@ -1305,6 +1427,7 @@ def _certify_v4_repository(
         certifier_identity=final_certifier_identity,
         checks_by_node=normalized_checks,
         schema_root=selected_schema_root,
+        certification_basis_paths=final_basis_paths,
         allow_non_atomic=allow_non_atomic,
     )
     for node_id in written:
@@ -1320,7 +1443,7 @@ def _certify_v4_repository(
         and final_graph.nodes[node_id].node_type == "module"
     ):
         module = final_graph.nodes[module_id]
-        path = pooled_review_path(module.skill_root)
+        path = pooled_review_path(module.module_root)
         try:
             rendered = render_pooled_review(
                 final_graph,
@@ -1330,13 +1453,13 @@ def _certify_v4_repository(
             atomic_replace_bytes(
                 path,
                 rendered,
-                allowed_root=module.skill_root,
+                allowed_root=module.module_root,
                 mode=0o600,
                 allow_non_atomic=allow_non_atomic,
             )
             if read_regular_file_bytes(
                 path,
-                allowed_root=module.skill_root,
+                allowed_root=module.module_root,
                 allow_non_atomic=allow_non_atomic,
             ) != rendered:
                 raise CertificationError(
@@ -1720,7 +1843,7 @@ def resolve_reviewed_repository_targets(
                 for node in graph.nodes.values()
                 if node.node_type == "module"
             ),
-            key=lambda node: (node.node_id, node.skill_root.as_posix()),
+            key=lambda node: (node.node_id, node.module_root.as_posix()),
         )
     )
     if not module_nodes:
@@ -1741,13 +1864,17 @@ def resolve_reviewed_repository_targets(
             matches = [
                 node
                 for node in module_nodes
-                if node.skill_root.resolve() == candidate
+                if node.module_root.resolve() == candidate
             ]
         else:
             matches = [
                 node
                 for node in module_nodes
-                if node.node_id == request or node.skill_root.name == request
+                if node.node_id == request
+                or (
+                    graph.schema_version == 4
+                    and node.module_root.name == request
+                )
             ]
         if len(matches) != 1:
             raise CertificationError(
@@ -1755,7 +1882,7 @@ def resolve_reviewed_repository_targets(
                 "in the reviewed repository"
             )
         target = matches[0]
-        identity = (target.node_id, target.skill_root.resolve())
+        identity = (target.node_id, target.module_root.resolve())
         if identity not in seen:
             seen.add(identity)
             resolved.append(target)
@@ -1770,7 +1897,7 @@ def certify(
     reviewed_commit: str | None = None,
     allow_non_atomic: bool = False,
 ) -> tuple[list[CommandResult], list[CertificationOutcome]]:
-    """Issue certificates for exact v4 module targets."""
+    """Issue certificates for exact canonical v5 module targets."""
 
     if reviewed_repository is None or reviewed_commit is None:
         raise CertificationError(
@@ -1781,12 +1908,13 @@ def certify(
     graph = load_repository_blueprint_graph(
         repository,
         schema_root=repository / "references" / "blueprint",
+        expected_schema_version=5,
     )
     if any(
-        node.declaration.get("schema_version") != 4
+        node.declaration.get("schema_version") != 5
         for node in graph.nodes.values()
     ):
-        raise CertificationError("certification accepts only an all-v4 repository")
+        raise CertificationError("certification accepts only an all-v5 repository")
 
     resolved = resolve_reviewed_repository_targets(graph, targets)
 
@@ -1797,7 +1925,7 @@ def certify(
             sorted(
                 node_id
                 for node_id, node in graph.nodes.items()
-                if node.skill_root.resolve() == target.skill_root.resolve()
+                if node.module_root.resolve() == target.module_root.resolve()
             )
         )
         if not node_ids:
@@ -1817,6 +1945,8 @@ def certify(
         allow_non_atomic=allow_non_atomic,
         require_candidate_execution=True,
         require_migration_review=False,
+        expected_schema_version=5,
+        schema_root=repository / "references" / "blueprint",
     )
     written = set(result.node_ids)
     missing = requested_node_ids - written
@@ -1830,7 +1960,7 @@ def certify(
         CertificationOutcome(
             module=target.node_id,
             source="reviewed-repository",
-            module_root=target.skill_root.resolve(),
+            module_root=target.module_root.resolve(),
             nodes=tuple(
                 NodeCertificationOutcome(
                     node_id=node_id,

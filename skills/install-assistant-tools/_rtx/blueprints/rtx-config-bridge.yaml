@@ -1,0 +1,203 @@
+content:
+- _config_bridge\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: install-assistant-tools-rtx.source.rtx-init
+  version: 1
+description: Links Claude and Codex configuration directories to a development checkout
+  and installs repository hook configuration where supported.
+gateway:
+  language: Python
+  path: _config_bridge.py
+id: install-assistant-tools-rtx.source.rtx-config-bridge
+interfaces:
+  install-assistant-tools-rtx.source.rtx-config-bridge.interface.scripts-dev-link:
+    contract:
+      arguments:
+        options:
+          description: Optional home and host-config and shell paths plus skip-host
+            and dry-run choices.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        repo-root:
+          description: Explicit live AI repository checkout to link.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: Non-dry-run execution replaces eligible host configuration
+          paths with links and configures repository hooks.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: live assistant configuration and hooks
+          formats:
+          - directory
+          - json
+          - toml
+          - shell
+          id: read-1
+          medium: repository-filesystem
+          path: <repo-root>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: configure
+          content: Claude and Codex configuration links and shell environment and
+            Git hook setting
+          formats:
+          - symlink
+          - shell
+          - git-config
+          id: write-1
+          medium: home-filesystem
+          path: caller-selected host configuration and shell paths
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: bridge status
+          formats:
+          - text
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Repository and host path state is checked immediately before each
+            action.
+        effects:
+        - action: configure
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: bridge-state
+          may_occur_in_outcomes:
+          - linked
+          reversibility:
+            compensatable: The links and shell block and Git hook setting can be removed
+              by the uninstaller.
+          value_source:
+            argument_ref: repo-root
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: Links and shell configuration and Git hook configuration
+              are applied separately.
+          concurrent_invocations:
+            unsafe: Concurrent bridge operations are not serialized.
+          idempotency:
+            idempotent: Repeating against the same checkout reconciles equivalent
+              links and configuration.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the reported links and Git hooksPath before
+              retrying.
+          partial_effects_on_failure:
+            possible: Some host links or settings may be applied before a later conflict.
+          rollback_on_failure:
+            unavailable: Earlier successful effects are not rolled back automatically.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: status
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Verify the reported host links and Git hook configuration.
+        class: success
+        effects:
+        - bridge-state
+        id: linked
+        outputs:
+        - status
+      - caller_action: Review the dry-run actions.
+        class: no-op
+        effects: []
+        id: planned
+        outputs:
+        - status
+      - caller_action: Resolve a conflicting non-link host path before retrying.
+        class: refusal
+        effects: []
+        id: refused
+        outputs: []
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: null
+          minimum: 1
+        description: Ordered bridge actions or dry-run plan.
+        direct_io_ref: write-2
+        empty: Never empty.
+        id: status
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Symlink Claude/Codex config dirs to a live repo checkout, register
+      dev-mode hooks, set git hooksPath, export $AI. Requires an explicit repo path.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --repo-root
+        - --home
+        - --claude-home
+        - --codex-home
+        - --shell-rc
+        - --no-claude
+        - --no-codex
+        - --dry-run
+        flag_patterns:
+          --claude-home: ^.+$
+          --codex-home: ^.+$
+          --home: ^.+$
+          --repo-root: ^.+$
+          --shell-rc: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+        required_flags:
+        - --repo-root
+    usage: --repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home
+      DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]
+    version: 2
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: binary
+  name: git
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Configures repository hook settings during development installs.
+  version: any
+schema_version: 5
+uses_interfaces:
+- interface: common.interface.codex-toml
+  version: 1
+- interface: common.interface.toml-io
+  version: 1
+version: 1

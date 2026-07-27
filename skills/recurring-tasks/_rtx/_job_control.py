@@ -22,12 +22,15 @@ import yaml
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-SKILL_DIR = Path(__file__).parent.parent
+SKILL_DIR = Path(__file__).parent
 RTX_DIR = Path(__file__).resolve().parent
 if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
-from _schedule_backend import (  # noqa: E402
+if __package__:
+    from ._schedule_backend import ScheduleContext, platform_schedule_backend, schedule_jobs_from_mappings
+else:
+    from _schedule_backend import (  # noqa: E402
     ScheduleContext,
     platform_schedule_backend,
     schedule_jobs_from_mappings,

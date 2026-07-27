@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "certificate.schema.json",
   "title": "Project Node Certificate",
-  "description": "A signed v4 module or behavioral-source certification payload. The signature covers the canonical encoding of payload and no field outside payload.",
+  "description": "A signed historical payload-v1 or current payload-v2 module or behavioral-source certificate. The signature covers the canonical encoding of payload and no field outside payload.",
   "type": "object",
   "required": ["payload", "signature"],
   "additionalProperties": false,
@@ -55,7 +55,7 @@
         "git_provenance": {"enum": ["tracked", "ignored", "untracked"]}
       }
     },
-    "dependency": {
+    "dependencyV1": {
       "type": "object",
       "required": ["relation", "target", "version", "node_hash"],
       "additionalProperties": false,
@@ -67,6 +67,34 @@
             "uses-private-interface",
             "uses-export",
             "references-cross-owner-contract"
+          ]
+        },
+        "target": {
+          "oneOf": [
+            {"$ref": "common.schema.json#/definitions/moduleId"},
+            {"$ref": "common.schema.json#/definitions/behavioralSourceId"}
+          ]
+        },
+        "version": {"$ref": "common.schema.json#/definitions/interfaceVersion"},
+        "node_hash": {"$ref": "#/definitions/sha256"}
+      }
+    },
+    "dependencyV2": {
+      "type": "object",
+      "required": ["relation", "target", "version", "node_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "relation": {
+          "enum": [
+            "contains-source",
+            "uses-source",
+            "uses-private-interface",
+            "uses-export",
+            "references-cross-owner-contract",
+            "routes-child-namespace",
+            "routes-terminal-module",
+            "facades-child-export",
+            "facades-implementing-source"
           ]
         },
         "target": {
@@ -119,7 +147,7 @@
       ],
       "additionalProperties": false,
       "properties": {
-        "certificate_schema_version": {"const": 1},
+        "certificate_schema_version": {"enum": [1, 2]},
         "subject": {"$ref": "#/definitions/subject"},
         "node_hash": {"$ref": "#/definitions/sha256"},
         "source_commit": {"$ref": "#/definitions/gitCommit"},
@@ -131,8 +159,7 @@
         },
         "dependencies": {
           "type": "array",
-          "uniqueItems": true,
-          "items": {"$ref": "#/definitions/dependency"}
+          "uniqueItems": true
         },
         "certification_basis_hash": {"$ref": "#/definitions/sha256"},
         "certifier": {"$ref": "#/definitions/certifier"},
@@ -148,7 +175,33 @@
           ]
         },
         "certified_at": {"type": "string", "format": "date-time"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"certificate_schema_version": {"const": 1}}
+          },
+          "then": {
+            "properties": {
+              "dependencies": {
+                "items": {"$ref": "#/definitions/dependencyV1"}
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {"certificate_schema_version": {"const": 2}}
+          },
+          "then": {
+            "properties": {
+              "dependencies": {
+                "items": {"$ref": "#/definitions/dependencyV2"}
+              }
+            }
+          }
+        }
+      ]
     },
     "signature": {
       "type": "object",

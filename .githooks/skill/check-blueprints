@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Repository-validation owner for the live v4 module/source graph, tracked
+# Repository-validation owner for the live v5 module/source graph, tracked
 # blueprint files, ownership paths, and generated contract synchronization.
 # Certification and migration remain separate gates and are not duplicated here.
 set -uo pipefail

@@ -1,0 +1,1299 @@
+content:
+- _email_accounts\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: email-client-rtx.source.rtx-init
+  version: 1
+description: Python source for the per-machine email account registry, credential
+  storage, credential purging, and Gmail OAuth setup.
+gateway:
+  language: Python
+  path: _email_accounts.py
+id: email-client-rtx.source.rtx-email-accounts
+interfaces:
+  email-client-rtx.source.rtx-email-accounts.interface.accounts-add:
+    contract:
+      arguments:
+        auth:
+          default: app-password
+          description: Account authentication method
+          required: false
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - description: Use stored IMAP and SMTP app passwords
+              value: app-password
+            - description: Use Gmail OAuth XOAUTH2
+              value: gmail-oauth
+        display-name:
+          description: Optional display name used when composing messages
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+        email:
+          description: Email address associated with the account
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              named: email
+            kind: string
+        imap-host:
+          description: Optional IMAP host; Gmail is the default
+          required: false
+          sensitivity: public
+          type:
+            kind: string
+        imap-port:
+          description: Optional IMAP port
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            maximum: 65535
+            minimum: 1
+        nickname:
+          description: New unique account nickname
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              named: identifier
+            kind: string
+        smtp-host:
+          description: Optional SMTP host; Gmail is the default
+          required: false
+          sensitivity: public
+          type:
+            kind: string
+        smtp-port:
+          description: Optional SMTP port
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            maximum: 65535
+            minimum: 1
+        starttls:
+          default: false
+          description: Use SMTP STARTTLS instead of implicit TLS
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+      caller_warnings:
+      - external-side-effect: Creates a persistent account-registry entry; an existing
+          nickname is rejected rather than replaced.
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - access: write
+          content: email-account
+          id: write-1
+          medium: local-system
+          sensitivity: user-private
+          system: keyring
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-3
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: The registry is loaded once, modified in memory, and then written.
+        effects:
+        - action: create
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: account-write
+          may_occur_in_outcomes:
+          - success
+          reversibility:
+            compensatable: Remove the nickname with accounts-remove.
+          value_source:
+            direct_io_ref: write-1
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: The implementation writes the registry directly and does not
+              provide an atomic replacement guarantee.
+          concurrent_invocations:
+            unsafe: Concurrent registry writers can overwrite one another.
+          idempotency:
+            non_idempotent: Repeating the call after success is rejected because the
+              nickname exists.
+          on_uncertain_completion:
+            verify_then_decide: Run accounts-list and retry only if the nickname is
+              absent.
+          partial_effects_on_failure:
+            possible: A process or filesystem failure can occur while persisting the
+              registry.
+          rollback_on_failure:
+            unavailable: No automatic rollback is supplied.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Configure the declared authentication method before using the
+          account.
+        class: success
+        effects:
+        - account-write
+        id: success
+        outputs:
+        - result
+      - caller_action: Correct the reported nickname, address, or option error before
+          retrying.
+        class: error
+        effects: []
+        id: error
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Account-created confirmation and next authentication setup guidance.
+        direct_io_ref: write-2
+        empty: Always printed on success.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-3
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Register a new account nickname. Gmail IMAP/SMTP settings are the
+      default; pass explicit host/port flags for other providers. App-password auth
+      is the default; use --auth gmail-oauth for Gmail OAuth.
+    process_binding:
+      args_prefix:
+      - add
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --nickname
+        - --email
+        - --display-name
+        - --imap-host
+        - --imap-port
+        - --smtp-host
+        - --smtp-port
+        - --starttls
+        - --auth
+        flag_patterns:
+          --auth: ^(app-password|gmail-oauth)$
+          --display-name: ^.+$
+          --email: ^.+$
+          --imap-host: ^.+$
+          --imap-port: ^.+$
+          --nickname: ^.+$
+          --smtp-host: ^.+$
+          --smtp-port: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+        required_flags:
+        - --nickname
+        - --email
+    usage: --nickname <nick> --email <addr> [--display-name <name>] [--imap-host H]
+      [--imap-port P] [--smtp-host H] [--smtp-port P] [--starttls] [--auth app-password|gmail-oauth]
+    version: 1
+  email-client-rtx.source.rtx-email-accounts.interface.accounts-list:
+    contract:
+      arguments: {}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: email-account
+          id: read-1
+          medium: local-system
+          sensitivity: user-private
+          system: keyring
+        writes:
+        - access: write
+          content: email-account
+          formats:
+          - json
+          id: write-1
+          medium: stdout
+          sensitivity: user-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-2
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: The account registry is read once for this listing.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: accounts
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use only a returned nickname for later account operations.
+        class: success
+        effects: []
+        id: success
+        outputs:
+        - accounts
+      - caller_action: Resolve the reported registry read or decoding failure before
+          retrying.
+        class: error
+        effects: []
+        id: error
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: One JSON object mapping each nickname to its email address and
+          display name; credentials are omitted.
+        direct_io_ref: write-1
+        empty: An empty registry is returned as an empty JSON object.
+        id: accounts
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: JSON account summary
+          format:
+            named: json
+          kind: string
+          sensitivity: user-private
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-2
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: List registered account nicknames with their email/display name (no
+      secrets).
+    process_binding:
+      args_prefix:
+      - list
+      entry: Interface
+      kind: process
+      patterns:
+      - max_positionals: 0
+        min_positionals: 0
+        name: owner
+    usage: ''
+    version: 1
+  email-client-rtx.source.rtx-email-accounts.interface.accounts-remove:
+    contract:
+      arguments:
+        nickname:
+          description: Existing account nickname to remove
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              named: identifier
+            kind: string
+        purge-credentials:
+          default: false
+          description: Delete stored IMAP, SMTP, and OAuth credential keys after registry
+            removal
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+      caller_warnings:
+      - external-side-effect: Removes the registry entry; with credential purge, registry
+          removal occurs before credential deletion and is not rolled back if purge
+          fails.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: email-account
+          id: read-1
+          medium: local-system
+          sensitivity: user-private
+          system: keyring
+        writes:
+        - access: delete
+          content: email-account
+          id: write-1
+          medium: local-system
+          sensitivity: user-private
+          system: keyring
+        - access: delete
+          content: credential
+          id: write-2
+          medium: local-system
+          sensitivity: secret
+          system: keyring
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-3
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-4
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: The registry record is loaded once and removed before any requested
+            credential purge.
+        effects:
+        - action: delete
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: account-delete
+          may_occur_in_outcomes:
+          - removed
+          - removed-and-purged
+          - partial
+          reversibility:
+            irreversible: The removed registry record is not archived.
+          value_source:
+            direct_io_ref: read-1
+            kind: direct-io
+        - action: delete
+          confirmation_evidence:
+            direct_io_ref: write-2
+            kind: direct-io
+          direct_io_ref: write-2
+          id: credential-delete
+          may_occur_in_outcomes:
+          - removed-and-purged
+          - partial
+          reversibility:
+            irreversible: Deleted credentials cannot be recovered by this interface.
+          value_source:
+            direct_io_ref: read-1
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: Registry removal and credential deletions are separate operations.
+          concurrent_invocations:
+            unsafe: Concurrent registry or credential changes are not serialized.
+          idempotency:
+            non_idempotent: Repeating the call is rejected because the nickname is
+              already absent.
+          on_uncertain_completion:
+            verify_then_decide: Run accounts-list and inspect the credential store
+              before deciding whether any manual cleanup remains.
+          partial_effects_on_failure:
+            possible: Registry removal can succeed before credential purge fails,
+              and a multi-key purge can itself be partial.
+          rollback_on_failure:
+            unavailable: Removed registry data and credentials are not restored automatically.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
+        - direct_io_ref: write-2
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Retain or separately clear credentials as intended.
+        class: success
+        effects:
+        - account-delete
+        id: removed
+        outputs:
+        - result
+      - caller_action: No further action is required.
+        class: success
+        effects:
+        - account-delete
+        - credential-delete
+        id: removed-and-purged
+        outputs:
+        - result
+      - caller_action: Treat the nickname as removed and manually verify or clear
+          any remaining credentials.
+        class: partial
+        effects:
+        - account-delete
+        - credential-delete
+        id: partial
+        outputs:
+        - diagnostic
+      - caller_action: Correct an unknown nickname before retrying.
+        class: error
+        effects: []
+        id: error
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Confirmation distinguishing registry-only removal from removal
+          with credential purge.
+        direct_io_ref: write-3
+        empty: Always printed on success.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-4
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Remove an account nickname from the registry; optionally purge its
+      stored credentials too.
+    process_binding:
+      args_prefix:
+      - remove
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --nickname
+        - --purge-credentials
+        flag_patterns:
+          --nickname: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+        required_flags:
+        - --nickname
+    usage: --nickname <nick> [--purge-credentials]
+    version: 1
+  email-client-rtx.source.rtx-email-accounts.interface.accounts-set-password:
+    contract:
+      arguments:
+        nickname:
+          description: Existing account nickname whose credential should be stored
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              named: identifier
+            kind: string
+        purpose:
+          description: Credential purpose to store
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - description: IMAP authentication credential
+              value: imap
+            - description: SMTP authentication credential
+              value: smtp
+        secret:
+          description: Nonempty credential read from standard input
+          required: true
+          sensitivity: secret
+          type:
+            kind: string
+      caller_warnings:
+      - external-side-effect: Replaces the stored IMAP or SMTP credential for the
+          selected account and purpose.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: credential
+          formats:
+          - text
+          id: read-1
+          medium: stdin
+          sensitivity: secret
+        writes:
+        - access: write
+          auth:
+            kind: keyring-entry
+            mode: uses-existing
+          content: credential
+          id: write-1
+          medium: local-system
+          sensitivity: secret
+          system: keyring
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-3
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: The account registry is read once before the supplied secret is
+            written.
+        effects:
+        - action: configure
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: credential-write
+          may_occur_in_outcomes:
+          - success
+          reversibility:
+            compensatable: A later set-password call can replace the stored value.
+          value_source:
+            direct_io_ref: read-1
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: The credential-store operation is delegated to the host
+              backend; no cross-key transaction is claimed.
+          concurrent_invocations:
+            unsafe: Concurrent writes to the same credential key are not serialized.
+          idempotency:
+            idempotent: Repeating the same nickname, purpose, and secret leaves the
+              same stored value.
+          on_uncertain_completion:
+            verify_then_decide: Run the appropriate authentication-only live smoke
+              check before writing again.
+          partial_effects_on_failure:
+            possible: Legacy compatibility can write more than one credential key
+              without a transaction.
+          rollback_on_failure:
+            unavailable: The previous secret is not retained for rollback.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use a live smoke check if provider authentication must be verified.
+        class: success
+        effects:
+        - credential-write
+        id: success
+        outputs:
+        - result
+      - caller_action: Supply a nonempty stdin secret for an existing nickname and
+          valid purpose, then retry.
+        class: error
+        effects: []
+        id: error
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Confirmation naming the account and credential purpose stored.
+        direct_io_ref: write-2
+        empty: Always printed on success.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-3
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Store the IMAP or SMTP credential for an account in the host credential
+      store. The secret is read from stdin, never a CLI argument.
+    process_binding:
+      args_prefix:
+      - set-password
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: true
+        allowed_flags:
+        - --nickname
+        - --purpose
+        flag_patterns:
+          --nickname: ^.+$
+          --purpose: ^(imap|smtp)$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+        required_flags:
+        - --nickname
+        - --purpose
+    usage: --nickname <nick> --purpose imap|smtp
+    version: 1
+  email-client-rtx.source.rtx-email-accounts.interface.accounts-setup-oauth:
+    contract:
+      arguments:
+        client-config:
+          description: Google Desktop OAuth client JSON file
+          direct_io_ref: read-1
+          required: true
+          sensitivity: secret
+          type:
+            access: read
+            content_type:
+              format:
+                named: json
+              kind: string
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        nickname:
+          description: Existing Gmail account nickname to authorize
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              named: identifier
+            kind: string
+        no-open-browser:
+          default: false
+          description: Print the authorization URL for manual opening instead of launching
+            a browser
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+      caller_warnings:
+      - may-wait: Waits up to five minutes for the browser or manually opened authorization
+          URL to return to the local callback.
+      - external-side-effect: Changes the registry account to Gmail OAuth, stores
+          separate OAuth client-secret and refresh-token entries, and may open a browser.
+      direct_io:
+        network:
+        - access: request
+          auth:
+            kind: gmail-oauth
+            mode: creates
+          content: credential
+          endpoint: <auth_uri from client configuration or https://accounts.google.com/o/oauth2/v2/auth>
+          id: network-1
+          medium: network-request
+          sensitivity: secret
+          system: oauth
+        - access: request
+          auth:
+            kind: gmail-oauth
+            mode: creates
+          content: credential
+          endpoint: <token_uri from client configuration or https://oauth2.googleapis.com/token>
+          formats:
+          - json
+          id: network-2
+          medium: network-request
+          sensitivity: secret
+          system: oauth
+        - access: request
+          content: authorization callback
+          endpoint: http://127.0.0.1:<ephemeral-port>/oauth2/callback
+          formats:
+          - http
+          id: network-3
+          medium: network-request
+          sensitivity: secret
+          system: localhost-callback
+        reads:
+        - access: read
+          content: config
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: <path>
+          path_match: exact
+          sensitivity: secret
+          system: filesystem
+        - access: read
+          content: email-account
+          formats:
+          - json
+          id: read-2
+          medium: local-filesystem
+          path: $EMAIL_CLIENT_CONFIG_DIR/accounts.json or $home/.config/email-client/accounts.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          auth:
+            kind: gmail-oauth
+            mode: creates
+          content: credential
+          id: write-1
+          medium: local-system
+          sensitivity: secret
+          system: keyring
+        - access: write
+          auth:
+            kind: gmail-oauth
+            mode: creates
+          content: credential
+          id: write-2
+          medium: local-system
+          sensitivity: secret
+          system: keyring
+        - access: write
+          content: email-account
+          formats:
+          - json
+          id: write-3
+          medium: local-filesystem
+          path: $EMAIL_CLIENT_CONFIG_DIR/accounts.json or $home/.config/email-client/accounts.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-4
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-5
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: OAuth authorization and token exchange use live provider state during
+            this invocation.
+        effects:
+        - action: configure
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: client-secret-write
+          may_occur_in_outcomes:
+          - success
+          - partial
+          reversibility:
+            compensatable: Removing the account with credential purge clears the stored
+              OAuth credentials.
+          value_source:
+            direct_io_ref: read-1
+            kind: direct-io
+        - action: configure
+          confirmation_evidence:
+            direct_io_ref: write-2
+            kind: direct-io
+          direct_io_ref: write-2
+          id: refresh-token-write
+          may_occur_in_outcomes:
+          - success
+          - partial
+          reversibility:
+            compensatable: Removing the account with credential purge clears the stored
+              OAuth credentials.
+          value_source:
+            direct_io_ref: network-2
+            kind: direct-io
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-3
+            kind: direct-io
+          direct_io_ref: write-3
+          id: account-registry-update
+          may_occur_in_outcomes:
+          - success
+          - partial
+          reversibility:
+            compensatable: A later account update can restore known prior authentication
+              metadata.
+          value_source:
+            direct_io_ref: read-1
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: Provider authorization, two credential writes, and registry
+              persistence are separate operations.
+          concurrent_invocations:
+            unsafe: Concurrent OAuth setup for the same nickname is not serialized.
+          idempotency:
+            non_idempotent: Each run creates new authorization state and may issue
+              a different refresh token.
+          on_uncertain_completion:
+            verify_then_decide: Run live-smoke before repeating authorization.
+          partial_effects_on_failure:
+            possible: The provider grant, either secret, or registry metadata can
+              exist even if a later step fails.
+          rollback_on_failure:
+            unavailable: No automatic provider revocation or credential rollback is
+              supplied.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: status
+        - direct_io_ref: write-1
+          method: direct-io-state
+        - direct_io_ref: write-2
+          method: direct-io-state
+        - direct_io_ref: write-3
+          method: direct-io-state
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        timeout_seconds: 300
+        unattended_outcome: error
+      outcomes:
+      - caller_action: Run live-smoke with IMAP and SMTP authentication to verify
+          the setup.
+        class: success
+        effects:
+        - client-secret-write
+        - refresh-token-write
+        - account-registry-update
+        id: success
+        outputs:
+        - status
+      - caller_action: Resolve the reported client-config, consent, callback, token,
+          scope, or credential-store failure before retrying.
+        class: error
+        effects: []
+        id: error
+        outputs:
+        - status
+        - diagnostic
+      - caller_action: Inspect both OAuth secret keys and accounts.json before retrying
+          or cleaning up.
+        class: partial
+        effects:
+        - client-secret-write
+        - refresh-token-write
+        - account-registry-update
+        id: partial
+        outputs:
+        - status
+        - diagnostic
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Authorization guidance and URL followed by the stored-credentials
+          confirmation on success.
+        direct_io_ref: write-4
+        empty: Validation can fail before the authorization URL is printed.
+        id: status
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: OAuth setup failure emitted on stderr.
+        direct_io_ref: write-5
+        empty: Empty on success.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Complete Gmail OAuth setup for an account using a Google desktop
+      OAuth client JSON file. Prints the authorization URL and completion status,
+      stores refresh-token and client-secret keys, and persists Gmail OAuth metadata
+      in accounts.json.
+    process_binding:
+      args_prefix:
+      - setup-oauth
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --nickname
+        - --client-config
+        - --no-open-browser
+        flag_patterns:
+          --client-config: ^.+$
+          --nickname: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+        required_flags:
+        - --nickname
+        - --client-config
+    usage: --nickname <nick> --client-config <path> [--no-open-browser]
+    version: 1
+  email-client-rtx.source.rtx-email-accounts.interface.accounts-update:
+    contract:
+      arguments:
+        auth:
+          description: Replacement authentication method
+          required: false
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - description: Use stored IMAP and SMTP app passwords
+              value: app-password
+            - description: Use Gmail OAuth XOAUTH2
+              value: gmail-oauth
+        display-name:
+          description: Replacement display name
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+        email:
+          description: Replacement email address
+          required: false
+          sensitivity: user-private
+          type:
+            format:
+              named: email
+            kind: string
+        imap-host:
+          description: Replacement IMAP host
+          required: false
+          sensitivity: public
+          type:
+            kind: string
+        imap-port:
+          description: Replacement IMAP port
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            maximum: 65535
+            minimum: 1
+        nickname:
+          description: Existing account nickname to update
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              named: identifier
+            kind: string
+        smtp-host:
+          description: Replacement SMTP host
+          required: false
+          sensitivity: public
+          type:
+            kind: string
+        smtp-port:
+          description: Replacement SMTP port
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            maximum: 65535
+            minimum: 1
+      caller_warnings:
+      - external-side-effect: Rewrites the persistent registry record for the selected
+          nickname.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: email-account
+          id: read-1
+          medium: local-system
+          sensitivity: user-private
+          system: keyring
+        writes:
+        - access: write
+          content: email-account
+          id: write-1
+          medium: local-system
+          sensitivity: user-private
+          system: keyring
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-3
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: The registry is loaded once, updated in memory, and written once.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: account-write
+          may_occur_in_outcomes:
+          - success
+          reversibility:
+            compensatable: A later update can restore known prior field values.
+          value_source:
+            direct_io_ref: read-1
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: The implementation writes the registry directly and does not
+              provide an atomic replacement guarantee.
+          concurrent_invocations:
+            unsafe: Concurrent registry writers can overwrite one another.
+          idempotency:
+            idempotent: Repeating the same field update leaves the same registry values.
+          on_uncertain_completion:
+            verify_then_decide: Run accounts-list and inspect the configured behavior
+              before retrying.
+          partial_effects_on_failure:
+            possible: A process or filesystem failure can occur while persisting the
+              registry.
+          rollback_on_failure:
+            unavailable: No prior-record archive or automatic rollback is supplied.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Re-run a read or smoke check if the changed connection settings
+          must be verified.
+        class: success
+        effects:
+        - account-write
+        id: success
+        outputs:
+        - result
+      - caller_action: Correct an unknown nickname or invalid option before retrying.
+        class: error
+        effects: []
+        id: error
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Confirmation naming the updated account.
+        direct_io_ref: write-2
+        empty: Always printed on success.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-3
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Update fields on an existing account nickname.
+    process_binding:
+      args_prefix:
+      - update
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --nickname
+        - --email
+        - --display-name
+        - --imap-host
+        - --imap-port
+        - --smtp-host
+        - --smtp-port
+        - --auth
+        flag_patterns:
+          --auth: ^(app-password|gmail-oauth)$
+          --display-name: ^.+$
+          --email: ^.+$
+          --imap-host: ^.+$
+          --imap-port: ^.+$
+          --nickname: ^.+$
+          --smtp-host: ^.+$
+          --smtp-port: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+        required_flags:
+        - --nickname
+    usage: --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host
+      H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--auth app-password|gmail-oauth]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: keyring
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Clears stored account credentials when requested.
+  version: any
+- kind: python-package
+  name: keyring
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Stores Gmail OAuth refresh tokens and client secrets in the host credential
+    store.
+  version: any
+- kind: python-package
+  name: keyring
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Stores IMAP or SMTP credentials in the host credential store.
+  version: any
+schema_version: 5
+uses_interfaces:
+- interface: common.interface.secret-store
+  version: 1
+version: 1

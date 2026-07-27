@@ -8,7 +8,7 @@ from pathlib import Path
 from officina.runtime.python_machine_interface import PythonMachineInterface
 
 
-SKILL_DIR = Path(__file__).resolve().parent.parent
+SKILL_DIR = Path(__file__).resolve().parent
 LOG_FILE = SKILL_DIR / "triage.log"
 
 

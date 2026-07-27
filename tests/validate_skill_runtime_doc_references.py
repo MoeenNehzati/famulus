@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 _VALIDATOR = Path(__file__).resolve().parents[1] / "validators" / "skill_runtime_doc_references.py"
 _spec = importlib.util.spec_from_file_location("skill_runtime_doc_references", _VALIDATOR)
@@ -89,3 +90,37 @@ def test_assets_markdown_is_exempt(tmp_path: Path) -> None:
     (skill / "assets" / "README.md").write_text("Run install.sh.\n", encoding="utf-8")
 
     assert _mod.validate(tmp_path) == []
+
+
+def test_registered_child_artifacts_are_not_runtime_names_but_executable_is(
+    tmp_path: Path,
+) -> None:
+    skill = tmp_path / "skills" / "demo-skill"
+    child = skill / "_rtx"
+    (child / "assets").mkdir(parents=True)
+    (child / "assets" / "_artifact_name.py").write_text("", encoding="utf-8")
+    (child / "tests").mkdir()
+    (child / "tests" / "_test_helper.py").write_text("", encoding="utf-8")
+    (child / "_Child_Gateway.py").write_text("", encoding="utf-8")
+    (child / "blueprint.yaml").write_text("", encoding="utf-8")
+    (child / "README.md").write_text(
+        "Child Gateway is private.\n", encoding="utf-8"
+    )
+    (skill / "SKILL.md").write_text(
+        "Artifact Name and Test Helper are ordinary prose; "
+        "Child Gateway is private.\n",
+        encoding="utf-8",
+    )
+    graph = SimpleNamespace(
+        module_parents={"demo-rtx": "demo-skill"},
+        nodes={
+            "demo-rtx": SimpleNamespace(module_root=child),
+        },
+    )
+
+    errors = _mod.validate_with_graph(tmp_path, graph)
+
+    assert not any("_artifact_name" in error for error in errors)
+    assert not any("_test_helper" in error for error in errors)
+    assert any("_Child_Gateway" in error for error in errors)
+    assert not any("README.md" in error for error in errors)

@@ -1,0 +1,265 @@
+content:
+- _legacy_importer\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: list-manager-rtx.source.rtx-init
+  version: 1
+description: Python source that converts legacy Markdown checklists into validated
+  YAML list documents without overwriting an existing destination.
+gateway:
+  language: Python
+  path: _legacy_importer.py
+id: list-manager-rtx.source.rtx-legacy-importer
+interfaces:
+  list-manager-rtx.source.rtx-legacy-importer.interface.migrate-markdown:
+    contract:
+      arguments:
+        destination:
+          description: New YAML list file to create
+          direct_io_ref: write-1
+          required: true
+          sensitivity: user-private
+          type:
+            access: write
+            content_type:
+              format:
+                named: yaml
+              kind: string
+            kind: file
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+        name:
+          description: Optional display name for the migrated list
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+        schema:
+          description: Target list schema name
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - description: Todo list schema
+              value: todo
+            - description: Triage action schema
+              value: triage
+            - description: Default list schema
+              value: default
+        source:
+          description: Legacy Markdown list file to parse
+          direct_io_ref: read-1
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            content_type:
+              kind: string
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+      caller_warnings:
+      - external-side-effect: Creates a validated YAML list file and refuses to overwrite
+          an existing destination.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: list
+          formats:
+          - markdown
+          id: read-1
+          medium: local-filesystem
+          path: <source.md>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: list
+          formats:
+          - yaml
+          id: write-1
+          medium: local-filesystem
+          path: <dest.yaml>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-3
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: Parses one snapshot of the Markdown source before writing the
+            destination.
+        effects:
+        - action: create
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: destination-create
+          may_occur_in_outcomes:
+          - migrated
+          reversibility:
+            reversible: Delete the newly created destination file if the migration
+              should be discarded.
+          value_source:
+            direct_io_ref: read-1
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: The interface creates one destination file after parsing
+              and validation.
+          concurrent_invocations:
+            unsafe: Concurrent calls targeting the same absent destination are not
+              serialized.
+          idempotency:
+            non_idempotent: Repeating a successful call is refused because the destination
+              exists.
+          on_uncertain_completion:
+            verify_then_decide: Check whether the destination exists and validates
+              before retrying.
+          partial_effects_on_failure:
+            possible: A filesystem failure can interrupt destination writing.
+          rollback_on_failure:
+            unavailable: No automatic destination cleanup is guaranteed after a write
+              failure.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the new YAML list and review any missing-deadline warnings.
+        class: success
+        effects:
+        - destination-create
+        id: migrated
+        outputs:
+        - result
+        - diagnostics
+      - caller_action: Correct the source, destination, schema, or validation error
+          before retrying.
+        class: error
+        effects: []
+        id: error
+        outputs:
+        - diagnostics
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Migration confirmation naming the source and destination.
+        direct_io_ref: write-2
+        empty: Always printed after a successful destination write.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Missing-deadline warnings or a terminal migration error emitted
+          on stderr.
+        direct_io_ref: write-3
+        empty: Empty when migration has no warnings and does not fail.
+        id: diagnostics
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: bounded
+          limit: 7
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions:
+      - caller_action: Supply a readable Markdown source file.
+        check:
+          direct_io_ref: read-1
+          kind: direct-io
+          predicate: readable
+        description: The Markdown source must exist and be readable
+        id: readable-source
+        unmet_outcome: error
+      - caller_action: Select a new destination path; the importer never overwrites.
+        check:
+          direct_io_ref: write-1
+          kind: direct-io
+          predicate: exists
+        description: The destination must not already exist
+        id: unused-destination
+        unmet_outcome: error
+    description: Migrate a legacy Markdown list to YAML format.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        allow_stdin: false
+        min_positionals: 3
+    usage: <source.md> <dest.yaml> --schema <schema>
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Writes migrated YAML list files.
+  version: '>=6'
+- kind: python-package
+  name: dateparser
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Parses natural-language legacy Markdown deadlines.
+  version: any
+- kind: python-package
+  name: jsonschema
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Validates migrated entries before writing.
+  version: '>=4'
+schema_version: 5
+uses_interfaces: []
+version: 1

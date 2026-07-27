@@ -30,9 +30,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-from _install_launcher import LauncherInstallResult, platform_launcher_installer
-from _state_record import Manifest, manifest_path
-from _shell_block import ensure_rc_vars
+if __package__:
+    from ._install_launcher import LauncherInstallResult, platform_launcher_installer
+else:
+    from _install_launcher import LauncherInstallResult, platform_launcher_installer
+if __package__:
+    from ._state_record import Manifest, manifest_path
+else:
+    from _state_record import Manifest, manifest_path
+if __package__:
+    from ._shell_block import ensure_rc_vars
+else:
+    from _shell_block import ensure_rc_vars
 
 
 def log(msg: str = "") -> None:

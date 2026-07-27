@@ -9,9 +9,8 @@ import shutil
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = (
     REPO_ROOT
-    / "skills"
-    / "skill-maker"
     / "validators"
+    / "skill"
     / "skill_md_dispatch.py"
 )
 SPEC = importlib.util.spec_from_file_location("skill_md_dispatch", VALIDATOR)

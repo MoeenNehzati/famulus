@@ -8,7 +8,7 @@ description: Use when the user invokes "tight mode" or asks for rigorous, exact,
 
 Category: workflow-general-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces: none
 

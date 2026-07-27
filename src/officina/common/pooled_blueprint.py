@@ -104,10 +104,10 @@ def render_pooled_review(
                 "node_type": node.node_type,
                 "version": node.version,
                 "blueprint_path": _review_path(
-                    node.blueprint_path, node.skill_root
+                    node.blueprint_path, node.module_root
                 ),
                 "gateway_path": _review_path(
-                    node.gateway_path, node.skill_root
+                    node.gateway_path, node.module_root
                 ),
                 "declaration": deepcopy(node.declaration),
                 "certificate": {
@@ -124,7 +124,7 @@ def render_pooled_review(
         "root": {
             "id": selected_root,
             "blueprint_path": _review_path(
-                root_node.blueprint_path, root_node.skill_root
+                root_node.blueprint_path, root_node.module_root
             ),
             "node_hash": root_certificate.node_hash,
             "certificate_hash": root_certificate.certificate_hash,

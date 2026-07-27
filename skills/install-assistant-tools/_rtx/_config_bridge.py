@@ -61,9 +61,18 @@ sys.path.insert(0, str(Path(__file__).parent))
 from officina.common import codex_toml, toml_io
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-from _state_record import Manifest, manifest_path
-from _fs_links import make_link
-from _shell_block import ensure_rc_vars
+if __package__:
+    from ._state_record import Manifest, manifest_path
+else:
+    from _state_record import Manifest, manifest_path
+if __package__:
+    from ._fs_links import make_link
+else:
+    from _fs_links import make_link
+if __package__:
+    from ._shell_block import ensure_rc_vars
+else:
+    from _shell_block import ensure_rc_vars
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

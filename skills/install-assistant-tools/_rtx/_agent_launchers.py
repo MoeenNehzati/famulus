@@ -35,10 +35,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from officina.common import toml_io
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-from _install_launcher import platform_launcher_installer
-from _state_record import Manifest, manifest_path
-from _fs_links import log, make_link
-from _shell_block import ensure_rc_vars
+if __package__:
+    from ._install_launcher import platform_launcher_installer
+else:
+    from _install_launcher import platform_launcher_installer
+if __package__:
+    from ._state_record import Manifest, manifest_path
+else:
+    from _state_record import Manifest, manifest_path
+if __package__:
+    from ._fs_links import log, make_link
+else:
+    from _fs_links import log, make_link
+if __package__:
+    from ._shell_block import ensure_rc_vars
+else:
+    from _shell_block import ensure_rc_vars
 
 _MODEL_INSTRUCTIONS_RE = re.compile(r'^model_instructions_file\s*=\s*".*"$', re.MULTILINE)
 
@@ -237,7 +249,7 @@ def run(
 ) -> None:
     home = home or Path.home()
     bin_dir = bin_dir or home / "Documents" / "_rtx" / "bin"
-    source_bin_dir = repo_root / "skills" / "install-assistant-tools" / "bin"
+    source_bin_dir = repo_root / "skills" / "install-assistant-tools" / "_rtx/assets/bin"
     profiles_dir = repo_root / "profiles"
     codex_home = codex_home or home / ".codex"
     claude_home = claude_home or home / ".claude"

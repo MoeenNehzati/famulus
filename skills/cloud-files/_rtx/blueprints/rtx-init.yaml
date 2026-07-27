@@ -1,0 +1,19 @@
+content:
+- __init__\.py
+- _cp_llm\.py
+- _drive_gateway\.py
+- _ls_llm\.py
+- _read_remote\.py
+- _rm_llm\.py
+dependencies: []
+description: Marks the cloud-files runtime directory as a Python package for sibling
+  behavioral sources.
+gateway:
+  language: Python
+  path: __init__.py
+id: cloud-files-rtx.source.rtx-init
+interfaces: {}
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces: []
+version: 1

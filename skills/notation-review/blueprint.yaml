@@ -4,9 +4,14 @@ authority:
     bash: []
     network: []
 category: research-assistant
+children:
+  notation-review-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
 - SKILL\.md
-description: Audits mathematical notation for lightness, coherent families, scope consistency, semantic transparency, and field-appropriate conventions.
+description: Audits mathematical notation for lightness, coherent families, scope
+  consistency, semantic transparency, and field-appropriate conventions.
 discovery:
   mechanism: skill
 exports:
@@ -20,12 +25,13 @@ gateway:
   path: SKILL.md
 id: notation-review
 kind: reviewer
+namespace_exports: {}
 node_type: module
 role: math-reasoning
-schema_version: 4
+schema_version: 5
 sources:
   notation-review.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 1
+version: 2

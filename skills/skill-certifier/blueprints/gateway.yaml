@@ -13,49 +13,95 @@ interfaces:
     contract:
       arguments:
         request:
-          description: Request to certify selected module names, exact module-root paths,
-            or every observed blueprint-backed installed skill.
+          description: Request to certify selected module names, exact module-root
+            paths, or every observed blueprint-backed installed skill.
           required: true
           sensitivity: user-private
-          type: {kind: string, sensitivity: user-private}
-      preconditions: []
-      interaction: {mode: interactive, channel: tty, unattended_outcome: review-required}
+          type:
+            kind: string
+            sensitivity: user-private
       caller_warnings:
       - external-side-effect: Successful delegated certification may create Ed25519
           signing material and append signed certificate logs.
-      outputs:
-      - id: response
-        audience: both
-        description: Per-target certificate result and any mechanical, semantic-review,
-          signing, or post-write verification failure.
-        direct_io_ref: write-1
-        type: {kind: string, sensitivity: derived-private}
-        cardinality: {minimum: 1, maximum: 1}
-        ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        empty: Never empty.
-      outcomes:
-      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Treat only targets with listed signed certificate entries as certified.}
-      - {id: review-required, class: refusal, outputs: [response], effects: [], caller_action: Review the exact blueprint closure against its bound behavior before certification.}
-      - {id: failed, class: error, outputs: [response], effects: [], caller_action: Report the affected target and do not claim certification.}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {live: The response reflects semantic review and signed certificate state for the exact reviewed commit.}
-        verification: [{method: output-schema, output_ref: response}]
-      helpers: []
       direct_io:
         network: []
         reads:
-        - {id: read-1, medium: prompt, access: read, system: agent-runtime, content: certification request and semantic attestation, formats: [text], sensitivity: user-private}
+        - access: read
+          content: certification request and semantic attestation
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
         writes:
-        - {id: write-1, medium: prompt, access: write, system: agent-runtime, content: certification result, formats: [markdown], sensitivity: derived-private}
+        - access: write
+          content: certification result
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          live: The response reflects semantic review and signed certificate state
+            for the exact reviewed commit.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: review-required
+      outcomes:
+      - caller_action: Treat only targets with listed signed certificate entries as
+          certified.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Review the exact blueprint closure against its bound behavior
+          before certification.
+        class: refusal
+        effects: []
+        id: review-required
+        outputs:
+        - response
+      - caller_action: Report the affected target and do not claim certification.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - response
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Per-target certificate result and any mechanical, semantic-review,
+          signing, or post-write verification failure.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
     description: Certify exact target closures and report signed certificate outcomes.
     version: 1
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces:
-- interface: skill-certifier.source.rtx-certifier.interface.certify
+- interface: skill-certifier.interface.certify
   version: 1
-version: 1
+version: 2

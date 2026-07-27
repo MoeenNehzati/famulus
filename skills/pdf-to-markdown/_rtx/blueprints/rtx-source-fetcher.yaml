@@ -1,0 +1,218 @@
+content:
+- _source_fetcher\.py
+dependencies: []
+description: Downloads one arXiv source response, rejects non-gzip responses, and
+  otherwise extracts the archive and lists discovered TeX files.
+gateway:
+  language: Python
+  path: _source_fetcher.py
+id: pdf-to-markdown-rtx.source.rtx-source-fetcher
+interfaces:
+  pdf-to-markdown-rtx.source.rtx-source-fetcher.interface.scripts-fetch-arxiv-source:
+    contract:
+      arguments:
+        arxiv-id:
+          description: arXiv identifier appended to the source-download endpoint.
+          required: true
+          sensitivity: public
+          type:
+            format:
+              named: identifier
+            kind: string
+        output-dir:
+          default: .
+          description: Destination directory for the downloaded source archive contents.
+          direct_io_ref: write-1
+          required: false
+          sensitivity: user-private
+          type:
+            access: write
+            kind: dir
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+      caller_warnings:
+      - external-side-effect: The interface creates the output directory and extraction
+          can replace existing paths with names from the downloaded archive.
+      - may-wait: The arXiv source request has a 60-second network timeout before
+          archive extraction begins.
+      direct_io:
+        network:
+        - access: download
+          content: source
+          endpoint: https://arxiv.org/src/<arxiv-id>
+          formats:
+          - gzip
+          - html
+          id: network-1
+          medium: network-request
+          sensitivity: public
+          system: arxiv
+        reads: []
+        writes:
+        - access: write
+          content: source
+          formats:
+          - binary
+          id: write-1
+          medium: local-filesystem
+          path: <output-dir>
+          path_match: exact
+          sensitivity: public
+          system: filesystem
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-3
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Downloads the current source response served for the requested arXiv
+            identifier.
+        effects:
+        - action: create
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: prepare-output-directory
+          may_occur_in_outcomes:
+          - extracted
+          - source-unavailable
+          - failed
+          reversibility:
+            compensatable: Remove the newly created directory only when it did not
+              exist before the invocation.
+          value_source:
+            argument_ref: output-dir
+            kind: argument
+        - action: update
+          confirmation_evidence:
+            kind: output
+            output_ref: report
+          direct_io_ref: write-1
+          id: extract-source
+          may_occur_in_outcomes:
+          - extracted
+          reversibility:
+            compensatable: Restore any retained prior destination files or remove
+              newly extracted files.
+          value_source:
+            direct_io_ref: network-1
+            kind: direct-io
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: Directory creation, download, and archive-member extraction
+              occur as separate writes.
+          concurrent_invocations:
+            unsafe: Concurrent calls targeting the same directory can replace or remove
+              one another's temporary archive and extracted files.
+          idempotency:
+            non_idempotent: Repeated calls can overwrite existing archive-member paths
+              and the remote source response may change.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the destination directory and listed TeX files
+              before retrying.
+          partial_effects_on_failure:
+            possible: The destination directory or a subset of archive members can
+              remain after a failed extraction.
+          rollback_on_failure:
+            unavailable: The interface does not retain backups or remove partially
+              extracted archive members.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: report
+        - direct_io_ref: write-1
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Inspect the listed TeX files and select the document root.
+        class: success
+        effects:
+        - prepare-output-directory
+        - extract-source
+        id: extracted
+        outputs:
+        - report
+      - caller_action: Continue to another source location or the PDF fallback.
+        class: refusal
+        effects:
+        - prepare-output-directory
+        id: source-unavailable
+        outputs:
+        - diagnostic
+      - caller_action: Report the network or extraction failure and inspect the destination
+          before retrying.
+        class: error
+        effects:
+        - prepare-output-directory
+        id: failed
+        outputs: []
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Extraction destination followed by the sorted TeX files found
+          recursively.
+        direct_io_ref: write-2
+        empty: Empty when arXiv returns a non-source response or the request fails.
+        id: report
+        ordering: sorted
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Explanation that the requested arXiv submission has no downloadable
+          LaTeX source.
+        direct_io_ref: write-3
+        empty: Empty after successful extraction.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Download and extract the LaTeX source tarball for a paper from arXiv.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - max_positionals: 2
+        min_positionals: 1
+        name: owner
+    usage: <arxiv-id> <output-dir>
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: false
+  windows: false
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces: []
+version: 1

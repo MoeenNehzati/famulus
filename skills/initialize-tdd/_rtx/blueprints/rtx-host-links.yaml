@@ -1,0 +1,158 @@
+content:
+- _claude_compat_symlink\.py
+- _host_links\.py
+dependencies: []
+description: Discovers every sibling compatibility-alias helper by filename, loads
+  each helper in-process, and applies it to one scaffolded project directory.
+gateway:
+  language: Python
+  path: _host_links.py
+id: initialize-tdd-rtx.source.rtx-host-links
+interfaces:
+  initialize-tdd-rtx.source.rtx-host-links.interface.setup-compat-aliases:
+    contract:
+      arguments:
+        project-dir:
+          description: Existing scaffolded project directory in which compatibility
+            instruction aliases are created or replaced.
+          direct_io_ref: write-1
+          required: true
+          sensitivity: user-private
+          type:
+            access: read-write
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+      caller_warnings:
+      - external-side-effect: Each discovered helper may remove an existing alias
+          path before creating its replacement; the current helper replaces CLAUDE.md
+          with a symlink to AGENTS.md.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: compatibility helper modules
+          formats:
+          - python
+          id: read-1
+          medium: local-filesystem
+          path: $module/*_compat_symlink.py
+          path_match: glob
+          reason: Discover and load every host-specific alias helper in deterministic
+            filename order.
+          sensitivity: public
+          system: filesystem
+        writes:
+        - access: read-write
+          content: compatibility instruction aliases
+          id: write-1
+          medium: local-filesystem
+          path: <project-dir>/*
+          path_match: glob
+          reason: The discovered helpers inspect, remove, and recreate their owned
+            alias paths; the current helper writes CLAUDE.md as a symlink to AGENTS.md.
+          sensitivity: user-private
+          system: filesystem
+      execution:
+        consistency:
+          live: Helpers are discovered and applied against the filesystem state visible
+            during this invocation.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: compatibility-aliases
+          may_occur_in_outcomes:
+          - completed
+          reversibility:
+            irreversible: Any prior file or symlink at a helper-owned alias path is
+              removed without backup.
+          value_source:
+            argument_ref: project-dir
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: Each helper updates its own alias; the full helper sequence
+              is not transactional.
+          concurrent_invocations:
+            unsafe: Concurrent invocations can race while replacing the same alias
+              paths.
+          idempotency:
+            idempotent: Re-running against an unchanged project recreates the same
+              aliases.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the helper-owned alias paths before retrying.
+          partial_effects_on_failure:
+            possible: Earlier helpers remain applied if a later helper fails.
+          rollback_on_failure:
+            unavailable: Removed prior alias-path contents are not retained.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Continue scaffolding after the aliases exist.
+        class: success
+        effects:
+        - compatibility-aliases
+        id: completed
+        outputs:
+        - alias-state
+      - caller_action: Report the load or filesystem error and do not claim the scaffold
+          is complete.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Compatibility aliases present in the project directory after
+          every discovered helper returns successfully.
+        direct_io_ref: write-1
+        empty: The interface emits no stdout; success is represented by exit status
+          and alias state.
+        id: alias-state
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: Verified filesystem state; successful execution emits no stdout
+            payload
+          kind: string
+          sensitivity: user-private
+      preconditions: []
+    description: Create every host compatibility alias symlink (e.g. a legacy filename
+      some host looks for specifically) in a freshly scaffolded project directory.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        max_positionals: 1
+        min_positionals: 1
+        notes: First positional is the scaffolded project's directory path. Discovers
+          and runs every compat-alias helper next to this script; adding a new host's
+          alias later needs no change here.
+    usage: <project-dir>
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces: []
+version: 1

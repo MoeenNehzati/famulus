@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import sys
 
-import _drive_gateway as cloud_files
+if __package__:
+    from . import _drive_gateway as cloud_files
+else:
+    import _drive_gateway as cloud_files
 
 
 def main() -> int:

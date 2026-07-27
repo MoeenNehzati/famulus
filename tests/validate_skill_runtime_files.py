@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 _VALIDATOR = Path(__file__).resolve().parents[1] / "validators" / "skill_runtime_files.py"
 _spec = importlib.util.spec_from_file_location("skill_runtime_files", _VALIDATOR)
@@ -22,16 +23,202 @@ def test_private_python_runtime_name_passes(tmp_path: Path) -> None:
     assert _mod.validate(tmp_path) == []
 
 
-def test_private_shell_runtime_name_passes(tmp_path: Path) -> None:
+def test_private_shell_runtime_name_is_rejected(tmp_path: Path) -> None:
     _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "_mail_transport.sh")
 
-    assert _mod.validate(tmp_path) == []
+    errors = _mod.validate(tmp_path)
+
+    assert any("unsupported runtime suffix `.sh`" in error for error in errors)
 
 
 def test_init_file_is_exempt(tmp_path: Path) -> None:
     _write(tmp_path / "skills" / "demo-skill" / "_rtx" / "__init__.py")
 
     assert _mod.validate(tmp_path) == []
+
+
+def test_registered_runtime_child_artifacts_are_not_executable_files(
+    tmp_path: Path,
+) -> None:
+    child_root = tmp_path / "skills" / "demo-skill" / "_rtx"
+    for relative in (
+        "blueprint.yaml",
+        "blueprints/runtime.yaml",
+        "schemas/input.schema.json",
+        "assets/data.json",
+        "state/cache.json",
+        "tests/test_runtime.py",
+        ".certificates/runtime.jsonl",
+        ".pooled-blueprint-review.yaml",
+        ".pooled-blueprint-review.health.json",
+        "_run_task.py",
+    ):
+        _write(child_root / relative)
+    graph = SimpleNamespace(
+        module_parents={"demo-skill-rtx": "demo-skill"},
+        nodes={
+            "demo-skill-rtx": SimpleNamespace(
+                node_type="module",
+                module_root=child_root,
+            )
+        },
+    )
+
+    assert _mod.validate_with_graph(tmp_path, graph) == []
+
+
+def test_source_owned_top_level_bin_payloads_still_require_artifact_layout(
+    tmp_path: Path,
+) -> None:
+    child_root = tmp_path / "skills" / "demo-skill" / "_rtx"
+    gateway = child_root / "_install_launchers.py"
+    payloads = (
+        child_root / "bin" / "assistant",
+        child_root / "bin" / "assistant.bat",
+        child_root / "bin" / "_agent_launch.py",
+    )
+    _write(gateway)
+    for payload in payloads:
+        _write(payload)
+    source_id = "demo-skill-rtx.source.launchers"
+    graph = SimpleNamespace(
+        module_parents={"demo-skill-rtx": "demo-skill"},
+        nodes={
+            "demo-skill-rtx": SimpleNamespace(
+                node_type="module",
+                module_root=child_root,
+            ),
+            source_id: SimpleNamespace(
+                node_type="behavioral_source",
+                module_root=child_root,
+                gateway_path=gateway,
+                declaration={"gateway": {"language": "Python"}},
+            ),
+        },
+        direct_file_owners={
+            gateway: source_id,
+            **{payload: source_id for payload in payloads},
+        },
+    )
+
+    errors = _mod.validate_with_graph(tmp_path, graph)
+
+    assert any("runtime directory name must match" in error for error in errors)
+
+
+def test_non_python_source_gateway_is_registered_child_configuration(
+    tmp_path: Path,
+) -> None:
+    child_root = tmp_path / "skills" / "demo-skill" / "_rtx"
+    gateway = child_root / "jobs.yaml"
+    _write(gateway)
+    source_id = "demo-skill-rtx.source.jobs-config"
+    graph = SimpleNamespace(
+        module_parents={"demo-skill-rtx": "demo-skill"},
+        nodes={
+            "demo-skill-rtx": SimpleNamespace(
+                node_type="module",
+                module_root=child_root,
+            ),
+            source_id: SimpleNamespace(
+                node_type="behavioral_source",
+                module_root=child_root,
+                gateway_path=gateway,
+                declaration={"gateway": {"language": "YAML"}},
+            ),
+        },
+        direct_file_owners={gateway: source_id},
+    )
+
+    assert _mod.validate_with_graph(tmp_path, graph) == []
+
+
+def test_unowned_bin_file_is_not_a_registered_child_artifact(
+    tmp_path: Path,
+) -> None:
+    child_root = tmp_path / "skills" / "demo-skill" / "_rtx"
+    payload = child_root / "bin" / "assistant"
+    _write(payload)
+    graph = SimpleNamespace(
+        module_parents={"demo-skill-rtx": "demo-skill"},
+        nodes={
+            "demo-skill-rtx": SimpleNamespace(
+                node_type="module",
+                module_root=child_root,
+            ),
+        },
+        direct_file_owners={},
+    )
+
+    errors = _mod.validate_with_graph(tmp_path, graph)
+
+    assert any("runtime directory name must match" in error for error in errors)
+    assert any("runtime filename stem must match" in error for error in errors)
+
+
+def test_unregistered_runtime_tree_is_not_treated_as_child_artifacts(
+    tmp_path: Path,
+) -> None:
+    _write(
+        tmp_path
+        / "skills"
+        / "demo-skill"
+        / "_rtx"
+        / "assets"
+        / "data.json"
+    )
+    graph = SimpleNamespace(module_parents={}, nodes={})
+
+    errors = _mod.validate_with_graph(tmp_path, graph)
+
+    assert any("runtime directory name must match" in error for error in errors)
+    assert any("unsupported runtime suffix `.json`" in error for error in errors)
+
+
+def test_registered_artifact_classification_uses_deepest_matching_child(
+    tmp_path: Path,
+) -> None:
+    parent_root = tmp_path / "modules" / "parent"
+    child_root = parent_root / "nested"
+    artifact = child_root / "assets" / "data.json"
+    _write(artifact)
+    graph = SimpleNamespace(
+        module_parents={
+            "parent": None,
+            "child": "parent",
+        },
+        nodes={
+            "parent": SimpleNamespace(
+                node_type="module",
+                module_root=parent_root,
+            ),
+            "child": SimpleNamespace(
+                node_type="module",
+                module_root=child_root,
+            ),
+        },
+    )
+
+    assert _mod._registered_child_artifact(artifact, graph)
+
+
+def test_parent_module_artifact_directories_are_not_child_exempt(
+    tmp_path: Path,
+) -> None:
+    parent_root = tmp_path / "skills" / "demo-skill"
+    artifact = parent_root / "assets" / "data.json"
+    _write(artifact)
+    graph = SimpleNamespace(
+        module_parents={"demo-skill": None},
+        nodes={
+            "demo-skill": SimpleNamespace(
+                node_type="module",
+                module_root=parent_root,
+            ),
+        },
+    )
+
+    assert not _mod._registered_child_artifact(artifact, graph)
 
 
 def test_nested_private_runtime_package_passes(tmp_path: Path) -> None:

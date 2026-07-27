@@ -16,42 +16,86 @@ interfaces:
             blueprint should be regenerated.
           required: true
           sensitivity: public
-          type: {kind: string, format: {regex: {pattern: '^[a-z0-9]+(?:-[a-z0-9]+)+$', dialect: python, matching: full, example: skill-maker}}}
-      preconditions: []
-      interaction: {mode: unattended}
+          type:
+            format:
+              regex:
+                dialect: python
+                example: skill-maker
+                matching: full
+                pattern: ^[a-z0-9]+(?:-[a-z0-9]+)+$
+            kind: string
       caller_warnings:
-      - external-side-effect: The delegated regenerator writes one candidate YAML file
-          under /tmp and does not edit the source skill.
-      outputs:
-      - id: response
-        audience: human
-        description: Generated candidate path or a validation failure.
-        direct_io_ref: write-1
-        type: {kind: string, sensitivity: derived-private}
-        cardinality: {minimum: 1, maximum: 1}
-        ordering: stable
-        pagination: {kind: none}
-        truncation: {kind: none}
-        empty: Never empty.
-      outcomes:
-      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Review the candidate path; the live blueprint remains unchanged.}
-      - {id: failed, class: error, outputs: [response], effects: [], caller_action: Report the validation or missing-blueprint error.}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {snapshot: The response reports the delegated regeneration result for the source blueprint read during this invocation.}
-        verification: [{method: output-schema, output_ref: response}]
-      helpers: []
+      - external-side-effect: The delegated regenerator writes one candidate YAML
+          file under /tmp and does not edit the source skill.
       direct_io:
         network: []
         reads:
-        - {id: read-1, medium: prompt, access: read, system: agent-runtime, content: regeneration request, formats: [text], sensitivity: user-private}
+        - access: read
+          content: regeneration request
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
         writes:
-        - {id: write-1, medium: prompt, access: write, system: agent-runtime, content: regeneration result, formats: [markdown], sensitivity: derived-private}
-    description: Regenerate one existing skill blueprint into /tmp, report its path or
-      validation failure, and never modify the source blueprint.
+        - access: write
+          content: regeneration result
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          snapshot: The response reports the delegated regeneration result for the
+            source blueprint read during this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Review the candidate path; the live blueprint remains unchanged.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Report the validation or missing-blueprint error.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Generated candidate path or a validation failure.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Regenerate one existing skill blueprint into /tmp, report its path
+      or validation failure, and never modify the source blueprint.
     version: 1
 node_type: behavioral_source
-schema_version: 4
-uses_interfaces: []
+schema_version: 5
+uses_interfaces:
+- interface: regenerate-blueprints.interface.regenerate-blueprint
+  version: 1
 version: 1

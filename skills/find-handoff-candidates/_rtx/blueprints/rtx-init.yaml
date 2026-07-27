@@ -1,0 +1,16 @@
+content:
+- __init__\.py
+- _claude_parser\.py
+- _codex_parser\.py
+dependencies: []
+description: Aggregates the configured host-specific transcript parsers and their
+  location, extraction, resume-hint, opaque-field, and threshold policies.
+gateway:
+  language: Python
+  path: __init__.py
+id: find-handoff-candidates-rtx.source.rtx-init
+interfaces: {}
+node_type: behavioral_source
+schema_version: 5
+uses_interfaces: []
+version: 1

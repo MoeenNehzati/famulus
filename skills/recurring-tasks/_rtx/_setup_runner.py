@@ -11,14 +11,23 @@ from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-SKILL_DIR = Path(__file__).parent.parent
+SKILL_DIR = Path(__file__).parent
 RTX_DIR = Path(__file__).resolve().parent
 if str(RTX_DIR) not in sys.path:
     sys.path.insert(0, str(RTX_DIR))
 
-import _ensure_agent_env  # noqa: E402
-import _unit_writer  # noqa: E402
-from _schedule_backend import ScheduleContext, platform_schedule_backend  # noqa: E402
+if __package__:
+    from . import _ensure_agent_env
+else:
+    import _ensure_agent_env  # noqa: E402
+if __package__:
+    from . import _unit_writer
+else:
+    import _unit_writer  # noqa: E402
+if __package__:
+    from ._schedule_backend import ScheduleContext, platform_schedule_backend
+else:
+    from _schedule_backend import ScheduleContext, platform_schedule_backend  # noqa: E402
 
 CRON_MARKER = "# ai-recurring-healthcheck"
 OLD_CRON_MARKER = "# ai-recurring"
@@ -79,7 +88,7 @@ def install_healthcheck_cron(*, skill_dir: Path, migrate_cron: bool = False) -> 
         print("Healthcheck cron entry already present.")
         return
 
-    healthcheck = skill_dir / "_rtx" / "_healthcheck_probe.py"
+    healthcheck = skill_dir / "_healthcheck_probe.py"
     lines.append(f"0 */4 * * * python3 {healthcheck} {CRON_MARKER}")
     _write_crontab("\n".join(lines) + "\n")
     print("Added healthcheck cron entry (every 4 hours).")
@@ -100,7 +109,7 @@ def run_setup(*, argv: list[str], home: Path | None = None) -> None:
     print("PyYAML ok")
 
     selected_home = home or Path.home()
-    repo_root = SKILL_DIR.parent.parent
+    repo_root = SKILL_DIR.parents[2]
     bin_dir = _default_bin_dir(selected_home)
     _ensure_agent_env.run(
         repo_root=repo_root,

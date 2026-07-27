@@ -40,7 +40,14 @@ class SchemaDocument(dict[str, Any]):
         super().__init__(value)
         self.path = path
         self.documents: dict[str, dict[str, Any]] = {}
-        for child in path.parent.glob("*.schema.json"):
+        candidates = {
+            *path.parent.glob("*.schema.json"),
+            path.parent / "schema.json",
+            path.parent / "schema.annotated-draft.json",
+        }
+        for child in sorted(candidates):
+            if not child.is_file():
+                continue
             document = json.loads(child.read_text(encoding="utf-8"))
             self.documents[child.name] = document
             self.documents[child.resolve().as_uri()] = document
@@ -115,6 +122,134 @@ def write_regenerated_skill_blueprint(
     return destination
 
 
+def write_repository_managed_skill_blueprints(
+    skill_name: str,
+    *,
+    category: str,
+    repo_root: str | Path = ".",
+    schema_root: str | Path | None = None,
+) -> tuple[Path, Path, Path]:
+    """Create one v5 discoverable parent and its non-discoverable code child."""
+
+    if not skill_name or "/" in skill_name or "\\" in skill_name:
+        raise ValueError(f"invalid skill name: {skill_name!r}")
+    if not isinstance(category, str) or not category:
+        raise ValueError("category must be a non-empty string")
+
+    root = Path(repo_root)
+    skill_root = root / "skills" / skill_name
+    child_root = skill_root / "_rtx"
+    skill_file = skill_root / "SKILL.md"
+    parent_path = skill_root / "blueprint.yaml"
+    child_path = child_root / "blueprint.yaml"
+    init_path = child_root / "__init__.py"
+    outputs = (parent_path, child_path, init_path)
+    if not skill_file.is_file():
+        raise FileNotFoundError(f"missing parent SKILL.md: {skill_file}")
+    existing = tuple(path for path in outputs if path.exists())
+    if existing:
+        raise FileExistsError(
+            "repository-managed skill blueprint outputs already exist: "
+            + ", ".join(str(path) for path in existing)
+        )
+    rollback_paths = tuple(path for path in outputs if not path.exists())
+
+    selected_schema_root = (
+        Path(schema_root)
+        if schema_root is not None
+        else root / "references" / "blueprint"
+    )
+    if not (selected_schema_root / "module.schema.json").is_file():
+        selected_schema_root = (
+            Path(__file__).resolve().parents[3]
+            / "references"
+            / "blueprint"
+        )
+    schema = load_schema(selected_schema_root / "module.schema.json")
+    child_id = f"{skill_name}-rtx"
+    parent = {
+        "schema_version": 5,
+        "node_type": "module",
+        "id": skill_name,
+        "version": 1,
+        "category": category,
+        "gateway": {"path": "SKILL.md", "language": "Markdown"},
+        "content": [r"SKILL\.md"],
+        "discovery": {"mechanism": "skill"},
+        "authority": {"owns_filesystem": []},
+        "sources": {},
+        "children": {
+            child_id: {
+                "base": "module-root",
+                "path": "_rtx/blueprint.yaml",
+            }
+        },
+        "namespace_exports": {},
+        "exports": {},
+    }
+    child = {
+        "schema_version": 5,
+        "node_type": "module",
+        "id": child_id,
+        "version": 1,
+        "gateway": {
+            "path": "__init__.py",
+            "language": "Python>=3.11",
+        },
+        "content": [r"__init__\.py"],
+        "authority": {"owns_filesystem": []},
+        "sources": {},
+        "children": {},
+        "namespace_exports": {},
+        "exports": {},
+    }
+    validator = schema_validator(schema)
+    validator.validate(parent)
+    validator.validate(child)
+    parent_text = render_blueprint_from_schema(
+        schema,
+        parent,
+        doc_mode="compact",
+        include_missing_template_fields=False,
+    )
+    child_text = render_blueprint_from_schema(
+        schema,
+        child,
+        doc_mode="compact",
+        include_missing_template_fields=False,
+    )
+
+    created_child_root = False
+    try:
+        try:
+            child_root.mkdir(parents=True)
+        except FileExistsError:
+            if not child_root.is_dir():
+                raise
+        else:
+            created_child_root = True
+        parent_path.write_text(parent_text, encoding="utf-8")
+        child_path.write_text(child_text, encoding="utf-8")
+        init_path.write_text("", encoding="utf-8")
+    except BaseException as error:
+        for path in reversed(rollback_paths):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as rollback_error:
+                error.add_note(f"rollback failed for {path}: {rollback_error}")
+        if created_child_root:
+            try:
+                child_root.rmdir()
+            except FileNotFoundError:
+                pass
+            except OSError as rollback_error:
+                error.add_note(
+                    f"rollback failed for directory {child_root}: {rollback_error}"
+                )
+        raise
+    return outputs
+
+
 def render_blueprint_template(schema: JsonMapping, *, doc_mode: DocMode = "full") -> str:
     """Render a documented blueprint template from schema examples/defaults."""
     return render_blueprint_from_schema(
@@ -125,13 +260,13 @@ def render_blueprint_template(schema: JsonMapping, *, doc_mode: DocMode = "full"
 
 
 def _default_schema_path(repo_root: Path, blueprint: object | None = None) -> Path:
-    if isinstance(blueprint, dict) and blueprint.get("schema_version") == 4:
+    if isinstance(blueprint, dict) and blueprint.get("schema_version") == 5:
         node_type = blueprint.get("node_type")
         schema_name = _AUTHORING_SCHEMA_BY_TYPE.get(node_type)
         if schema_name is not None:
             return repo_root / "references" / "blueprint" / schema_name
     raise ValueError(
-        "blueprint authoring requires schema_version 4 and node_type "
+        "blueprint authoring requires schema_version 5 and node_type "
         "module or behavioral_source"
     )
 

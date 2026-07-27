@@ -8,7 +8,7 @@ description: Use when auditing or refactoring an existing skill for convention c
 
 Category: skill-making-development-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces: none
 

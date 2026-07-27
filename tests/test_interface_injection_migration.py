@@ -78,7 +78,7 @@ def _graph() -> RepositoryBlueprintGraph:
         node_id="consumer-skill.llm.default",
         node_type="llm-interface",
         version=1,
-        skill_root=root,
+        module_root=root,
         blueprint_path=root / "blueprint.yaml",
         gateway_path=root / "SKILL.md",
         declaration={},
@@ -87,7 +87,7 @@ def _graph() -> RepositoryBlueprintGraph:
         node_id="provider-skill.machine-module.worker",
         node_type="machine-module",
         version=1,
-        skill_root=Path("/repo/skills/provider-skill"),
+        module_root=Path("/repo/skills/provider-skill"),
         blueprint_path=Path("/repo/skills/provider-skill/_rtx/._worker.py.blueprint.yaml"),
         gateway_path=Path("/repo/skills/provider-skill/_rtx/_worker.py"),
         declaration={},
@@ -282,7 +282,7 @@ def test_converter_drops_only_exact_map_reviewed_generated_uses_overlay() -> Non
     )
 
 
-def test_live_repository_uses_one_v4_module_source_cutover() -> None:
+def test_live_repository_uses_parent_and_code_child_cutover() -> None:
     root = Path(__file__).resolve().parents[1]
     module = yaml.safe_load(
         (root / "skills" / "daily-plan" / "blueprint.yaml").read_text(
@@ -294,13 +294,13 @@ def test_live_repository_uses_one_v4_module_source_cutover() -> None:
             root
             / "skills"
             / "daily-plan"
+            / "_rtx"
             / "blueprints"
             / "rtx-init.yaml"
         ).read_text(encoding="utf-8")
     )
 
-    assert (module["schema_version"], module["node_type"]) == (4, "module")
-    assert daily_init["uses_interfaces"] == [
+    expected_uses = [
         {"interface": "cloud-files.interface.lists-read", "version": 1},
         {"interface": "cloud-files.interface.lists-write", "version": 1},
         {"interface": "cloud-files.interface.plans-read", "version": 1},
@@ -311,22 +311,20 @@ def test_live_repository_uses_one_v4_module_source_cutover() -> None:
         {"interface": "list-manager.interface.read-beautify", "version": 1},
         {"interface": "list-manager.interface.update-list", "version": 1},
     ]
-    for source_name in (
-        "rtx-plan-orchestrate",
-        "rtx-plan-storage",
-        "rtx-render-plan",
-        "rtx-state-patch",
-    ):
+    assert (module["schema_version"], module["node_type"]) == (5, "module")
+    assert daily_init["uses_interfaces"] == expected_uses
+    for source_name in ("rtx-plan-orchestrate", "rtx-state-patch"):
         source = yaml.safe_load(
             (
                 root
                 / "skills"
                 / "daily-plan"
+                / "_rtx"
                 / "blueprints"
                 / f"{source_name}.yaml"
             ).read_text(encoding="utf-8")
         )
-        assert source["uses_interfaces"] == []
+        assert source["uses_interfaces"] == expected_uses
     assert not (root / "skills" / "skill-audit" / "SKILL.md").exists()
     assert not (
         root / "skills" / "skill-audit" / "_rtx" / "_audit_certifier.py"
@@ -1219,7 +1217,8 @@ def test_converter_rejects_unsupported_python_package_support_policy(
         )
 
 
-def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None:
+def _assert_pre_nested_parent_cutover_without_collisions() -> None:
+    """Retain the reviewed v4 parent-cutover assertions as historical evidence."""
     repo_root = Path(__file__).resolve().parents[1]
     map_document = yaml.safe_load(
         (repo_root / "docs/plans/unified-architecture-migration-map.yaml").read_text(
@@ -1302,6 +1301,14 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
             "certification-view",
         },
         "process-binding-compiler": {"blueprint-graph"},
+        "nested-module-migration": {
+            "atomic-files",
+            "blueprint-graph",
+            "blueprint-inventory",
+            "certificate-records",
+            "certification-hashing",
+            "git-provenance",
+        },
     }
     expected_common_sources = set(expected_common_dependencies) | {
         "atomic-files",
@@ -1341,7 +1348,10 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
     } == expected_export_sources
     assert common["exports"]["common.interface.blueprint-template"]["access"] == {
         "allow_all_modules": False,
-        "allowed_callers": ["regenerate-blueprints"],
+        "allowed_callers": [
+            "regenerate-blueprints",
+            "regenerate-blueprints-rtx",
+        ],
     }
     assert common["exports"]["common.interface.blueprint-graph"]["access"] == {
         "allow_all_modules": False,
@@ -1952,12 +1962,12 @@ def test_post_adoption_cli_checks_map_and_references_without_materializing_candi
     ]
 
 
-def test_live_cutover_inventory_is_v4_only_and_has_unique_public_ids() -> None:
+def test_live_cutover_inventory_is_v5_only_and_has_unique_public_ids() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     graph = migration.load_repository_blueprint_graph(repo_root)
 
-    assert len(graph.nodes) == 171
-    assert all(node.declaration["schema_version"] == 4 for node in graph.nodes.values())
+    assert len(graph.nodes) == 207
+    assert all(node.declaration["schema_version"] == 5 for node in graph.nodes.values())
     assert len(graph.exports) == len(set(graph.exports))
 
 
@@ -1968,17 +1978,18 @@ def test_live_skill_drift_retires_drift_hash_helper_and_keeps_package_dependency
             repo_root
             / "skills"
             / "skill-drift"
+            / "_rtx"
             / "blueprints"
             / "rtx-check-drift-state.yaml"
         ).read_text(encoding="utf-8")
     )
 
-    assert source["content"] == [r"_rtx/_check_drift_state\.py"]
+    assert source["content"] == [r"_check_drift_state\.py"]
     assert not (
         repo_root / "skills" / "skill-drift" / "_rtx" / "_drift_hashes.py"
     ).exists()
     assert any(
-        dependency["source"] == "skill-drift.source.rtx-skill-sources-init"
+        dependency["source"] == "skill-drift-rtx.source.rtx-skill-sources-init"
         for dependency in source["dependencies"]
     )
 

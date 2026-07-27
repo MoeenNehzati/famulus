@@ -1,27 +1,14 @@
 authority:
   owns_filesystem: []
-  suggested_permissions:
-    bash: []
-    network: []
 category: skill-making-development-assistant
-description: Defines the personal skill-authoring workflow and owns repository skill
-  conformance validators plus generated blueprint-contract synchronization.
+children:
+  skill-maker-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
 - SKILL\.md
-- _rtx/_blueprint_syncer\.py
-- tests/test_blueprint_tools\.py
-- validators/__init__\.py
-- validators/blueprint_relationships\.py
-- validators/blueprints\.py
-- validators/boundaries\.py
-- validators/dependencies\.py
-- validators/dispatch_caller_skill\.py
-- validators/dispatcher_usage\.py
-- validators/interface_ids\.py
-- validators/names\.py
-- validators/skill_body_execution\.py
-- validators/skill_md_dispatch\.py
-- validators/skill_metadata\.py
+description: Defines the personal skill-authoring workflow and owns repository skill
+  conformance validators plus generated blueprint-contract synchronization.
 discovery:
   mechanism: skill
 exports:
@@ -35,22 +22,21 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - skill-certifier
-    source_interface: skill-maker.source.rtx-blueprint-syncer.interface.sync-blueprints
+    facade_interface:
+      interface: skill-maker-rtx.interface.sync-blueprints
+      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: skill-maker
 kind: generator
+namespace_exports: {}
 node_type: module
 role: meta-skill
-schema_version: 4
+schema_version: 5
 sources:
   skill-maker.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  skill-maker.source.rtx-blueprint-syncer:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-blueprint-syncer.yaml
-version: 1
+version: 2

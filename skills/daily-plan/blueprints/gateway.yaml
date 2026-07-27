@@ -1,7 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Routes a user's daily-planning request through the orchestration and mutation interfaces described in the skill instructions.
+description: Routes a user's daily-planning request through the orchestration and
+  mutation interfaces described in the skill instructions.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -10,22 +11,17 @@ interfaces:
   daily-plan.source.gateway.interface.default:
     contract:
       arguments:
-        request: {description: User request to create or refresh or show or mutate a daily plan., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
-      preconditions: []
-      interaction: {mode: unattended}
+        request:
+          description: User request to create or refresh or show or mutate a daily
+            plan.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
       caller_warnings:
-      - external-side-effect: Delegated machine interfaces may persist a plan or update list state after the user selects a mutation.
-      outputs:
-      - {id: response, audience: human, description: Plan content or a concise planning result returned to the user., direct_io_ref: write-1, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty on success., type: {kind: string, sensitivity: derived-private}}
-      outcomes:
-      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Present the returned plan or mutation result.}
-      - {id: unavailable, class: error, outputs: [], effects: [], caller_action: Report the failing delegated source and preserve existing plan state.}
-      execution:
-        state_effect: read-only
-        lifecycle: finite
-        consistency: {per_source: Each delegated source is read at the time it is invoked.}
-        verification: [{method: output-schema, output_ref: response}]
-      helpers: []
+      - external-side-effect: Delegated machine interfaces may persist a plan or update
+          list state after the user selects a mutation.
       direct_io:
         network: []
         reads:
@@ -44,9 +40,59 @@ interfaces:
           id: write-1
           medium: prompt
           sensitivity: derived-private
+      execution:
+        consistency:
+          per_source: Each delegated source is read at the time it is invoked.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Present the returned plan or mutation result.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Report the failing delegated source and preserve existing plan
+          state.
+        class: error
+        effects: []
+        id: unavailable
+        outputs: []
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Plan content or a concise planning result returned to the user.
+        direct_io_ref: write-1
+        empty: Never empty on success.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
     description: Primary LLM-facing skill instructions.
     version: 1
 node_type: behavioral_source
-schema_version: 4
-uses_interfaces: []
+schema_version: 5
+uses_interfaces:
+- interface: daily-plan.interface.mutate-plan
+  version: 1
+- interface: daily-plan.interface.orchestrate
+  version: 1
+- interface: daily-plan.interface.plan-storage
+  version: 1
+- interface: daily-plan.interface.render-plan
+  version: 1
 version: 1

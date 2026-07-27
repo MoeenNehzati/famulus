@@ -1,0 +1,173 @@
+content:
+- _list_beautify\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: list-manager-rtx.source.rtx-init
+  version: 1
+description: Python source that renders YAML list data from stdin as human-readable
+  Markdown, a table, a diff fence, or terminal-rich output.
+gateway:
+  language: Python
+  path: _list_beautify.py
+id: list-manager-rtx.source.rtx-list-beautify
+interfaces:
+  list-manager-rtx.source.rtx-list-beautify.interface.beautify-list:
+    contract:
+      arguments:
+        diff:
+          default: false
+          description: Render the legacy diff-fenced view
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        ids:
+          default: false
+          description: Append stable entry IDs to rendered rows
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        input:
+          description: YAML list document or entry sequence to render
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              named: yaml
+            kind: string
+        markdown:
+          default: false
+          description: Render nested bullet-list Markdown
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        no-descriptions:
+          default: false
+          description: Hide entry descriptions
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        relative-deadlines:
+          default: false
+          description: Render relative deadline labels
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        table:
+          default: false
+          description: Render a flat GitHub-Flavored Markdown table
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: list
+          formats:
+          - yaml
+          id: read-1
+          medium: stdin
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: report
+          formats:
+          - markdown
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: Rendering uses only the YAML supplied on stdin for this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: rendered
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Relay the rendering without reformatting when it is intended
+          for the user.
+        class: success
+        effects: []
+        id: success
+        outputs:
+        - rendered
+      - caller_action: Correct malformed YAML or incompatible rendering options before
+          retrying.
+        class: error
+        effects: []
+        id: error
+        outputs: []
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Human-readable rendering of the supplied YAML list.
+        direct_io_ref: write-1
+        empty: Empty input renders an empty-list representation.
+        id: rendered
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: Markdown or terminal-oriented list rendering
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Render YAML list entries from stdin (nested bullet-list markdown
+      by default for todo/triage; --table for a flat GFM table, --diff for the legacy
+      diff-fenced view). Pass YAML via stdin using `dispatcher --stdin`.
+    process_binding:
+      entry: BeautifyListInterface
+      kind: process
+      patterns:
+      - allow_extra_positionals: true
+        allow_stdin: true
+        min_positionals: 0
+        notes: 'Reads YAML from stdin and renders user-facing list output. No allowed_flags
+          restriction: -D/--markdown/--table/--diff/--relative-deadlines/--ids all
+          pass through.'
+    usage: '[-D|--no-descriptions] [--markdown|--table|--diff] [--relative-deadlines]
+      [--ids]'
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Reads YAML list data from stdin.
+  version: '>=6'
+- kind: python-package
+  name: rich
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Renders nested list output for terminal display.
+  version: any
+schema_version: 5
+uses_interfaces: []
+version: 1

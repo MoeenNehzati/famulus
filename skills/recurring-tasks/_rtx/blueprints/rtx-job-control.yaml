@@ -1,0 +1,1013 @@
+content:
+- _job_control\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/jobs-config.yaml
+  reason: Reads and mutates the shared jobs configuration.
+  source: recurring-tasks-rtx.source.jobs-config
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: recurring-tasks-rtx.source.rtx-init
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-schedule-backend-init.yaml
+  reason: Imports Python source from _rtx/_schedule_backend/__init__.py.
+  source: recurring-tasks-rtx.source.rtx-schedule-backend-init
+  version: 1
+description: Implements enable, disable, immediate-run, status, and log-view operations
+  for configured recurring jobs.
+gateway:
+  language: Python
+  path: _job_control.py
+id: recurring-tasks-rtx.source.rtx-job-control
+interfaces:
+  recurring-tasks-rtx.source.rtx-job-control.interface.scripts-disable:
+    contract:
+      arguments:
+        jobs-file:
+          default: jobs.yaml
+          description: Optional jobs YAML path used for testing or an alternate configuration
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+        name:
+          description: Configured job name to disable
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+        no-sync:
+          default: false
+          description: Skip native scheduler reconciliation after editing jobs YAML
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+      caller_warnings:
+      - external-side-effect: Rewrites jobs YAML and normally removes or disables
+          native scheduler entries.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: config
+          formats:
+          - yaml
+          id: read-1
+          medium: local-filesystem
+          path: jobs.yaml
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: config
+          formats:
+          - yaml
+          id: write-1
+          medium: local-filesystem
+          path: jobs.yaml
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: configure
+          content: scheduler-config
+          formats:
+          - text
+          id: write-2
+          medium: local-system
+          sensitivity: user-private
+          system: native-scheduler
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-3
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-4
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Loads the selected jobs file before changing the matching enabled
+            flag.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: write-jobs
+          may_occur_in_outcomes:
+          - disabled
+          - disabled-no-sync
+          reversibility:
+            reversible: Enable the same job again.
+          value_source:
+            argument_ref: name
+            kind: argument
+        - action: configure
+          confirmation_evidence:
+            direct_io_ref: write-2
+            kind: direct-io
+          direct_io_ref: write-2
+          id: sync-scheduler
+          may_occur_in_outcomes:
+          - disabled
+          reversibility:
+            reversible: Enable and resync the same job.
+          value_source:
+            argument_ref: name
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: jobs.yaml is written before native scheduler reconciliation.
+          concurrent_invocations:
+            unsafe: Concurrent job edits can overwrite YAML or scheduler state.
+          idempotency:
+            idempotent: Repeated disable calls converge to disabled state when the
+              job remains present.
+          on_uncertain_completion:
+            verify_then_decide: Inspect jobs.yaml and native scheduler state before
+              retrying.
+          partial_effects_on_failure:
+            possible: YAML can be updated when scheduler sync later fails.
+          rollback_on_failure:
+            unavailable: The interface does not automatically restore prior YAML.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Treat the job as disabled.
+        class: success
+        effects:
+        - write-jobs
+        - sync-scheduler
+        id: disabled
+        outputs:
+        - result
+      - caller_action: Run scheduler sync before relying on native state.
+        class: partial
+        effects:
+        - write-jobs
+        id: disabled-no-sync
+        outputs:
+        - result
+      - caller_action: Check jobs.yaml for the requested name.
+        class: error
+        effects: []
+        id: not-found
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Confirmation of the disabled job
+        direct_io_ref: write-3
+        empty: A confirmation line is printed on success.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-4
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: 'Disable a job by setting enabled: false in jobs.yaml and syncing
+      native scheduler entries.'
+    process_binding:
+      args_prefix:
+      - disable
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --jobs-file
+        - --no-sync
+        flag_patterns:
+          --jobs-file: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: owner
+    usage: <name>
+    version: 1
+  recurring-tasks-rtx.source.rtx-job-control.interface.scripts-enable:
+    contract:
+      arguments:
+        jobs-file:
+          default: jobs.yaml
+          description: Optional jobs YAML path used for testing or an alternate configuration
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+        name:
+          description: Configured job name to enable
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+        no-sync:
+          default: false
+          description: Skip native scheduler reconciliation after editing jobs YAML
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+      caller_warnings:
+      - external-side-effect: Rewrites jobs YAML and normally creates and starts native
+          scheduler entries.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: config
+          formats:
+          - yaml
+          id: read-1
+          medium: local-filesystem
+          path: jobs.yaml
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: config
+          formats:
+          - yaml
+          id: write-1
+          medium: local-filesystem
+          path: jobs.yaml
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: configure
+          content: scheduler-config
+          formats:
+          - text
+          id: write-2
+          medium: local-system
+          sensitivity: user-private
+          system: native-scheduler
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-3
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-4
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Loads the selected jobs file before changing the matching enabled
+            flag.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: write-jobs
+          may_occur_in_outcomes:
+          - enabled
+          - enabled-no-sync
+          reversibility:
+            reversible: Disable the same job again.
+          value_source:
+            argument_ref: name
+            kind: argument
+        - action: configure
+          confirmation_evidence:
+            direct_io_ref: write-2
+            kind: direct-io
+          direct_io_ref: write-2
+          id: sync-scheduler
+          may_occur_in_outcomes:
+          - enabled
+          reversibility:
+            reversible: Disable and resync the same job.
+          value_source:
+            argument_ref: name
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: jobs.yaml is written before native scheduler reconciliation.
+          concurrent_invocations:
+            unsafe: Concurrent job edits can overwrite YAML or scheduler state.
+          idempotency:
+            idempotent: Repeated enable calls converge to enabled state when the job
+              remains present.
+          on_uncertain_completion:
+            verify_then_decide: Inspect jobs.yaml and native scheduler state before
+              retrying.
+          partial_effects_on_failure:
+            possible: YAML can be updated when scheduler sync later fails.
+          rollback_on_failure:
+            unavailable: The interface does not automatically restore prior YAML.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Treat the job as enabled.
+        class: success
+        effects:
+        - write-jobs
+        - sync-scheduler
+        id: enabled
+        outputs:
+        - result
+      - caller_action: Run scheduler sync before relying on native state.
+        class: partial
+        effects:
+        - write-jobs
+        id: enabled-no-sync
+        outputs:
+        - result
+      - caller_action: Check jobs.yaml for the requested name.
+        class: error
+        effects: []
+        id: not-found
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Confirmation of the enabled job
+        direct_io_ref: write-3
+        empty: A confirmation line is printed on success.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-4
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: 'Enable a job by setting enabled: true in jobs.yaml and syncing native
+      scheduler entries.'
+    process_binding:
+      args_prefix:
+      - enable
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --jobs-file
+        - --no-sync
+        flag_patterns:
+          --jobs-file: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: owner
+    usage: <name>
+    version: 1
+  recurring-tasks-rtx.source.rtx-job-control.interface.scripts-status:
+    contract:
+      arguments: {}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: scheduler-status
+          formats:
+          - text
+          id: read-1
+          medium: local-system
+          sensitivity: derived-private
+          system: native-scheduler
+        writes:
+        - access: write
+          content: scheduler-status
+          formats:
+          - text
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-2
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Queries native scheduler state during this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: status
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the native status to assess scheduled jobs.
+        class: success
+        effects: []
+        id: reported
+        outputs:
+        - status
+      - caller_action: Report the backend failure.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: null
+          minimum: 0
+        description: Native scheduler status text for recurring jobs
+        direct_io_ref: write-1
+        empty: No text is printed when the backend reports no entries.
+        id: status
+        ordering: unspecified
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-2
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: List active recurring scheduler entries, next fire times, and service
+      status.
+    process_binding:
+      args_prefix:
+      - status
+      entry: Interface
+      kind: process
+      patterns:
+      - max_positionals: 0
+        min_positionals: 0
+        name: owner
+    usage: ''
+    version: 1
+  recurring-tasks-rtx.source.rtx-job-control.interface.scripts-test:
+    contract:
+      arguments:
+        name:
+          description: Configured job name to trigger through the native scheduler
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+      caller_warnings:
+      - external-side-effect: Starts the configured job immediately through the native
+          scheduler.
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - access: execute
+          content: recurring-job
+          formats:
+          - text
+          id: write-1
+          medium: local-system
+          sensitivity: user-private
+          system: native-scheduler
+        - access: write
+          content: response
+          formats:
+          - text
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-3
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Requests an immediate native scheduler run and waits for the backend
+            command result.
+        effects:
+        - action: execute
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: start-job
+          may_occur_in_outcomes:
+          - passed
+          - failed
+          - execution-error
+          reversibility:
+            irreversible: Work already performed by the started job cannot be recalled
+              generically.
+          value_source:
+            argument_ref: name
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: One scheduler start request is issued.
+          concurrent_invocations:
+            unsafe: Multiple calls may overlap executions of the same job.
+          idempotency:
+            non_idempotent: Repeating the call starts another job run.
+          on_uncertain_completion:
+            verify_then_decide: Inspect scheduler and run-log state before retrying.
+          partial_effects_on_failure:
+            possible: The job may start even when status collection fails.
+          rollback_on_failure:
+            unavailable: The interface has no generic compensation for job work.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Treat the immediate scheduler run as successful.
+        class: success
+        effects:
+        - start-job
+        id: passed
+        outputs:
+        - result
+      - caller_action: Inspect service and run logs.
+        class: error
+        effects:
+        - start-job
+        id: failed
+        outputs:
+        - result
+      - caller_action: Report the scheduler exception and inspect native scheduler
+          state before retrying.
+        class: error
+        effects:
+        - start-job
+        id: execution-error
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: null
+          minimum: 1
+        description: Pass or fail message from the immediate scheduler trigger
+        direct_io_ref: write-2
+        empty: A pass or fail line is always printed.
+        id: result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-3
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Trigger a job immediately through the native scheduler, show output
+      and status.
+    process_binding:
+      args_prefix:
+      - test
+      entry: Interface
+      kind: process
+      patterns:
+      - max_positionals: 1
+        min_positionals: 1
+        name: owner
+    usage: <name>
+    version: 1
+  recurring-tasks-rtx.source.rtx-job-control.interface.scripts-view-logs:
+    contract:
+      arguments:
+        job-name:
+          description: Configured job whose run log should be shown
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+        lines:
+          default: 50
+          description: Maximum trailing lines to print
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            minimum: 1
+            unit: count
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: log
+          formats:
+          - text
+          id: read-1
+          medium: local-filesystem
+          path: logs/*/run.log
+          path_match: glob
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: log
+          formats:
+          - text
+          id: write-1
+          medium: stdout
+          sensitivity: user-private
+        - access: write
+          content: diagnostic-report
+          formats:
+          - text
+          id: write-2
+          medium: stderr
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: Reads the selected log once and prints its trailing lines.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: log-tail
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the lines for diagnosis.
+        class: success
+        effects: []
+        id: shown
+        outputs:
+        - log-tail
+      - caller_action: Confirm whether the job has ever run.
+        class: no-op
+        effects: []
+        id: absent
+        outputs:
+        - log-tail
+      - caller_action: Report the log read failure.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - diagnostic
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: null
+          minimum: 1
+        description: Requested tail of the job run log or a no-log message
+        direct_io_ref: write-1
+        empty: A no-log message is printed when the file is absent.
+        id: log-tail
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: user-private
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 0
+        description: Caller-visible warning or error text written to stderr.
+        direct_io_ref: write-2
+        empty: No stderr is emitted on paths without diagnostics.
+        id: diagnostic
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Tail the run log for a job (default 50 lines).
+    process_binding:
+      args_prefix:
+      - view-logs
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --lines
+        flag_patterns:
+          --lines: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: owner
+    usage: <job-name> [--lines N]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: binary
+  name: launchctl
+  platforms:
+    linux: false
+    macos: true
+    windows: false
+  reason: Disables generated user scheduler entries.
+  version: any
+- kind: binary
+  name: launchctl
+  platforms:
+    linux: false
+    macos: true
+    windows: false
+  reason: Enables and starts generated user scheduler entries.
+  version: any
+- kind: binary
+  name: launchctl
+  platforms:
+    linux: false
+    macos: true
+    windows: false
+  reason: Lists active generated user scheduler entries.
+  version: any
+- kind: binary
+  name: launchctl
+  platforms:
+    linux: false
+    macos: true
+    windows: false
+  reason: Starts the generated scheduler entry immediately.
+  version: any
+- kind: binary
+  name: schtasks
+  platforms:
+    linux: false
+    macos: false
+    windows: true
+  reason: Disables generated user scheduler entries.
+  version: any
+- kind: binary
+  name: schtasks
+  platforms:
+    linux: false
+    macos: false
+    windows: true
+  reason: Enables and starts generated user scheduler entries.
+  version: any
+- kind: binary
+  name: schtasks
+  platforms:
+    linux: false
+    macos: false
+    windows: true
+  reason: Lists active generated user scheduler entries.
+  version: any
+- kind: binary
+  name: schtasks
+  platforms:
+    linux: false
+    macos: false
+    windows: true
+  reason: Starts the generated scheduler entry immediately.
+  version: any
+- kind: binary
+  name: systemctl
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Disables generated user timers.
+  version: any
+- kind: binary
+  name: systemctl
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Enables and starts generated user timers.
+  version: any
+- kind: binary
+  name: systemctl
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Lists active generated user timers.
+  version: any
+- kind: binary
+  name: systemctl
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Starts the generated user service immediately.
+  version: any
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Loads jobs.yaml before locating the run log.
+  version: '>=6'
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Loads jobs.yaml in the management CLI.
+  version: '>=6'
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Reads and writes jobs.yaml.
+  version: '>=6'
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Reads jobs.yaml before running the job.
+  version: '>=6'
+- kind: system-service
+  name: launchd
+  platforms:
+    linux: false
+    macos: true
+    windows: false
+  reason: Provides the per-user scheduler queried for recurring-task status.
+  version: any
+- kind: system-service
+  name: launchd
+  platforms:
+    linux: false
+    macos: true
+    windows: false
+  reason: Provides the per-user scheduler that owns generated recurring-task entries.
+  version: any
+- kind: system-service
+  name: launchd
+  platforms:
+    linux: false
+    macos: true
+    windows: false
+  reason: Provides the per-user scheduler used to trigger jobs.
+  version: any
+- kind: system-service
+  name: systemd-user
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Provides the user service manager used to trigger jobs.
+  version: any
+- kind: system-service
+  name: systemd-user
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Provides the user timer manager queried for recurring-task status.
+  version: any
+- kind: system-service
+  name: systemd-user
+  platforms:
+    linux: true
+    macos: false
+    windows: false
+  reason: Provides the user timer manager that owns generated recurring-task units.
+  version: any
+- kind: system-service
+  name: task-scheduler
+  platforms:
+    linux: false
+    macos: false
+    windows: true
+  reason: Provides the per-user scheduler queried for recurring-task status.
+  version: any
+- kind: system-service
+  name: task-scheduler
+  platforms:
+    linux: false
+    macos: false
+    windows: true
+  reason: Provides the per-user scheduler that owns generated recurring-task entries.
+  version: any
+- kind: system-service
+  name: task-scheduler
+  platforms:
+    linux: false
+    macos: false
+    windows: true
+  reason: Provides the per-user scheduler used to trigger jobs.
+  version: any
+schema_version: 5
+uses_interfaces: []
+version: 1

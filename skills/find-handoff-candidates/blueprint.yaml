@@ -1,34 +1,14 @@
 authority:
   owns_filesystem: []
-  suggested_permissions:
-    bash:
-    - args_prefix:
-      - --caller-skill
-      - find-handoff-candidates
-      - find-handoff-candidates.interface.scan
-      command:
-      - dispatcher
-      reason: Read-only scan of local session transcript files; no writes, no network.
-    - args_prefix:
-      - --caller-skill
-      - find-handoff-candidates
-      - find-handoff-candidates.interface.calibrate
-      command:
-      - dispatcher
-      reason: Read-only diagnostic tool for re-deriving default threshold reference
-        numbers; no writes, no network.
-    network: []
 category: workflow-general-assistant
+children:
+  find-handoff-candidates-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
 - SKILL\.md
-- _rtx/__init__\.py
-- _rtx/_claude_parser\.py
-- _rtx/_codex_parser\.py
-- _rtx/_handoff_calibrate\.py
-- _rtx/_handoff_scan\.py
-- tests/test_parsers\.py
-- tests/test_scan\.py
-description: Mechanically identifies session transcripts with substantial work since their last completed handoff and provides threshold-calibration diagnostics.
+description: Mechanically identifies session transcripts with substantial work since
+  their last completed handoff and provides threshold-calibration diagnostics.
 discovery:
   mechanism: skill
 exports:
@@ -36,7 +16,9 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: find-handoff-candidates.source.rtx-handoff-calibrate.interface.calibrate
+    facade_interface:
+      interface: find-handoff-candidates-rtx.interface.calibrate
+      version: 1
   find-handoff-candidates.interface.default:
     access:
       allow_all_modules: true
@@ -46,30 +28,21 @@ exports:
     access:
       allow_all_modules: true
       allowed_callers: []
-    source_interface: find-handoff-candidates.source.rtx-handoff-scan.interface.scan
+    facade_interface:
+      interface: find-handoff-candidates-rtx.interface.scan
+      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: find-handoff-candidates
 kind: analyzer
+namespace_exports: {}
 node_type: module
 role: automation
-schema_version: 4
+schema_version: 5
 sources:
   find-handoff-candidates.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  find-handoff-candidates.source.rtx-handoff-calibrate:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-handoff-calibrate.yaml
-  find-handoff-candidates.source.rtx-handoff-scan:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-handoff-scan.yaml
-  find-handoff-candidates.source.rtx-init:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-init.yaml
-version: 1
+version: 2

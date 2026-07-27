@@ -32,9 +32,18 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-import _config_bridge as dev_link
-import _agent_launchers as launchers
-import _install_scaffold as scaffold
+if __package__:
+    from . import _config_bridge as dev_link
+else:
+    import _config_bridge as dev_link
+if __package__:
+    from . import _agent_launchers as launchers
+else:
+    import _agent_launchers as launchers
+if __package__:
+    from . import _install_scaffold as scaffold
+else:
+    import _install_scaffold as scaffold
 
 ALL_AGENTS = launchers.ALL_AGENTS
 

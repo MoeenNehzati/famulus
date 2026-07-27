@@ -1,0 +1,33 @@
+authority:
+  owns_filesystem:
+  - allowed_readers: []
+    match: regex
+    path: ^\$tmp/[A-Za-z0-9-]+_blueprint\.yaml$
+    reason: Candidate regenerated blueprints are outputs of this interface.
+  suggested_permissions:
+    bash: []
+    network: []
+children: {}
+content:
+- _blueprint_regenerator\.py
+- __init__\.py
+description: Code module for the regenerate-blueprints skill.
+exports:
+  regenerate-blueprints-rtx.interface.regenerate-blueprint:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: regenerate-blueprints-rtx.source.rtx-blueprint-regenerator.interface.regenerate-blueprint
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: regenerate-blueprints-rtx
+namespace_exports: {}
+node_type: module
+schema_version: 5
+sources:
+  regenerate-blueprints-rtx.source.rtx-blueprint-regenerator:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-blueprint-regenerator.yaml
+version: 1

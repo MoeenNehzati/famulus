@@ -1,39 +1,14 @@
 authority:
-  owns_filesystem:
-  - allowed_readers:
-    - g-calendar.interface.ensure-oauth
-    - g-calendar.interface.scripts-gcal
-    match: exact
-    path: $home/.config/g-calendar/credentials.json
-    reason: setup-oauth is the declared writer for regenerated calendar OAuth credentials.
-  suggested_permissions:
-    bash:
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_oauth_bootstrap.py
-      - Interface
-      reason: OAuth setup tool.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _rtx/_ensure_oauth.py
-      - Interface
-      reason: Check OAuth status and guide setup (relocated from install-assistant-tools).
-    network: []
+  owns_filesystem: []
 category: productivity-general-assistant
-description: Reads and modifies Google Calendar events and owns the service-specific OAuth credential setup used by its calendar client.
+children:
+  g-calendar-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
 - SKILL\.md
-- _rtx/__init__\.py
-- _rtx/_ensure_oauth\.py
-- _rtx/_gcal_client\.py
-- _rtx/_oauth_bootstrap\.py
-- tests/test_calendar_oauth_transaction\.py
-- tests/test_g_calendar_ensure_oauth\.py
-- tests/test_gcal\.py
+description: Reads and modifies Google Calendar events and owns the service-specific
+  OAuth credential setup used by its calendar client.
 discovery:
   mechanism: skill
 exports:
@@ -46,45 +21,37 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: g-calendar.source.rtx-ensure-oauth.interface.ensure-oauth
+    facade_interface:
+      interface: g-calendar-rtx.interface.ensure-oauth
+      version: 1
   g-calendar.interface.scripts-gcal:
     access:
       allow_all_modules: false
       allowed_callers:
       - daily-plan
-    source_interface: g-calendar.source.rtx-gcal-client.interface.scripts-gcal
+      - daily-plan-rtx
+    facade_interface:
+      interface: g-calendar-rtx.interface.scripts-gcal
+      version: 1
   g-calendar.interface.setup-oauth:
     access:
       allow_all_modules: false
       allowed_callers: []
-    source_interface: g-calendar.source.rtx-oauth-bootstrap.interface.setup-oauth
+    facade_interface:
+      interface: g-calendar-rtx.interface.setup-oauth
+      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: g-calendar
 kind: client
+namespace_exports: {}
 node_type: module
 role: productivity
-schema_version: 4
+schema_version: 5
 sources:
   g-calendar.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  g-calendar.source.rtx-ensure-oauth:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-ensure-oauth.yaml
-  g-calendar.source.rtx-gcal-client:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-gcal-client.yaml
-  g-calendar.source.rtx-init:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-init.yaml
-  g-calendar.source.rtx-oauth-bootstrap:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-oauth-bootstrap.yaml
-version: 1
+version: 2

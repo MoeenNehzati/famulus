@@ -1,18 +1,15 @@
 authority:
-  owns_filesystem:
-  - allowed_readers: []
-    match: regex
-    path: ^\$tmp/[A-Za-z0-9-]+_blueprint\.yaml$
-    reason: Candidate regenerated blueprints are outputs of this interface.
-  suggested_permissions:
-    bash: []
-    network: []
+  owns_filesystem: []
 category: skill-making-development-assistant
-description: Regenerates schema-documented YAML comments for an existing skill blueprint
-  into a validated temporary candidate without changing the source blueprint's parsed values.
+children:
+  regenerate-blueprints-rtx:
+    base: module-root
+    path: _rtx/blueprint.yaml
 content:
 - SKILL\.md
-- _rtx/_blueprint_regenerator\.py
+description: Regenerates schema-documented YAML comments for an existing skill blueprint
+  into a validated temporary candidate without changing the source blueprint's parsed
+  values.
 discovery:
   mechanism: skill
 exports:
@@ -25,22 +22,21 @@ exports:
     access:
       allow_all_modules: true
       allowed_callers: []
-    source_interface: regenerate-blueprints.source.rtx-blueprint-regenerator.interface.regenerate-blueprint
+    facade_interface:
+      interface: regenerate-blueprints-rtx.interface.regenerate-blueprint
+      version: 1
 gateway:
   language: Markdown
   path: SKILL.md
 id: regenerate-blueprints
 kind: generator
+namespace_exports: {}
 node_type: module
 role: meta-skill
-schema_version: 4
+schema_version: 5
 sources:
   regenerate-blueprints.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-  regenerate-blueprints.source.rtx-blueprint-regenerator:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-blueprint-regenerator.yaml
-version: 1
+version: 2

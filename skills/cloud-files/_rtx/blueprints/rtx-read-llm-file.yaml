@@ -1,0 +1,263 @@
+content:
+- _read_llm_file\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: cloud-files-rtx.source.rtx-init
+  version: 1
+description: Resolves and downloads a caller-authorized list or plan file beneath
+  the configured Google Drive root.
+gateway:
+  language: Python
+  path: _read_llm_file.py
+id: cloud-files-rtx.source.rtx-read-llm-file
+interfaces:
+  cloud-files-rtx.source.rtx-read-llm-file.interface.lists-read:
+    contract:
+      arguments:
+        path:
+          description: Relative list path beginning with lists/.
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              regex:
+                dialect: python
+                example: lists/todo.yaml
+                matching: full
+                pattern: ^lists/.+
+            kind: string
+      caller_warnings:
+      - rate-limited: Google Drive API quotas apply.
+      direct_io:
+        network:
+        - access: download
+          auth:
+            kind: google-drive-oauth
+            mode: uses-existing
+          content: list
+          endpoint: https://www.googleapis.com/drive/v3/files
+          formats:
+          - text
+          id: network-1
+          medium: network-request
+          sensitivity: user-private
+          system: google-drive
+        - access: request
+          auth:
+            kind: google-drive-oauth
+            mode: uses-existing
+          content: credential
+          endpoint: https://oauth2.googleapis.com/token
+          formats:
+          - json
+          id: network-2
+          medium: network-request
+          sensitivity: secret
+          system: oauth
+        reads:
+        - access: read
+          auth:
+            kind: google-drive-oauth
+            mode: uses-existing
+          content: list
+          formats:
+          - text
+          id: read-1
+          medium: remote-filesystem
+          path: lists/<path>
+          path_match: exact
+          sensitivity: user-private
+          system: google-drive
+        writes:
+        - access: write
+          content: list
+          formats:
+          - text
+          id: write-1
+          medium: stdout
+          sensitivity: user-private
+      execution:
+        consistency:
+          live: Reads current Google Drive state during this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: content
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Consume the returned text.
+        class: success
+        effects: []
+        id: found
+        outputs:
+        - content
+      - caller_action: Report the stderr error and do not invent file content.
+        class: error
+        effects: []
+        id: unavailable
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Exact UTF-8 text stored in the requested list file.
+        direct_io_ref: write-1
+        empty: An empty remote file produces empty stdout.
+        id: content
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: user-private
+      preconditions: []
+    description: Read a file from cloud storage under the lists/ directory.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        max_positionals: 1
+        min_positionals: 1
+        notes: Read list files from cloud storage. Restricted to lists/ directory.
+        positional_patterns:
+          '0': ^lists/.*
+    usage: lists/<path>
+    version: 1
+  cloud-files-rtx.source.rtx-read-llm-file.interface.plans-read:
+    contract:
+      arguments:
+        path:
+          description: Relative plan path beginning with plans/.
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              regex:
+                dialect: python
+                example: plans/2026-07-22.md
+                matching: full
+                pattern: ^plans/.+
+            kind: string
+      caller_warnings:
+      - rate-limited: Google Drive API quotas apply.
+      direct_io:
+        network:
+        - access: download
+          auth:
+            kind: google-drive-oauth
+            mode: uses-existing
+          content: plan
+          endpoint: https://www.googleapis.com/drive/v3/files
+          formats:
+          - text
+          id: network-1
+          medium: network-request
+          sensitivity: user-private
+          system: google-drive
+        - access: request
+          auth:
+            kind: google-drive-oauth
+            mode: uses-existing
+          content: credential
+          endpoint: https://oauth2.googleapis.com/token
+          formats:
+          - json
+          id: network-2
+          medium: network-request
+          sensitivity: secret
+          system: oauth
+        reads:
+        - access: read
+          auth:
+            kind: google-drive-oauth
+            mode: uses-existing
+          content: plan
+          formats:
+          - text
+          id: read-1
+          medium: remote-filesystem
+          path: plans/<path>
+          path_match: exact
+          sensitivity: user-private
+          system: google-drive
+        writes:
+        - access: write
+          content: plan
+          formats:
+          - text
+          id: write-1
+          medium: stdout
+          sensitivity: user-private
+      execution:
+        consistency:
+          live: Reads current Google Drive state during this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: content
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Consume the returned text.
+        class: success
+        effects: []
+        id: found
+        outputs:
+        - content
+      - caller_action: Report the stderr error and do not invent file content.
+        class: error
+        effects: []
+        id: unavailable
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Exact UTF-8 text stored in the requested plan file.
+        direct_io_ref: write-1
+        empty: An empty remote file produces empty stdout.
+        id: content
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: user-private
+      preconditions: []
+    description: Read a file from cloud storage under the plans/ directory.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        max_positionals: 1
+        min_positionals: 1
+        notes: Read plan files from cloud storage. Restricted to plans/ directory.
+        positional_patterns:
+          '0': ^plans/.*
+    usage: plans/<path>
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 5
+uses_interfaces: []
+version: 1

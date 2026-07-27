@@ -8,7 +8,7 @@ description: Use when the user invokes "loose mode" or asks for broad exploratio
 
 Category: workflow-general-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces: none
 

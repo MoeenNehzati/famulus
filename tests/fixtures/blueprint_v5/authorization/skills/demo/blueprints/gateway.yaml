@@ -1,0 +1,16 @@
+schema_version: 5
+node_type: behavioral_source
+id: demo.source.gateway
+version: 1
+gateway:
+  path: SKILL.md
+  language: Markdown
+content:
+  - SKILL\.md
+dependencies: []
+uses_interfaces:
+  - interface: demo.interface.execute
+    version: 3
+  - interface: demo-rtx.interface.execute
+    version: 3
+interfaces: {}

@@ -21,7 +21,7 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 # State lives next to this script (SKILL_DIR/state), matching update_watermark.py,
 # so it stays portable across machines regardless of $HOME layout or caller cwd.
-SKILL_DIR = Path(__file__).resolve().parent.parent
+SKILL_DIR = Path(__file__).resolve().parent
 # Overridable via env var so tests can point at a tmp_path instead of the
 # real state/ directory.
 STATE_DIR = Path(os.environ["EMAIL_TRIAGE_STATE_DIR"]) if os.environ.get("EMAIL_TRIAGE_STATE_DIR") else SKILL_DIR / "state"

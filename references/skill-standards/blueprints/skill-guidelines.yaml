@@ -5,16 +5,18 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/interface-design.yaml
-  reason: Routes source-owned interface and instruction-source design to its detailed same-module standard.
+  reason: Routes source-owned interface and instruction-source design to its detailed
+    same-module standard.
   source: skill-standards.source.interface-design
   version: 1
-description: Defines the canonical standards governing skill identity, boundaries, interfaces, runtime ownership, and validation.
+description: Defines the canonical standards governing skill identity, boundaries,
+  interfaces, runtime ownership, and validation.
 gateway:
   language: Markdown
   path: skill-guidelines.md
 id: skill-standards.source.skill-guidelines
 interfaces: {}
 node_type: behavioral_source
-schema_version: 4
+schema_version: 5
 uses_interfaces: []
 version: 1

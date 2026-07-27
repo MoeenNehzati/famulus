@@ -29,8 +29,14 @@ import yaml
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface, PythonMachineInterface
 
 try:
-    import _rtx._cloud_transport as cloud_transport
-    import _rtx._get_schema as get_schema
+    if __package__:
+        from . import _cloud_transport as cloud_transport
+    else:
+        import _rtx._cloud_transport as cloud_transport
+    if __package__:
+        from . import _get_schema as get_schema
+    else:
+        import _rtx._get_schema as get_schema
 except ModuleNotFoundError:
     import _cloud_transport as cloud_transport
     import _get_schema as get_schema

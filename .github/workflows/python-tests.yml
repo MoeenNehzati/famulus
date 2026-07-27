@@ -52,4 +52,4 @@ jobs:
         if: always() && (matrix.os == 'macos-latest' || matrix.os == 'windows-latest')
         env:
           FAMULUS_RUN_SCHEDULER_SMOKE: '1'
-        run: python3 -m pytest -q skills/recurring-tasks/tests/test_scheduler_live_smoke.py
+        run: python3 -m pytest -q skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py

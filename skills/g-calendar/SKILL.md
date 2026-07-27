@@ -13,12 +13,10 @@ description: |
 
 Category: productivity-general-assistant
 
-Skill Version: 1
+Skill Version: 2
 
 Uses Interfaces:
 - `g-calendar.source.gateway -> connect-google.interface.default@1`
-- `g-calendar.source.gateway -> g-calendar.source.rtx-oauth-bootstrap.interface.setup-oauth@1`
-- `g-calendar.source.rtx-oauth-bootstrap -> common.interface.oauth-json@1`
 
 Public Interfaces:
 - `g-calendar.interface.default`

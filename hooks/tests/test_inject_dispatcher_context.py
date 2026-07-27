@@ -19,6 +19,8 @@ from unittest.mock import patch
 
 import pytest
 
+from test_support.runtime_module import load_runtime_module
+
 
 _HOOK = Path(__file__).resolve().parents[2] / "llmhooks" / "inject_dispatcher_context.py"
 _REPO_ROOT = _HOOK.parents[1]
@@ -60,16 +62,15 @@ def _available(*, cli: bool = True, pkg: bool = True):
 
 
 def _env_with_generated_dispatcher(tmp_path: Path) -> dict[str, str]:
-    installer_dir = _REPO_ROOT / "skills" / "install-assistant-tools" / "_rtx"
-    installer_dir_str = str(installer_dir)
-    inserted = installer_dir_str not in sys.path
-    if inserted:
-        sys.path.insert(0, installer_dir_str)
-    try:
-        from _install_launcher import platform_launcher_installer
-    finally:
-        if inserted:
-            sys.path.remove(installer_dir_str)
+    installer = load_runtime_module(
+        _REPO_ROOT
+        / "skills"
+        / "install-assistant-tools"
+        / "_rtx"
+        / "_install_launcher"
+        / "__init__.py"
+    )
+    platform_launcher_installer = installer.platform_launcher_installer
 
     bin_dir = tmp_path / "bin"
     result = platform_launcher_installer().install_dispatcher_launcher(
