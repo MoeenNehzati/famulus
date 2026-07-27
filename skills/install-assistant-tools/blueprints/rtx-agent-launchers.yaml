@@ -31,7 +31,7 @@ interfaces:
     contract:
       arguments:
         repo-root: {description: AI repository checkout containing launcher and agent profile sources., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
-        agents: {description: Comma-separated assistant and collab and coauthor selection., required: true, sensitivity: public, type: {kind: string}}
+        agents: {description: "Comma-separated assistant and collab and coauthor selection. Only the listed agents are installed by direct invocation of this interface; the phase-entry orchestrator additionally forces assistant into every installation it runs regardless of this selection, because assistant is a required invoke-skill prerequisite.", required: true, sensitivity: public, type: {kind: string}}
         options: {description: Optional home and bin and host-config paths plus default LLM and install mode and dry-run choice., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
       preconditions: []
       interaction: {mode: unattended}
@@ -66,7 +66,12 @@ interfaces:
         - {id: write-1, medium: home-filesystem, access: configure, system: filesystem, content: launchers and profile configuration and worker directories and shell default, formats: [python, shell, toml, directory], sensitivity: user-private, path: caller-selected home and bin and assistant config paths; worker directories default to the platform Famulus state dir in plugin mode and to <repo-root>/workers in development mode}
         - {id: write-2, medium: stdout, access: write, content: installation status, formats: [text], sensitivity: derived-private}
     description: Install per-agent bin launcher, profile config, worker dir, and ASSISTANT_DEFAULT
-      for the given agents. Worker directories are created under the platform
+      for the given agents. Direct invocation of this interface installs
+      exactly the --agents selection; when this launcher installation runs as
+      part of the phase-entry orchestrator, assistant is additionally forced
+      into the installed set regardless of selection, because it is a
+      required invoke-skill prerequisite (feedback item 18) and is not
+      user-selectable. Worker directories are created under the platform
       Famulus state dir in plugin mode (--mode plugin, the default plugin-cache
       checkout is a public/immutable tree) or under <repo-root>/workers in
       development mode (--mode development, an explicit live checkout).

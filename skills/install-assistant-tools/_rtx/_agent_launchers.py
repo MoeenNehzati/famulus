@@ -26,7 +26,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Sequence
 
 InstallMode = Literal["development", "plugin"]
 
@@ -51,6 +51,22 @@ ALL_AGENTS = ["assistant", "collab", "coauthor", "tw"]
 # tw is a bin-dir alias for tmux-workspace; it has no separate worker dir,
 # profile, or ASSISTANT_DEFAULT relevance (tmux-workspace isn't an LLM backend).
 WORKER_AGENTS = ["assistant", "collab", "coauthor"]
+
+
+def launcher_closure(selected_agents: Sequence[str], *, install_invoke_skill: bool) -> tuple[str, ...]:
+    """Expand a user's --agents selection to the set that must be installed.
+
+    `assistant` is a hard prerequisite for the invoke-skill implementation
+    (feedback item 18): when install_invoke_skill is set, it's guaranteed to
+    be present and moved to the front, regardless of whether the caller
+    explicitly selected it.
+    """
+    agents = list(dict.fromkeys(selected_agents))  # de-dupe, preserve order
+    if install_invoke_skill:
+        if "assistant" in agents:
+            agents.remove("assistant")
+        agents.insert(0, "assistant")
+    return tuple(agents)
 
 
 def install_agent_launcher_files(source_bin_dir: Path, bin_dir: Path, agent: str, dry_run: bool, manifest: Manifest | None) -> None:
@@ -262,6 +278,7 @@ def run(
     dry_run: bool = False,
     manifest: Manifest | None = None,
     mode: InstallMode = "development",
+    install_invoke_skill: bool = False,
 ) -> None:
     home = home or Path.home()
     bin_dir = bin_dir or default_bin_dir(home=home)
@@ -269,6 +286,8 @@ def run(
     profiles_dir = repo_root / "profiles"
     codex_home = codex_home or home / ".codex"
     claude_home = claude_home or home / ".claude"
+
+    agents = list(launcher_closure(agents, install_invoke_skill=install_invoke_skill))
 
     if manifest is None and not dry_run:
         manifest = Manifest(manifest_path(home))

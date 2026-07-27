@@ -144,6 +144,7 @@ def run(
         bin_dir=bin_dir, codex_home=codex_home, claude_home=claude_home,
         shell_rc=shell_rc, default_llm=default_llm, dry_run=dry_run,
         mode="development" if dev_mode else "plugin",
+        install_invoke_skill=True,
     )
 
     log()
