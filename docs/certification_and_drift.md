@@ -118,11 +118,14 @@ The resolved `input_manifest` records each selected repository-relative
 `path`, its `sha256` `digest`, and `git_provenance`: `tracked`, `ignored`, or
 `untracked`. It does not record policy-internal details such as a final rule.
 
-All tracked manifest entries and tracked blueprint data must match the
-certificate's `source_commit`. Included ignored and untracked files are signed
-local-state claims: their exact bytes must remain stable while certification
-runs, but they need not be committed. Consequently, `source_commit`
-reproduces the tracked subset only when a certificate includes local inputs.
+At issuance, all tracked manifest entries and tracked blueprint data must match
+the certificate's `source_commit`. Included ignored and untracked files are
+signed local-state claims: their exact bytes must remain stable while
+certification runs, but they need not be committed. Consequently,
+`source_commit` records the snapshot needed to reproduce the tracked subset
+when a certificate includes local inputs. Later currentness requires relevant
+tracked inputs to be clean at current `HEAD`, but does not require current
+`HEAD` to equal the certificate's issuance commit.
 
 `node_hash(x)` covers the canonical node identity and blueprint data together
 with the selected paths and their exact bytes. It excludes certificates,

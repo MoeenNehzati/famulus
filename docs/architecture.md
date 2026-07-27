@@ -80,11 +80,12 @@ through project policy unless a later rule deliberately re-includes an eligible
 directly owned regular file.
 
 The resolved manifest records repository-relative path, digest, and Git
-provenance (`tracked`, `ignored`, or `untracked`). Tracked inputs and the
-blueprint must match `source_commit`; included ignored or untracked files are
-signed local-state claims that must stay
-unchanged during certification. `source_commit` therefore reproduces only the
-tracked subset when local inputs exist.
+provenance (`tracked`, `ignored`, or `untracked`). At issuance, tracked inputs
+and the blueprint must match the certificate's `source_commit`; included
+ignored or untracked files are signed local-state claims that must stay
+unchanged during certification. `source_commit` therefore records the snapshot
+needed to reproduce the tracked subset when local inputs exist. Later
+currentness does not require current `HEAD` to equal that issuance commit.
 
 Repository paths have filesystem identity, not textual identity. The same
 checkout may have equivalent absolute spellings, such as `/Users/...` and

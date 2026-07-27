@@ -248,6 +248,16 @@ def _expected_checks(
         raise ValueError(f"{node_id}: invalid expected certification checks: {exc}") from exc
 
 
+def _certifier_currentness_identity(
+    certifier_identity: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in certifier_identity.items()
+        if key != "source_commit"
+    }
+
+
 def evaluate_certificate_currentness(
     graph: RepositoryBlueprintGraph,
     states: Mapping[str, NodeHashState],
@@ -267,7 +277,7 @@ def evaluate_certificate_currentness(
     selected_schema_root = Path(schema_root) if schema_root is not None else _default_schema_root()
     validator = schema_validator(load_schema(selected_schema_root / "certificate.schema.json"))
     local: dict[str, CertificateNodeCurrentness] = {}
-    node_source_commit_inputs_current = {
+    node_tracked_inputs_clean = {
         node_id: False for node_id in graph.nodes
     }
     try:
@@ -308,11 +318,10 @@ def evaluate_certificate_currentness(
         )
         global_inputs_current = (
             snapshot is not None
-            and snapshot.commit == source_commit
             and global_readiness.stamp_worthy
         )
         for node_id, state in states.items():
-            if node_id not in node_source_commit_inputs_current or not isinstance(
+            if node_id not in node_tracked_inputs_clean or not isinstance(
                 state, NodeHashState
             ):
                 continue
@@ -323,7 +332,7 @@ def evaluate_certificate_currentness(
                     if entry.get("git_provenance") == "tracked"
                 )
             )
-            node_source_commit_inputs_current[node_id] = (
+            node_tracked_inputs_clean[node_id] = (
                 global_inputs_current
                 and check_commit_readiness(
                     snapshot,
@@ -337,7 +346,7 @@ def evaluate_certificate_currentness(
 
     for node_id, node in sorted(graph.nodes.items()):
         concerns: list[str] = []
-        if not node_source_commit_inputs_current[node_id]:
+        if not node_tracked_inputs_clean[node_id]:
             concerns.append("source-commit-input-mismatch")
         certificate: Mapping[str, object] | None = None
         state = states.get(node_id)
@@ -393,8 +402,6 @@ def evaluate_certificate_currentness(
                 concerns.append("legacy-certificate-payload")
             if payload.get("subject") != _expected_subject(node, root):
                 concerns.append("subject-mismatch")
-            if payload.get("source_commit") != source_commit:
-                concerns.append("source-commit-mismatch")
             if payload.get("input_manifest") != [dict(entry) for entry in state.input_manifest]:
                 concerns.append("input-manifest-mismatch")
             if payload.get("node_hash") != state.node_hash:
@@ -403,7 +410,11 @@ def evaluate_certificate_currentness(
                 concerns.append("dependency-mismatch")
             if payload.get("certification_basis_hash") != state.certification_basis_hash:
                 concerns.append("certification-basis-mismatch")
-            if payload.get("certifier") != dict(certifier_identity):
+            payload_certifier = payload.get("certifier")
+            if not isinstance(payload_certifier, Mapping) or (
+                _certifier_currentness_identity(payload_certifier)
+                != _certifier_currentness_identity(certifier_identity)
+            ):
                 concerns.append("certifier-mismatch")
             if payload.get("checks") != _expected_checks(node_id, checks_by_node):
                 concerns.append("checks-mismatch")

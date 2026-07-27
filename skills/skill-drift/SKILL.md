@@ -51,7 +51,9 @@ has no certification authority. Hash output never writes a report.
 
 Report `certificate-current` only when every selected node has a valid signed
 certificate matching its current node hash, dependencies, certification basis,
-source commit, certifier identity, and expected checks. Otherwise report
-`certificate-stale` with the exact node concerns.
+certifier functional identity, and expected checks. The signed `source_commit`
+is issuance provenance for restoring the audited snapshot; it is not required
+to equal current `HEAD`. Otherwise report `certificate-stale` with the exact
+node concerns.
 
 Writing certification state belongs solely to `skill-certifier`.

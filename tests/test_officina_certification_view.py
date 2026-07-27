@@ -43,6 +43,7 @@ from officina.common.certification_view import (
     RejectingCertificationView,
 )
 from v4_certification_fixtures import (
+    create_certified_fixture,
     create_v4_repository,
     payload as v4_payload,
 )
@@ -669,6 +670,51 @@ def test_certificate_currentness_accepts_exact_recursive_state_and_adapter(tmp_p
     ).certified
 
 
+def test_certificate_currentness_accepts_later_head_with_unchanged_certified_inputs(
+    tmp_path: Path,
+) -> None:
+    graph, states, certified_commit, public_key_root, _backend, _key = _fixture(
+        tmp_path
+    )
+    repository = GitTestRepository(tmp_path)
+    (tmp_path / "unrelated.txt").write_text("unrelated\n", encoding="utf-8")
+    repository.git("add", "unrelated.txt")
+    repository.git("commit", "-qm", "unrelated later commit")
+    assert (
+        repository.git("rev-parse", "HEAD").stdout.decode("ascii").strip()
+        != certified_commit
+    )
+
+    report = _evaluate(tmp_path, graph, states, certified_commit, public_key_root)
+
+    assert all(status.current for status in report.nodes.values())
+
+
+def test_repository_certification_state_accepts_later_head_with_unchanged_certified_inputs(
+    tmp_path: Path,
+) -> None:
+    _graph, _states, certified_commit, public_key_root, _backend, _key = (
+        create_certified_fixture(tmp_path)
+    )
+    repository = GitTestRepository(tmp_path)
+    (tmp_path / "unrelated.txt").write_text("unrelated\n", encoding="utf-8")
+    repository.git("add", "unrelated.txt")
+    repository.git("commit", "-qm", "unrelated later commit")
+    assert (
+        repository.git("rev-parse", "HEAD").stdout.decode("ascii").strip()
+        != certified_commit
+    )
+
+    state = derive_repository_certification_state(
+        tmp_path,
+        public_key_root=public_key_root,
+        expected_schema_version=4,
+        schema_root=SCHEMA_ROOT,
+    )
+
+    assert all(status.current for status in state.currentness.nodes.values())
+
+
 def test_certificate_currentness_propagates_explicit_non_atomic_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -730,7 +776,6 @@ def test_certificate_currentness_propagates_explicit_non_atomic_fallback(
     ("field", "replacement", "concern"),
     [
         ("subject", {"id": "wrong"}, "subject-mismatch"),
-        ("source_commit", "d" * 40, "source-commit-mismatch"),
         ("input_manifest", [], "input-manifest-mismatch"),
         ("node_hash", "sha256:" + "d" * 64, "node-hash-mismatch"),
         (
@@ -769,6 +814,33 @@ def test_certificate_currentness_rejects_each_mismatched_projection(
 
     assert not status.current
     assert concern in status.concerns
+
+
+def test_certificate_source_commits_are_issuance_provenance_not_currentness(
+    tmp_path: Path,
+) -> None:
+    graph, states, current_commit, public_key_root, _backend, key = _fixture(tmp_path)
+    certified_commit = "d" * 40
+    certified_certifier = {**CERTIFIER, "source_commit": certified_commit}
+
+    for node_id in graph.nodes:
+        payload = _payload(tmp_path, graph, states, node_id, certified_commit, key.key_id)
+        payload["certifier"] = certified_certifier
+        _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
+
+    report = evaluate_certificate_currentness(
+        graph,
+        states,
+        repo_root=tmp_path,
+        public_key_root=public_key_root,
+        source_commit=current_commit,
+        certifier_identity=CERTIFIER,
+        checks_by_node={node_id: CHECKS for node_id in graph.nodes},
+        schema_root=SCHEMA_ROOT,
+        allow_non_atomic=True,
+    )
+
+    assert all(status.current for status in report.nodes.values())
 
 
 def test_export_requires_its_exact_source_but_containment_does_not_stale_module(
