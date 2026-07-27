@@ -11,6 +11,7 @@ downloads/
 tasks/
 projects/
 ide/
+workers/
 mcp-needs-auth-cache.json
 
 # Local/machine-specific settings
