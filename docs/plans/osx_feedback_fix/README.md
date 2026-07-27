@@ -1,13 +1,34 @@
 # macOS Installation Feedback Remediation Umbrella Plan
 
-> **Deferred pending approved post-adoption rebase — do not execute this
-> package or its subplans.** It overlaps the unified migration's installer,
-> plugin-discovery, manifest, launcher, hook, and atomic-state contracts. None
-> of its proposed artifacts is authorized by that migration; resumption
-> requires an approved post-adoption rebase and fresh functional-predecessor
-> dispositions for every proposed artifact.
+> **Superseded by a 2026-07-27 v5 rebase — this package and its six subplans
+> (01-06) are historical record only, not executable.** They were frozen
+> relative to the "unified architecture v4" migration and never rebased
+> before the repo also completed the "nested modules v5" migration
+> (`docs/architecture.md`: "Adopted version-5 architecture"). A full audit
+> against the current v5 tree found real, still-open bugs behind most of the
+> 28 feedback items below, but every proposed mechanism, file path, and
+> blueprint shape here predates two structural rewrites of the codebase.
+>
+> The rebased, currently-authoritative plans are:
+> - [01 installer runtime -> 2026-07-27-osx-installer-runtime-v5-rebase.md](../../superpowers/plans/2026-07-27-osx-installer-runtime-v5-rebase.md)
+> - [02 dispatcher contracts -> 2026-07-27-dispatcher-contracts-v5-rebase.md](../../superpowers/plans/2026-07-27-dispatcher-contracts-v5-rebase.md)
+> - [03 Google onboarding -> 2026-07-27-google-onboarding-v5-rebase.md](../../superpowers/plans/2026-07-27-google-onboarding-v5-rebase.md)
+> - [04 recurring reliability -> 2026-07-27-recurring-reliability-v5-rebase.md](../../superpowers/plans/2026-07-27-recurring-reliability-v5-rebase.md)
+> - [05 downstream workflow repairs -> 2026-07-27-downstream-workflows-v5-rebase.md](../../superpowers/plans/2026-07-27-downstream-workflows-v5-rebase.md)
+> - [06 macOS acceptance -> 2026-07-27-macos-acceptance-v5-rebase.md](../../superpowers/plans/2026-07-27-macos-acceptance-v5-rebase.md)
+>
+> Three feedback items were found already resolved by code that landed
+> outside this package and are dropped from the rebase: item 5 (cloud-files'
+> half of the duplicate-subcommand bug, fixed by the v5 migration itself),
+> item 9 (native macOS LaunchAgent smoke, already implemented in
+> `skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py`), and item
+> 26 (missing-Subject envelope crash, already fixed in
+> `skills/email-client/_rtx/_imap_gateway.py`). All other items remain open
+> and are carried into the rebased plans above.
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` or, when the user explicitly authorizes delegation, `superpowers:subagent-driven-development`. Execute one linked subplan at a time and stop at its review gate.
+> **For agentic workers:** Do not execute this package. Follow the rebased
+> plans linked above instead, using `superpowers:executing-plans` or
+> `superpowers:subagent-driven-development` per their own headers.
 
 **Goal:** Turn the July 17 macOS installation failures into a cross-platform installer architecture, accepted on Linux, macOS, and Windows with an additional native macOS LaunchAgent smoke for the reported path.
 
