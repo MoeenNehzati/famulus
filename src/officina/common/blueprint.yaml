@@ -11,6 +11,7 @@ content:
 - certification_view\.py
 - codex_toml\.py
 - dates\.py
+- famulus_paths/__init__\.py
 - git_provenance\.py
 - oauth_json\.py
 - pooled_blueprint\.py
@@ -75,6 +76,12 @@ exports:
       allowed_callers:
       - daily-plan
     source_interface: common.source.dates.interface.python-api
+  common.interface.famulus-paths:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+    source_interface: common.source.famulus-paths.interface.python-api
   common.interface.git-provenance:
     access:
       allow_all_modules: false
@@ -159,6 +166,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/dates.yaml
+  common.source.famulus-paths:
+    blueprint:
+      base: module-root
+      path: blueprints/famulus-paths.yaml
   common.source.git-provenance:
     blueprint:
       base: module-root

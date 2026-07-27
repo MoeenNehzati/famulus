@@ -1269,6 +1269,7 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
         "common.interface.certification-view",
         "common.interface.codex-toml",
         "common.interface.dates",
+        "common.interface.famulus-paths",
         "common.interface.git-provenance",
         "common.interface.oauth-json",
         "common.interface.pooled-blueprint",
@@ -1307,6 +1308,7 @@ def test_live_cutover_contains_every_v4_declaration_without_collisions() -> None
         "atomic-files",
         "codex-toml",
         "dates",
+        "famulus-paths",
         "oauth-json",
         "repository-paths",
         "secret-store",
@@ -1956,7 +1958,7 @@ def test_live_cutover_inventory_is_v4_only_and_has_unique_public_ids() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     graph = migration.load_repository_blueprint_graph(repo_root)
 
-    assert len(graph.nodes) == 171
+    assert len(graph.nodes) == 172
     assert all(node.declaration["schema_version"] == 4 for node in graph.nodes.values())
     assert len(graph.exports) == len(set(graph.exports))
 
