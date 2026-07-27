@@ -1,0 +1,61 @@
+content:
+- install_info\.py
+dependencies: []
+description: Parses and validates the pinned bootstrap/runtime versions declared in install-info.toml.
+gateway:
+  language: Python
+  path: install_info.py
+id: install.source.install-info
+interfaces:
+  install.source.install-info.interface.python-api:
+    contract:
+      arguments:
+        path:
+          description: Path to the install-info.toml file to parse.
+          required: true
+          sensitivity: public
+          direct_io_ref: install-info-file
+          type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, opaque_content: true}
+      preconditions:
+      - id: readable-toml
+        description: path must be a readable, syntactically valid TOML file.
+        check: {kind: argument, argument_ref: path, predicate: present}
+        unmet_outcome: unreadable
+        caller_action: Supply a path to an existing, valid TOML file.
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - id: result
+        audience: machine
+        description: InstallInfo dataclass instance with schema_version, uv_version, managed_python, and managed_python_supported fields.
+        direct_io_ref: return-value
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty on success.
+        type: {kind: string, sensitivity: public, description: Python InstallInfo dataclass instance.}
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [], caller_action: "Use the returned InstallInfo fields to resolve pinned bootstrap and managed-runtime versions."}
+      - {id: unreadable, class: error, outputs: [], effects: [], caller_action: "Supply a readable, syntactically valid install-info.toml file."}
+      - {id: unsupported-schema, class: refusal, outputs: [], effects: [], caller_action: "Upgrade the caller to a version that understands this install-info.toml schema_version, or pin a supported install-info.toml."}
+      - {id: missing-key, class: refusal, outputs: [], effects: [], caller_action: Repair install-info.toml so it declares bootstrap.uv_version and managed_python.preferred and managed_python.supported.}
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency: {live: The file is read once during the call.}
+        verification:
+        - {method: output-schema, output_ref: result}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: install-info-file, medium: local-filesystem, access: read, content: install-info.toml bytes, formats: [toml], sensitivity: public, path: <path>}
+        writes:
+        - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [text], sensitivity: public}
+        network: []
+    description: Provides install-info.toml parsing to Python callers.
+    version: 1
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1
