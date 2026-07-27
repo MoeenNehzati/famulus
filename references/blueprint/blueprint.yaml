@@ -16,8 +16,8 @@ content:
 - schema\.annotated\-draft\.json
 - schema\.json
 - template\.yaml
-description: Owns the repository's version 4 blueprint schemas, templates, and schema
-  metadata.
+description: Owns the repository's version 5 blueprint schemas, templates, and schema
+  metadata; frozen v4 artifacts live only under migrations/v4 for conversion evidence.
 exports: {}
 gateway:
   language: JSON-Schema

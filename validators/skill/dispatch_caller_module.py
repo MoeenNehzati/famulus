@@ -140,15 +140,21 @@ def _validate(
                     f"{rel}:{lineno}: import officina.dispatcher instead of removed famulus.dispatcher"
                 )
             for declaration in analyze_dispatch_call_declarations(tree):
-                if declaration.caller_skill is None:
+                if graph is not None and graph.schema_version == 5 and declaration.legacy_v4:
                     errors.append(
-                        f"{rel}:{declaration.lineno}: DispatchCall() must include caller_skill "
+                        f"{rel}:{declaration.lineno}: DispatchCall() must use "
+                        "caller_module_id and target_module_id in v5 runtime code"
+                    )
+                    continue
+                if declaration.caller_module_id is None:
+                    errors.append(
+                        f"{rel}:{declaration.lineno}: DispatchCall() must include caller_module_id "
                         "as a literal or module-level string constant"
                     )
-                elif declaration.caller_skill != expected_module_id:
+                elif declaration.caller_module_id != expected_module_id:
                     errors.append(
-                        f"{rel}:{declaration.lineno}: caller_skill resolves to "
-                        f"`{declaration.caller_skill}`, expected `{expected_module_id}`"
+                        f"{rel}:{declaration.lineno}: caller_module_id resolves to "
+                        f"`{declaration.caller_module_id}`, expected `{expected_module_id}`"
                     )
 
             if not direct_aliases and not module_aliases:

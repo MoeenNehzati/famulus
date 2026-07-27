@@ -105,7 +105,7 @@ def test_dispatch_call_literal_match_passes(tmp_path: Path) -> None:
     (skill / "_rtx" / "run.py").write_text(
         "from officina.runtime.python_machine_interface import DispatchCall\n"
         "DISPATCHES = {\n"
-        "    'read': DispatchCall(caller_skill='good-skill', target_skill='other', interface='x')\n"
+        "    'read': DispatchCall(caller_module_id='good-skill', target_module_id='other', interface='x')\n"
         "}\n",
         encoding="utf-8",
     )
@@ -120,7 +120,7 @@ def test_dispatch_call_module_constant_match_passes(tmp_path: Path) -> None:
         "OWNER = 'good-skill'\n"
         "import officina.runtime.python_machine_interface as pmi\n"
         "DISPATCHES = {\n"
-        "    'read': pmi.DispatchCall(caller_skill=OWNER, target_skill='other', interface='x')\n"
+        "    'read': pmi.DispatchCall(caller_module_id=OWNER, target_module_id='other', interface='x')\n"
         "}\n",
         encoding="utf-8",
     )
@@ -150,7 +150,27 @@ def test_dispatch_call_missing_caller_skill_flagged(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     errors = _mod.validate(tmp_path)
-    assert any("DispatchCall() must include caller_skill" in error for error in errors)
+    assert any("DispatchCall() must include caller_module_id" in error for error in errors)
+
+
+def test_v5_dispatch_call_legacy_keywords_flagged(tmp_path: Path) -> None:
+    copy_v5_fixture_tree(_V5_FIXTURE / "skills", tmp_path / "skills")
+    graph = load_repository_blueprint_graph(
+        tmp_path,
+        schema_root=_V5_SCHEMA_ROOT,
+        expected_schema_version=5,
+    )
+    runtime = tmp_path / "skills" / "demo" / "_rtx" / "runtime.py"
+    runtime.write_text(
+        "from officina.runtime.python_machine_interface import DispatchCall\n"
+        "DISPATCHES = {\n"
+        "    'read': DispatchCall(caller_skill='demo-rtx', target_skill='other', interface='x')\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    errors = _mod.validate_with_graph(tmp_path, graph)
+    assert any("caller_module_id and target_module_id" in error for error in errors)
 
 
 def test_wrong_skill_flagged(tmp_path: Path) -> None:
@@ -173,7 +193,7 @@ def test_dispatch_call_wrong_skill_flagged(tmp_path: Path) -> None:
     (skill / "_rtx" / "run.py").write_text(
         "from officina.runtime.python_machine_interface import DispatchCall\n"
         "DISPATCHES = {\n"
-        "    'read': DispatchCall(caller_skill='other-skill', target_skill='other', interface='x')\n"
+        "    'read': DispatchCall(caller_module_id='other-skill', target_module_id='other', interface='x')\n"
         "}\n",
         encoding="utf-8",
     )

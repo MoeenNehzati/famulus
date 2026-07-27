@@ -36,7 +36,11 @@ python3 scripts/generate-doc-artifacts.py
 
 ## Named Python Suites
 
-`scripts/run-python-tests.py` is the single source of truth for suite membership.
+`scripts/run-python-tests.py` is the single source of truth for suite
+membership. The fixed boundaries are `tests/`, `hooks/tests/`, and skill-owned
+runtime test directories. The runner discovers concrete `skills/*/_rtx/tests`
+directories at execution time so migrated runtime modules cannot fall out of
+the suite when a skill gains or loses a code module.
 
 ### `precommit`
 
@@ -44,22 +48,14 @@ This suite runs:
 
 - `tests/`
 - `hooks/tests/`
-- `skills/cloud-files/tests/`
-- `skills/daily-plan/tests/`
-- `skills/email-client/tests/`
-- `skills/email-triage/tests/`
-- `skills/find-handoff-candidates/tests/`
-- `skills/g-calendar/tests/`
-- `skills/list-manager/tests/`
-- `skills/math-dependency-graph/tests/`
-- `skills/recurring-tasks/tests/`
-- `skills/skill-maker/tests/`
+- discovered `skills/*/_rtx/tests/`, excluding the install-assistant-tools
+  runtime tests named below
 
 ### `full`
 
 This suite runs everything in `precommit`, plus:
 
-- `skills/install-assistant-tools/tests/`
+- `skills/install-assistant-tools/_rtx/tests/`
 
 ### `portability`
 
@@ -110,7 +106,7 @@ Each job runs, in order:
 7. `python3 scripts/run-python-tests.py --suite portability --verbose`
 8. `python3 scripts/run-python-tests.py --suite full --verbose`
 9. macOS and Windows only: `FAMULUS_REQUIRE_NATIVE_KEYRING=1 python3 -m pytest -q tests/test_officina_secret_store.py::test_default_backend_native_roundtrip_when_available`
-10. macOS and Windows only: `FAMULUS_RUN_SCHEDULER_SMOKE=1 python3 -m pytest -q skills/recurring-tasks/tests/test_scheduler_live_smoke.py`
+10. macOS and Windows only: `FAMULUS_RUN_SCHEDULER_SMOKE=1 python3 -m pytest -q skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py`
 
 Validators and tests intentionally share the same CI worker so setup happens once per operating system.
 
@@ -162,11 +158,15 @@ that mechanism.
 
 When you add, remove, or rename a repo-owned Python test directory:
 
-1. Update the explicit suite membership in `scripts/run-python-tests.py`.
-2. Decide whether the directory belongs in `precommit`, `full`, or both.
+1. Keep it under the canonical boundary for its owner: repo tests under
+   `tests/` or `hooks/tests/`, and skill runtime tests under
+   `skills/<skill>/_rtx/tests/`.
+2. Update `scripts/run-python-tests.py` only if the boundary or exclusion
+   policy changes.
 3. Update this file if the suite boundaries changed.
 
-Do not rely on implicit glob expansion for the suite contract. The point of the runner script is to make the operational boundary explicit.
+The runner may discover concrete directories inside those boundaries, but the
+boundaries themselves must remain explicit in the script and in this document.
 
 ## Known hazards
 

@@ -4,11 +4,11 @@ The concrete schemas in this directory are the canonical source for blueprint
 shape and field-level authoring rules. See
 [`docs/skill-blueprints.md`](../../docs/skill-blueprints.md) for the current
 contributor overview and [`docs/certification_and_drift.md`](../../docs/certification_and_drift.md)
-for the version-4 input and certificate contract.
+for the version-5 input and certificate contract.
 
-## Live version-4 contracts
+## Live version-5 contracts
 
-Version 4 is the live blueprint family. Validate each document against its
+Version 5 is the live blueprint family. Validate each document against its
 concrete schema:
 
 - `module.schema.json`: discovery, filesystem authority, contained behavioral
@@ -26,19 +26,23 @@ concrete schema:
 - `common.schema.json`: shared identifiers, locators, gateways, requirements,
   ownership, and relationship shapes
 
-`schema.json` is the live dispatcher and accepts only version-4 modules and
-behavioral sources. `schema.annotated-draft.json` is the matching authoring
+`schema.json` is the live dispatcher and accepts only version-5 modules,
+behavioral sources, child topology, namespace exports, and facade routes.
+`schema.annotated-draft.json` is the matching authoring
 entry point; it delegates field-level guidance to those same two concrete
 schemas. Earlier schema families have been retired; their conversion behavior
-is preserved only in the migration engine and its regression evidence.
+is preserved only in the migration engine and its regression evidence. V4
+parsing remains available only for the frozen migration bundle, explicit
+migration/test fixtures, and compatibility checks that request that schema
+family directly.
 
 `template.yaml` is the schema-family artifact manifest. Its `examples` name
 the live module root and ordinary behavioral-source blueprints under
 `blueprints/`; `generated_outputs` names the derived `SKILL.md` blocks.
 
-## Version-4 authoring contract
+## Version-5 authoring contract
 
-Every module or behavioral source uses `schema_version: 4` and its exact
+Every module or behavioral source uses `schema_version: 5` and its exact
 `node_type`. A gateway is one whole existing file described by `path`,
 `language`, and optional alternative `machines`. Language and machine
 requirements use a name, an exact version, or a comma-separated intersection,
@@ -51,9 +55,12 @@ A module owns:
 
 - optional discovery, currently `{mechanism: skill}`;
 - filesystem authority and suggested permissions;
-- a map of contained behavioral sources to blueprint locators; and
-- exported interface IDs, each resolving to one intrinsic source interface
-  with caller access declared as allow-all or a non-empty module allowlist.
+- a map of contained behavioral sources to blueprint locators;
+- explicitly registered child modules under module-root-relative paths;
+- namespace exports that expose all or a selected subset of a direct child; and
+- exported interface IDs, each resolving either to one intrinsic source
+  interface or to an allowed direct-child facade with access no broader than
+  the child.
 
 Export versions are derived from their source interfaces. Contracts and
 process bindings remain intrinsic to behavioral sources; modules do not copy
@@ -76,7 +83,9 @@ and direct I/O. They do not contain argv/stdin bindings, output channels,
 signals, cancellation transport, or stop mechanics; those belong to
 `process_binding`.
 
-Blueprint locators use only `module-root` or `repository-root`. Content entries
+Blueprint locators use `module-root` for live child registration and owned
+blueprint references. `repository-root` remains for explicit cross-repository
+contract references where the schema permits it. Content entries
 remain case-sensitive Python regular expressions matched with `re.fullmatch`
 against normalized POSIX paths under the ownership root. They declare
 ownership only, not that every match is tracked or hashed. The project
