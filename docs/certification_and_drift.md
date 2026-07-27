@@ -137,17 +137,17 @@ dependency hash without changing the dependent's local node hash.
 
 ```yaml
 payload:
-  certificate_schema_version: 1
+  certificate_schema_version: 2
   subject:
-    id: example-skill.source.gateway
+    id: example-skill-rtx.source.runtime
     node_type: behavioral_source
     version: 1
-    blueprint_path: skills/example-skill/blueprints/gateway.yaml
-    gateway_path: skills/example-skill/SKILL.md
+    blueprint_path: skills/example-skill/_rtx/blueprints/runtime.yaml
+    gateway_path: skills/example-skill/_rtx/runtime.py
   node_hash: sha256:...
   source_commit: ...
   input_manifest:
-    - path: skills/example-skill/SKILL.md
+    - path: skills/example-skill/_rtx/runtime.py
       digest: sha256:...
       git_provenance: tracked
   dependencies: []
@@ -172,16 +172,20 @@ value is valid base64. `certified_at` is informational and never establishes
 currentness.
 
 Each dependency entry contains `relation`, `target`, `version`, and
-`node_hash`. Derived relations are `uses-source`,
-`uses-private-interface`, `uses-export`, or
-`references-cross-owner-contract`. The payload contains no separate
-dependency-certificate hash.
+`node_hash`. V5 dependency relations are `uses-source`,
+`uses-private-interface`, `uses-export`, `references-cross-owner-contract`,
+`contains-source`, `routes-child-namespace`, `routes-terminal-module`,
+`facades-child-export`, and `facades-implementing-source`. The payload contains
+no separate dependency-certificate hash.
 
-Containment assigns ownership but creates no certification dependency. A
-`uses-export` dependency targets the exact behavioral source implementing the
-export. Runtime admission separately requires the current exporting-module
-certificate, so boundary identity and access remain protected without making
-every consumer depend on every source in that module.
+Containment and route/facade topology are certificate dependencies in v5:
+module certificates depend on contained sources, parent namespace routes
+depend on the routed child module, and facades depend on both the child export
+and the implementing terminal source. A `uses-export` dependency targets the
+exact behavioral source implementing the export. Runtime admission separately
+requires the current exporting-module certificate, so boundary identity and
+access remain protected without making every consumer depend on every source in
+that module.
 
 The certifier identity contains its exported interface and version, its node
 hash, and its source commit. `certification_basis_hash` is the single digest
