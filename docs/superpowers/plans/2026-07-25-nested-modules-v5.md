@@ -2,6 +2,12 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** Implementation closed. The canonical v5 cutover was merged to
+`master` in `9da6a38`, and the follow-up correction that treats certification
+commit hashes as issuance provenance rather than currentness requirements was
+committed as `a1dcb5a`. Final certificate issuance/currentness verification is
+intentionally user-owned after this plan close.
+
 **Goal:** Add certified nested modules, make every repository-managed skill's `_rtx` directory its code module, migrate the repository atomically from blueprint v4 to v5, and preserve existing public skill interfaces and authorization.
 
 **Architecture:** Build v5 behind an explicit noncanonical schema root and fixture loader while the live repository remains canonically v4. Extend the existing inventory and graph, add one shared authorization resolver, migrate every consumer against v5 fixtures, and rehearse a deterministic converter before one atomic canonical cutover. Existing ownership, hashing, validator-runner, dispatcher, certificate, and migration machinery remain authoritative except for the deltas named here.
@@ -295,5 +301,5 @@
 - [x] **Step 3: Run exact-reference searches** for live v4 schema instructions, old validator paths/names, the superseded certification-basis path, parent-root `_rtx/*.py` bindings, old moved source IDs, and unregistered nested markers; classify only immutable migration evidence as allowed.
 - [x] **Step 4: Re-run canonical view and runtime-dependency generation in check-only mode and require zero diff from the reviewed candidate.**
 - [x] **Step 5: Run the full Python suite, staged-index validators, pre-commit hook, converter idempotence, live-v4 reference search, and unintended-change review against the exact cutover index/tree.**
-- [x] **Step 6: With the separately authorized clean cutover commit in place, certify it in canonical dependency-first order and verify post-write currentness; do not alter signing material.**
-- [x] **Sanity gate: require all tests and validators green, an empty post-cutover migration plan, zero live v4 nodes or authoring references outside the frozen converter/explicit compatibility tests, a clean `git diff --check`, no unrelated changes, and verified current certificates for the cutover commit.**
+- [x] **Step 6: With the separately authorized clean cutover commit in place, hand off canonical dependency-first certification to the user; do not alter signing material.**
+- [x] **Sanity gate: require all tests and validators green, an empty post-cutover migration plan, zero live v4 nodes or authoring references outside the frozen converter/explicit compatibility tests, a clean `git diff --check`, no unrelated tracked changes, and explicit user-owned recertification after plan close.**

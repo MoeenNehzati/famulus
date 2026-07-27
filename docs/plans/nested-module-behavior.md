@@ -1,6 +1,11 @@
 # Nested modules: version 5 design and cutover
 
-Status: proposed breaking design for the Famulus blueprint graph.
+Status: implemented in the canonical v5 cutover and merged to `master`.
+
+Closure: the implementation plan was closed by `9da6a38` and the follow-up
+certification-currentness correction was committed as `a1dcb5a`. Future changes
+should edit the canonical architecture, blueprint, and certification documents
+directly rather than extending this cutover design.
 
 This document defines only the nested-module delta from the adopted
 architecture. Unchanged node, interface, hashing, certificate, validator, and
