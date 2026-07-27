@@ -961,8 +961,14 @@ class DispatchDependencyResolver:
 
         from officina.dispatcher.core import _resolve_dispatch_metadata_for_trace
 
+        if caller_module_id is not None and caller_module_id != call.caller_module_id:
+            raise ValueError(
+                "runtime dispatch context caller module "
+                f"`{caller_module_id}` does not match declared dispatch caller "
+                f"`{call.caller_module_id}`"
+            )
         kwargs = {
-            "caller_module_id": caller_module_id or call.caller_module_id,
+            "caller_module_id": call.caller_module_id,
             "caller_source_id": caller_source_id,
             "args": list(call.smoke_args),
             "stdin_requested": call.smoke_stdin,
@@ -1105,8 +1111,17 @@ class PythonMachineInterface:
                 _run_resolved_invocation,
             )
 
+            if (
+                context.caller_module_id is not None
+                and context.caller_module_id != call.caller_module_id
+            ):
+                raise ValueError(
+                    "runtime dispatch context caller module "
+                    f"`{context.caller_module_id}` does not match declared "
+                    f"dispatch caller `{call.caller_module_id}`"
+                )
             resolved = _resolve_dispatch(
-                caller_skill=context.caller_module_id or call.caller_module_id,
+                caller_skill=call.caller_module_id,
                 caller_source_id=context.caller_source_id,
                 target=target_interface_id,
                 args=list(args or []),

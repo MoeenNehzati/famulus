@@ -1617,8 +1617,8 @@ def test_declared_v5_dispatch_uses_runtime_source_context(
     interface = Interface()
     python_interface.set_runtime_dispatch_context(
         interface,
-        caller_module_id="daily-plan-rtx",
-        caller_source_id="daily-plan-rtx.source.rtx-plan-orchestrate",
+        caller_module_id="demo-rtx",
+        caller_source_id="demo-rtx.source.rtx-plan-orchestrate",
         repo_root=tmp_path,
     )
 
@@ -1626,10 +1626,10 @@ def test_declared_v5_dispatch_uses_runtime_source_context(
         interface.dispatch("read", args=["todo"], stdin="payload", text=True)
         == "ok"
     )
-    assert captured_resolve["caller_skill"] == "daily-plan-rtx"
+    assert captured_resolve["caller_skill"] == "demo-rtx"
     assert (
         captured_resolve["caller_source_id"]
-        == "daily-plan-rtx.source.rtx-plan-orchestrate"
+        == "demo-rtx.source.rtx-plan-orchestrate"
     )
     assert captured_resolve["target"] == "cloud-files-rtx.interface.read"
     assert captured_resolve["repo_root"] == tmp_path
@@ -1637,6 +1637,30 @@ def test_declared_v5_dispatch_uses_runtime_source_context(
     assert captured_run["resolved"] is sentinel
     assert captured_run["stdin"] == "payload"
     assert captured_run["text"] is True
+
+
+def test_declared_v5_dispatch_rejects_mismatched_runtime_caller_context(
+    tmp_path: Path,
+) -> None:
+    class Interface(PythonMachineInterface):
+        dispatches = {
+            "read": DispatchCall(
+                caller_module_id="demo-rtx",
+                target_module_id="cloud-files-rtx",
+                interface="read",
+            )
+        }
+
+    interface = Interface()
+    python_interface.set_runtime_dispatch_context(
+        interface,
+        caller_module_id="daily-plan-rtx",
+        caller_source_id="daily-plan-rtx.source.rtx-plan-orchestrate",
+        repo_root=tmp_path,
+    )
+
+    with pytest.raises(ValueError, match="does not match declared dispatch caller"):
+        interface.dispatch("read")
 
 
 def test_dependency_resolver_builds_v5_target_from_local_interface(
@@ -1665,6 +1689,23 @@ def test_dependency_resolver_builds_v5_target_from_local_interface(
     assert result is sentinel
     assert captured["caller_module_id"] == "demo-rtx"
     assert captured["target"] == "cloud-files-rtx.interface.read"
+
+
+def test_dependency_resolver_rejects_mismatched_runtime_caller_context(
+    tmp_path: Path,
+) -> None:
+    call = DispatchCall(
+        caller_module_id="demo-rtx",
+        target_module_id="cloud-files-rtx",
+        interface="read",
+    )
+
+    with pytest.raises(ValueError, match="does not match declared dispatch caller"):
+        DispatchDependencyResolver(repo_root=tmp_path).resolve_call(
+            call,
+            caller_module_id="daily-plan-rtx",
+            caller_source_id="daily-plan-rtx.source.rtx-plan-orchestrate",
+        )
 
 
 def test_dependency_resolver_uses_private_trace_certification_seam(
