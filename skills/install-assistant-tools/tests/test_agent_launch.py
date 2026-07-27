@@ -45,3 +45,21 @@ def test_repo_root_resolves_three_levels_above_bin_file():
     # <repo>/skills/install-assistant-tools/bin/_agent_launch.py
     expected = Path(_agent_launch.__file__).resolve().parents[3]
     assert _agent_launch._repo_root() == expected
+
+
+def test_worker_dir_uses_ai_env_var_when_set(monkeypatch, tmp_path):
+    monkeypatch.setenv("AI", str(tmp_path / "live-checkout"))
+
+    result = _agent_launch._worker_dir("assistant")
+
+    assert result == tmp_path / "live-checkout" / "workers" / "assistant"
+
+
+def test_worker_dir_falls_back_to_famulus_paths_when_ai_unset(monkeypatch, tmp_path):
+    monkeypatch.delenv("AI", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    result = _agent_launch._worker_dir("assistant")
+
+    assert "Documents" not in str(result)
+    assert result != _agent_launch._repo_root() / "workers" / "assistant"

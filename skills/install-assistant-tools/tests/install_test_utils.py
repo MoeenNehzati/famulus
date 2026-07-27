@@ -33,6 +33,23 @@ def read_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def assert_default_bin_dir_matches_famulus_paths(default_bin_dir, home: Path) -> None:
+    """Assert a module's `default_bin_dir(home=...)` matches FamulusPaths.user_bin.
+
+    Shared by test_scaffold.py, test_launchers.py, and test_uninstall.py,
+    each of which re-exports its own `default_bin_dir` (imported from
+    `_fs_links`) into its own module namespace — the per-module call still
+    confirms that re-export, this just centralizes the assertion itself.
+    """
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    expected = resolve_famulus_paths(platform=sys.platform, home=home).user_bin
+    result = default_bin_dir(home=home)
+
+    assert result == expected
+    assert "Documents" not in str(result)
+
+
 def github_owner_repo(repo_root: Path = REPO_ROOT) -> str:
     """`owner/repo` shorthand, read from the plugin manifest's `repository` URL."""
     repository = read_json(repo_root / ".claude-plugin" / "plugin.json")["repository"]

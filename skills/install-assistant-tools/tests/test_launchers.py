@@ -10,6 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
 import _agent_launchers as launchers
+from install_test_utils import assert_default_bin_dir_matches_famulus_paths
 
 
 def _make_repo(tmp_path: Path) -> Path:
@@ -32,6 +33,35 @@ def _make_repo(tmp_path: Path) -> Path:
         "---\nname: assistant\ndescription: test\n---\n\nYou are a test agent.\n"
     )
     return repo_root
+
+
+def test_default_bin_dir_is_not_under_documents(tmp_path):
+    assert_default_bin_dir_matches_famulus_paths(launchers.default_bin_dir, tmp_path)
+
+
+def test_worker_root_in_plugin_mode_is_not_under_repo_workers(tmp_path):
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    repo_root = tmp_path / "repo"
+    expected_root = resolve_famulus_paths(platform=sys.platform, home=tmp_path).worker_root
+
+    result = launchers.install_worker_dir(
+        repo_root, "assistant", dry_run=True, mode="plugin", home=tmp_path
+    )
+
+    assert result == expected_root / "assistant"
+    assert result != repo_root / "workers" / "assistant"
+    assert "Documents" not in str(result)
+
+
+def test_worker_root_in_development_mode_stays_under_repo_workers(tmp_path):
+    repo_root = tmp_path / "repo"
+
+    result = launchers.install_worker_dir(
+        repo_root, "assistant", dry_run=True, mode="development", home=tmp_path
+    )
+
+    assert result == repo_root / "workers" / "assistant"
 
 
 def test_run_installs_only_selected_agents(tmp_path):

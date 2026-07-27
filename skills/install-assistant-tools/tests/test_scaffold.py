@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 import _install_scaffold as scaffold
 import officina.common.certificate_records as certificate_records
 from _install_launcher._base_launcher import LauncherInstallerBase
+from install_test_utils import assert_default_bin_dir_matches_famulus_paths
 
 
 def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[str]) -> None:
@@ -42,6 +43,10 @@ def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[s
         ),
         encoding="utf-8",
     )
+
+
+def test_default_bin_dir_is_not_under_documents(tmp_path):
+    assert_default_bin_dir_matches_famulus_paths(scaffold.default_bin_dir, tmp_path)
 
 
 def test_run_writes_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch):

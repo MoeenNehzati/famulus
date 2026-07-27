@@ -33,6 +33,7 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 from _install_launcher import LauncherInstallResult, platform_launcher_installer
 from _state_record import Manifest, manifest_path
 from _shell_block import ensure_rc_vars
+from _fs_links import default_bin_dir
 
 
 def log(msg: str = "") -> None:
@@ -257,7 +258,7 @@ def run(
     manifest: Manifest | None = None,
 ) -> int:
     home = home or Path.home()
-    bin_dir = bin_dir or home / "Documents" / "_rtx" / "bin"
+    bin_dir = bin_dir or default_bin_dir(home=home)
 
     if manifest is None and not dry_run:
         manifest = Manifest(manifest_path(home))
@@ -314,7 +315,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo-root", metavar="DIR", required=True, help="Path to the AI repo checkout")
     parser.add_argument("--home", metavar="DIR", help="Home directory (default: platform home)")
-    parser.add_argument("--bin-dir", metavar="DIR", help="Bin dir for launchers (default: ~/Documents/scripts/bin)")
+    parser.add_argument("--bin-dir", metavar="DIR", help="Bin dir for launchers (default: platform user-bin dir from officina.common.famulus_paths, e.g. ~/.local/bin on Linux/macOS)")
     parser.add_argument("--shell-rc", metavar="FILE", help="Shell rc file (auto-detected on Unix)")
     parser.add_argument("--dry-run", action="store_true", help="Print planned actions without writing")
     return parser.parse_args(argv)

@@ -56,7 +56,7 @@ interfaces:
         reads:
         - {id: read-1, medium: repository-filesystem, access: read, system: filesystem, content: dispatcher package and launcher sources, formats: [python, shell, toml], sensitivity: public, path: <repo-root>, path_match: exact}
         writes:
-        - {id: write-1, medium: home-filesystem, access: configure, system: filesystem, content: installed package launchers and managed PATH block, formats: [python-package, shell, batch], sensitivity: user-private, path: caller-selected bin and shell startup paths}
+        - {id: write-1, medium: home-filesystem, access: configure, system: filesystem, content: installed package launchers and managed PATH block, formats: [python-package, shell, batch], sensitivity: user-private, path: caller-selected bin and shell startup paths; the bin dir defaults to the platform Famulus user-bin dir (never under Documents) when --bin-dir is omitted}
         - {id: write-2, medium: stdout, access: write, content: scaffold status, formats: [text], sensitivity: derived-private}
         - {id: write-3, medium: local-filesystem, access: configure, system: filesystem, content: Ed25519 public verification files and private key selected through the configured secret store, formats: [pem, text, secret-store-entry], sensitivity: credential, path: <repo-root>/skills/skill-certifier/.certificates/public-keys}
     description: Install the dispatcher + invoke-skill launchers and put the bin dir

@@ -275,9 +275,9 @@ Do not modify scripts speculatively.
 |---|---|
 | User rc | `~/.zshrc` (zsh) or `~/.bashrc` (bash/other) — auto-detected; Windows uses registry |
 | System rc | `/etc/bash.bashrc` (skipped on Windows) |
-| Bin dir | `$HOME/Documents/scripts/bin` |
+| Bin dir | Platform user-bin dir from `officina.common.famulus_paths` (e.g. `~/.local/bin` on Linux/macOS, `%LOCALAPPDATA%/Famulus/bin` on Windows) |
 | Repo root | Dev mode: the path the user supplied. Plugin mode: derived from wherever the plugin is running from. `$AI` itself is only exported by `dev-link` (dev-mode only) — plugin-mode installs never set it; `_agent_launch.py` and `dispatcher` resolve their own repo root from their own file location instead. |
-| Workers | `<repo-root>/workers/{assistant,collab,coauthor}` |
+| Workers | Dev mode: `<repo-root>/workers/{assistant,collab,coauthor}` (live checkout). Plugin mode: FamulusPaths `worker_root`/`{assistant,collab,coauthor}` |
 | Codex home | `$CODEX_HOME`, or `$HOME/.codex` |
 | Claude home | `$CLAUDE_HOME`, or `$HOME/.claude` |
 | Git hooks | `<repo-root>/.githooks` |

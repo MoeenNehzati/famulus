@@ -26,6 +26,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Literal
+
+InstallMode = Literal["development", "plugin"]
 
 REPO_SRC = Path(__file__).resolve().parents[3] / "src"
 if str(REPO_SRC) not in sys.path:
@@ -33,11 +36,12 @@ if str(REPO_SRC) not in sys.path:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from officina.common import toml_io
+from officina.common.famulus_paths import resolve_famulus_paths
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 from _install_launcher import platform_launcher_installer
 from _state_record import Manifest, manifest_path
-from _fs_links import log, make_link
+from _fs_links import log, make_link, default_bin_dir
 from _shell_block import ensure_rc_vars
 
 _MODEL_INSTRUCTIONS_RE = re.compile(r'^model_instructions_file\s*=\s*".*"$', re.MULTILINE)
@@ -62,14 +66,37 @@ def install_agent_launcher_files(source_bin_dir: Path, bin_dir: Path, agent: str
     )
 
 
-def install_worker_dir(repo_root: Path, agent: str, dry_run: bool) -> None:
+def worker_root_for_mode(mode: InstallMode, repo_root: Path, home: Path) -> Path:
+    """Resolve the parent dir workers are created under, by install mode.
+
+    Plugin-mode installs run from an immutable/public plugin-cache checkout,
+    so workers (which hold live session data) go under the FamulusPaths
+    state dir instead. Development-mode installs run against an explicit
+    live repo checkout the user supplied, so `repo_root / "workers"` is
+    correct there — it's a live checkout, not a public/immutable tree.
+    """
+    if mode == "plugin":
+        return resolve_famulus_paths(platform=sys.platform, home=home).worker_root
+    return repo_root / "workers"
+
+
+def install_worker_dir(
+    repo_root: Path,
+    agent: str,
+    dry_run: bool,
+    *,
+    mode: InstallMode = "development",
+    home: Path | None = None,
+) -> Path | None:
     if agent not in WORKER_AGENTS:
-        return
-    wdir = repo_root / "workers" / agent
+        return None
+    home = home or Path.home()
+    wdir = worker_root_for_mode(mode, repo_root, home) / agent
     if dry_run:
         log(f"Would create worker dir {wdir}")
     else:
         wdir.mkdir(parents=True, exist_ok=True)
+    return wdir
 
 
 def write_profile_config_with_absolute_agent_path(
@@ -234,9 +261,10 @@ def run(
     default_llm: str = "claude",
     dry_run: bool = False,
     manifest: Manifest | None = None,
+    mode: InstallMode = "development",
 ) -> None:
     home = home or Path.home()
-    bin_dir = bin_dir or home / "Documents" / "_rtx" / "bin"
+    bin_dir = bin_dir or default_bin_dir(home=home)
     source_bin_dir = repo_root / "skills" / "install-assistant-tools" / "bin"
     profiles_dir = repo_root / "profiles"
     codex_home = codex_home or home / ".codex"
@@ -249,7 +277,7 @@ def run(
 
     for agent in agents:
         install_agent_launcher_files(source_bin_dir, bin_dir, agent, dry_run, manifest)
-        install_worker_dir(repo_root, agent, dry_run)
+        install_worker_dir(repo_root, agent, dry_run, mode=mode, home=home)
         install_profile_for_agent(repo_root, profiles_dir, codex_home, claude_home, agent, dry_run, manifest)
 
     remove_legacy_coder_links(source_bin_dir, profiles_dir, bin_dir, codex_home, claude_home, dry_run)
@@ -299,6 +327,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--shell-rc", metavar="FILE")
     parser.add_argument("--default-llm", choices=["claude", "codex"], default="claude")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--mode", choices=["development", "plugin"], default="development",
+        help="development: worker dirs live under --repo-root/workers (live checkout). "
+             "plugin: worker dirs live under the platform Famulus state dir (default: development)")
     return parser.parse_args(argv)
 
 
@@ -317,6 +348,7 @@ def main(argv: list[str] | None = None) -> int:
         claude_home=Path(args.claude_home) if args.claude_home else None,
         shell_rc=Path(args.shell_rc) if args.shell_rc else None,
         default_llm=args.default_llm,
+        mode=args.mode,
         dry_run=args.dry_run,
     )
     return 0

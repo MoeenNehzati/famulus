@@ -40,6 +40,7 @@ from _shell_block import (  # noqa: E402
     BLOCK_BEGIN,
     BLOCK_END,
 )
+from _fs_links import default_bin_dir  # noqa: E402
 
 REPO_ROOT_DEFAULT = Path(__file__).resolve().parents[3]
 
@@ -459,7 +460,7 @@ def main() -> None:
     repo_root = Path(args.repo_root) if args.repo_root else REPO_ROOT_DEFAULT
     claude_home = Path(args.claude_home or os.environ.get("CLAUDE_HOME") or home / ".claude")
     codex_home = Path(args.codex_home or os.environ.get("CODEX_HOME") or home / ".codex")
-    bin_dir = Path(args.bin_dir) if args.bin_dir else home / "Documents" / "_rtx" / "bin"
+    bin_dir = Path(args.bin_dir) if args.bin_dir else default_bin_dir(home=home)
 
     if args.shell_rc:
         shell_rc = Path(args.shell_rc)

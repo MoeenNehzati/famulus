@@ -249,12 +249,21 @@ class CodexInstallTests(unittest.TestCase):
             run_command(install_cmd, env=install_env)
 
             # workers are created at install time by the bootstrap (runtime
-            # dirs, not plugin content)
+            # dirs, not plugin content). This is a plugin-mode install
+            # (--no-dev-mode): the plugin cache (installed_path) is a
+            # public/immutable tree, so workers live under the platform
+            # Famulus state dir instead of installed_path/workers.
+            from officina.common.famulus_paths import resolve_famulus_paths
+
+            expected_worker_root = resolve_famulus_paths(
+                platform=sys.platform, home=install_home
+            ).worker_root
             for agent in ("assistant", "collab", "coauthor"):
                 self.assertTrue(
-                    (installed_path / "workers" / agent).is_dir(),
+                    (expected_worker_root / agent).is_dir(),
                     f"worker dir not created by installer bootstrap: {agent}",
                 )
+                self.assertFalse((installed_path / "workers" / agent).exists())
 
             def expect_symlink(path: Path, target: Path) -> None:
                 self.assertTrue(path.is_symlink(), f"Expected symlink: {path}")
@@ -377,10 +386,20 @@ class CodexInstallTests(unittest.TestCase):
                     "CODEX_HOME": str(install_codex_home),
                     "CLAUDE_HOME": str(install_claude_home),
                     "ASSISTANT_DEFAULT": "codex",
-                    "AI": str(installed_path),
+                    # $AI deliberately NOT set: this is a plugin-mode install
+                    # (--no-dev-mode above); dev_link.py is the only thing
+                    # that exports $AI, and it didn't run here. The launcher
+                    # must resolve its own repo root and worker dir the same
+                    # way a real plugin-mode session would.
                     "PATH": str(install_bin) + os.pathsep + os.environ.get("PATH", ""),
                 },
             )
+            # python_test_env() starts from a copy of this process's own
+            # environment; explicitly drop any ambient $AI (e.g. this repo's
+            # own dev-mode install sets it) so the launcher genuinely sees
+            # plugin-mode ($AI unset), not whatever happens to be exported
+            # in the environment running this test.
+            launcher_env.pop("AI", None)
             run_command(
                 platform_shell_command("dispatcher", ["--help"]),
                 env=launcher_env,
@@ -401,7 +420,7 @@ class CodexInstallTests(unittest.TestCase):
                 self.assertIn(f"{plugin_name}:daily-plan", visible_text)
                 # visible_text is json.dumps output: backslashes in Windows
                 # paths are escaped, so compare in JSON-escaped space
-                worker_dir_json = json.dumps(str(installed_path / "workers" / agent))[1:-1]
+                worker_dir_json = json.dumps(str(expected_worker_root / agent))[1:-1]
                 self.assertIn(worker_dir_json, visible_text)
 
             # ── Uninstall phase: plugin removal must clean up completely ──
