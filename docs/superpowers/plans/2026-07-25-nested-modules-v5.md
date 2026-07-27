@@ -56,11 +56,11 @@
 - Produces: noncanonical standard v2.0.0 revision 1 and its deterministic rendered view.
 - Preserves: the canonical `references/blueprint/*.schema.json` v4 contract.
 
-- [ ] **Step 1: Write failing contract tests** for valid parent/child/facade documents; rejection of mixed export forms, repository-root child locators, malformed relative callers, invalid surfaces, and missing explicit topology fields; and a v2 standard that replaces live-v4 rules while preserving frozen historical fixtures.
-- [ ] **Step 2: Run `python3 -m pytest -q -o pythonpath=src tests/test_nested_module_v5_schemas.py tests/test_blueprint_schema_metadata.py tests/test_migrated_standards_fidelity.py`** and confirm failures are caused by the absent v5 contract.
-- [ ] **Step 3: Add the minimal shadow schemas, template, annotated entry point, metadata, frozen v4 bundle, and rendered shadow v2 standard** without changing canonical schema or standard selection.
-- [ ] **Step 4: Run the focused tests** and require all v5 schema and metadata cases to pass.
-- [ ] **Sanity gate: run `python3 -m pytest -q -o pythonpath=src tests/test_nested_module_v5_schemas.py tests/test_typed_blueprint_schemas.py tests/test_blueprint_schema_metadata.py tests/test_migrated_standards_fidelity.py` and `git diff --check`; require v5 tests green and all existing canonical v4 schema and standard tests unchanged.**
+- [x] **Step 1: Write failing contract tests** for valid parent/child/facade documents; rejection of mixed export forms, repository-root child locators, malformed relative callers, invalid surfaces, and missing explicit topology fields; and a v2 standard that replaces live-v4 rules while preserving frozen historical fixtures.
+- [x] **Step 2: Run `python3 -m pytest -q -o pythonpath=src tests/test_nested_module_v5_schemas.py tests/test_blueprint_schema_metadata.py tests/test_migrated_standards_fidelity.py`** and confirm failures are caused by the absent v5 contract.
+- [x] **Step 3: Add the minimal shadow schemas, template, annotated entry point, metadata, frozen v4 bundle, and rendered shadow v2 standard** without changing canonical schema or standard selection.
+- [x] **Step 4: Run the focused tests** and require all v5 schema and metadata cases to pass.
+- [x] **Sanity gate: run `python3 -m pytest -q -o pythonpath=src tests/test_nested_module_v5_schemas.py tests/test_typed_blueprint_schemas.py tests/test_blueprint_schema_metadata.py tests/test_migrated_standards_fidelity.py` and `git diff --check`; require v5 tests green and all existing canonical v4 schema and standard tests unchanged.**
 
 ### Task 2: Extend inventory for explicit registered nesting
 
@@ -75,11 +75,11 @@
 - Produces: `BlueprintDocument.module_root`, with temporary read-only `owner_root` compatibility only where required by still-v4 consumers.
 - Preserves: default v4 rejection of nested module roots.
 
-- [ ] **Step 1: Write failing inventory tests** for registered nesting, unregistered markers, duplicate parents, cycles, wrong-nearest-parent registration, ignored paths, nested repositories, symlinks, and the derived `_rtx` ID exception.
-- [ ] **Step 2: Run `python3 -m pytest -q -o pythonpath=src tests/test_blueprint_inventory.py`** and confirm the registered-nesting cases fail under the current flat inventory.
-- [ ] **Step 3: Refactor the existing bounded marker walk into collect-then-reconcile behavior for `expected_schema_version=5`**, retaining existing ignore and filesystem-safety logic.
-- [ ] **Step 4: Add `module_root`, retaining temporary read-only `owner_root` compatibility for consumers migrated in later tasks; do not add a second filesystem walker.**
-- [ ] **Sanity gate: run `python3 -m pytest -q -o pythonpath=src tests/test_blueprint_inventory.py tests/test_officina_repository_paths.py`; require every new topology case and every existing v4/path-safety case to pass.**
+- [x] **Step 1: Write failing inventory tests** for registered nesting, unregistered markers, duplicate parents, cycles, wrong-nearest-parent registration, ignored paths, nested repositories, symlinks, and the derived `_rtx` ID exception.
+- [x] **Step 2: Run `python3 -m pytest -q -o pythonpath=src tests/test_blueprint_inventory.py`** and confirm the registered-nesting cases fail under the current flat inventory.
+- [x] **Step 3: Refactor the existing bounded marker walk into collect-then-reconcile behavior for `expected_schema_version=5`**, retaining existing ignore and filesystem-safety logic.
+- [x] **Step 4: Add `module_root`, retaining temporary read-only `owner_root` compatibility for consumers migrated in later tasks; do not add a second filesystem walker.**
+- [x] **Sanity gate: run `python3 -m pytest -q -o pythonpath=src tests/test_blueprint_inventory.py tests/test_officina_repository_paths.py`; require every new topology case and every existing v4/path-safety case to pass.**
 
 ### Task 3: Add v5 graph topology and the shared authorization resolver
 
@@ -99,12 +99,12 @@
 - Produces: one immutable authorization result containing the immediate caller, requested and terminal interfaces, implementing source, caller/target ancestry, LCA, crossed namespace gates, resolved callers, effective filters, decision and diagnostic, derived relations, and required certificates.
 - Produces: `resolve_interface_authorization(graph, request) -> AuthorizationResult`.
 
-- [ ] **Step 1: Write failing graph tests** for registered parents/children, deepest ownership, parent pruning, local `_rtx` segments, global child IDs, topology cycles, and parent/child authority overlap.
-- [ ] **Step 2: Write failing authorization tests** covering self, parent, sibling, cross-branch, descendant-to-ancestor, unrelated, exact caller, relative caller, private target, facade self evaluation at both owners, explicit parent admission at the child, no implicit namespace route from a facade, and `all`/`only` namespace routes.
-- [ ] **Step 3: Run the two focused test files** and verify the failures identify missing v5 topology and resolver behavior.
-- [ ] **Step 4: Add v5 graph indexing and topology relations**, keeping v4 loading behavior unchanged by default.
-- [ ] **Step 5: Implement the pure resolver and use it in the graph's relationship-validation pass.** Materialize every active routed interface and terminal-module hash, including `all` surfaces; emit the design's five topology/routing/facade relations and exact certificate requirements while preserving local parent hashing.
-- [ ] **Sanity gate: run `python3 -m pytest -q -o pythonpath=src tests/test_officina_blueprint_graph.py tests/test_officina_blueprint_authorization.py tests/test_blueprint_inventory.py`; require no duplicate authorization implementation in the graph tests or fixtures.**
+- [x] **Step 1: Write failing graph tests** for registered parents/children, deepest ownership, parent pruning, local `_rtx` segments, global child IDs, topology cycles, and parent/child authority overlap.
+- [x] **Step 2: Write failing authorization tests** covering self, parent, sibling, cross-branch, descendant-to-ancestor, unrelated, exact caller, relative caller, private target, facade self evaluation at both owners, explicit parent admission at the child, no implicit namespace route from a facade, and `all`/`only` namespace routes.
+- [x] **Step 3: Run the two focused test files** and verify the failures identify missing v5 topology and resolver behavior.
+- [x] **Step 4: Add v5 graph indexing and topology relations**, keeping v4 loading behavior unchanged by default.
+- [x] **Step 5: Implement the pure resolver and use it in the graph's relationship-validation pass.** Materialize every active routed interface and terminal-module hash, including `all` surfaces; emit the design's five topology/routing/facade relations and exact certificate requirements while preserving local parent hashing.
+- [x] **Sanity gate: run `python3 -m pytest -q -o pythonpath=src tests/test_officina_blueprint_graph.py tests/test_officina_blueprint_authorization.py tests/test_blueprint_inventory.py`; require no duplicate authorization implementation in the graph tests or fixtures.**
 
 ### Task 4: Migrate projection, search, templates, and generated interface views
 
@@ -124,10 +124,10 @@
 - Produces: search results keyed by global node ID and registered ancestry.
 - Preserves: parent-only `SKILL.md` generated blocks and skill discovery.
 
-- [ ] **Step 1: Write failing tests** for facade projection, helper closure through facades, child ancestry search, parent-only generated blocks, hidden `_rtx` discovery, and child runtime-dependency inclusion.
-- [ ] **Step 2: Run the focused projection/search/template/syncer tests** and confirm failures arise from flat-root and source-export assumptions.
-- [ ] **Step 3: Replace direct export/path assumptions with graph and resolver results** while retaining existing size, definition, digest, and generated-view checks. The existing generator must create the parent blueprint, `_rtx/blueprint.yaml`, and `_rtx/__init__.py` together.
-- [ ] **Sanity gate: run `python3 -m pytest -q -o pythonpath=src tests/test_interface_projection.py tests/test_blueprint_search.py tests/test_officina_blueprint_template.py skills/skill-maker/tests/test_blueprint_tools.py`; require v4 projections and generated views to remain byte-stable.**
+- [x] **Step 1: Write failing tests** for facade projection, helper closure through facades, child ancestry search, parent-only generated blocks, hidden `_rtx` discovery, and child runtime-dependency inclusion.
+- [x] **Step 2: Run the focused projection/search/template/syncer tests** and confirm failures arise from flat-root and source-export assumptions.
+- [x] **Step 3: Replace direct export/path assumptions with graph and resolver results** while retaining existing size, definition, digest, and generated-view checks. The existing generator must create the parent blueprint, `_rtx/blueprint.yaml`, and `_rtx/__init__.py` together.
+- [x] **Sanity gate: run `python3 -m pytest -q -o pythonpath=src tests/test_interface_projection.py tests/test_blueprint_search.py tests/test_officina_blueprint_template.py skills/skill-maker/tests/test_blueprint_tools.py`; require v4 projections and generated views to remain byte-stable.**
 
 ### Task 5: Make dispatcher and Python runtime module-root aware
 
@@ -146,12 +146,12 @@
 - Produces: Python binding fields for physical root/path, collision-free logical package, and logical entrypoint.
 - Preserves: host-facing `--caller-skill` for discoverable parent calls and physical `__file__`/compile filenames.
 
-- [ ] **Step 1: Write failing dispatcher tests** for deepest caller attribution, parent versus `<skill-id>-rtx` callers, facade admission, direct child admission, and global target IDs.
-- [ ] **Step 2: Write failing runtime tests** for two `_rtx` packages in one trace, relative imports, descriptor/snapshot parity, hostile cache state, physical `__file__`, and sibling-resource lookup.
-- [ ] **Step 3: Run the focused tests** and confirm current parent-root path and `_rtx` basename assumptions cause the expected failures.
-- [ ] **Step 4: Route admission through the shared resolver and migrate internal metadata to module IDs.**
-- [ ] **Step 5: Carry and load distinct physical/logical entrypoint identities**, preserving existing confinement, snapshot, fallback, and tracing behavior.
-- [ ] **Sanity gate: run `python3 -m pytest -q -o pythonpath=src tests/test_officina_dispatcher.py tests/test_dispatcher_route_smoke.py tests/test_officina_python_machine_interface.py tests/test_process_binding_compiler.py`; require all existing v4 routes plus new child routes to pass.**
+- [x] **Step 1: Write failing dispatcher tests** for deepest caller attribution, parent versus `<skill-id>-rtx` callers, facade admission, direct child admission, and global target IDs.
+- [x] **Step 2: Write failing runtime tests** for two `_rtx` packages in one trace, relative imports, descriptor/snapshot parity, hostile cache state, physical `__file__`, and sibling-resource lookup.
+- [x] **Step 3: Run the focused tests** and confirm current parent-root path and `_rtx` basename assumptions cause the expected failures.
+- [x] **Step 4: Route admission through the shared resolver and migrate internal metadata to module IDs.**
+- [x] **Step 5: Carry and load distinct physical/logical entrypoint identities**, preserving existing confinement, snapshot, fallback, and tracing behavior.
+- [x] **Sanity gate: run `python3 -m pytest -q -o pythonpath=src tests/test_officina_dispatcher.py tests/test_dispatcher_route_smoke.py tests/test_officina_python_machine_interface.py tests/test_process_binding_compiler.py`; require all existing v4 routes plus new child routes to pass.**
 
 ### Task 6: Extend certification, drift, and bootstrap for v5
 
@@ -290,10 +290,10 @@
 - Consumes: the reviewed Task 9 manifest; no hand-written migration deviations.
 - Produces: one canonical all-v5 repository with 35 registered `_rtx` children and zero v4 authoring entry points.
 
-- [ ] **Step 1: Stop for explicit cutover authorization, then re-run the Task 9 dry run and require the reviewed candidate commit/tree and manifest hash** before any live write.
+- [x] **Step 1: Stop for explicit cutover authorization, then re-run the Task 9 dry run and require the reviewed candidate commit/tree and manifest hash** before any live write.
 - [x] **Step 2: Install that exact reviewed candidate through Git**, including schema/standard selection, validator relocation, all node/interface/access/path/import/history mappings, and generated artifacts. Switch canonical loader defaults to v5, remove temporary `owner_root`, and forbid mixed live authoring. Retain explicit v4 parsing only for the frozen converter, migration fixtures, historical regression tests, and compatibility checks that request the frozen schema family directly.
 - [x] **Step 3: Run exact-reference searches** for live v4 schema instructions, old validator paths/names, the superseded certification-basis path, parent-root `_rtx/*.py` bindings, old moved source IDs, and unregistered nested markers; classify only immutable migration evidence as allowed.
-- [ ] **Step 4: Re-run canonical view and runtime-dependency generation in check-only mode and require zero diff from the reviewed candidate.**
-- [ ] **Step 5: Run the full Python suite, staged-index validators, pre-commit hook, converter idempotence, live-v4 reference search, and unintended-change review against the exact cutover index/tree.**
-- [ ] **Step 6: With the separately authorized clean cutover commit in place, certify it in canonical dependency-first order and verify post-write currentness; do not alter signing material.**
-- [ ] **Sanity gate: require all tests and validators green, an empty post-cutover migration plan, zero live v4 nodes or authoring references outside the frozen converter/explicit compatibility tests, a clean `git diff --check`, no unrelated changes, and verified current certificates for the cutover commit.**
+- [x] **Step 4: Re-run canonical view and runtime-dependency generation in check-only mode and require zero diff from the reviewed candidate.**
+- [x] **Step 5: Run the full Python suite, staged-index validators, pre-commit hook, converter idempotence, live-v4 reference search, and unintended-change review against the exact cutover index/tree.**
+- [x] **Step 6: With the separately authorized clean cutover commit in place, certify it in canonical dependency-first order and verify post-write currentness; do not alter signing material.**
+- [x] **Sanity gate: require all tests and validators green, an empty post-cutover migration plan, zero live v4 nodes or authoring references outside the frozen converter/explicit compatibility tests, a clean `git diff --check`, no unrelated changes, and verified current certificates for the cutover commit.**
