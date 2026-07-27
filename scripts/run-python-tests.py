@@ -20,6 +20,11 @@ PRECOMMIT_EXCLUDED_TEST_DIRS = {
     "skills/install-assistant-tools/_rtx/tests",
     "skills/install-assistant-tools/tests",
 }
+PRECOMMIT_EXCLUDED_TESTS = {
+    "tests/test_nested_module_migration.py::"
+    "TestNestedModuleMigrationContract::"
+    "test_repository_inventory_matches_reviewed_v5_cutover_surface",
+}
 
 PORTABILITY_TESTS = (
     "tests/test_officina_atomic_files.py::test_secure_append_creates_then_appends_complete_framed_records",
@@ -36,6 +41,14 @@ SUITES = {"precommit", "portability", "full"}
 
 def _pytest_args(*, verbose: bool) -> list[str]:
     return ["-o", "pythonpath=src", "-v" if verbose else "-q"]
+
+
+def _suite_pytest_args(name: str, *, verbose: bool) -> list[str]:
+    args = _pytest_args(verbose=verbose)
+    if name == "precommit":
+        for test in sorted(PRECOMMIT_EXCLUDED_TESTS):
+            args.extend(["--deselect", test])
+    return args
 
 
 def _discover_skill_test_dirs() -> list[str]:
@@ -94,7 +107,7 @@ def main() -> int:
     args = parser.parse_args()
 
     test_dirs = _resolve_suite(args.suite)
-    pytest_args = _pytest_args(verbose=args.verbose)
+    pytest_args = _suite_pytest_args(args.suite, verbose=args.verbose)
     for group in _execution_groups(test_dirs):
         cmd = [sys.executable, "-m", "pytest", *pytest_args, *group]
         completed = subprocess.run(cmd, cwd=REPO_ROOT)

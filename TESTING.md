@@ -51,6 +51,13 @@ This suite runs:
 - discovered `skills/*/_rtx/tests/`, excluding the install-assistant-tools
   runtime tests named below
 
+It intentionally omits
+`tests/test_nested_module_migration.py::TestNestedModuleMigrationContract::test_repository_inventory_matches_reviewed_v5_cutover_surface`
+because that assertion requires a clean committed tree and is therefore
+incompatible with a pre-commit hook that necessarily runs while changes are
+staged. Run it after the commit or through the ordinary full suite in a clean
+checkout.
+
 ### `full`
 
 This suite runs everything in `precommit`, plus:
