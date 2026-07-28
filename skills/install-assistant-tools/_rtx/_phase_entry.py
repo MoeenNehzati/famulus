@@ -98,7 +98,7 @@ def _build_managed_runtime_candidate(*, repo_root: Path, home: Path) -> int:
         log("Skipping managed-runtime candidate build: unsupported platform.")
         return 0
 
-    info = load_install_info(repo_root / "install-info.toml")
+    info = load_install_info(repo_root)
     paths = resolve_famulus_paths(platform=sys.platform, home=home)
     manifest_path = repo_root / scaffold.RUNTIME_DEPENDENCIES_MANIFEST
 

@@ -6,6 +6,8 @@ from pathlib import Path
 
 import tomllib
 
+from officina.common import toml_io
+
 
 class InstallInfoError(Exception):
     """Raised when install-info.toml is missing required data or unsupported."""
@@ -19,9 +21,11 @@ class InstallInfo:
     managed_python_supported: str
 
 
-def load_install_info(path: Path) -> InstallInfo:
-    """Load and validate the pinned bootstrap/runtime versions from ``path``."""
-    data = tomllib.loads(path.read_text())
+def load_install_info(base: Path) -> InstallInfo:
+    """Load and validate the pinned bootstrap/runtime versions from
+    ``install-info.toml`` under ``base``."""
+    with toml_io.open(base, "install-info.toml") as f:
+        data = tomllib.loads(f.read())
     schema_version = data.get("schema_version")
     if schema_version != 1:
         raise InstallInfoError(
