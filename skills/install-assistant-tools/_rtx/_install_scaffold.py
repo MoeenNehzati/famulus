@@ -17,8 +17,8 @@ this subcommand only owns PATH.
 from __future__ import annotations
 
 import argparse
-import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -29,6 +29,7 @@ if str(REPO_SRC) not in sys.path:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+from officina.install.managed_runtime import declared_python_packages
 
 from _install_launcher import LauncherInstallResult, platform_launcher_installer
 from _state_record import Manifest, manifest_path
@@ -44,67 +45,32 @@ RUNTIME_DEPENDENCIES_MANIFEST = Path("references") / "blueprint" / "runtime_depe
 DEFAULT_PIP_INSTALL_TIMEOUT_SECONDS = 60
 
 
+def _platform_name() -> str | None:
+    if sys.platform == "darwin":
+        return "macos"
+    if sys.platform.startswith("win"):
+        return "windows"
+    if sys.platform.startswith("linux"):
+        return "linux"
+    return None
+
+
+def _declares_package(spec: str, name: str) -> bool:
+    """Return whether install spec ``spec`` (e.g. "cryptography>=44.0.1") is
+    for the bare package ``name`` (case-insensitive)."""
+    bare = re.split(r"(==|>=|<=|!=|~=|>|<)", spec, maxsplit=1)[0]
+    return bare.strip().casefold() == name.casefold()
+
+
 def required_python_packages(repo_root: Path) -> list[str]:
-    packages: dict[str, tuple[str, set[str]]] = {}
-    platform_name = (
-        "macos"
-        if sys.platform == "darwin"
-        else "windows"
-        if sys.platform.startswith("win")
-        else "linux"
-        if sys.platform.startswith("linux")
-        else None
-    )
+    """Return the declared python-package install specs for this platform,
+    sourced from the shared officina.install.managed_runtime manifest reader.
+    """
     manifest = repo_root / RUNTIME_DEPENDENCIES_MANIFEST
-    if manifest.exists():
-        data = json.loads(manifest.read_text(encoding="utf-8"))
-        skills = data.get("skills", {})
-        if isinstance(skills, dict):
-            for skill in skills.values():
-                interfaces = (
-                    skill.get("interfaces", {})
-                    if isinstance(skill, dict)
-                    else {}
-                )
-                if not isinstance(interfaces, dict):
-                    continue
-                for interface in interfaces.values():
-                    dependencies = (
-                        interface.get("dependencies", [])
-                        if isinstance(interface, dict)
-                        else []
-                    )
-                    if not isinstance(dependencies, list):
-                        continue
-                    for dependency in dependencies:
-                        if (
-                            not isinstance(dependency, dict)
-                            or dependency.get("kind") != "python-package"
-                        ):
-                            continue
-                        platforms = dependency.get("platforms")
-                        if (
-                            isinstance(platforms, dict)
-                            and platform_name is not None
-                            and platforms.get(platform_name) is False
-                        ):
-                            continue
-                        name = dependency.get("name")
-                        version = dependency.get("version", "any")
-                        if not isinstance(name, str) or not name:
-                            continue
-                        key = name.casefold()
-                        display, versions = packages.setdefault(
-                            key,
-                            (name, set()),
-                        )
-                        if isinstance(version, str) and version and version != "any":
-                            versions.add(version)
-    requirements = [
-        display + ",".join(sorted(versions))
-        for display, versions in packages.values()
-    ]
-    return sorted(requirements, key=str.lower)
+    platform_name = _platform_name()
+    if not manifest.exists() or platform_name is None:
+        return []
+    return sorted(declared_python_packages(manifest, platform=platform_name), key=str.lower)
 
 
 def pip_install_timeout_seconds() -> int:
@@ -118,34 +84,74 @@ def pip_install_timeout_seconds() -> int:
     return max(1, timeout)
 
 
-def install_python_packages(repo_root: Path, dry_run: bool) -> None:
-    """Ensure required third-party Python packages are installed.
+def install_python_packages(repo_root: Path, dry_run: bool) -> LauncherInstallResult:
+    """Ensure required third-party Python packages are installed, in one
+    atomic batch call rather than a per-package best-effort loop.
 
     officina.dispatcher itself (first-party) is deliberately NOT pip-installed
     here — it runs from the repo via the dispatcher launcher below.
+
+    Unlike the previous per-package WARN-and-continue loop, a failed batch
+    install is reported as a failed, blocking capability rather than being
+    silently swallowed.
     """
+    workflows = ("skill python-package dependencies",)
+    packages = required_python_packages(repo_root)
     log("\nInstalling required Python packages...")
-    timeout = pip_install_timeout_seconds()
-    for package in required_python_packages(repo_root):
-        if dry_run:
+    if dry_run:
+        for package in packages:
             log(f"  (dry-run) Would install: {package}")
-            continue
-        log(f"  Installing: {package}")
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", package, "--quiet"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="strict",
-                timeout=timeout,
-            )
-            if result.returncode == 0:
-                log(f"  OK: {package}")
-            else:
-                log(f"  WARN: failed to install {package}: {result.stderr.strip()}")
-        except subprocess.TimeoutExpired:
-            log(f"  WARN: timed out installing {package} after {timeout}s")
+        return LauncherInstallResult(
+            name="python-packages",
+            required=True,
+            status="would-install",
+            workflows=workflows,
+        )
+    if not packages:
+        return LauncherInstallResult(
+            name="python-packages",
+            required=True,
+            status="installed",
+            workflows=workflows,
+        )
+    log(f"  Installing {len(packages)} declared package(s) in one batch: {', '.join(packages)}")
+    timeout = pip_install_timeout_seconds()
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", *packages, "--quiet"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        reason = f"timed out installing batch after {timeout}s"
+        log(f"  FAILED: {reason}")
+        return LauncherInstallResult(
+            name="python-packages",
+            required=True,
+            status="failed",
+            workflows=workflows,
+            reason=reason,
+        )
+    if result.returncode != 0:
+        reason = result.stderr.strip()
+        log(f"  FAILED: batch package install failed: {reason}")
+        return LauncherInstallResult(
+            name="python-packages",
+            required=True,
+            status="failed",
+            workflows=workflows,
+            reason=reason,
+        )
+    log("  OK: installed all declared packages")
+    return LauncherInstallResult(
+        name="python-packages",
+        required=True,
+        status="installed",
+        workflows=workflows,
+    )
 
 
 def install_certificate_signing_material(
@@ -265,16 +271,14 @@ def run(
     if dry_run:
         manifest = None
 
-    install_python_packages(repo_root, dry_run)
+    declared_packages = required_python_packages(repo_root)
     launcher_installer = platform_launcher_installer()
     capability_results = [
+        install_python_packages(repo_root, dry_run),
         launcher_installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run, manifest),
         launcher_installer.install_invoke_skill_launcher(bin_dir, dry_run, manifest),
     ]
-    if any(
-        package.lower() == "cryptography"
-        for package in required_python_packages(repo_root)
-    ):
+    if any(_declares_package(package, "cryptography") for package in declared_packages):
         capability_results.append(
             install_certificate_signing_material(repo_root, dry_run)
         )

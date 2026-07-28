@@ -43,7 +43,7 @@ interfaces:
         - {id: scaffold-state, direct_io_ref: write-1, action: configure, value_source: {kind: argument, argument_ref: repo-root}, may_occur_in_outcomes: [installed], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Installed launchers and the managed PATH block can be removed.}}
         - {id: certificate-signing-material, direct_io_ref: write-3, action: configure, value_source: {kind: argument, argument_ref: repo-root}, may_occur_in_outcomes: [installed], confirmation_evidence: {kind: direct-io, direct_io_ref: write-3}, reversibility: {irreversible: Removing the active private key prevents future signing and removing retained public keys invalidates historical verification.}}
         mutation_safety:
-          atomicity: {per_effect_only: "Package installation, certificate-key provisioning, launcher writes, and shell configuration are separate effects."}
+          atomicity: {per_effect_only: "The declared Python package set installs in one atomic batch call (via officina.install.managed-runtime) rather than per-package; certificate-key provisioning, launcher writes, and shell configuration remain separate effects."}
           concurrent_invocations: {unsafe: Concurrent scaffold installers are not serialized.}
           idempotency: {idempotent: Repeating with the same source and targets reconciles equivalent files and managed shell blocks.}
           on_uncertain_completion: {verify_then_decide: Resolve the launcher commands and inspect the managed PATH block before retrying.}
@@ -92,5 +92,7 @@ runtime_dependencies: []
 schema_version: 4
 uses_interfaces:
 - interface: common.interface.certificate-records
+  version: 1
+- interface: install.interface.managed-runtime
   version: 1
 version: 1

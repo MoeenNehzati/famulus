@@ -31,6 +31,7 @@ def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[s
                                         "kind": "python-package",
                                         "name": package,
                                         "version": "any",
+                                        "platforms": {"linux": True, "macos": True, "windows": True},
                                     }
                                     for package in python_packages
                                 ]
@@ -237,6 +238,7 @@ def test_required_python_packages_preserve_declared_versions(tmp_path):
                                         "kind": "python-package",
                                         "name": "cryptography",
                                         "version": ">=44.0.1",
+                                        "platforms": {"linux": True, "macos": True, "windows": True},
                                     }
                                 ]
                             }
@@ -257,17 +259,20 @@ def test_required_python_packages_preserve_declared_versions(tmp_path):
 @pytest.mark.parametrize(
     ("runtime_platform", "expected"),
     [
-        ("linux", ["Example<2,>=1"]),
-        ("darwin", ["Example!=1.5,>=1"]),
-        ("win32", ["Example>=1,~=1.8"]),
+        ("linux", ["example<2"]),
+        ("darwin", ["EXAMPLE!=1.5"]),
+        ("win32", ["Example~=1.8"]),
     ],
 )
-def test_required_python_packages_merge_only_platform_applicable_versions(
+def test_required_python_packages_uses_first_declared_version_per_platform(
     tmp_path,
     monkeypatch,
     runtime_platform,
     expected,
 ):
+    """Each platform sees one declared spec per package name: the first
+    matching declaration in manifest order wins (see
+    officina.install.managed_runtime.declared_python_packages)."""
     repo_root = tmp_path / "repo"
     manifest = repo_root / scaffold.RUNTIME_DEPENDENCIES_MANIFEST
     manifest.parent.mkdir(parents=True)
@@ -280,11 +285,6 @@ def test_required_python_packages_merge_only_platform_applicable_versions(
                         "interfaces": {
                             "run": {
                                 "dependencies": [
-                                    {
-                                        "kind": "python-package",
-                                        "name": "Example",
-                                        "version": ">=1",
-                                    },
                                     {
                                         "kind": "python-package",
                                         "name": "example",
@@ -412,7 +412,7 @@ def test_certificate_signing_material_dry_run_does_not_write(
     assert result.status == "would-install"
 
 
-def test_python_package_install_timeout_warns_and_continues(tmp_path, monkeypatch, capsys):
+def test_python_package_install_is_one_atomic_batch_call(tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     write_runtime_dependencies_manifest(repo_root, ["marker-pdf", "rich"])
@@ -420,15 +420,54 @@ def test_python_package_install_timeout_warns_and_continues(tmp_path, monkeypatc
 
     def fake_run(cmd, **kwargs):
         calls.append(cmd)
-        if "marker-pdf" in cmd:
-            raise scaffold.subprocess.TimeoutExpired(cmd, kwargs["timeout"])
         return type("R", (), {"returncode": 0, "stderr": ""})()
+
+    monkeypatch.setattr(scaffold.subprocess, "run", fake_run)
+
+    result = scaffold.install_python_packages(repo_root, dry_run=False)
+
+    assert len(calls) == 1
+    assert "marker-pdf" in calls[0] and "rich" in calls[0]
+    assert result.status == "installed"
+
+
+def test_python_package_install_timeout_fails_closed_and_does_not_swallow_error(tmp_path, monkeypatch, capsys):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    write_runtime_dependencies_manifest(repo_root, ["marker-pdf", "rich"])
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        raise scaffold.subprocess.TimeoutExpired(cmd, kwargs["timeout"])
 
     monkeypatch.setenv("FAMULUS_PIP_INSTALL_TIMEOUT_SECONDS", "1")
     monkeypatch.setattr(scaffold.subprocess, "run", fake_run)
 
-    scaffold.install_python_packages(repo_root, dry_run=False)
+    result = scaffold.install_python_packages(repo_root, dry_run=False)
 
     output = capsys.readouterr().out
-    assert "WARN: timed out installing marker-pdf after 1s" in output
-    assert any("rich" in cmd for cmd in calls)
+    assert len(calls) == 1  # one atomic attempt, not one per package
+    assert result.status == "failed"
+    assert result.blocks_install()
+    assert "timed out installing batch after 1s" in result.reason
+    assert "FAILED" in output
+
+
+def test_python_package_install_failure_blocks_scaffold_exit_status(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    write_runtime_dependencies_manifest(repo_root, ["marker-pdf"])
+    bin_dir = tmp_path / "bin"
+    rc_file = tmp_path / ".bashrc"
+    rc_file.write_text("")
+
+    monkeypatch.setattr(
+        scaffold.subprocess, "run",
+        lambda cmd, **kw: type("R", (), {"returncode": 1, "stderr": "boom"})(),
+    )
+
+    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
+
+    assert status != 0
