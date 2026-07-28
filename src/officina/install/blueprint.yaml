@@ -11,6 +11,7 @@ content:
 - runtime_pointer\.py
 - managed_runtime\.py
 - launcher_entry\.py
+- resolvers/launch\.py
 description: Parses the pinned bootstrap/runtime versions in install-info.toml, manages the atomic current.json pointer for the installed, versioned Famulus runtime, builds new candidate releases by installing the real v1 runtime_dependencies.json manifest's Python dependencies in one atomic batch, and provides the stable, path-fixed launch resolver that generated launcher shims exec into instead of embedding a release-specific repo/interpreter path.
 exports:
   install.interface.install-info:

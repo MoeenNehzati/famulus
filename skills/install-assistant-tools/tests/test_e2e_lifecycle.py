@@ -166,13 +166,15 @@ def test_launchers_executable_after_install(homes):
     launcher_installer = platform_launcher_installer()
     buf = io.StringIO()
     with redirect_stdout(buf):
-        launcher_installer.install_dispatcher_launcher(REPO_ROOT, bin_dir, dry_run=False)
+        launcher_installer.install_dispatcher_launcher(
+            REPO_ROOT, bin_dir, dry_run=False, home=homes["home"]
+        )
         for agent in ("assistant", "collab", "coauthor", "tw"):
             launchers.install_agent_launcher_files(source_bin, bin_dir, agent, dry_run=False, manifest=None)
 
     env = python_test_env(homes["root"], {"HOME": str(homes["home"])})
     # "dispatcher" is generated separately below: it now execs into the
-    # stable managed-runtime resolver (officina.install.launcher_entry)
+    # stable managed-runtime resolver (officina.install.resolvers.launch)
     # instead of running self-contained against this repo checkout, and that
     # resolver is only deployed/activated once the managed-runtime install
     # flow is wired up (a separately scoped, later task) -- see the assertion

@@ -194,11 +194,13 @@ def build_candidate_release(
     )
 
 
-# Public alias: officina.install.launcher_entry needs this same uv-managed
-# Python install dir to derive the trusted_interpreter_roots that let it
-# accept the very symlinked python_bin that build_candidate_release just
-# activated, without re-implementing uv's "where do you keep interpreters"
-# lookup a second time.
+# Public alias: whatever deploys officina.install.resolvers.launch (the
+# dependency-free resolver -- see its docstring for why it cannot import this
+# module itself) needs this same uv-managed Python install dir to populate
+# the resolver's trusted-roots.json sidecar at release-activation time, so
+# the resolver accepts the very symlinked python_bin that build_candidate_release
+# just activated, without re-implementing uv's "where do you keep
+# interpreters" lookup a second time.
 uv_python_install_dir = _uv_python_install_dir
 
 __all__ = [

@@ -72,11 +72,13 @@ def _env_with_generated_dispatcher(tmp_path: Path) -> dict[str, str]:
             sys.path.remove(installer_dir_str)
 
     bin_dir = tmp_path / "bin"
+    home = tmp_path / "home"
     result = platform_launcher_installer().install_dispatcher_launcher(
         _REPO_ROOT,
         bin_dir,
         dry_run=False,
         manifest=None,
+        home=home,
     )
     assert not result.blocks_install(), result.reason
     env = os.environ.copy()

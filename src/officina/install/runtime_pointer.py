@@ -63,6 +63,17 @@ def _require_contained_or_trusted(
     anyone who can write under ``root`` point ``python_bin`` at an arbitrary
     binary), the resolved leaf target is checked against an explicit
     allowlist of trusted roots supplied by the caller.
+
+    This logic is intentionally duplicated (not imported) in
+    ``officina.install.resolvers.launch._require_contained_or_trusted``: that
+    module is a dependency-free, stdlib-only script deployed to run under the
+    user's ambient Python before any interpreter handoff, so it cannot import
+    this module (see its docstring for why). If you change the containment
+    behavior here, update that copy too and rerun
+    ``tests/test_officina_launcher_entry.py``'s
+    ``test_resolver_containment_check_matches_real_runtime_pointer_implementation``
+    cross-check, which fails loudly if the two implementations disagree on
+    any of its adversarial test vectors.
     """
     if not path.is_absolute():
         raise RuntimePointerError(f"{label} must be an absolute path: {path}")

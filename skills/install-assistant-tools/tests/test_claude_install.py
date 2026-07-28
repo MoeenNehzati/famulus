@@ -151,7 +151,7 @@ class ClaudeInstallTests(unittest.TestCase):
             )
             plugin_env = prepend_path(plugin_env, scaffold_bin)
             # "dispatcher" now execs into the stable managed-runtime resolver
-            # (officina.install.launcher_entry) instead of running
+            # (officina.install.resolvers.launch) instead of running
             # self-contained against this repo checkout. That resolver is
             # only deployed/activated once the managed-runtime install flow
             # is wired up (a separately scoped, later task), so it currently

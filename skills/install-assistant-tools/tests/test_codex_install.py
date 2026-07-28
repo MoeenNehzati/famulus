@@ -354,8 +354,9 @@ class CodexInstallTests(unittest.TestCase):
             # dispatcher launcher: generated file (not symlink) that execs
             # into the stable managed-runtime resolver at launch time,
             # instead of embedding this install's repo checkout or
-            # interpreter path (see officina.install.launcher_entry). Windows
-            # has a separate .bat launcher.
+            # interpreter path (see officina.install.resolvers.launch, a
+            # dependency-free stdlib-only script). Windows has a separate
+            # .bat launcher.
             if sys.platform == "win32":
                 self.assertFalse((install_bin / "dispatcher").exists())
                 launcher = install_bin / "dispatcher.bat"
@@ -410,7 +411,7 @@ class CodexInstallTests(unittest.TestCase):
             # in the environment running this test.
             launcher_env.pop("AI", None)
             # "dispatcher" now execs into the stable managed-runtime resolver
-            # (officina.install.launcher_entry) instead of running
+            # (officina.install.resolvers.launch) instead of running
             # self-contained against this repo checkout. That resolver is
             # only deployed/activated once the managed-runtime install flow
             # is wired up (a separately scoped, later task), so it currently

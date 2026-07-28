@@ -18,10 +18,12 @@ from ._base_launcher import (
 )
 
 # Fixed, immutable location of the stable launch resolver beneath a given
-# runtime_root (see officina.install.launcher_entry, deployed there by the
-# managed-runtime install flow). Generated shims invoke this path instead of
-# embedding a release-specific repo checkout or interpreter: this path does
-# not change when the repo moves or a new release is activated.
+# runtime_root. The file deployed there is officina.install.resolvers.launch's
+# source (a dependency-free, stdlib-only script -- deployment is the
+# managed-runtime install flow's job, not this generator's). Generated shims
+# invoke this path instead of embedding a release-specific repo checkout or
+# interpreter: this path does not change when the repo moves or a new release
+# is activated.
 _RESOLVER_RELATIVE_PATH = ("bootstrap", "resolvers", "v1", "launch.py")
 
 

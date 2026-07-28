@@ -129,8 +129,9 @@ def test_osx_uses_unix_launcher_contract(tmp_path):
     installer = platform_launcher_installer("darwin")
     repo_root = tmp_path / "repo"
     bin_dir = tmp_path / "bin"
+    home = tmp_path / "home"
 
-    dispatcher = installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run=False)
+    dispatcher = installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run=False, home=home)
 
     assert dispatcher.status == "installed"
     assert (bin_dir / "dispatcher").is_file()
