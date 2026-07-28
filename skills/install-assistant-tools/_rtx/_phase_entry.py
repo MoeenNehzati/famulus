@@ -31,6 +31,9 @@ if str(REPO_SRC) not in sys.path:
 sys.path.insert(0, str(Path(__file__).parent))
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+from officina.common.famulus_paths import resolve_famulus_paths
+from officina.install.install_info import load_install_info
+import officina.install.managed_runtime as managed_runtime
 
 import _config_bridge as dev_link
 import _agent_launchers as launchers
@@ -79,6 +82,50 @@ def _prompt_default_llm() -> str:
     return reply if reply in ("claude", "codex") else "claude"
 
 
+def _build_managed_runtime_candidate(*, repo_root: Path, home: Path) -> int:
+    """Build and activate a managed-runtime candidate release before scaffold
+    runs, so the dispatcher/invoke-skill launchers scaffold.run installs have
+    a real release to exec into as soon as they exist on disk.
+
+    Returns 0 on success. On a ManagedRuntimeError (bad manifest, failed venv
+    creation, failed batch install), logs the failure and returns nonzero
+    without raising -- build_candidate_release itself guarantees no partial
+    pointer is written in that case, so any prior current.json is left
+    untouched.
+    """
+    platform_name = scaffold._platform_name()
+    if platform_name is None:
+        log("Skipping managed-runtime candidate build: unsupported platform.")
+        return 0
+
+    info = load_install_info(repo_root / "install-info.toml")
+    paths = resolve_famulus_paths(platform=sys.platform, home=home)
+    manifest_path = repo_root / scaffold.RUNTIME_DEPENDENCIES_MANIFEST
+
+    log("Building managed-runtime candidate release...")
+    try:
+        managed_runtime.build_candidate_release(
+            runtime_root=paths.runtime_root,
+            manifest_path=manifest_path,
+            platform=platform_name,
+            uv_bin=paths.uv_bin,
+            python_version=info.managed_python,
+        )
+    except managed_runtime.ManagedRuntimeError as exc:
+        log(f"Managed-runtime candidate build failed: {exc}")
+        if not paths.uv_bin.exists():
+            # Expected until a machine-local uv bootstrap step lands
+            # (separately scoped) -- distinguish it from a genuine failure
+            # of an already-bootstrapped uv so this doesn't read as alarming
+            # on every fresh, not-yet-bootstrapped machine.
+            log(
+                f"  Hint: no managed uv binary found at {paths.uv_bin} -- "
+                "this machine has not been bootstrapped with a managed uv yet."
+            )
+        return 1
+    return 0
+
+
 def run(
     *,
     home: Path | None = None,
@@ -116,6 +163,15 @@ def run(
         # Plugin mode: derive from this script's own location, same as the
         # pre-redesign behavior. <repo>/skills/install-assistant-tools/_rtx/_phase_entry.py
         repo_root = Path(__file__).resolve().parents[3]
+
+    if dry_run:
+        log("(dry-run) Would build and activate a managed-runtime candidate release.")
+    else:
+        candidate_status = _build_managed_runtime_candidate(repo_root=repo_root, home=home)
+        if candidate_status:
+            log()
+            log("Installation stopped because the managed-runtime candidate build failed.")
+            return candidate_status
 
     scaffold_status = scaffold.run(repo_root=repo_root, home=home, bin_dir=bin_dir, shell_rc=shell_rc, dry_run=dry_run)
     if scaffold_status:

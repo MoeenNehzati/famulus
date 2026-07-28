@@ -31,7 +31,10 @@ from install_test_utils import (  # noqa: E402
     can_create_symlink,
     codex_env,
     copy_repo_tree,
+    deploy_managed_uv,
     expected_skills,
+    managed_runtime_uv_bin,
+    managed_uv_python_install_dir,
     python_test_env,
     read_json,
     run_command,
@@ -214,6 +217,14 @@ class CodexInstallTests(unittest.TestCase):
             install_claude_home.mkdir()
             install_shell_rc = tmp_root / "install.bashrc"
 
+            if managed_runtime_uv_bin() is None:
+                # famulus-skip: category=capability-unavailable; reason=_phase_entry.py now builds a real managed-runtime candidate release ahead of scaffold, which requires a real uv binary; alternate=tests/test_officina_managed_runtime.py and tests/test_officina_launcher_entry.py cover the build+deploy+resolver flow directly
+                self.skipTest("uv is not installed on this machine")
+            # Simulate the separately scoped uv-bootstrap step that would
+            # place uv at the machine-local managed location before any real
+            # install ever runs _phase_entry.py's managed-runtime wiring.
+            deploy_managed_uv(install_home)
+
             install_cmd = [
                 sys.executable,
                 str(installed_path / "skills" / "install-assistant-tools" / "_rtx" / "_phase_entry.py"),
@@ -244,9 +255,16 @@ class CodexInstallTests(unittest.TestCase):
                     "HOME": str(install_home),
                     "CODEX_HOME": str(install_codex_home),
                     "CLAUDE_HOME": str(install_claude_home),
+                    # Reuse this machine's already-populated uv Python store
+                    # and package cache instead of letting uv resolve fresh,
+                    # empty ones under the isolated HOME above and attempt a
+                    # full network re-download of every declared dependency
+                    # (including marker-pdf's multi-GB torch/CUDA closure).
+                    "UV_PYTHON_INSTALL_DIR": managed_uv_python_install_dir(),
+                    "UV_CACHE_DIR": str(Path.home() / ".cache" / "uv"),
                 },
             )
-            run_command(install_cmd, env=install_env)
+            run_command(install_cmd, env=install_env, timeout=900)
 
             # workers are created at install time by the bootstrap (runtime
             # dirs, not plugin content). This is a plugin-mode install
@@ -412,11 +430,17 @@ class CodexInstallTests(unittest.TestCase):
             launcher_env.pop("AI", None)
             # "dispatcher" now execs into the stable managed-runtime resolver
             # (officina.install.resolvers.launch) instead of running
-            # self-contained against this repo checkout. That resolver is
-            # only deployed/activated once the managed-runtime install flow
-            # is wired up (a separately scoped, later task), so it currently
-            # fails cleanly here rather than falling back to a repo-embedded
-            # interpreter path as it used to.
+            # self-contained against this repo checkout. install_cmd above
+            # went through the real _phase_entry.py, which builds and
+            # activates a managed-runtime candidate release (deploying the
+            # resolver and its trusted-roots.json sidecar as part of that
+            # activation) before scaffold ever runs, so the resolver hop now
+            # succeeds. The release venv still has no `officina` package
+            # installed (a separate, deliberate scope decision -- see
+            # _install_scaffold.install_python_packages's docstring), so the
+            # only expected failure is ModuleNotFoundError for officina.
+            # dispatcher.cli, raised by the release interpreter after control
+            # has already transferred there -- never a resolver-side error.
             dispatcher_result = run_command(
                 platform_shell_command("dispatcher", ["--help"]),
                 env=launcher_env,
@@ -424,6 +448,10 @@ class CodexInstallTests(unittest.TestCase):
                 check=False,
             )
             self.assertNotEqual(dispatcher_result.returncode, 0)
+            self.assertNotIn("No such file or directory", dispatcher_result.stderr)
+            self.assertNotIn("famulus launcher:", dispatcher_result.stderr)
+            self.assertIn("ModuleNotFoundError", dispatcher_result.stderr)
+            self.assertIn("officina", dispatcher_result.stderr)
             for agent in ("assistant", "collab", "coauthor"):
                 command = platform_shell_command(
                     agent,

@@ -168,6 +168,43 @@ def test_build_candidate_release_venv_failure_writes_no_pointer(monkeypatch, tmp
     assert not (runtime_root / "current.json").exists()
 
 
+def test_build_candidate_release_resolver_deploy_failure_writes_no_pointer(monkeypatch, tmp_path):
+    """A failed resolver deployment (e.g. disk full, permissions, a
+    concurrent-install race) must behave exactly like every other
+    build_candidate_release failure: no release is activated (current.json
+    stays untouched) and the raised exception is a typed ManagedRuntimeError
+    the installer's `except ManagedRuntimeError` can catch cleanly -- not a
+    raw OSError propagating as an unhandled crash. This also guards against
+    regressing back to deploying the resolver *after* activate_release,
+    which would let a deployment failure leave a release activated with a
+    missing/broken resolver.
+    """
+    calls: list = []
+    monkeypatch.setattr(
+        "subprocess.run", _fake_run_creating_venv_python(calls, trusted_python_dir=tmp_path / "uv-python-store")
+    )
+    monkeypatch.setattr(
+        "officina.install.managed_runtime.shutil.copy2",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("simulated disk full")),
+    )
+    runtime_root = tmp_path / "runtime"
+
+    with pytest.raises(ManagedRuntimeError):
+        build_candidate_release(
+            runtime_root=runtime_root,
+            manifest_path=REAL_MANIFEST,
+            platform="linux",
+            uv_bin=Path("/fake/uv"),
+            python_version="3.11",
+        )
+
+    assert not (runtime_root / "current.json").exists()
+    # activate_release must never have run either: no release directory was
+    # promoted, so no bootstrap/resolvers path exists beyond what
+    # _deploy_resolver itself half-created before failing.
+    assert not (runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py").exists()
+
+
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover call shapes and ordering without uv installed
 @pytest.mark.skipif(UV_BIN is None, reason="uv is not installed on this machine")
 def test_build_candidate_release_end_to_end_with_real_uv(tmp_path):

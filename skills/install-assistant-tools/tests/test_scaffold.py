@@ -178,11 +178,16 @@ def test_run_reruns_idempotently(tmp_path, monkeypatch):
     assert content.count('export PATH="') == 1
 
 
-def test_run_installs_required_python_packages(tmp_path, monkeypatch):
+def test_run_never_shells_out_to_ambient_python_for_package_install(tmp_path, monkeypatch):
+    """Scaffold must not install third-party Python packages into the
+    ambient interpreter at all (that's build_candidate_release's job, into
+    the managed release venv, run by _phase_entry.py before scaffold.run
+    ever executes) -- confirms feedback item 2/3's ambient-python-install
+    violation is fully gone, not just relocated to a different call site."""
     monkeypatch.setattr(sys, "platform", "linux")
     calls = []
     monkeypatch.setattr(
-        scaffold.subprocess, "run",
+        "subprocess.run",
         lambda cmd, **kw: (calls.append(cmd), type("R", (), {"returncode": 0, "stderr": ""})())[1],
     )
     repo_root = tmp_path / "repo"
@@ -194,40 +199,24 @@ def test_run_installs_required_python_packages(tmp_path, monkeypatch):
 
     scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
 
-    assert any("dateparser" in " ".join(cmd) for cmd in calls)
+    for cmd in calls:
+        assert sys.executable not in cmd, f"scaffold invoked ambient sys.executable: {cmd}"
+        assert "pip" not in cmd, f"scaffold ran its own pip install: {cmd}"
 
 
-def test_run_installs_python_packages_from_runtime_dependency_manifest(tmp_path, monkeypatch):
+def test_run_warns_but_does_not_block_when_no_managed_release_is_active(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "platform", "linux")
-    calls = []
-    monkeypatch.setattr(
-        scaffold.subprocess, "run",
-        lambda cmd, **kw: (calls.append(cmd), type("R", (), {"returncode": 0, "stderr": ""})())[1],
-    )
-    monkeypatch.setattr(
-        scaffold,
-        "install_certificate_signing_material",
-        lambda repo_root, dry_run: scaffold.LauncherInstallResult(
-            name="certificate-signing-material",
-            required=True,
-            status="installed",
-            workflows=("v4 certification", "certificate verification"),
-        ),
-    )
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    write_runtime_dependencies_manifest(repo_root, ["PyYAML", "jsonschema", "cryptography"])
     bin_dir = tmp_path / "bin"
     rc_file = tmp_path / ".bashrc"
     rc_file.write_text("")
 
-    scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
+    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
 
-    installed = {" ".join(cmd) for cmd in calls}
-    assert any("PyYAML" in cmd for cmd in installed)
-    assert any("jsonschema" in cmd for cmd in installed)
-    assert any("cryptography" in cmd for cmd in installed)
-    assert not any(" rg " in f" {cmd} " for cmd in installed)
+    output = capsys.readouterr().out
+    assert status == 0
+    assert "NOTE: no managed-runtime release is active yet" in output
 
 
 def test_required_python_packages_preserve_declared_versions(tmp_path):
@@ -419,64 +408,3 @@ def test_certificate_signing_material_dry_run_does_not_write(
     )
 
     assert result.status == "would-install"
-
-
-def test_python_package_install_is_one_atomic_batch_call(tmp_path, monkeypatch):
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    write_runtime_dependencies_manifest(repo_root, ["marker-pdf", "rich"])
-    calls = []
-
-    def fake_run(cmd, **kwargs):
-        calls.append(cmd)
-        return type("R", (), {"returncode": 0, "stderr": ""})()
-
-    monkeypatch.setattr(scaffold.subprocess, "run", fake_run)
-
-    result = scaffold.install_python_packages(repo_root, dry_run=False)
-
-    assert len(calls) == 1
-    assert "marker-pdf" in calls[0] and "rich" in calls[0]
-    assert result.status == "installed"
-
-
-def test_python_package_install_timeout_fails_closed_and_does_not_swallow_error(tmp_path, monkeypatch, capsys):
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    write_runtime_dependencies_manifest(repo_root, ["marker-pdf", "rich"])
-    calls = []
-
-    def fake_run(cmd, **kwargs):
-        calls.append(cmd)
-        raise scaffold.subprocess.TimeoutExpired(cmd, kwargs["timeout"])
-
-    monkeypatch.setenv("FAMULUS_PIP_INSTALL_TIMEOUT_SECONDS", "1")
-    monkeypatch.setattr(scaffold.subprocess, "run", fake_run)
-
-    result = scaffold.install_python_packages(repo_root, dry_run=False)
-
-    output = capsys.readouterr().out
-    assert len(calls) == 1  # one atomic attempt, not one per package
-    assert result.status == "failed"
-    assert result.blocks_install()
-    assert "timed out installing batch after 1s" in result.reason
-    assert "FAILED" in output
-
-
-def test_python_package_install_failure_blocks_scaffold_exit_status(tmp_path, monkeypatch):
-    monkeypatch.setattr(sys, "platform", "linux")
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    write_runtime_dependencies_manifest(repo_root, ["marker-pdf"])
-    bin_dir = tmp_path / "bin"
-    rc_file = tmp_path / ".bashrc"
-    rc_file.write_text("")
-
-    monkeypatch.setattr(
-        scaffold.subprocess, "run",
-        lambda cmd, **kw: type("R", (), {"returncode": 1, "stderr": "boom"})(),
-    )
-
-    status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False)
-
-    assert status != 0

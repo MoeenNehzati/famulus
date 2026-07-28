@@ -341,12 +341,62 @@ def test_resolver_end_to_end_execs_into_real_uv_managed_interpreter_with_clean_e
 
 # famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover main()'s pointer-resolution and trusted-roots logic without uv installed
 @pytest.mark.skipif(UV_BIN is None, reason="uv is not installed on this machine")
+def test_build_candidate_release_auto_deploys_resolver_with_clean_env(tmp_path):
+    """Task 7 (Step 3b) closes the Task 6 gap: build_candidate_release itself
+    must deploy the resolver and its trust sidecar as part of activation, not
+    leave that to a separate manual deployment step. Unlike
+    test_resolver_end_to_end_execs_into_real_uv_managed_interpreter_with_clean_env
+    above, this test deliberately does NOT call _deploy_resolver -- proving
+    the deployment happens automatically -- and invokes the resolver
+    directly (not the full dispatcher shim, which still hits
+    ModuleNotFoundError for officina.dispatcher.cli since that package isn't
+    pip-installed into the managed venv; that is a separate, deliberate
+    design decision, not this test's concern) with a clean environment.
+    """
+    runtime_root = tmp_path / "runtime"
+    manifest = tmp_path / "runtime_dependencies.json"
+    manifest.write_text(json.dumps({"version": 1, "skills": {}}))
+
+    managed_uv = _deploy_managed_uv(runtime_root)
+    pointer = build_candidate_release(
+        runtime_root=runtime_root,
+        manifest_path=manifest,
+        platform="linux",
+        uv_bin=managed_uv,
+        python_version="3.11",
+    )
+
+    resolver_path = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
+    trust_file = resolver_path.parent / "trusted-roots.json"
+    assert resolver_path.is_file(), "build_candidate_release did not deploy the resolver"
+    assert trust_file.is_file(), "build_candidate_release did not deploy the trust sidecar"
+    trusted_entries = json.loads(trust_file.read_text())
+    assert trusted_entries == [str(uv_python_install_dir(managed_uv))]
+
+    # Deliberately no PYTHONPATH (or any other officina-specific env var) --
+    # a genuinely clean subprocess environment, exactly as a generated
+    # dispatcher shim's exec into this resolver would see.
+    result = subprocess.run(
+        [str(resolver_path), "-c", "import sys; print(sys.executable)"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "ModuleNotFoundError" not in result.stderr
+    assert result.stdout.strip() == str(pointer.python_bin.resolve())
+
+
+# famulus-skip: category=capability-unavailable; reason=requires a real uv binary on PATH; alternate=mocked tests above cover main()'s pointer-resolution and trusted-roots logic without uv installed
+@pytest.mark.skipif(UV_BIN is None, reason="uv is not installed on this machine")
 def test_generated_dispatcher_shim_reaches_the_real_release_interpreter_with_clean_env(tmp_path, monkeypatch):
     """End-to-end through the actual generated dispatcher content, also with
-    a clean environment: a real uv-managed release is built and activated,
-    the dependency-free resolver is deployed at its fixed path, and the
-    exact shim content _unix_dispatcher_content produces is written and
-    executed. The release venv has no `officina` package installed (that
+    a clean environment: a real uv-managed release is built and activated
+    (build_candidate_release deploys the dependency-free resolver and its
+    trust sidecar at its fixed path as part of that activation -- see
+    test_build_candidate_release_auto_deploys_resolver_with_clean_env above),
+    and the exact shim content _unix_dispatcher_content produces is written
+    and executed. The release venv has no `officina` package installed (that
     wiring is a separately scoped, later task), so success here means
     getting all the way through pointer resolution and exec into the release
     interpreter with no PYTHONPATH help -- the only expected failure is
@@ -375,9 +425,9 @@ def test_generated_dispatcher_shim_reaches_the_real_release_interpreter_with_cle
         uv_bin=managed_uv,
         python_version="3.11",
     )
-
-    trusted_roots = (uv_python_install_dir(managed_uv),)
-    _deploy_resolver(runtime_root, trusted_roots=trusted_roots)
+    # No manual _deploy_resolver call: build_candidate_release above already
+    # deployed the resolver and its trusted-roots.json sidecar as part of
+    # activation (Task 7's Step 3b).
 
     content = _unix_dispatcher_content(repo_root=tmp_path / "repo", home=home)
     dispatcher = tmp_path / "bin" / "dispatcher"

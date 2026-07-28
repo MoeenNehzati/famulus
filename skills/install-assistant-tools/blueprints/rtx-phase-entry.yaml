@@ -93,5 +93,7 @@ runtime_dependencies:
   reason: Configures repository hook settings during development installs.
   version: any
 schema_version: 4
-uses_interfaces: []
+uses_interfaces:
+- interface: install.interface.managed-runtime
+  version: 1
 version: 1

@@ -29,8 +29,10 @@ sys.path.insert(0, str(SCRIPT_DIR.parent / "_rtx"))
 
 from install_test_utils import (  # noqa: E402
     REPO_ROOT,
+    build_minimal_managed_runtime_release,
     can_create_symlink,
     expected_skills,
+    managed_runtime_uv_bin,
     python_test_env,
     run_command,
 )
@@ -175,10 +177,9 @@ def test_launchers_executable_after_install(homes):
     env = python_test_env(homes["root"], {"HOME": str(homes["home"])})
     # "dispatcher" is generated separately below: it now execs into the
     # stable managed-runtime resolver (officina.install.resolvers.launch)
-    # instead of running self-contained against this repo checkout, and that
-    # resolver is only deployed/activated once the managed-runtime install
-    # flow is wired up (a separately scoped, later task) -- see the assertion
-    # further down for its current, expected failure mode.
+    # instead of running self-contained against this repo checkout -- see the
+    # assertion further down, once a real candidate release has been built
+    # and the resolver deployed, for its current, expected failure mode.
     for cmd in ("assistant", "collab", "coauthor", "tw"):
         exe = bin_dir / cmd
         assert exe.exists(), f"{cmd} not installed into bin dir"
@@ -191,16 +192,31 @@ def test_launchers_executable_after_install(homes):
 
     dispatcher = bin_dir / "dispatcher"
     assert dispatcher.exists(), "dispatcher not installed into bin dir"
+
+    if managed_runtime_uv_bin() is None:
+        # famulus-skip: category=capability-unavailable; reason=proving the resolver hop succeeds requires building a real managed-runtime release, which needs a real uv binary; alternate=tests/test_officina_managed_runtime.py and tests/test_officina_launcher_entry.py cover the build+deploy+resolver flow directly
+        pytest.skip("uv is not installed on this machine")
+    # Build and activate a real managed-runtime candidate release under this
+    # test's sandboxed home. build_candidate_release deploys the
+    # dependency-free launcher resolver and its trusted-roots.json sidecar as
+    # part of that activation (Task 7's Step 3b), so the resolver hop this
+    # dispatcher shim execs into now succeeds.
+    build_minimal_managed_runtime_release(home=homes["home"], tmp_root=homes["root"])
+
     result = subprocess.run(
         [str(dispatcher), "--help"], capture_output=True, text=True, env=env, timeout=60
     )
-    # Until the managed-runtime install flow deploys and activates a release
-    # (see officina.install.managed_runtime.build_candidate_release and
-    # officina.install.runtime_pointer.activate_release), nothing exists yet
-    # at the fixed resolver path this shim execs into -- so it fails, rather
-    # than falling back to a repo-embedded interpreter path as it used to.
+    # The release venv still has no `officina` package installed (a
+    # separate, deliberate scope decision -- see
+    # _install_scaffold.install_python_packages's docstring), so the only
+    # expected failure is ModuleNotFoundError for officina.dispatcher.cli,
+    # raised by the release interpreter after control has already
+    # transferred there -- never a resolver-side error.
     assert result.returncode != 0
-    assert "No such file or directory" in result.stderr
+    assert "No such file or directory" not in result.stderr
+    assert "famulus launcher:" not in result.stderr
+    assert "ModuleNotFoundError" in result.stderr
+    assert "officina" in result.stderr
 
     assert _tree_hash(REPO_ROOT / "skills") == skills_before
 

@@ -8,8 +8,13 @@ jobs invoke `invoke-skill <name>`. Both need to exist and be on PATH
 regardless of plugin vs dev-mode, and regardless of which agent launchers
 (assistant/collab/coauthor/tw) the user wants. Run this first, always.
 
-Also installs required third-party Python packages declared by blueprint
-executable interfaces, not tied to any particular agent.
+Required third-party Python packages declared by blueprint executable
+interfaces are provisioned into the managed-runtime release venv by
+officina.install.managed_runtime.build_candidate_release, which
+_phase_entry.py calls before this scaffold step runs at all -- scaffold no
+longer installs packages into the ambient Python itself (see
+warn_if_managed_release_missing for the lightweight, non-blocking sanity
+check that a managed release exists).
 
 Does NOT set ASSISTANT_DEFAULT (see launchers.py) or AI (see dev_link.py) —
 this subcommand only owns PATH.
@@ -19,7 +24,6 @@ from __future__ import annotations
 import argparse
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -29,6 +33,7 @@ if str(REPO_SRC) not in sys.path:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+from officina.common.famulus_paths import resolve_famulus_paths
 from officina.install.managed_runtime import declared_python_packages
 
 from _install_launcher import LauncherInstallResult, platform_launcher_installer
@@ -42,7 +47,6 @@ def log(msg: str = "") -> None:
 
 
 RUNTIME_DEPENDENCIES_MANIFEST = Path("references") / "blueprint" / "runtime_dependencies.json"
-DEFAULT_PIP_INSTALL_TIMEOUT_SECONDS = 60
 
 
 def _platform_name() -> str | None:
@@ -73,85 +77,29 @@ def required_python_packages(repo_root: Path) -> list[str]:
     return sorted(declared_python_packages(manifest, platform=platform_name), key=str.lower)
 
 
-def pip_install_timeout_seconds() -> int:
-    raw = os.environ.get("FAMULUS_PIP_INSTALL_TIMEOUT_SECONDS", "")
-    if not raw:
-        return DEFAULT_PIP_INSTALL_TIMEOUT_SECONDS
-    try:
-        timeout = int(raw)
-    except ValueError:
-        return DEFAULT_PIP_INSTALL_TIMEOUT_SECONDS
-    return max(1, timeout)
+def warn_if_managed_release_missing(*, home: Path) -> None:
+    """Log an advisory (non-blocking) note if no managed-runtime release is
+    active yet.
 
-
-def install_python_packages(repo_root: Path, dry_run: bool) -> LauncherInstallResult:
-    """Ensure required third-party Python packages are installed, in one
-    atomic batch call rather than a per-package best-effort loop.
-
-    officina.dispatcher itself (first-party) is deliberately NOT pip-installed
-    here — it runs from the repo via the dispatcher launcher below.
-
-    Unlike the previous per-package WARN-and-continue loop, a failed batch
-    install is reported as a failed, blocking capability rather than being
-    silently swallowed.
+    Scaffold no longer installs third-party Python packages itself: they are
+    provisioned into the managed release venv by
+    ``officina.install.managed_runtime.build_candidate_release``, which
+    ``_phase_entry.py`` calls before ``scaffold.run`` runs at all. This is a
+    lightweight sanity check for that call-order assumption, not a second
+    install — scaffold proceeds regardless, since it is also called directly
+    (bypassing `_phase_entry.py`) by targeted-repair invocations and tests.
     """
-    workflows = ("skill python-package dependencies",)
-    packages = required_python_packages(repo_root)
-    log("\nInstalling required Python packages...")
-    if dry_run:
-        for package in packages:
-            log(f"  (dry-run) Would install: {package}")
-        return LauncherInstallResult(
-            name="python-packages",
-            required=True,
-            status="would-install",
-            workflows=workflows,
-        )
-    if not packages:
-        return LauncherInstallResult(
-            name="python-packages",
-            required=True,
-            status="installed",
-            workflows=workflows,
-        )
-    log(f"  Installing {len(packages)} declared package(s) in one batch: {', '.join(packages)}")
-    timeout = pip_install_timeout_seconds()
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", *packages, "--quiet"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-            timeout=timeout,
+        current_pointer = resolve_famulus_paths(platform=sys.platform, home=home).current_pointer
+    except Exception:
+        return
+    if not current_pointer.exists():
+        log(
+            "  NOTE: no managed-runtime release is active yet "
+            f"({current_pointer} not found). dispatcher/invoke-skill will "
+            "not work until officina.install.managed_runtime.build_candidate_release "
+            "has run (see _phase_entry.py)."
         )
-    except subprocess.TimeoutExpired:
-        reason = f"timed out installing batch after {timeout}s"
-        log(f"  FAILED: {reason}")
-        return LauncherInstallResult(
-            name="python-packages",
-            required=True,
-            status="failed",
-            workflows=workflows,
-            reason=reason,
-        )
-    if result.returncode != 0:
-        reason = result.stderr.strip()
-        log(f"  FAILED: batch package install failed: {reason}")
-        return LauncherInstallResult(
-            name="python-packages",
-            required=True,
-            status="failed",
-            workflows=workflows,
-            reason=reason,
-        )
-    log("  OK: installed all declared packages")
-    return LauncherInstallResult(
-        name="python-packages",
-        required=True,
-        status="installed",
-        workflows=workflows,
-    )
 
 
 def install_certificate_signing_material(
@@ -271,10 +219,12 @@ def run(
     if dry_run:
         manifest = None
 
+    if not dry_run:
+        warn_if_managed_release_missing(home=home)
+
     declared_packages = required_python_packages(repo_root)
     launcher_installer = platform_launcher_installer()
     capability_results = [
-        install_python_packages(repo_root, dry_run),
         launcher_installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run, manifest, home=home),
         launcher_installer.install_invoke_skill_launcher(bin_dir, dry_run, manifest),
     ]
