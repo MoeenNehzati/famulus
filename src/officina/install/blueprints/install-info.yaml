@@ -1,6 +1,12 @@
 content:
 - install_info\.py
-dependencies: []
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/init.yaml
+  reason: Loads Python package support from __init__.py.
+  source: install.source.init
+  version: 1
 description: Parses and validates the pinned bootstrap/runtime versions declared in install-info.toml.
 gateway:
   language: Python
@@ -10,18 +16,18 @@ interfaces:
   install.source.install-info.interface.python-api:
     contract:
       arguments:
-        path:
-          description: Path to the install-info.toml file to parse.
+        base:
+          description: Base directory containing install-info.toml, opened through the toml_io boundary (which joins on the fixed "install-info.toml" filename internally).
           required: true
           sensitivity: public
           direct_io_ref: install-info-file
-          type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, opaque_content: true}
+          type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}
       preconditions:
       - id: readable-toml
-        description: path must be a readable, syntactically valid TOML file.
-        check: {kind: argument, argument_ref: path, predicate: present}
+        description: base must contain a readable, syntactically valid install-info.toml file.
+        check: {kind: argument, argument_ref: base, predicate: present}
         unmet_outcome: unreadable
-        caller_action: Supply a path to an existing, valid TOML file.
+        caller_action: Supply a base directory containing an existing, valid install-info.toml file.
       interaction: {mode: unattended}
       caller_warnings: []
       outputs:
@@ -49,7 +55,7 @@ interfaces:
       helpers: []
       direct_io:
         reads:
-        - {id: install-info-file, medium: local-filesystem, access: read, content: install-info.toml bytes, formats: [toml], sensitivity: public, path: <path>}
+        - {id: install-info-file, medium: local-filesystem, access: read, content: install-info.toml bytes, formats: [toml], sensitivity: public, path: <base>/install-info.toml}
         writes:
         - {id: return-value, medium: local-system, access: write, content: Python return value, formats: [text], sensitivity: public}
         network: []

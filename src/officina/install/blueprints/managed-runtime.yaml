@@ -7,6 +7,12 @@ dependencies:
   reason: build-candidate-release activates the finished release through the shared runtime-pointer source.
   source: install.source.runtime-pointer
   version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/init.yaml
+  reason: Loads Python package support from __init__.py.
+  source: install.source.init
+  version: 1
 description: Reads the real v1 runtime_dependencies.json manifest for declared Python dependencies and builds a versioned managed-runtime candidate release by installing them in one atomic batch, instead of an ambient, best-effort per-package pip loop.
 gateway:
   language: Python

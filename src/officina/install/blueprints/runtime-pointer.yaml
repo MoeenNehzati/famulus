@@ -1,6 +1,12 @@
 content:
 - runtime_pointer\.py
-dependencies: []
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/init.yaml
+  reason: Loads Python package support from __init__.py.
+  source: install.source.init
+  version: 1
 description: Reads and atomically activates the current.json pointer that selects which installed runtime release is live.
 gateway:
   language: Python

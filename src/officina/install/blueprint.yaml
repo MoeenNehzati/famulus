@@ -45,6 +45,10 @@ id: install
 node_type: module
 schema_version: 4
 sources:
+  install.source.init:
+    blueprint:
+      base: module-root
+      path: blueprints/init.yaml
   install.source.install-info:
     blueprint:
       base: module-root

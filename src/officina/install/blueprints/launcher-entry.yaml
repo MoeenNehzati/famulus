@@ -1,7 +1,13 @@
 content:
 - launcher_entry\.py
 - resolvers/launch\.py
-dependencies: []
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/init.yaml
+  reason: Loads Python package support from __init__.py.
+  source: install.source.init
+  version: 1
 description: Owns the stable, path-fixed launch resolver deployed at <runtime_root>/bootstrap/resolvers/v1/launch.py (resolvers/launch.py's own source -- a dependency-free, stdlib-only script that imports nothing beyond the Python standard library, since it runs under the user's ambient Python before any interpreter handoff). It reads current.json at launch time, using a minimal read-only reimplementation of officina.install.runtime_pointer's containment check, and execs into the active managed-runtime release's interpreter, so generated launcher shims (dispatcher, invoke-skill, ...) never need to embed a release-specific repo checkout or interpreter path that goes stale when the repo moves or a new release is activated. launcher_entry.py is a thin, ordinarily-importable wrapper around the same resolver source, used only by tests (the Task 4/5-style cross-check against officina.install.runtime_pointer's real containment check) -- production code never imports either module.
 gateway:
   language: Python

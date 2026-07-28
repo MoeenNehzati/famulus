@@ -1,0 +1,13 @@
+content:
+- __init__\.py
+dependencies: []
+description: Marks the install module directory as a Python package and exposes no callable interface.
+gateway:
+  language: Python
+  path: __init__.py
+id: install.source.init
+interfaces: {}
+node_type: behavioral_source
+schema_version: 4
+uses_interfaces: []
+version: 1
