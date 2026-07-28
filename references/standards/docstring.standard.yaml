@@ -1,0 +1,160 @@
+# Human-readable format contract consumed by `officina.common.docstring`.
+# Canonical policy filename for docstring controls.
+#
+# Purpose
+#   This file contains only semantic policy (what code and docs should assert).
+#   Syntax and parsing constraints are enforced in `docstring.standard.lark`.
+#   It is intentionally declarative so repository-specific enforcement can be
+#   changed without editing parser/validator logic where possible.
+#
+# Naming and versioning
+#   `docstring_format_version` should be bumped whenever this policy shape
+#   changes in a way that can affect docstring quality checks.
+#   `name` is used as an identifier in diagnostics and docs.
+docstring_format_version: 18
+# Stable contract identifier used by tooling outputs and diagnostics.
+name: docstring_format
+# If true, required settings are enforced and surface as warnings.
+# If false, required settings are treated as defaults.
+strict: true
+
+# Cookbook and validation examples.
+#
+# Examples are not required by the schema validator and are retained for docs only.
+examples: {}
+
+# Settings for callable/class/function/method docstrings.
+callable:
+  # A short top-of-docstring explanation is required.
+  required_summary: true
+  # Catch placeholder phrases that do not help readers understand behavior.
+  forbidden_summary_phrases:
+    - "what does this do"
+    - "todo"
+    - "tbd"
+    - "placeholder"
+    - "implement me"
+    - "to be implemented"
+
+  # Sections that must be present for every validated callable docstring.
+  # `Graph` captures intent and `Role` captures semantic function.
+  required_sections:
+    - Graph
+    - Role
+
+  # Optional callable sections that are retained by the parser for tooling.
+  optional_sections:
+    - Phase
+    - NonInferableCalls
+    - Wraps
+    - Owns
+    - Pseudocode
+    - CallsFromModule
+    - InstantiationsFromModule
+
+  pseudocode:
+    section: Pseudocode
+    max_steps: 8
+    max_step_chars: 140
+    max_total_chars: 640
+
+  # Separate sections for what this callable consumes from module scope.
+  module_dependencies:
+    calls_section: CallsFromModule
+    instantiates_section: InstantiationsFromModule
+    allow_implicit: true
+    validate_declared_calls: true
+    validate_declared_instantiations: true
+    report_unlisted_calls: true
+    report_unlisted_instantiations: true
+    ignore_non_external: true
+    validate_dependency_targets_resolved: true
+    enforce_declared_dependency_pseudocode_coverage: true
+    enforce_observed_dependency_pseudocode_coverage: true
+
+  # Wrapper-exposure policy for ``Wraps`` entries.
+  # Accepted example:
+  #   target -> preprocess: <text>; postprocess: <text>; fixed_arguments: <text>
+  wraps:
+
+  # Ownership policy for ``Owns`` entries.
+  ownership:
+    # Docstring section that lists ownership.
+    section: Owns
+    # If true, ownership missing causes validation warning.
+    section_required: false
+    # If false, only one ownership entry is expected per callable.
+    allows_multiple: false
+    # If true, ownership implies primary semantic responsibility.
+    single_owner_per_callable: true
+    # How owner ids are resolved (`module:Ownable`).
+    owner_resolution: module:Ownable
+    # Cross-file ownership support configuration.
+    cross_file:
+      # Toggle cross-file owner resolution.
+      enabled: true
+
+# Settings for module-level pipeline metadata (`GraphPipeline`).
+pipeline:
+  # If true, module docstrings must define a `GraphPipeline` block.
+  required: false
+  # Required pipeline sections.
+  required_sections:
+    - Phases
+    - PhaseMembers
+  # Optional pipeline sections used by visualization and audit.
+  optional_sections:
+    - PhaseEdges
+    - NonInferableCalls
+    - Description
+
+# Settings for module-level metadata and ownership registry.
+module:
+  # If true, module metadata is required to pass strict checks.
+  required: false
+  # Module summary required under strict module checks.
+  required_summary: true
+  # Required sections that describe module composition.
+  required_sections:
+    - Includes
+  # Optional sections used for module orchestration and traceability.
+  optional_sections:
+    - Workflow
+    - Traces
+    - Description
+    - Ownable
+
+  # Optional table of owner definitions available for the module.
+  ownership_registry:
+    # Section that lists owned capabilities.
+    section: Ownable
+    # Multiple owner entries may be declared in this section.
+    allows_multiple: true
+
+# Checks are enforced by checker code; this catalog is for reviewer orientation.
+check_categories:
+  formatting:
+    - docstring.formatting
+  behavioral:
+    - code: docstring.missing
+      intent: Callable/class/function body has no docstring.
+    - code: docstring.module-missing
+      intent: Module docstring is missing.
+    - code: docstring.unknown-owner
+      intent: Owns declaration resolves to no known owner.
+    - code: docstring.crossfile-owner-disabled
+      intent: Owns declaration points to another module while cross-file ownership is off.
+    - code: docstring.module-dependency-not-observed
+      intent: Declared dependency is not seen in function body.
+    - code: docstring.module-dependency-undocumented
+      intent: Observed dependency is not declared in docs.
+    - code: docstring.module-dependency-unresolved
+      intent: Declared dependency cannot be resolved to imports/local symbols.
+    - code: docstring.wraps-incomplete
+      intent: Wraps entry lacks required semantic details.
+    - code: docstring.wraps-unresolved-target
+      intent: Wraps target cannot be grounded to imports/local symbols/observed calls.
+    - code: docstring.pseudocode-dependency-missing
+      intent: Declared module dependency is not mentioned in pseudocode.
+    - code: docstring.pseudocode-dependency-undocumented
+      intent: Observed dependency is not mentioned in pseudocode.
