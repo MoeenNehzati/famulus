@@ -171,7 +171,13 @@ def test_launchers_executable_after_install(homes):
             launchers.install_agent_launcher_files(source_bin, bin_dir, agent, dry_run=False, manifest=None)
 
     env = python_test_env(homes["root"], {"HOME": str(homes["home"])})
-    for cmd in ("assistant", "collab", "coauthor", "tw", "dispatcher"):
+    # "dispatcher" is generated separately below: it now execs into the
+    # stable managed-runtime resolver (officina.install.launcher_entry)
+    # instead of running self-contained against this repo checkout, and that
+    # resolver is only deployed/activated once the managed-runtime install
+    # flow is wired up (a separately scoped, later task) -- see the assertion
+    # further down for its current, expected failure mode.
+    for cmd in ("assistant", "collab", "coauthor", "tw"):
         exe = bin_dir / cmd
         assert exe.exists(), f"{cmd} not installed into bin dir"
         result = subprocess.run(
@@ -180,6 +186,19 @@ def test_launchers_executable_after_install(homes):
         assert result.returncode == 0, (
             f"{cmd} --help failed ({result.returncode}):\n{result.stderr}"
         )
+
+    dispatcher = bin_dir / "dispatcher"
+    assert dispatcher.exists(), "dispatcher not installed into bin dir"
+    result = subprocess.run(
+        [str(dispatcher), "--help"], capture_output=True, text=True, env=env, timeout=60
+    )
+    # Until the managed-runtime install flow deploys and activates a release
+    # (see officina.install.managed_runtime.build_candidate_release and
+    # officina.install.runtime_pointer.activate_release), nothing exists yet
+    # at the fixed resolver path this shim execs into -- so it fails, rather
+    # than falling back to a repo-embedded interpreter path as it used to.
+    assert result.returncode != 0
+    assert "No such file or directory" in result.stderr
 
     assert _tree_hash(REPO_ROOT / "skills") == skills_before
 

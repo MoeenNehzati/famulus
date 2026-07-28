@@ -4,7 +4,7 @@ content:
 - _rtx/_install_launcher/_linux_launcher\.py
 - _rtx/_install_launcher/_osx_launcher\.py
 - _rtx/_install_launcher/_windows_launcher\.py
-description: Marks the platform-launcher implementation directory as a Python package and exposes no callable interface.
+description: Marks the platform-launcher implementation directory as a Python package and exposes no callable interface. _linux_launcher.py and _windows_launcher.py generate shims that reference the fixed <runtime_root>/bootstrap/resolvers/v1/launch.py resolver contract (see officina.install.launcher_entry) instead of embedding a release-specific repo checkout or interpreter path.
 dependencies: []
 gateway:
   language: Python
@@ -13,5 +13,7 @@ id: install-assistant-tools.source.rtx-install-launcher-init
 interfaces: {}
 node_type: behavioral_source
 schema_version: 4
-uses_interfaces: []
+uses_interfaces:
+- interface: common.interface.famulus-paths
+  version: 1
 version: 1

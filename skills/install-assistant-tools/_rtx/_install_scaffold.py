@@ -275,7 +275,7 @@ def run(
     launcher_installer = platform_launcher_installer()
     capability_results = [
         install_python_packages(repo_root, dry_run),
-        launcher_installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run, manifest),
+        launcher_installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run, manifest, home=home),
         launcher_installer.install_invoke_skill_launcher(bin_dir, dry_run, manifest),
     ]
     if any(_declares_package(package, "cryptography") for package in declared_packages):

@@ -194,8 +194,16 @@ def build_candidate_release(
     )
 
 
+# Public alias: officina.install.launcher_entry needs this same uv-managed
+# Python install dir to derive the trusted_interpreter_roots that let it
+# accept the very symlinked python_bin that build_candidate_release just
+# activated, without re-implementing uv's "where do you keep interpreters"
+# lookup a second time.
+uv_python_install_dir = _uv_python_install_dir
+
 __all__ = [
     "ManagedRuntimeError",
     "build_candidate_release",
     "declared_python_packages",
+    "uv_python_install_dir",
 ]

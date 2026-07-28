@@ -10,7 +10,8 @@ content:
 - install_info\.py
 - runtime_pointer\.py
 - managed_runtime\.py
-description: Parses the pinned bootstrap/runtime versions in install-info.toml, manages the atomic current.json pointer for the installed, versioned Famulus runtime, and builds new candidate releases by installing the real v1 runtime_dependencies.json manifest's Python dependencies in one atomic batch.
+- launcher_entry\.py
+description: Parses the pinned bootstrap/runtime versions in install-info.toml, manages the atomic current.json pointer for the installed, versioned Famulus runtime, builds new candidate releases by installing the real v1 runtime_dependencies.json manifest's Python dependencies in one atomic batch, and provides the stable, path-fixed launch resolver that generated launcher shims exec into instead of embedding a release-specific repo/interpreter path.
 exports:
   install.interface.install-info:
     access:
@@ -30,6 +31,12 @@ exports:
       allowed_callers:
       - install-assistant-tools
     source_interface: install.source.managed-runtime.interface.python-api
+  install.interface.launcher-entry:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+    source_interface: install.source.launcher-entry.interface.cli
 gateway:
   language: Python
   path: __init__.py
@@ -49,4 +56,8 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/managed-runtime.yaml
+  install.source.launcher-entry:
+    blueprint:
+      base: module-root
+      path: blueprints/launcher-entry.yaml
 version: 1

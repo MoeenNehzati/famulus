@@ -351,23 +351,32 @@ class CodexInstallTests(unittest.TestCase):
                 for path, (source, agent) in mapping.items():
                     expect_copy(path, source, agent)
 
-            # dispatcher launcher: generated file (not symlink), runs
-            # officina.dispatcher from the repo with an install-time fallback
-            # path. Windows has a separate .bat launcher.
+            # dispatcher launcher: generated file (not symlink) that execs
+            # into the stable managed-runtime resolver at launch time,
+            # instead of embedding this install's repo checkout or
+            # interpreter path (see officina.install.launcher_entry). Windows
+            # has a separate .bat launcher.
             if sys.platform == "win32":
                 self.assertFalse((install_bin / "dispatcher").exists())
                 launcher = install_bin / "dispatcher.bat"
                 self.assertTrue(launcher.is_file(), "dispatcher launcher missing")
                 launcher_text = launcher.read_text(encoding="utf-8")
                 self.assertIn("officina.dispatcher.cli", launcher_text)
-                self.assertIn(str(installed_path), launcher_text)
+                self.assertNotIn(str(installed_path), launcher_text)
+                self.assertIn("bootstrap", launcher_text)
+                self.assertIn("resolvers", launcher_text)
+                self.assertIn("launch.py", launcher_text)
             else:
                 launcher = install_bin / "dispatcher"
                 self.assertTrue(launcher.is_file(), "dispatcher launcher missing")
                 self.assertFalse(launcher.is_symlink(), "dispatcher must be a generated file")
                 self.assertTrue(os.access(launcher, os.X_OK), "dispatcher launcher not executable")
                 launcher_text = launcher.read_text(encoding="utf-8")
-                self.assertIn(f"os.environ.get('AI', '{installed_path}')", launcher_text)
+                self.assertNotIn(str(installed_path), launcher_text)
+                self.assertIn("os.execv(RESOLVER", launcher_text)
+                self.assertIn("bootstrap", launcher_text)
+                self.assertIn("resolvers", launcher_text)
+                self.assertIn("launch.py", launcher_text)
                 self.assertIn("officina.dispatcher.cli", launcher_text)
 
             if sys.platform != "win32":
@@ -400,11 +409,20 @@ class CodexInstallTests(unittest.TestCase):
             # plugin-mode ($AI unset), not whatever happens to be exported
             # in the environment running this test.
             launcher_env.pop("AI", None)
-            run_command(
+            # "dispatcher" now execs into the stable managed-runtime resolver
+            # (officina.install.launcher_entry) instead of running
+            # self-contained against this repo checkout. That resolver is
+            # only deployed/activated once the managed-runtime install flow
+            # is wired up (a separately scoped, later task), so it currently
+            # fails cleanly here rather than falling back to a repo-embedded
+            # interpreter path as it used to.
+            dispatcher_result = run_command(
                 platform_shell_command("dispatcher", ["--help"]),
                 env=launcher_env,
                 cwd=workdir,
+                check=False,
             )
+            self.assertNotEqual(dispatcher_result.returncode, 0)
             for agent in ("assistant", "collab", "coauthor"):
                 command = platform_shell_command(
                     agent,

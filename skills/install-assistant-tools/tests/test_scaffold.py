@@ -11,7 +11,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
 import _install_scaffold as scaffold
 import officina.common.certificate_records as certificate_records
-from _install_launcher._base_launcher import LauncherInstallerBase
 from install_test_utils import assert_default_bin_dir_matches_famulus_paths
 
 
@@ -67,21 +66,28 @@ def test_run_writes_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch)
     assert invoke_skill.is_file()
     if os.name != "nt":
         assert dispatcher.stat().st_mode & 0o111  # executable bits set
-    assert repr(str(repo_root)) in dispatcher.read_text()
-    assert repr(str(Path(sys.executable))) in dispatcher.read_text()
-    assert "os.execv(EXPECTED_PYTHON" in dispatcher.read_text()
-    assert repr(str(Path(sys.executable))) in invoke_skill.read_text()
-    assert "os.execv(EXPECTED_PYTHON" in invoke_skill.read_text()
-    assert "_agent_invoker.sh" not in invoke_skill.read_text(encoding="utf-8")
+    dispatcher_text = dispatcher.read_text()
+    invoke_text = invoke_skill.read_text(encoding="utf-8")
+    # Generated launchers resolve the active release at launch time through
+    # the stable managed-runtime resolver instead of embedding this repo
+    # checkout's path or this test process's own interpreter.
+    assert str(repo_root) not in dispatcher_text
+    assert sys.executable not in dispatcher_text
+    assert "bootstrap" in dispatcher_text and "resolvers" in dispatcher_text and "launch.py" in dispatcher_text
+    assert "os.execv(RESOLVER" in dispatcher_text
+    assert sys.executable not in invoke_text
+    assert "_agent_invoker.sh" not in invoke_text
 
 
 def test_run_writes_windows_dispatcher_and_invoke_skill_launchers(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(scaffold, "ensure_path_windows", lambda *args, **kwargs: None)
+    # A real Windows host always has LOCALAPPDATA set; resolving the
+    # resolver's fixed path needs it now that this monkeypatches sys.platform.
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     bin_dir = tmp_path / "bin"
-    python = LauncherInstallerBase._batch_path(Path(sys.executable))
 
     status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, dry_run=False)
 
@@ -92,7 +98,10 @@ def test_run_writes_windows_dispatcher_and_invoke_skill_launchers(tmp_path, monk
     assert dispatcher.is_file()
     assert invoke_skill.is_file()
     dispatcher_text = dispatcher.read_text(encoding="utf-8")
-    assert f'"{python}" -m officina.dispatcher.cli %*' in dispatcher_text
+    assert "-m officina.dispatcher.cli %*" in dispatcher_text
+    assert "bootstrap" in dispatcher_text and "resolvers" in dispatcher_text and "launch.py" in dispatcher_text
+    assert str(repo_root) not in dispatcher_text
+    assert sys.executable not in dispatcher_text
     assert "py -3" not in dispatcher_text
     assert "assistant --local --claude" in invoke_skill.read_text(encoding="utf-8")
     assert "OK: dispatcher" in output

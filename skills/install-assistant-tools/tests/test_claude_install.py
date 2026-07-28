@@ -150,7 +150,18 @@ class ClaudeInstallTests(unittest.TestCase):
                 env=plugin_env,
             )
             plugin_env = prepend_path(plugin_env, scaffold_bin)
-            run_command(["dispatcher", "--help"], env=plugin_env)
+            # "dispatcher" now execs into the stable managed-runtime resolver
+            # (officina.install.launcher_entry) instead of running
+            # self-contained against this repo checkout. That resolver is
+            # only deployed/activated once the managed-runtime install flow
+            # is wired up (a separately scoped, later task), so it currently
+            # fails cleanly here rather than falling back to a repo-embedded
+            # interpreter path as it used to.
+            dispatcher_result = run_command(
+                ["dispatcher", "--help"], env=plugin_env, check=False
+            )
+            self.assertNotEqual(dispatcher_result.returncode, 0)
+            self.assertIn("No such file or directory", dispatcher_result.stderr)
 
             # Claude exposes hook_started/hook_response events before auth
             # failure, so this is a real session-attachment check. Codex's
