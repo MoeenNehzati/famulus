@@ -923,9 +923,25 @@ git commit -m "fix(install-assistant-tools): generate launchers via a dependency
 
 ## Task 7: Wire `_phase_entry.py` to the managed runtime (feedback item 1)
 
+> **Naming correction (2026-07-28):** Tasks 4-5 landed with module id `install`
+> (not `officina-install` — this repo's blueprint graph enforces module id ==
+> directory basename), and Task 5's export is named to match its `install.interface.*`
+> sibling convention. Verify the exact current interface/export name in
+> `src/officina/install/blueprint.yaml` before writing `uses_interfaces` below
+> rather than trusting the `officina-install.interface.build-candidate-release`
+> name this section originally used.
+>
+> **Scope addition (2026-07-28):** Task 6's corrected design (dependency-free
+> resolver at `src/officina/install/resolvers/launch.py`, trust sidecar at
+> `trusted-roots.json`) explicitly deferred **deploying** those two files into
+> an activated release to this task — that deployment step was missing from
+> the step list below and is added as Step 3b. Without it, `dispatcher`/
+> `invoke-skill` remain non-functional after install even once this task's
+> other wiring lands.
+
 **Files:**
 - Modify: `skills/install-assistant-tools/_rtx/_phase_entry.py`
-- Modify (via `skill-maker`): `skills/install-assistant-tools/_rtx/blueprints/rtx-phase-entry.yaml` (add `uses_interfaces` for `officina-install.interface.build-candidate-release`)
+- Modify (via `skill-maker`): `skills/install-assistant-tools/_rtx/blueprints/rtx-phase-entry.yaml` (add `uses_interfaces` for the real `install.interface.*` export Task 5 created — check its exact name in `src/officina/install/blueprint.yaml` first)
 - Test: `skills/install-assistant-tools/tests/test_install.py`
 
 - [ ] **Step 1: Write failing test**
@@ -961,20 +977,43 @@ Expected: FAIL — `_phase_entry.py` doesn't call `build_candidate_release` yet.
 
 In `_phase_entry.py`, before invoking `scaffold.run`, call `officina.install.managed_runtime.build_candidate_release(...)`; on `ManagedRuntimeError`, return a nonzero typed failure without calling scaffold at all.
 
+- [ ] **Step 3b: Deploy the resolver and trust sidecar into the activated release (closes the Task 6 gap)**
+
+**Files:**
+- Modify: `src/officina/install/managed_runtime.py` (`build_candidate_release`, or wherever activation finalizes a release)
+- Test: `skills/install-assistant-tools/tests/test_install.py`
+
+After a candidate release is built and validated but as part of the same atomic activation `build_candidate_release`/`activate_release` performs, copy `src/officina/install/resolvers/launch.py` to `<runtime_root>/bootstrap/resolvers/v1/launch.py`, and write `trusted-roots.json` alongside it containing the same trusted-interpreter-roots list `build_candidate_release` already derives via `managed_runtime.uv_python_install_dir()` (per Task 5) — as a flat JSON list of absolute path strings, matching the shape `resolvers/launch.py`'s `_trusted_interpreter_roots()` already expects (verify the exact expected shape by reading that function before writing this step).
+
+Write a test that, after a full `build_candidate_release` + this deployment step, actually invokes the generated `dispatcher` shim (or the resolver directly, matching the shim's exact invocation form) via `subprocess.run` with a clean environment (no `PYTHONPATH` injected — reuse the pattern from `tests/test_officina_launcher_entry.py`'s existing clean-env end-to-end tests) and asserts it succeeds without any `ModuleNotFoundError`. This is the test that finally proves `dispatcher --help` works again after a real plugin-mode install — update the three tests that were changed to assert the "no resolver deployed yet" failure mode in Task 6 (`test_claude_install.py`, `test_codex_install.py`, `test_e2e_lifecycle.py::test_launchers_executable_after_install`) back to asserting success, now that deployment actually happens.
+
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python3 -m pytest -q skills/install-assistant-tools/tests/test_install.py skills/install-assistant-tools/tests/test_e2e_lifecycle.py -v`
-Expected: PASS, no regressions in the existing e2e lifecycle suite.
+Run: `python3 -m pytest -q skills/install-assistant-tools/tests/test_install.py skills/install-assistant-tools/tests/test_e2e_lifecycle.py skills/install-assistant-tools/tests/test_claude_install.py skills/install-assistant-tools/tests/test_codex_install.py -v`
+Expected: PASS, no regressions in the existing e2e lifecycle suite, and the three tests reverted in Step 3b now assert success again.
 
-- [ ] **Step 5: Blueprint update through `skill-maker`**
+- [ ] **Step 5: Blueprint update**
 
-Add `uses_interfaces: [{interface: officina-install.interface.build-candidate-release, version: 1}]` to `blueprints/rtx-phase-entry.yaml`; extend `officina-install`'s export `allowed_callers` if not already covering `install-assistant-tools-rtx`.
+Add `uses_interfaces` to `blueprints/rtx-phase-entry.yaml` referencing the real `install.interface.*` export name (check `src/officina/install/blueprint.yaml` for its current exact name — do not assume `build-candidate-release` or the `officina-install` module id, both are stale from before Tasks 4-5 landed); extend that export's `allowed_callers` in `src/officina/install/blueprint.yaml` if not already covering `install-assistant-tools`.
+
+- [ ] **Step 5c: Remove scaffold's own redundant, ambient-python-violating install path**
+
+**Bug found during Task 7 execution (2026-07-28):** `_install_scaffold.py`'s `install_python_packages` was never actually fixed by Task 5 — it still runs `subprocess.run([sys.executable, "-m", "pip", "install", *packages, ...])`, i.e. it still shells out to **ambient Python**, the exact violation feedback items 2/3 exist to eliminate. Task 5 only fixed how the package list is *parsed* (`declared_python_packages`), not *where* it installs to. Now that Step 3/3b wire `build_candidate_release` (which correctly provisions a managed venv and installs the same package set there) to run before `scaffold.run()`, `install_python_packages` is pure redundant work on top of an already-known-bad path.
+
+**Files:**
+- Modify: `skills/install-assistant-tools/_rtx/_install_scaffold.py` (delete `install_python_packages`, `pip_install_timeout_seconds`, and their call site in `run()`)
+- Test: `skills/install-assistant-tools/tests/test_scaffold.py` (delete/update tests that exercised `install_python_packages` directly; add a test confirming `run()` no longer calls `subprocess.run` with `sys.executable` at all)
+
+Delete `install_python_packages` and its call site in `scaffold.run()` (currently appended to the `workflows`/`LauncherInstallResult` list built there). Scaffold's job becomes: assume dependencies are already installed into the managed release venv by the `build_candidate_release` call `_phase_entry.py` now makes before invoking scaffold at all — it does not need its own install step. If scaffold needs to *verify* the managed release exists/is healthy before proceeding (rather than blindly trusting `_phase_entry.py`'s call order), add a lightweight existence check against `FamulusPaths.current_pointer`, not a second install.
+
+Run: `python3 -m pytest -q -o pythonpath=src skills/install-assistant-tools/tests/test_scaffold.py skills/install-assistant-tools/tests/test_install.py skills/install-assistant-tools/tests/test_e2e_lifecycle.py -v`
+Expected: PASS. Confirm via `grep -rn sys.executable skills/install-assistant-tools/_rtx/_install_scaffold.py` that the ambient-python invocation is gone.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add skills/install-assistant-tools/_rtx/_phase_entry.py skills/install-assistant-tools/_rtx/blueprints/rtx-phase-entry.yaml skills/install-assistant-tools/tests/test_install.py
-git commit -m "feat(install-assistant-tools): require a verified managed-runtime candidate before scaffold runs"
+git add skills/install-assistant-tools/_rtx/_phase_entry.py skills/install-assistant-tools/_rtx/blueprints/rtx-phase-entry.yaml skills/install-assistant-tools/_rtx/_install_scaffold.py skills/install-assistant-tools/tests/test_install.py skills/install-assistant-tools/tests/test_scaffold.py
+git commit -m "feat(install-assistant-tools): require a verified managed-runtime candidate before scaffold runs; remove scaffold's redundant ambient-python install path"
 ```
 
 ---
@@ -1013,6 +1052,41 @@ git commit -m "chore: sync blueprints and certify officina.install / install-ass
 
 ---
 
+## Task 9: `uv` bootstrap (blocks field deployment, not this plan's other tasks)
+
+> **Added 2026-07-28.** Task 7's hard-abort-before-scaffold semantics (a
+> `ManagedRuntimeError` — including "`uv` binary not found" — now stops the
+> entire install, not just the managed-runtime piece) means every fresh
+> machine without `uv` already on `PATH` will hard-fail immediately after
+> Tasks 1-8 land. The original frozen v4 plan (`docs/plans/osx_feedback_fix/01-installer-runtime.md`)
+> had a pinned-`uv`-download bootstrap step in its own Task 1; this rebase's
+> Task 1 dropped it (scope was narrowed to `FamulusPaths` only) and nothing
+> since has replaced it. This task is **not required to close out Tasks 1-8**
+> — dev/CI environments already have `uv` installed — but must land before
+> this installer is considered field-ready for a machine that has never had
+> `uv` on it.
+
+**Files:**
+- Create: `src/officina/install/uv_bootstrap.py`, `blueprints/uv-bootstrap.yaml`
+- Modify: `skills/install-assistant-tools/_rtx/_phase_entry.py` (call the bootstrap before `_build_managed_runtime_candidate`, only when `paths.uv_bin` doesn't already exist)
+- Test: `tests/test_officina_uv_bootstrap.py`
+
+- [ ] **Step 1: Write failing tests**
+
+Cover: downloads the pinned `uv` version from `install-info.toml`'s `bootstrap.uv_version` for the current platform (mock the network call — do not hit a real URL in tests except one explicit, opt-in, skip-guarded real-network integration test mirroring the pattern `tests/test_officina_launcher_entry.py` already used for real-`uv` end-to-end tests); verifies a checksum/signature if the upstream release provides one (research what `uv`'s real release artifacts offer before committing to a verification mechanism — don't invent one without confirming what's actually available); installs to `FamulusPaths.uv_bin`'s parent directory atomically (temp + rename, reusing `officina.common.atomic_files` per the established convention from Tasks 4-5); is a no-op if the pinned version is already present and its version string matches; never invokes ambient `python`/`python3` to perform the download (use `urllib.request` from the officina.install module's own process, which is fine — the constraint is about not invoking ambient *python as the install mechanism*, not about officina's own code never running under whatever Python launched the installer in the first place).
+
+- [ ] **Step 2-6: Standard TDD cycle** — write failing tests, implement, pass, add blueprint, commit.
+
+- [ ] **Step 7: Wire into `_phase_entry.py`**
+
+Before `_build_managed_runtime_candidate()` (Task 7's Step 3), check `paths.uv_bin.exists()`; if not, call the new bootstrap. On bootstrap failure, same hard-abort-with-typed-failure semantics as `ManagedRuntimeError` already has.
+
+- [ ] **Step 8: Update the "Known limitation" framing**
+
+Once this task lands, revisit Task 7's Step 3b tests and any documentation that currently says "requires `uv` already present" and confirm they still make sense (they may now be redundant with this task's own coverage, or may need to explicitly test the bootstrap-then-build sequence together).
+
+---
+
 ## Dependency order summary
 
 ```
@@ -1021,12 +1095,13 @@ Task 1 (FamulusPaths) ──┬──> Task 2 (Documents-path fix)      [shippab
                         │
                         ├──> Task 4 (officina.install scaffold + pointer)
                         │        └──> Task 5 (managed_runtime, real-manifest dependency sync)
-                        │                 └──> Task 7 (_phase_entry wiring)
+                        │                 └──> Task 7 (_phase_entry wiring, removes scaffold's redundant install path)
+                        │                          └──> Task 9 (uv bootstrap — blocks field deployment, not Tasks 1-8)
                         │
                         └──> Task 6 (stable-resolver launchers, needs current.json from Task 4)
 
 Task 3 (assistant closure) ── independent, only needs Task 2 landed first for a clean diff
-Task 8 (blueprint sync + certification) ── final gate, after all of the above
+Task 8 (blueprint sync + certification) ── final gate for Tasks 1-7
 ```
 
 ## Explicitly out of scope for this plan
