@@ -754,10 +754,28 @@ git commit -m "feat(officina.install): atomic one-batch dependency install from 
 
 ## Task 6: Stable-resolver launcher generation (feedback item 19)
 
+> **Design correction (2026-07-28):** The first attempt at this task used a
+> resolver script that imports `officina.install.runtime_pointer` at module
+> level. That import runs under whatever Python the shim's `#!/usr/bin/env
+> python3` shebang invokes — i.e. the user's ambient system Python — which is
+> exactly the invocation this program forbids elsewhere ("Product bootstrap
+> never invokes or mutates the user's ambient python or python3"). A resolver
+> that needs `officina` importable before it can even find the managed
+> interpreter defeats its own purpose. The corrected design below makes the
+> resolver a **dependency-free, stdlib-only script** that never imports
+> `officina`. It duplicates a minimal, read-only version of `runtime_pointer`'s
+> containment check inline — `officina.install.runtime_pointer` remains the
+> sole source of truth for *writing* `current.json` (at release-activation
+> time, with the full adversarially-verified check); the resolver only *reads*
+> it, using a deliberately narrow reimplementation. Task 6c below adds a
+> cross-check test that fails loudly if the two implementations' behavior
+> ever diverges on a shared table of test vectors, so the duplication doesn't
+> silently rot.
+
 **Files:**
-- Create: `src/officina/install/launcher_entry.py`, `blueprints/launcher-entry.yaml`
+- Create: `src/officina/install/launcher_entry.py` (a thin Python wrapper around the real resolver, used only for the shared test-vector cross-check — see Task 6c), `resolvers/launch.py` (the actual dependency-free resolver script deployed into every release, plain stdlib only), `blueprints/launcher-entry.yaml`
 - Modify: `skills/install-assistant-tools/_rtx/_install_launcher/_linux_launcher.py`, `_windows_launcher.py`
-- Test: `skills/install-assistant-tools/tests/test_install_launcher.py`
+- Test: `skills/install-assistant-tools/tests/test_install_launcher.py`, `tests/test_officina_launcher_entry.py`
 
 - [ ] **Step 1: Write failing tests**
 
@@ -766,7 +784,7 @@ def test_generated_dispatcher_does_not_embed_repo_root_or_sys_executable(tmp_rep
     content = _unix_dispatcher_content(repo_root=tmp_repo_root)
     assert str(tmp_repo_root) not in content
     assert sys.executable not in content
-    assert "launcher_entry" in content or "resolvers/v1/launch.py" in content
+    assert "resolvers/v1/launch.py" in content
 
 
 def test_generated_launcher_content_has_no_legacy_vendor_paths(tmp_repo_root):
@@ -782,37 +800,96 @@ def test_generated_launcher_content_has_no_legacy_vendor_paths(tmp_repo_root):
 Run: `python3 -m pytest -q skills/install-assistant-tools/tests/test_install_launcher.py -v`
 Expected: FAIL — current generated content embeds `repr(str(repo_root))` and `sys.executable`.
 
-- [ ] **Step 3: Implement `launcher_entry.py` resolver and update generators**
+- [ ] **Step 3: Implement the dependency-free resolver script**
+
+`src/officina/install/resolvers/launch.py` — this file is what actually gets deployed into `<runtime_root>/bootstrap/resolvers/v1/launch.py` (Task 7 wires the deployment); it must import nothing beyond the Python standard library, since it runs under ambient Python before any interpreter handoff:
 
 ```python
-"""Stable launcher entry point: reads current.json and execs into the
-active managed-runtime release's interpreter. Generated launcher shims
-invoke this file by a fixed path, never by embedding a release-specific
-interpreter or repo path."""
+#!/usr/bin/env python3
+"""Dependency-free launcher resolver: reads current.json and execs into the
+active managed-runtime release's interpreter. This file MUST NOT import
+officina or any third-party package — it runs under the user's ambient
+Python, before control transfers to the managed interpreter. It duplicates a
+minimal, read-only containment check from officina.install.runtime_pointer;
+that module remains the sole source of truth for validating and WRITING
+current.json. See tests/test_officina_launcher_entry.py for the cross-check
+that keeps this copy honest against the real implementation."""
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
 
-from officina.install.runtime_pointer import load_current_pointer, RuntimePointerError
+
+class ResolverError(Exception):
+    pass
+
+
+def _require_contained_or_trusted(path: Path, *, root: Path, trusted_roots: tuple[Path, ...], label: str) -> Path:
+    if not path.is_absolute():
+        raise ResolverError(f"{label} must be an absolute path: {path}")
+    resolved_root = root.resolve()
+    try:
+        path.parent.resolve().relative_to(resolved_root)
+    except ValueError as exc:
+        raise ResolverError(f"{label} must live under runtime_root: {path}") from exc
+    resolved_leaf = path.resolve()
+    allowed_roots = (resolved_root, *(r.resolve() for r in trusted_roots))
+    if not any(_is_relative_to(resolved_leaf, allowed) for allowed in allowed_roots):
+        raise ResolverError(f"{label} resolves outside runtime_root and all trusted roots: {path} -> {resolved_leaf}")
+    return resolved_leaf
+
+
+def _is_relative_to(path: Path, other: Path) -> bool:
+    try:
+        path.relative_to(other)
+        return True
+    except ValueError:
+        return False
+
+
+def _load_current_pointer(runtime_root: Path, *, trusted_roots: tuple[Path, ...]) -> Path:
+    pointer_path = runtime_root / "current.json"
+    if not pointer_path.exists():
+        raise ResolverError(f"no current.json at {pointer_path}")
+    payload = json.loads(pointer_path.read_text())
+    if payload.get("schema_version") != 1:
+        raise ResolverError(f"unsupported current.json schema_version: {payload.get('schema_version')!r}")
+    python_bin = Path(payload["python_bin"])
+    runtime_source = Path(payload["runtime_source"])
+    _require_contained_or_trusted(runtime_source, root=runtime_root, trusted_roots=(), label="runtime_source")
+    return _require_contained_or_trusted(python_bin, root=runtime_root, trusted_roots=trusted_roots, label="python_bin")
+
+
+def _trusted_interpreter_roots() -> tuple[Path, ...]:
+    # Deployment writes this resolver alongside a sibling data file
+    # (`trusted-roots.json`, a flat JSON list of absolute path strings)
+    # populated at release-activation time from the same
+    # managed_runtime._uv_python_install_dir() derivation officina.install
+    # uses — this resolver reads that file rather than re-deriving trust
+    # itself, since it must not shell out to `uv` or import anything.
+    trust_file = Path(__file__).resolve().parent / "trusted-roots.json"
+    if not trust_file.exists():
+        return ()
+    return tuple(Path(p) for p in json.loads(trust_file.read_text()))
 
 
 def main(argv: list[str]) -> int:
     runtime_root = Path(argv[0]).resolve().parents[3]  # bootstrap/resolvers/v1/launch.py -> runtime_root
     try:
-        pointer = load_current_pointer(runtime_root=runtime_root)
-    except RuntimePointerError as exc:
+        python_bin = _load_current_pointer(runtime_root, trusted_roots=_trusted_interpreter_roots())
+    except ResolverError as exc:
         print(f"famulus launcher: {exc}", file=sys.stderr)
         return 1
-    os.execv(str(pointer.python_bin), [str(pointer.python_bin), *argv[1:]])
+    os.execv(str(python_bin), [str(python_bin), *argv[1:]])
 
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))
 ```
 
-Update `_unix_dispatcher_content`/`_unix_invoke_skill_content` in `_linux_launcher.py` (and the Windows equivalent) to generate shims that invoke `<runtime_root>/bootstrap/resolvers/v1/launch.py <original-args>` instead of embedding `repr(str(repo_root))`/`repr(str(sys.executable))` directly.
+Update `_unix_dispatcher_content`/`_unix_invoke_skill_content` in `_linux_launcher.py` (and the Windows equivalent) to generate shims that invoke `<runtime_root>/bootstrap/resolvers/v1/launch.py <original-args>` directly (the shim itself may still need a `#!/usr/bin/env python3`-equivalent shebang or `exec` line, but it must embed only this FIXED resolver path — never `repo_root` or `sys.executable`). The resolver script above is what actually runs under that shebang; it has no imports beyond stdlib, so no ambient-`officina`-importability problem exists.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -823,16 +900,24 @@ Expected: PASS
 
 Read `_osx_launcher.py` again now that `_linux_launcher.py`'s content-generation no longer embeds platform-specific literal paths. If `OSXLauncherInstaller(LinuxLauncherInstaller)` with zero overrides is now correct (both are POSIX shells calling the same resolver), leave it as-is and add a one-line comment explaining why the empty subclass is intentional, not a stub. If `launchctl`/plist-specific behavior is still needed, that belongs to subplan 06 (macOS acceptance), not this task — do not scope-creep into LaunchAgent work here.
 
-- [ ] **Step 6: Blueprint updates through `skill-maker`**
+- [ ] **Step 6: Blueprint updates**
 
-Create `blueprints/launcher-entry.yaml` under `officina.install`. Update `blueprints/rtx-install-launcher.yaml` (or equivalent) to reference the resolver path contract.
+Create `blueprints/launcher-entry.yaml` under `officina.install` describing the resolver as a deployable artifact (not a Python-importable interface — it is deliberately import-free). Update `blueprints/rtx-install-launcher.yaml` (or equivalent) to reference the resolver path contract and note the `trusted-roots.json` sidecar file Task 7's deployment step must write alongside it.
+
+- [ ] **Step 6c: Cross-check test — keep the duplicated containment logic honest**
+
+**Test:** `tests/test_officina_launcher_entry.py`
+
+Import BOTH `officina.install.runtime_pointer._require_contained_or_trusted` (the real, adversarially-verified implementation) and `officina.install.resolvers.launch._require_contained_or_trusted` (the stdlib-only duplicate — the resolver script itself is not normally imported as a module, but for this test only, load it via `importlib.util.spec_from_file_location` so the test can call its internals directly without giving production code any reason to import it as a package). Build a shared table of test vectors covering every case the earlier security review exercised: contained real path (accept), contained-but-symlink-to-trusted-root (accept), symlink-to-untrusted-target (reject), symlink chain (reject if ultimately untrusted), dangling symlink (reject), parent-directory symlink escape (reject), non-absolute path (reject). Run every vector through BOTH implementations and assert they agree on accept/reject for every case. This test is the safeguard against the two copies silently drifting apart; if it ever fails, that's a signal the resolver's copy needs to be updated to match a change in the real implementation (or vice versa — investigate which one is right before "fixing" the test).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/officina/install/launcher_entry.py src/officina/install/blueprints/launcher-entry.yaml skills/install-assistant-tools/_rtx/_install_launcher/ skills/install-assistant-tools/tests/test_install_launcher.py
-git commit -m "fix(install-assistant-tools): generate launchers via stable resolver, not embedded repo/interpreter paths"
+git add src/officina/install/launcher_entry.py src/officina/install/resolvers/ src/officina/install/blueprints/launcher-entry.yaml skills/install-assistant-tools/_rtx/_install_launcher/ skills/install-assistant-tools/tests/test_install_launcher.py tests/test_officina_launcher_entry.py
+git commit -m "fix(install-assistant-tools): generate launchers via a dependency-free stable resolver, not embedded repo/interpreter paths"
 ```
+
+**Known interim state after this task:** until Task 7 lands (deployment of the resolver + `trusted-roots.json` sidecar into an activated release), no `current.json` exists in production and the generated shims will fail cleanly with a "no current.json" resolver error rather than silently doing the old (buggy) thing. This is an accepted, temporary regression window scoped to land alongside Task 7 in the same rollout — call this out explicitly in the Task 6 commit/PR description so it isn't mistaken for an unrelated bug if observed between the two commits landing.
 
 ---
 
