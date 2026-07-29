@@ -8,13 +8,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
+SRC_ROOT = REPO_ROOT / "src"
+if SRC_ROOT.exists() and str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
-BASE_TEST_DIRS = [
-    "tests",
-    "hooks/tests",
-]
+from officina.common.test_discovery import (
+    discover_repository_test_dirs,
+)
 
 PRECOMMIT_EXCLUDED_TEST_DIRS = {
     "skills/install-assistant-tools/_rtx/tests",
@@ -51,21 +52,13 @@ def _suite_pytest_args(name: str, *, verbose: bool) -> list[str]:
     return args
 
 
-def _discover_skill_test_dirs() -> list[str]:
-    skills_root = REPO_ROOT / "skills"
-    return sorted(
-        path.relative_to(REPO_ROOT).as_posix()
-        for pattern in ("*/tests", "*/_rtx/tests")
-        for path in skills_root.glob(pattern)
-        if path.is_dir()
-    )
-
-
 def _resolve_suite(name: str) -> list[str]:
     if name == "portability":
         test_dirs = list(PORTABILITY_TESTS)
     else:
-        test_dirs = [*BASE_TEST_DIRS, *_discover_skill_test_dirs()]
+        test_dirs = list(
+            discover_repository_test_dirs(REPO_ROOT, return_relative=True)
+        )
     if name == "precommit":
         test_dirs = [
             path for path in test_dirs if path not in PRECOMMIT_EXCLUDED_TEST_DIRS

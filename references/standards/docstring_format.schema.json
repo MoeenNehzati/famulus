@@ -2,15 +2,42 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "$id": "https://officina/references/standards/docstring_format.schema.json",
   "title": "Docstring Format Schema",
-  "description": "Validation schema for the declarative docstring_format policy used by the common docstring layer. Syntax is enforced by `docstring.standard.lark`; this schema models semantic policy and check shape.",
+  "description": "JSON Schema for the declarative docstring policy used by officina common docstring components.",
   "type": "object",
   "additionalProperties": true,
+  "required": ["docstring_format_version", "name", "callable"],
   "examples": [
     {
-      "docstring_format_version": 18,
+      "docstring_format_version": 24,
       "name": "docstring_format",
       "strict": true,
       "callable": {
+        "required_summary": true,
+        "required_sections": [
+          "Intent",
+          "Rationale",
+          "Pseudocode",
+          "Wraps"
+        ],
+        "summary_min_chars": 20,
+        "summary_max_chars": 240,
+        "rationale_min_chars": 45,
+        "rationale_max_chars": 1200,
+        "optional_sections": [
+          "Graph",
+          "Role",
+          "Phase",
+          "NonInferableCalls",
+          "Wraps",
+          "Owns",
+          "Parameters",
+          "Returns",
+          "Raises",
+          "Attributes",
+          "Pseudocode",
+          "CallsFromModule",
+          "InstantiationsFromModule"
+        ],
         "forbidden_summary_phrases": [
           "what does this do",
           "todo",
@@ -19,14 +46,27 @@
           "implement me",
           "to be implemented"
         ],
-        "required_summary": true,
-        "required_sections": ["Graph", "Role"],
-        "optional_sections": ["Phase", "NonInferableCalls", "Wraps", "Owns", "Pseudocode", "CallsFromModule", "InstantiationsFromModule"],
+        "min_pseudocode_steps": 1,
+        "forbidden_rationale_phrases": [
+          "this callable exists to implement the behavior described in its contract documentation",
+          "this callable exists to implement the behavior described in the contract documentation",
+          "implemented as described in the contract documentation",
+          "implemented as described in contract documentation"
+        ],
+        "forbidden_pseudocode_phrases": [
+          "execute the implementation steps described in source code",
+          "implementation steps described in source code",
+          "same as source code"
+        ],
+        "dependency_reference_sections": [
+          "Pseudocode"
+        ],
         "pseudocode": {
           "section": "Pseudocode",
+          "min_steps": 1,
           "max_steps": 8,
           "max_step_chars": 140,
-          "max_total_chars": 640,
+          "max_total_chars": 640
         },
         "module_dependencies": {
           "calls_section": "CallsFromModule",
@@ -34,62 +74,99 @@
           "allow_implicit": true,
           "validate_declared_calls": true,
           "validate_declared_instantiations": true,
-          "report_unlisted_calls": true,
-          "report_unlisted_instantiations": true,
-          "ignore_non_external": true,
-          "validate_dependency_targets_resolved": true,
-          "enforce_declared_dependency_pseudocode_coverage": true,
-          "enforce_observed_dependency_pseudocode_coverage": true
-        },
-        "wraps": {
-        },
+            "report_unlisted_calls": true,
+            "report_unlisted_instantiations": true,
+            "ignore_non_external": true,
+            "validate_dependency_targets_resolved": true,
+            "enforce_declared_dependency_pseudocode_coverage": false,
+            "enforce_observed_dependency_pseudocode_coverage": false
+          },
         "ownership": {
           "section": "Owns",
           "section_required": false,
           "allows_multiple": false,
           "single_owner_per_callable": true,
           "owner_resolution": "module:Ownable",
-        }
-      },
-      "pipeline": {
-        "required": false,
-        "required_sections": ["Phases", "PhaseMembers"],
-        "optional_sections": ["PhaseEdges", "NonInferableCalls", "Description"]
-      },
-      "module": {
-        "required": false,
-        "required_summary": true,
-        "required_sections": ["Includes"],
-        "optional_sections": ["Workflow", "Traces", "Description", "Ownable"],
-        "ownership_registry": {
-          "section": "Ownable",
-          "allows_multiple": true
-        }
-      }
-    },
-    {
-      "name": "docstring_format",
-      "strict": true,
-      "callable": {
-        "required_sections": ["Graph", "Role"],
-        "optional_sections": ["Wraps", "Owns", "Phase", "NonInferableCalls"],
-        "ownership": {
-          "allows_multiple": true,
-          "cross_file_enabled": true,
           "cross_file": {
             "enabled": true
           }
         }
       },
       "pipeline": {
-        "required": true
+        "required": false,
+        "required_sections": [
+          "Phases",
+          "PhaseMembers"
+        ],
+        "optional_sections": [
+          "PhaseEdges",
+          "NonInferableCalls",
+          "Description"
+        ]
       },
       "module": {
-        "required_sections": ["Includes"],
+        "required": false,
+        "required_summary": true,
+        "required_sections": [
+          "Includes"
+        ],
+        "optional_sections": [
+          "Workflow",
+          "Traces",
+          "Description",
+          "Ownable"
+        ],
         "ownership_registry": {
-          "allows_multiple": true,
           "section": "Ownable",
+          "allows_multiple": true
         }
+      },
+      "check_categories": {
+        "formatting": [
+          "docstring.formatting",
+          "docstring.empty",
+          "docstring.invalid-owns",
+          "docstring.owns-too-many",
+          "docstring.invalid-edge",
+          "docstring.invalid-section",
+          "docstring.duplicate-section",
+          "docstring.invalid-wraps",
+          "docstring.invalid-module-dependency",
+          "docstring.invalid-pseudocode-ref",
+          "docstring.invalid-pseudocode",
+          "docstring.pseudocode-colon",
+          "docstring.pseudocode-flow",
+          "docstring.pseudocode-indent",
+          "docstring.pseudocode-step-min",
+          "docstring.pseudocode-step-length",
+          "docstring.pseudocode-step-cap",
+          "docstring.pseudocode-total-length",
+          "docstring.section-missing",
+          "docstring.summary-missing",
+          "docstring.summary-forbidden",
+          "docstring.summary-length",
+          "docstring.rationale-forbidden",
+          "docstring.rationale-length",
+          "docstring.pseudocode-forbidden",
+          "docstring.missing-graphpipeline",
+          "docstring.undeclared-pseudocode-dependency",
+          "docstring.ambiguous-pseudocode-dependency"
+        ],
+        "behavioral": [
+          "docstring.invalid-wraps",
+          "docstring.missing",
+          "docstring.module-missing",
+          "docstring.unknown-owner",
+          "docstring.crossfile-owner-disabled",
+          "docstring.module-dependency-not-observed",
+          "docstring.module-dependency-undocumented",
+          "docstring.module-dependency-unresolved",
+          "docstring.wraps-incomplete",
+          "docstring.wraps-unresolved-target",
+          "docstring.owning-single",
+          "docstring.pseudocode-dependency-missing",
+          "docstring.pseudocode-dependency-undocumented"
+        ]
       }
     }
   ],
@@ -97,312 +174,187 @@
     "docstring_schema_version": {
       "type": "integer",
       "minimum": 1,
-      "description": "Legacy alias kept for compatibility with earlier schema naming. Prefer docstring_format_version.",
-      "examples": [7]
+    "description": "Legacy alias kept for compatibility with earlier schema naming.",
+    "examples": [23]
     },
     "docstring_format_version": {
       "type": "integer",
       "minimum": 1,
-      "description": "Current policy-version number for this format file.",
-      "examples": [18]
+      "description": "Current policy version for this docstring format contract.",
+      "examples": [23]
     },
     "name": {
       "type": "string",
-      "description": "Stable contract identifier used by tooling and diagnostics. Usually `docstring_format`.",
+      "description": "Stable contract identifier used by diagnostics and tooling.",
       "examples": ["docstring_format"]
     },
     "strict": {
       "type": "boolean",
-      "description": "When true, required-section checks are enforced and reported as warnings.",
-      "examples": [true]
+      "description": "When true, required-section checks are enforced and reported as warnings."
     },
     "callable": {
       "type": "object",
       "additionalProperties": true,
-        "description": "Validation contract for callable/class docstrings.",
-        "properties": {
-            "forbidden_summary_phrases": {
-              "type": "array",
-              "description": "Words or phrases not allowed in callable short summaries.",
-              "items": {
-                "type": "string"
-              },
-              "examples": [["what does this do", "todo", "tbd", "placeholder", "implement me", "to be implemented"]]
-            },
-            "required_summary": {
-              "type": "boolean",
-              "description": "Require a short non-empty one-line summary in each callable docstring.",
-              "examples": [true]
-            },
+      "properties": {
+        "required_summary": {
+          "type": "boolean"
+        },
+        "summary_min_chars": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "summary_max_chars": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rationale_min_chars": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rationale_max_chars": {
+          "type": "integer",
+          "minimum": 0
+        },
         "required_sections": {
           "type": "array",
-          "description": "Sections that must exist in callable docstrings under strict mode.",
-          "items": {
-            "type": "string"
-          },
-          "examples": [["Graph", "Role"]]
+          "items": {"type": "string"}
         },
         "optional_sections": {
           "type": "array",
-          "description": "Optional callable sections that parser can capture and export. Examples are preserved as opaque text and interpreted by tools by name.",
-          "items": {
-            "type": "string"
-          },
-              "examples": [["Phase", "NonInferableCalls", "Wraps", "Owns", "Pseudocode", "CallsFromModule", "InstantiationsFromModule"]]
+          "items": {"type": "string"}
         },
-        "examples": {
-          "type": "object",
-          "additionalProperties": true,
-          "description": "Suggested callable-level docstring formats.",
-          "examples": [
-            {
-              "docstring": "Compute deterministic cache key states for one node.\n\nGraph\n-----\nReturn canonical hashes for node state and metadata snapshots.\n\nRole\n----\nOwns key material normalization and hash formatting responsibilities."
-            },
-            {
-          "docstring": "Normalize fields before hashing raw node state.\n\nGraph\n-----\nConvert dataclass-backed payload into an ordered tuple used by downstream digest functions.\n\nRole\n----\nOwns low-level canonicalization and null-handling semantics for hashing."
+        "forbidden_summary_phrases": {
+          "type": "array",
+          "items": {"type": "string"}
         },
-        {
-              "docstring": "Build deterministic hash states.\n\nGraph\n-----\nEmit ordered hash tuples for downstream checks.\n\nPseudocode\n----------\n1) if missing fields -> initialize defaults\n2) for each normalized field\n   if field absent -> skip\n3) return ordered tuple\n"
-            }
-          ]
+        "forbidden_rationale_phrases": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "forbidden_pseudocode_phrases": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "min_pseudocode_steps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dependency_reference_sections": {
+          "type": "array",
+          "items": {"type": "string"}
         },
         "pseudocode": {
           "type": "object",
           "additionalProperties": true,
-          "description": "Policy for parsing callable `Pseudocode` blocks.",
           "properties": {
-            "section": {
-              "type": "string",
-              "description": "Section name that contains compact execution-script documentation."
-            },
-            "max_steps": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Maximum number of pseudocode steps to accept in a callable docstring."
-            },
-            "max_step_chars": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Maximum number of characters per pseudocode step text."
-            },
-            "max_total_chars": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Maximum total characters across all pseudocode step texts."
-            },
-          },
-          "required": []
-        },
-        "wraps": {
-          "type": "object",
-          "additionalProperties": true,
-          "description": "Policy for parsing the `Wraps` section.",
-          "properties": {
-          },
-          "required": []
+            "section": {"type": "string"},
+            "min_steps": {"type": "integer", "minimum": 0},
+            "max_steps": {"type": "integer", "minimum": 0},
+            "max_step_chars": {"type": "integer", "minimum": 0},
+            "max_total_chars": {"type": "integer", "minimum": 0}
+          }
         },
         "module_dependencies": {
           "type": "object",
           "additionalProperties": true,
-          "description": "Policy mapping callable section names for module dependencies.",
           "properties": {
-            "calls_section": {
-              "type": "string",
-              "description": "Section name listing module calls referenced by this callable."
-            },
-            "instantiates_section": {
-              "type": "string",
-              "description": "Section name listing module-level instantiations."
-            },
-            "allow_implicit": {
-              "type": "boolean",
-              "description": "Whether dependency entries may be marked as implicit."
-            },
-            "validate_declared_calls": {
-              "type": "boolean",
-              "description": "Require each explicit CallsFromModule declaration to match at least one observed module-level call."
-            },
-            "validate_declared_instantiations": {
-              "type": "boolean",
-              "description": "Require each explicit InstantiationsFromModule declaration to match at least one observed module-level instantiation."
-            },
-            "report_unlisted_calls": {
-              "type": "boolean",
-              "description": "Report module-level calls observed in code that are not listed in CallsFromModule."
-            },
-            "report_unlisted_instantiations": {
-              "type": "boolean",
-              "description": "Report module-level instantiations observed in code that are not listed in InstantiationsFromModule."
-            },
-            "ignore_non_external": {
-              "type": "boolean",
-              "description": "Ignore non-imported symbols when inferring module-level calls and instantiations."
-            },
-            "validate_dependency_targets_resolved": {
-              "type": "boolean",
-              "description": "Require declared dependency entries to resolve to module imports or local symbols."
-            },
-            "enforce_declared_dependency_pseudocode_coverage": {
-              "type": "boolean",
-              "description": "Require each declared module dependency to be referenced in the callable pseudocode."
-            },
-            "enforce_observed_dependency_pseudocode_coverage": {
-              "type": "boolean",
-              "description": "Require observed module dependencies in code to be referenced in callable pseudocode."
-            }
-          },
-          "required": []
+            "calls_section": {"type": "string"},
+            "instantiates_section": {"type": "string"},
+            "allow_implicit": {"type": "boolean"},
+            "validate_declared_calls": {"type": "boolean"},
+            "validate_declared_instantiations": {"type": "boolean"},
+            "report_unlisted_calls": {"type": "boolean"},
+            "report_unlisted_instantiations": {"type": "boolean"},
+            "ignore_non_external": {"type": "boolean"},
+            "validate_dependency_targets_resolved": {"type": "boolean"},
+            "enforce_declared_dependency_pseudocode_coverage": {"type": "boolean"},
+            "enforce_observed_dependency_pseudocode_coverage": {"type": "boolean"}
+          }
         },
         "ownership": {
           "type": "object",
           "additionalProperties": true,
-          "description": "Policy for `Owns` sections and owner reference parsing.",
           "properties": {
-            "section": {
-              "type": "string",
-              "description": "Section name that holds ownership declarations."
-            },
-            "section_required": {
-              "type": "boolean",
-              "description": "If true, `Owns` must appear when strict validation runs."
-            },
-            "allows_multiple": {
-              "type": "boolean",
-              "description": "Whether multiple ownership lines are allowed for one callable."
-            },
-            "single_owner_per_callable": {
-              "type": "boolean",
-              "description": "Whether parser/validator treats ownership as singular semantic responsibility."
-            },
-            "owner_resolution": {
-              "type": "string",
-              "description": "Resolution strategy for resolving owner ids. Supports `module:Ownable`."
-            },
-            "cross_file_enabled": {
-              "type": "boolean",
-              "description": "Global compatibility switch for cross-file ownership declarations."
-            },
+            "section": {"type": "string"},
+            "section_required": {"type": "boolean"},
+            "allows_multiple": {"type": "boolean"},
+            "single_owner_per_callable": {"type": "boolean"},
+            "owner_resolution": {"type": "string"},
             "cross_file": {
               "type": "object",
               "additionalProperties": true,
-              "description": "Cross-file owner resolution options.",
               "properties": {
-                "enabled": {
-                  "type": "boolean",
-                  "description": "Whether cross-file owner resolution is allowed for this policy."
-                }
-              },
-              "required": []
+                "enabled": {"type": "boolean"}
+              }
             }
-          },
-          "required": []
+          }
         }
-      },
-      "required": []
+      }
     },
     "pipeline": {
       "type": "object",
       "additionalProperties": true,
-      "description": "Validation contract for module-level pipeline docs (`GraphPipeline`).",
       "properties": {
-        "required": {
-          "type": "boolean",
-          "description": "Whether `GraphPipeline` must be present in module docs."
-        },
+        "required": {"type": "boolean"},
         "required_sections": {
           "type": "array",
-          "description": "Sections required inside `GraphPipeline` when the block exists.",
-          "items": {
-            "type": "string"
-          },
-          "examples": [["Phases", "PhaseMembers"]]
+          "items": {"type": "string"}
         },
         "optional_sections": {
           "type": "array",
-          "description": "Optional sections inside `GraphPipeline`.",
-          "items": {
-            "type": "string"
-          },
-          "examples": [["PhaseEdges", "NonInferableCalls", "Description"]]
-        },
-        "examples": {
-          "type": "object",
-          "additionalProperties": true,
-          "description": "Pipeline contract examples.",
-          "examples": [
-            {
-              "required_sections": ["Phases", "PhaseMembers"],
-              "optional_sections": ["PhaseEdges", "NonInferableCalls", "Description"],
-              "required": false
-            },
-            {
-              "required_sections": ["Phases", "PhaseMembers"],
-              "required": true
-            }
-          ]
+          "items": {"type": "string"}
         }
-      },
-      "required": []
+      }
     },
     "module": {
       "type": "object",
       "additionalProperties": true,
-      "description": "Validation contract for module-level documentation and ownership registry.",
       "properties": {
-        "required": {
-          "type": "boolean",
-          "description": "Whether module docstring itself is required for validation runs."
-        },
-        "required_summary": {
-          "type": "boolean",
-          "description": "Whether module summary is mandatory when module docs are required."
-        },
+        "required": {"type": "boolean"},
+        "required_summary": {"type": "boolean"},
         "required_sections": {
           "type": "array",
-          "description": "Sections required in module docstrings.",
-          "items": {
-            "type": "string"
-          },
-          "examples": [["Includes"]]
+          "items": {"type": "string"}
         },
         "optional_sections": {
           "type": "array",
-          "description": "Optional module sections for richer context in docs/visualization.",
-          "items": {
-            "type": "string"
-          },
-          "examples": [["Workflow", "Traces", "Description", "Ownable"]]
+          "items": {"type": "string"}
         },
         "ownership_registry": {
           "type": "object",
           "additionalProperties": true,
-          "description": "Configuration for parsing module-owned registry entries.",
           "properties": {
-            "section": {
-              "type": "string",
-              "description": "Section name that contains ownable registry entries."
-            },
-            "allows_multiple": {
-              "type": "boolean",
-              "description": "Whether multiple ownable entries are allowed."
-            }
-          },
-          "required": [],
-          "examples": [
-            {
-              "section": "Ownable",
-              "allows_multiple": true
-            }
-          ]
+            "section": {"type": "string"},
+            "allows_multiple": {"type": "boolean"}
+          }
         }
-      },
-      "required": []
+      }
+    },
+    "check_categories": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "formatting": {
+          "type": "array",
+          "items": {
+            "type": ["string", "object"],
+            "properties": {
+              "code": {"type": "string"},
+              "intent": {"type": "string"}
+            }
+          }
+        },
+        "behavioral": {
+          "type": "array",
+          "items": {
+            "type": ["string", "object"],
+            "properties": {
+              "code": {"type": "string"},
+              "intent": {"type": "string"}
+            }
+          }
+        }
+      }
     }
-  },
-  "required": [
-    "name",
-    "callable",
-    "pipeline",
-    "module"
-  ]
+  }
 }

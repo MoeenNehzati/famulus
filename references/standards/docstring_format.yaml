@@ -1,7 +1,8 @@
 # Human-readable format contract consumed by `officina.common.docstring`.
 #
-# Legacy compatibility location. Primary canonical contract now lives at
-# `docstring.standard.yaml`. Keep this file in sync if referenced directly.
+# Candidate-policy location. Primary implementation contract prefers
+# `docstring.standard.candidate.yaml` when present. Keep this file in sync if
+# referenced directly.
 #
 # Purpose
 #   This file contains only policy choices for docstring comparison and
@@ -13,7 +14,7 @@
 #   `docstring_format_version` should be bumped whenever this policy shape
 #   changes in a way that can affect docstring quality checks.
 #   `name` is used as an identifier in diagnostics and docs.
-docstring_format_version: 18
+docstring_format_version: 24
 # Stable contract identifier used by tooling outputs and diagnostics.
 name: docstring_format
 # If true, required settings are enforced and surface as warnings.
@@ -29,6 +30,12 @@ examples: {}
 callable:
   # A short top-of-docstring explanation is required.
   required_summary: true
+  # Keep summaries concise but meaningful for quick intent.
+  summary_min_chars: 20
+  summary_max_chars: 240
+  # Rationale should carry semantic purpose, not just a restatement.
+  rationale_min_chars: 45
+  rationale_max_chars: 1200
   # Catch placeholder phrases that do not help readers understand behavior.
   forbidden_summary_phrases:
     - "what does this do"
@@ -37,28 +44,56 @@ callable:
     - "placeholder"
     - "implement me"
     - "to be implemented"
+  forbidden_rationale_phrases:
+    - "this callable exists to implement the behavior described in its contract documentation"
+    - "this callable exists to implement the behavior described in the contract documentation"
+    - "implemented as described in the contract documentation"
+    - "implemented as described in contract documentation"
+    - "callable semantics explicit and auditable"
+  forbidden_pseudocode_phrases:
+    - "execute the implementation steps described in source code"
+    - "implementation steps described in source code"
+    - "same as source code"
 
   # Sections that must be present for every validated callable docstring.
-  # `Graph` captures intent and `Role` captures semantic function.
+  # `Intent` is the behavioral goal, and `Rationale` is the reason it does it
+  # (preferred over older `Graph`/`Role` naming).
   required_sections:
-    - Graph
-    - Role
+    - Intent
+    - Rationale
+    - Pseudocode
+    - Wraps
 
   # Optional callable sections that are retained by the parser for tooling.
   optional_sections:
+    - Graph
+    - Role
     - Phase
     - NonInferableCalls
     - Wraps
     - Owns
+    - Parameters
+    - Returns
+    - Raises
+    - Attributes
     - Pseudocode
     - CallsFromModule
     - InstantiationsFromModule
 
   pseudocode:
     section: Pseudocode
+    min_steps: 1
     max_steps: 8
     max_step_chars: 140
     max_total_chars: 640
+  dependency_reference_sections:
+    - Pseudocode
+  # Dependency references in pseudocode are explicit markers.
+  # Supported forms:
+  #   - ``@name``
+  #   - ``@name(...)``
+  #   - ``@SectionName:name``
+  #   - ``@SectionName:name(...)``
 
   # Separate sections for what this callable consumes from module scope.
   module_dependencies:
@@ -71,12 +106,13 @@ callable:
     report_unlisted_instantiations: true
     ignore_non_external: true
     validate_dependency_targets_resolved: true
-    enforce_declared_dependency_pseudocode_coverage: true
-    enforce_observed_dependency_pseudocode_coverage: true
+    enforce_declared_dependency_pseudocode_coverage: false
+    enforce_observed_dependency_pseudocode_coverage: false
 
   # Wrapper-exposure policy for ``Wraps`` entries.
   # Accepted example:
   #   target -> preprocess: <text>; postprocess: <text>; fixed_arguments: <text>
+  # Use ``none`` when a callable is not a wrapper.
   wraps:
 
   # Ownership policy for ``Owns`` entries.
@@ -138,6 +174,8 @@ check_categories:
   formatting:
     - docstring.formatting
   behavioral:
+    - code: docstring.invalid-wraps
+      intent: Wraps line could not be parsed.
     - code: docstring.missing
       intent: Callable/class/function body has no docstring.
     - code: docstring.module-missing
@@ -156,6 +194,8 @@ check_categories:
       intent: Wraps entry lacks required semantic details.
     - code: docstring.wraps-unresolved-target
       intent: Wraps target cannot be grounded to imports/local symbols/observed calls.
+    - code: docstring.owning-single
+      intent: Callable declares multiple owners while only one is allowed.
     - code: docstring.pseudocode-dependency-missing
       intent: Declared module dependency is not mentioned in pseudocode.
     - code: docstring.pseudocode-dependency-undocumented

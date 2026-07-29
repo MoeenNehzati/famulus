@@ -10,14 +10,37 @@ from __future__ import annotations
 
 from typing import Iterable
 from textwrap import dedent
+from collections import Counter
+import re
 
 from .docstring_parser import (
     ParserIssue,
+    _section_header,
+    parse_pseudocode_dependency_ref,
     parse_graph_block,
     parse_ownership_reference,
     validate_edge_expression,
 )
 from .docstring_schema import load_docstring_schema
+
+_DEPENDENCY_REFERENCE_MARKER_SCAN_RE = re.compile(
+    r"(?<![A-Za-z0-9_])@(?:(?P<section>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*)?(?P<name>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)(?:\([^)]*\))?"
+)
+
+
+def _split_dependency_reference(value: str) -> tuple[str | None, str]:
+    """Split ``section:name`` into ``(section, name)`` while preserving bare names."""
+    raw = (value or "").strip()
+    if not raw:
+        return None, ""
+
+    if ":" not in raw:
+        return None, raw
+
+    section, name = [part.strip() for part in raw.split(":", 1)]
+    if not section or not name:
+        return None, raw
+    return section, name
 
 
 def _collect_invalid_edges(lines: Iterable[str], section_name: str) -> tuple[ParserIssue, ...]:
@@ -27,18 +50,80 @@ def _collect_invalid_edges(lines: Iterable[str], section_name: str) -> tuple[Par
         raw = line.strip()
         if not raw:
             continue
-        if "->" in raw and not validate_edge_expression(raw):
-            issues.append(
-                ParserIssue(
-                    code="docstring.invalid-edge",
-                    message=(
-                        f"Invalid edge {raw!r}; expected "
-                        "syntax 'source -> target'."
-                    ),
-                    section=section_name,
-                    severity="warning",
-                )
+        if validate_edge_expression(raw):
+            continue
+        issues.append(
+            ParserIssue(
+                code="docstring.invalid-edge",
+                message=(
+                    f"Invalid edge {raw!r}; expected "
+                    "syntax 'source -> target'."
+                ),
+                section=section_name,
+                severity="warning",
             )
+        )
+    return tuple(issues)
+
+
+_VALID_SECTION_UNDERLINE_CHARS = {"-", "="}
+
+
+def _looks_like_section_underline(raw: str) -> bool:
+    """Return ``True`` for NumPy-style section underlines."""
+    text = raw.strip()
+    return bool(text) and len(set(text)) == 1 and text[0] in _VALID_SECTION_UNDERLINE_CHARS
+
+
+def _collect_section_header_issues(lines: list[str], section_names: frozenset[str]) -> tuple[ParserIssue, ...]:
+    """Collect unknown and duplicate section declarations from raw docstring lines."""
+    issues: list[ParserIssue] = []
+    seen_sections: list[str] = []
+
+    for index in range(len(lines)):
+        header = _section_header(
+            lines=lines,
+            index=index,
+            section_names=section_names,
+        )
+        if header is None:
+            raw = lines[index].strip()
+            if (
+                raw
+                and not raw.startswith("-")
+                and index + 1 < len(lines)
+                and _looks_like_section_underline(lines[index + 1])
+                and raw not in section_names
+            ):
+                issues.append(
+                    ParserIssue(
+                        code="docstring.invalid-section",
+                        message=(
+                            f"Unknown docstring section '{raw}' at line {index + 1}; "
+                            "did you mean a standard section?"
+                        ),
+                        section=raw,
+                        severity="warning",
+                    )
+                )
+            continue
+        seen_sections.append(header)
+
+    for section_name, count in Counter(seen_sections).items():
+        if count <= 1:
+            continue
+        issues.append(
+            ParserIssue(
+                code="docstring.duplicate-section",
+                message=(
+                    f"Docstring section '{section_name}' is declared {count} times; "
+                    "keep one definition."
+                ),
+                section=section_name,
+                severity="warning",
+            )
+        )
+
     return tuple(issues)
 
 
@@ -106,6 +191,226 @@ def _collect_invalid_module_dependencies(
     return tuple(issues)
 
 
+def _collect_invalid_dependency_marker_syntax(
+    lines: Iterable[object],
+    section: str,
+    *,
+    allowed_scopes: tuple[str, ...] | None = None,
+) -> tuple[ParserIssue, ...]:
+    """Collect malformed dependency reference markers in configured sections."""
+    issues: list[ParserIssue] = []
+    valid_scopes = {scope for scope in (allowed_scopes or ()) if scope}
+    for line in lines:
+        text = str(getattr(line, "text", line)).strip()
+        if not text:
+            continue
+        for marker_match in _DEPENDENCY_REFERENCE_MARKER_SCAN_RE.finditer(text):
+            marker = marker_match.group(0).rstrip(".,;:")
+            if parse_pseudocode_dependency_ref(marker) is None:
+                issues.append(
+                    ParserIssue(
+                        code="docstring.invalid-pseudocode-ref",
+                        message=(
+                            f"Invalid dependency reference marker in {text!r}; "
+                            "use @<name>, @<section:name>, and optional @<name>(...)."
+                        ),
+                        section=section,
+                        severity="warning",
+                    )
+                )
+                continue
+
+            parsed_scope, _ = parse_pseudocode_dependency_ref(marker)
+            if parsed_scope is not None and parsed_scope not in valid_scopes:
+                issues.append(
+                    ParserIssue(
+                        code="docstring.invalid-pseudocode-ref",
+                        message=(
+                            f"Dependency marker scope {parsed_scope!r} is not a known "
+                            f"dependency declaration section. Known scopes: "
+                            f"{', '.join(sorted(valid_scopes)) or '<none>'}."
+                        ),
+                        section=section,
+                        severity="warning",
+                    )
+                )
+    return tuple(issues)
+
+
+def _dependency_reference_section_lines(
+    section_names: tuple[str, ...],
+    spec,
+    pseudocode_section: str,
+) -> dict[str, tuple[str, ...]]:
+    """Collect raw lines for each dependency-reference section."""
+    lines_by_section: dict[str, tuple[str, ...]] = {}
+
+    for section_name in section_names:
+        section_lines = getattr(spec, "sections", {}).get(section_name)
+        if not section_lines:
+            continue
+        if section_name == pseudocode_section:
+            if not getattr(spec, "pseudocode_steps", None):
+                continue
+            lines_by_section[section_name] = tuple(
+                str(getattr(step, "text", "")) for step in spec.pseudocode_steps
+            )
+            continue
+        lines_by_section[section_name] = tuple(section_lines)
+
+    return lines_by_section
+
+
+def _collect_pseudocode_dependency_entity_issues(
+    spec,
+    *,
+    section: str,
+    enforce_declared_coverage: bool,
+    declaration_sections: tuple[str, ...] | None = None,
+) -> tuple[ParserIssue, ...]:
+    """Collect coverage and declaration consistency for explicit dependency refs."""
+    issues: list[ParserIssue] = []
+
+    declared: list[tuple[str, str]] = []
+    seen_declared: set[tuple[str, str]] = set()
+    declared_by_name: dict[str, list[str]] = {}
+    scoped_refs: set[tuple[str, str]] = set()
+    unscoped_refs: set[str] = set()
+
+    def _add_declared(source: str, value: str | None) -> None:
+        candidate = (value or "").strip()
+        if not candidate:
+            return
+        key = (source, candidate)
+        if key in seen_declared:
+            return
+        declared.append(key)
+        seen_declared.add(key)
+        declared_by_name.setdefault(candidate, [])
+        if source not in declared_by_name[candidate]:
+            declared_by_name[candidate].append(source)
+
+    def _add_reference(ref: str | None) -> None:
+        section_name, name = _split_dependency_reference(ref or "")
+        if not name:
+            return
+        if section_name is None:
+            unscoped_refs.add(name)
+            return
+        scoped_refs.add((section_name, name))
+
+    normalized_declaration_sections: tuple[str, ...] = (
+        "CallsFromModule",
+        "InstantiationsFromModule",
+        "Wraps",
+        "NonInferableCalls",
+    )
+    if declaration_sections is not None:
+        cleaned_sections = tuple(section.strip() for section in declaration_sections)
+        if cleaned_sections:
+            normalized_declaration_sections = tuple(
+                section for section in cleaned_sections if section
+            ) + normalized_declaration_sections[len(cleaned_sections) :]
+
+    calls_section = normalized_declaration_sections[0]
+    instantiates_section = normalized_declaration_sections[1]
+    wraps_section = normalized_declaration_sections[2]
+    noninferable_section = normalized_declaration_sections[3]
+
+    for dependency in getattr(spec, "module_calls", ()):
+        _add_declared(calls_section, getattr(dependency, "name", ""))
+    for dependency in getattr(spec, "module_instantiates", ()):
+        _add_declared(instantiates_section, getattr(dependency, "name", ""))
+    for dependency in getattr(spec, "wraps", ()):
+        _add_declared(wraps_section, getattr(dependency, "target", ""))
+    for source, target in getattr(spec, "noninferable_calls", []):
+        _add_declared(noninferable_section, source)
+        _add_declared(noninferable_section, target)
+
+    for ref in getattr(spec, "pseudocode_dependency_refs", ()):
+        _add_reference(ref)
+
+    if not scoped_refs and not unscoped_refs:
+        return tuple(issues)
+
+    for ref, ref_sources in (
+        (ref, set([source for source in declared_by_name.get(ref, [])]))
+        for ref in unscoped_refs
+    ):
+        if not ref_sources:
+            issues.append(
+                ParserIssue(
+                    code="docstring.undeclared-pseudocode-dependency",
+                    message=(
+                        f"Dependency reference {ref!r} is not declared in "
+                        f"{', '.join(normalized_declaration_sections)}."
+                    ),
+                    section=section,
+                    severity="warning",
+                )
+            )
+            continue
+        if len(ref_sources) > 1:
+            issues.append(
+                ParserIssue(
+                    code="docstring.ambiguous-pseudocode-dependency",
+                    message=(
+                        f"Dependency reference {ref!r} is ambiguous across "
+                        f"{', '.join(sorted(ref_sources))}; add a section scope, e.g. "
+                        f"@{calls_section}:{ref}."
+                    ),
+                    section=section,
+                    severity="warning",
+                )
+            )
+
+    for section_name, name in sorted(scoped_refs):
+        sources = declared_by_name.get(name, [])
+        if section_name not in sources:
+            options = ", ".join(sources or ["<none>"])
+            issues.append(
+                ParserIssue(
+                    code="docstring.undeclared-pseudocode-dependency",
+                    message=(
+                        f"Dependency reference {section_name + ':' + name!r} is not declared "
+                        f"under {section_name!r}; known sources are {options}."
+                    ),
+                    section=section,
+                    severity="warning",
+                )
+            )
+
+    if not enforce_declared_coverage:
+        return tuple(issues)
+
+    for source, name in declared:
+        coverage_sources = declared_by_name.get(name, [])
+        has_scope_ref = (source, name) in scoped_refs
+        has_unscoped_ref = name in unscoped_refs and len(coverage_sources) == 1
+        if has_scope_ref or has_unscoped_ref:
+            continue
+
+        expected = (
+            f"{source}:{name}"
+            if len(coverage_sources) > 1
+            else f"{name} (or scoped with {source}:)"
+        )
+        issues.append(
+            ParserIssue(
+                code="docstring.pseudocode-dependency-missing",
+                message=(
+                    f"Declared dependency '{name}' is not referenced in dependency "
+                    "markers; "
+                    f"add @{expected}."
+                ),
+                section=section,
+                severity="warning",
+            )
+        )
+
+    return tuple(issues)
+
+
 def _collect_invalid_ownership(
     lines: Iterable[str],
     *,
@@ -136,6 +441,7 @@ def _collect_invalid_pseudocode(
     steps: list,
     *,
     section: str,
+    min_steps: int,
     max_steps: int,
     max_step_chars: int,
     max_total_chars: int,
@@ -146,8 +452,22 @@ def _collect_invalid_pseudocode(
     keyword appears at the start of a line.
     """
     issues: list[ParserIssue] = []
-    if not steps:
+    if min_steps < 1 and not steps:
         return ()
+    if len(steps) < min_steps:
+        issues.append(
+            ParserIssue(
+                code="docstring.pseudocode-step-min",
+                message=(
+                    f"Pseudocode has {len(steps)} steps, fewer than required minimum "
+                    f"{min_steps}."
+                ),
+                section=section,
+                severity="warning",
+            )
+        )
+        if not steps:
+            return tuple(issues)
 
     requires_clause = {"if", "elif", "for", "for_each", "while", "with"}
     block_controls = {
@@ -362,22 +682,25 @@ def _collect_invalid_pseudocode(
     return tuple(issues)
 
 
-def _collect_forbidden_summary_phrases(
-    summary: str,
+def _collect_forbidden_phrases(
+    text: str,
     *,
-    forbidden_summary_phrases: tuple[str, ...],
+    forbidden_phrases: tuple[str, ...],
+    code: str,
+    section: str,
+    message_prefix: str,
 ) -> tuple[ParserIssue, ...]:
-    """Collect warnings when the summary contains prohibited placeholder phrases."""
-    if not summary or not forbidden_summary_phrases:
+    """Collect warnings for prohibited placeholder phrasing in free text."""
+    if not text or not forbidden_phrases:
         return ()
 
-    normalized_summary = summary.lower()
+    normalized_text = text.lower()
     matched: list[str] = []
-    for phrase in forbidden_summary_phrases:
+    for phrase in forbidden_phrases:
         phrase_text = phrase.strip().lower()
         if not phrase_text:
             continue
-        if phrase_text in normalized_summary:
+        if phrase_text in normalized_text:
             matched.append(phrase)
 
     if not matched:
@@ -386,12 +709,108 @@ def _collect_forbidden_summary_phrases(
     unique = ", ".join(sorted(set(matched)))
     return (
         ParserIssue(
-            code="docstring.summary-forbidden",
-            message=f"Summary contains placeholder phrasing that is not allowed: {unique}",
-            section="summary",
+            code=code,
+            message=(
+                f"{message_prefix} contains placeholder phrasing that is not allowed: "
+                f"{unique}"
+            ),
+            section=section,
             severity="warning",
         ),
     )
+
+
+def _collect_forbidden_summary_phrases(
+    summary: str,
+    *,
+    forbidden_summary_phrases: tuple[str, ...],
+) -> tuple[ParserIssue, ...]:
+    """Collect warnings when the summary contains prohibited placeholder phrases."""
+    return _collect_forbidden_phrases(
+        text=summary,
+        forbidden_phrases=forbidden_summary_phrases,
+        code="docstring.summary-forbidden",
+        section="summary",
+        message_prefix="Summary",
+    )
+
+
+def _collect_forbidden_rationale_phrases(
+    rationale: str,
+    *,
+    forbidden_rationale_phrases: tuple[str, ...],
+) -> tuple[ParserIssue, ...]:
+    """Collect warnings when rationale contains prohibited placeholder phrases."""
+    return _collect_forbidden_phrases(
+        text=rationale,
+        forbidden_phrases=forbidden_rationale_phrases,
+        code="docstring.rationale-forbidden",
+        section="Rationale",
+        message_prefix="Rationale",
+    )
+
+
+def _collect_forbidden_pseudocode_phrases(
+    steps: list,
+    *,
+    forbidden_pseudocode_phrases: tuple[str, ...],
+) -> tuple[ParserIssue, ...]:
+    """Collect warnings when pseudocode text contains prohibited placeholder phrases."""
+    joined = " ".join(step.text for step in steps if getattr(step, "text", ""))
+    return _collect_forbidden_phrases(
+        text=joined,
+        forbidden_phrases=forbidden_pseudocode_phrases,
+        code="docstring.pseudocode-forbidden",
+        section="Pseudocode",
+        message_prefix="Pseudocode",
+    )
+
+
+def _collect_text_length(
+    text: str,
+    *,
+    code: str,
+    section: str,
+    min_chars: int,
+    max_chars: int,
+    label: str,
+) -> tuple[ParserIssue, ...]:
+    """Collect readable length checks for concise textual docstring fields."""
+    if not text:
+        return ()
+
+    value = text.strip()
+    if not value:
+        return ()
+
+    count = len(value)
+    issues: list[ParserIssue] = []
+    if min_chars > 0 and count < min_chars:
+        issues.append(
+            ParserIssue(
+                code=code,
+                message=(
+                    f"{label} text has {count} chars, below minimum {min_chars}. "
+                    f"Expand this section with concrete behavior."
+                ),
+                section=section,
+                severity="warning",
+            )
+        )
+    if max_chars > 0 and count > max_chars:
+        issues.append(
+            ParserIssue(
+                code=code,
+                message=(
+                    f"{label} text has {count} chars, above maximum {max_chars}. "
+                    "Trim to keep docs concise."
+                ),
+                section=section,
+                severity="warning",
+            )
+        )
+
+    return tuple(issues)
 
 
 def validate_pipeline_docstring(docstring: str) -> tuple[ParserIssue, ...]:
@@ -505,6 +924,11 @@ def check_graph_docstring(docstring: str) -> tuple[ParserIssue, ...]:
         )
         return tuple(issues)
 
+    dedented = dedent(docstring)
+    lines = dedented.splitlines()
+    section_names = frozenset(schema_rules.section_names())
+    issues.extend(_collect_section_header_issues(lines, section_names=section_names))
+
     spec = parse_graph_block(docstring)
     if schema_rules.callable.required_summary and not spec.summary:
         issues.append(
@@ -518,6 +942,32 @@ def check_graph_docstring(docstring: str) -> tuple[ParserIssue, ...]:
         _collect_forbidden_summary_phrases(
             spec.summary,
             forbidden_summary_phrases=schema_rules.callable.forbidden_summary_phrases,
+        )
+    )
+    issues.extend(
+        _collect_text_length(
+            text=spec.summary,
+            code="docstring.summary-length",
+            section="summary",
+            min_chars=schema_rules.callable.summary_min_chars,
+            max_chars=schema_rules.callable.summary_max_chars,
+            label="Summary",
+        )
+    )
+    issues.extend(
+        _collect_forbidden_rationale_phrases(
+            spec.rationale or "",
+            forbidden_rationale_phrases=schema_rules.callable.forbidden_rationale_phrases,
+        )
+    )
+    issues.extend(
+        _collect_text_length(
+            text=spec.rationale or "",
+            code="docstring.rationale-length",
+            section="Rationale",
+            min_chars=schema_rules.callable.rationale_min_chars,
+            max_chars=schema_rules.callable.rationale_max_chars,
+            label="Rationale",
         )
     )
 
@@ -571,9 +1021,50 @@ def check_graph_docstring(docstring: str) -> tuple[ParserIssue, ...]:
         _collect_invalid_pseudocode(
             spec.pseudocode_steps,
             section=schema_rules.callable.pseudocode.section,
+            min_steps=schema_rules.callable.min_pseudocode_steps,
             max_steps=schema_rules.callable.pseudocode.max_steps,
             max_step_chars=schema_rules.callable.pseudocode.max_step_chars,
             max_total_chars=schema_rules.callable.pseudocode.max_total_chars,
+        )
+    )
+    issues.extend(
+        _collect_forbidden_pseudocode_phrases(
+            spec.pseudocode_steps,
+            forbidden_pseudocode_phrases=schema_rules.callable.forbidden_pseudocode_phrases,
+        )
+    )
+    dependency_reference_sections = schema_rules.callable.dependency_reference_sections
+    section_lines = _dependency_reference_section_lines(
+        dependency_reference_sections,
+        spec,
+        pseudocode_section=schema_rules.callable.pseudocode.section,
+    )
+    for section_name in dependency_reference_sections:
+        if section_name not in section_lines:
+            continue
+        issues.extend(
+            _collect_invalid_dependency_marker_syntax(
+                section_lines[section_name],
+                section=section_name,
+                allowed_scopes=(
+                    dependency_rules.calls_section,
+                    dependency_rules.instantiates_section,
+                    "Wraps",
+                    "NonInferableCalls",
+                ),
+            )
+        )
+    issues.extend(
+        _collect_pseudocode_dependency_entity_issues(
+            spec,
+            section="DependencyRefs",
+            enforce_declared_coverage=dependency_rules.enforce_declared_dependency_pseudocode_coverage,
+            declaration_sections=(
+                dependency_rules.calls_section,
+                dependency_rules.instantiates_section,
+                "Wraps",
+                "NonInferableCalls",
+            ),
         )
     )
     if not ownership_rules.allows_multiple and len(spec.owns) > 1:

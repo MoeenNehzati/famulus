@@ -3,7 +3,8 @@
 IDENT: /[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*/
 
 edge: name WS* "->" WS* name
-wraps: name [WS* "->" WS* wrap_fields]
+wraps: WRAP_NONE | name [WS* "->" WS* wrap_fields]
+WRAP_NONE: /[Nn][oO][nN][eE]/
 wrap_fields: wrap_field (WS* ";" WS* wrap_field)*
 wrap_field: wrap_key WS* ":" WS* wrap_value
 wrap_key: /[A-Za-z_][A-Za-z0-9_ ]*/
@@ -11,8 +12,8 @@ wrap_value: /[^;\n]+/
 module_dependency: name call_args? implicit_marker? dependency_why
 call_args: /\([^)]*\)/
 implicit_marker: "[implicit]"
-DEPS_REASON: /[^-\n][^\n]*/
-dependency_why: "->" DEPS_REASON
+DEPS_RATIONALE: /[^-\n][^\n]*/
+dependency_why: "->" DEPS_RATIONALE
 name: IDENT
 
 %import common.WS

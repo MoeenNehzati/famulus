@@ -206,12 +206,15 @@ class WrapSpec:
         Operations run after delegation.
     fixed_arguments : str
         Fixed arguments this wrapper enforces while delegating.
+    is_wrapper : bool
+        ``False`` when the wraps declaration is the explicit non-wrapper marker.
     """
 
     target: str
     preprocess: str = ""
     postprocess: str = ""
     fixed_arguments: str = ""
+    is_wrapper: bool = True
 
 
 @dataclass(frozen=True)
@@ -254,9 +257,12 @@ class FunctionSpec:
     Parameters
     ----------
     role : str | None
-        Role hint extracted from ``Role`` text.
+        Role hint extracted from ``Intent`` text.
+        ``Role`` is still read as a compatibility fallback.
     phase : str | None
         Declared ``Phase`` for this callable.
+    rationale : str | None
+        Why the callable exists, parsed from ``Rationale``.
     noninferable_calls : list[tuple[str, str]]
         Explicit ``NonInferableCalls`` edges.
     wraps : list[WrapSpec]
@@ -269,6 +275,8 @@ class FunctionSpec:
         Module object constructions referenced in ``InstantiationsFromModule``.
     pseudocode_steps : list[PseudocodeStep]
         Parsed compact execution steps from the configurable pseudocode section.
+    pseudocode_dependency_refs : list[str]
+        Parsed dependency markers (scoped or unscoped) from configured sections.
     summary : str
         Compact free-text summary extracted from top-level lines.
     signature : str
@@ -278,6 +286,7 @@ class FunctionSpec:
     """
 
     role: str | None = None
+    rationale: str | None = None
     phase: str | None = None
     noninferable_calls: list[tuple[str, str]] = field(default_factory=list)
     wraps: list[WrapSpec] = field(default_factory=list)
@@ -285,6 +294,7 @@ class FunctionSpec:
     module_calls: list[ModuleDependencyRef] = field(default_factory=list)
     module_instantiates: list[ModuleDependencyRef] = field(default_factory=list)
     pseudocode_steps: list[PseudocodeStep] = field(default_factory=list)
+    pseudocode_dependency_refs: list[str] = field(default_factory=list)
     summary: str = ""
     signature: str = ""
     sections: dict[str, list[str]] = field(default_factory=dict)
@@ -389,7 +399,7 @@ def _extract_dependency_parts(
     for node in tree.scan_values(lambda value: isinstance(value, Token)):
         if node.type in {"name", "IDENT"}:
             name = str(node)
-        elif node.type == "DEPS_REASON":
+        elif node.type in {"DEPS_RATIONALE", "DEPS_REASON"}:
             why = str(node).strip()
         elif node.type == "IMPLICIT":
             marker = str(node)
@@ -401,6 +411,88 @@ def _extract_dependency_parts(
 
 
 _PSEUDOCODE_PREFIX_RE = re.compile(r"^(\([^)]+\)|\d+[.)]|[a-zA-Z][.)])\s+")
+_PSEUDOCODE_DEPENDENCY_REF_RE = re.compile(
+    r"@(?:(?P<section>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*)?(?P<name>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)(?:\([^)]*\))?"
+)
+
+
+def parse_pseudocode_dependency_ref(
+    raw_ref: str,
+) -> tuple[str | None, str] | None:
+    """Parse one dependency marker from docstring text.
+
+    Supported forms:
+
+    - ``@name``
+    - ``@name(...)``
+    - ``@section:name``
+    - ``@section:name(...)``
+    """
+    if not raw_ref:
+        return None
+    match = _PSEUDOCODE_DEPENDENCY_REF_RE.fullmatch(raw_ref.strip())
+    if match is None:
+        return None
+    section = match.group("section")
+    name = (match.group("name") or "").strip()
+    if not name:
+        return None
+    return (section.strip() if section else None, name)
+
+
+def _normalize_pseudocode_dependency_ref(raw_ref: str) -> str:
+    """Return canonical dependency ref key used by checker-side consistency checks."""
+    parsed = parse_pseudocode_dependency_ref(raw_ref)
+    if parsed is None:
+        return raw_ref.strip()
+    section, name = parsed
+    return f"{section}:{name}" if section else name
+
+
+def normalize_pseudocode_dependency_ref(raw_ref: str) -> str:
+    """Public wrapper for pseudocode dependency-ref canonicalization.
+
+    This keeps parser and checker aligned on one reference representation
+    (``name`` or ``section:name`` with bracket-argument tails removed).
+    """
+    return _normalize_pseudocode_dependency_ref(raw_ref)
+
+
+def extract_pseudocode_dependency_refs_from_text(text: str) -> tuple[str, ...]:
+    """Extract canonical references from a section text line."""
+    raw = (text or "").strip()
+    if not raw:
+        return ()
+
+    refs: list[str] = []
+    seen: set[str] = set()
+    for match in _PSEUDOCODE_DEPENDENCY_REF_RE.finditer(raw):
+        parsed = parse_pseudocode_dependency_ref(match.group(0))
+        if parsed is None:
+            continue
+        section, name = parsed
+        ref = f"{section}:{name}" if section else name
+        if ref in seen:
+            continue
+        seen.add(ref)
+        refs.append(ref)
+    return tuple(refs)
+
+
+def extract_pseudocode_dependency_refs_from_lines(
+    lines: Iterable[object],
+) -> tuple[str, ...]:
+    """Extract canonical dependency references from several section lines."""
+    refs: list[str] = []
+    seen: set[str] = set()
+
+    for raw in lines:
+        for ref in extract_pseudocode_dependency_refs_from_text(str(raw or "")):
+            if ref in seen:
+                continue
+            seen.add(ref)
+            refs.append(ref)
+    return tuple(refs)
 
 
 def parse_ownership_reference(
@@ -517,12 +609,31 @@ def _parse_pseudocode_section(
     return steps
 
 
+def _extract_pseudocode_dependency_refs(
+    steps: Iterable[PseudocodeStep],
+) -> list[str]:
+    """Collect explicit ``@name`` references from pseudocode steps."""
+    refs: list[str] = []
+    seen: set[str] = set()
+    for step in steps:
+        if not isinstance(step, PseudocodeStep):
+            continue
+        for ref in extract_pseudocode_dependency_refs_from_lines((step.text,)):
+            if ref in seen:
+                continue
+            seen.add(ref)
+            refs.append(ref)
+    return refs
+
+
 def _parse_edge(line: str) -> tuple[str, str] | None:
     """Parse ``source -> target`` edge syntax."""
     match = _parse_with_lark(_EDGE_PARSER, line)
     if match is None:
         return None
     names = _token_values(match, "name")
+    if not names:
+        names = _token_values(match, "IDENT")
     if len(names) != 2:
         return None
     return names[0], names[1]
@@ -534,9 +645,26 @@ def _parse_wrap_entry(line: str) -> WrapSpec | None:
     cleaned = _clean_item(line)
     if not cleaned:
         return None
+    if cleaned.lower() in {"none", "no", "not a wrapper", "not-wrapper", "not wrapper", "n/a", "na"}:
+        return WrapSpec(
+            target="",
+            preprocess="",
+            postprocess="",
+            fixed_arguments="",
+            is_wrapper=False,
+        )
     parse_tree = _parse_with_lark(_WRAP_PARSER, cleaned)
     if parse_tree is None:
         return None
+
+    if _token_values(parse_tree, "WRAP_NONE"):
+        return WrapSpec(
+            target="",
+            preprocess="",
+            postprocess="",
+            fixed_arguments="",
+            is_wrapper=False,
+        )
 
     names = _token_values(parse_tree, "name")
     if not names:
@@ -568,6 +696,8 @@ def _parse_wraps(lines: Iterable[str]) -> tuple[list[WrapSpec], list[str]]:
             raw_text = raw.strip()
             if raw_text:
                 invalid.append(raw_text)
+            continue
+        if not parsed.is_wrapper:
             continue
         wraps.append(parsed)
     return wraps, invalid
@@ -716,6 +846,7 @@ def parse_graph_block(docstring: str, *, section_names: frozenset[str] | None = 
     schema_rules = load_docstring_schema()
     pseudocode_rules = schema_rules.callable.pseudocode
     module_dependency_rules = schema_rules.module_dependencies
+    dependency_reference_sections = schema_rules.callable.dependency_reference_sections
 
     section: str | None = None
     section_lines: list[str] = []
@@ -758,11 +889,20 @@ def parse_graph_block(docstring: str, *, section_names: frozenset[str] | None = 
     if summary_lines:
         spec.summary = " ".join(line.strip() for line in summary_lines if line.strip())
 
+    intent_lines = spec.sections.get("Intent", [])
     role_lines = spec.sections.get("Role", [])
+    if intent_lines:
+        role_lines = intent_lines + role_lines
     for line in role_lines:
         cleaned = _clean_item(line)
         if cleaned:
             spec.role = f"{spec.role} {cleaned}".strip() if spec.role else cleaned
+
+    rationale_lines = spec.sections.get("Rationale", [])
+    for line in rationale_lines:
+        cleaned = _clean_item(line)
+        if cleaned:
+            spec.rationale = f"{spec.rationale} {cleaned}".strip() if spec.rationale else cleaned
 
     if "Phase" in spec.sections:
         for item in spec.sections["Phase"]:
@@ -783,6 +923,17 @@ def parse_graph_block(docstring: str, *, section_names: frozenset[str] | None = 
     spec.pseudocode_steps = _parse_pseudocode_section(
         pseudocode_lines,
     )
+    spec.pseudocode_dependency_refs = _extract_pseudocode_dependency_refs(
+        spec.pseudocode_steps
+    )
+    for section_name in dependency_reference_sections:
+        if section_name == pseudocode_rules.section:
+            continue
+        for ref in extract_pseudocode_dependency_refs_from_lines(
+            spec.sections.get(section_name, ())
+        ):
+            if ref not in spec.pseudocode_dependency_refs:
+                spec.pseudocode_dependency_refs.append(ref)
     for dependency in spec.sections.get(module_dependency_rules.calls_section, []):
         parsed = _parse_module_dependency_ref(
             dependency,
@@ -994,4 +1145,8 @@ __all__ = [
     "validate_pipeline_docstring",
     "parse_ownership_reference",
     "parse_ownable_registry",
+    "parse_pseudocode_dependency_ref",
+    "normalize_pseudocode_dependency_ref",
+    "extract_pseudocode_dependency_refs_from_text",
+    "extract_pseudocode_dependency_refs_from_lines",
 ]

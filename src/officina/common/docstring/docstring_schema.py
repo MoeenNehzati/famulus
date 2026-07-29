@@ -20,8 +20,13 @@ from pathlib import Path
 
 import yaml
 
-# Canonical policy filename.
+# Canonical policy filenames.
+# - Candidate policy files are preferred so repository-level standard validation does
+#   not treat them as canonical `.standard.yaml` artifacts.
+# - Legacy/compatibility fallback remains supported.
+DOCSTRING_STANDARD_CANDIDATE_FILE = "docstring.standard.candidate.yaml"
 DOCSTRING_STANDARD_FILE = "docstring.standard.yaml"
+DOCSTRING_LEGACY_FORMAT_FILE = "docstring_format.yaml"
 
 
 @dataclass(frozen=True)
@@ -59,6 +64,7 @@ class PseudocodeDocstringSchema:
     """Rules for parsing callable pseudocode documentation sections."""
 
     section: str = "Pseudocode"
+    min_steps: int = 1
     max_steps: int = 8
     max_step_chars: int = 140
     max_total_chars: int = 640
@@ -77,10 +83,23 @@ class CallableDocstringSchema:
     """
 
     required_summary: bool = True
-    required_sections: tuple[str, ...] = ("Graph", "Role")
-    optional_sections: tuple[str, ...] = ("Phase", "NonInferableCalls", "Wraps", "Owns")
+    required_sections: tuple[str, ...] = ("Intent", "Rationale")
+    summary_min_chars: int = 20
+    summary_max_chars: int = 240
+    rationale_min_chars: int = 45
+    rationale_max_chars: int = 1200
+    optional_sections: tuple[str, ...] = (
+        "Graph",
+        "Role",
+        "Phase",
+        "NonInferableCalls",
+        "Wraps",
+        "Owns",
+    )
     pseudocode: PseudocodeDocstringSchema = field(default_factory=PseudocodeDocstringSchema)
+    dependency_reference_sections: tuple[str, ...] = ("Pseudocode",)
     ownership: OwnershipConfig = field(default_factory=OwnershipConfig)
+    min_pseudocode_steps: int = 1
     forbidden_summary_phrases: tuple[str, ...] = (
         "what does this do",
         "todo",
@@ -89,10 +108,26 @@ class CallableDocstringSchema:
         "implement me",
         "to be implemented",
     )
+    forbidden_rationale_phrases: tuple[str, ...] = (
+        "this callable exists to implement the behavior described in its contract documentation",
+        "this callable exists to implement the behavior described in the contract documentation",
+        "implemented as described in the contract documentation",
+        "implemented as described in contract documentation",
+    )
+    forbidden_pseudocode_phrases: tuple[str, ...] = (
+        "execute the implementation steps described in source code",
+        "implementation steps described in source code",
+        "same as source code",
+    )
 
     def section_names(self) -> tuple[str, ...]:
         """Return all sections that are meaningful for callable parsing/validation."""
-        return self.required_sections + self.optional_sections + self.pseudocode.section_names()
+        sections: list[str] = []
+        sections.extend(self.required_sections)
+        sections.extend(self.optional_sections)
+        sections.extend(self.pseudocode.section_names())
+        sections.extend(self.dependency_reference_sections)
+        return tuple(dict.fromkeys(sections).keys())
 
 
 @dataclass(frozen=True)
@@ -318,16 +353,24 @@ def resolve_docstring_schema_path(path: str | Path | None = None) -> Path | None
     Priority:
 
     - explicit ``path`` argument when provided,
-    - ``references/docstring.standard.yaml``
-    - ``references/standards/docstring.standard.yaml``
+    - ``references/docstring.standard.candidate.yaml`` (candidate),
+    - ``references/docstring.standard.yaml`` (legacy canonical),
+    - ``references/docstring_format.yaml`` (legacy alias),
+    - ``references/standards/docstring.standard.candidate.yaml`` (candidate),
+    - ``references/standards/docstring.standard.yaml`` (legacy canonical),
+    - ``references/standards/docstring_format.yaml`` (legacy alias)
     """
     if path is not None:
         return Path(path)
 
     def _resolve_candidates(base: Path) -> list[Path]:
         return [
+            base / DOCSTRING_STANDARD_CANDIDATE_FILE,
             base / DOCSTRING_STANDARD_FILE,
+            base / DOCSTRING_LEGACY_FORMAT_FILE,
+            base / "standards" / DOCSTRING_STANDARD_CANDIDATE_FILE,
             base / "standards" / DOCSTRING_STANDARD_FILE,
+            base / "standards" / DOCSTRING_LEGACY_FORMAT_FILE,
         ]
 
     module_path = Path(__file__).resolve()
@@ -335,14 +378,11 @@ def resolve_docstring_schema_path(path: str | Path | None = None) -> Path | None
         for candidate in _resolve_candidates(parent / "references"):
             if candidate.exists():
                 return candidate
-        for candidate in _resolve_candidates(parent / "references" / "standards"):
-            if candidate.exists():
-                return candidate
     return None
 
 
 def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
-    """Load and map docstring format rules from ``references/.../docstring.standard.yaml``.
+    """Load and map docstring format rules from ``references/.../docstring.standard[.candidate].yaml``.
 
     On malformed files or missing schema validation support, this returns the
     conservative default dataclass values so callers can continue operating in a
@@ -418,6 +458,9 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
     if isinstance(pseudocode_values, dict):
         pseudocode_config = PseudocodeDocstringSchema(
             section=_safe_str(pseudocode_values.get("section"), pseudocode_config.section),
+            min_steps=_safe_int(
+                pseudocode_values.get("min_steps"), pseudocode_config.min_steps
+            ),
             max_steps=_safe_int(
                 pseudocode_values.get("max_steps"), pseudocode_config.max_steps
             ),
@@ -433,19 +476,36 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
 
     pipeline_values = schema_value.get("pipeline", {})
     module_values = schema_value.get("module", {})
+    callable_defaults = CallableDocstringSchema()
+    ownership_defaults = OwnershipConfig()
 
     return DocstringSchema(
         name=_safe_str(schema_value.get("name"), "docstring_format"),
         strict=_safe_bool(schema_value.get("strict"), True),
         callable=CallableDocstringSchema(
-            required_summary=_safe_bool(callable_values.get("required_summary"), True),
+            required_summary=_safe_bool(
+                callable_values.get("required_summary"),
+                callable_defaults.required_summary,
+            ),
             required_sections=_safe_str_tuple(
                 callable_values.get("required_sections"),
-                ("Graph", "Role"),
+                callable_defaults.required_sections,
             ),
             optional_sections=_safe_str_tuple(
                 callable_values.get("optional_sections"),
-                ("Phase", "NonInferableCalls", "Wraps", "Owns", "Pseudocode"),
+                (
+                    "Graph",
+                    "Role",
+                    "Phase",
+                    "NonInferableCalls",
+                    "Wraps",
+                    "Owns",
+                    "Pseudocode",
+                ),
+            ),
+            dependency_reference_sections=_safe_str_tuple(
+                callable_values.get("dependency_reference_sections"),
+                ("Pseudocode",),
             ),
             pseudocode=pseudocode_config,
             forbidden_summary_phrases=_safe_str_tuple(
@@ -459,7 +519,47 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
                     "to be implemented",
                 ),
             ),
-            ownership=_parse_ownership_config(callable_values.get("ownership"), default=OwnershipConfig()),
+            min_pseudocode_steps=_safe_int(
+                callable_values.get("min_pseudocode_steps"),
+                pseudocode_config.min_steps,
+            ),
+            summary_min_chars=_safe_int(
+                callable_values.get("summary_min_chars"),
+                callable_defaults.summary_min_chars,
+            ),
+            summary_max_chars=_safe_int(
+                callable_values.get("summary_max_chars"),
+                callable_defaults.summary_max_chars,
+            ),
+            rationale_min_chars=_safe_int(
+                callable_values.get("rationale_min_chars"),
+                callable_defaults.rationale_min_chars,
+            ),
+            rationale_max_chars=_safe_int(
+                callable_values.get("rationale_max_chars"),
+                callable_defaults.rationale_max_chars,
+            ),
+            forbidden_rationale_phrases=_safe_str_tuple(
+                callable_values.get("forbidden_rationale_phrases"),
+                (
+                    "this callable exists to implement the behavior described in its contract documentation",
+                    "this callable exists to implement the behavior described in the contract documentation",
+                    "implemented as described in the contract documentation",
+                    "implemented as described in contract documentation",
+                ),
+            ),
+            forbidden_pseudocode_phrases=_safe_str_tuple(
+                callable_values.get("forbidden_pseudocode_phrases"),
+                (
+                    "execute the implementation steps described in source code",
+                    "implementation steps described in source code",
+                    "same as source code",
+                ),
+            ),
+            ownership=_parse_ownership_config(
+                callable_values.get("ownership"),
+                default=ownership_defaults,
+            ),
         ),
         module_dependencies=module_dependency_config,
         pipeline=PipelineDocstringSchema(

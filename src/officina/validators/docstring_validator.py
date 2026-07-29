@@ -25,6 +25,7 @@ from ..common.docstring.docstring_schema import (
     load_docstring_check_categories,
     load_docstring_schema,
 )
+from ..common.test_discovery import is_test_module as _is_repo_test_module
 
 _IGNORED_CALL_BASES = frozenset({
     "self",
@@ -146,6 +147,16 @@ def _collect_pseudocode_tokens(steps: Iterable[object]) -> set[str]:
     return tokens
 
 
+def _collect_explicit_dependency_refs(parsed: object) -> set[str]:
+    """Collect canonical dependency markers from parser output."""
+    refs: set[str] = set()
+    for raw in getattr(parsed, "pseudocode_dependency_refs", ()):
+        value = (str(raw) if raw is not None else "").strip()
+        if value:
+            refs.add(value)
+    return refs
+
+
 def _name_matches_observed(
     name: str,
     observed: set[str],
@@ -160,14 +171,50 @@ def _name_matches_observed(
 
 def _name_mentioned_in_pseudocode(
     name: str,
-    pseudocode_tokens: set[str],
+    pseudocode_refs: set[str] | list[str],
     import_aliases: Mapping[str, str],
+    *,
+    scope: str | None = None,
 ) -> bool:
     """Match a name against collected pseudocode identifiers."""
+    references = set(pseudocode_refs)
+    if not references:
+        return False
+
+    candidate_variants = set(_dependency_name_variants(name, import_aliases))
+    for ref in references:
+        if ":" in ref:
+            ref_scope, ref_name = _split_explicit_ref(ref)
+            if scope is not None and ref_scope is not None and ref_scope != scope:
+                continue
+            if not ref_name:
+                continue
+            if scope is not None and ref_scope is not None and ref_scope == scope:
+                if ref_name in candidate_variants:
+                    return True
+            if scope is None:
+                if ref_name in candidate_variants:
+                    return True
+            continue
+
+        if ref in candidate_variants:
+            return True
+
     for variant in _dependency_name_variants(name, import_aliases):
-        if variant in pseudocode_tokens:
+        if variant in references:
             return True
     return False
+
+
+def _split_explicit_ref(ref: str) -> tuple[str | None, str]:
+    """Split ``section:name`` to scope + identifier if present."""
+    raw = (ref or "").strip()
+    if ":" not in raw:
+        return None, raw
+    section, name = [part.strip() for part in raw.split(":", 1)]
+    if not section or not name:
+        return None, raw
+    return section, name
 
 
 @dataclass(frozen=True)
@@ -547,12 +594,18 @@ def _iter_module_dependency_issues(
     pseudocode_tokens = _collect_pseudocode_tokens(
         getattr(parsed, "pseudocode_steps", ())
     )
+    explicit_refs = _collect_explicit_dependency_refs(parsed)
+    if explicit_refs:
+        pseudocode_tokens = explicit_refs
 
     if schema_rules.validate_declared_calls:
+        validate_declared_targets_resolved = bool(
+            getattr(schema_rules, "validate_declared_targets_resolved", False)
+        ) or bool(getattr(schema_rules, "validate_dependency_targets_resolved", False))
         for dependency in documented_calls:
             if dependency.implicit:
                 continue
-            if schema_rules.validate_declared_targets_resolved and not _dependency_is_resolved(
+            if validate_declared_targets_resolved and not _dependency_is_resolved(
                 dependency.name,
                 import_aliases=import_aliases,
                 defined_symbols=defined_symbols,
@@ -576,13 +629,14 @@ def _iter_module_dependency_issues(
                 dependency.name,
                 pseudocode_tokens,
                 import_aliases,
+                scope="CallsFromModule",
             ):
                 yield DocstringValidationIssue(
                     path=path,
                     code="docstring.pseudocode-dependency-missing",
                     message=(
                         f"Declared dependency '{dependency.name}' is not mentioned in "
-                        "Pseudocode."
+                        "dependency references."
                     ),
                     line=line_no,
                     node_id=node_id,
@@ -592,7 +646,7 @@ def _iter_module_dependency_issues(
         for dependency in documented_instantiations:
             if dependency.implicit:
                 continue
-            if schema_rules.validate_declared_targets_resolved and not _dependency_is_resolved(
+            if validate_declared_targets_resolved and not _dependency_is_resolved(
                 dependency.name,
                 import_aliases=import_aliases,
                 defined_symbols=defined_symbols,
@@ -616,13 +670,14 @@ def _iter_module_dependency_issues(
                 dependency.name,
                 pseudocode_tokens,
                 import_aliases,
+                scope="InstantiationsFromModule",
             ):
                 yield DocstringValidationIssue(
                     path=path,
                     code="docstring.pseudocode-dependency-missing",
                     message=(
                         f"Declared dependency '{dependency.name}' is not mentioned in "
-                        "Pseudocode."
+                        "dependency references."
                     ),
                     line=line_no,
                     node_id=node_id,
@@ -646,13 +701,14 @@ def _iter_module_dependency_issues(
                 observed,
                 pseudocode_tokens,
                 import_aliases,
+                scope="CallsFromModule",
             ):
                 yield DocstringValidationIssue(
                     path=path,
                     code="docstring.pseudocode-dependency-undocumented",
                     message=(
                         f"Observed dependency '{observed}' is not mentioned in "
-                        "Pseudocode."
+                        "dependency references."
                     ),
                     line=line_no,
                     node_id=node_id,
@@ -676,13 +732,14 @@ def _iter_module_dependency_issues(
                 observed,
                 pseudocode_tokens,
                 import_aliases,
+                scope="InstantiationsFromModule",
             ):
                 yield DocstringValidationIssue(
                     path=path,
                     code="docstring.pseudocode-dependency-undocumented",
                     message=(
                         f"Observed dependency '{observed}' is not mentioned in "
-                        "Pseudocode."
+                        "dependency references."
                     ),
                     line=line_no,
                     node_id=node_id,
@@ -1121,6 +1178,9 @@ def validate_module_docstrings(
     """
 
     path = Path(module_path)
+    effective_check_group = (
+        "syntax" if check_group == "all" and _is_repo_test_module(path) else check_group
+    )
     schema_rules = load_docstring_schema()
     effective_allow_cross_file = (
         allow_cross_file_ownership and schema_rules.callable.ownership.cross_file_enabled
@@ -1150,7 +1210,7 @@ def validate_module_docstrings(
         module_doc=module_doc,
         require_module_docstring=require_module_docstring,
     )
-    checkers = _checker_from_group(check_group)
+    checkers = _checker_from_group(effective_check_group)
     for checker in checkers:
         issues.extend(checker._filter_scoped(module_issues))
 
