@@ -239,6 +239,49 @@ def refresh_access_token(
     return _exchange_refresh_token(ref=ref, client_secret=client_secret, refresh_token=refresh_token, urlopen=urlopen)
 
 
+def exchange_authorization_code(
+    *,
+    client_id: str,
+    code: str,
+    code_verifier: str,
+    redirect_uri: str,
+    token_uri: str,
+    urlopen: Callable,
+    secret_backend=None,
+) -> dict:
+    """Exchange a PKCE authorization code for tokens using the stored client secret.
+
+    The client secret never leaves this module: callers (connect-google's
+    authorize-services source) pass only ``client_id``/``token_uri`` read from
+    the public canonical client file, and this function looks the secret up
+    from the host secret store itself, keyed by ``client_id``.
+    """
+    import urllib.parse
+    import urllib.request
+
+    from officina.common import secret_store as secret_store_module
+
+    client_secret = secret_store_module.require(
+        "connect-google", f"oauth-client:{client_id}:client-secret", backend=secret_backend
+    )
+    data = urllib.parse.urlencode(
+        {
+            "code": code,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+            "code_verifier": code_verifier,
+        }
+    ).encode()
+    request = urllib.request.Request(token_uri, data=data, method="POST")
+    with urlopen(request) as response:
+        payload = json.loads(response.read())
+    if not isinstance(payload, dict):
+        raise GoogleCredentialError("token endpoint returned a non-object response")
+    return payload
+
+
 def _exchange_refresh_token(*, ref: GoogleCredentialRef, client_secret: str, refresh_token: str, urlopen: Callable) -> str:
     import urllib.parse
     import urllib.request
@@ -264,6 +307,7 @@ __all__ = [
     "SERVICE_SCOPES",
     "canonical_client_path",
     "client_status",
+    "exchange_authorization_code",
     "install_client",
     "load_credential",
     "normalize_services",

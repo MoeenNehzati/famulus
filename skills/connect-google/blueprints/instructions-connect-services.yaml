@@ -55,6 +55,8 @@ interfaces:
 node_type: behavioral_source
 schema_version: 4
 uses_interfaces:
+- interface: connect-google.source.rtx-authorize-services.interface.authorize-services
+  version: 1
 - interface: connect-google.source.rtx-client-config.interface.client-status
   version: 1
 - interface: connect-google.source.rtx-client-config.interface.install-client

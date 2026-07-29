@@ -2,6 +2,7 @@ authority:
   owns_filesystem:
   - allowed_readers:
     - cloud-files.interface.setup-oauth
+    - connect-google.interface.authorize-services
     - connect-google.interface.client-status
     - email-client.interface.accounts-setup-oauth
     - g-calendar.interface.setup-oauth
@@ -14,18 +15,26 @@ description: Prepares a shared Google Desktop OAuth client and routes service-sp
 content:
 - SKILL\.md
 - _rtx/__init__\.py
+- _rtx/_loopback_oauth\.py
 - _rtx/_client_config\.py
 - instructions/connect\-services\.md
 - instructions/create\-client\.md
 - personal\-preferences/connect\-services\.md
 - personal\-preferences/create\-client\.md
 - personal\-preferences/default\.md
+- tests/test_authorize_services\.py
 - tests/test_client_config\.py
 - tests/test_connect_google_llm_routing\.py
 - tests/test_service_delegation\.py
 discovery:
   mechanism: skill
 exports:
+  connect-google.interface.authorize-services:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - connect-google
+    source_interface: connect-google.source.rtx-authorize-services.interface.authorize-services
   connect-google.interface.client-status:
     access:
       allow_all_modules: false
@@ -88,6 +97,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/personal-preferences-default.yaml
+  connect-google.source.rtx-authorize-services:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-authorize-services.yaml
   connect-google.source.rtx-client-config:
     blueprint:
       base: module-root

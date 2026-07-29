@@ -79,13 +79,53 @@
     },
     "connect-google": {
       "interfaces": {
+        "authorize-services": {
+          "id": "connect-google.interface.authorize-services",
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
         "client-status": {
           "id": "connect-google.interface.client-status",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "install-client": {
           "id": "connect-google.interface.install-client",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         }
       }
     },
