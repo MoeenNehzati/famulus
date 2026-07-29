@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -131,6 +132,49 @@ def test_dispatcher_module_cli_help_is_available(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert "Invoke a skill machine interface declared in blueprint.yaml." in result.stdout
     assert "--caller-skill" in result.stdout
+    assert "--error-format" in result.stdout
+
+
+def test_dispatcher_cli_default_error_format_is_unchanged_text(tmp_path: Path) -> None:
+    result = _run_dispatcher(
+        [
+            "--caller-skill",
+            "demo-caller",
+            "nonexistent-module.interface.does-not-exist",
+        ],
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr.startswith("error: interface not found:")
+    assert "nonexistent-module.interface.does-not-exist" in result.stderr
+
+
+def test_dispatcher_cli_error_format_json_emits_structured_payload(
+    tmp_path: Path,
+) -> None:
+    result = _run_dispatcher(
+        [
+            "--caller-skill",
+            "demo-caller",
+            "--error-format",
+            "json",
+            "nonexistent-module.interface.does-not-exist",
+        ],
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    payload = json.loads(result.stderr)
+    assert payload["schema_version"] == 1
+    assert payload["code"] == "dispatcher.interface_not_found"
+    assert payload["caller_module_id"] == "demo-caller"
+    assert payload["target_module_id"] == "nonexistent-module"
+    assert payload["interface_id"] == "nonexistent-module.interface.does-not-exist"
+    assert "token" not in result.stderr.lower()
+    assert "secret" not in result.stderr.lower()
 
 
 @pytest.mark.parametrize(
