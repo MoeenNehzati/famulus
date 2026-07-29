@@ -99,13 +99,38 @@ git commit -m "feat(validators): reject duplicated fixed dispatcher subcommand t
 
 ## Task 2: Structured dispatcher failures (feedback items 12, 21)
 
+> **Design correction (2026-07-28):** The audit this task's original design was
+> based on described `InvocationError` as already having `caller_module_id`/
+> `target_module_id` fields and a documented "Temporary compatibility for v4
+> consumers" property — that description does not match the real file. As of
+> this correction, `src/officina/dispatcher/core.py` defines:
+> ```python
+> class InvocationError(Exception):
+>     """Raised when a dispatcher request is invalid."""
+> ```
+> a bare `Exception` subclass with no fields, and ~20 raise sites (grep
+> `raise InvocationError(` — currently between lines 244 and 680, re-check at
+> implementation time) that all pass a single plain string message, e.g.
+> `raise InvocationError(f"module id \`{target}\` is not callable")`. There is
+> no `caller_skill`/`target_skill` v4-compat property anywhere in this file —
+> nothing to preserve compatibility with beyond the bare exception type and
+> its string messages. The real CLI (`src/officina/dispatcher/cli.py`) takes
+> `--caller-skill` (required), a positional `target_or_skill`, and
+> `rest: REMAINDER` — not an `invoke <module> <interface>` subcommand form —
+> and its existing `except InvocationError` block returns exit code **2**, not
+> 1. The design below is corrected against this real shape. Do not assume any
+> of the original snippets in this section (now replaced) — they described
+> code that does not exist in this repo.
+
 **Files:**
 - Create: `src/officina/dispatcher/errors.py`
-- Modify: `src/officina/dispatcher/core.py` (raise-site inventory — currently ~20 `raise InvocationError(...)` sites between line 456 and line 1109; re-derive exact line numbers at implementation time since Task 1's changes don't touch this file but time will have passed)
-- Modify: `src/officina/dispatcher/cli.py` (add `--error-format json`, replace the flat `except InvocationError as exc: print(f"error: {exc}")` at line 79-80)
-- Test: `tests/test_dispatcher_errors.py`, extend `tests/test_dispatcher_cli.py` or equivalent
+- Modify: `src/officina/dispatcher/core.py` (replace `raise InvocationError("...")` string-message raises with typed subclass raises — re-grep for the current raise-site list at implementation time, do not trust a stale line count)
+- Modify: `src/officina/dispatcher/cli.py` (add `--error-format json`; the existing `except InvocationError as exc: ...; return 2` block gains a JSON branch, exit code stays 2)
+- Test: `tests/test_dispatcher_errors.py`, extend the real dispatcher CLI test file (find its actual name/location — do not assume `tests/test_dispatcher_cli.py` exists under that exact name)
 
-**Design decision from the audit (apply this, don't re-derive it):** Use v5's real `module_id` vocabulary (`caller_module_id`/`target_module_id`, already the primary fields on `InvocationError` per `core.py:103-104`) as the canonical field names in structured payloads — not the legacy `caller_skill`/`target` naming the original 2026-07-24 plan used, which only exists today as a documented "Temporary compatibility for v4 consumers" property (`core.py:173-182`). Cross-reference the module/blueprint split (one `blueprint.yaml` plus per-source `blueprints/<id>.yaml` files) rather than assuming one blueprint file per skill when populating any `sources`/`target_blueprint` context field.
+**Design decision (module_id vocabulary):** Even though there's no existing `caller_module_id`/`target_module_id` field to build on, still use that vocabulary (not `caller_skill`/`target_skill`) for the NEW structured payload's field names, since it matches this repo's real v5 terminology (module ids, not "skills") used everywhere else in this plan and the installer-runtime plan. The CLI's own `--caller-skill` flag name is a separate, pre-existing surface — do not rename it; just don't propagate that naming into the new payload schema.
+
+**Backward compatibility note:** Since `InvocationError` has no existing fields/properties to preserve, this task's compatibility concern is narrower than originally assumed: (a) `str(exc)` for any raise site you convert must produce the SAME message text as before (some code may pattern-match error text — grep for `str(exc)` usage before changing message wording), (b) `isinstance(exc, InvocationError)` must still hold for every converted raise site (existing `except InvocationError` handlers, including `script_dispatcher`'s re-export, must keep working), (c) the CLI's exit code for an `InvocationError` stays 2, not 1 as the original (incorrect) task text assumed.
 
 - [ ] **Step 1: Write failing tests for the error hierarchy**
 
@@ -117,25 +142,26 @@ from officina.dispatcher.errors import (
     InterfaceNotFoundError,
     UnauthorizedCallerError,
 )
+from officina.dispatcher.core import InvocationError
 
 
 def test_dispatcher_error_has_schema_version_and_code():
     err = InterfaceNotFoundError(
-        caller_module_id="install-assistant-tools-rtx",
-        target_module_id="officina-install",
-        interface_id="officina-install.interface.does-not-exist",
+        caller_module_id="install-assistant-tools",
+        target_module_id="install",
+        interface_id="install.interface.does-not-exist",
     )
     payload = err.as_payload()
     assert payload["schema_version"] == 1
     assert payload["code"] == "dispatcher.interface_not_found"
-    assert payload["caller_module_id"] == "install-assistant-tools-rtx"
-    assert payload["target_module_id"] == "officina-install"
+    assert payload["caller_module_id"] == "install-assistant-tools"
+    assert payload["target_module_id"] == "install"
 
 
 def test_dispatcher_error_payload_never_contains_credentials():
     err = UnauthorizedCallerError(
         caller_module_id="rogue-module",
-        target_module_id="officina-common",
+        target_module_id="common",
         interface_id="common.interface.famulus-paths",
     )
     payload = err.as_payload()
@@ -145,38 +171,48 @@ def test_dispatcher_error_payload_never_contains_credentials():
 
 
 def test_dispatcher_error_is_still_an_invocation_error_subclass():
-    from officina.dispatcher.core import InvocationError
     err = InterfaceNotFoundError(
         caller_module_id="a", target_module_id="b", interface_id="c",
     )
     assert isinstance(err, InvocationError)
+
+
+def test_dispatcher_error_str_is_a_readable_message():
+    err = InterfaceNotFoundError(
+        caller_module_id="a", target_module_id="b", interface_id="b.interface.missing",
+    )
+    assert "b.interface.missing" in str(err)
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python3 -m pytest -q tests/test_dispatcher_errors.py -v`
+Run: `python3 -m pytest -q -o pythonpath=src tests/test_dispatcher_errors.py -v`
 Expected: FAIL — `officina.dispatcher.errors` doesn't exist yet.
 
 - [ ] **Step 3: Implement the error hierarchy**
 
+Plain `__init__` methods, not `@dataclass` (mixing `@dataclass` with `Exception` subclassing is fragile — `Exception.__init__`/`args`/pickling interact awkwardly with dataclass-generated `__init__`; a hand-written `__init__` calling `super().__init__(message)` is simpler and avoids that pitfall entirely):
+
 ```python
 """Structured dispatcher failures: every raise site produces a typed error
 with a stable machine-readable code and safe context, never raw credentials
-or tracebacks in the payload."""
+or tracebacks in the payload. Every class here remains an InvocationError
+subclass so existing `except InvocationError` handlers (including
+script_dispatcher's re-export) keep working unchanged."""
 from __future__ import annotations
-
-from dataclasses import dataclass, field
 
 from officina.dispatcher.core import InvocationError
 
 SCHEMA_VERSION = 1
 
 
-@dataclass
 class DispatcherError(InvocationError):
-    code: str = field(init=False)
-    caller_module_id: str = ""
-    target_module_id: str = ""
+    code = "dispatcher.error"
+
+    def __init__(self, message: str, *, caller_module_id: str = "", target_module_id: str = "") -> None:
+        super().__init__(message)
+        self.caller_module_id = caller_module_id
+        self.target_module_id = target_module_id
 
     def as_payload(self) -> dict:
         return {
@@ -188,14 +224,15 @@ class DispatcherError(InvocationError):
         }
 
 
-@dataclass
 class InterfaceNotFoundError(DispatcherError):
-    interface_id: str = ""
+    code = "dispatcher.interface_not_found"
 
-    def __post_init__(self) -> None:
-        self.code = "dispatcher.interface_not_found"
+    def __init__(self, *, caller_module_id: str, target_module_id: str, interface_id: str) -> None:
+        self.interface_id = interface_id
         super().__init__(
-            f"interface not found: {self.interface_id} (requested by {self.caller_module_id})"
+            f"interface not found: {interface_id} (requested by {caller_module_id})",
+            caller_module_id=caller_module_id,
+            target_module_id=target_module_id,
         )
 
     def as_payload(self) -> dict:
@@ -204,14 +241,15 @@ class InterfaceNotFoundError(DispatcherError):
         return payload
 
 
-@dataclass
 class UnauthorizedCallerError(DispatcherError):
-    interface_id: str = ""
+    code = "dispatcher.unauthorized_caller"
 
-    def __post_init__(self) -> None:
-        self.code = "dispatcher.unauthorized_caller"
+    def __init__(self, *, caller_module_id: str, target_module_id: str, interface_id: str) -> None:
+        self.interface_id = interface_id
         super().__init__(
-            f"{self.caller_module_id} is not an allowed caller of {self.interface_id}"
+            f"{caller_module_id} is not an allowed caller of {interface_id}",
+            caller_module_id=caller_module_id,
+            target_module_id=target_module_id,
         )
 
     def as_payload(self) -> dict:
@@ -220,20 +258,18 @@ class UnauthorizedCallerError(DispatcherError):
         return payload
 ```
 
-Adjust the exact dataclass/inheritance mechanics to match `InvocationError`'s real constructor signature in `core.py` (it currently takes `caller_module_id`/`target_module_id`/`caller_skill` as keyword args with compatibility shimming — read `core.py:120-185` before finalizing this shape, since a naive dataclass subclass may conflict with its existing `__init__`).
-
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python3 -m pytest -q tests/test_dispatcher_errors.py -v`
+Run: `python3 -m pytest -q -o pythonpath=src tests/test_dispatcher_errors.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Re-derive the raise-site inventory and replace flat `InvocationError` raises**
+- [ ] **Step 5: Re-derive the raise-site inventory and replace string-message raises with typed subclasses**
 
-Grep `src/officina/dispatcher/core.py` for `raise InvocationError(` (re-run this at implementation time — the audit found roughly 20 sites between lines 456 and 1109, but exact numbers will have drifted). For each, replace with the matching typed subclass (add new subclasses beyond `InterfaceNotFoundError`/`UnauthorizedCallerError` as needed — e.g. `MalformedRequestError`, `ModuleNotCertifiedError` — following the same pattern, one per distinct failure phase).
+Grep `src/officina/dispatcher/core.py` for `raise InvocationError(` (re-run this now — do not trust any specific line-number list, it will have drifted). For each site, read the surrounding code to determine which failure phase it represents (interface not found, unauthorized caller, malformed request, certification failure, etc.) and either reuse `InterfaceNotFoundError`/`UnauthorizedCallerError` or add a new subclass following the exact same pattern (one per distinct failure phase, `code` string following `dispatcher.<snake_case_reason>`). Preserve each site's exact existing message text (or as close as reasonably possible — do not silently reword messages other code might pattern-match against; grep the repo for `str(exc)` / substring-matching against dispatcher error text before changing wording). Not every raise site necessarily needs a bespoke subclass — a generic `DispatcherError(message, caller_module_id=..., target_module_id=...)` is an acceptable fallback for phases that don't have enough callers/callers-in-this-plan to justify a dedicated subclass; use judgment rather than forcing exactly one subclass per raise site.
 
 - [ ] **Step 6: Add `--error-format json` to the CLI**
 
-Modify `cli.py`'s argument parser to add `--error-format {text,json}` (default `text`). Replace the `except InvocationError as exc: print(f"error: {exc}", file=sys.stderr)` block (currently `cli.py:79-80`) with:
+Read `cli.py`'s current argument parser and `except InvocationError` block first (real shape: `--caller-skill` required flag, positional `target_or_skill`, `rest: REMAINDER`, existing except block returns 2). Add `--error-format {text,json}` (default `text`) as a new optional flag. Modify the except block to branch on it:
 
 ```python
     except InvocationError as exc:
@@ -241,40 +277,48 @@ Modify `cli.py`'s argument parser to add `--error-format {text,json}` (default `
             print(json.dumps(exc.as_payload()), file=sys.stderr)
         else:
             print(f"error: {exc}", file=sys.stderr)
-        return 1
+        return 2
 ```
+
+(Exit code stays `2`, matching the existing behavior — do not change it to `1`.) `json` needs importing if not already imported in this file.
 
 - [ ] **Step 7: Write and run CLI-level tests**
 
+Find the real dispatcher CLI test file (search for existing tests that call `cli.main()` or invoke the dispatcher CLI programmatically — do not assume a filename) and add tests matching the REAL argv shape and exit code:
+
 ```python
-def test_cli_error_format_json_emits_structured_payload(capsys):
-    exit_code = run_cli(["--error-format", "json", "invoke", "nonexistent-module", "some-interface"])
+def test_cli_error_format_json_emits_structured_payload(capsys, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["dispatcher", "--caller-skill", "test-caller", "--error-format", "json", "nonexistent-module.interface.missing"])
+    exit_code = cli.main()
+    assert exit_code == 2
     captured = capsys.readouterr()
     payload = json.loads(captured.err)
     assert payload["schema_version"] == 1
     assert "code" in payload
 
 
-def test_cli_default_error_format_is_unchanged_text(capsys):
-    exit_code = run_cli(["invoke", "nonexistent-module", "some-interface"])
+def test_cli_default_error_format_is_unchanged_text(capsys, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["dispatcher", "--caller-skill", "test-caller", "nonexistent-module.interface.missing"])
+    exit_code = cli.main()
+    assert exit_code == 2
     captured = capsys.readouterr()
     assert captured.err.startswith("error:")
 ```
 
-(Match the real CLI test harness/entry-point function name — read the existing dispatcher CLI test file first.)
+(Match the real `main()`/entry-point invocation convention used by existing tests in that file — this is illustrative, adjust to fit.)
 
-Run: `python3 -m pytest -q tests/test_dispatcher_errors.py tests/test_dispatcher_cli.py -v`
+Run: `python3 -m pytest -q -o pythonpath=src tests/test_dispatcher_errors.py <the real CLI test file> -v`
 Expected: PASS, no regressions in existing dispatcher CLI tests.
 
 - [ ] **Step 8: Run the full dispatcher test suite**
 
-Run: `python3 -m pytest -q src/officina/dispatcher/ tests/ -k dispatcher -v`
+Run: `python3 -m pytest -q -o pythonpath=src tests/ -k dispatcher -v` and also `python3 -m pytest -q -o pythonpath=src script_dispatcher/ 2>/dev/null || true` (check whether `script_dispatcher` has its own test suite that re-exports `InvocationError` and needs to keep passing — the implementer who first investigated this task found `script_dispatcher/src/script_dispatcher/{__init__,core,cli}.py` re-exports dispatcher symbols; confirm `script_dispatcher.InvocationError is officina.dispatcher.core.InvocationError` still holds after this change, since subclassing doesn't touch that identity but verify anyway).
 Expected: PASS.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/officina/dispatcher/errors.py src/officina/dispatcher/core.py src/officina/dispatcher/cli.py tests/test_dispatcher_errors.py tests/test_dispatcher_cli.py
+git add src/officina/dispatcher/errors.py src/officina/dispatcher/core.py src/officina/dispatcher/cli.py tests/test_dispatcher_errors.py <the real CLI test file>
 git commit -m "feat(dispatcher): structured typed failures with module_id context and --error-format json"
 ```
 
