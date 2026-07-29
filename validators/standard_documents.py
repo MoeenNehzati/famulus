@@ -12,12 +12,16 @@ CANONICAL_STANDARDS = (
     Path("references/skill-standards/skill-guidelines.standard.yaml"),
     Path("references/skill-standards/skill-refactoring.standard.yaml"),
     Path("references/document-standards/document-profile.standard.yaml"),
+    Path("references/standards/docstring.standard.yaml"),
 )
 TOOLING_ARTIFACTS = (
     Path("references/standards/standard-v6.schema.json"),
     Path("references/standards/validate_standard_v6.py"),
     Path("references/standards/render_standard_v6.py"),
 )
+NON_STANDARD_V6_PATHS = {
+    Path("references/standards/docstring.standard.yaml"),
+}
 
 
 def _display(path: Path) -> str:
@@ -69,6 +73,8 @@ def validate(repo_root: Path) -> list[str]:
     for relative in CANONICAL_STANDARDS:
         path = repo_root / relative
         if not path.is_file():
+            continue
+        if relative in NON_STANDARD_V6_PATHS:
             continue
         errors.extend(
             f"{_display(relative)}: {error}"

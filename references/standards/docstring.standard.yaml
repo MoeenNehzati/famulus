@@ -1,12 +1,9 @@
 # Human-readable format contract consumed by `officina.common.docstring`.
-#
-# Canonical policy location is `docstring.standard.yaml` with a full contract of
-# syntax behavior settings. This YAML file remains available as a compatibility
-# entrypoint.
+# Canonical policy filename for docstring controls.
 #
 # Purpose
-#   This file contains only policy choices for docstring comparison and
-#   enforcement; parser syntax constraints are defined in `docstring.standard.lark`.
+#   This file contains only semantic policy (what code and docs should assert).
+#   Syntax and parsing constraints are enforced in `docstring.standard.lark`.
 #   It is intentionally declarative so repository-specific enforcement can be
 #   changed without editing parser/validator logic where possible.
 #
@@ -64,7 +61,7 @@ callable:
     - Pseudocode
     - Wraps
 
-  # Optional callable sections that are retained by the parser for tooling.
+  # Additional optional callable sections that are retained by parser/validator tooling.
   optional_sections:
     - Graph
     - Role
@@ -86,14 +83,19 @@ callable:
     max_steps: 8
     max_step_chars: 140
     max_total_chars: 640
+  # Additional callable sections that may contain dependency markers like
+  # ``@name`` or ``@Section:name`` and are checked against declared
+  # dependency buckets.
   dependency_reference_sections:
     - Pseudocode
-  # Dependency references in pseudocode are explicit markers.
+  # Dependency references in configured sections are explicit markers.
   # Supported forms:
   #   - ``@name``
   #   - ``@name(...)``
   #   - ``@SectionName:name``
   #   - ``@SectionName:name(...)``
+  # If a dependency name exists in multiple declaration sections,
+  # use ``SectionName:`` to avoid ambiguity.
 
   # Separate sections for what this callable consumes from module scope.
   module_dependencies:
@@ -172,7 +174,62 @@ module:
 # Checks are enforced by checker code; this catalog is for reviewer orientation.
 check_categories:
   formatting:
-    - docstring.formatting
+    - code: docstring.formatting
+      intent: Generic parser/syntax-level warning bucket.
+    - code: docstring.empty
+      intent: Docstring body is empty.
+    - code: docstring.invalid-owns
+      intent: Owns section is malformed.
+    - code: docstring.owns-too-many
+      intent: Too many ownership declarations were provided.
+    - code: docstring.invalid-edge
+      intent: Edge expression does not match expected syntax.
+    - code: docstring.invalid-section
+      intent: Docstring section header is malformed or unknown.
+    - code: docstring.duplicate-section
+      intent: Duplicate section declaration was found.
+    - code: docstring.invalid-wraps
+      intent: Wraps line could not be parsed.
+    - code: docstring.invalid-module-dependency
+      intent: Module dependency reference cannot be parsed.
+    - code: docstring.invalid-pseudocode-ref
+      intent: Pseudocode dependency marker is malformed.
+    - code: docstring.invalid-pseudocode
+      intent: Pseudocode line is not in a parser-recognized format.
+    - code: docstring.pseudocode-colon
+      intent: Pseudocode indentation marker is malformed.
+    - code: docstring.pseudocode-flow
+      intent: Pseudocode control keyword ordering or nesting is invalid.
+    - code: docstring.pseudocode-indent
+      intent: Pseudocode indentation is inconsistent.
+    - code: docstring.pseudocode-step-min
+      intent: Pseudocode has too few steps.
+    - code: docstring.pseudocode-step-length
+      intent: Pseudocode step is too long.
+    - code: docstring.pseudocode-step-cap
+      intent: Too many pseudocode steps.
+    - code: docstring.pseudocode-total-length
+      intent: Total pseudocode block is too long.
+    - code: docstring.section-missing
+      intent: A required docstring section is missing.
+    - code: docstring.summary-missing
+      intent: Summary text is missing.
+    - code: docstring.summary-forbidden
+      intent: Summary contains placeholder or prohibited phrasing.
+    - code: docstring.summary-length
+      intent: Summary length is outside the configured bounds.
+    - code: docstring.rationale-forbidden
+      intent: Rationale contains placeholder or prohibited phrasing.
+    - code: docstring.rationale-length
+      intent: Rationale length is outside the configured bounds.
+    - code: docstring.pseudocode-forbidden
+      intent: Pseudocode uses placeholder or prohibited phrasing.
+    - code: docstring.missing-graphpipeline
+      intent: Pipeline docstring block is required but missing.
+    - code: docstring.undeclared-pseudocode-dependency
+      intent: Dependency marker references an undeclared dependency.
+    - code: docstring.ambiguous-pseudocode-dependency
+      intent: Dependency marker is ambiguous across declaration buckets.
   behavioral:
     - code: docstring.invalid-wraps
       intent: Wraps line could not be parsed.

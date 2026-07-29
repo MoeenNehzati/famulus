@@ -21,11 +21,10 @@ from pathlib import Path
 import yaml
 
 # Canonical policy filenames.
-# - Candidate policy files are preferred so repository-level standard validation does
-#   not treat them as canonical `.standard.yaml` artifacts.
-# - Legacy/compatibility fallback remains supported.
-DOCSTRING_STANDARD_CANDIDATE_FILE = "docstring.standard.candidate.yaml"
+# - `docstring.standard.yaml` is the canonical repo standard.
+# - `docstring.standard.candidate.yaml` is a transitional compatibility fallback.
 DOCSTRING_STANDARD_FILE = "docstring.standard.yaml"
+DOCSTRING_STANDARD_CANDIDATE_FILE = "docstring.standard.candidate.yaml"
 DOCSTRING_LEGACY_FORMAT_FILE = "docstring_format.yaml"
 
 
@@ -353,11 +352,11 @@ def resolve_docstring_schema_path(path: str | Path | None = None) -> Path | None
     Priority:
 
     - explicit ``path`` argument when provided,
+    - ``references/docstring.standard.yaml`` (canonical),
     - ``references/docstring.standard.candidate.yaml`` (candidate),
-    - ``references/docstring.standard.yaml`` (legacy canonical),
     - ``references/docstring_format.yaml`` (legacy alias),
     - ``references/standards/docstring.standard.candidate.yaml`` (candidate),
-    - ``references/standards/docstring.standard.yaml`` (legacy canonical),
+    - ``references/standards/docstring.standard.yaml`` (canonical),
     - ``references/standards/docstring_format.yaml`` (legacy alias)
     """
     if path is not None:
@@ -365,11 +364,11 @@ def resolve_docstring_schema_path(path: str | Path | None = None) -> Path | None
 
     def _resolve_candidates(base: Path) -> list[Path]:
         return [
-            base / DOCSTRING_STANDARD_CANDIDATE_FILE,
             base / DOCSTRING_STANDARD_FILE,
+            base / DOCSTRING_STANDARD_CANDIDATE_FILE,
             base / DOCSTRING_LEGACY_FORMAT_FILE,
-            base / "standards" / DOCSTRING_STANDARD_CANDIDATE_FILE,
             base / "standards" / DOCSTRING_STANDARD_FILE,
+            base / "standards" / DOCSTRING_STANDARD_CANDIDATE_FILE,
             base / "standards" / DOCSTRING_LEGACY_FORMAT_FILE,
         ]
 

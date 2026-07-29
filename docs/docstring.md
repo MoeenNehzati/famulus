@@ -3,7 +3,7 @@
 This pipeline keeps docstring parsing/validation explicit and machine-checkable.
 
 ## 1) Policy + Syntax inputs
-- `references/standards/docstring.standard.candidate.yaml`: semantic policy (`required` sections, lengths, checks, toggles).
+- `references/standards/docstring.standard.yaml`: semantic policy (`required` sections, lengths, checks, toggles).
 - `references/standards/docstring.standard.lark`: parser grammar for docstring micro-syntax (edges, wraps, module dependencies).
 - Keep behavior policy in YAML; keep punctuation/shape syntax in `.lark`.
 
@@ -27,7 +27,7 @@ Rules:
   buckets so ambiguity becomes a checker issue rather than a hidden assumption.
 
 To include additional sections, set `callable.dependency_reference_sections` in
-`references/standards/docstring.standard.candidate.yaml`.
+`references/standards/docstring.standard.yaml`.
 
 The marker grammar is intentionally shared across declaration buckets. For a marker
 to be unscoped (`@name`), the identifier must be unambiguous across all

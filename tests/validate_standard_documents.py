@@ -13,6 +13,7 @@ CANONICAL = (
     "references/skill-standards/skill-guidelines.standard.yaml",
     "references/skill-standards/skill-refactoring.standard.yaml",
     "references/document-standards/document-profile.standard.yaml",
+    "references/standards/docstring.standard.yaml",
 )
 
 
@@ -31,8 +32,10 @@ def _copy_standard_repo(tmp_path: Path) -> Path:
         shutil.copy2(ROOT / relative, target)
         rendered_relative = Path(relative.removesuffix(".standard.yaml") + ".md")
         rendered = tmp_path / rendered_relative
-        rendered.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / rendered_relative, rendered)
+        source_rendered = ROOT / rendered_relative
+        if source_rendered.is_file():
+            rendered.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_rendered, rendered)
     tooling = tmp_path / "references" / "standards"
     tooling.mkdir(parents=True, exist_ok=True)
     for name in ("standard-v6.schema.json", "validate_standard_v6.py", "render_standard_v6.py"):
@@ -51,6 +54,8 @@ def test_accepts_utf8_standards_and_crlf_views_under_windows_default_encoding(
     repo = _copy_standard_repo(tmp_path)
     for relative in CANONICAL:
         view = repo / Path(relative.removesuffix(".standard.yaml") + ".md")
+        if not view.is_file():
+            continue
         text = view.read_text(encoding="utf-8")
         view.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
 
@@ -119,7 +124,7 @@ def test_rejects_stale_generated_markdown(tmp_path):
     ]
 
 
-def test_requires_exactly_the_three_canonical_standards(tmp_path):
+def test_requires_exactly_the_four_canonical_standards(tmp_path):
     repo = _copy_standard_repo(tmp_path)
     (repo / CANONICAL[2]).unlink()
     extra = repo / "references/skill-standards/extra.standard.yaml"
@@ -127,7 +132,7 @@ def test_requires_exactly_the_three_canonical_standards(tmp_path):
 
     errors = _load_validator().validate(repo)
 
-    assert "references/document-standards/document-profile.standard.yaml: missing canonical standard" in errors
+    assert f"{CANONICAL[2]}: missing canonical standard" in errors
     assert "references/skill-standards/extra.standard.yaml: unexpected canonical standard" in errors
 
 
