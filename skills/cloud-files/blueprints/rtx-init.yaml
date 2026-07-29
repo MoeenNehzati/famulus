@@ -14,5 +14,7 @@ id: cloud-files.source.rtx-init
 interfaces: {}
 node_type: behavioral_source
 schema_version: 4
-uses_interfaces: []
+uses_interfaces:
+- interface: common.interface.google-credentials
+  version: 1
 version: 1

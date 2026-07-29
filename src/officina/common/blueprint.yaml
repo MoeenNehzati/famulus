@@ -95,6 +95,7 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
+      - cloud-files
       - connect-google
     source_interface: common.source.google-credentials.interface.python-api
   common.interface.oauth-json:

@@ -240,6 +240,82 @@ interfaces:
         - --home
     usage: --home <dir> [--remote-llm-root <path>] [--dry-run]
     version: 1
+  cloud-files.source.rtx-ensure-oauth.interface.use-google-credential:
+    contract:
+      arguments:
+        credential-id: {description: Opaque shared credential identifier issued by connect-google's authorize_services flow, required: true, sensitivity: user-private, type: {kind: string}}
+        home: {description: Home directory under which cloud-files config is written, required: true, sensitivity: user-private, type: {kind: string}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Replaces cloud-files config.json's credential_id, binding cloud-files to the shared credential going forward.
+      outputs: []
+      outcomes:
+      - {id: bound, class: success, outputs: [], effects: [write-config], caller_action: Cloud-files now authenticates using the shared credential.}
+      - {id: insufficient-scope, class: refusal, outputs: [], effects: [], caller_action: "Re-run connect-google's authorization with Drive scope included, then retry."}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Loads the current credential registry entry and validates granted scopes before writing.}
+        effects:
+        - {id: write-config, direct_io_ref: write-1, action: update, value_source: {kind: argument, argument_ref: credential-id}, may_occur_in_outcomes: [bound], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Restore a previously retained config.json or call write-config again.}}
+        mutation_safety:
+          atomicity: {per_effect_only: One config file is rewritten after scope validation succeeds.}
+          concurrent_invocations: {unsafe: Concurrent writers can overwrite one another's preserved settings.}
+          idempotency: {idempotent: Repeating the same credential-id converges to the same configuration value.}
+          on_uncertain_completion: {verify_then_decide: Read config.json before deciding whether to retry.}
+          partial_effects_on_failure: {possible: A direct file write can be interrupted after truncation.}
+          rollback_on_failure: {unavailable: The interface does not retain an automatic backup.}
+        verification: [{method: direct-io-state, direct_io_ref: write-1}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: config
+          formats: [json]
+          id: read-1
+          medium: local-filesystem
+          path: $home/.config/cloud-files/config.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: config
+          formats: [json]
+          id: write-1
+          medium: local-filesystem
+          path: $home/.config/cloud-files/config.json
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+    description: Bind cloud-files to a shared connect-google credential_id after
+      validating it carries Drive scope, storing only the opaque identifier (never
+      the client secret or refresh token) in cloud-files' own config.json. The
+      pre-existing per-service OAuth path (ensure-oauth/write-config) remains the
+      unchanged fallback for callers who have not adopted the shared credential.
+    process_binding:
+      args_prefix:
+      - use-google-credential
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        allowed_flags:
+        - --credential-id
+        - --home
+        flag_patterns:
+          --credential-id: ^.+$
+          --home: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        notes: Bind cloud-files to a shared Google credential_id.
+        required_flags:
+        - --credential-id
+        - --home
+    usage: --credential-id <id> --home <dir>
+    version: 1
 node_type: behavioral_source
 platform_support:
   linux: true
@@ -247,5 +323,7 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 4
-uses_interfaces: []
+uses_interfaces:
+- interface: common.interface.google-credentials
+  version: 1
 version: 1

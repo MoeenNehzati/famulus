@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_SRC = Path(__file__).resolve().parents[3] / "src"
 if str(REPO_SRC) not in sys.path:
@@ -69,7 +72,96 @@ def test_write_config_preserves_credentials_path(tmp_path):
 
     ensure_oauth.write_config(home, remote_llm_root="assistant/", dry_run=False)
 
-    import json
     payload = json.loads((config_dir / "config.json").read_text())
     assert payload["credentials_path"] == "/custom/path.json"
+    assert payload["remote_llm_root"] == "assistant"
+
+
+class FakeSecretBackend:
+    def __init__(self) -> None:
+        self.stored: dict[tuple[str, str], str] = {}
+
+    def store(self, namespace: str, key: str, value: str) -> None:
+        self.stored[(namespace, key)] = value
+
+    def lookup(self, namespace: str, key: str) -> str | None:
+        return self.stored.get((namespace, key))
+
+    def clear(self, namespace: str, key: str) -> bool:
+        return self.stored.pop((namespace, key), None) is not None
+
+
+PLATFORM = "linux"
+
+
+def _store_credential(home: Path, *, granted_drive_scope: bool) -> str:
+    from officina.common.google_credentials import SERVICE_SCOPES, store_google_credential
+
+    scopes = {"openid", "email"}
+    if granted_drive_scope:
+        scopes |= SERVICE_SCOPES["drive"]
+
+    ref = store_google_credential(
+        subject="sub1",
+        account="user@example.com",
+        client_id="test-client-id",
+        token_uri="https://oauth2.example.test/token",
+        granted_scopes=frozenset(scopes),
+        refresh_token="refresh-token-value",
+        home=home,
+        platform=PLATFORM,
+        secret_backend=FakeSecretBackend(),
+    )
+    return ref.credential_id
+
+
+@pytest.fixture
+def fake_registry_with_drive_scope(tmp_path):
+    return _store_credential(tmp_path, granted_drive_scope=True)
+
+
+@pytest.fixture
+def fake_registry_missing_drive_scope(tmp_path):
+    return _store_credential(tmp_path, granted_drive_scope=False)
+
+
+def test_use_google_credential_stores_only_credential_id(tmp_path, fake_registry_with_drive_scope):
+    credential_id = fake_registry_with_drive_scope
+
+    ensure_oauth.use_google_credential(credential_id=credential_id, home=tmp_path, platform=PLATFORM)
+
+    config_path = tmp_path / ".config" / "cloud-files" / "config.json"
+    config = json.loads(config_path.read_text())
+    assert config["credential_id"] == credential_id
+    assert "client_secret" not in config
+    assert "refresh_token" not in config
+
+
+def test_use_google_credential_rejects_insufficient_scope(tmp_path, fake_registry_missing_drive_scope):
+    credential_id = fake_registry_missing_drive_scope
+
+    # Matches write_config's existing convention of converting its own
+    # validation failure (normalize_llm_root's ValueError) into a clean
+    # SystemExit for CLI use, rather than leaking a raw traceback.
+    with pytest.raises(SystemExit):
+        ensure_oauth.use_google_credential(credential_id=credential_id, home=tmp_path, platform=PLATFORM)
+
+    config_path = tmp_path / ".config" / "cloud-files" / "config.json"
+    assert not config_path.exists()
+
+
+def test_use_google_credential_then_write_config_preserves_credential_id(tmp_path, fake_registry_with_drive_scope):
+    # Regression test: write_config used to rebuild its payload from an
+    # explicit allow-list (remote_llm_root, timeout_seconds, credentials_path),
+    # silently dropping any field it didn't know about — including
+    # credential_id written by use_google_credential. Both functions now
+    # route through a shared merge-then-patch helper so this can't recur.
+    credential_id = fake_registry_with_drive_scope
+
+    ensure_oauth.use_google_credential(credential_id=credential_id, home=tmp_path, platform=PLATFORM)
+    ensure_oauth.write_config(tmp_path, remote_llm_root="assistant/", dry_run=False)
+
+    config_path = tmp_path / ".config" / "cloud-files" / "config.json"
+    payload = json.loads(config_path.read_text())
+    assert payload["credential_id"] == credential_id
     assert payload["remote_llm_root"] == "assistant"

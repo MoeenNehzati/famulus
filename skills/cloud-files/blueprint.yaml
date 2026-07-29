@@ -126,6 +126,11 @@ exports:
       allow_all_modules: false
       allowed_callers: []
     source_interface: cloud-files.source.rtx-oauth-bootstrap.interface.setup-oauth
+  cloud-files.interface.use-google-credential:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: cloud-files.source.rtx-ensure-oauth.interface.use-google-credential
   cloud-files.interface.write-config:
     access:
       allow_all_modules: false

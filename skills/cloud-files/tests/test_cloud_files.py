@@ -179,6 +179,103 @@ class CloudFilesTests(unittest.TestCase):
             home / ".config" / "cloud-files" / "credentials.json",
         )
 
+    def test_load_config_reads_credential_id_and_home_when_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            config_dir = home / ".config" / "cloud-files"
+            config_dir.mkdir(parents=True)
+            (config_dir / "config.json").write_text(
+                json.dumps(
+                    {
+                        "remote_llm_root": "assistant/",
+                        "timeout_seconds": 12,
+                        "credential_id": "google:sub1",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = cloud_files.load_config(home)
+        self.assertEqual(config.credential_id, "google:sub1")
+        self.assertEqual(config.home, home)
+
+    def test_load_config_credential_id_defaults_to_none(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            config_dir = home / ".config" / "cloud-files"
+            config_dir.mkdir(parents=True)
+            (config_dir / "config.json").write_text(
+                json.dumps({"remote_llm_root": "assistant/", "timeout_seconds": 12}),
+                encoding="utf-8",
+            )
+            config = cloud_files.load_config(home)
+        self.assertIsNone(config.credential_id)
+
+    def test_get_access_token_uses_shared_credential_when_present(self) -> None:
+        config = cloud_files.CloudFilesConfig(
+            remote_llm_root="assistant/",
+            timeout_seconds=45,
+            credentials_path=Path("/tmp/creds.json"),
+            credential_id="google:sub1",
+            home=Path("/tmp/home"),
+        )
+        calls = []
+
+        def fake_refresh_access_token(credential_id, **kwargs):
+            calls.append((credential_id, kwargs))
+            return "fake-access-token"
+
+        with mock.patch(
+            "officina.common.google_credentials.refresh_access_token",
+            fake_refresh_access_token,
+        ):
+            token = cloud_files.get_access_token(config, platform="linux")
+
+        self.assertEqual(token, "fake-access-token")
+        self.assertEqual(calls[0][0], "google:sub1")
+        from officina.common.google_credentials import SERVICE_SCOPES
+
+        self.assertEqual(calls[0][1]["required_scopes"], SERVICE_SCOPES["drive"])
+        self.assertEqual(calls[0][1]["home"], Path("/tmp/home"))
+        self.assertEqual(calls[0][1]["platform"], "linux")
+
+    def test_get_access_token_falls_back_to_legacy_credentials_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            creds_path = Path(tmp) / "credentials.json"
+            creds_path.write_text(
+                json.dumps(
+                    {
+                        "client_id": "cid",
+                        "client_secret": "csecret",
+                        "refresh_token": "rtoken",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = cloud_files.CloudFilesConfig(
+                remote_llm_root="assistant/",
+                timeout_seconds=45,
+                credentials_path=creds_path,
+            )
+            self.assertIsNone(config.credential_id)
+
+            class FakeResponse:
+                def __enter__(self_inner):
+                    return self_inner
+
+                def __exit__(self_inner, *exc):
+                    return False
+
+                def read(self_inner):
+                    return json.dumps({"access_token": "legacy-token"}).encode("utf-8")
+
+            with mock.patch.object(
+                cloud_files.urllib.request, "urlopen", return_value=FakeResponse()
+            ) as urlopen:
+                token = cloud_files.get_access_token(config)
+
+        self.assertEqual(token, "legacy-token")
+        urlopen.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
