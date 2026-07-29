@@ -6,7 +6,7 @@ authority:
     - email-client.interface.accounts-setup-oauth
     - g-calendar.interface.setup-oauth
     match: exact
-    path: $HOME/.config/connect-google/client.json
+    path: platform Famulus config root (see common.interface.google-credentials) / connect-google/client.json
     reason: This interface is the only writer of the shared OAuth client; service
       setup interfaces may read it for authorization.
 category: workflow-general-assistant

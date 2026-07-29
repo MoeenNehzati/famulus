@@ -39,8 +39,7 @@ interfaces:
           - json
           id: read-1
           medium: local-filesystem
-          path: $HOME/.config/connect-google/client.json
-          path_match: exact
+          path: platform Famulus config root (see common.interface.google-credentials) / connect-google/client.json
           reason: Validate the installed OAuth client without returning its contents.
           sensitivity: secret
           system: filesystem
@@ -146,9 +145,8 @@ interfaces:
           - json
           id: write-1
           medium: local-filesystem
-          path: $HOME/.config/connect-google/client.json
-          path_match: exact
-          reason: Install the canonical private client atomically.
+          path: platform Famulus config root (see common.interface.google-credentials) / connect-google/client.json
+          reason: Install the canonical private client atomically. The client secret is stored via common.interface.google-credentials in the host secret store, not written to this file.
           sensitivity: secret
           system: filesystem
         - access: write
@@ -187,6 +185,6 @@ platform_support:
 runtime_dependencies: []
 schema_version: 4
 uses_interfaces:
-- interface: common.interface.oauth-json
+- interface: common.interface.google-credentials
   version: 1
 version: 1
