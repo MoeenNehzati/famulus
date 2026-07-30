@@ -36,6 +36,7 @@ exports:
       - install
       - skill-maker
       - skill-certifier
+      - recurring-tasks
     source_interface: common.source.atomic-files.interface.python-api
   common.interface.certificate-records:
     access:

@@ -19,6 +19,12 @@ dependencies:
   reason: Imports Python source from _rtx/_schedule_backend/__init__.py.
   source: recurring-tasks.source.rtx-schedule-backend-init
   version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-run-record.yaml
+  reason: Reads the run record a triggered job's executor writes, to report the job's actual outcome instead of only the scheduler's trigger-acceptance result.
+  source: recurring-tasks.source.rtx-run-record
+  version: 1
 description: Implements enable, disable, immediate-run, status, and log-view operations for configured recurring jobs.
 gateway:
   language: Python
@@ -191,19 +197,21 @@ interfaces:
       interaction: {mode: unattended}
       caller_warnings:
       - external-side-effect: Starts the configured job immediately through the native scheduler.
+      - external-side-effect: Polls logs/<name>/latest.json for up to a bounded timeout after triggering, rather than trusting the scheduler's own trigger-acceptance result, since some native scheduler backends (e.g. launchd's kickstart, Windows' schtasks /Run) return immediately without waiting for the job to actually finish.
       outputs:
-      - {id: result, audience: both, description: Pass or fail message from the immediate scheduler trigger, direct_io_ref: write-2, type: {kind: string}, cardinality: {minimum: 1, maximum: null}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: A pass or fail line is always printed.}
+      - {id: result, audience: both, description: "Pass or fail message reflecting the triggered job's run record (its declared success contract), not merely whether the scheduler accepted the trigger.", direct_io_ref: write-2, type: {kind: string}, cardinality: {minimum: 1, maximum: null}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: A pass or fail line is always printed.}
       - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-3, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
       outcomes:
-      - {id: passed, class: success, outputs: [result], effects: [start-job], caller_action: Treat the immediate scheduler run as successful.}
-      - {id: failed, class: error, outputs: [result], effects: [start-job], caller_action: Inspect service and run logs.}
+      - {id: passed, class: success, outputs: [result], effects: [start-job], caller_action: "Treat the job's actual run, not just the trigger, as successful."}
+      - {id: failed, class: error, outputs: [result], effects: [start-job], caller_action: Inspect service and run logs; the trigger may have been accepted even though the job's own success contract was not met.}
+      - {id: timed-out, class: error, outputs: [result], effects: [start-job], caller_action: Inspect service and run logs; no fresh run record appeared within the bounded wait.}
       - {id: execution-error, class: error, outputs: [diagnostic], effects: [start-job], caller_action: Report the scheduler exception and inspect native scheduler state before retrying.}
       execution:
         state_effect: mutating
         lifecycle: finite
-        consistency: {live: Requests an immediate native scheduler run and waits for the backend command result.}
+        consistency: {live: "Requests an immediate native scheduler run, then polls the job's run-record file until a fresh record appears or the bounded timeout elapses."}
         effects:
-        - {id: start-job, direct_io_ref: write-1, action: execute, value_source: {kind: argument, argument_ref: name}, may_occur_in_outcomes: [passed, failed, execution-error], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {irreversible: Work already performed by the started job cannot be recalled generically.}}
+        - {id: start-job, direct_io_ref: write-1, action: execute, value_source: {kind: argument, argument_ref: name}, may_occur_in_outcomes: [passed, failed, timed-out, execution-error], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {irreversible: Work already performed by the started job cannot be recalled generically.}}
         mutation_safety:
           atomicity: {per_effect_only: One scheduler start request is issued.}
           concurrent_invocations: {unsafe: Multiple calls may overlap executions of the same job.}
@@ -211,17 +219,18 @@ interfaces:
           on_uncertain_completion: {verify_then_decide: Inspect scheduler and run-log state before retrying.}
           partial_effects_on_failure: {possible: The job may start even when status collection fails.}
           rollback_on_failure: {unavailable: The interface has no generic compensation for job work.}
-        verification: [{method: output-schema, output_ref: result}]
+        verification: [{method: output-schema, output_ref: result}, {method: direct-io-state, direct_io_ref: read-2}]
       helpers: []
       direct_io:
         network: []
-        reads: []
+        reads:
+        - {access: read, content: run-record, formats: [json], id: read-2, medium: local-filesystem, path: logs/<name>/latest.json, path_match: exact, sensitivity: derived-private, system: filesystem}
         writes:
         - {access: execute, content: recurring-job, formats: [text], id: write-1, medium: local-system, sensitivity: user-private, system: native-scheduler}
         - {access: write, content: response, formats: [text], id: write-2, medium: stdout, sensitivity: derived-private}
         - {access: write, content: diagnostic-report, formats: [text], id: write-3, medium: stderr, sensitivity: derived-private}
-    description: Trigger a job immediately through the native scheduler, show output
-      and status.
+    description: Trigger a job immediately through the native scheduler, then wait
+      (bounded) for its run record and report whether the job actually succeeded.
     process_binding:
       args_prefix:
       - test

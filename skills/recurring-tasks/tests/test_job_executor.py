@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -10,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_rtx"))
 
 import _job_executor as job_executor
+from _run_record import JobRunRecord, evaluate_success_contract, write_run_record
 
 
 def test_direct_executor_entrypoint_finds_repo_package_without_pythonpath():
@@ -100,3 +102,156 @@ def test_run_job_appends_output_without_shell(tmp_path):
     assert kwargs.get("shell") is not True
     assert kwargs["env"]["FOO"] == "bar"
     assert (tmp_path / "logs" / "demo" / "run.log").exists()
+
+
+# ── _run_record: JobRunRecord / write_run_record / evaluate_success_contract ──
+
+def test_write_run_record_creates_run_boundary_markers(tmp_path):
+    record = JobRunRecord(job_name="email-triage", started_at="2026-07-27T00:00:00Z",
+                           finished_at="2026-07-27T00:00:05Z", process_exit_code=0,
+                           inner_status="ok", success=True)
+    write_run_record(log_dir=tmp_path, record=record)
+    latest = json.loads((tmp_path / "email-triage" / "latest.json").read_text())
+    assert latest["success"] is True
+    assert latest["started_at"] == "2026-07-27T00:00:00Z"
+
+
+def test_evaluate_success_contract_fails_when_inner_status_is_error_despite_zero_exit():
+    contract = {"require_inner_status": "ok"}
+    result = evaluate_success_contract(process_exit_code=0, inner_status="error", contract=contract)
+    assert result.success is False
+
+
+def test_evaluate_success_contract_passes_when_no_contract_declared():
+    result = evaluate_success_contract(process_exit_code=0, inner_status=None, contract={})
+    assert result.success is True
+
+
+def test_evaluate_success_contract_fails_on_nonzero_exit_regardless_of_contract():
+    result = evaluate_success_contract(process_exit_code=1, inner_status="ok", contract={})
+    assert result.success is False
+    assert "1" in result.reason
+
+
+def test_evaluate_success_contract_passes_when_inner_status_matches_required():
+    contract = {"require_inner_status": "ok"}
+    result = evaluate_success_contract(process_exit_code=0, inner_status="ok", contract=contract)
+    assert result.success is True
+
+
+# ── run_job: run boundary markers, run-record writing, success contract wiring ──
+
+def _write_jobs_file(tmp_path: Path, *, command: str, success: dict | None = None) -> Path:
+    jobs_file = tmp_path / "jobs.yaml"
+    success_yaml = ""
+    if success is not None:
+        lines = "\n".join(f"      {k}: {v}" for k, v in success.items())
+        success_yaml = f"    success:\n{lines}\n"
+    jobs_file.write_text(
+        "jobs:\n"
+        "  - name: demo\n"
+        "    description: Demo\n"
+        f"    command: {command}\n"
+        "    schedule: '0 * * * *'\n"
+        "    enabled: true\n"
+        f"{success_yaml}",
+        encoding="utf-8",
+    )
+    return jobs_file
+
+
+def test_run_job_writes_run_boundary_markers_around_execution(tmp_path):
+    jobs_file = _write_jobs_file(tmp_path, command="invoke-skill demo")
+    completed = subprocess.CompletedProcess(args=[], returncode=0)
+
+    with mock.patch.object(job_executor.subprocess, "run", return_value=completed):
+        job_executor.run_job(jobs_file=jobs_file, job_name="demo", log_dir=tmp_path / "logs")
+
+    log_text = (tmp_path / "logs" / "demo" / "run.log").read_text()
+    assert "--- RUN START ---" in log_text
+    assert "--- RUN END (success=True) ---" in log_text
+    start_idx = log_text.index("--- RUN START ---")
+    end_idx = log_text.index("--- RUN END")
+    assert start_idx < end_idx
+
+
+def test_run_job_writes_run_boundary_markers_on_failure(tmp_path):
+    jobs_file = _write_jobs_file(tmp_path, command="invoke-skill demo")
+    completed = subprocess.CompletedProcess(args=[], returncode=1)
+
+    with mock.patch.object(job_executor.subprocess, "run", return_value=completed):
+        exit_code = job_executor.run_job(jobs_file=jobs_file, job_name="demo", log_dir=tmp_path / "logs")
+
+    assert exit_code == 1
+    log_text = (tmp_path / "logs" / "demo" / "run.log").read_text()
+    assert "--- RUN START ---" in log_text
+    assert "--- RUN END (success=False) ---" in log_text
+
+
+def test_run_job_writes_run_record_with_success_from_exit_code(tmp_path):
+    jobs_file = _write_jobs_file(tmp_path, command="invoke-skill demo")
+    completed = subprocess.CompletedProcess(args=[], returncode=0)
+    log_dir = tmp_path / "logs"
+
+    with mock.patch.object(job_executor.subprocess, "run", return_value=completed):
+        job_executor.run_job(jobs_file=jobs_file, job_name="demo", log_dir=log_dir)
+
+    record = json.loads((log_dir / "demo" / "latest.json").read_text())
+    assert record["success"] is True
+    assert record["process_exit_code"] == 0
+    assert record["job_name"] == "demo"
+
+
+def test_run_job_fails_run_record_when_inner_status_does_not_match_contract(tmp_path, monkeypatch):
+    jobs_file = _write_jobs_file(
+        tmp_path, command="invoke-skill demo", success={"require_inner_status": "ok"}
+    )
+    completed = subprocess.CompletedProcess(args=[], returncode=0)
+    log_dir = tmp_path / "logs"
+    skills_root = tmp_path / "skills"
+    (skills_root / "demo" / "state").mkdir(parents=True)
+    (skills_root / "demo" / "state" / "status.json").write_text(
+        json.dumps({"result": "error", "message": "boom"})
+    )
+
+    with mock.patch.object(job_executor.subprocess, "run", return_value=completed), \
+         mock.patch.object(job_executor, "SKILLS_ROOT", skills_root):
+        exit_code = job_executor.run_job(jobs_file=jobs_file, job_name="demo", log_dir=log_dir)
+
+    # process exit code is still 0 (the wrapper launched fine); success is
+    # what tells the difference.
+    assert exit_code == 0
+    record = json.loads((log_dir / "demo" / "latest.json").read_text())
+    assert record["success"] is False
+    assert record["inner_status"] == "error"
+
+    log_text = (log_dir / "demo" / "run.log").read_text()
+    assert "--- RUN END (success=False) ---" in log_text
+
+
+def test_run_job_writes_run_end_and_run_record_when_subprocess_fails_to_spawn(tmp_path):
+    """A missing/misconfigured executable raises OSError (e.g.
+    FileNotFoundError, PermissionError) from subprocess.run() itself --
+    before any CompletedProcess exists. run_job() must still close out the
+    RUN START marker with a RUN END marker and write a run record, instead
+    of letting the exception propagate past both."""
+    jobs_file = _write_jobs_file(tmp_path, command="invoke-skill demo")
+    log_dir = tmp_path / "logs"
+
+    with mock.patch.object(job_executor.subprocess, "run",
+                            side_effect=FileNotFoundError("no such file: invoke-skill")):
+        exit_code = job_executor.run_job(jobs_file=jobs_file, job_name="demo", log_dir=log_dir)
+
+    assert exit_code != 0
+
+    log_text = (log_dir / "demo" / "run.log").read_text()
+    assert "--- RUN START ---" in log_text
+    assert "--- RUN END (success=False) ---" in log_text
+    start_idx = log_text.index("--- RUN START ---")
+    end_idx = log_text.index("--- RUN END")
+    assert start_idx < end_idx
+
+    record = json.loads((log_dir / "demo" / "latest.json").read_text())
+    assert record["success"] is False
+    assert record["inner_status"] is None
+    assert "spawn" in record["reason"].lower()

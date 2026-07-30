@@ -4,8 +4,18 @@ jobs:
   command: ASSISTANT_DEFAULT=codex invoke-skill email-triage
   schedule: 0 3 * * *
   enabled: true
+  # email-triage's own scripts (_watermark_floor.py, _watermark_writer.py,
+  # _failure_clearer.py) write state/status.json with result: ok|error|warning
+  # as part of their existing watermark-safety mechanism, so its success can
+  # be checked beyond a bare exit code.
+  success:
+    require_inner_status: ok
 - name: daily-plan
   description: Generate or show today's daily plan, including potential-actions triage
   command: invoke-skill daily-plan
   schedule: 0 7 * * *
   enabled: true
+  # daily-plan has no status.json self-reporting mechanism (unlike
+  # email-triage), so its success contract is process exit code only --
+  # leave `success:` absent/empty rather than requiring an inner status it
+  # never writes, which would make every run report failure.

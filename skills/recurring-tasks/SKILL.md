@@ -12,6 +12,7 @@ Skill Version: 1
 
 Uses Interfaces:
 - `recurring-tasks.source.gateway -> install-assistant-tools.interface.default@2`
+- `recurring-tasks.source.rtx-run-record -> common.interface.atomic-files@1`
 - `recurring-tasks.source.rtx-schedule-backend-init -> common.interface.famulus-paths@1`
 
 Public Interfaces:
@@ -50,7 +51,7 @@ Use the installed `dispatcher` command for these process-bound interfaces:
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-status`
 - `recurring-tasks.interface.scripts-sync` — Regenerate native scheduler entries from jobs.yaml.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-sync`
-- `recurring-tasks.interface.scripts-test` — Trigger a job immediately through the native scheduler, show output and status.
+- `recurring-tasks.interface.scripts-test` — Trigger a job immediately through the native scheduler, then wait (bounded) for its run record and report whether the job actually succeeded.
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-test <name>`
 - `recurring-tasks.interface.scripts-view-logs` — Tail the run log for a job (default 50 lines).
   - `dispatcher --caller-skill recurring-tasks recurring-tasks.interface.scripts-view-logs <job-name> [--lines N]`

@@ -1,0 +1,120 @@
+content:
+- _rtx/_run_record\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: recurring-tasks.source.rtx-init
+  version: 1
+description: Separates trigger acceptance from real task success by evaluating a job's process exit code and self-reported inner status against its declared success contract, and persisting the result as a durable per-job run record.
+gateway:
+  language: Python
+  path: _rtx/_run_record.py
+id: recurring-tasks.source.rtx-run-record
+interfaces:
+  recurring-tasks.source.rtx-run-record.interface.python-api:
+    contract:
+      arguments:
+        operation:
+          description: Run-record function to call.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - {value: evaluate-success-contract, description: "Decide whether a run succeeded from its process exit code, inner status, and success contract."}
+            - {value: read-inner-status, description: "Read a job's self-reported result field from its state/status.json, if present."}
+            - {value: write-run-record, description: Atomically persist a JobRunRecord as logs/<job>/latest.json.}
+            - {value: read-latest-run-record, description: "Read back the most recent run record for a job, if one exists."}
+        job-name:
+          description: Configured job name the operation concerns.
+          required: true
+          sensitivity: user-private
+          type: {kind: string}
+        process-exit-code:
+          description: The subprocess exit code observed for the job's run, used by evaluate-success-contract.
+          required: false
+          sensitivity: public
+          type: {kind: integer}
+        inner-status:
+          description: The job's self-reported result value (e.g. "ok", "error", "warning"), or null when the job has no such mechanism.
+          required: false
+          sensitivity: derived-private
+          type: {kind: string}
+        contract:
+          description: The job's success block from jobs.yaml, or empty/absent to mean "process exit code only".
+          required: false
+          sensitivity: user-private
+          type: {kind: string, description: "Mapping such as require_inner_status: ok."}
+        log-dir:
+          description: Root logs directory containing per-job run-record subdirectories.
+          required: false
+          sensitivity: user-private
+          direct_io_ref: run-record-file
+          type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: false, access: read-write}
+        skills-root:
+          description: Root directory containing installed skills, used to locate <job>/state/status.json.
+          required: false
+          sensitivity: user-private
+          direct_io_ref: status-file
+          type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: false, access: read}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: write-run-record replaces logs/<job>/latest.json.
+      outputs:
+      - id: result
+        audience: machine
+        description: The evaluated SuccessEvaluation, the inner status string or null, the written/read JobRunRecord, or null when no record exists yet.
+        direct_io_ref: run-record-file
+        cardinality: {minimum: 0, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: read-inner-status and read-latest-run-record return null/None when no file exists yet; write-run-record returns no value.
+        type: {kind: string, sensitivity: derived-private, description: Python return value whose concrete type depends on operation.}
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [run-record-state], caller_action: "Use the returned evaluation, status, or record and continue."}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Reads and writes operate on the state/status.json and logs/<job>/latest.json observed during the call.}
+        effects:
+        - id: run-record-state
+          direct_io_ref: run-record-file
+          action: update
+          value_source: {kind: argument, argument_ref: job-name}
+          may_occur_in_outcomes: [completed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: run-record-file}
+          reversibility: {irreversible: "The previous run record is overwritten, not retained."}
+        mutation_safety:
+          atomicity: {per_effect_only: "write-run-record uses atomic_files.atomic_replace_bytes on POSIX with an explicit non-atomic fallback, and a temp-file-plus-replace on Windows."}
+          concurrent_invocations: {unsafe: "Concurrent writes for the same job can interleave, though the last successful replace always wins over a torn read."}
+          idempotency: {idempotent: Writing the same record twice converges to the same file content.}
+          on_uncertain_completion: {verify_then_decide: Read logs/<job>/latest.json before assuming a write did not land.}
+          partial_effects_on_failure: {possible: "The underlying atomic_files replace only exposes fully-written or unchanged file content; the explicit non-atomic fallback can leave a partial write on a hard interruption."}
+          rollback_on_failure: {unavailable: The previous record is not retained for rollback.}
+        verification:
+        - {method: direct-io-state, direct_io_ref: run-record-file}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: status-file, medium: local-filesystem, access: read, content: job-reported status, formats: [json], sensitivity: derived-private, path: <skills-root>/<job-name>/state/status.json, path_match: exact, system: filesystem}
+        - {id: run-record-file, medium: local-filesystem, access: read, content: prior run record, formats: [json], sensitivity: derived-private, path: <log-dir>/<job-name>/latest.json, path_match: exact, system: filesystem}
+        writes:
+        - {id: run-record-file, medium: local-filesystem, access: write, content: job run record, formats: [json], sensitivity: derived-private, path: <log-dir>/<job-name>/latest.json, path_match: exact, system: filesystem}
+        network: []
+    description: Provides run-record evaluation, inner-status reading, and durable persistence to Python callers within recurring-tasks.
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 4
+uses_interfaces:
+- interface: common.interface.atomic-files
+  version: 1
+version: 1

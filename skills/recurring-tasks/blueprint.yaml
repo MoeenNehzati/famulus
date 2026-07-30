@@ -64,6 +64,7 @@ content:
 - _rtx/_job_executor\.py
 - _rtx/_job_utils\.py
 - _rtx/_live_probe\.py
+- _rtx/_run_record\.py
 - _rtx/_schedule_backend/__init__\.py
 - _rtx/_schedule_backend/_base_backend\.py
 - _rtx/_schedule_backend/_linux_backend\.py
@@ -184,6 +185,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-job-utils.yaml
+  recurring-tasks.source.rtx-run-record:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-run-record.yaml
   recurring-tasks.source.rtx-schedule-backend-init:
     blueprint:
       base: module-root
