@@ -264,17 +264,6 @@
               "version": ">=6",
               "platforms": {
                 "linux": true,
-                "macos": false,
-                "windows": false
-              },
-              "reason": "Reads and writes YAML plan/list data through plan_runtime."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
                 "macos": true,
                 "windows": true
               },
@@ -345,6 +334,17 @@
                 "windows": true
               },
               "reason": "Reads and writes YAML list files."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads and writes YAML plan/list data through plan_runtime."
             },
             {
               "kind": "python-package",
@@ -478,17 +478,6 @@
               "version": ">=6",
               "platforms": {
                 "linux": true,
-                "macos": false,
-                "windows": false
-              },
-              "reason": "Reads and writes YAML plan/list data through plan_runtime."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
                 "macos": true,
                 "windows": true
               },
@@ -559,6 +548,17 @@
                 "windows": true
               },
               "reason": "Reads and writes YAML list files."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads and writes YAML plan/list data through plan_runtime."
             },
             {
               "kind": "python-package",
@@ -692,8 +692,8 @@
               "version": "any",
               "platforms": {
                 "linux": true,
-                "macos": false,
-                "windows": false
+                "macos": true,
+                "windows": true
               },
               "reason": "Reads and writes plan files in the configured GDrive remote."
             },
