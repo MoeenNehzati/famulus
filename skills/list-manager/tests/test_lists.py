@@ -84,7 +84,10 @@ def test_init_creates_valid_yaml(tmp_path):
     data = yaml.safe_load(f.read_text())
     assert data["schema"] == "todo"
     assert data["name"] == "todo"
-    assert data["categories"] == []
+    # A fresh list is seeded with usable default domain categories rather
+    # than an empty list (feedback item 23) -- see
+    # test_init_seeds_default_categories_for_todo_schema for the details.
+    assert data["categories"]
 
 
 def test_init_custom_name(tmp_path):
@@ -123,6 +126,54 @@ def test_init_default_schema(tmp_path):
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(f.read_text())
     assert data["schema"] == "default"
+
+
+# Fixed subcategory sets todo/triage domain categories must carry exactly
+# (task-list.json / task-list-personal.json's `name` enum). Personal adds
+# "Shop"; every other domain (e.g. Work) uses the base six.
+_PERSONAL_SUBCATEGORY_NAMES = {"Replies", "Payments", "Reading", "Writing", "Tasks", "Misc", "Shop"}
+_WORK_SUBCATEGORY_NAMES = {"Replies", "Payments", "Reading", "Writing", "Tasks", "Misc"}
+
+
+def _assert_default_domain_categories(data: dict) -> None:
+    """Shared assertion for the todo/triage default-category seed: both
+    "Personal" and "Work" domains present, each with its exact required
+    subcategory set."""
+    category_names = [c["name"] for c in data["categories"]]
+    assert "Personal" in category_names
+    assert "Work" in category_names
+
+    personal = next(c for c in data["categories"] if c["name"] == "Personal")
+    assert {sc["name"] for sc in personal["categories"]} == _PERSONAL_SUBCATEGORY_NAMES
+
+    work = next(c for c in data["categories"] if c["name"] == "Work")
+    assert {sc["name"] for sc in work["categories"]} == _WORK_SUBCATEGORY_NAMES
+
+
+def test_init_seeds_default_categories_for_todo_schema(tmp_path):
+    f = tmp_path / "todo.yaml"
+    result = run(["init", str(f), "--schema", "todo"])
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(f.read_text())
+    _assert_default_domain_categories(data)
+
+
+def test_init_seeds_default_categories_for_triage_schema(tmp_path):
+    f = tmp_path / "triage.yaml"
+    result = run(["init", str(f), "--schema", "triage"])
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(f.read_text())
+    _assert_default_domain_categories(data)
+
+
+def test_init_default_schema_categories_stay_empty(tmp_path):
+    # The "default" schema has no fixed category vocabulary, so there is no
+    # usable default to seed -- an empty list remains correct.
+    f = tmp_path / "notes.yaml"
+    result = run(["init", str(f), "--schema", "default"])
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(f.read_text())
+    assert data["categories"] == []
 
 
 # ── gen-id ───────────────────────────────────────────────────────────────────

@@ -451,6 +451,43 @@ def cmd_describe_schema(args: argparse.Namespace) -> None:
     print(yaml.dump(out, allow_unicode=True, default_flow_style=False, sort_keys=False), end="")
 
 
+def _domain_category(name: str, personal: bool) -> dict:
+    """Build one domain category, populated with the fixed subcategory set
+    todo/triage schemas require (task-list.json / task-list-personal.json),
+    resolved through get_schema so this stays in sync with the schema files
+    instead of duplicating their enum here.
+    """
+    sub_names = get_schema.domain_subcategory_names(personal)
+    return {"name": name, "categories": [{"name": n} for n in sub_names]}
+
+
+def default_categories(schema: str) -> list[dict]:
+    """Usable starting categories for a freshly initialized list.
+
+    Fixes feedback item 23: an unconditional `categories: []` left every new
+    list unusable until the caller manually built out the schema's required
+    category structure. todo/triage lists need at least one domain category,
+    and that domain category must carry the schema's fixed subcategory set
+    (see task-list.json / task-list-personal.json), so a bare `[{"name":
+    "Personal"}]` would itself fail validation -- the seed must be fully
+    populated. Schemas without a fixed category vocabulary (e.g. "default")
+    have no meaningful default, so they keep an empty list.
+
+    "Personal" and "Work" are the two seed domain names: "Personal" is not
+    arbitrary -- todo.json/triage.json route on the literal name "Personal"
+    to require the 7-subcategory (incl. "Shop") variant, so it must be spelled
+    exactly that way to exercise it. "Work" has no schema significance (any
+    other name would validate identically); it's just a second, common-sense
+    domain so a fresh list isn't limited to a single bucket.
+    """
+    if schema in ("todo", "triage"):
+        return [
+            _domain_category("Personal", personal=True),
+            _domain_category("Work", personal=False),
+        ]
+    return []
+
+
 def cmd_init(args: argparse.Namespace) -> None:
     file = Path(args.file)
     if file.exists():
@@ -460,7 +497,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     data: dict = {
         "schema": args.schema,
         "name": name,
-        "categories": [],
+        "categories": default_categories(args.schema),
     }
 
     validate_list(data)

@@ -232,12 +232,12 @@ interfaces:
       - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-2, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
       - {id: result, audience: both, description: Success confirmation written to stdout., direct_io_ref: write-1, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: A confirmation line is emitted on success., type: {kind: string, sensitivity: derived-private}}
       outcomes:
-      - {id: created, class: success, outputs: [result], effects: [cloud-list-create], caller_action: Add categories or entries through the supported list interfaces.}
+      - {id: created, class: success, outputs: [result], effects: [cloud-list-create], caller_action: "Add entries through the supported list interfaces; todo/triage schemas start pre-seeded with usable default domain categories (Personal, Work) already carrying the schema's required subcategory set, not an empty list."}
       - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: "Correct the name, schema, validation, or cloud error before retrying."}
       execution:
         state_effect: mutating
         lifecycle: finite
-        consistency: {live: Builds and validates a new empty list before uploading it to current cloud state.}
+        consistency: {live: "Builds and validates a new list -- pre-seeded with default categories for todo/triage schemas, empty for schemas with no fixed category vocabulary -- before uploading it to current cloud state."}
         effects:
         - {id: cloud-list-create, direct_io_ref: write-1, action: create, value_source: {kind: argument, argument_ref: name}, may_occur_in_outcomes: [created], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Remove the uploaded list through the cloud storage owner if it is no longer wanted.}}
         mutation_safety:
@@ -694,12 +694,12 @@ interfaces:
       - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-2, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
       - {id: result, audience: both, description: Success confirmation written to stdout., direct_io_ref: write-3, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: A confirmation line is emitted on success., type: {kind: string, sensitivity: derived-private}}
       outcomes:
-      - {id: created, class: success, outputs: [result], effects: [list-create], caller_action: Populate the new list through create-entry.}
+      - {id: created, class: success, outputs: [result], effects: [list-create], caller_action: "Populate the new list through create-entry; todo/triage schemas start pre-seeded with usable default domain categories (Personal, Work) already carrying the schema's required subcategory set, not an empty list."}
       - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: Choose an unused path and valid schema before retrying.}
       execution:
         state_effect: mutating
         lifecycle: finite
-        consistency: {snapshot: Validates a newly constructed empty list before creating the file.}
+        consistency: {snapshot: "Validates a newly constructed list -- pre-seeded with default categories for todo/triage schemas, empty for schemas with no fixed category vocabulary -- before creating the file."}
         effects:
         - {id: list-create, direct_io_ref: write-1, action: create, value_source: {kind: argument, argument_ref: schema}, may_occur_in_outcomes: [created], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {reversible: Delete the newly created file while it is no longer needed.}}
         mutation_safety:
