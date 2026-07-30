@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import secrets
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -113,6 +114,53 @@ def refresh_google_access_token(
     if not access_token:
         raise OAuthError(f"token refresh for account '{nickname}' did not return an access token")
     return access_token
+
+
+def get_gmail_access_token(
+    nickname: str,
+    account: dict,
+    *,
+    home: Path | None = None,
+    platform: str = sys.platform,
+    urlopen: Callable = urllib.request.urlopen,
+) -> str:
+    """Return a Gmail XOAUTH2 access token for ``account``.
+
+    When the account record carries a ``credential_id`` (bound via
+    accounts.py's ``use-google-credential`` subcommand), delegates to the
+    shared connect-google credential in
+    ``officina.common.google_credentials``, which re-validates Gmail scope on
+    every call before any network request. This is NOT the same function as
+    ``officina.common.google_credentials.exchange_authorization_code`` — that
+    module has its own, unrelated OAuth helpers; this module's own
+    ``exchange_authorization_code`` (below) is untouched.
+
+    Falls back to this module's own legacy per-account OAuth flow
+    (``refresh_google_access_token``) — UNCHANGED — when ``credential_id`` is
+    absent, so accounts that have not adopted the shared credential keep
+    authenticating exactly as before.
+    """
+    credential_id = account.get("credential_id")
+    if not credential_id:
+        # Unchanged legacy call shape: refresh_google_access_token's own
+        # default urlopen=urllib.request.urlopen already matches this
+        # wrapper's default, and existing callers/tests rely on this
+        # function being invoked with exactly (nickname, account).
+        return refresh_google_access_token(nickname, account)
+
+    from officina.common.google_credentials import GoogleCredentialError, SERVICE_SCOPES, refresh_access_token
+
+    resolved_home = home if home is not None else Path.home()
+    try:
+        return refresh_access_token(
+            credential_id,
+            required_scopes=SERVICE_SCOPES["gmail"],
+            home=resolved_home,
+            platform=platform,
+            urlopen=urlopen,
+        )
+    except GoogleCredentialError as exc:
+        raise OAuthError(str(exc)) from exc
 
 
 def xoauth2_string(email_address: str, access_token: str) -> str:

@@ -200,6 +200,41 @@ def cmd_setup_oauth(args: argparse.Namespace) -> None:
     print(f"Stored Gmail OAuth credentials for '{args.nickname}'")
 
 
+def accounts_use_google_credential(*, nickname: str, credential_id: str, home: Path, platform: str = sys.platform) -> None:
+    """Bind one email-client account to a shared connect-google credential.
+
+    Validates the credential grants Gmail scope *before* writing anything,
+    then stores only the opaque ``credential_id`` on the TARGET ACCOUNT's own
+    record in accounts.json — never the client secret or refresh token,
+    which stay in officina.common.google_credentials' registry/secret store.
+
+    Mutates the loaded record in place and writes the whole registry back via
+    save(), the same merge-not-replace convention cmd_update already uses, so
+    every other field on the account (email, imap/smtp settings, auth mode,
+    legacy oauth block, etc.) survives untouched.
+    """
+    from officina.common.google_credentials import SERVICE_SCOPES, GoogleCredentialError, load_credential
+
+    data = load()
+    if nickname not in data:
+        raise SystemExit(f"unknown account '{nickname}'. Known: {', '.join(data) or '(none)'}")
+
+    try:
+        ref = load_credential(credential_id, home=home, platform=platform)
+        if not SERVICE_SCOPES["gmail"] <= ref.granted_scopes:
+            raise GoogleCredentialError(f"credential {credential_id} lacks Gmail scope")
+    except GoogleCredentialError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    data[nickname]["credential_id"] = credential_id
+    save(data)
+
+
+def cmd_use_google_credential(args: argparse.Namespace) -> None:
+    accounts_use_google_credential(nickname=args.nickname, credential_id=args.credential_id, home=Path(args.home))
+    print(f"Bound account '{args.nickname}' to shared Google credential '{args.credential_id}'")
+
+
 def cmd_resolve(args: argparse.Namespace) -> None:
     data = load()
     if args.nickname not in data:
@@ -263,6 +298,12 @@ def main(argv: list[str] | None = None) -> int:
     p_resolve = sub.add_parser("resolve")
     p_resolve.add_argument("--nickname", required=True)
     p_resolve.set_defaults(func=cmd_resolve)
+
+    p_use_cred = sub.add_parser("use-google-credential")
+    p_use_cred.add_argument("--nickname", required=True)
+    p_use_cred.add_argument("--credential-id", required=True)
+    p_use_cred.add_argument("--home", required=True)
+    p_use_cred.set_defaults(func=cmd_use_google_credential)
 
     args = parser.parse_args(argv)
     args.func(args)

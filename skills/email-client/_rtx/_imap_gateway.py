@@ -111,7 +111,7 @@ def get_password(nickname: str, account: dict) -> str:
 def authenticate_imap(conn: imaplib.IMAP4_SSL, nickname: str, account: dict) -> None:
     if _oauth_tokens.is_gmail_oauth(account):
         try:
-            access_token = _oauth_tokens.refresh_google_access_token(nickname, account)
+            access_token = _oauth_tokens.get_gmail_access_token(nickname, account)
         except _oauth_tokens.OAuthError as exc:
             die(str(exc))
         auth_bytes = _oauth_tokens.xoauth2_bytes(account["email"], access_token)

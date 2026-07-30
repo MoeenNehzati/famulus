@@ -82,6 +82,11 @@ exports:
       allow_all_modules: false
       allowed_callers: []
     source_interface: email-client.source.rtx-email-accounts.interface.accounts-update
+  email-client.interface.accounts-use-google-credential:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: email-client.source.rtx-email-accounts.interface.accounts-use-google-credential
   email-client.interface.default:
     access:
       allow_all_modules: true

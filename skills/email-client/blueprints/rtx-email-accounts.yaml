@@ -627,6 +627,96 @@ interfaces:
     usage: --nickname <nick> [--email <addr>] [--display-name <name>] [--imap-host
       H] [--imap-port P] [--smtp-host H] [--smtp-port P] [--auth app-password|gmail-oauth]
     version: 1
+  email-client.source.rtx-email-accounts.interface.accounts-use-google-credential:
+    contract:
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: email-account
+          id: read-1
+          medium: local-system
+          sensitivity: user-private
+          system: keyring
+        writes:
+        - access: write
+          content: email-account
+          id: write-1
+          medium: local-system
+          sensitivity: user-private
+          system: keyring
+        - access: write
+          content: response
+          formats: [text]
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+        - {access: write, content: diagnostic-report, formats: [text], id: write-3, medium: stderr, sensitivity: derived-private}
+      arguments:
+        nickname: {description: Existing account nickname to bind to the shared credential, required: true, sensitivity: user-private, type: {kind: string, format: {named: identifier}}}
+        credential-id: {description: Opaque shared credential identifier issued by connect-google's authorize-services flow, required: true, sensitivity: user-private, type: {kind: string}}
+        home: {description: Home directory whose connect-google credential registry is consulted, required: true, sensitivity: user-private, type: {kind: string}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings:
+      - external-side-effect: Rewrites the target account's registry record to add credential_id; other fields on that record and every other account are left untouched.
+      outputs:
+      - {id: result, audience: both, description: Confirmation naming the account bound to the shared credential., direct_io_ref: write-2, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Always printed on success., type: {kind: string, sensitivity: derived-private}}
+      - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-3, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
+      outcomes:
+      - {id: bound, class: success, outputs: [result], effects: [account-write], caller_action: "The account now authenticates Gmail IMAP/SMTP using the shared credential; the legacy per-account OAuth fields, if present, are left in place but unused."}
+      - {id: insufficient-scope, class: refusal, outputs: [diagnostic], effects: [], caller_action: "Re-run connect-google's authorization with Gmail scope included, then retry."}
+      - {id: unknown-nickname, class: error, outputs: [diagnostic], effects: [], caller_action: Register the account with accounts-add before binding it to a shared credential.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Loads the current credential registry entry and validates granted Gmail scope before writing.}
+        effects:
+        - id: account-write
+          direct_io_ref: write-1
+          action: update
+          value_source: {kind: argument, argument_ref: credential-id}
+          may_occur_in_outcomes: [bound]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}
+          reversibility: {compensatable: A later accounts-update or accounts-use-google-credential call can change or replace credential_id.}
+        mutation_safety:
+          atomicity: {non_atomic: The implementation writes the registry directly and does not provide an atomic replacement guarantee.}
+          concurrent_invocations: {unsafe: Concurrent registry writers can overwrite one another.}
+          idempotency: {idempotent: Repeating the same nickname and credential-id leaves the same stored value.}
+          on_uncertain_completion: {verify_then_decide: Run accounts-resolve on the nickname and inspect credential_id before retrying.}
+          partial_effects_on_failure: {possible: A process or filesystem failure can occur while persisting the registry.}
+          rollback_on_failure: {unavailable: No prior-record archive or automatic rollback is supplied.}
+        verification: [{method: direct-io-state, direct_io_ref: write-1}]
+      helpers: []
+    description: Bind one account nickname to a shared connect-google credential_id
+      after validating it carries Gmail scope, storing only the opaque identifier
+      (never the client secret or refresh token) on that account's own registry
+      record. Other accounts and other fields on this account are untouched. The
+      pre-existing per-account Gmail OAuth path (accounts-setup-oauth) remains the
+      unchanged fallback for accounts that have not adopted the shared credential.
+    process_binding:
+      args_prefix:
+      - use-google-credential
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --nickname
+        - --credential-id
+        - --home
+        flag_patterns:
+          --nickname: ^.+$
+          --credential-id: ^.+$
+          --home: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+        required_flags:
+        - --nickname
+        - --credential-id
+        - --home
+    usage: --nickname <nick> --credential-id <id> --home <dir>
+    version: 1
 node_type: behavioral_source
 platform_support:
   linux: true
@@ -661,5 +751,7 @@ runtime_dependencies:
 schema_version: 4
 uses_interfaces:
 - interface: common.interface.secret-store
+  version: 1
+- interface: common.interface.google-credentials
   version: 1
 version: 1

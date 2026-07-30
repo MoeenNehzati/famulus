@@ -14,4 +14,6 @@ schema_version: 4
 uses_interfaces:
 - interface: common.interface.secret-store
   version: 1
+- interface: common.interface.google-credentials
+  version: 1
 version: 1
