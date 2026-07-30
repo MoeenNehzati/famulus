@@ -2123,7 +2123,40 @@
                 "macos": true,
                 "windows": true
               },
+              "reason": "Clears stored account credentials when requested."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
               "reason": "Provides the system credential-store API imported by secret_store.py."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Stores Gmail OAuth refresh tokens and client secrets in the host credential store."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Stores IMAP or SMTP credentials in the host credential store."
             }
           ]
         },

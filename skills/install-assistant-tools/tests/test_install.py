@@ -190,3 +190,83 @@ def test_phase_entry_dry_run_skips_candidate_build(tmp_path, monkeypatch):
 
     assert status == 0
     assert "build_candidate_release" not in [name for name, _ in calls]
+
+
+# ── Google onboarding wiring (Task 4) ────────────────────────────────────────
+
+
+def test_phase_entry_calls_google_onboarding_only_after_core_install_succeeds(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        install.managed_runtime, "build_candidate_release",
+        lambda **kwargs: calls.append("build"),
+    )
+    monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append("scaffold"))
+    monkeypatch.setattr(install.dev_link, "run", lambda **kw: calls.append("dev_link"))
+    monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append("launchers"))
+    monkeypatch.setattr(
+        install.google_onboarding, "run_google_onboarding",
+        lambda *a, **kw: calls.append("google_onboarding") or install.google_onboarding.OnboardingCapabilityResult(status="needs_selection"),
+    )
+
+    status = install.run(
+        home=tmp_path, dry_run=False, non_interactive=True,
+        dev_mode=False, agents=[], default_llm="claude",
+    )
+
+    assert status == 0
+    assert calls.index("build") < calls.index("scaffold") < calls.index("google_onboarding")
+
+
+def test_phase_entry_skips_google_onboarding_on_core_install_failure(tmp_path, monkeypatch):
+    called = []
+    monkeypatch.setattr(install.scaffold, "run", lambda **kw: 1)
+    monkeypatch.setattr(install.launchers, "run", lambda **kw: called.append("launchers"))
+    monkeypatch.setattr(
+        install.google_onboarding, "run_google_onboarding",
+        lambda *a, **kw: called.append("google_onboarding"),
+    )
+
+    status = install.run(
+        home=tmp_path, dry_run=True, non_interactive=True,
+        dev_mode=False, agents=[], default_llm="claude",
+    )
+
+    assert status != 0
+    assert called == []
+
+
+def test_phase_entry_google_onboarding_failure_does_not_fail_install(tmp_path, monkeypatch):
+    monkeypatch.setattr(install.scaffold, "run", lambda **kw: None)
+    monkeypatch.setattr(install.launchers, "run", lambda **kw: None)
+
+    def boom(*a, **kw):
+        raise RuntimeError("simulated dispatcher failure")
+
+    monkeypatch.setattr(install.google_onboarding, "run_google_onboarding", boom)
+
+    status = install.run(
+        home=tmp_path, dry_run=True, non_interactive=True,
+        dev_mode=False, agents=[], default_llm="claude",
+    )
+
+    assert status == 0
+
+
+def test_phase_entry_google_onboarding_partial_does_not_fail_install(tmp_path, monkeypatch):
+    monkeypatch.setattr(install.scaffold, "run", lambda **kw: None)
+    monkeypatch.setattr(install.launchers, "run", lambda **kw: None)
+    monkeypatch.setattr(
+        install.google_onboarding, "run_google_onboarding",
+        lambda *a, **kw: install.google_onboarding.OnboardingCapabilityResult(
+            status="partial", credential_id="cred-1",
+            granted_services=("drive",), denied_services=(), deferred_services=("gmail",),
+        ),
+    )
+
+    status = install.run(
+        home=tmp_path, dry_run=True, non_interactive=True,
+        dev_mode=False, agents=[], default_llm="claude",
+    )
+
+    assert status == 0

@@ -43,6 +43,7 @@ content:
 - _rtx/_agent_launchers\.py
 - _rtx/_config_bridge\.py
 - _rtx/_fs_links\.py
+- _rtx/_google_onboarding\.py
 - _rtx/_install_launcher/__init__\.py
 - _rtx/_install_launcher/_base_launcher\.py
 - _rtx/_install_launcher/_linux_launcher\.py
@@ -71,6 +72,7 @@ content:
 - tests/test_dev_link\.py
 - tests/test_dev_link_hooks\.py
 - tests/test_e2e_lifecycle\.py
+- tests/test_google_onboarding\.py
 - tests/test_install\.py
 - tests/test_install_launcher\.py
 - tests/test_install_manifest\.py
@@ -129,6 +131,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-config-bridge.yaml
+  install-assistant-tools.source.rtx-google-onboarding:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-google-onboarding.yaml
   install-assistant-tools.source.rtx-init:
     blueprint:
       base: module-root

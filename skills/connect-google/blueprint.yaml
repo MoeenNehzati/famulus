@@ -34,12 +34,14 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - connect-google
+      - install-assistant-tools
     source_interface: connect-google.source.rtx-authorize-services.interface.authorize-services
   connect-google.interface.client-status:
     access:
       allow_all_modules: false
       allowed_callers:
       - connect-google
+      - install-assistant-tools
     source_interface: connect-google.source.rtx-client-config.interface.client-status
   connect-google.interface.connect-services:
     access:

@@ -66,7 +66,8 @@ exports:
   g-calendar.interface.use-google-credential:
     access:
       allow_all_modules: false
-      allowed_callers: []
+      allowed_callers:
+      - install-assistant-tools
     source_interface: g-calendar.source.rtx-ensure-oauth.interface.use-google-credential
 gateway:
   language: Markdown

@@ -85,7 +85,8 @@ exports:
   email-client.interface.accounts-use-google-credential:
     access:
       allow_all_modules: false
-      allowed_callers: []
+      allowed_callers:
+      - install-assistant-tools
     source_interface: email-client.source.rtx-email-accounts.interface.accounts-use-google-credential
   email-client.interface.default:
     access:

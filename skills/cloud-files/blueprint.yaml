@@ -129,7 +129,8 @@ exports:
   cloud-files.interface.use-google-credential:
     access:
       allow_all_modules: false
-      allowed_callers: []
+      allowed_callers:
+      - install-assistant-tools
     source_interface: cloud-files.source.rtx-ensure-oauth.interface.use-google-credential
   cloud-files.interface.write-config:
     access:

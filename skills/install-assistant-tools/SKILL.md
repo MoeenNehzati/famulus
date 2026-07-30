@@ -15,6 +15,11 @@ Uses Interfaces:
 - `install-assistant-tools.source.rtx-agent-launchers -> common.interface.toml-io@1`
 - `install-assistant-tools.source.rtx-config-bridge -> common.interface.codex-toml@1`
 - `install-assistant-tools.source.rtx-config-bridge -> common.interface.toml-io@1`
+- `install-assistant-tools.source.rtx-google-onboarding -> cloud-files.interface.use-google-credential@1`
+- `install-assistant-tools.source.rtx-google-onboarding -> connect-google.interface.authorize-services@1`
+- `install-assistant-tools.source.rtx-google-onboarding -> connect-google.interface.client-status@1`
+- `install-assistant-tools.source.rtx-google-onboarding -> email-client.interface.accounts-use-google-credential@1`
+- `install-assistant-tools.source.rtx-google-onboarding -> g-calendar.interface.use-google-credential@1`
 - `install-assistant-tools.source.rtx-init -> common.interface.famulus-paths@1`
 - `install-assistant-tools.source.rtx-install-launcher-init -> common.interface.famulus-paths@1`
 - `install-assistant-tools.source.rtx-install-scaffold -> common.interface.certificate-records@1`
