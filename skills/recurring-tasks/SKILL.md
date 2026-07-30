@@ -12,6 +12,7 @@ Skill Version: 1
 
 Uses Interfaces:
 - `recurring-tasks.source.gateway -> install-assistant-tools.interface.default@2`
+- `recurring-tasks.source.rtx-schedule-backend-init -> common.interface.famulus-paths@1`
 
 Public Interfaces:
 - `recurring-tasks.interface.default`

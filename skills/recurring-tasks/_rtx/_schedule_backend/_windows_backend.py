@@ -6,7 +6,6 @@ import csv
 import os
 import re
 import subprocess
-import sys
 
 from ._base_backend import ScheduleContext, ScheduleJob
 
@@ -22,10 +21,20 @@ def _short_task_name(name: str) -> str:
 
 
 def executor_command(job: ScheduleJob, context: ScheduleContext) -> str:
+    """Build the schtasks ``/TR`` command line for one job.
+
+    Windows has no shebang-based exec: unlike the Unix backends (which can
+    invoke ``context.runtime_resolver`` directly since it carries its own
+    ``#!/usr/bin/env python3`` shebang), the resolver script must be handed
+    to an explicit ``python`` interpreter -- the same convention the
+    installer's generated Windows dispatcher launcher uses
+    (``python "{resolver}" -m officina.dispatcher.cli %*``).
+    """
     executor = context.skill_dir / "_rtx" / "_job_executor.py"
     return subprocess.list2cmdline(
         [
-            sys.executable,
+            "python",
+            str(context.runtime_resolver),
             str(executor),
             "--jobs-file",
             str(context.jobs_file),

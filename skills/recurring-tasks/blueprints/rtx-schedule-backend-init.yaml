@@ -20,5 +20,7 @@ id: recurring-tasks.source.rtx-schedule-backend-init
 interfaces: {}
 node_type: behavioral_source
 schema_version: 4
-uses_interfaces: []
+uses_interfaces:
+- interface: common.interface.famulus-paths
+  version: 1
 version: 1

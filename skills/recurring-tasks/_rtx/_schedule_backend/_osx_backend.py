@@ -6,7 +6,6 @@ import os
 import plistlib
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 from ._base_backend import ScheduleContext, ScheduleJob
@@ -84,13 +83,14 @@ def plist_content(
     jobs_file: Path,
     log_file: Path,
     executor: Path,
+    runtime_resolver: Path,
     schedule: str,
 ) -> bytes:
     """Generate a launchd plist for one recurring job."""
     payload = {
         "Label": launchd_label(job_name),
         "ProgramArguments": [
-            sys.executable,
+            str(runtime_resolver),
             str(executor),
             "--jobs-file",
             str(jobs_file),
@@ -134,6 +134,7 @@ class OSXScheduleBackend:
                     jobs_file=context.jobs_file,
                     log_file=log_file,
                     executor=executor,
+                    runtime_resolver=context.runtime_resolver,
                     schedule=job.schedule,
                 )
             )

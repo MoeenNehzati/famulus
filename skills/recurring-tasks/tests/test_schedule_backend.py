@@ -65,10 +65,6 @@ def test_linux_sync_writes_units_and_enables_timer(tmp_path):
     with (
         mock.patch("_schedule_backend._linux_backend.subprocess.run") as run,
         mock.patch(
-            "_schedule_backend._linux_backend.sys.executable",
-            "/usr/bin/python3",
-        ),
-        mock.patch(
             "_schedule_backend._linux_backend.shutil.which",
             return_value="/opt/famulus/bin/invoke-skill",
         ),
@@ -77,8 +73,10 @@ def test_linux_sync_writes_units_and_enables_timer(tmp_path):
 
     service = (tmp_path / "ai-my-job.service").read_text()
     timer = (tmp_path / "ai-my-job.timer").read_text()
-    assert 'ExecStart="/usr/bin/python3"' in service
-    assert 'Environment="PATH=/opt/famulus/bin:/usr/bin:' in service
+    assert f'ExecStart="{context.runtime_resolver}"' in service
+    assert sys.executable not in service
+    assert 'Environment="PATH=/opt/famulus/bin:' in service
+    assert 'Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus"' in service
     assert '_job_executor.py" --jobs-file' in service
     assert "/bin/bash" not in service
     assert ">>" not in service
@@ -129,7 +127,8 @@ def test_osx_sync_writes_plist_and_loads_launch_agent(tmp_path):
 
     plist = plistlib.loads((tmp_path / "ai-my-job.plist").read_bytes())
     assert plist["Label"] == launchd_label("my-job")
-    assert plist["ProgramArguments"][0] == sys.executable
+    assert plist["ProgramArguments"][0] == str(context.runtime_resolver)
+    assert plist["ProgramArguments"][0] != sys.executable
     assert "_job_executor.py" in plist["ProgramArguments"][1]
     assert plist["StartCalendarInterval"] == {"Hour": 9, "Minute": 0, "Weekday": 1}
     calls = [call.args[0] for call in run.call_args_list]
@@ -218,6 +217,71 @@ def test_windows_test_runs_expected_task():
         assert WindowsScheduleBackend().test("my-job", _context()) is True
 
     assert run.call_args.args[0] == ["schtasks", "/Run", "/TN", task_name("my-job")]
+
+
+def test_schedule_context_carries_stable_resolver_path(tmp_path):
+    ctx = ScheduleContext(
+        skill_dir=tmp_path,
+        jobs_file=tmp_path / "jobs.yaml",
+        log_dir=tmp_path / "logs",
+        unit_dir=tmp_path / "units",
+        live=False,
+        runtime_resolver=tmp_path / "runtime" / "bootstrap" / "resolvers" / "v1" / "launch.py",
+        config_root=tmp_path / "config",
+        state_root=tmp_path / "state",
+        assistant_default="codex",
+    )
+    assert ctx.runtime_resolver.name == "launch.py"
+    assert ctx.config_root == tmp_path / "config"
+    assert ctx.state_root == tmp_path / "state"
+    assert ctx.assistant_default == "codex"
+
+
+def test_schedule_context_defaults_new_fields_for_untouched_call_sites():
+    """Existing call sites that construct ScheduleContext without the new
+    fields (job_control.py, unit_writer.py, setup_runner.py) must keep
+    working -- the new fields resolve sensible host defaults instead of
+    becoming required constructor arguments."""
+    ctx = ScheduleContext(skill_dir=SKILL_DIR, jobs_file=SKILL_DIR / "jobs.yaml", log_dir=SKILL_DIR / "logs")
+    assert ctx.runtime_resolver.name == "launch.py"
+    assert isinstance(ctx.config_root, Path)
+    assert isinstance(ctx.state_root, Path)
+    assert ctx.assistant_default == "claude"
+
+
+def test_osx_plist_content_uses_stable_resolver_not_sys_executable(tmp_path):
+    from _schedule_backend._osx_backend import plist_content
+
+    resolver = tmp_path / "runtime" / "bootstrap" / "resolvers" / "v1" / "launch.py"
+    raw = plist_content(
+        job_name="my-job",
+        description="My Job",
+        jobs_file=tmp_path / "jobs.yaml",
+        log_file=tmp_path / "run.log",
+        executor=tmp_path / "_job_executor.py",
+        runtime_resolver=resolver,
+        schedule="0 9 * * 1",
+    )
+    plist = plistlib.loads(raw)
+    assert plist["ProgramArguments"][0] == str(resolver)
+    assert sys.executable not in plist["ProgramArguments"]
+
+
+def test_windows_executor_command_uses_python_interpreter_with_stable_resolver(tmp_path):
+    from _schedule_backend._windows_backend import executor_command
+
+    context = _context()
+    job = ScheduleJob(
+        name="my-job",
+        description="My Job",
+        command="/usr/bin/echo hello",
+        schedule="0 9 * * *",
+        enabled=True,
+    )
+    command = executor_command(job, context)
+    assert command.split()[0] == "python"
+    assert str(context.runtime_resolver) in command
+    assert sys.executable not in command
 
 
 def _context(unit_dir: Path | None = None) -> ScheduleContext:

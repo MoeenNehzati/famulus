@@ -83,6 +83,7 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - install-assistant-tools
+      - recurring-tasks
     source_interface: common.source.famulus-paths.interface.python-api
   common.interface.git-provenance:
     access:

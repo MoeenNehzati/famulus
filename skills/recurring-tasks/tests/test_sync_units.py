@@ -183,16 +183,21 @@ def test_no_per_job_runner_scripts_written():
 
 def test_service_runs_python_executor_without_shell(monkeypatch):
     monkeypatch.setattr(shutil, "which", lambda _name: "/opt/famulus/bin/invoke-skill")
-    monkeypatch.setattr(sys, "executable", "/usr/bin/python3")
     with tempfile.TemporaryDirectory() as d:
         _run_sync(JOBS_ONE_ENABLED, d)
         content = (Path(d) / "ai-test-job.service").read_text()
-        assert 'ExecStart="/usr/bin/python3"' in content
-        assert 'Environment="PATH=/opt/famulus/bin:/usr/bin:' in content
+        # ExecStart must invoke the stable, release-independent launch
+        # resolver -- not sys.executable, which would pin the job to
+        # whatever interpreter happened to run the sync script.
+        assert sys.executable not in content
+        assert 'ExecStart="' in content
+        assert "bootstrap/resolvers/v1/launch.py" in content
+        assert 'Environment="PATH=/opt/famulus/bin:' in content
+        assert 'Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus"' in content
         assert '_job_executor.py" --jobs-file' in content
         assert "/bin/bash" not in content
         assert ">>" not in content
-        print("PASS: service ExecStart uses the active Python job executor without shell redirection")
+        print("PASS: service ExecStart uses the stable launch resolver without shell redirection")
 
 
 def test_orphaned_units_removed_when_job_disabled():
