@@ -7,7 +7,7 @@ dependencies:
   reason: Loads Python package support from _rtx/__init__.py.
   source: g-calendar.source.rtx-init
   version: 1
-description: Implements the agenda, search, list, create, update, and delete operations of the Google Calendar command interface.
+description: Implements the agenda, search, list, create, update, and delete operations of the Google Calendar command interface. Mints access tokens via the shared connect-google credential when config.json carries a credential_id, falling back unchanged to the legacy per-service credentials.json refresh flow otherwise.
 gateway:
   language: Python
   path: _rtx/_gcal_client.py
@@ -110,6 +110,16 @@ interfaces:
           path: $home/.config/g-calendar/credentials.json
           path_match: exact
           sensitivity: secret
+          system: filesystem
+        - access: read
+          content: config
+          formats:
+          - json
+          id: read-3
+          medium: local-filesystem
+          path: $home/.config/g-calendar/config.json
+          path_match: exact
+          sensitivity: user-private
           system: filesystem
         writes:
         - access: write
@@ -302,5 +312,7 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 4
-uses_interfaces: []
+uses_interfaces:
+- interface: common.interface.google-credentials
+  version: 1
 version: 1

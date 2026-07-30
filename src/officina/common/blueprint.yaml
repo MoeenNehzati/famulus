@@ -97,6 +97,7 @@ exports:
       allowed_callers:
       - cloud-files
       - connect-google
+      - g-calendar
     source_interface: common.source.google-credentials.interface.python-api
   common.interface.oauth-json:
     access:

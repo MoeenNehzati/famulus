@@ -1954,15 +1954,55 @@
       "interfaces": {
         "ensure-oauth": {
           "id": "g-calendar.interface.ensure-oauth",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "scripts-gcal": {
           "id": "g-calendar.interface.scripts-gcal",
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         },
         "setup-oauth": {
           "id": "g-calendar.interface.setup-oauth",
           "dependencies": []
+        },
+        "use-google-credential": {
+          "id": "g-calendar.interface.use-google-credential",
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         }
       }
     },

@@ -6,6 +6,11 @@ authority:
     match: exact
     path: $home/.config/g-calendar/credentials.json
     reason: setup-oauth is the declared writer for regenerated calendar OAuth credentials.
+  - allowed_readers:
+    - g-calendar.interface.scripts-gcal
+    match: exact
+    path: $home/.config/g-calendar/config.json
+    reason: use-google-credential is the declared writer for the g-calendar config.
   suggested_permissions:
     bash:
     - command:
@@ -58,6 +63,11 @@ exports:
       allow_all_modules: false
       allowed_callers: []
     source_interface: g-calendar.source.rtx-oauth-bootstrap.interface.setup-oauth
+  g-calendar.interface.use-google-credential:
+    access:
+      allow_all_modules: false
+      allowed_callers: []
+    source_interface: g-calendar.source.rtx-ensure-oauth.interface.use-google-credential
 gateway:
   language: Markdown
   path: SKILL.md

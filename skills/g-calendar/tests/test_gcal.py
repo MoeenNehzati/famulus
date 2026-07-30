@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import os
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 REPO_SRC = Path(__file__).resolve().parents[3] / "src"
 if str(REPO_SRC) not in sys.path:
@@ -291,6 +293,56 @@ def test_cmd_move_uses_destination_query(monkeypatch, capsys):
         )
     ]
     assert capsys.readouterr().out == "Moved: Meeting  [id: evt-1]  -> calendar team/calendar\n"
+
+
+def test_get_access_token_uses_shared_credential_when_present(tmp_path):
+    config_dir = tmp_path / ".config" / "g-calendar"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.json").write_text(json.dumps({"credential_id": "google:sub1"}))
+
+    calls = []
+
+    def fake_refresh_access_token(credential_id, **kwargs):
+        calls.append((credential_id, kwargs))
+        return "fake-access-token"
+
+    with mock.patch(
+        "officina.common.google_credentials.refresh_access_token",
+        fake_refresh_access_token,
+    ):
+        token = gcal.get_access_token(home=tmp_path, platform="linux")
+
+    assert token == "fake-access-token"
+    assert calls[0][0] == "google:sub1"
+    from officina.common.google_credentials import SERVICE_SCOPES
+
+    assert calls[0][1]["required_scopes"] == SERVICE_SCOPES["calendar"]
+    assert calls[0][1]["home"] == tmp_path
+    assert calls[0][1]["platform"] == "linux"
+
+
+def test_get_access_token_falls_back_to_legacy_credentials_file(tmp_path):
+    config_dir = tmp_path / ".config" / "g-calendar"
+    config_dir.mkdir(parents=True)
+    (config_dir / "credentials.json").write_text(
+        json.dumps({"client_id": "cid", "client_secret": "csecret", "refresh_token": "rtoken"})
+    )
+
+    class FakeResponse:
+        def __enter__(self_inner):
+            return self_inner
+
+        def __exit__(self_inner, *exc):
+            return False
+
+        def read(self_inner):
+            return json.dumps({"access_token": "legacy-token"}).encode("utf-8")
+
+    with mock.patch.object(gcal.urllib.request, "urlopen", return_value=FakeResponse()) as urlopen:
+        token = gcal.get_access_token(home=tmp_path)
+
+    assert token == "legacy-token"
+    urlopen.assert_called_once()
 
 
 def test_gcal_python_interface_preserves_help_surface():
