@@ -15,12 +15,14 @@ Every subcommand except describe-schema also accepts --cloud, treating the
 """
 
 import argparse
+import contextlib
 import datetime
 import os
 import re
 import shutil
 import sys
 import tempfile
+import time
 import warnings
 from pathlib import Path
 
@@ -87,6 +89,215 @@ def save_yaml(path: Path, data: dict) -> None:
 def die(msg: str) -> None:
     print(f"error: {msg}", file=sys.stderr)
     sys.exit(1)
+
+
+# ── Optimistic concurrency + mutual exclusion (feedback items 24/25) ─────────
+#
+# Design: two processes (e.g. email-triage running concurrently with a user's
+# manual edit, or two triage runs overlapping) can each load_yaml() the same
+# file, mutate their own in-memory copy, and save_yaml() back -- the second
+# write silently clobbers the first's changes with no detection.
+#
+# Two parts close this, and BOTH are required -- a revision check alone is
+# check-then-write with no lock, which only narrows the race window (to the
+# time spent parsing/validating between the check and the write) without
+# closing it: two processes that both load+check before either reaches the
+# write would both pass the check and both write, the second still silently
+# clobbering the first.
+#
+#  1. `revision`: an integer counter on every list document (missing == 0, so
+#     every existing list file on disk today is compatible without
+#     migration). Every successful mutating save increments it by exactly one
+#     (save_with_revision_bump, below). A caller that wants the safety check
+#     reads the list first, notes `revision`, and passes it back via
+#     --expected-revision; if the file's revision has moved on since, the
+#     mutation is rejected before anything is written.
+#  2. `file_lock`: an exclusive advisory lock on a `<file>.lock` sidecar, held
+#     for the ENTIRE load -> check_revision -> mutate -> save sequence in
+#     cmd_create_entry/cmd_update/cmd_delete (see their bodies). This is what
+#     actually serializes two racing processes: the second one's load_yaml()
+#     cannot even start until the first has released the lock (i.e. finished
+#     saving), so the second's check always sees the first's write and is
+#     correctly rejected -- there is no window left for both to pass the
+#     check. The revision field is what makes the now-guaranteed-correct
+#     ordering *detectable and rejectable*, rather than just serialized-and-
+#     silently-overwriting like an unguarded lock alone would still be.
+#
+# This deliberately does NOT introduce a new generic multi-target "apply
+# batch" entrypoint: create-entry already accepts a *list* of entries for one
+# target in a single download/mutate/upload (see cmd_create_entry), and
+# update/delete already accept a list of ids/patches in one call. The actual
+# gap closed here is the missing staleness check + mutual exclusion shared by
+# all three mutating commands -- adding another batch-apply surface would
+# duplicate that existing batching rather than fix the race.
+#
+# Passing --expected-revision is optional everywhere: existing callers that
+# don't know about revisions keep working exactly as before (unconditional
+# read-modify-write, same as pre-existing behavior) -- except that they too
+# now serialize against other lock-holders, since the lock is unconditional
+# and taken regardless of whether --expected-revision was passed. Making
+# --expected-revision itself mandatory would break every caller that
+# predates this feature for no safety gain on local, single-writer usage;
+# the rejection only matters where two writers can race, and those callers
+# opt in by passing it.
+#
+# Note on scope: this local file lock only protects the *local* file path
+# each command operates on. In --cloud mode, that path is a fresh per-
+# invocation temp file (see main()), so the lock serializes nothing across
+# processes there -- the cloud download/mutate/upload sequence has its own,
+# separate (and still open) race at the transport level. This fix closes the
+# local-file race, which is what email-triage's local list files and the
+# tests below exercise.
+class StaleRevisionError(RuntimeError):
+    """Raised when --expected-revision no longer matches the file's current
+    revision: someone else saved this list since the caller last read it."""
+
+    def __init__(self, file: Path, expected: int, actual: int):
+        self.file = file
+        self.expected = expected
+        self.actual = actual
+        super().__init__(
+            f"stale revision: expected {expected}, but {file} is at revision {actual}. "
+            f"Someone else modified this list since you read it -- re-read {file} and retry your change."
+        )
+
+
+def check_revision(data: dict, expected: int | None, file: Path) -> None:
+    """No-op when expected is None: the check is opt-in (see module note above)."""
+    if expected is None:
+        return
+    actual = data.get("revision", 0)
+    if actual != expected:
+        raise StaleRevisionError(file, expected, actual)
+
+
+def save_with_revision_bump(path: Path, data: dict) -> None:
+    """The single choke point every mutating command (create-entry, update,
+    delete) goes through to validate, bump `revision`, and write once."""
+    data["revision"] = data.get("revision", 0) + 1
+    validate_list(data)
+    save_yaml(path, data)
+
+
+_DEFAULT_LOCK_TIMEOUT_S = 30.0
+_LOCK_POLL_INTERVAL_S = 0.05
+
+
+def _lock_timeout_s() -> float:
+    """Bounded-wait deadline for file_lock() acquisition. A crashed writer
+    isn't the risk -- the OS releases flock/msvcrt locks automatically on
+    process exit -- but a HUNG-but-alive writer (stuck network call,
+    deadlock) must not make every later local invocation on this file stall
+    silently forever, which is exactly the wrong failure mode for an
+    unattended caller like email-triage. 30s is meant to catch genuinely
+    stuck processes, not add friction to normal fast operations.
+
+    LIST_MANAGER_TEST_LOCK_TIMEOUT_S overrides it for tests that need to
+    exercise the timeout path in well under a second rather than waiting out
+    the real default.
+    """
+    override = os.environ.get("LIST_MANAGER_TEST_LOCK_TIMEOUT_S")
+    return float(override) if override else _DEFAULT_LOCK_TIMEOUT_S
+
+
+@contextlib.contextmanager
+def file_lock(path: Path):
+    """Cross-platform exclusive advisory lock, held for the full
+    load -> check_revision -> mutate -> save sequence so two racing
+    processes are genuinely serialized rather than merely optimistically
+    checked (see the module note above for why the revision check alone is
+    not sufficient).
+
+    Uses a `<file>.lock` sidecar as the lock handle rather than locking
+    `path` itself, since `path` is fully replaced (not written in place) by
+    save_yaml -- locking a path across a replace is unreliable. Advisory
+    only: it serializes cooperating callers that go through this same
+    function (every mutating list-manager subcommand does); it does not
+    prevent a process that ignores locking entirely from writing the file.
+
+    Acquisition is a bounded-retry loop (non-blocking lock attempt, sleep,
+    repeat, until a deadline) rather than one blocking call on either
+    platform: a plain blocking fcntl.flock has no built-in timeout, and a
+    stuck-but-alive lock holder must not wedge every later invocation on
+    this file forever -- see _lock_timeout_s(). On timeout, dies with a
+    message naming the sidecar and suggesting manual recovery if no process
+    is actually still running.
+
+    os.name == "posix": fcntl.flock(LOCK_EX | LOCK_NB) -- the same
+    primitive officina.common.atomic_files uses to serialize its own
+    compare-and-append writers (see _posix_atomic_append_bytes). That
+    module's public API is purpose-built for confined-root, restrictive-ACL
+    certificate-log operations (secure_open, ACL verification, native NT-ABI
+    calls) and isn't a structural fit for list-manager's arbitrary
+    user-supplied file paths, so this mirrors its per-os.name split directly
+    rather than reusing it.
+
+    os.name == "nt": msvcrt.locking(LK_NBLCK) on the sidecar file (the
+    stdlib cross-platform equivalent; atomic_files.py's nt-branch lock uses
+    the lower-level LockFileEx/UnlockFileEx pair via ctypes for its own
+    confined-handle pipeline, which isn't reachable without that pipeline).
+    """
+    lock_path = path.with_name(path.name + ".lock")
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
+    try:
+        deadline = time.monotonic() + _lock_timeout_s()
+        if os.name == "nt":
+            import msvcrt
+
+            while True:
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        die(
+                            f"could not acquire lock on {lock_path} after "
+                            f"{_lock_timeout_s():.0f}s -- another process may be stuck; "
+                            f"if none is actually running, delete the stale lock file and retry."
+                        )
+                    time.sleep(_LOCK_POLL_INTERVAL_S)
+        else:
+            import fcntl
+
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        die(
+                            f"could not acquire lock on {lock_path} after "
+                            f"{_lock_timeout_s():.0f}s -- another process may be stuck; "
+                            f"if none is actually running, delete the stale lock file and retry."
+                        )
+                    time.sleep(_LOCK_POLL_INTERVAL_S)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                import msvcrt
+
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def _test_race_delay() -> None:
+    """Test-only hook: sleeping here -- inside the lock, after check_revision
+    has passed, before the mutation and save -- lets a test deterministically
+    hold a writer inside the exact check-to-write gap that a lock (rather
+    than a bare revision check) is required to close. No-op unless
+    LIST_MANAGER_TEST_RACE_DELAY is set; only used by
+    test_update_concurrent_writers_are_serialized_by_the_lock.
+    """
+    delay = os.environ.get("LIST_MANAGER_TEST_RACE_DELAY")
+    if delay:
+        time.sleep(float(delay))
 
 
 # ── Cloud transport ───────────────────────────────────────────────────────────
@@ -548,59 +759,64 @@ def cmd_read(args: argparse.Namespace) -> None:
 
 def cmd_create_entry(args: argparse.Namespace) -> None:
     file = Path(args.file)
-    data = load_yaml(file)
-    target = args.target
+    # The lock spans the whole load -> check -> mutate -> save sequence (not
+    # just the check) -- see the module note above check_revision() for why
+    # a bare check-then-write is insufficient to close the race.
+    with file_lock(file):
+        data = load_yaml(file)
+        check_revision(data, getattr(args, "expected_revision", None), file)
+        _test_race_delay()
+        target = args.target
 
-    if HEX6_RE.match(target):
-        parent_entry = find_entry_by_id(data, target)
-        if parent_entry is None:
-            die(f"no entry with id '{target}' found in {file}")
-        dest_list = parent_entry.setdefault("children", [])
-    else:
-        parts = [p.strip() for p in target.split("/") if p.strip()]
-        category = find_category_by_path(data.get("categories", []), parts)
-        if category is None:
-            available = all_category_paths(data.get("categories", []))
-            die(
-                f"category '{target}' not found. Available: "
-                + (", ".join(available) if available else "(none)")
-            )
-        dest_list = category.setdefault("entries", [])
+        if HEX6_RE.match(target):
+            parent_entry = find_entry_by_id(data, target)
+            if parent_entry is None:
+                die(f"no entry with id '{target}' found in {file}")
+            dest_list = parent_entry.setdefault("children", [])
+        else:
+            parts = [p.strip() for p in target.split("/") if p.strip()]
+            category = find_category_by_path(data.get("categories", []), parts)
+            if category is None:
+                available = all_category_paths(data.get("categories", []))
+                die(
+                    f"category '{target}' not found. Available: "
+                    + (", ".join(available) if available else "(none)")
+                )
+            dest_list = category.setdefault("entries", [])
 
-    if args.entries:
-        with open(args.entries, encoding="utf-8") as f:
-            new_entries = yaml.safe_load(f)
-    else:
-        new_entries = yaml.safe_load(sys.stdin.read())
+        if args.entries:
+            with open(args.entries, encoding="utf-8") as f:
+                new_entries = yaml.safe_load(f)
+        else:
+            new_entries = yaml.safe_load(sys.stdin.read())
 
-    if not isinstance(new_entries, list):
-        die("entries input must be a YAML list")
+        if not isinstance(new_entries, list):
+            die("entries input must be a YAML list")
 
-    # Validate required fields before adding to list. This fails fast and forces
-    # the caller to ask for missing values instead of inventing them.
-    schema_name = data.get("schema")
-    validate_entries_before_insert(new_entries, schema_name)
+        # Validate required fields before adding to list. This fails fast and forces
+        # the caller to ask for missing values instead of inventing them.
+        schema_name = data.get("schema")
+        validate_entries_before_insert(new_entries, schema_name)
 
-    existing_ids = collect_ids(data)
-    today = datetime.date.today().isoformat()
-    for entry in new_entries:
-        if "id" not in entry:
-            new_id = gen_ids(existing_ids, 1)[0]
-            entry["id"] = new_id
-            existing_ids.add(new_id)
-        # Default state and created so callers (e.g. email-triage) don't need
-        # to supply them; these are only required by todo/triage schemas but
-        # are harmless on others.
-        if "state" not in entry:
-            # Use schema-aware defaults: triage uses "undecided", todo uses
-            # "incomplete".
-            entry["state"] = "undecided" if schema_name == "triage" else "incomplete"
-        if "created" not in entry:
-            entry["created"] = today
+        existing_ids = collect_ids(data)
+        today = datetime.date.today().isoformat()
+        for entry in new_entries:
+            if "id" not in entry:
+                new_id = gen_ids(existing_ids, 1)[0]
+                entry["id"] = new_id
+                existing_ids.add(new_id)
+            # Default state and created so callers (e.g. email-triage) don't need
+            # to supply them; these are only required by todo/triage schemas but
+            # are harmless on others.
+            if "state" not in entry:
+                # Use schema-aware defaults: triage uses "undecided", todo uses
+                # "incomplete".
+                entry["state"] = "undecided" if schema_name == "triage" else "incomplete"
+            if "created" not in entry:
+                entry["created"] = today
 
-    dest_list.extend(new_entries)
-    validate_list(data)
-    save_yaml(file, data)
+        dest_list.extend(new_entries)
+        save_with_revision_bump(file, data)
 
 
 # States that mean "this entry is finished" across both todo and triage schemas.
@@ -609,55 +825,57 @@ FINISHED_STATES = frozenset({"complete", "accepted", "rejected"})
 
 def cmd_update(args: argparse.Namespace) -> None:
     file = Path(args.file)
-    data = load_yaml(file)
+    with file_lock(file):
+        data = load_yaml(file)
+        check_revision(data, getattr(args, "expected_revision", None), file)
+        _test_race_delay()
 
-    if args.file_input:
-        with open(args.file_input, encoding="utf-8") as f:
-            updates = yaml.safe_load(f)
-    else:
-        updates = yaml.safe_load(sys.stdin.read())
+        if args.file_input:
+            with open(args.file_input, encoding="utf-8") as f:
+                updates = yaml.safe_load(f)
+        else:
+            updates = yaml.safe_load(sys.stdin.read())
 
-    if not isinstance(updates, list):
-        die("update input must be a YAML list")
+        if not isinstance(updates, list):
+            die("update input must be a YAML list")
 
-    today = datetime.date.today().isoformat()
+        today = datetime.date.today().isoformat()
 
-    for patch in updates:
-        if "id" not in patch:
-            die("each update must have an 'id' field")
+        for patch in updates:
+            if "id" not in patch:
+                die("each update must have an 'id' field")
 
-        bad = IMMUTABLE_FIELDS & set(patch.keys()) - {"id"}
-        if bad:
-            die(f"cannot update immutable field(s): {', '.join(sorted(bad))}")
+            bad = IMMUTABLE_FIELDS & set(patch.keys()) - {"id"}
+            if bad:
+                die(f"cannot update immutable field(s): {', '.join(sorted(bad))}")
 
-        target_id = patch["id"]
-        entry = find_entry_by_id(data, target_id)
-        if entry is None:
-            die(f"no entry with id '{target_id}' found in {file}")
+            target_id = patch["id"]
+            entry = find_entry_by_id(data, target_id)
+            if entry is None:
+                die(f"no entry with id '{target_id}' found in {file}")
 
-        for k, v in patch.items():
-            if k == "id":
-                continue
-            entry[k] = v
+            for k, v in patch.items():
+                if k == "id":
+                    continue
+                entry[k] = v
 
-        # `modified`: auto-stamped on every touch (debugging aid; not shown to
-        # the user). `completed`: auto-stamped only the first time a patch
-        # itself transitions state into a finished value, so later unrelated
-        # edits (e.g. a deadline correction) never overwrite the real
-        # completion date. Both are skipped if the patch already set them
-        # explicitly.
-        if "modified" not in patch:
-            entry["modified"] = today
-        if (
-            "completed" not in patch
-            and "state" in patch
-            and patch["state"] in FINISHED_STATES
-            and not entry.get("completed")
-        ):
-            entry["completed"] = today
+            # `modified`: auto-stamped on every touch (debugging aid; not shown to
+            # the user). `completed`: auto-stamped only the first time a patch
+            # itself transitions state into a finished value, so later unrelated
+            # edits (e.g. a deadline correction) never overwrite the real
+            # completion date. Both are skipped if the patch already set them
+            # explicitly.
+            if "modified" not in patch:
+                entry["modified"] = today
+            if (
+                "completed" not in patch
+                and "state" in patch
+                and patch["state"] in FINISHED_STATES
+                and not entry.get("completed")
+            ):
+                entry["completed"] = today
 
-    validate_list(data)
-    save_yaml(file, data)
+        save_with_revision_bump(file, data)
 
 
 # ── Deletion helpers ─────────────────────────────────────────────────────────
@@ -693,21 +911,23 @@ def remove_entries_by_ids(node, ids_to_remove: set[str]) -> None:
 
 def cmd_delete(args: argparse.Namespace) -> None:
     file = Path(args.file)
-    data = load_yaml(file)
+    with file_lock(file):
+        data = load_yaml(file)
+        check_revision(data, getattr(args, "expected_revision", None), file)
+        _test_race_delay()
 
-    ids_to_delete = set(args.ids)
+        ids_to_delete = set(args.ids)
 
-    # Detect missing ids before touching data
-    all_ids = collect_ids(data)
-    missing = ids_to_delete - all_ids
-    if missing:
-        for mid in sorted(missing):
-            print(f"error: id '{mid}' not found", file=sys.stderr)
-        sys.exit(1)
+        # Detect missing ids before touching data
+        all_ids = collect_ids(data)
+        missing = ids_to_delete - all_ids
+        if missing:
+            for mid in sorted(missing):
+                print(f"error: id '{mid}' not found", file=sys.stderr)
+            sys.exit(1)
 
-    remove_entries_by_ids(data, ids_to_delete)
-    validate_list(data)
-    save_yaml(file, data)
+        remove_entries_by_ids(data, ids_to_delete)
+        save_with_revision_bump(file, data)
 
     for id_ in sorted(ids_to_delete):
         print(f"deleted: {id_}")
@@ -728,6 +948,23 @@ def build_parser() -> argparse.ArgumentParser:
             "--cloud",
             action="store_true",
             help="Treat the source as a cloud list name; download, operate, and upload",
+        )
+
+    # Optimistic-concurrency guard (feedback items 24/25): optional on every
+    # mutating subcommand, opt-in for backward compat. See the module note
+    # above check_revision()/StaleRevisionError for the full rationale.
+    def add_expected_revision_arg(subparser):
+        subparser.add_argument(
+            "--expected-revision",
+            dest="expected_revision",
+            type=int,
+            default=None,
+            help=(
+                "Only apply if the list's current 'revision' field equals this value "
+                "(read it from a prior `read`); rejects with a stale-revision error "
+                "otherwise instead of silently overwriting a concurrent change. "
+                "Omit to skip the check (default; matches pre-existing behavior)."
+            ),
         )
 
     p_describe = sub.add_parser(
@@ -754,11 +991,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_create.add_argument("target", help="Category path (Work/Writing) or 6-char entry ID")
     p_create.add_argument("--entries", dest="entries", help="YAML file of entries (default: stdin)")
     add_cloud_arg(p_create)
+    add_expected_revision_arg(p_create)
 
     p_update = sub.add_parser("update", help="Update fields on entries")
     p_update.add_argument("file", help="Path to list YAML, or cloud list name with --cloud")
     p_update.add_argument("--file", dest="file_input", help="YAML file of updates (default: stdin)")
     add_cloud_arg(p_update)
+    add_expected_revision_arg(p_update)
 
     p_genid = sub.add_parser("gen-id", help="Generate collision-free IDs")
     p_genid.add_argument("file", help="Path to list YAML, or cloud list name with --cloud")
@@ -769,6 +1008,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_delete.add_argument("file", help="Path to list YAML, or cloud list name with --cloud")
     p_delete.add_argument("ids", nargs="+", help="One or more 6-char entry IDs to delete")
     add_cloud_arg(p_delete)
+    add_expected_revision_arg(p_delete)
 
     return parser
 
@@ -820,27 +1060,32 @@ def main(argv: list[str] | None = None) -> int:
     # Cloud mode: the source positional is a list NAME. For reads we download →
     # operate; for mutations we download → operate → upload; for init we create
     # → upload (nothing to download). Local mode operates on the file in place.
-    if getattr(args, "cloud", False):
-        list_name = args.file
-        mutating = args.command in ("init", "create-entry", "update", "delete")
-        tmp_dir = Path(tempfile.mkdtemp())
-        temp_path = tmp_dir / f"{list_name}.yaml"
-        try:
-            if args.command == "init":
-                # New list: nothing to download; default display name to the
-                # cloud list name unless the caller set one explicitly.
-                if not getattr(args, "name", None):
-                    args.name = list_name
-            else:
-                download_list(list_name, temp_path)
-            args.file = str(temp_path)
+    try:
+        if getattr(args, "cloud", False):
+            list_name = args.file
+            mutating = args.command in ("init", "create-entry", "update", "delete")
+            tmp_dir = Path(tempfile.mkdtemp())
+            temp_path = tmp_dir / f"{list_name}.yaml"
+            try:
+                if args.command == "init":
+                    # New list: nothing to download; default display name to the
+                    # cloud list name unless the caller set one explicitly.
+                    if not getattr(args, "name", None):
+                        args.name = list_name
+                else:
+                    download_list(list_name, temp_path)
+                args.file = str(temp_path)
+                dispatch[args.command](args)
+                if mutating:
+                    upload_list(list_name, temp_path)
+            finally:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+        else:
             dispatch[args.command](args)
-            if mutating:
-                upload_list(list_name, temp_path)
-        finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-    else:
-        dispatch[args.command](args)
+    except StaleRevisionError as exc:
+        # Rejected before any download/upload of the mutated snapshot -- no
+        # partial or corrupt write results from a stale-revision rejection.
+        die(str(exc))
     return 0
 
 

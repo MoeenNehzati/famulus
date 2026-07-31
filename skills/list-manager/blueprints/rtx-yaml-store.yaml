@@ -58,6 +58,7 @@ interfaces:
         name: {description: Existing cloud list name to update, required: true, sensitivity: user-private, type: {kind: string, format: {named: identifier}}}
         target: {description: Existing category path or parent entry ID receiving the new entries, required: true, sensitivity: user-private, type: {kind: string}}
         entries: {description: YAML sequence of entries read from a file or stdin, required: true, sensitivity: user-private, type: {kind: string, format: {named: yaml}}}
+        expected_revision: {description: "Optional optimistic-concurrency guard: only apply if the downloaded snapshot's 'revision' field equals this value; rejects with a stale-revision error and uploads nothing otherwise.", required: false, sensitivity: user-private, type: {kind: integer}}
       preconditions: []
       interaction: {mode: unattended}
       caller_warnings:
@@ -67,7 +68,7 @@ interfaces:
       - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-2, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
       outcomes:
       - {id: created, class: success, outputs: [], effects: [cloud-list-update], caller_action: Re-read the affected category when confirmation is needed.}
-      - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: "Correct the list, target, entry schema, or cloud error; never upload after local validation failure."}
+      - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: "Correct the list, target, entry schema, or cloud error; never upload after local validation failure. A stale-revision error means a concurrent writer saved this list first -- re-read it and retry."}
       execution:
         state_effect: mutating
         lifecycle: finite
@@ -76,7 +77,7 @@ interfaces:
         - {id: cloud-list-update, direct_io_ref: write-1, action: update, value_source: {kind: argument, argument_ref: entries}, may_occur_in_outcomes: [created], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Delete the newly assigned entry IDs with cloud-delete.}}
         mutation_safety:
           atomicity: {per_effect_only: Local mutation is validated before one remote upload; download and upload are not a transaction.}
-          concurrent_invocations: {unsafe: Concurrent cloud writers can overwrite changes made after this invocation downloads its snapshot.}
+          concurrent_invocations: {unsafe: "Unsafe by default -- concurrent cloud writers can overwrite changes made after this invocation downloads its snapshot -- unless the caller passes expected_revision, in which case a concurrent writer that saved first causes this call to be rejected before any upload instead of silently clobbering it."}
           idempotency: {non_idempotent: Repeating the request creates additional entries with new IDs.}
           on_uncertain_completion: {verify_then_decide: Re-read the target category and inspect stable IDs before retrying.}
           partial_effects_on_failure: {possible: Remote upload completion can be uncertain after a transport failure.}
@@ -91,8 +92,13 @@ interfaces:
       kind: process
       patterns:
       - allow_stdin: true
+        allowed_flags:
+        - --cloud
+        - --expected-revision
         forbidden_flags:
         - --entries
+        flag_patterns:
+          --expected-revision: ^[0-9]+$
         max_positionals: 2
         min_positionals: 2
         name: stdin-mode
@@ -105,8 +111,10 @@ interfaces:
         allowed_flags:
         - --cloud
         - --entries
+        - --expected-revision
         flag_patterns:
           --entries: ^.+$
+          --expected-revision: ^[0-9]+$
         max_positionals: 2
         min_positionals: 2
         name: file-mode
@@ -116,7 +124,7 @@ interfaces:
         required_flags:
         - --cloud
         - --entries
-    usage: <name> <category/path> --cloud --entries /tmp/entry.yaml
+    usage: <name> <category/path> --cloud --entries /tmp/entry.yaml [--expected-revision N]
     version: 1
   list-manager.source.rtx-yaml-store.interface.cloud-delete:
     contract:
@@ -142,6 +150,7 @@ interfaces:
       arguments:
         name: {description: Existing cloud list name to update, required: true, sensitivity: user-private, type: {kind: string, format: {named: identifier}}}
         ids: {description: One or more stable six-character entry IDs to delete, required: true, sensitivity: user-private, type: {kind: list, element_type: {kind: string, format: {regex: {pattern: '^[0-9a-f]{6}$', dialect: python, matching: full, example: 010b76}}}}}
+        expected_revision: {description: "Optional optimistic-concurrency guard: only apply if the downloaded snapshot's 'revision' field equals this value; rejects with a stale-revision error and uploads nothing otherwise.", required: false, sensitivity: user-private, type: {kind: integer}}
       preconditions: []
       interaction: {mode: unattended}
       caller_warnings:
@@ -161,7 +170,7 @@ interfaces:
       - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-2, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
       outcomes:
       - {id: success, class: success, outputs: [deleted], effects: [cloud-list-update], caller_action: Use the confirmation lines as evidence of the requested deletions.}
-      - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: Re-read the list when any ID is missing; no deletion is uploaded in that case.}
+      - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: "Re-read the list when any ID is missing; no deletion is uploaded in that case. A stale-revision error means a concurrent writer saved this list first -- re-read it and retry."}
       execution:
         state_effect: mutating
         lifecycle: finite
@@ -170,7 +179,7 @@ interfaces:
         - {id: cloud-list-update, direct_io_ref: write-1, action: delete, value_source: {kind: argument, argument_ref: ids}, may_occur_in_outcomes: [success], confirmation_evidence: {kind: output, output_ref: deleted}, reversibility: {irreversible: Deleted entry subtrees are not archived by this interface.}}
         mutation_safety:
           atomicity: {per_effect_only: "All IDs are checked before one validated remote upload, but download and upload are not transactional."}
-          concurrent_invocations: {unsafe: Concurrent cloud writers can overwrite changes made after this invocation downloads its snapshot.}
+          concurrent_invocations: {unsafe: "Unsafe by default -- concurrent cloud writers can overwrite changes made after this invocation downloads its snapshot -- unless the caller passes expected_revision, in which case a concurrent writer that saved first causes this call to be rejected before any upload instead of silently clobbering it."}
           idempotency: {non_idempotent: Repeating a successful deletion fails because the IDs are absent.}
           on_uncertain_completion: {verify_then_decide: Re-read the list and check whether every requested ID is absent before retrying.}
           partial_effects_on_failure: {possible: Remote upload completion can be uncertain after a transport failure.}
@@ -189,6 +198,9 @@ interfaces:
         allow_stdin: false
         allowed_flags:
         - --cloud
+        - --expected-revision
+        flag_patterns:
+          --expected-revision: ^[0-9]+$
         min_positionals: 2
         notes: Delete one or more entries by ID from a cloud list.
         positional_patterns:
@@ -196,7 +208,7 @@ interfaces:
           '1': ^[0-9a-f]{6}$
         required_flags:
         - --cloud
-    usage: <name> --cloud <id> [<id>...]
+    usage: <name> --cloud <id> [<id>...] [--expected-revision N]
     version: 1
   list-manager.source.rtx-yaml-store.interface.cloud-init:
     contract:
@@ -379,6 +391,7 @@ interfaces:
       arguments:
         name: {description: Existing cloud list name to update, required: true, sensitivity: user-private, type: {kind: string, format: {named: identifier}}}
         patches: {description: YAML sequence of patch objects with quoted string IDs, required: true, sensitivity: user-private, type: {kind: string, format: {named: yaml}}}
+        expected_revision: {description: "Optional optimistic-concurrency guard: only apply if the downloaded snapshot's 'revision' field equals this value; rejects with a stale-revision error and uploads nothing otherwise.", required: false, sensitivity: user-private, type: {kind: integer}}
       preconditions: []
       interaction: {mode: unattended}
       caller_warnings:
@@ -388,7 +401,7 @@ interfaces:
       - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-2, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
       outcomes:
       - {id: updated, class: success, outputs: [], effects: [cloud-list-update], caller_action: Re-read the affected entries when confirmation is needed.}
-      - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: "Correct the patch sequence, quoted ID, field value, list state, or cloud error; never upload after local validation failure."}
+      - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: "Correct the patch sequence, quoted ID, field value, list state, or cloud error; never upload after local validation failure. A stale-revision error means a concurrent writer saved this list first -- re-read it and retry."}
       execution:
         state_effect: mutating
         lifecycle: finite
@@ -397,7 +410,7 @@ interfaces:
         - {id: cloud-list-update, direct_io_ref: write-1, action: update, value_source: {kind: argument, argument_ref: patches}, may_occur_in_outcomes: [updated], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Apply another patch containing known prior values.}}
         mutation_safety:
           atomicity: {per_effect_only: All patches are validated before one remote upload; download and upload are not a transaction.}
-          concurrent_invocations: {unsafe: Concurrent cloud writers can overwrite changes made after this invocation downloads its snapshot.}
+          concurrent_invocations: {unsafe: "Unsafe by default -- concurrent cloud writers can overwrite changes made after this invocation downloads its snapshot -- unless the caller passes expected_revision, in which case a concurrent writer that saved first causes this call to be rejected before any upload instead of silently clobbering it."}
           idempotency: {idempotent: "Reapplying the same field values converges, although modified is restamped on each touch."}
           on_uncertain_completion: {verify_then_decide: Re-read the affected IDs before retrying an interrupted upload.}
           partial_effects_on_failure: {possible: Remote upload completion can be uncertain after a transport failure.}
@@ -416,8 +429,10 @@ interfaces:
         allowed_flags:
         - --cloud
         - --file
+        - --expected-revision
         flag_patterns:
           --file: ^.+$
+          --expected-revision: ^[0-9]+$
         max_positionals: 1
         min_positionals: 1
         name: file-mode
@@ -428,8 +443,13 @@ interfaces:
         - --cloud
         - --file
       - allow_stdin: true
+        allowed_flags:
+        - --cloud
+        - --expected-revision
         forbidden_flags:
         - --file
+        flag_patterns:
+          --expected-revision: ^[0-9]+$
         max_positionals: 1
         min_positionals: 1
         name: stdin-mode
@@ -438,7 +458,7 @@ interfaces:
           '0': ^[a-zA-Z0-9_-]+$
         required_flags:
         - --cloud
-    usage: <name> --cloud --file /tmp/patch.yaml
+    usage: <name> --cloud --file /tmp/patch.yaml [--expected-revision N]
     version: 1
   list-manager.source.rtx-yaml-store.interface.create-entry:
     contract:
@@ -488,6 +508,7 @@ interfaces:
         file: {description: Existing local YAML list file to modify, required: true, sensitivity: user-private, direct_io_ref: read-1, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read-write, content_type: {kind: string, format: {named: yaml}}}}
         target: {description: Existing category path or parent entry ID receiving the new entries, required: true, sensitivity: user-private, type: {kind: string}}
         entries: {description: YAML sequence of entries read from a file or stdin, required: true, sensitivity: user-private, type: {kind: string, format: {named: yaml}}}
+        expected_revision: {description: "Optional optimistic-concurrency guard: only apply if the file's current 'revision' field equals this value; rejects with a stale-revision error and writes nothing otherwise.", required: false, sensitivity: user-private, type: {kind: integer}}
       preconditions:
       - {id: readable-list, description: The target list must exist and be readable, check: {kind: direct-io, direct_io_ref: read-1, predicate: readable}, unmet_outcome: error, caller_action: Supply an existing readable YAML list file.}
       interaction: {mode: unattended}
@@ -497,7 +518,7 @@ interfaces:
       - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-2, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
       outcomes:
       - {id: created, class: success, outputs: [], effects: [list-update], caller_action: Re-read the affected category when confirmation is needed.}
-      - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: "Correct the file, target, entry shape, required fields, or schema error before retrying."}
+      - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: "Correct the file, target, entry shape, required fields, or schema error before retrying. A stale-revision error means a concurrent writer saved this file first -- re-read it and retry."}
       execution:
         state_effect: mutating
         lifecycle: finite
@@ -506,7 +527,7 @@ interfaces:
         - {id: list-update, direct_io_ref: write-1, action: update, value_source: {kind: argument, argument_ref: entries}, may_occur_in_outcomes: [created], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Delete the newly assigned stable IDs if the additions should be undone.}}
         mutation_safety:
           atomicity: {non_atomic: The list file is written directly after validation without a transactional replacement guarantee.}
-          concurrent_invocations: {unsafe: Concurrent writers can overwrite one another.}
+          concurrent_invocations: {unsafe: "Unsafe by default -- concurrent writers can overwrite one another -- unless the caller passes expected_revision, in which case a concurrent writer that saved first causes this call to be rejected before any write instead of silently clobbering it."}
           idempotency: {non_idempotent: Repeating the request creates additional entries with new IDs.}
           on_uncertain_completion: {verify_then_decide: Re-read the target category and inspect stable IDs before retrying.}
           partial_effects_on_failure: {possible: A filesystem failure can interrupt the rewrite.}
@@ -521,22 +542,28 @@ interfaces:
       kind: process
       patterns:
       - allow_stdin: true
+        allowed_flags:
+        - --expected-revision
         forbidden_flags:
         - --entries
+        flag_patterns:
+          --expected-revision: ^[0-9]+$
         max_positionals: 2
         min_positionals: 2
         name: stdin-mode
       - allow_stdin: false
         allowed_flags:
         - --entries
+        - --expected-revision
         flag_patterns:
           --entries: ^.+$
+          --expected-revision: ^[0-9]+$
         max_positionals: 2
         min_positionals: 2
         name: file-mode
         required_flags:
         - --entries
-    usage: <file> <category/path> --entries /tmp/entry.yaml
+    usage: <file> <category/path> --entries /tmp/entry.yaml [--expected-revision N]
     version: 1
   list-manager.source.rtx-yaml-store.interface.describe-schema:
     contract:
@@ -844,6 +871,7 @@ interfaces:
       arguments:
         file: {description: Existing local YAML list file to patch, required: true, sensitivity: user-private, direct_io_ref: read-1, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read-write, content_type: {kind: string, format: {named: yaml}}}}
         patches: {description: "YAML sequence of patch objects read from a file or stdin, each with a stable string ID", required: true, sensitivity: user-private, type: {kind: string, format: {named: yaml}}}
+        expected_revision: {description: "Optional optimistic-concurrency guard: only apply if the file's current 'revision' field equals this value; rejects with a stale-revision error and writes nothing otherwise.", required: false, sensitivity: user-private, type: {kind: integer}}
       preconditions:
       - {id: readable-list, description: The target list must exist and be readable, check: {kind: direct-io, direct_io_ref: read-1, predicate: readable}, unmet_outcome: error, caller_action: Supply an existing readable YAML list file.}
       interaction: {mode: unattended}
@@ -853,7 +881,7 @@ interfaces:
       - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-2, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
       outcomes:
       - {id: updated, class: success, outputs: [], effects: [list-update], caller_action: Re-read the affected IDs when confirmation is needed.}
-      - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: "Correct the patch sequence, stable ID, immutable field, field value, or schema error before retrying."}
+      - {id: error, class: error, outputs: [diagnostic], effects: [], caller_action: "Correct the patch sequence, stable ID, immutable field, field value, or schema error before retrying. A stale-revision error means a concurrent writer saved this file first -- re-read it and retry."}
       execution:
         state_effect: mutating
         lifecycle: finite
@@ -862,7 +890,7 @@ interfaces:
         - {id: list-update, direct_io_ref: write-1, action: update, value_source: {kind: argument, argument_ref: patches}, may_occur_in_outcomes: [updated], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Apply another patch containing known prior field values.}}
         mutation_safety:
           atomicity: {non_atomic: The list file is written directly after validation without a transactional replacement guarantee.}
-          concurrent_invocations: {unsafe: Concurrent writers can overwrite one another.}
+          concurrent_invocations: {unsafe: "Unsafe by default -- concurrent writers can overwrite one another -- unless the caller passes expected_revision, in which case a concurrent writer that saved first causes this call to be rejected before any write instead of silently clobbering it."}
           idempotency: {idempotent: "Reapplying the same field values converges, although modified is restamped on each touch."}
           on_uncertain_completion: {verify_then_decide: Re-read the affected IDs before retrying.}
           partial_effects_on_failure: {possible: A filesystem failure can interrupt the rewrite.}
@@ -880,8 +908,10 @@ interfaces:
       - allow_stdin: false
         allowed_flags:
         - --file
+        - --expected-revision
         flag_patterns:
           --file: ^.+$
+          --expected-revision: ^[0-9]+$
         max_positionals: 1
         min_positionals: 1
         name: file-mode
@@ -889,13 +919,17 @@ interfaces:
         required_flags:
         - --file
       - allow_stdin: true
+        allowed_flags:
+        - --expected-revision
         forbidden_flags:
         - --file
+        flag_patterns:
+          --expected-revision: ^[0-9]+$
         max_positionals: 1
         min_positionals: 1
         name: stdin-batch
         notes: Internal convenience mode for the owning skill when feeding YAML directly.
-    usage: <file> --file /tmp/patch.yaml
+    usage: <file> --file /tmp/patch.yaml [--expected-revision N]
     version: 1
 node_type: behavioral_source
 platform_support:

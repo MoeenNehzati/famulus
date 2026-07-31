@@ -84,6 +84,32 @@ skill to infer title, optional description, and optional deadline. Do not
 manually format list storage lines here; pass the freeform action content and
 destination list to `list-manager.interface.default`.
 
+**Concurrency:** `todo` and `triage` are each a single YAML file with no
+built-in locking — a concurrent write (a second triage run overlapping this
+one, or the user manually editing the list at the same time) can silently
+clobber this run's additions if two writers race to read-modify-write the
+same file. Guard against this:
+
+- Issue additions to a given destination list (`todo` or `triage`) **one at a
+  time, in sequence** — never fire multiple `list-manager.interface.default`
+  add calls at the same destination list in parallel, even though Steps 1 and
+  3 explicitly parallelize unrelated reads. Two lists (`todo` and `triage`)
+  are independent files, so calls to different lists don't need to serialize
+  against each other.
+- The underlying list-manager write path supports an optional
+  `--expected-revision <N>` guard: pass the `revision` value observed when
+  the list was last read (Step 4) and the write is rejected — loudly, with no
+  partial write — if another process has saved the file since. If the list
+  read in Step 4 has no `revision` field at all (it predates this field, or
+  has never had a mutating write since), pass `0` — that is the documented
+  convention for "no revision yet", not a sign the guard doesn't apply. On
+  rejection, re-read the list, re-check for a duplicate, and retry the single
+  item; never assume the write succeeded and never skip re-reading.
+- This is a per-write check, not a new batch-apply mechanism: the underlying
+  create path already accepts multiple entries for one target in a single
+  call, so multiple items destined for the *same* category can still be
+  added together where that's natural.
+
 For every item added to `triage`, include the source email id in the description
 so the originating message can be found again later.
 

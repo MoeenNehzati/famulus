@@ -2,6 +2,7 @@
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -706,3 +707,241 @@ def test_describe_schema_unknown_schema_errors():
     result = run(["describe-schema", "not-a-schema"])
     assert result.returncode != 0
     assert "not-a-schema" in result.stderr
+
+
+# ── optimistic-concurrency revision check (feedback items 24/25) ──────────────
+#
+# TODO_YAML has no `revision` field, matching every pre-existing list file on
+# disk today -- a missing revision is treated as revision 0 so this feature
+# is opt-in and doesn't disturb any file that predates it.
+
+def test_update_without_expected_revision_still_works(todo_file):
+    """Backward compat: callers that never pass --expected-revision behave
+    exactly as before -- the check is opt-in, not mandatory."""
+    result = run(["update", str(todo_file)], stdin="- id: a3f2b9\n  state: complete\n")
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(todo_file.read_text())
+    entry = data["categories"][0]["categories"][3]["entries"][0]
+    assert entry["state"] == "complete"
+
+
+def test_update_succeeds_with_matching_expected_revision(todo_file):
+    # Fresh file has no revision field -> treated as revision 0.
+    result = run(
+        ["update", str(todo_file), "--expected-revision", "0"],
+        stdin="- id: a3f2b9\n  state: complete\n",
+    )
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(todo_file.read_text())
+    entry = data["categories"][0]["categories"][3]["entries"][0]
+    assert entry["state"] == "complete"
+    # A successful revision-checked mutation advances the counter.
+    assert data["revision"] == 1
+
+
+def test_update_revision_increments_across_successive_mutations(todo_file):
+    r1 = run(
+        ["update", str(todo_file), "--expected-revision", "0"],
+        stdin="- id: a3f2b9\n  state: complete\n",
+    )
+    assert r1.returncode == 0, r1.stderr
+    r2 = run(
+        ["update", str(todo_file), "--expected-revision", "1"],
+        stdin="- id: b7c1e2\n  state: complete\n",
+    )
+    assert r2.returncode == 0, r2.stderr
+    data = yaml.safe_load(todo_file.read_text())
+    assert data["revision"] == 2
+
+
+def test_update_rejects_stale_expected_revision(todo_file):
+    result = run(
+        ["update", str(todo_file), "--expected-revision", "5"],
+        stdin="- id: a3f2b9\n  state: complete\n",
+    )
+    assert result.returncode != 0
+    assert "revision" in result.stderr.lower()
+
+
+def test_update_rejects_stale_revision_from_a_prior_completed_write(todo_file):
+    """Sequential regression test (writer1 fully completes before writer2
+    starts -- NOT a concurrency test): a writer whose --expected-revision no
+    longer matches because a previous, already-finished write moved the
+    revision on must be rejected, not silently clobber that prior write. The
+    file on disk must be exactly the first writer's result -- no
+    partial/corrupt write from the rejected second attempt. For an actual
+    concurrent race that exercises the lock (two processes alive at the same
+    time, racing through the check-to-write gap), see
+    test_update_concurrent_writers_are_serialized_by_the_lock below."""
+    writer1 = run(
+        ["update", str(todo_file), "--expected-revision", "0"],
+        stdin="- id: a3f2b9\n  state: complete\n",
+    )
+    assert writer1.returncode == 0, writer1.stderr
+    after_writer1 = todo_file.read_text()
+
+    # writer2 still passes the (now stale) revision it would have observed
+    # had it read the file before writer1 ran.
+    writer2 = run(
+        ["update", str(todo_file), "--expected-revision", "0"],
+        stdin="- id: b7c1e2\n  state: complete\n",
+    )
+    assert writer2.returncode != 0
+    assert "revision" in writer2.stderr.lower()
+
+    # File is untouched by the rejected second writer: still exactly writer1's
+    # result, not a mix of both, not corrupted.
+    assert todo_file.read_text() == after_writer1
+    data = yaml.safe_load(todo_file.read_text())
+    entry_a = data["categories"][0]["categories"][3]["entries"][0]
+    entry_b = data["categories"][0]["categories"][3]["entries"][1]
+    assert entry_a["state"] == "complete"   # writer1's change applied
+    assert entry_b["state"] == "inprogress"  # writer2's change did NOT apply
+
+
+def test_update_concurrent_writers_are_serialized_by_the_lock(todo_file):
+    """Genuinely concurrent race, not sequential: writer1 is started and,
+    while it is INSIDE its lock-held critical section -- past check_revision,
+    before its save (via the LIST_MANAGER_TEST_RACE_DELAY test hook) --
+    writer2 is started without waiting for writer1 to finish. Both are alive
+    at the same time and both target --expected-revision 0, so their
+    check-then-write windows would genuinely interleave if the mutation were
+    only an optimistic check with no lock (writer2's load+check could happen
+    before writer1's save, and both would then pass the check and both
+    write). This is exactly the gap a bare revision check narrows but does
+    not close.
+
+    Proves the file lock closes it: writer2's load_yaml() cannot even begin
+    until writer1 releases the lock (i.e. has already saved), so writer2
+    always observes the post-writer1 revision and is correctly rejected --
+    it can never race through and clobber writer1's write."""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join([str(REPO_SRC), str(SCRIPTS_DIR)])
+    env["LIST_MANAGER_TEST_RACE_DELAY"] = "1.0"
+
+    writer1 = subprocess.Popen(
+        [sys.executable, str(LISTS_PY), "update", str(todo_file), "--expected-revision", "0"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    # Give writer1 time to acquire the lock, pass check_revision, and enter
+    # its delay -- i.e. to be genuinely inside its critical section -- before
+    # writer2 starts. This is what makes the two processes' windows overlap
+    # rather than merely running one after the other.
+    time.sleep(0.3)
+
+    env2 = os.environ.copy()
+    env2["PYTHONPATH"] = env["PYTHONPATH"]
+    # writer2 has no injected delay: it is the fast racer that would win the
+    # race (and silently clobber writer1) if the lock did not serialize it.
+    writer2 = subprocess.Popen(
+        [sys.executable, str(LISTS_PY), "update", str(todo_file), "--expected-revision", "0"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env2,
+    )
+
+    out1, err1 = writer1.communicate(input="- id: a3f2b9\n  state: complete\n", timeout=15)
+    out2, err2 = writer2.communicate(input="- id: b7c1e2\n  state: complete\n", timeout=15)
+
+    assert writer1.returncode == 0, err1
+    # writer2 was blocked on the lock until writer1 released it, so by the
+    # time it acquired the lock and ran check_revision, the file's revision
+    # had already moved to 1 -- it is correctly rejected rather than racing
+    # through.
+    assert writer2.returncode != 0, f"writer2 unexpectedly succeeded (lock did not serialize): {out2}"
+    assert "revision" in err2.lower()
+
+    data = yaml.safe_load(todo_file.read_text())
+    entry_a = data["categories"][0]["categories"][3]["entries"][0]
+    entry_b = data["categories"][0]["categories"][3]["entries"][1]
+    assert entry_a["state"] == "complete"     # writer1's change applied
+    assert entry_b["state"] == "inprogress"   # writer2's change never applied
+    assert data["revision"] == 1              # exactly one successful write occurred
+
+
+# famulus-skip: category=platform-contract; reason=this test holds the lock sidecar directly via fcntl.flock, which only exists on os.name == "posix"; alternate=file_lock()'s os.name == "nt" branch shares the same bounded-retry-with-deadline structure exercised here, just via msvcrt instead of fcntl
+@pytest.mark.skipif(os.name != "posix", reason="holds the lock directly via fcntl.flock")
+def test_update_lock_acquisition_times_out_with_clear_error(todo_file):
+    """A HUNG-but-alive lock holder (stuck network call, deadlock -- not a
+    crash, which releases the OS lock automatically) must not make a later
+    invocation stall silently forever. Hold the `<file>.lock` sidecar
+    exclusively (simulating a stuck writer that has acquired the lock but
+    never releases it) and confirm a second acquisition attempt -- using
+    LIST_MANAGER_TEST_LOCK_TIMEOUT_S to shrink the real 30s default down to
+    well under a second -- fails fast with a clear, actionable error instead
+    of hanging."""
+    import fcntl
+
+    lock_path = todo_file.with_name(todo_file.name + ".lock")
+    holder_fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
+    fcntl.flock(holder_fd, fcntl.LOCK_EX)
+    try:
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join([str(REPO_SRC), str(SCRIPTS_DIR)])
+        env["LIST_MANAGER_TEST_LOCK_TIMEOUT_S"] = "0.3"
+
+        start = time.monotonic()
+        result = subprocess.run(
+            [sys.executable, str(LISTS_PY), "update", str(todo_file)],
+            input="- id: a3f2b9\n  state: complete\n",
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=10,
+        )
+        elapsed = time.monotonic() - start
+
+        assert result.returncode != 0
+        assert "lock" in result.stderr.lower()
+        assert str(lock_path) in result.stderr
+        # Fails fast on the shrunk test timeout, not the real 30s default and
+        # not a hang -- proves the bound is actually enforced.
+        assert elapsed < 5, f"took {elapsed:.1f}s -- did not honor the shortened test timeout"
+        # File untouched: a timed-out acquisition attempt never reaches
+        # load/mutate/save.
+        assert todo_file.read_text() == TODO_YAML
+    finally:
+        fcntl.flock(holder_fd, fcntl.LOCK_UN)
+        os.close(holder_fd)
+
+
+def test_create_entry_succeeds_with_matching_expected_revision(todo_file):
+    result = run(
+        ["create-entry", str(todo_file), "Work/Writing", "--expected-revision", "0"],
+        stdin=NEW_ENTRY_YAML,
+    )
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(todo_file.read_text())
+    assert data["revision"] == 1
+
+
+def test_create_entry_rejects_stale_expected_revision_no_write(todo_file):
+    before = todo_file.read_text()
+    result = run(
+        ["create-entry", str(todo_file), "Work/Writing", "--expected-revision", "7"],
+        stdin=NEW_ENTRY_YAML,
+    )
+    assert result.returncode != 0
+    assert "revision" in result.stderr.lower()
+    assert todo_file.read_text() == before  # rejected mutation writes nothing
+
+
+def test_delete_succeeds_with_matching_expected_revision(todo_file):
+    result = run(["delete", str(todo_file), "a3f2b9", "--expected-revision", "0"])
+    assert result.returncode == 0, result.stderr
+    data = yaml.safe_load(todo_file.read_text())
+    assert data["revision"] == 1
+
+
+def test_delete_rejects_stale_expected_revision_no_write(todo_file):
+    before = todo_file.read_text()
+    result = run(["delete", str(todo_file), "a3f2b9", "--expected-revision", "9"])
+    assert result.returncode != 0
+    assert "revision" in result.stderr.lower()
+    assert todo_file.read_text() == before
