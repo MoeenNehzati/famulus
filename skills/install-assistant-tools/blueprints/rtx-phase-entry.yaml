@@ -106,4 +106,6 @@ uses_interfaces:
   version: 1
 - interface: install.interface.managed-runtime
   version: 1
+- interface: install.interface.uv-bootstrap
+  version: 1
 version: 1

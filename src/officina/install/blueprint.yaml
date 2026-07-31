@@ -12,7 +12,8 @@ content:
 - managed_runtime\.py
 - launcher_entry\.py
 - resolvers/launch\.py
-description: Parses the pinned bootstrap/runtime versions in install-info.toml, manages the atomic current.json pointer for the installed, versioned Famulus runtime, builds new candidate releases by installing the real v1 runtime_dependencies.json manifest's Python dependencies in one atomic batch, and provides the stable, path-fixed launch resolver that generated launcher shims exec into instead of embedding a release-specific repo/interpreter path.
+- uv_bootstrap\.py
+description: Parses the pinned bootstrap/runtime versions in install-info.toml, manages the atomic current.json pointer for the installed, versioned Famulus runtime, builds new candidate releases by installing the real v1 runtime_dependencies.json manifest's Python dependencies in one atomic batch, provides the stable, path-fixed launch resolver that generated launcher shims exec into instead of embedding a release-specific repo/interpreter path, and bootstraps a machine-local managed uv binary from the real astral-sh/uv GitHub release when one is not already present.
 exports:
   install.interface.install-info:
     access:
@@ -38,6 +39,12 @@ exports:
       allowed_callers:
       - install-assistant-tools
     source_interface: install.source.launcher-entry.interface.cli
+  install.interface.uv-bootstrap:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - install-assistant-tools
+    source_interface: install.source.uv-bootstrap.interface.python-api
 gateway:
   language: Python
   path: __init__.py
@@ -65,4 +72,8 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/launcher-entry.yaml
+  install.source.uv-bootstrap:
+    blueprint:
+      base: module-root
+      path: blueprints/uv-bootstrap.yaml
 version: 1

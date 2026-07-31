@@ -59,6 +59,66 @@ def _platform_name() -> str | None:
     return None
 
 
+# uv's real per-OS release-asset target-triple suffixes and archive formats
+# (confirmed against the real 0.11.29 GitHub release asset list). This table
+# -- and the machine-architecture aliasing below -- is the one place that
+# translates _platform_name()'s generic vocabulary into uv's concrete
+# release-asset naming; officina.install.uv_bootstrap itself stays
+# platform-name-free and only ever sees the already-resolved triple/archive
+# pair this function returns.
+_UV_TRIPLE_OS_SUFFIX = {
+    "macos": "apple-darwin",
+    "linux": "unknown-linux-gnu",
+    "windows": "pc-windows-msvc",
+}
+
+# Normalizes platform.machine()'s real reported values (which differ by
+# platform: e.g. macOS Apple Silicon reports "arm64", Linux reports
+# "aarch64", Windows reports "AMD64") to uv's release-asset arch tokens.
+_UV_MACHINE_ALIASES = {
+    "x86_64": "x86_64",
+    "amd64": "x86_64",
+    "aarch64": "aarch64",
+    "arm64": "aarch64",
+}
+
+_UV_WINDOWS_ARCHIVE_EXTENSION = ".zip"
+_UV_POSIX_ARCHIVE_EXTENSION = ".tar.gz"
+
+
+class UvReleaseTargetError(ValueError):
+    """Raised when a platform/machine combination has no known uv release asset."""
+
+
+def uv_release_target(*, platform_name: str, machine: str) -> tuple[str, str]:
+    """Resolve the real uv release-asset (target-triple, archive-extension)
+    pair for ``platform_name`` (this module's own vocabulary: macos/linux/
+    windows) and ``machine`` (platform.machine()'s real reported value).
+
+    Raises UvReleaseTargetError for any unsupported platform or machine
+    architecture.
+    """
+    suffix = _UV_TRIPLE_OS_SUFFIX.get(platform_name)
+    if suffix is None:
+        raise UvReleaseTargetError(
+            f"unsupported platform for uv bootstrap: {platform_name!r} "
+            f"(supported: {sorted(_UV_TRIPLE_OS_SUFFIX)})"
+        )
+    arch = _UV_MACHINE_ALIASES.get(machine.casefold())
+    if arch is None:
+        raise UvReleaseTargetError(
+            f"unsupported machine architecture for uv bootstrap: {machine!r} "
+            f"(supported: {sorted(set(_UV_MACHINE_ALIASES.values()))})"
+        )
+    triple = f"{arch}-{suffix}"
+    extension = (
+        _UV_WINDOWS_ARCHIVE_EXTENSION
+        if platform_name == "windows"
+        else _UV_POSIX_ARCHIVE_EXTENSION
+    )
+    return triple, extension
+
+
 def _declares_package(spec: str, name: str) -> bool:
     """Return whether install spec ``spec`` (e.g. "cryptography>=44.0.1") is
     for the bare package ``name`` (case-insensitive)."""

@@ -27,6 +27,7 @@ Uses Interfaces:
 - `install-assistant-tools.source.rtx-phase-entry -> common.interface.famulus-paths@1`
 - `install-assistant-tools.source.rtx-phase-entry -> install.interface.install-info@1`
 - `install-assistant-tools.source.rtx-phase-entry -> install.interface.managed-runtime@1`
+- `install-assistant-tools.source.rtx-phase-entry -> install.interface.uv-bootstrap@1`
 
 Public Interfaces:
 - `install-assistant-tools.interface.default`

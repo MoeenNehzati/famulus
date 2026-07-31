@@ -22,6 +22,7 @@ Run individual scripts directly for targeted repairs:
 from __future__ import annotations
 
 import argparse
+import platform
 import sys
 from pathlib import Path
 
@@ -34,6 +35,7 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 from officina.common.famulus_paths import resolve_famulus_paths
 from officina.install.install_info import load_install_info
 import officina.install.managed_runtime as managed_runtime
+import officina.install.uv_bootstrap as uv_bootstrap
 
 import _config_bridge as dev_link
 import _agent_launchers as launchers
@@ -83,16 +85,47 @@ def _prompt_default_llm() -> str:
     return reply if reply in ("claude", "codex") else "claude"
 
 
+def _ensure_managed_uv(*, info, paths, platform_name: str) -> int:
+    """Bootstrap a machine-local managed uv binary at paths.uv_bin if one
+    isn't already present, before build_candidate_release ever needs it.
+
+    Returns 0 on success (including the common case where paths.uv_bin
+    already exists and needs no bootstrap). On an unsupported platform/arch
+    (_install_scaffold.UvReleaseTargetError) or a UvBootstrapError (network
+    failure, checksum mismatch, archive-extraction failure), logs the
+    failure and returns nonzero without raising -- bootstrap_uv itself
+    guarantees no partial/bad binary is left at paths.uv_bin in that case.
+    """
+    if paths.uv_bin.exists():
+        return 0
+    log(f"No managed uv binary found at {paths.uv_bin} -- bootstrapping uv {info.uv_version}...")
+    try:
+        triple, archive_extension = scaffold.uv_release_target(
+            platform_name=platform_name, machine=platform.machine()
+        )
+        uv_bootstrap.bootstrap_uv(
+            uv_bin=paths.uv_bin,
+            version=info.uv_version,
+            triple=triple,
+            archive_extension=archive_extension,
+        )
+    except (scaffold.UvReleaseTargetError, uv_bootstrap.UvBootstrapError) as exc:
+        log(f"uv bootstrap failed: {exc}")
+        return 1
+    log(f"Bootstrapped uv {info.uv_version} at {paths.uv_bin}.")
+    return 0
+
+
 def _build_managed_runtime_candidate(*, repo_root: Path, home: Path) -> int:
     """Build and activate a managed-runtime candidate release before scaffold
     runs, so the dispatcher/invoke-skill launchers scaffold.run installs have
     a real release to exec into as soon as they exist on disk.
 
-    Returns 0 on success. On a ManagedRuntimeError (bad manifest, failed venv
-    creation, failed batch install), logs the failure and returns nonzero
-    without raising -- build_candidate_release itself guarantees no partial
-    pointer is written in that case, so any prior current.json is left
-    untouched.
+    Returns 0 on success. On a UvBootstrapError or ManagedRuntimeError (bad
+    manifest, failed venv creation, failed batch install), logs the failure
+    and returns nonzero without raising -- both bootstrap_uv and
+    build_candidate_release guarantee no partial state is left in that case,
+    so any prior current.json is left untouched.
     """
     platform_name = scaffold._platform_name()
     if platform_name is None:
@@ -102,6 +135,10 @@ def _build_managed_runtime_candidate(*, repo_root: Path, home: Path) -> int:
     info = load_install_info(repo_root)
     paths = resolve_famulus_paths(platform=sys.platform, home=home)
     manifest_path = repo_root / scaffold.RUNTIME_DEPENDENCIES_MANIFEST
+
+    uv_status = _ensure_managed_uv(info=info, paths=paths, platform_name=platform_name)
+    if uv_status:
+        return uv_status
 
     log("Building managed-runtime candidate release...")
     try:
@@ -114,15 +151,6 @@ def _build_managed_runtime_candidate(*, repo_root: Path, home: Path) -> int:
         )
     except managed_runtime.ManagedRuntimeError as exc:
         log(f"Managed-runtime candidate build failed: {exc}")
-        if not paths.uv_bin.exists():
-            # Expected until a machine-local uv bootstrap step lands
-            # (separately scoped) -- distinguish it from a genuine failure
-            # of an already-bootstrapped uv so this doesn't read as alarming
-            # on every fresh, not-yet-bootstrapped machine.
-            log(
-                f"  Hint: no managed uv binary found at {paths.uv_bin} -- "
-                "this machine has not been bootstrapped with a managed uv yet."
-            )
         return 1
     return 0
 

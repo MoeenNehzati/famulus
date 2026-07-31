@@ -408,3 +408,35 @@ def test_certificate_signing_material_dry_run_does_not_write(
     )
 
     assert result.status == "would-install"
+
+
+# ── uv_release_target: resolves the real uv release-asset naming ────────────
+
+
+@pytest.mark.parametrize(
+    "platform_name,machine,expected_triple,expected_extension",
+    [
+        ("linux", "x86_64", "x86_64-unknown-linux-gnu", ".tar.gz"),
+        ("linux", "aarch64", "aarch64-unknown-linux-gnu", ".tar.gz"),
+        ("macos", "x86_64", "x86_64-apple-darwin", ".tar.gz"),
+        ("macos", "arm64", "aarch64-apple-darwin", ".tar.gz"),
+        ("windows", "AMD64", "x86_64-pc-windows-msvc", ".zip"),
+        ("windows", "ARM64", "aarch64-pc-windows-msvc", ".zip"),
+    ],
+)
+def test_uv_release_target_resolves_real_asset_naming(
+    platform_name, machine, expected_triple, expected_extension
+):
+    triple, extension = scaffold.uv_release_target(platform_name=platform_name, machine=machine)
+    assert triple == expected_triple
+    assert extension == expected_extension
+
+
+def test_uv_release_target_rejects_unsupported_platform():
+    with pytest.raises(scaffold.UvReleaseTargetError, match="platform"):
+        scaffold.uv_release_target(platform_name="freebsd", machine="x86_64")
+
+
+def test_uv_release_target_rejects_unsupported_machine():
+    with pytest.raises(scaffold.UvReleaseTargetError, match="architecture|machine"):
+        scaffold.uv_release_target(platform_name="linux", machine="sparc64")
