@@ -123,6 +123,7 @@ def test_osx_sync_writes_plist_and_loads_launch_agent(tmp_path):
     )
 
     with mock.patch("_schedule_backend._osx_backend.subprocess.run") as run:
+        run.return_value = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
         OSXScheduleBackend().sync([job], context)
 
     plist = plistlib.loads((tmp_path / "ai-my-job.plist").read_bytes())
@@ -135,15 +136,104 @@ def test_osx_sync_writes_plist_and_loads_launch_agent(tmp_path):
     assert ["launchctl", "bootstrap", mock.ANY, str(tmp_path / "ai-my-job.plist")] in calls
 
 
-def test_osx_sync_removes_disabled_launch_agent(tmp_path):
-    old = tmp_path / "ai-old-job.plist"
-    old.write_bytes(b"stale")
+def test_osx_sync_bootout_by_label_before_bootstrap_when_already_loaded(tmp_path):
+    """Regression test for the stale-prior-location gap: when launchd already
+    has the job's label loaded (from any path, possibly a stale one), sync()
+    must probe by label and bootout by service-target (label) form *before*
+    bootstrapping the new plist, rather than relying on a path-form bootout
+    that can't reach a job loaded from a different path."""
+    context = _context(unit_dir=tmp_path)
+    job = ScheduleJob(
+        name="my-job",
+        description="My Job",
+        command="/usr/bin/echo hello",
+        schedule="0 9 * * 1",
+        enabled=True,
+    )
+    backend = OSXScheduleBackend()
+    target = backend._target()
+    label = launchd_label("my-job")
+    plist_path = tmp_path / "ai-my-job.plist"
 
     with mock.patch("_schedule_backend._osx_backend.subprocess.run") as run:
-        OSXScheduleBackend().sync([], _context(unit_dir=tmp_path))
+        run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        backend.sync([job], context)
+
+    calls = [call.args[0] for call in run.call_args_list]
+    assert calls == [
+        ["launchctl", "print", f"{target}/{label}"],
+        ["launchctl", "bootout", f"{target}/{label}"],
+        ["launchctl", "bootstrap", target, str(plist_path)],
+    ]
+
+
+def test_osx_sync_skips_bootout_when_not_already_loaded(tmp_path):
+    """When the probe reports the label is not currently loaded, sync() must
+    not issue a bootout at all -- just bootstrap the new plist."""
+    context = _context(unit_dir=tmp_path)
+    job = ScheduleJob(
+        name="my-job",
+        description="My Job",
+        command="/usr/bin/echo hello",
+        schedule="0 9 * * 1",
+        enabled=True,
+    )
+    backend = OSXScheduleBackend()
+    target = backend._target()
+    label = launchd_label("my-job")
+    plist_path = tmp_path / "ai-my-job.plist"
+
+    with mock.patch("_schedule_backend._osx_backend.subprocess.run") as run:
+        run.return_value = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+        backend.sync([job], context)
+
+    calls = [call.args[0] for call in run.call_args_list]
+    assert calls == [
+        ["launchctl", "print", f"{target}/{label}"],
+        ["launchctl", "bootstrap", target, str(plist_path)],
+    ]
+    assert ["launchctl", "bootout", f"{target}/{label}"] not in calls
+
+
+def test_osx_sync_removes_disabled_launch_agent_by_label_when_loaded(tmp_path):
+    """Regression test for the same stale-path bug in the disabled-job
+    cleanup loop: if a disabled job's label is still loaded (possibly from a
+    stale path), sync() must bootout by service-target (label) form before
+    deleting the on-disk plist, otherwise the label leaks in launchd forever
+    even though the plist file is gone."""
+    old = tmp_path / "ai-old-job.plist"
+    old.write_bytes(b"stale")
+    backend = OSXScheduleBackend()
+    target = backend._target()
+    label = launchd_label("old-job")
+
+    with mock.patch("_schedule_backend._osx_backend.subprocess.run") as run:
+        run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        backend.sync([], _context(unit_dir=tmp_path))
 
     assert not old.exists()
-    assert ["launchctl", "bootout", mock.ANY, str(old)] in [call.args[0] for call in run.call_args_list]
+    calls = [call.args[0] for call in run.call_args_list]
+    assert calls == [
+        ["launchctl", "print", f"{target}/{label}"],
+        ["launchctl", "bootout", f"{target}/{label}"],
+    ]
+
+
+def test_osx_sync_removes_disabled_launch_agent_skips_bootout_when_not_loaded(tmp_path):
+    old = tmp_path / "ai-old-job.plist"
+    old.write_bytes(b"stale")
+    backend = OSXScheduleBackend()
+    target = backend._target()
+    label = launchd_label("old-job")
+
+    with mock.patch("_schedule_backend._osx_backend.subprocess.run") as run:
+        run.return_value = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+        backend.sync([], _context(unit_dir=tmp_path))
+
+    assert not old.exists()
+    calls = [call.args[0] for call in run.call_args_list]
+    assert calls == [["launchctl", "print", f"{target}/{label}"]]
+    assert ["launchctl", "bootout", f"{target}/{label}"] not in calls
 
 
 def test_osx_test_kickstarts_expected_label():

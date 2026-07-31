@@ -114,6 +114,30 @@ class OSXScheduleBackend:
         getuid = getattr(os, "getuid", lambda: 0)
         return f"gui/{getuid()}"
 
+    def _bootout_by_label_if_loaded(self, name: str) -> None:
+        """Unload a label if launchd currently has it loaded, regardless of
+        which plist path it was loaded from.
+
+        A prior sync (or an earlier release using a different unit_dir
+        convention) may have this label loaded under a stale plist path.
+        ``launchctl bootout <target> <path>`` only unloads the job if
+        ``<path>`` is exactly what launchd currently has loaded for the
+        label, so a path-form bootout silently no-ops in the stale-path
+        case. Probing by label first and, if loaded, bootout-ing by the
+        service-target (label) form works regardless of which path was
+        originally used to load it.
+        """
+        service_target = f"{self._target()}/{launchd_label(name)}"
+        probe = subprocess.run(
+            ["launchctl", "print", service_target],
+            capture_output=True,
+        )
+        if probe.returncode == 0:
+            subprocess.run(
+                ["launchctl", "bootout", service_target],
+                capture_output=True,
+            )
+
     def sync(self, jobs: list[ScheduleJob], context: ScheduleContext) -> None:
         unit_dir = context.unit_dir or default_launch_agents_dir()
         unit_dir.mkdir(parents=True, exist_ok=True)
@@ -144,20 +168,14 @@ class OSXScheduleBackend:
             name = plist_path.stem[len(PREFIX):]
             if name not in enabled_names:
                 if context.live:
-                    subprocess.run(
-                        ["launchctl", "bootout", self._target(), str(plist_path)],
-                        capture_output=True,
-                    )
+                    self._bootout_by_label_if_loaded(name)
                 plist_path.unlink(missing_ok=True)
                 print(f"Removed disabled job: '{name}'")
 
         if context.live:
             for name in sorted(enabled_names):
                 plist_path = unit_dir / plist_name(name)
-                subprocess.run(
-                    ["launchctl", "bootout", self._target(), str(plist_path)],
-                    capture_output=True,
-                )
+                self._bootout_by_label_if_loaded(name)
                 subprocess.run(
                     ["launchctl", "bootstrap", self._target(), str(plist_path)],
                     check=True,
