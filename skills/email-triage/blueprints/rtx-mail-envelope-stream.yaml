@@ -1,5 +1,6 @@
 content:
 - _rtx/_mail_envelope_stream\.py
+- _rtx/_rescan_filter\.py
 dependencies:
 - blueprint:
     base: module-root
@@ -24,6 +25,8 @@ interfaces:
       arguments:
         account: {description: Configured email-client account nickname, required: true, sensitivity: user-private, type: {kind: string}}
         after: {description: Coarse date cutoff passed to email-client mail-list, required: true, sensitivity: derived-private, type: {kind: date, date_formats: [YYYY-MM-DD]}}
+        rescan-after: {description: "Explicit ISO cutoff overriding the stored watermark for this call only, used for a manual historical rescan.", required: false, sensitivity: derived-private, type: {kind: string}}
+        dedup-against: {description: "Destination list name to filter results against by source.message_id via list-manager.interface.cloud-read before returning them.", required: false, sensitivity: user-private, type: {kind: enum, values: [{value: todo, description: Filter against the todo list.}, {value: triage, description: Filter against the triage list.}]}}
       preconditions: []
       interaction: {mode: unattended}
       caller_warnings:
@@ -35,6 +38,7 @@ interfaces:
       - {id: fetched, class: success, outputs: [filtered-envelopes, diagnostic], effects: [update-status], caller_action: Process only the returned envelopes.}
       - {id: mail-list-failed, class: error, outputs: [diagnostic], effects: [], caller_action: Report the delegated failure and preserve the watermark.}
       - {id: invalid-response, class: error, outputs: [diagnostic], effects: [], caller_action: Report invalid email-client JSON and preserve the watermark.}
+      - {id: dedup-read-failed, class: error, outputs: [diagnostic], effects: [], caller_action: Report the delegated list-manager cloud-read failure; retry the rescan once the destination list is readable.}
       execution:
         state_effect: mutating
         lifecycle: finite
@@ -102,9 +106,13 @@ interfaces:
       - allowed_flags:
         - -a
         - --after
+        - --rescan-after
+        - --dedup-against
         flag_patterns:
           --after: ^.+$
           -a: ^.+$
+          --rescan-after: ^.+$
+          --dedup-against: ^(todo|triage)$
         forbidden_flags:
         - --account
         max_positionals: 0
@@ -116,9 +124,13 @@ interfaces:
       - allowed_flags:
         - --account
         - --after
+        - --rescan-after
+        - --dedup-against
         flag_patterns:
           --account: ^.+$
           --after: ^.+$
+          --rescan-after: ^.+$
+          --dedup-against: ^(todo|triage)$
         forbidden_flags:
         - -a
         max_positionals: 0
@@ -127,16 +139,26 @@ interfaces:
         required_flags:
         - --account
         - --after
-    usage: -a <account> --after YYYY-MM-DD
+    usage: -a <account> --after YYYY-MM-DD [--rescan-after ISO_CUTOFF] [--dedup-against todo|triage]
     version: 1
 node_type: behavioral_source
 platform_support:
   linux: true
   macos: true
   windows: true
-runtime_dependencies: []
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Parses the destination list YAML fetched via list-manager.interface.cloud-read for --dedup-against.
+  version: '>=6'
 schema_version: 4
 uses_interfaces:
 - interface: email-client.interface.mail-list
+  version: 1
+- interface: list-manager.interface.cloud-read
   version: 1
 version: 1

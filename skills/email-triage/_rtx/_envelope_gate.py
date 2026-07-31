@@ -53,25 +53,39 @@ def record_warning(message: str) -> None:
     STATUS_FILE.write_text(json.dumps({"result": "warning", "message": message}, indent=2))
 
 
-def load_cutoff():
-    """Return (cutoff_datetime, warning_message|None)."""
+def _parse_cutoff_value(raw: str) -> datetime:
+    """Parse a watermark-shaped string (ISO datetime, or legacy date-only)
+    into a cutoff datetime. Shared by the file-backed watermark and by an
+    explicit `--rescan-after` override so both accept the same formats."""
+    try:
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.astimezone()
+        return dt
+    except ValueError:
+        # Legacy date-only watermark — treat as midnight UTC on that date
+        from datetime import date
+        d = date.fromisoformat(raw)
+        return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+
+
+def load_cutoff(*, override: str | None = None):
+    """Return (cutoff_datetime, warning_message|None).
+
+    `override`, when given, is used in place of the stored watermark file --
+    this is how a manual historical rescan (`--rescan-after <value>`) fetches
+    from an arbitrary earlier point instead of the normal watermark, without
+    ever touching or advancing the real watermark file.
+    """
+    if override:
+        return _parse_cutoff_value(override), None
     if not WATERMARK.exists():
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         msg = "No watermark found — defaulting to 24h lookback."
         record_warning(msg)
         return cutoff, f"WARNING: {msg}"
     raw = WATERMARK.read_text().strip()
-    try:
-        dt = datetime.fromisoformat(raw)
-        if dt.tzinfo is None:
-            dt = dt.astimezone()
-        return dt, None
-    except ValueError:
-        # Legacy date-only watermark — treat as midnight UTC on that date
-        from datetime import date
-        d = date.fromisoformat(raw)
-        dt = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
-        return dt, None
+    return _parse_cutoff_value(raw), None
 
 
 def clear_stale_error():

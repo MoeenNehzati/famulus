@@ -26,6 +26,7 @@ Uses Interfaces:
 - `email-triage.source.rtx-failure-sentinel -> common.interface.famulus-paths@1`
 - `email-triage.source.rtx-finalize-run -> common.interface.famulus-paths@1`
 - `email-triage.source.rtx-mail-envelope-stream -> email-client.interface.mail-list@1`
+- `email-triage.source.rtx-mail-envelope-stream -> list-manager.interface.cloud-read@1`
 - `email-triage.source.rtx-watermark-floor -> common.interface.famulus-paths@1`
 - `email-triage.source.rtx-watermark-writer -> common.interface.famulus-paths@1`
 - `email-triage.source.rtx-write-metrics -> common.interface.famulus-paths@1`
@@ -51,7 +52,7 @@ Dispatcher Interfaces:
 
 Use the installed `dispatcher` command for these process-bound interfaces:
 - `email-triage.interface.fetch-filtered-envelopes` — Fetch email envelopes for one account through email-client and emit only envelopes strictly after the triage watermark.
-  - `dispatcher --caller-skill email-triage email-triage.interface.fetch-filtered-envelopes -a <account> --after YYYY-MM-DD`
+  - `dispatcher --caller-skill email-triage email-triage.interface.fetch-filtered-envelopes -a <account> --after YYYY-MM-DD [--rescan-after ISO_CUTOFF] [--dedup-against todo|triage]`
 - `email-triage.interface.scripts-clear-failure` — Clear a latched triage failure after its cause is fixed, without advancing the watermark.
   - `dispatcher --caller-skill email-triage email-triage.interface.scripts-clear-failure [reason]`
 - `email-triage.interface.scripts-filter-envelopes` — Filter JSON envelopes (from email-client's mail-list, piped via stdin) to those strictly after the triage watermark.

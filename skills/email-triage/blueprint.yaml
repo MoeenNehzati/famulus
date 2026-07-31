@@ -92,6 +92,7 @@ content:
 - _rtx/_finalize_run\.py
 - _rtx/_log_compactor\.py
 - _rtx/_mail_envelope_stream\.py
+- _rtx/_rescan_filter\.py
 - _rtx/_watermark_floor\.py
 - _rtx/_watermark_writer\.py
 - _rtx/_write_metrics\.py
@@ -101,6 +102,7 @@ content:
 - tests/test_filter_envelopes\.py
 - tests/test_llm_routing\.py
 - tests/test_finalize_run\.py
+- tests/test_rescan\.py
 - tests/test_watermark\.py
 discovery:
   mechanism: skill

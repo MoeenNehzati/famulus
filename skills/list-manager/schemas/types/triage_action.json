@@ -58,6 +58,21 @@
       "type": "string",
       "format": "date",
       "description": "Auto-stamped to today the first time a patch sets state to accepted/rejected -- not user-set (unless the patch explicitly provides it). Never overwritten by later, unrelated edits."
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "type": "string"
+        },
+        "mailbox": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id"
+      ],
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

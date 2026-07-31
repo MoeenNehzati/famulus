@@ -112,7 +112,8 @@ exports:
   list-manager.interface.cloud-read:
     access:
       allow_all_modules: false
-      allowed_callers: []
+      allowed_callers:
+      - email-triage
     source_interface: list-manager.source.rtx-yaml-store.interface.cloud-read
   list-manager.interface.cloud-read-beautify:
     access:

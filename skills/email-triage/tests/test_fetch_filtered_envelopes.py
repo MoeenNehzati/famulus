@@ -186,7 +186,8 @@ def test_composite_declares_typed_dispatch_boundary() -> None:
     assert interface["process_binding"]["kind"] == "process"
     assert interface["process_binding"]["entry"] == "Interface"
     assert source["uses_interfaces"] == [
-        {"interface": "email-client.interface.mail-list", "version": 1}
+        {"interface": "email-client.interface.mail-list", "version": 1},
+        {"interface": "list-manager.interface.cloud-read", "version": 1},
     ]
     assert source["platform_support"] == {
         "linux": True,

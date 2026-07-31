@@ -41,6 +41,19 @@ Each envelope is JSON: `id`, `flags` (IMAP flags — absence of `\Seen` means un
 
 **Never skip** if the subject suggests a message is waiting on a portal ("you have a message", "new message", "someone replied") — a human sent it; classify as Type 3 in Step 3.
 
+**Manual historical rescan (operator-invoked, not part of a normal triage run):**
+`email-triage.interface.fetch-filtered-envelopes` also accepts `--rescan-after
+<ISO cutoff>` and `--dedup-against <todo|triage>`, for backfilling after a bug or
+bootstrapping onto an account without editing the watermark file by hand.
+`--rescan-after` replaces the stored watermark for that one call only (the real
+watermark file is never read or written by a rescan). `--dedup-against` fetches the
+named destination list internally and drops any candidate envelope whose
+`message_id` already matches a `source.message_id` already present in that list —
+this only works for entries created after this feature shipped and carrying a
+`source` field (see Step 5); older entries have no `source` and cannot be deduped
+this way. An operator runs this directly (outside the normal Step 1–7 flow); do not
+invoke it automatically as part of a regular triage run.
+
 ---
 
 ## Step 3 — Read email bodies in batches
@@ -110,8 +123,22 @@ same file. Guard against this:
   call, so multiple items destined for the *same* category can still be
   added together where that's natural.
 
-For every item added to `triage`, include the source email id in the description
-so the originating message can be found again later.
+Every entry created in `todo` or `triage` must carry a structured `source` in the
+`entries` YAML passed to `list-manager.interface.default`, alongside its other fields:
+
+```yaml
+- title: Reply to Bob re: proposal
+  deadline: 2026-08-05
+  source:
+    message_id: "<abc123@mail.example.com>"
+    mailbox: work
+```
+
+`source.message_id` is the envelope's `message_id` field from Step 1/3 (required);
+`mailbox` is the account nickname the email came from (optional but include it when
+known). This is what lets a later historical rescan (see "Manual historical rescan"
+near Step 1) deterministically skip messages already filed here instead of relying
+on fuzzy title matching.
 
 **Format by category:**
 - Bill: `Pay [Sender]; amount/context $[amount]; deadline [date]` → `todo`
