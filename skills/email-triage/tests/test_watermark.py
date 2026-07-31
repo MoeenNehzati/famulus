@@ -1,11 +1,14 @@
 """CLI tests for update_watermark.py / mark_failure.py, isolated via
 EMAIL_TRIAGE_STATE_DIR so nothing here touches the real state/ directory.
 """
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 SCRIPTS_DIR = Path(__file__).parent.parent / "_rtx"
 REPO_SRC = Path(__file__).resolve().parents[3] / "src"
@@ -15,6 +18,19 @@ SCRIPT_NAMES = {
     "clear_failure.py": "_failure_clearer.py",
     "get_cutoff.py": "_watermark_floor.py",
 }
+
+if str(REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(REPO_SRC))
+
+
+def _load_module(script_name):
+    spec = importlib.util.spec_from_file_location(
+        script_name, SCRIPTS_DIR / script_name
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 def run(script, state_dir, *args, input=None):
@@ -93,3 +109,36 @@ def test_get_cutoff_reads_watermark_written_by_update_watermark(tmp_path):
     # Should print today's or yesterday's date, not the 2-day-back default
     # that only kicks in when no watermark exists at all.
     assert "WARNING" not in result.stderr
+
+
+# ── default_state_dir ────────────────────────────────────────────────────────
+
+STATE_DIR_MODULES = [
+    "_watermark_writer.py",
+    "_watermark_floor.py",
+    "_failure_clearer.py",
+    "_failure_sentinel.py",
+]
+
+
+@pytest.mark.parametrize("module_name", STATE_DIR_MODULES)
+def test_state_dir_defaults_to_famulus_state_root_not_skill_dir(monkeypatch, tmp_path, module_name):
+    monkeypatch.delenv("EMAIL_TRIAGE_STATE_DIR", raising=False)
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    expected = resolve_famulus_paths(
+        platform=sys.platform, home=tmp_path
+    ).email_triage_state_root
+
+    module = _load_module(module_name)
+    assert module.default_state_dir(home=tmp_path) == expected
+    assert module.default_state_dir(home=tmp_path) != module.SKILL_DIR / "state"
+
+
+@pytest.mark.parametrize("module_name", STATE_DIR_MODULES)
+def test_state_dir_honors_explicit_env_override(monkeypatch, tmp_path, module_name):
+    override = tmp_path / "custom-state"
+    monkeypatch.setenv("EMAIL_TRIAGE_STATE_DIR", str(override))
+
+    module = _load_module(module_name)
+    assert module.default_state_dir() == override

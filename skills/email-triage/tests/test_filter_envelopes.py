@@ -24,7 +24,7 @@ spec.loader.exec_module(fe)
 
 def _isolate(monkeypatch, tmp_path):
     state_dir = tmp_path / "state"
-    monkeypatch.setattr(fe, "STATE_DIR", state_dir)
+    monkeypatch.setattr(fe, "default_state_dir", lambda **kwargs: state_dir)
     monkeypatch.setattr(fe, "WATERMARK", state_dir / "last_run")
     monkeypatch.setattr(fe, "STATUS_FILE", state_dir / "status.json")
     return state_dir
@@ -141,3 +141,23 @@ def test_cli_envelope_without_date_is_kept_conservatively(tmp_path):
     result = run_cli(tmp_path, "-a", "work", input_json=[{"id": "1", "subject": "no date field"}])
     kept = json.loads(result.stdout)
     assert [e["id"] for e in kept] == ["1"]
+
+
+# ── default_state_dir ────────────────────────────────────────────────────────
+
+def test_state_dir_defaults_to_famulus_state_root_not_skill_dir(monkeypatch, tmp_path):
+    monkeypatch.delenv("EMAIL_TRIAGE_STATE_DIR", raising=False)
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    expected = resolve_famulus_paths(
+        platform=sys.platform, home=tmp_path
+    ).email_triage_state_root
+
+    assert fe.default_state_dir(home=tmp_path) == expected
+    assert fe.default_state_dir(home=tmp_path) != fe.SKILL_DIR / "state"
+
+
+def test_state_dir_honors_explicit_env_override(monkeypatch, tmp_path):
+    override = tmp_path / "custom-state"
+    monkeypatch.setenv("EMAIL_TRIAGE_STATE_DIR", str(override))
+    assert fe.default_state_dir() == override

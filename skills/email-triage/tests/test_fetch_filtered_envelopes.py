@@ -35,7 +35,7 @@ def _isolate_filter_state(module, tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     (state_dir / "last_run").write_text("2026-07-05T10:00:00-04:00", encoding="utf-8")
-    module.envelope_gate.STATE_DIR = state_dir
+    module.envelope_gate.default_state_dir = lambda **kwargs: state_dir
     module.envelope_gate.WATERMARK = state_dir / "last_run"
     module.envelope_gate.STATUS_FILE = state_dir / "status.json"
 

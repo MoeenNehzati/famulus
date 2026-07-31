@@ -83,6 +83,7 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
+      - email-triage
       - install-assistant-tools
       - recurring-tasks
     source_interface: common.source.famulus-paths.interface.python-api

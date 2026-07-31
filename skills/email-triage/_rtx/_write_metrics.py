@@ -22,8 +22,24 @@ except ImportError:
     HAS_OFFICINA = False
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
-STATE_DIR = Path(os.environ["EMAIL_TRIAGE_STATE_DIR"]) if os.environ.get("EMAIL_TRIAGE_STATE_DIR") else SKILL_DIR / "state"
-STATUS_FILE = STATE_DIR / "status.json"
+
+
+def default_state_dir(*, home: Path | None = None) -> Path:
+    """Resolve the mutable state root for email-triage.
+
+    Defaults to the shared Famulus state root (not SKILL_DIR/state, which may
+    be a read-only installed/plugin tree). Overridable via
+    EMAIL_TRIAGE_STATE_DIR so tests and CI can point at a tmp_path.
+    """
+    override = os.environ.get("EMAIL_TRIAGE_STATE_DIR")
+    if override:
+        return Path(override)
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    return resolve_famulus_paths(platform=sys.platform, home=home or Path.home()).email_triage_state_root
+
+
+STATUS_FILE = default_state_dir() / "status.json"
 
 
 if HAS_OFFICINA:
@@ -45,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     # Read existing status.json if it exists, to preserve any error state
     status = {}

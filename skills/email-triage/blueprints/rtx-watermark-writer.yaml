@@ -103,5 +103,7 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 4
-uses_interfaces: []
+uses_interfaces:
+- interface: common.interface.famulus-paths
+  version: 1
 version: 1

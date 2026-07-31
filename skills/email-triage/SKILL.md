@@ -21,7 +21,13 @@ Uses Interfaces:
 - `email-triage.source.instructions-triage -> email-triage.source.rtx-watermark-floor.interface.scripts-get-cutoff@1`
 - `email-triage.source.instructions-triage -> email-triage.source.rtx-watermark-writer.interface.scripts-update-watermark@1`
 - `email-triage.source.instructions-triage -> list-manager.interface.default@1`
+- `email-triage.source.rtx-envelope-gate -> common.interface.famulus-paths@1`
+- `email-triage.source.rtx-failure-clearer -> common.interface.famulus-paths@1`
+- `email-triage.source.rtx-failure-sentinel -> common.interface.famulus-paths@1`
 - `email-triage.source.rtx-mail-envelope-stream -> email-client.interface.mail-list@1`
+- `email-triage.source.rtx-watermark-floor -> common.interface.famulus-paths@1`
+- `email-triage.source.rtx-watermark-writer -> common.interface.famulus-paths@1`
+- `email-triage.source.rtx-write-metrics -> common.interface.famulus-paths@1`
 
 Public Interfaces:
 - `email-triage.interface.default`
