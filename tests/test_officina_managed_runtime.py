@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import FakeCompletedProcess, fake_uv_subprocess_run
 from officina.install.managed_runtime import (
     ManagedRuntimeError,
     build_candidate_release,
@@ -14,13 +15,6 @@ from officina.install.managed_runtime import (
 
 REAL_MANIFEST = Path(__file__).resolve().parents[1] / "references" / "blueprint" / "runtime_dependencies.json"
 UV_BIN = shutil.which("uv")
-
-
-class FakeCompletedProcess:
-    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
 
 
 def test_declared_python_packages_matches_today_baseline():
@@ -64,33 +58,10 @@ def test_declared_python_packages_rejects_unsupported_schema_version(tmp_path):
         declared_python_packages(manifest, platform="linux")
 
 
-def _fake_run_creating_venv_python(calls: list, *, trusted_python_dir: Path) -> callable:
-    """A fake ``subprocess.run`` that mimics real ``uv`` behavior: ``uv venv``
-    creates the interpreter on disk as a side effect, ``uv pip install`` does
-    not (it requires the interpreter to already exist at ``--python``), and
-    ``uv python dir`` reports a trusted interpreter-store directory. This is
-    what caught the original bug, where the fake only created ``python_bin``
-    during the (mocked) pip-install call — real ``uv pip install`` never does
-    that, so the real happy path always failed.
-    """
-
-    def fake_run(cmd, **kwargs):
-        calls.append(cmd)
-        if cmd[1] == "venv":
-            venv_dir = Path(cmd[-1])
-            (venv_dir / "bin").mkdir(parents=True, exist_ok=True)
-            (venv_dir / "bin" / "python").write_text("#!/bin/sh\n")
-        elif cmd[1:3] == ["python", "dir"]:
-            return FakeCompletedProcess(stdout=str(trusted_python_dir) + "\n")
-        return FakeCompletedProcess()
-
-    return fake_run
-
-
 def test_build_candidate_release_creates_venv_then_one_batch_pip_install(monkeypatch, tmp_path):
     calls: list = []
     monkeypatch.setattr(
-        "subprocess.run", _fake_run_creating_venv_python(calls, trusted_python_dir=tmp_path / "uv-python-store")
+        "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
     )
 
     pointer = build_candidate_release(
@@ -115,7 +86,7 @@ def test_build_candidate_release_provisions_venv_before_installing_packages(monk
     ordering, independent of the batch-install call-count assertion above."""
     calls: list = []
     monkeypatch.setattr(
-        "subprocess.run", _fake_run_creating_venv_python(calls, trusted_python_dir=tmp_path / "uv-python-store")
+        "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
     )
 
     build_candidate_release(
@@ -181,7 +152,7 @@ def test_build_candidate_release_resolver_deploy_failure_writes_no_pointer(monke
     """
     calls: list = []
     monkeypatch.setattr(
-        "subprocess.run", _fake_run_creating_venv_python(calls, trusted_python_dir=tmp_path / "uv-python-store")
+        "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
     )
     monkeypatch.setattr(
         "officina.install.managed_runtime.shutil.copy2",
