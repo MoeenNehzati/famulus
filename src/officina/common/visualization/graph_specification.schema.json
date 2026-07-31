@@ -1,0 +1,476 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://officina.ai/schemas/visualization/graph_specification.schema.json",
+  "title": "Visualizable Graph Payload",
+  "type": "object",
+  "description": "Rich, domain-agnostic graph payload contract for shared visualization rendering.",
+  "additionalProperties": false,
+  "required": ["schema_version", "entities"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Visual graph payload schema version."
+    },
+    "graph_kind": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional domain hint (for UI text and filtering, not required for layout)."
+    },
+    "graph_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional stable identifier for the rendered graph artifact."
+    },
+    "document": {
+      "$ref": "#/definitions/documentMeta"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional generic metadata for auditability.",
+      "additionalProperties": true
+    },
+    "render_modes": {
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Optional named modes enabled by the wrapper (e.g., flowchart, architecture)."
+    },
+    "default_mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ui": {
+      "$ref": "#/definitions/uiConfig"
+    },
+    "categories": {
+      "type": "array",
+      "description": "Optional machine-readable category catalog for legend/filtering.",
+      "items": {
+        "$ref": "#/definitions/category"
+      }
+    },
+    "entities": {
+      "type": "array",
+      "description": "Nodes in the graph.",
+      "minItems": 0,
+      "items": {
+        "$ref": "#/definitions/entity"
+      }
+    }
+  },
+  "definitions": {
+    "documentMeta": {
+      "type": "object",
+      "description": "Optional document-level context shown in viewer metadata.",
+      "additionalProperties": true,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generated_by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generated_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "render_profile": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "uiConfig": {
+      "type": "object",
+      "description": "Optional renderer-level preferences. Missing fields fall back to renderer defaults.",
+      "additionalProperties": true,
+      "properties": {
+        "layout": {
+          "type": "object",
+          "properties": {
+            "elk_algorithm": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rankdir": {
+              "type": "string",
+              "enum": ["TB", "BT", "LR", "RL"]
+            },
+            "node_spacing": {
+              "type": "number",
+              "minimum": 0
+            },
+            "layer_spacing": {
+              "type": "number",
+              "minimum": 0
+            },
+            "edge_routing": {
+              "type": "string",
+              "enum": ["ORTHOGONAL", "POLYLINE"]
+            }
+          }
+        },
+        "interaction": {
+          "type": "object",
+          "properties": {
+            "ancestor_focus_mode": {
+              "type": "string",
+              "enum": ["off", "dim", "hide"]
+            },
+            "show_delete_node": {
+              "type": "boolean"
+            },
+            "show_raw_json": {
+              "type": "boolean"
+            },
+            "allow_pan_zoom": {
+              "type": "boolean"
+            }
+          }
+        },
+        "visibility": {
+          "type": "object",
+          "properties": {
+            "hidden_types": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "hidden_nodes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "pinned_nodes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "type_styles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "shape": {
+                "type": "string",
+                "minLength": 1
+              },
+              "color": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "description": "Optional renderer styles for node types."
+        },
+        "edge_styles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "color": {
+                "type": "string",
+                "minLength": 1
+              },
+              "stroke": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dash": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "description": "Optional renderer styles for edge types."
+        },
+        "panel": {
+          "type": "object",
+          "properties": {
+            "start_collapsed": {
+              "type": "boolean"
+            },
+            "default_tab": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "focus": {
+          "type": "object",
+          "properties": {
+            "selected_node_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "selection_mode": {
+              "type": "string",
+              "enum": ["none", "node", "path", "subgraph"]
+            }
+          }
+        }
+      }
+    },
+    "category": {
+      "type": "object",
+      "required": ["id", "label"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "shape": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional renderer shape for this category."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "color": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "edgeCommon": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["High", "Medium", "Low", "Verified", "Likely", "Unknown"]
+        },
+        "implicit": {
+          "type": "boolean",
+          "description": "True when the edge is machine inferred and not explicitly asserted."
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Short human label for this edge. Renderers should prefer this over raw type when present."
+        },
+        "edge_label": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Deprecated compatibility alias for label."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "weight": {
+          "type": "number"
+        },
+        "phase": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "edgeCanonical": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/edgeCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "to": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Canonical target node id."
+            },
+            "type": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Canonical edge kind."
+            }
+          },
+          "required": ["to", "type"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "entity": {
+      "type": "object",
+      "description": "A render node and its metadata.",
+      "required": ["id", "type", "short_title", "position"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Renderer category/type used for legend, style, and filtering."
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1
+        },
+        "short_title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional display label for this node. Renderers should fall back to short_title."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "type": "string"
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "layout": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "width": {
+              "type": "number",
+              "minimum": 0
+            },
+            "height": {
+              "type": "number",
+              "minimum": 0
+            },
+            "z": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": true
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1
+        },
+        "container": {
+          "type": "string",
+          "minLength": 1
+        },
+        "group": {
+          "type": "string",
+          "minLength": 1
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "connects_to": {
+          "type": "array",
+          "minItems": 0,
+          "items": {
+            "$ref": "#/definitions/edgeCanonical"
+          },
+          "description": "Canonical outgoing edges."
+        },
+        "active_in": {
+          "type": "string",
+          "minLength": 1
+        },
+        "documentation": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "defined": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "enum": ["explicit", "inferred"]
+        },
+        "role_bucket": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role_summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "in_degree": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "out_degree": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tier": {
+          "type": "string",
+          "enum": ["entry", "core", "leaf", "orphan"]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

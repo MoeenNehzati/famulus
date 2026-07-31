@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Lightweight wrapper entrypoint for rendering dependency graphs.
-
-Layout, node/edge rendering behavior, containment, and supernode/subnode handling
-are owned by the shared renderer in ``officina.common.visualization.base_renderer``.
-"""
+"""CLI entrypoint for rendering canonical dependency graphs."""
 
 from __future__ import annotations
 
@@ -13,29 +9,11 @@ from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-from officina.common.visualization.elk_html_renderer import (
-    build_html_with_elk,
-)
-from officina.common.visualization.base_renderer_cli import (
-    reduce_transitive_edges,
-    validate_document,
-)
-
-TYPE_STYLES = {
-    "standing-assumption": {"shape": "hexagon", "color": "#c0392b"},
-    "local-assumption": {"shape": "diamond", "color": "#d35400"},
-    "definition": {"shape": "roundrect", "color": "#2471a3"},
-    "notation": {"shape": "parallelogram", "color": "#148f77"},
-    "lemma": {"shape": "ellipse", "color": "#1e8449"},
-    "proposition": {"shape": "rect", "color": "#7d6608"},
-    "theorem": {"shape": "rect", "color": "#6c3483"},
-    "corollary": {"shape": "circle", "color": "#b7950b"},
-    "remark": {"shape": "rect", "color": "#616a6b"},
-}
+from .elk_html_renderer import ElkHtmlRenderer, build_html_with_elk
 
 try:
     from ._tex_macro_reader import default_output_path, extract_macros, write_macros
-except ImportError:  # pragma: no cover - fallback for alternate import paths
+except ImportError:  # pragma: no cover - only relevant when imported unusually
     try:
         from _tex_macro_reader import default_output_path, extract_macros, write_macros
     except ImportError:
@@ -44,21 +22,42 @@ except ImportError:  # pragma: no cover - fallback for alternate import paths
         write_macros = None
 
 
+_DEFAULT_RENDERER = ElkHtmlRenderer()
+
+
+def validate_document(doc: dict) -> None:
+    """Validate the canonical payload expected by the shared renderer."""
+    _DEFAULT_RENDERER.validate(doc)
+
+
+def merge_mathjax_macros(doc: dict, macro_file: Path | None) -> int:
+    """Merge extracted MathJax macros from a macro JSON file."""
+    if macro_file is None:
+        return 0
+    if not macro_file.exists():
+        raise SystemExit(f"Macro file not found: {macro_file}")
+    file_macros = json.loads(macro_file.read_text(encoding="utf-8"))
+    if not isinstance(file_macros, dict):
+        raise SystemExit(f"Macro file must contain a JSON object: {macro_file}")
+    document_meta = doc.setdefault("document", {})
+    json_macros = document_meta.get("mathjax_macros", {})
+    if json_macros and not isinstance(json_macros, dict):
+        raise SystemExit("'document.mathjax_macros' must be an object when present.")
+    document_meta["mathjax_macros"] = {**file_macros, **json_macros}
+    return len(file_macros)
+
+
 def resolve_entrypoint(entrypoint_text: str, source_path: Path) -> Path:
     """Resolve an entrypoint from CLI/JSON relative to useful roots."""
     entrypoint = Path(entrypoint_text)
-    candidates: list[Path] = []
     if entrypoint.is_absolute():
-        candidates.append(entrypoint)
-    else:
-        candidates.extend(
-            [
-                Path.cwd() / entrypoint,
-                source_path.parent / entrypoint,
-                source_path.parent.parent / entrypoint,
-            ]
-        )
+        return entrypoint
 
+    candidates = [
+        Path.cwd() / entrypoint,
+        source_path.parent / entrypoint,
+        source_path.parent.parent / entrypoint,
+    ]
     for candidate in candidates:
         if candidate.exists():
             return candidate.resolve()
@@ -90,34 +89,15 @@ def prepare_macro_file(args: argparse.Namespace, source_path: Path, doc: dict) -
     return macro_path
 
 
-def merge_mathjax_macros(doc: dict, macro_file: Path | None) -> int:
-    """Merge extracted MathJax macros into ``doc``.
-
-    Macros already present in the graph JSON take precedence because they may be
-    hand-normalized for MathJax compatibility.
-    """
-    if macro_file is None:
-        return 0
-    if not macro_file.exists():
-        raise SystemExit(f"Macro file not found: {macro_file}")
-
-    file_macros = json.loads(macro_file.read_text(encoding="utf-8"))
-    if not isinstance(file_macros, dict):
-        raise SystemExit(f"Macro file must contain a JSON object: {macro_file}")
-
-    document_meta = doc.setdefault("document", {})
-    json_macros = document_meta.get("mathjax_macros", {})
-    if json_macros and not isinstance(json_macros, dict):
-        raise SystemExit("'document.mathjax_macros' must be an object when present.")
-
-    document_meta["mathjax_macros"] = {**file_macros, **json_macros}
-    return len(file_macros)
+def reduce_transitive_edges(doc: dict) -> tuple[dict, list[dict]]:
+    """Apply graph-theoretic transitive reduction to the rendered view only."""
+    return _DEFAULT_RENDERER.reduce_graph_json_transitive_edges(doc)
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None) -> int:
     """CLI entry point for rendering canonical dependency JSON to HTML."""
     parser = argparse.ArgumentParser(
-        description="Render an interactive HTML dependency graph from canonical JSON."
+        description="Render an interactive dependency graph from canonical JSON."
     )
     parser.add_argument("source", help="Path to the canonical dependency-graph JSON file")
     parser.add_argument("--html-out", dest="html_out", help="Path to write the standalone HTML viewer")
@@ -149,7 +129,6 @@ def main(argv: list[str] | None = None) -> None:
 
     doc = json.loads(source_path.read_text(encoding="utf-8"))
     validate_document(doc)
-
     macro_path = prepare_macro_file(args, source_path, doc)
     macro_count = merge_mathjax_macros(doc, macro_path)
     reduction_note = ""
@@ -157,8 +136,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.reduce_transitive_edges:
         doc, removed_edges = reduce_transitive_edges(doc)
         reduction_note = (
-            "Graph-theoretic transitive reduction enabled: "
-            f"removed {len(removed_edges)} redundant edges from the rendered view."
+            f"Graph-theoretic transitive reduction enabled: removed {len(removed_edges)} redundant edges "
+            "from the rendered view."
         )
 
     if args.html_out:
@@ -167,18 +146,14 @@ def main(argv: list[str] | None = None) -> None:
         build_dir = source_path.parent / "_build"
         build_dir.mkdir(exist_ok=True)
         html_path = build_dir / source_path.with_suffix(".html").name
-
-    html_path.write_text(
-        build_html_with_elk(doc, reduction_note=reduction_note),
-        encoding="utf-8",
-    )
+    html_path.write_text(build_html_with_elk(doc, reduction_note=reduction_note), encoding="utf-8")
 
     print(
         json.dumps(
             {
                 "json": str(source_path),
                 "html": str(html_path),
-                "entities": len(doc.get("entities", [])),
+                "entities": len(doc["entities"]),
                 "reduced": args.reduce_transitive_edges,
                 "removed_edges": len(removed_edges),
                 "macro_file": str(macro_path) if macro_path else None,
@@ -187,17 +162,17 @@ def main(argv: list[str] | None = None) -> None:
             indent=2,
         )
     )
+    return 0
 
 
 class Interface(PythonArgvMachineInterface):
-    """Compatibility interface for automation hooks that invoke this renderer."""
+    """Runtime-compatible entrypoint object."""
 
     prog = "graph_builder.py"
 
-    def run(self, argv: list[str]) -> int:
-        main(argv)
-        return 0
+    def run(self, argv: list[str]) -> int:  # pragma: no cover - simple dispatch
+        return main(argv)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

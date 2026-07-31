@@ -39,7 +39,7 @@ from .docstring import (
     validate_edge_expression,
     validate_pipeline_docstring,
 )
-from .explanatory_graphs import (
+from .visualization import (
     render_module_artifacts,
 )
 

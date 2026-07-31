@@ -148,12 +148,13 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
         self.assertIn("const MIN_ARROW_LANDING_RUN = 18;", html)
         self.assertIn("const mergeLane = edgeNodeGap() + Math.max(MIN_ARROW_LANDING_RUN, routingConfig.mergeLaneDistance);", html)
         self.assertIn("const laneX = sourceOnRight ? dstPos.x - mergeLane : dstPos.x + dstPos.width + mergeLane;", html)
-        self.assertIn("const key = pathEl.dataset.targetNodeId;", html)
+        self.assertIn("function routeGroupKey(pathEl)", html)
         self.assertIn("function incidentEdgePaths(nodeId)", html)
         self.assertIn("function rerouteIncidentEdgesFromCurrentPositions(nodeId)", html)
         self.assertIn("function rerouteAllVisibleEdgesFromCurrentPositions()", html)
         mouseup_handler = html.split('document.addEventListener("mouseup", event => {', 1)[1].split("});", 1)[0]
-        self.assertIn("rerouteIncidentEdgesFromCurrentPositions(droppedNodeId);", mouseup_handler)
+        self.assertIn("draggingNodeIds.forEach((nodeId) => {", mouseup_handler)
+        self.assertIn("rerouteIncidentEdgesFromCurrentPositions(nodeId);", html)
         self.assertNotIn("updateVisibilityFull();", mouseup_handler)
 
     def test_arrowheads_are_synced_svg_polygons_not_markers(self) -> None:
@@ -280,7 +281,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     "defined": "Fixture",
                     "active_in": "Fixture",
                     "source": "explicit",
-                    "depends_on": [],
+                    "connects_to": [],
                     "position": 1,
                 },
                 {
@@ -293,7 +294,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     "defined": "Fixture",
                     "active_in": "Fixture",
                     "source": "explicit",
-                    "depends_on": [],
+                    "connects_to": [],
                     "position": 2,
                 },
                 {
@@ -306,9 +307,9 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     "defined": "Fixture",
                     "active_in": "Fixture",
                     "source": "explicit",
-                    "depends_on": [
-                        {"id": "root", "use_type": "uses", "description": "Uses root.", "confidence": "Verified", "evidence": "fixture"},
-                        {"id": "other", "use_type": "uses", "description": "Uses other.", "confidence": "Verified", "evidence": "fixture"},
+                    "connects_to": [
+                        {"to": "root", "type": "uses", "description": "Uses root.", "confidence": "Verified", "evidence": "fixture"},
+                        {"to": "other", "type": "uses", "description": "Uses other.", "confidence": "Verified", "evidence": "fixture"},
                     ],
                     "position": 3,
                 },
@@ -322,7 +323,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     "defined": "Fixture",
                     "active_in": "Fixture",
                     "source": "explicit",
-                    "depends_on": [],
+                    "connects_to": [],
                     "position": 4,
                 },
             ],
@@ -419,8 +420,8 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
 
                     document.getElementById("reset-btn").dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
                     await new Promise(resolve => setTimeout(resolve, 80));
-                    const unaffected = document.querySelector('[data-source-node-id="other"][data-target-node-id="child"]');
-                    const affected = document.querySelector('[data-source-node-id="root"][data-target-node-id="child"]');
+                    const unaffected = document.querySelector('[data-source-node-id="child"][data-target-node-id="other"]');
+                    const affected = document.querySelector('[data-source-node-id="child"][data-target-node-id="root"]');
                     const unaffectedBefore = unaffected.getAttribute("d");
                     const affectedBefore = affected.getAttribute("d");
                     root.dispatchEvent(new MouseEvent("mousedown", {bubbles: true, button: 0, clientX: 60, clientY: 100}));
@@ -433,7 +434,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     document.getElementById("reset-btn").dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
                     await new Promise(resolve => setTimeout(resolve, 80));
                     const childAfterReset = document.querySelector('[data-node-id="child"]');
-                    const rootChildAfterReset = document.querySelector('[data-source-node-id="root"][data-target-node-id="child"]');
+                    const rootChildAfterReset = document.querySelector('[data-source-node-id="child"][data-target-node-id="root"]');
                     const staleRootChildPath = rootChildAfterReset.getAttribute("d");
                     childAfterReset.dispatchEvent(new MouseEvent("dblclick", {bubbles: true, clientX: 360, clientY: 160}));
                     await new Promise(resolve => setTimeout(resolve, 80));
