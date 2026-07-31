@@ -338,6 +338,7 @@ CallableDocstringPolicy = CallableDocstringSchema
 
 
 def _safe_bool(value: object, fallback: bool = False) -> bool:
+    """Coerce common YAML boolean spellings while preserving a fallback."""
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -346,12 +347,14 @@ def _safe_bool(value: object, fallback: bool = False) -> bool:
 
 
 def _safe_str(value: object, fallback: str) -> str:
+    """Return a string config value, or the provided fallback."""
     if isinstance(value, str):
         return value
     return fallback
 
 
 def _safe_str_tuple(values: object, fallback: tuple[str, ...] = ()) -> tuple[str, ...]:
+    """Coerce YAML string lists into a tuple while dropping non-string items."""
     if values is None:
         return fallback
     if isinstance(values, tuple):
@@ -362,6 +365,7 @@ def _safe_str_tuple(values: object, fallback: tuple[str, ...] = ()) -> tuple[str
 
 
 def _safe_int(value: object, fallback: int = 0) -> int:
+    """Coerce non-negative integer config values while rejecting booleans."""
     if isinstance(value, bool):
         return fallback
     if isinstance(value, int):
@@ -372,6 +376,7 @@ def _safe_int(value: object, fallback: int = 0) -> int:
 
 
 def _safe_check_codes(values: object) -> tuple[str, ...]:
+    """Normalize check-category entries into unique issue-code strings."""
     if values is None:
         return ()
     if isinstance(values, tuple):
@@ -395,6 +400,7 @@ def _safe_check_codes(values: object) -> tuple[str, ...]:
 
 
 def _safe_bool_mapping(values: object) -> dict[str, bool]:
+    """Normalize a YAML mapping whose values are boolean-like toggles."""
     if not isinstance(values, dict):
         return {}
     normalized: dict[str, bool] = {}
@@ -408,6 +414,7 @@ def _safe_bool_mapping(values: object) -> dict[str, bool]:
 
 
 def _parse_profile_configs(values: object) -> tuple[DocstringProfileConfig, ...]:
+    """Parse ordered path profiles and fail fast on unsupported keys."""
     if not isinstance(values, dict):
         return ()
 
@@ -471,6 +478,7 @@ def _parse_profile_configs(values: object) -> tuple[DocstringProfileConfig, ...]
 
 
 def _load_yaml(path: Path) -> object:
+    """Load a YAML document, returning ``None`` when the file is unreadable."""
     try:
         return yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError):
@@ -481,6 +489,7 @@ def _parse_ownership_config(
     value: object,
     default: OwnershipConfig,
 ) -> OwnershipConfig:
+    """Parse callable ownership policy from YAML, preserving defaults."""
     if not isinstance(value, dict):
         return default
 
@@ -514,6 +523,7 @@ def _parse_module_ownership_config(
     value: object,
     default: ModuleOwnershipConfig,
 ) -> ModuleOwnershipConfig:
+    """Parse module-level ownership registry policy from YAML."""
     if not isinstance(value, dict):
         return default
     return ModuleOwnershipConfig(
@@ -523,10 +533,12 @@ def _parse_module_ownership_config(
 
 
 def _default_docstring_schema() -> DocstringSchema:
+    """Return the built-in policy after applying repo-local config."""
     return apply_config_to_policy(DocstringSchema(), load_docstring_config())
 
 
 def resolve_docstring_schema_path(path: str | Path | None = None) -> Path | None:
+    """Find the portable docstring standard file from an explicit or repo-relative path."""
     if path is not None:
         return Path(path)
 
@@ -549,12 +561,14 @@ def resolve_docstring_schema_path(path: str | Path | None = None) -> Path | None
 
 
 def resolve_docstring_config_path(path: str | Path | None = None) -> Path:
+    """Resolve the repo-local docstring config file path."""
     if path is not None:
         return Path(path)
     return Path(__file__).resolve().with_name(DOCSTRING_CONFIG_FILE)
 
 
 def load_docstring_config(path: str | Path | None = None) -> DocstringRuntimeConfig:
+    """Load repo-local docstring configuration from ``config.yaml``."""
     config_path = resolve_docstring_config_path(path)
     config_value = _load_yaml(config_path)
     default = DocstringRuntimeConfig()
@@ -649,6 +663,7 @@ def apply_config_to_policy(
     base_policy: DocstringSchema,
     config: DocstringRuntimeConfig,
 ) -> DocstringSchema:
+    """Inject repo-local config into the portable docstring policy."""
     section_names = config.names_for_dependency_sections
     syntax = config.dependency_syntax
     module_dependencies = replace(
@@ -686,6 +701,7 @@ def apply_config_to_policy(
 
 
 def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
+    """Load the effective docstring schema from standard YAML plus repo config."""
     schema_path = resolve_docstring_schema_path(path)
     config = load_docstring_config()
     if schema_path is None or not schema_path.exists():
@@ -966,6 +982,7 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
 def load_docstring_check_categories(
     path: str | Path | None = None,
 ) -> dict[str, tuple[str, ...]]:
+    """Load named checker groups from the portable standard when present."""
     schema_path = resolve_docstring_schema_path(path)
     if schema_path is None or not schema_path.exists():
         return {}

@@ -112,6 +112,7 @@ def _resolve_docstring_syntax_path(path: str | Path | None = None) -> Path | Non
 
 
 def _load_docstring_grammar(path: str | Path | None = None) -> str | None:
+    """Load the Lark grammar text used for strict docstring micro-syntax."""
     syntax_path = _resolve_docstring_syntax_path(path)
     if syntax_path is None:
         return None
