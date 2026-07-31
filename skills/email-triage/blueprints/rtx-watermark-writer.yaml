@@ -15,31 +15,33 @@ id: email-triage.source.rtx-watermark-writer
 interfaces:
   email-triage.source.rtx-watermark-writer.interface.scripts-update-watermark:
     contract:
-      arguments: {}
+      arguments:
+        run-id: {description: "Optional idempotency key (used by scripts-finalize-triage). A repeat call with the same run id that already committed is a replay-safe no-op.", required: false, default: null, sensitivity: derived-private, type: {kind: string}}
       preconditions: []
       interaction: {mode: unattended}
       caller_warnings:
-      - external-side-effect: Advances the exact mail watermark only when status.json does not contain a latched error.
+      - external-side-effect: Advances the exact mail watermark only when status.json does not contain a latched error, and (when run-id is given) only when that run id has not already been committed.
       outputs:
-      - {id: result, audience: both, description: Confirmation containing the new watermark timestamp, direct_io_ref: write-3, type: {kind: string}, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: A confirmation line is printed on success.}
+      - {id: result, audience: both, description: Confirmation containing the new watermark timestamp or a replay no-op notice, direct_io_ref: write-3, type: {kind: string}, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: A confirmation line is printed on every non-error path.}
       - {id: diagnostic, audience: both, description: Caller-visible warning or error text written to stderr., direct_io_ref: write-4, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: No stderr is emitted on paths without diagnostics., type: {kind: string, sensitivity: derived-private}}
       outcomes:
-      - {id: advanced, class: success, outputs: [result], effects: [advance-watermark, update-status], caller_action: Use the new watermark on the next triage run.}
+      - {id: advanced, class: success, outputs: [result], effects: [update-status, advance-watermark], caller_action: Use the new watermark on the next triage run.}
+      - {id: replayed, class: success, outputs: [result], effects: [], caller_action: "Treat as already advanced for this run id; take no further action."}
       - {id: blocked, class: refusal, outputs: [diagnostic], effects: [], caller_action: Preserve the old watermark and resolve the latched failure.}
       - {id: failed, class: error, outputs: [], effects: [], caller_action: Treat advancement as unconfirmed and inspect both state files.}
       execution:
         state_effect: mutating
         lifecycle: finite
-        consistency: {live: Checks current failure state immediately before writing a new local timestamp.}
+        consistency: {live: "Checks current failure state and, if a run id was given, whether that run id already committed, immediately before writing."}
         effects:
-        - {id: advance-watermark, direct_io_ref: write-1, action: update, value_source: {kind: direct-io, direct_io_ref: write-1}, may_occur_in_outcomes: [advanced], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Restore a previously retained watermark timestamp.}}
         - {id: update-status, direct_io_ref: write-2, action: update, value_source: {kind: direct-io, direct_io_ref: write-2}, may_occur_in_outcomes: [advanced], confirmation_evidence: {kind: direct-io, direct_io_ref: write-2}, reversibility: {compensatable: Restore a previously retained status document.}}
+        - {id: advance-watermark, direct_io_ref: write-1, action: update, value_source: {kind: direct-io, direct_io_ref: write-1}, may_occur_in_outcomes: [advanced], confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}, reversibility: {compensatable: Restore a previously retained watermark timestamp.}}
         mutation_safety:
-          atomicity: {non_atomic: Watermark and status are written sequentially as separate files.}
+          atomicity: {non_atomic: "Status (result, new timestamp, and run id) is committed in one write BEFORE the watermark file is written, specifically so a crash between the two writes cannot cause a later replay to re-advance the watermark to a second, later timestamp — the only crash casualty possible is the watermark file lagging one commit behind status.json, which a later run self-heals."}
           concurrent_invocations: {unsafe: Concurrent runs can overwrite timestamps and status fields.}
-          idempotency: {non_idempotent: Each successful call writes the current time.}
-          on_uncertain_completion: {verify_then_decide: Inspect both watermark and status before retrying.}
-          partial_effects_on_failure: {possible: The watermark may advance before the status update fails.}
+          idempotency: {idempotent: "When --run-id is given, a repeat call for a run id already recorded in status.json's last_finalized_run_id performs no writes at all. Without --run-id there is no idempotency key and each successful call advances again (unchanged legacy behavior)."}
+          on_uncertain_completion: {verify_then_decide: "Inspect status.json's last_finalized_run_id (if a run id was used) and the watermark file before retrying."}
+          partial_effects_on_failure: {possible: "Status may commit (including the run id) before the watermark file write completes; this is the deliberately safe direction, never the reverse."}
           rollback_on_failure: {unavailable: The interface does not retain old file contents automatically.}
         verification:
         - {method: direct-io-state, direct_io_ref: write-1}
@@ -87,14 +89,20 @@ interfaces:
           sensitivity: derived-private
         - {access: write, content: diagnostic-report, formats: [text], id: write-4, medium: stderr, sensitivity: derived-private}
     description: Advance the triage watermark to the current timestamp. Refuses if
-      scripts-mark-failure was called earlier in this run.
+      scripts-mark-failure was called earlier in this run. Optionally accepts a
+      run id to make repeated calls for the same run a replay-safe no-op.
     process_binding:
       entry: Interface
       kind: process
       patterns:
-      - allow_extra_positionals: true
+      - allowed_flags:
+        - --run-id
+        flag_patterns:
+          --run-id: ^.+$
+        max_positionals: 0
+        min_positionals: 0
         name: owner
-    usage: ''
+    usage: '[--run-id <id>]'
     version: 1
 node_type: behavioral_source
 platform_support:

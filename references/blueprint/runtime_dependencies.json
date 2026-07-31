@@ -1961,6 +1961,10 @@
           "id": "email-triage.interface.scripts-filter-envelopes",
           "dependencies": []
         },
+        "scripts-finalize-triage": {
+          "id": "email-triage.interface.scripts-finalize-triage",
+          "dependencies": []
+        },
         "scripts-get-cutoff": {
           "id": "email-triage.interface.scripts-get-cutoff",
           "dependencies": []

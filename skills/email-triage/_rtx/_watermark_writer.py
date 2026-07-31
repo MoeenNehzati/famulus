@@ -10,7 +10,21 @@ Safety: if _rtx/_failure_sentinel.py was called earlier in this run, a
 status.json with result="error" will be present. In that case this script
 refuses to advance the watermark (exit 1) so no emails are silently skipped
 on the next run. On success it resets status.json to result="ok".
+
+Optional --run-id (used by _finalize_run.py, not required for standalone
+use): when given, status.json is committed FIRST — result, the new
+watermark timestamp, AND the run id, all in that one write — and only
+afterward is the watermark file itself written. This ordering matters for
+crash-safety: if the process dies between the two writes, status.json
+already shows this run id as finalized, so a replay with the same run id
+short-circuits as a no-op instead of advancing the watermark a second time
+to a later timestamp. The only failure mode left is the safe direction —
+the watermark file lags one commit behind what status.json claims, which
+just makes the next run re-scan a bit more mail (caught by Step 5's dedup)
+rather than silently skipping any. A later run with a fresh run id (or no
+run id at all) advances normally and self-heals the lag.
 """
+import argparse
 import json
 import sys
 from datetime import datetime
@@ -53,7 +67,17 @@ if HAS_OFFICINA:
             return main(argv)
 
 
-def main(_argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Advance the triage watermark")
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Optional idempotency key (set by _finalize_run.py). A repeat call with "
+        "the same run id that already committed is a no-op.",
+    )
+    args = parser.parse_args(argv)
+    run_id = args.run_id
+
     WATERMARK.parent.mkdir(parents=True, exist_ok=True)
 
     status = {}
@@ -70,15 +94,26 @@ def main(_argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
+        if run_id is not None and status.get("last_finalized_run_id") == run_id:
+            print(f"Watermark already advanced for run {run_id!r}; no-op (replay-safe)")
+            return 0
 
     now = datetime.now().astimezone()
-    WATERMARK.write_text(now.isoformat())
 
     # Preserve existing metrics and other fields, just update result and timestamp
     status["result"] = "ok"
     status["watermark_advanced_at"] = now.isoformat()
+    if run_id is not None:
+        status["last_finalized_run_id"] = run_id
 
+    # Commit status.json (including the run id) BEFORE writing the watermark
+    # file itself. If the process dies between these two writes, status.json
+    # already records this run id as finalized, so a replay is recognized as
+    # a no-op and never re-advances the watermark to a later timestamp — the
+    # only possible casualty of a crash here is the watermark file lagging
+    # one commit behind, which is self-healing and never causes skipped mail.
     STATUS_FILE.write_text(json.dumps(status, indent=2))
+    WATERMARK.write_text(now.isoformat())
     print(f"Watermark updated: {now.isoformat()}")
     return 0
 

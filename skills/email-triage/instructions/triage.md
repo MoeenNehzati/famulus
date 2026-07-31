@@ -148,9 +148,15 @@ Include these counts in your summary, then pass them to the metrics interface.
 
 ---
 
-## Step 7 — Record metrics, update watermark, and prune log
+## Step 7 — Finalize the run (metrics + watermark), then prune log
 
-If any `list-manager.interface.default` add/update in Step 5 failed (e.g. a validation error), invoke `email-triage.interface.scripts-mark-failure "<reason>"` and stop — do not call `email-triage.interface.scripts-update-watermark`. This keeps next run's lookback window covering the emails that didn't get filed, and surfaces the failure as a desktop notification via the scheduled health check.
+**Run id:** before doing anything else in this step, mint one run id for this
+triage run — any short unique token (e.g. a random hex string) is fine. Reuse
+the *same* run id for every finalize call attempted in this run, including
+retries. A fresh triage run (a new invocation of this skill) must mint a new
+run id.
+
+If any `list-manager.interface.default` add/update in Step 5 failed (e.g. a validation error), invoke `email-triage.interface.scripts-mark-failure "<reason>"` and stop — do not invoke the finalization interface below. This keeps next run's lookback window covering the emails that didn't get filed, and surfaces the failure as a desktop notification via the scheduled health check.
 
 After the failure's cause has been fixed, an operator may invoke
 `email-triage.interface.scripts-clear-failure "<recovery reason>"` before starting
@@ -158,10 +164,21 @@ a fresh triage run. This clears only the latched error; it never advances the
 watermark. Never clear a failure automatically in the same run that recorded
 it.
 
-Otherwise, after a successful run, invoke these interfaces in order:
+Otherwise, after a successful run, invoke:
 
-1. Record the counts from Step 6 (total scanned, added to todo, added to triage, skipped, deduped)
-2. Update watermark — advances the run timestamp so next scan only sees new emails
-3. Prune log — drops entries older than 30 days and prints a one-line summary
+1. `email-triage.interface.scripts-finalize-triage` with the run id from above
+   and the counts from Step 6 (total scanned, added to todo, added to triage,
+   skipped, deduped, accounts). This single call records the counters and then
+   advances the watermark, in that order, as one step — it refuses to advance
+   the watermark if recording the counters fails or if a failure is still
+   latched from an earlier run, and it is safe to call again with the same run
+   id if the caller is unsure whether the previous call actually landed (e.g.
+   after a network error): a repeat with the same run id is a no-op, it will
+   not double-advance the watermark or re-apply the counters. Only retry with
+   a *new* run id if this is genuinely a new run.
+2. Prune log — drops entries older than 30 days and prints a one-line summary
 
-These three steps in sequence ensure metrics are recorded, watermark is advanced, and old logs are cleaned up.
+Two lower-level interfaces this one composes internally still exist and work
+exactly as before for manual recovery, but normal triage runs should use
+`scripts-finalize-triage` instead of calling them separately — calling them
+apart no longer gives any ordering or replay-safety guarantee.

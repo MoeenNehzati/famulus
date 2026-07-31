@@ -52,6 +52,39 @@ def test_update_watermark_advances_on_clean_run(tmp_path):
     assert status["result"] == "ok"
 
 
+def test_update_watermark_with_run_id_records_it_alongside_result(tmp_path):
+    result = run("update_watermark.py", tmp_path, "--run-id", "run-a")
+    assert result.returncode == 0
+    status = json.loads((tmp_path / "status.json").read_text())
+    assert status["result"] == "ok"
+    assert status["last_finalized_run_id"] == "run-a"
+
+
+def test_update_watermark_replay_with_same_run_id_does_not_readvance(tmp_path):
+    first = run("update_watermark.py", tmp_path, "--run-id", "run-b")
+    assert first.returncode == 0
+    watermark_after_first = (tmp_path / "last_run").read_text()
+
+    second = run("update_watermark.py", tmp_path, "--run-id", "run-b")
+    assert second.returncode == 0
+    watermark_after_second = (tmp_path / "last_run").read_text()
+
+    assert watermark_after_second == watermark_after_first
+
+
+def test_update_watermark_without_run_id_still_advances_every_call(tmp_path):
+    # Backward compatible standalone behavior: with no --run-id there is no
+    # idempotency key, so each clean call advances again (matches the
+    # pre-existing test_watermark_survives_across_two_clean_runs below).
+    run("update_watermark.py", tmp_path)
+    first = (tmp_path / "last_run").read_text()
+    run("update_watermark.py", tmp_path)
+    second = (tmp_path / "last_run").read_text()
+    assert second >= first
+    status = json.loads((tmp_path / "status.json").read_text())
+    assert "last_finalized_run_id" not in status
+
+
 def test_mark_failure_blocks_subsequent_watermark_update(tmp_path):
     run("mark_failure.py", tmp_path, "something broke")
     result = run("update_watermark.py", tmp_path)

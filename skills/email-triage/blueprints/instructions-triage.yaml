@@ -63,9 +63,9 @@ uses_interfaces:
   version: 1
 - interface: email-triage.source.rtx-failure-sentinel.interface.scripts-mark-failure
   version: 1
-- interface: email-triage.source.rtx-log-compactor.interface.scripts-prune-log
+- interface: email-triage.source.rtx-finalize-run.interface.scripts-finalize-triage
   version: 1
-- interface: email-triage.source.rtx-watermark-writer.interface.scripts-update-watermark
+- interface: email-triage.source.rtx-log-compactor.interface.scripts-prune-log
   version: 1
 - interface: list-manager.interface.default
   version: 1

@@ -115,7 +115,7 @@ def test_canonical_triage_workflow_is_retained() -> None:
         "email-client.interface.default`'s `mail-read` interface",
         "email-triage.interface.scripts-log-decision",
         "email-triage.interface.scripts-mark-failure",
-        "email-triage.interface.scripts-update-watermark",
+        "email-triage.interface.scripts-finalize-triage",
     ):
         assert marker in body
 
