@@ -4,50 +4,244 @@ This pipeline keeps docstring parsing/validation explicit and machine-checkable.
 
 ## 1) Policy + Syntax inputs
 - `references/standards/docstring.standard.yaml`: semantic policy (`required` sections, lengths, checks, toggles).
-- `references/standards/docstring.standard.lark`: parser grammar for docstring micro-syntax (edges, wraps, module dependencies).
+- `references/standards/docstring.standard.lark`: parser grammar for docstring micro-syntax (edges, wraps, module dependencies, strict pseudocode bullets).
+- `src/officina/common/docstring/config.yaml`: repo-local config (`allowed_abs`, dependency section names, syntax toggles, and ordered path profiles).
 - Keep behavior policy in YAML; keep punctuation/shape syntax in `.lark`.
+- Users should not edit Python to tune docstring policy; repo-specific knobs belong in `config.yaml`.
 
-## 1a) Dependency references in pseudocode (new)
+## 1a) Repo dependency sections
 
-`Pseudocode` and any configured `dependency_reference_sections` can mark explicit
-dependency links with scoped markers:
+Callable dependency declarations use these configured section names by default:
 
-- `@parse_node`
-- `@NodeHashState(...)`
-- `@CallsFromModule:parse_node(...)`
-- `@InstantiationsFromModule:NodeHashState`
+- `CallsFromRepo`
+- `InstantiationsFromRepo`
+- `Dispatches`
 
-Rules:
+These sections are intentionally repo-level only. The current design does not
+add `CallsStdlib` or `CallsExternal`; ordinary library calls should be exposed
+only when they are integral to the algorithm and can be represented as logical
+repo-relevant dependencies.
 
-- `@name` and `@name(...)` are accepted when the name is unambiguous across declaration
-  sections.
-- `@Section:name` is recommended when a dependency name appears in multiple declaration
-  buckets (`CallsFromModule`, `InstantiationsFromModule`, `Wraps`, `NonInferableCalls`).
-- References are parsed into `pseudocode_dependency_refs` and validated against those declaration
-  buckets so ambiguity becomes a checker issue rather than a hidden assumption.
+The canonical dependency syntax is a YAML-like tree. Shared logical prefixes
+should be nested once and flattened by the parser into dotted paths or ids:
 
-To include additional sections, set `callable.dependency_reference_sections` in
-`references/standards/docstring.standard.yaml`.
+```yaml
+CallsFromRepo:
+  ._node_certifier._v4_module_renames:
+    why:
+      transforms: "Maps legacy subject ids to canonical review targets."
+  officina.common:
+    repository_paths:
+      repository_relative_path:
+        why:
+          transforms: "Normalizes candidate blueprint paths to repo-relative format."
 
-The marker grammar is intentionally shared across declaration buckets. For a marker
-to be unscoped (`@name`), the identifier must be unambiguous across all
-declaration buckets (`CallsFromModule`, `InstantiationsFromModule`, `Wraps`,
-`NonInferableCalls`). Use `@Section:name` when a name appears in multiple buckets.
+InstantiationsFromRepo:
+  ._node_certifier.V4LegacyReviewContext:
+    why:
+      constructs: "Constructs typed rows describing legacy skill interface claims."
 
-Examples:
+Dispatches:
+  skills.skill-certifier.interface.default:
+    why:
+      dispatches: "Dispatches CLI invocation to the interface entrypoint."
+```
 
-- `@NodeHashState` (unscoped, resolved uniquely)
-- `@CallsFromModule:parse_node` (explicitly points at one declaration bucket)
-- `@InstantiationsFromModule:NodeHashState`
+Every dependency `why` must use exactly one graphable action key:
+
+```yaml
+why:
+  validates: "Checks that candidate evidence matches reviewed input."
+```
+
+Allowed action keys are `reads`, `writes`, `transforms`, `validates`,
+`constructs`, `dispatches`, `serializes`, `parses`, `computes`,
+`orchestrates`, `raises`, and `misc`. Use `misc` only when none of the
+specific keys fit; it requires a longer concrete explanation. The checker code
+for this syntax is `docstring.dependency-why-action`.
+
+Path validity is explicit:
+
+- Relative dependency paths must start with `.`.
+- Absolute dependency paths/ids must start with a root in `config.allowed_abs`.
+- Bare paths such as `_node_certifier.foo`, `common.foo`, or `skill-certifier.interface.default` are invalid.
+
+With the repo default config, the allowed absolute roots are `officina` and
+`skills`. The checker code for this portability rule is
+`docstring.absolute-dependency-not-allowed`.
+
+Dispatch declarations are grounded behaviorally:
+
+- `docstring.dispatch-unresolved`: declared ID is not a known public interface ID.
+- `docstring.dispatch-not-observed`: declared ID is absent from dispatcher call literals when a literal dispatch is statically visible.
+- `docstring.dispatch-undocumented`: a dispatcher call literal names an ID not listed in `Dispatches`.
+
+The validator treats `skill.interface.default` and
+`skills.skill.interface.default` as equivalent logical spellings, but the
+portable docstring form should use the allowed root, e.g.
+`skills.skill-certifier.interface.default`.
+
+## 1b) Resource and dataflow sections
+
+Use `Resources` for non-call dependencies that matter to behavior or graphing:
+
+```yaml
+Resources:
+  docstring.config:
+    kind: file
+    access: read
+    why:
+      reads: "Loads repo-local policy roots."
+```
+
+Use `Dataflow` for compact producer/consumer edges, not execution order:
+
+```yaml
+Dataflow:
+  - from: docstring.config
+    to: .load_docstring_schema
+    kind: config
+    why:
+      transforms: "Feeds repo-local roots into effective policy."
+```
+
+This is separate from flow. `Dataflow` answers what information/resource moves
+between logical nodes; execution ordering remains in `Pseudocode` for now.
+
+## 1c) Strict pseudocode syntax
+
+`Pseudocode` is a compact execution sketch language, not prose. Every bullet is
+one graph node; every sigil resolves to one declared dependency; every indent
+creates a control edge.
+
+Allowed operation forms:
+
+- `name = @ref(args)` or `@ref(args)` for `CallsFromRepo`
+- `name = #ref(args)` or `#ref(args)` for `Dispatches`
+- `name = ClassName(args)` for `InstantiationsFromRepo`
+- `raise ErrorName(args)` for `InstantiationsFromRepo` plus `raise`
+- `set name = expression` for local computation
+- `read resource_id` / `write resource_id` for `Resources`
+- `if condition:`, `while condition:`, `for name in expression:`, and `else:`
+- `return expression`, `raise expression`, `continue`, `break`
+
+Only `- ` bullets are allowed. Indentation is exactly two spaces per level.
+Free prose lines and old scoped refs such as `@CallsFromRepo:name` are invalid.
+
+Example:
+
+```text
+Pseudocode
+----------
+- graph = @load_repository_blueprint_graph(root)
+- for node in graph.nodes:
+  - authority = @resolve_node_authority(node)
+  - if authority is missing:
+    - result = CertificationResult(status=`fail_closed`)
+    - continue
+  - review = #skill-certifier.interface.default(node)
+- return result
+```
+
+Reference resolution is bucket-specific:
+
+- `@ref` resolves inside `CallsFromRepo`.
+- `#ref` resolves inside `Dispatches`.
+- `ClassName(args)` in assignment or `raise` resolves inside `InstantiationsFromRepo`.
+
+Resolution uses exact match first, then unique dot-segment suffix matching. If no
+dependency matches, the checker emits `docstring.pseudocode-ref-unresolved`. If
+multiple dependencies match, it emits `docstring.pseudocode-ref-ambiguous`.
+
+Graphable pseudocode should avoid placeholder dataflow. Configured checks can
+reject generic assignment targets or arguments such as `value`, `out`, `state`,
+`args`, and `data`, and can require assigned dependency outputs to be used by a
+later step. Related checker codes are:
+
+- `docstring.pseudocode-placeholder-variable`
+- `docstring.pseudocode-placeholder-argument`
+- `docstring.pseudocode-output-unused`
+
+Repeated-template detection can also run at module scope. It normalizes
+callable and dependency names, then reports copied prose templates with
+`docstring.repeated-template`.
+
+## 1d) Repo-local profiles
+
+Profiles in `src/officina/common/docstring/config.yaml` are ordered path
+overrides. Later matching profiles override earlier matching profiles for the
+settings they mention. Profile names are labels only; behavior comes from
+`applies_to`, `callable`, and `checks`.
+
+Current repo policy:
+
+- `production_graphable` applies rich graphable documentation checks to non-test Python under `src/**/*.py` and `skills/*/_rtx/**/*.py`.
+- `tests_lightweight` applies after the production profile for test paths and relaxes callable docstring requirements.
+- Test files may have ordinary pytest prose docstrings; if absent, callable docstrings are not required.
+- Production files should use the full graphable format.
+
+Supported profile shape:
+
+```yaml
+profiles:
+  production_graphable:
+    applies_to:
+      - src/**/*.py
+      - skills/*/_rtx/**/*.py
+    checks:
+      dependency_why_action: true
+      pseudocode_output_use: true
+      repeated_template_detection: true
+  tests_lightweight:
+    applies_to:
+      - tests/**/*.py
+      - skills/*/_rtx/tests/**/*.py
+    callable:
+      require_docstrings: false
+      required_sections: []
+      min_pseudocode_steps: 0
+    checks:
+      pseudocode_output_use: false
+      repeated_template_detection: false
+```
+
+Config loading validates profile keys so misspelled checks fail early instead
+of silently disabling enforcement. Supported check keys are
+`dependency_why_action`, `pseudocode_dataflow`, `pseudocode_output_use`, and
+`repeated_template_detection`.
+
+## 1e) Canonical visualization pipeline
+
+Visualization follows a two-stage path:
+
+1. **Extract graph JSON from docstrings**
+- `officina.common.visualization.docstring_json_extractor.extract_docstring_dependency_json(module_path)`
+- Or call `parse_module(...)` + `parse_docstring_module(...)` + `to_dependency_json(...)`
+  from `officina.common.visualization.docstring_json_extractor` for custom control.
+2. **Render JSON through shared core**
+  - `officina.common.visualization.docstring_graph_from_json` prepares and renders
+graph payloads through `officina.common.visualization.renderer_base.render_graph_html(...)`.
+3. **Compatibility**
+- `officina.common.visualization.docstring_json_extractor` exposes the extractor contract
+  and now contains `DocstringCoreJsonExtractor` for `BaseGraphBuilder`.
+
+### 1f) Core serving API
+
+- `officina.common.visualization.renderer_base.start_graph_server(directory, host='127.0.0.1', port=8765, ...)`
+  - starts a background `http.server` subprocess for a directory
+  - returns `GraphServer(process, host, port, directory)`
+  - exposes `.url` for opening the viewer and `.stop()` for teardown.
 
 ## 2) Runtime flow
 1. Loader reads the standard via `officina.common.docstring.load_docstring_schema(...)`.
-2. Parser (`officina.common.docstring.docstring_parser`) parses raw docstring text:
+2. Repo config from `config.yaml` is injected into the portable policy.
+3. Module validation applies ordered path profiles to produce the effective per-file schema.
+4. Parser (`officina.common.docstring.docstring_parser`) parses raw docstring text:
    - callable docs -> `FunctionSpec`
    - module pipeline docs -> `PipelineSpec`
    - module AST scan -> `parse_function_graphs`
-3. Validator (`officina.common.docstring.docstring_validation`) validates against policy and returns `ParserIssue` objects.
-4. Issues flow back as structured codes/messages (`docstring.*`) to CI or local tooling.
+5. Validator (`officina.common.docstring.docstring_validation`) validates against policy and returns `ParserIssue` objects.
+6. Issues flow back as structured codes/messages (`docstring.*`) to CI or local tooling.
 
 ### 2a) Checkers, groups, and semantics
 
@@ -60,7 +254,14 @@ Examples:
 Why test files are special:
 
 - `validate_module_docstrings(check_group="all")` currently resolves to `syntax` when the target path is inside `tests/`, `hooks/tests/`, `skills/*/tests`, or `skills/*/_rtx/tests`.
+- The `tests_lightweight` profile also disables callable docstring requirements and full graph section requirements for test paths.
 - For behavior checks on test modules, request `check_group="behavioral"` explicitly.
+
+Why class files are special:
+
+- Class docstrings describe the class interface/responsibility.
+- Method-body dependency observation is not rolled into class docstrings by default.
+- Method dependencies belong on the method docstrings that actually use them.
 
 ## 3) Key module entry points
 - `officina.common.docstring.parse_graph_block(docstring)`

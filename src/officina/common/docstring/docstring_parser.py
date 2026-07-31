@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from textwrap import dedent
 from typing import Iterable
+
+import yaml
 
 from .docstring_schema import (
     CallableDocstringSchema,
@@ -64,8 +67,11 @@ STATIC_RECOGNIZED_SECTIONS = {
     "Graph",
     "Phases",
     "PhaseMembers",
+    "Resources",
+    "Dataflow",
     OWNABLE_SECTION,
 }
+_UNKNOWN_SECTION_PREFIX = "__unknown_docstring_section__:"
 
 def _policy_sections() -> frozenset[str]:
     """Read policy-driven section names without hardcoded future assumptions."""
@@ -83,19 +89,6 @@ EdgeList = list[tuple[str, str]]
 
 _DOCSTRING_SYNTAX_FILES = (
     "docstring.standard.lark",
-)
-_PSEUDOCODE_CONTROL_KEYWORDS = (
-    "if",
-    "elif",
-    "else",
-    "while",
-    "for",
-    "for each",
-    "loop",
-    "try",
-    "except",
-    "finally",
-    "with",
 )
 _WRAP_FIELDS = ("preprocess", "postprocess", "fixed_arguments")
 
@@ -146,6 +139,8 @@ _DOCSTRING_GRAMMAR_TEXT = _load_docstring_grammar()
 _EDGE_PARSER = _build_parser("edge")
 _WRAP_PARSER = _build_parser("wraps")
 _DEPENDENCY_PARSER = _build_parser("module_dependency")
+_PSEUDOCODE_BULLET_PARSER = _build_parser("pseudocode_bullet")
+_PSEUDOCODE_REF_PARSER = _build_parser("pseudocode_ref_expr")
 
 
 def _ensure_lark_parser() -> None:
@@ -223,7 +218,47 @@ class ModuleDependencyRef:
 
     name: str
     why: str = ""
+    why_action: str = ""
+    why_legacy_string: bool = False
+    why_action_count: int = 0
     implicit: bool = False
+
+
+@dataclass(frozen=True)
+class DispatchDependencyRef:
+    """Reference to a dispatch interface dependency."""
+
+    id: str
+    why: str = ""
+    why_action: str = ""
+    why_legacy_string: bool = False
+    why_action_count: int = 0
+
+
+@dataclass(frozen=True)
+class ResourceDependencyRef:
+    """Reference to an external or repo resource used by a callable."""
+
+    id: str
+    kind: str = ""
+    access: str = ""
+    why: str = ""
+    why_action: str = ""
+    why_legacy_string: bool = False
+    why_action_count: int = 0
+
+
+@dataclass(frozen=True)
+class DataflowDependencyRef:
+    """Structured data movement edge exposed by a callable docstring."""
+
+    source: str
+    target: str
+    kind: str = ""
+    why: str = ""
+    why_action: str = ""
+    why_legacy_string: bool = False
+    why_action_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -234,6 +269,15 @@ class PseudocodeStep:
     kind: str
     text: str
     raw: str
+    output: str = ""
+    ref: str = ""
+    args: str = ""
+    dependency_kind: str = ""
+    condition: str = ""
+    loop_variable: str = ""
+    loop_iterable: str = ""
+    resource_id: str = ""
+    expression: str = ""
 
 
 
@@ -270,9 +314,15 @@ class FunctionSpec:
     owns : list[str]
         Declared ownership tags from the ``Owns`` section.
     module_calls : list[ModuleDependencyRef]
-        Call targets referenced in ``CallsFromModule``.
+        Call targets referenced in ``CallsFromRepo``.
     module_instantiates : list[ModuleDependencyRef]
-        Module object constructions referenced in ``InstantiationsFromModule``.
+        Module object constructions referenced in ``InstantiationsFromRepo``.
+    dispatches : list[DispatchDependencyRef]
+        Dispatch interface dependencies referenced in ``Dispatches``.
+    resources : list[ResourceDependencyRef]
+        Resource dependencies referenced in ``Resources``.
+    dataflows : list[DataflowDependencyRef]
+        Data movement edges referenced in ``Dataflow``.
     pseudocode_steps : list[PseudocodeStep]
         Parsed compact execution steps from the configurable pseudocode section.
     pseudocode_dependency_refs : list[str]
@@ -293,6 +343,9 @@ class FunctionSpec:
     owns: list[str] = field(default_factory=list)
     module_calls: list[ModuleDependencyRef] = field(default_factory=list)
     module_instantiates: list[ModuleDependencyRef] = field(default_factory=list)
+    dispatches: list[DispatchDependencyRef] = field(default_factory=list)
+    resources: list[ResourceDependencyRef] = field(default_factory=list)
+    dataflows: list[DataflowDependencyRef] = field(default_factory=list)
     pseudocode_steps: list[PseudocodeStep] = field(default_factory=list)
     pseudocode_dependency_refs: list[str] = field(default_factory=list)
     summary: str = ""
@@ -314,6 +367,10 @@ class FunctionSpec:
             for dependency in self.module_instantiates
             if include_implicit or not dependency.implicit
         ]
+
+    def dispatch_ids(self) -> list[str]:
+        """Return dispatch dependency ids as plain strings."""
+        return [dependency.id for dependency in self.dispatches]
 
 
 @dataclass(frozen=True)
@@ -410,9 +467,11 @@ def _extract_dependency_parts(
     return name, why, marker
 
 
-_PSEUDOCODE_PREFIX_RE = re.compile(r"^(\([^)]+\)|\d+[.)]|[a-zA-Z][.)])\s+")
-_PSEUDOCODE_DEPENDENCY_REF_RE = re.compile(
-    r"@(?:(?P<section>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*)?(?P<name>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)(?:\([^)]*\))?"
+_LEGACY_DEPENDENCY_RE = re.compile(
+    r"^(?P<name>\.?[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*)"
+    r"(?:\([^)]*\))?"
+    r"\s*(?P<implicit>\[\s*implicit\s*\])?"
+    r"\s*->\s*(?P<why>.+?)\s*$"
 )
 
 
@@ -423,21 +482,22 @@ def parse_pseudocode_dependency_ref(
 
     Supported forms:
 
-    - ``@name``
-    - ``@name(...)``
-    - ``@section:name``
-    - ``@section:name(...)``
+    - ``@name(...)`` for ``CallsFromRepo``
+    - ``#name(...)`` for ``Dispatches``
     """
     if not raw_ref:
         return None
-    match = _PSEUDOCODE_DEPENDENCY_REF_RE.fullmatch(raw_ref.strip())
-    if match is None:
+    parse_tree = _parse_with_lark(_PSEUDOCODE_REF_PARSER, raw_ref.strip())
+    if parse_tree is None:
         return None
-    section = match.group("section")
-    name = (match.group("name") or "").strip()
-    if not name:
+    refs = _token_values(parse_tree, "PSEUDO_REF")
+    if not refs:
         return None
-    return (section.strip() if section else None, name)
+    if any(getattr(node, "data", "") == "pseudocode_call_ref" for node in parse_tree.iter_subtrees()):
+        return ("CallsFromRepo", refs[0])
+    if any(getattr(node, "data", "") == "pseudocode_dispatch_ref" for node in parse_tree.iter_subtrees()):
+        return ("Dispatches", refs[0])
+    return None
 
 
 def _normalize_pseudocode_dependency_ref(raw_ref: str) -> str:
@@ -453,7 +513,7 @@ def normalize_pseudocode_dependency_ref(raw_ref: str) -> str:
     """Public wrapper for pseudocode dependency-ref canonicalization.
 
     This keeps parser and checker aligned on one reference representation
-    (``name`` or ``section:name`` with bracket-argument tails removed).
+    (``CallsFromRepo:name`` or ``Dispatches:name`` with call arguments removed).
     """
     return _normalize_pseudocode_dependency_ref(raw_ref)
 
@@ -463,20 +523,22 @@ def extract_pseudocode_dependency_refs_from_text(text: str) -> tuple[str, ...]:
     raw = (text or "").strip()
     if not raw:
         return ()
-
-    refs: list[str] = []
-    seen: set[str] = set()
-    for match in _PSEUDOCODE_DEPENDENCY_REF_RE.finditer(raw):
-        parsed = parse_pseudocode_dependency_ref(match.group(0))
-        if parsed is None:
-            continue
-        section, name = parsed
-        ref = f"{section}:{name}" if section else name
-        if ref in seen:
-            continue
-        seen.add(ref)
-        refs.append(ref)
-    return tuple(refs)
+    if raw.startswith("- "):
+        step = _parse_strict_pseudocode_bullet(raw)
+        section_for_kind = {
+            "call": "CallsFromRepo",
+            "instantiate": "InstantiationsFromRepo",
+            "dispatch": "Dispatches",
+        }
+        section = section_for_kind.get(step.dependency_kind)
+        if section and step.ref:
+            return (f"{section}:{step.ref}",)
+        return ()
+    parsed = parse_pseudocode_dependency_ref(raw)
+    if parsed is None:
+        return ()
+    section, name = parsed
+    return (f"{section}:{name}",)
 
 
 def extract_pseudocode_dependency_refs_from_lines(
@@ -552,37 +614,154 @@ def _clean_item(value: str) -> str:
     return value.strip().lstrip("-").strip()
 
 
-def _normalize_pseudocode_prefix(raw: str) -> str:
-    """Strip supported list or numbered prefixes from one pseudocode line."""
-    text = raw.strip()
-    if not text:
-        return text
+def _parse_strict_pseudocode_bullet(raw: str) -> PseudocodeStep:
+    """Parse one strict pseudocode bullet with Lark and project it to metadata."""
+    cleaned_raw = raw.rstrip()
+    parse_tree = _parse_with_lark(_PSEUDOCODE_BULLET_PARSER, cleaned_raw)
+    if parse_tree is None:
+        return PseudocodeStep(
+            indent=0,
+            kind="invalid",
+            text=raw.strip(),
+            raw=raw.strip(),
+        )
 
-    for token in ("- ", "+ ", "* ", "• "):
-        if text.startswith(token):
-            text = text[len(token):].strip()
-            break
+    indent_values = _token_values(parse_tree, "PSEUDO_INDENT")
+    indent = len(indent_values[0]) // 2 if indent_values else 0
+    stripped = cleaned_raw.strip()
+    body = stripped[2:].strip() if stripped.startswith("- ") else stripped
+    variables = _token_values(parse_tree, "PSEUDO_VAR")
+    refs = _token_values(parse_tree, "PSEUDO_REF")
+    classes = _token_values(parse_tree, "PSEUDO_CLASS")
+    args_values = _token_values(parse_tree, "PSEUDO_ARGS")
+    args = args_values[0][1:-1] if args_values else ""
+    expressions = _token_values(parse_tree, "PSEUDO_EXPR")
+    resources = _token_values(parse_tree, "RESOURCE_ID")
+    subtree_names = {str(getattr(node, "data", "")) for node in parse_tree.iter_subtrees()}
 
-    if _PSEUDOCODE_PREFIX_RE.match(text):
-        text = re.sub(_PSEUDOCODE_PREFIX_RE, "", text, count=1)
+    if "pseudocode_call" in subtree_names:
+        return PseudocodeStep(
+            indent=indent,
+            kind="call",
+            text=body,
+            raw=stripped,
+            output=variables[0] if variables else "",
+            ref=refs[0] if refs else "",
+            args=args,
+            dependency_kind="call",
+        )
 
-    return text
+    if "pseudocode_dispatch" in subtree_names:
+        return PseudocodeStep(
+            indent=indent,
+            kind="dispatch",
+            text=body,
+            raw=stripped,
+            output=variables[0] if variables else "",
+            ref=refs[0] if refs else "",
+            args=args,
+            dependency_kind="dispatch",
+        )
 
+    if "pseudocode_instantiate" in subtree_names:
+        return PseudocodeStep(
+            indent=indent,
+            kind="instantiate",
+            text=body,
+            raw=stripped,
+            output=variables[0] if variables else "",
+            ref=classes[0] if classes else "",
+            args=args,
+            dependency_kind="instantiate",
+        )
 
-def _pseudocode_kind(text: str, control_keywords: tuple[str, ...]) -> str:
-    """Infer pseudocode step kind from textual prefix."""
-    lowered = text.lower().strip()
-    if not lowered:
-        return "step"
-    if not control_keywords:
-        return "step"
-    for keyword in sorted(control_keywords, key=len, reverse=True):
-        if not lowered.startswith(keyword):
-            continue
-        next_char = lowered[len(keyword) : len(keyword) + 1]
-        if lowered == keyword or next_char in {"", " ", ":", "("}:
-            return keyword.replace(" ", "_")
-    return "step"
+    if "pseudocode_raise_instantiate" in subtree_names:
+        expression = body.removeprefix("raise ").strip()
+        ref, _, arg_text = expression.partition("(")
+        args_text = arg_text[:-1] if arg_text.endswith(")") else arg_text
+        return PseudocodeStep(
+            indent=indent,
+            kind="raise",
+            text=body,
+            raw=stripped,
+            ref=ref.strip(),
+            args=args_text,
+            dependency_kind="instantiate",
+            expression=expression,
+        )
+
+    if "pseudocode_set" in subtree_names:
+        return PseudocodeStep(
+            indent=indent,
+            kind="set",
+            text=body,
+            raw=stripped,
+            output=variables[0] if variables else "",
+            expression=expressions[0].strip() if expressions else "",
+        )
+
+    if "pseudocode_resource" in subtree_names:
+        kind = "read" if body.startswith("read ") else "write"
+        return PseudocodeStep(
+            indent=indent,
+            kind=kind,
+            text=body,
+            raw=stripped,
+            resource_id=resources[0] if resources else "",
+        )
+
+    if "pseudocode_control" in subtree_names:
+        if body == "else:":
+            return PseudocodeStep(indent=indent, kind="else", text=body, raw=stripped)
+        if body.startswith("if "):
+            return PseudocodeStep(
+                indent=indent,
+                kind="if",
+                text=body,
+                raw=stripped,
+                condition=body[len("if ") : -1].strip(),
+            )
+        if body.startswith("while "):
+            return PseudocodeStep(
+                indent=indent,
+                kind="while",
+                text=body,
+                raw=stripped,
+                condition=body[len("while ") : -1].strip(),
+            )
+        if body.startswith("for "):
+            loop_text = body[len("for ") : -1].strip()
+            loop_variable, _, loop_iterable = loop_text.partition(" in ")
+            return PseudocodeStep(
+                indent=indent,
+                kind="for",
+                text=body,
+                raw=stripped,
+                loop_variable=loop_variable.strip(),
+                loop_iterable=loop_iterable.strip(),
+            )
+
+    if "pseudocode_terminal" in subtree_names:
+        if body in {"continue", "break"}:
+            return PseudocodeStep(indent=indent, kind=body, text=body, raw=stripped)
+        if body.startswith("return"):
+            return PseudocodeStep(
+                indent=indent,
+                kind="return",
+                text=body,
+                raw=stripped,
+                expression=body[len("return") :].strip(),
+            )
+        if body.startswith("raise "):
+            return PseudocodeStep(
+                indent=indent,
+                kind="raise",
+                text=body,
+                raw=stripped,
+                expression=body[len("raise ") :].strip(),
+            )
+
+    return PseudocodeStep(indent=indent, kind="invalid", text=body, raw=stripped)
 
 
 def _parse_pseudocode_section(
@@ -593,36 +772,39 @@ def _parse_pseudocode_section(
     for raw in lines:
         if not raw.strip():
             continue
-        indent = len(raw) - len(raw.lstrip(" \t"))
-        text = _normalize_pseudocode_prefix(raw)
-        if not text:
-            continue
-        kind = _pseudocode_kind(text, _PSEUDOCODE_CONTROL_KEYWORDS)
-        steps.append(
-            PseudocodeStep(
-                indent=indent,
-                kind=kind,
-                text=text,
-                raw=raw.strip(),
-            )
-        )
+        steps.append(_parse_strict_pseudocode_bullet(raw))
     return steps
 
 
 def _extract_pseudocode_dependency_refs(
     steps: Iterable[PseudocodeStep],
+    *,
+    calls_section: str = "CallsFromRepo",
+    instantiates_section: str = "InstantiationsFromRepo",
+    dispatches_section: str = "Dispatches",
 ) -> list[str]:
-    """Collect explicit ``@name`` references from pseudocode steps."""
+    """Collect typed dependency references from strict pseudocode steps."""
     refs: list[str] = []
     seen: set[str] = set()
+    section_for_kind = {
+        "call": calls_section,
+        "instantiate": instantiates_section,
+        "dispatch": dispatches_section,
+    }
     for step in steps:
         if not isinstance(step, PseudocodeStep):
             continue
-        for ref in extract_pseudocode_dependency_refs_from_lines((step.text,)):
-            if ref in seen:
-                continue
-            seen.add(ref)
-            refs.append(ref)
+        dependency_kind = step.dependency_kind
+        if not dependency_kind or not step.ref:
+            continue
+        section = section_for_kind.get(dependency_kind)
+        if section is None:
+            continue
+        ref = f"{section}:{step.ref}"
+        if ref in seen:
+            continue
+        seen.add(ref)
+        refs.append(ref)
     return refs
 
 
@@ -707,6 +889,7 @@ def _parse_module_dependency_ref(
     line: str,
     *,
     allow_implicit: bool = True,
+    require_why: bool = True,
 ) -> ModuleDependencyRef | None:
     """Parse a module dependency reference entry."""
     cleaned = _clean_item(line)
@@ -716,9 +899,14 @@ def _parse_module_dependency_ref(
     normalized = re.sub(r"\s*->\s*", "->", normalized)
     parse_tree = _parse_with_lark(_DEPENDENCY_PARSER, normalized)
     if parse_tree is None:
-        return None
-
-    name, why, marker = _extract_dependency_parts(cleaned, parse_tree)
+        match = _LEGACY_DEPENDENCY_RE.fullmatch(cleaned)
+        if match is None:
+            return None
+        name = match.group("name").strip()
+        why = (match.group("why") or "").strip()
+        marker = match.group("implicit")
+    else:
+        name, why, marker = _extract_dependency_parts(cleaned, parse_tree)
     if not name:
         return None
 
@@ -729,14 +917,440 @@ def _parse_module_dependency_ref(
     else:
         is_implicit = False
 
-    if not why:
+    if require_why and not why:
         return None
 
     return ModuleDependencyRef(
         name=name,
         why=why,
+        why_legacy_string=True,
         implicit=is_implicit,
     )
+
+
+def _parse_dependency_implicit_from_name(
+    name: str,
+    *,
+    allow_implicit: bool,
+) -> tuple[str, bool] | None:
+    """Extract legacy ``[implicit]`` markers from tree dependency keys."""
+    marker = re.search(r"\[\s*implicit\s*\]", name, flags=re.IGNORECASE)
+    if marker is None:
+        return name.strip(), False
+    if not allow_implicit:
+        return None
+    cleaned = re.sub(r"\s*\[\s*implicit\s*\]\s*", "", name, flags=re.IGNORECASE)
+    return cleaned.strip(), True
+
+
+def _join_dependency_path(prefix: str, key: str) -> str:
+    """Join a dependency tree prefix and child key into a dotted logical path."""
+    parent = prefix.strip()
+    child = key.strip()
+    if not parent:
+        return child
+    if not child:
+        return parent
+    if child.startswith("."):
+        return f"{parent}{child}"
+    return f"{parent}.{child}"
+
+
+def _parse_dependency_why_value(value: object) -> tuple[str, str, bool, int]:
+    """Parse dependency why text plus compact action metadata."""
+    if isinstance(value, str):
+        return value.strip(), "", True, 0
+    if isinstance(value, Mapping):
+        items = [(str(key).strip(), item) for key, item in value.items() if str(key).strip()]
+        if len(items) != 1:
+            joined = " ".join(str(item or "").strip() for _, item in items if str(item or "").strip())
+            return joined, "", False, len(items)
+        action, explanation = items[0]
+        return str(explanation or "").strip(), action, False, 1
+    return str(value or "").strip(), "", False, 0
+
+
+def _flatten_dependency_tree(
+    value: object,
+    *,
+    prefix: str = "",
+    require_why: bool,
+) -> tuple[list[tuple[str, str, str, bool, int]], list[str]]:
+    """Flatten a YAML-like dependency tree into ``(path, why)`` pairs."""
+    entries: list[tuple[str, str, str, bool, int]] = []
+    invalid: list[str] = []
+
+    if not isinstance(value, Mapping):
+        return entries, invalid
+
+    for raw_key, raw_value in value.items():
+        key = str(raw_key).strip()
+        if not key:
+            invalid.append(str(raw_key))
+            continue
+        path = _join_dependency_path(prefix, key)
+
+        if isinstance(raw_value, Mapping) and "why" in raw_value:
+            why, why_action, why_legacy, why_action_count = _parse_dependency_why_value(
+                raw_value.get("why")
+            )
+            if require_why and not why:
+                invalid.append(path)
+                continue
+            entries.append((path, why, why_action, why_legacy, why_action_count))
+            child_map = {
+                child_key: child_value
+                for child_key, child_value in raw_value.items()
+                if child_key != "why" and child_key != "implicit"
+            }
+            child_entries, child_invalid = _flatten_dependency_tree(
+                child_map,
+                prefix=path,
+                require_why=require_why,
+            )
+            entries.extend(child_entries)
+            invalid.extend(child_invalid)
+            continue
+
+        if isinstance(raw_value, Mapping):
+            child_entries, child_invalid = _flatten_dependency_tree(
+                raw_value,
+                prefix=path,
+                require_why=require_why,
+            )
+            entries.extend(child_entries)
+            invalid.extend(child_invalid)
+            continue
+
+        if isinstance(raw_value, str):
+            why = raw_value.strip()
+            if require_why and not why:
+                invalid.append(path)
+                continue
+            entries.append((path, why, "", True, 0))
+            continue
+
+        invalid.append(path)
+
+    return entries, invalid
+
+
+def _parse_dependency_section_tree(
+    lines: Iterable[str],
+    *,
+    allow_implicit: bool,
+    require_why: bool,
+) -> tuple[list[ModuleDependencyRef], list[str]]:
+    """Parse tree-shaped call/instantiation dependency declarations."""
+    raw_lines = [line.rstrip() for line in lines if line.strip()]
+    if not raw_lines:
+        return [], []
+
+    loaded = None
+    invalid: list[str] = []
+    try:
+        loaded = yaml.safe_load("\n".join(raw_lines))
+    except yaml.YAMLError:
+        invalid.extend(line.strip() for line in raw_lines)
+
+    entries: list[ModuleDependencyRef] = []
+    if isinstance(loaded, Mapping):
+        flattened, tree_invalid = _flatten_dependency_tree(
+            loaded,
+            require_why=require_why,
+        )
+        invalid.extend(tree_invalid)
+        for name, why, why_action, why_legacy, why_action_count in flattened:
+            parsed_name = _parse_dependency_implicit_from_name(
+                name,
+                allow_implicit=allow_implicit,
+            )
+            if parsed_name is None:
+                invalid.append(name)
+                continue
+            clean_name, implicit = parsed_name
+            entries.append(
+                ModuleDependencyRef(
+                    name=clean_name,
+                    why=why,
+                    why_action=why_action,
+                    why_legacy_string=why_legacy,
+                    why_action_count=why_action_count,
+                    implicit=implicit,
+                )
+            )
+        return entries, invalid
+
+    if isinstance(loaded, list):
+        for item in loaded:
+            if isinstance(item, Mapping):
+                name = str(item.get("name") or item.get("id") or "").strip()
+                why, why_action, why_legacy, why_action_count = _parse_dependency_why_value(
+                    item.get("why")
+                )
+                if not name or (require_why and not why):
+                    invalid.append(str(item))
+                    continue
+                parsed_name = _parse_dependency_implicit_from_name(
+                    name,
+                    allow_implicit=allow_implicit,
+                )
+                if parsed_name is None:
+                    invalid.append(name)
+                    continue
+                clean_name, implicit = parsed_name
+                entries.append(
+                    ModuleDependencyRef(
+                        name=clean_name,
+                        why=why,
+                        why_action=why_action,
+                        why_legacy_string=why_legacy,
+                        why_action_count=why_action_count,
+                        implicit=implicit,
+                    )
+                )
+                continue
+            invalid.append(str(item))
+        return entries, invalid
+
+    if loaded is not None:
+        invalid.extend(line.strip() for line in raw_lines)
+
+    return entries, invalid
+
+
+def _parse_dispatch_section_tree(
+    lines: Iterable[str],
+    *,
+    require_why: bool,
+) -> tuple[list[DispatchDependencyRef], list[str]]:
+    """Parse tree-shaped dispatch dependency declarations."""
+    raw_lines = [line.rstrip() for line in lines if line.strip()]
+    if not raw_lines:
+        return [], []
+
+    try:
+        loaded = yaml.safe_load("\n".join(raw_lines))
+    except yaml.YAMLError:
+        return [], [line.strip() for line in raw_lines]
+
+    entries: list[DispatchDependencyRef] = []
+    invalid: list[str] = []
+    if isinstance(loaded, Mapping):
+        flattened, tree_invalid = _flatten_dependency_tree(
+            loaded,
+            require_why=require_why,
+        )
+        invalid.extend(tree_invalid)
+        entries.extend(
+            DispatchDependencyRef(
+                id=path,
+                why=why,
+                why_action=why_action,
+                why_legacy_string=why_legacy,
+                why_action_count=why_action_count,
+            )
+            for path, why, why_action, why_legacy, why_action_count in flattened
+        )
+        return entries, invalid
+
+    if isinstance(loaded, list):
+        for item in loaded:
+            if not isinstance(item, Mapping):
+                invalid.append(str(item))
+                continue
+            dispatch_id = str(item.get("id") or "").strip()
+            why, why_action, why_legacy, why_action_count = _parse_dependency_why_value(
+                item.get("why")
+            )
+            if not dispatch_id or (require_why and not why):
+                invalid.append(str(item))
+                continue
+            entries.append(
+                DispatchDependencyRef(
+                    id=dispatch_id,
+                    why=why,
+                    why_action=why_action,
+                    why_legacy_string=why_legacy,
+                    why_action_count=why_action_count,
+                )
+            )
+        return entries, invalid
+
+    return [], [line.strip() for line in raw_lines]
+
+
+def _parse_module_dependency_section(
+    lines: Iterable[str],
+    *,
+    allow_implicit: bool,
+    allow_legacy_flat: bool,
+    require_why: bool,
+) -> tuple[list[ModuleDependencyRef], list[str]]:
+    """Parse a module dependency section using tree syntax plus optional legacy flat syntax."""
+    raw_lines = [line.rstrip() for line in lines if line.strip()]
+    tree_entries, tree_invalid = _parse_dependency_section_tree(
+        raw_lines,
+        allow_implicit=allow_implicit,
+        require_why=require_why,
+    )
+    if tree_entries or not allow_legacy_flat:
+        return tree_entries, tree_invalid
+
+    legacy_entries: list[ModuleDependencyRef] = []
+    legacy_invalid: list[str] = []
+    for line in raw_lines:
+        parsed = _parse_module_dependency_ref(
+            line,
+            allow_implicit=allow_implicit,
+            require_why=require_why,
+        )
+        if parsed is None:
+            legacy_invalid.append(line.strip())
+            continue
+        legacy_entries.append(parsed)
+    return legacy_entries, legacy_invalid
+
+
+def _parse_dispatch_dependency_section(
+    lines: Iterable[str],
+    *,
+    allow_legacy_flat: bool,
+    require_why: bool,
+) -> tuple[list[DispatchDependencyRef], list[str]]:
+    """Parse a dispatch dependency section using tree syntax plus optional flat syntax."""
+    raw_lines = [line.rstrip() for line in lines if line.strip()]
+    tree_entries, tree_invalid = _parse_dispatch_section_tree(
+        raw_lines,
+        require_why=require_why,
+    )
+    if tree_entries or not allow_legacy_flat:
+        return tree_entries, tree_invalid
+
+    legacy_entries: list[DispatchDependencyRef] = []
+    legacy_invalid: list[str] = []
+    for line in raw_lines:
+        parsed = _parse_module_dependency_ref(
+            line,
+            allow_implicit=False,
+            require_why=require_why,
+        )
+        if parsed is None:
+            legacy_invalid.append(line.strip())
+            continue
+        legacy_entries.append(
+            DispatchDependencyRef(
+                id=parsed.name,
+                why=parsed.why,
+                why_action=parsed.why_action,
+                why_legacy_string=parsed.why_legacy_string,
+                why_action_count=parsed.why_action_count,
+            )
+        )
+    return legacy_entries, legacy_invalid
+
+
+def _parse_resource_section(
+    lines: Iterable[str],
+    *,
+    require_why: bool,
+) -> tuple[list[ResourceDependencyRef], list[str]]:
+    """Parse compact resource dependency declarations."""
+    raw_lines = [line.rstrip() for line in lines if line.strip()]
+    if not raw_lines:
+        return [], []
+
+    try:
+        loaded = yaml.safe_load("\n".join(raw_lines))
+    except yaml.YAMLError:
+        return [], [line.strip() for line in raw_lines]
+
+    entries: list[ResourceDependencyRef] = []
+    invalid: list[str] = []
+
+    def _entry(resource_id: str, value: object) -> None:
+        if not isinstance(value, Mapping):
+            invalid.append(resource_id)
+            return
+        why, why_action, why_legacy, why_action_count = _parse_dependency_why_value(
+            value.get("why")
+        )
+        if not resource_id or (require_why and not why):
+            invalid.append(resource_id)
+            return
+        entries.append(
+            ResourceDependencyRef(
+                id=resource_id,
+                kind=str(value.get("kind") or "").strip(),
+                access=str(value.get("access") or "").strip(),
+                why=why,
+                why_action=why_action,
+                why_legacy_string=why_legacy,
+                why_action_count=why_action_count,
+            )
+        )
+
+    if isinstance(loaded, Mapping):
+        for key, value in loaded.items():
+            _entry(str(key).strip(), value)
+        return entries, invalid
+
+    if isinstance(loaded, list):
+        for item in loaded:
+            if not isinstance(item, Mapping):
+                invalid.append(str(item))
+                continue
+            resource_id = str(item.get("id") or "").strip()
+            _entry(resource_id, item)
+        return entries, invalid
+
+    return [], [line.strip() for line in raw_lines]
+
+
+def _parse_dataflow_section(
+    lines: Iterable[str],
+    *,
+    require_why: bool,
+) -> tuple[list[DataflowDependencyRef], list[str]]:
+    """Parse compact dataflow edge declarations."""
+    raw_lines = [line.rstrip() for line in lines if line.strip()]
+    if not raw_lines:
+        return [], []
+
+    try:
+        loaded = yaml.safe_load("\n".join(raw_lines))
+    except yaml.YAMLError:
+        return [], [line.strip() for line in raw_lines]
+
+    entries: list[DataflowDependencyRef] = []
+    invalid: list[str] = []
+    if not isinstance(loaded, list):
+        return [], [line.strip() for line in raw_lines]
+
+    for item in loaded:
+        if not isinstance(item, Mapping):
+            invalid.append(str(item))
+            continue
+        source = str(item.get("from") or item.get("source") or "").strip()
+        target = str(item.get("to") or item.get("target") or "").strip()
+        why, why_action, why_legacy, why_action_count = _parse_dependency_why_value(
+            item.get("why")
+        )
+        if not source or not target or (require_why and not why):
+            invalid.append(str(item))
+            continue
+        entries.append(
+            DataflowDependencyRef(
+                source=source,
+                target=target,
+                kind=str(item.get("kind") or "").strip(),
+                why=why,
+                why_action=why_action,
+                why_legacy_string=why_legacy,
+                why_action_count=why_action_count,
+            )
+        )
+    return entries, invalid
 
 
 def parse_pipeline(docstring: str) -> PipelineSpec:
@@ -861,7 +1475,11 @@ def parse_graph_block(docstring: str, *, section_names: frozenset[str] | None = 
 
         section_name = _section_header(lines, index, section_names=section_names)
         if section_name is not None:
-            if section is not None and section_lines:
+            if (
+                section is not None
+                and not section.startswith(_UNKNOWN_SECTION_PREFIX)
+                and section_lines
+            ):
                 sections[section] = section_lines
             section = section_name
             section_lines = []
@@ -871,6 +1489,22 @@ def parse_graph_block(docstring: str, *, section_names: frozenset[str] | None = 
                 skip_next = True
             continue
 
+        if (
+            raw.strip()
+            and index + 1 < len(lines)
+            and _is_header_underline(lines[index + 1])
+        ):
+            if (
+                section is not None
+                and not section.startswith(_UNKNOWN_SECTION_PREFIX)
+                and section_lines
+            ):
+                sections[section] = section_lines
+            section = f"{_UNKNOWN_SECTION_PREFIX}{raw.strip()}"
+            section_lines = []
+            skip_next = True
+            continue
+
         if section is None:
             if raw.strip():
                 summary_lines.append(raw.strip())
@@ -878,7 +1512,11 @@ def parse_graph_block(docstring: str, *, section_names: frozenset[str] | None = 
 
         section_lines.append(raw)
 
-    if section is not None and section_lines:
+    if (
+        section is not None
+        and not section.startswith(_UNKNOWN_SECTION_PREFIX)
+        and section_lines
+    ):
         sections[section] = section_lines
 
     for section_name, lines_for_section in sections.items():
@@ -924,7 +1562,10 @@ def parse_graph_block(docstring: str, *, section_names: frozenset[str] | None = 
         pseudocode_lines,
     )
     spec.pseudocode_dependency_refs = _extract_pseudocode_dependency_refs(
-        spec.pseudocode_steps
+        spec.pseudocode_steps,
+        calls_section=module_dependency_rules.calls_section,
+        instantiates_section=module_dependency_rules.instantiates_section,
+        dispatches_section=module_dependency_rules.dispatches_section,
     )
     for section_name in dependency_reference_sections:
         if section_name == pseudocode_rules.section:
@@ -934,20 +1575,41 @@ def parse_graph_block(docstring: str, *, section_names: frozenset[str] | None = 
         ):
             if ref not in spec.pseudocode_dependency_refs:
                 spec.pseudocode_dependency_refs.append(ref)
-    for dependency in spec.sections.get(module_dependency_rules.calls_section, []):
-        parsed = _parse_module_dependency_ref(
-            dependency,
+    spec.module_calls.extend(
+        _parse_module_dependency_section(
+            spec.sections.get(module_dependency_rules.calls_section, []),
             allow_implicit=module_dependency_rules.allow_implicit,
-        )
-        if parsed is not None:
-            spec.module_calls.append(parsed)
-    for dependency in spec.sections.get(module_dependency_rules.instantiates_section, []):
-        parsed = _parse_module_dependency_ref(
-            dependency,
+            allow_legacy_flat=module_dependency_rules.allow_legacy_flat,
+            require_why=module_dependency_rules.require_why,
+        )[0]
+    )
+    spec.module_instantiates.extend(
+        _parse_module_dependency_section(
+            spec.sections.get(module_dependency_rules.instantiates_section, []),
             allow_implicit=module_dependency_rules.allow_implicit,
-        )
-        if parsed is not None:
-            spec.module_instantiates.append(parsed)
+            allow_legacy_flat=module_dependency_rules.allow_legacy_flat,
+            require_why=module_dependency_rules.require_why,
+        )[0]
+    )
+    spec.dispatches.extend(
+        _parse_dispatch_dependency_section(
+            spec.sections.get(module_dependency_rules.dispatches_section, []),
+            allow_legacy_flat=module_dependency_rules.allow_legacy_flat,
+            require_why=module_dependency_rules.require_why,
+        )[0]
+    )
+    spec.resources.extend(
+        _parse_resource_section(
+            spec.sections.get("Resources", []),
+            require_why=module_dependency_rules.require_why,
+        )[0]
+    )
+    spec.dataflows.extend(
+        _parse_dataflow_section(
+            spec.sections.get("Dataflow", []),
+            require_why=module_dependency_rules.require_why,
+        )[0]
+    )
 
     for owner in spec.sections.get("Owns", []):
         cleaned = _clean_item(owner)
@@ -998,11 +1660,11 @@ def validate_pipeline_docstring(docstring: str) -> tuple[ParserIssue, ...]:
     return _validate_pipeline_docstring(docstring)
 
 
-def check_graph_docstring(docstring: str) -> tuple[ParserIssue, ...]:
+def check_graph_docstring(docstring: str, schema_rules: DocstringSchema | None = None) -> tuple[ParserIssue, ...]:
     """Callable docstring checks delegated to validator module."""
     from .docstring_validation import check_graph_docstring as _check_graph_docstring
 
-    return _check_graph_docstring(docstring)
+    return _check_graph_docstring(docstring, schema_rules=schema_rules)
 
 
 def check_pipeline_docstring(docstring: str) -> tuple[ParserIssue, ...]:
@@ -1136,6 +1798,9 @@ __all__ = [
     "resolve_docstring_schema_path",
     "OwnershipConfig",
     "ModuleDependencyRef",
+    "DispatchDependencyRef",
+    "ResourceDependencyRef",
+    "DataflowDependencyRef",
     "ModuleOwnershipConfig",
     "DocstringSchema",
     "CallableDocstringSchema",

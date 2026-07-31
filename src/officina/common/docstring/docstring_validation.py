@@ -16,17 +16,11 @@ import re
 from .docstring_parser import (
     ParserIssue,
     _section_header,
-    parse_pseudocode_dependency_ref,
     parse_graph_block,
     parse_ownership_reference,
     validate_edge_expression,
 )
-from .docstring_schema import load_docstring_schema
-
-_DEPENDENCY_REFERENCE_MARKER_SCAN_RE = re.compile(
-    r"(?<![A-Za-z0-9_])@(?:(?P<section>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*)?(?P<name>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)(?:\([^)]*\))?"
-)
-
+from .docstring_schema import DocstringSchema, load_docstring_schema
 
 def _split_dependency_reference(value: str) -> tuple[str | None, str]:
     """Split ``section:name`` into ``(section, name)`` while preserving bare names."""
@@ -41,6 +35,19 @@ def _split_dependency_reference(value: str) -> tuple[str | None, str]:
     if not section or not name:
         return None, raw
     return section, name
+
+
+def _dot_segment_suffix_matches(ref: str, declared: str) -> bool:
+    """Return true when ref exactly matches or is a dot-segment suffix."""
+    needle = (ref or "").strip()
+    candidate = (declared or "").strip()
+    if not needle or not candidate:
+        return False
+    if needle == candidate:
+        return True
+    clean_needle = needle.lstrip(".")
+    clean_candidate = candidate.lstrip(".")
+    return clean_candidate == clean_needle or clean_candidate.endswith(f".{clean_needle}")
 
 
 def _collect_invalid_edges(lines: Iterable[str], section_name: str) -> tuple[ParserIssue, ...]:
@@ -81,13 +88,26 @@ def _collect_section_header_issues(lines: list[str], section_names: frozenset[st
     seen_sections: list[str] = []
 
     for index in range(len(lines)):
+        raw = lines[index].strip()
+        if raw.endswith(":") and raw[:-1] in section_names:
+            issues.append(
+                ParserIssue(
+                    code="docstring.invalid-section-header",
+                    message=(
+                        f"Docstring section '{raw}' should be written as '{raw[:-1]}' "
+                        "with a NumPy-style underline, not as a YAML key."
+                    ),
+                    section=raw[:-1],
+                    severity="warning",
+                )
+            )
+            continue
         header = _section_header(
             lines=lines,
             index=index,
             section_names=section_names,
         )
         if header is None:
-            raw = lines[index].strip()
             if (
                 raw
                 and not raw.startswith("-")
@@ -161,33 +181,155 @@ def _collect_invalid_module_dependencies(
     *,
     section: str,
     allow_implicit: bool,
+    allow_legacy_flat: bool,
+    require_why: bool,
 ) -> tuple[ParserIssue, ...]:
     """Collect malformed module dependency references."""
     issues: list[ParserIssue] = []
-    from .docstring_parser import _parse_module_dependency_ref
+    from .docstring_parser import _parse_module_dependency_section
 
-    for line in lines:
-        raw = line.strip()
-        if not raw:
-            continue
-        parsed = _parse_module_dependency_ref(
-            raw,
-            allow_implicit=allow_implicit,
-        )
-        if parsed is None:
-            issues.append(
-                ParserIssue(
-                    code="docstring.invalid-module-dependency",
-                    message=(
-                        f"Invalid module dependency {raw!r}; expected "
-                        "'<name>(<args>) [implicit] -> <why>' or "
-                        "'<name> [implicit] -> <why>'."
-                    ),
-                    section=section,
-                    severity="warning",
-                )
+    _, invalid = _parse_module_dependency_section(
+        lines,
+        allow_implicit=allow_implicit,
+        allow_legacy_flat=allow_legacy_flat,
+        require_why=require_why,
+    )
+    for raw in invalid:
+        issues.append(
+            ParserIssue(
+                code="docstring.invalid-module-dependency",
+                message=(
+                    f"Invalid module dependency {raw!r}; expected a YAML-like "
+                    "tree leaf with 'why:' or legacy '<name> -> <why>' when "
+                    "legacy flat syntax is enabled."
+                ),
+                section=section,
+                severity="warning",
             )
+        )
+    return tuple(issues)
+
+
+def _collect_invalid_dispatch_dependencies(
+    lines: Iterable[str],
+    *,
+    section: str,
+    allow_legacy_flat: bool,
+    require_why: bool,
+) -> tuple[ParserIssue, ...]:
+    """Collect malformed dispatch dependency references."""
+    issues: list[ParserIssue] = []
+    from .docstring_parser import _parse_dispatch_dependency_section
+
+    _, invalid = _parse_dispatch_dependency_section(
+        lines,
+        allow_legacy_flat=allow_legacy_flat,
+        require_why=require_why,
+    )
+    for raw in invalid:
+        issues.append(
+            ParserIssue(
+                code="docstring.invalid-module-dependency",
+                message=(
+                    f"Invalid dispatch dependency {raw!r}; expected a YAML-like "
+                    "tree leaf with 'why:' or legacy '<id> -> <why>' when "
+                    "legacy flat syntax is enabled."
+                ),
+                section=section,
+                severity="warning",
+            )
+        )
+    return tuple(issues)
+
+
+def _collect_invalid_resources(
+    lines: Iterable[str],
+    *,
+    section: str,
+    require_why: bool,
+) -> tuple[ParserIssue, ...]:
+    """Collect malformed resource dependency declarations."""
+    issues: list[ParserIssue] = []
+    from .docstring_parser import _parse_resource_section
+
+    _, invalid = _parse_resource_section(lines, require_why=require_why)
+    for raw in invalid:
+        issues.append(
+            ParserIssue(
+                code="docstring.invalid-resource",
+                message=(
+                    f"Invalid resource declaration {raw!r}; expected a YAML mapping "
+                    "with kind, access, and why fields."
+                ),
+                section=section,
+                severity="warning",
+            )
+        )
+    return tuple(issues)
+
+
+def _collect_invalid_dataflows(
+    lines: Iterable[str],
+    *,
+    section: str,
+    require_why: bool,
+) -> tuple[ParserIssue, ...]:
+    """Collect malformed dataflow declarations."""
+    issues: list[ParserIssue] = []
+    from .docstring_parser import _parse_dataflow_section
+
+    _, invalid = _parse_dataflow_section(lines, require_why=require_why)
+    for raw in invalid:
+        issues.append(
+            ParserIssue(
+                code="docstring.invalid-dataflow",
+                message=(
+                    f"Invalid dataflow declaration {raw!r}; expected list entries "
+                    "with from, to, kind, and why fields."
+                ),
+                section=section,
+                severity="warning",
+            )
+        )
+    return tuple(issues)
+
+
+def _dependency_path_is_allowed(name: str, allowed_abs: tuple[str, ...]) -> bool:
+    """Return True iff a logical dependency path is explicitly relative or allowed absolute."""
+    raw = (name or "").strip()
+    if not raw:
+        return False
+    if raw.startswith("."):
+        return True
+    first_segment = raw.split(".", 1)[0]
+    return first_segment in set(allowed_abs)
+
+
+def _collect_dependency_path_issues(
+    values: Iterable[str],
+    *,
+    section: str,
+    allowed_abs: tuple[str, ...],
+) -> tuple[ParserIssue, ...]:
+    """Collect dependency logical paths outside the repo-local portability policy."""
+    issues: list[ParserIssue] = []
+    allowed = tuple(root for root in allowed_abs if root)
+    for value in values:
+        raw = (value or "").strip()
+        if not raw or _dependency_path_is_allowed(raw, allowed):
             continue
+        issues.append(
+            ParserIssue(
+                code="docstring.absolute-dependency-not-allowed",
+                message=(
+                    f"Dependency path/id {raw!r} must start with '.' for a relative "
+                    f"path or with one of the allowed absolute roots: "
+                    f"{', '.join(allowed) or '<none>'}."
+                ),
+                section=section,
+                severity="warning",
+            )
+        )
     return tuple(issues)
 
 
@@ -197,44 +339,9 @@ def _collect_invalid_dependency_marker_syntax(
     *,
     allowed_scopes: tuple[str, ...] | None = None,
 ) -> tuple[ParserIssue, ...]:
-    """Collect malformed dependency reference markers in configured sections."""
-    issues: list[ParserIssue] = []
-    valid_scopes = {scope for scope in (allowed_scopes or ()) if scope}
-    for line in lines:
-        text = str(getattr(line, "text", line)).strip()
-        if not text:
-            continue
-        for marker_match in _DEPENDENCY_REFERENCE_MARKER_SCAN_RE.finditer(text):
-            marker = marker_match.group(0).rstrip(".,;:")
-            if parse_pseudocode_dependency_ref(marker) is None:
-                issues.append(
-                    ParserIssue(
-                        code="docstring.invalid-pseudocode-ref",
-                        message=(
-                            f"Invalid dependency reference marker in {text!r}; "
-                            "use @<name>, @<section:name>, and optional @<name>(...)."
-                        ),
-                        section=section,
-                        severity="warning",
-                    )
-                )
-                continue
-
-            parsed_scope, _ = parse_pseudocode_dependency_ref(marker)
-            if parsed_scope is not None and parsed_scope not in valid_scopes:
-                issues.append(
-                    ParserIssue(
-                        code="docstring.invalid-pseudocode-ref",
-                        message=(
-                            f"Dependency marker scope {parsed_scope!r} is not a known "
-                            f"dependency declaration section. Known scopes: "
-                            f"{', '.join(sorted(valid_scopes)) or '<none>'}."
-                        ),
-                        section=section,
-                        severity="warning",
-                    )
-                )
-    return tuple(issues)
+    """Compatibility hook; strict Pseudocode refs are parsed by the Lark step parser."""
+    del lines, section, allowed_scopes
+    return ()
 
 
 def _dependency_reference_section_lines(
@@ -300,8 +407,9 @@ def _collect_pseudocode_dependency_entity_issues(
         scoped_refs.add((section_name, name))
 
     normalized_declaration_sections: tuple[str, ...] = (
-        "CallsFromModule",
-        "InstantiationsFromModule",
+        "CallsFromRepo",
+        "InstantiationsFromRepo",
+        "Dispatches",
         "Wraps",
         "NonInferableCalls",
     )
@@ -314,13 +422,16 @@ def _collect_pseudocode_dependency_entity_issues(
 
     calls_section = normalized_declaration_sections[0]
     instantiates_section = normalized_declaration_sections[1]
-    wraps_section = normalized_declaration_sections[2]
-    noninferable_section = normalized_declaration_sections[3]
+    dispatches_section = normalized_declaration_sections[2]
+    wraps_section = normalized_declaration_sections[3]
+    noninferable_section = normalized_declaration_sections[4]
 
     for dependency in getattr(spec, "module_calls", ()):
         _add_declared(calls_section, getattr(dependency, "name", ""))
     for dependency in getattr(spec, "module_instantiates", ()):
         _add_declared(instantiates_section, getattr(dependency, "name", ""))
+    for dependency in getattr(spec, "dispatches", ()):
+        _add_declared(dispatches_section, getattr(dependency, "id", ""))
     for dependency in getattr(spec, "wraps", ()):
         _add_declared(wraps_section, getattr(dependency, "target", ""))
     for source, target in getattr(spec, "noninferable_calls", []):
@@ -340,7 +451,7 @@ def _collect_pseudocode_dependency_entity_issues(
         if not ref_sources:
             issues.append(
                 ParserIssue(
-                    code="docstring.undeclared-pseudocode-dependency",
+                    code="docstring.pseudocode-ref-unresolved",
                     message=(
                         f"Dependency reference {ref!r} is not declared in "
                         f"{', '.join(normalized_declaration_sections)}."
@@ -353,11 +464,11 @@ def _collect_pseudocode_dependency_entity_issues(
         if len(ref_sources) > 1:
             issues.append(
                 ParserIssue(
-                    code="docstring.ambiguous-pseudocode-dependency",
+                    code="docstring.pseudocode-ref-ambiguous",
                     message=(
                         f"Dependency reference {ref!r} is ambiguous across "
-                        f"{', '.join(sorted(ref_sources))}; add a section scope, e.g. "
-                        f"@{calls_section}:{ref}."
+                        f"{', '.join(sorted(ref_sources))}; use the typed operation "
+                        "syntax and the shortest unique dot-segment suffix."
                     ),
                     section=section,
                     severity="warning",
@@ -365,15 +476,35 @@ def _collect_pseudocode_dependency_entity_issues(
             )
 
     for section_name, name in sorted(scoped_refs):
-        sources = declared_by_name.get(name, [])
-        if section_name not in sources:
+        candidates = [
+            declared_name
+            for source, declared_name in declared
+            if source == section_name and _dot_segment_suffix_matches(name, declared_name)
+        ]
+        if not candidates:
+            sources = declared_by_name.get(name, [])
             options = ", ".join(sources or ["<none>"])
             issues.append(
                 ParserIssue(
-                    code="docstring.undeclared-pseudocode-dependency",
+                    code="docstring.pseudocode-ref-unresolved",
                     message=(
-                        f"Dependency reference {section_name + ':' + name!r} is not declared "
-                        f"under {section_name!r}; known sources are {options}."
+                        f"Dependency reference {section_name + ':' + name!r} does not "
+                        f"match any declared dependency under {section_name!r}; "
+                        f"known exact sources are {options}."
+                    ),
+                    section=section,
+                    severity="warning",
+                )
+            )
+            continue
+        if len(candidates) > 1:
+            issues.append(
+                ParserIssue(
+                    code="docstring.pseudocode-ref-ambiguous",
+                    message=(
+                        f"Dependency reference {section_name + ':' + name!r} matches "
+                        f"multiple declared dependencies: {', '.join(sorted(candidates))}. "
+                        "Use the shortest unique dot-segment suffix."
                     ),
                     section=section,
                     severity="warning",
@@ -452,6 +583,95 @@ def _collect_invalid_pseudocode(
     keyword appears at the start of a line.
     """
     issues: list[ParserIssue] = []
+    control_kinds = {"if", "while", "for", "else"}
+    block_kinds = {"if", "while", "for", "else"}
+    valid_kinds = {
+        "call",
+        "dispatch",
+        "instantiate",
+        "set",
+        "read",
+        "write",
+        "if",
+        "else",
+        "while",
+        "for",
+        "return",
+        "raise",
+        "continue",
+        "break",
+    }
+
+    def _has_child(index: int) -> bool:
+        return index + 1 < len(steps) and steps[index + 1].indent > steps[index].indent
+
+    def _else_has_matching_if(index: int) -> bool:
+        indent = steps[index].indent
+        for previous in reversed(steps[:index]):
+            if previous.indent > indent:
+                continue
+            if previous.indent < indent:
+                return False
+            return previous.kind == "if"
+        return False
+
+    def _inside_loop(index: int) -> bool:
+        for previous_index in range(index - 1, -1, -1):
+            previous = steps[previous_index]
+            if previous.kind not in {"for", "while"}:
+                continue
+            if previous.indent >= steps[index].indent:
+                continue
+            if all(
+                between.indent > previous.indent
+                for between in steps[previous_index + 1 : index + 1]
+            ):
+                return True
+        return False
+
+    for index, step in enumerate(steps):
+        if step.kind not in valid_kinds:
+            issues.append(
+                ParserIssue(
+                    code="docstring.invalid-pseudocode",
+                    message=(
+                        f"Invalid strict pseudocode line {step.raw!r}; expected a "
+                        "typed call, dispatch, constructor assignment, set/read/write, "
+                        "if/else/while/for block, or terminal statement."
+                    ),
+                    section=section,
+                    severity="warning",
+                )
+            )
+            continue
+        if step.kind in block_kinds and not _has_child(index):
+            issues.append(
+                ParserIssue(
+                    code="docstring.pseudocode-control-empty",
+                    message=f"Pseudocode control line {step.raw!r} has no indented body.",
+                    section=section,
+                    severity="warning",
+                )
+            )
+        if step.kind == "else" and not _else_has_matching_if(index):
+            issues.append(
+                ParserIssue(
+                    code="docstring.pseudocode-else-unmatched",
+                    message="Pseudocode else block does not immediately follow a matching if block.",
+                    section=section,
+                    severity="warning",
+                )
+            )
+        if step.kind in {"break", "continue"} and not _inside_loop(index):
+            issues.append(
+                ParserIssue(
+                    code="docstring.pseudocode-loop-control-outside-loop",
+                    message=f"Pseudocode {step.kind!r} is only valid inside for/while blocks.",
+                    section=section,
+                    severity="warning",
+                )
+            )
+
     if min_steps < 1 and not steps:
         return ()
     if len(steps) < min_steps:
@@ -468,176 +688,6 @@ def _collect_invalid_pseudocode(
         )
         if not steps:
             return tuple(issues)
-
-    requires_clause = {"if", "elif", "for", "for_each", "while", "with"}
-    block_controls = {
-        "if",
-        "elif",
-        "else",
-        "for",
-        "for_each",
-        "while",
-        "try",
-        "except",
-        "finally",
-        "loop",
-        "with",
-    }
-
-    require_control_suffix = True
-    require_control_colon = True
-    enforce_indent_blocks = True
-    if enforce_indent_blocks:
-        open_blocks: list[dict[str, object]] = []
-        for index, step in enumerate(steps):
-            text = step.text.strip()
-            if not text:
-                issues.append(
-                    ParserIssue(
-                        code="docstring.invalid-pseudocode",
-                        message="Pseudocode entry has no parseable text.",
-                        section=section,
-                        severity="warning",
-                    )
-                )
-                continue
-            kind = step.kind
-            indent = step.indent
-            keyword = "for each" if kind == "for_each" else kind
-            suffix = text[len(keyword) :].strip() if text.startswith(keyword) else ""
-            colon_position = suffix.find(":")
-            has_inline_body = (
-                colon_position != -1 and bool(suffix[colon_position + 1 :].strip())
-            )
-
-            while open_blocks and indent < open_blocks[-1]["indent"]:
-                block = open_blocks.pop()
-                if block["has_body"] is False:
-                    issues.append(
-                        ParserIssue(
-                            code="docstring.pseudocode-indent",
-                            message=(
-                                f"Control block '{block['kind']}' at step {block['index']} "
-                                "has no indented body."
-                            ),
-                            section=section,
-                            severity="warning",
-                        )
-                    )
-            # Mark parent control blocks as having body once we move inside any deeper
-            # indentation level.
-            for block in open_blocks:
-                if indent > int(block["indent"]):
-                    block["has_body"] = True
-
-            if kind in {"elif", "else"}:
-                matching = next(
-                    (
-                        entry
-                        for entry in reversed(open_blocks)
-                        if int(entry["indent"]) == indent
-                        and str(entry["kind"]) in {"if", "elif"}
-                    ),
-                    None,
-                )
-                if matching is None:
-                    issues.append(
-                        ParserIssue(
-                            code="docstring.pseudocode-flow",
-                            message=(
-                                f"'{keyword}' at step {index + 1} is missing a matching "
-                                "'if' at the same indentation level."
-                            ),
-                            section=section,
-                            severity="warning",
-                        )
-                    )
-
-            if kind in {"except", "finally"}:
-                matching = next(
-                    (
-                        entry
-                        for entry in reversed(open_blocks)
-                        if int(entry["indent"]) == indent
-                        and str(entry["kind"]) in {"try", "except"}
-                    ),
-                    None,
-                )
-                if matching is None:
-                    issues.append(
-                        ParserIssue(
-                            code="docstring.pseudocode-flow",
-                            message=(
-                                f"'{keyword}' at step {index + 1} should follow a "
-                                "'try'/'except' at the same indentation level."
-                            ),
-                            section=section,
-                            severity="warning",
-                        )
-                    )
-
-            if kind in block_controls and require_control_colon and not ":" in suffix:
-                issues.append(
-                    ParserIssue(
-                        code="docstring.pseudocode-colon",
-                        message=(
-                            f"Control line '{keyword}' at step {index + 1} should use ':' "
-                            "syntax."
-                        ),
-                        section=section,
-                        severity="warning",
-                    )
-                )
-
-            if require_control_suffix and kind in requires_clause:
-                predicate = suffix if colon_position == -1 else suffix[:colon_position].strip()
-                if not predicate:
-                    issues.append(
-                        ParserIssue(
-                            code="docstring.invalid-pseudocode",
-                            message="Pseudocode control line is missing its control predicate.",
-                            section=section,
-                            severity="warning",
-                        )
-                    )
-
-            if kind in block_controls and not has_inline_body:
-                open_blocks.append(
-                    {
-                        "kind": kind,
-                        "indent": indent,
-                        "index": index + 1,
-                        "has_body": False,
-                    }
-                )
-
-        while open_blocks:
-            block = open_blocks.pop()
-            if block["has_body"] is False:
-                issues.append(
-                    ParserIssue(
-                        code="docstring.pseudocode-indent",
-                        message=(
-                            f"Control block '{block['kind']}' at step {block['index']} "
-                            "has no indented body."
-                        ),
-                        section=section,
-                        severity="warning",
-                    )
-                )
-
-    for step in steps:
-        if require_control_suffix and step.kind in requires_clause:
-            keyword = "for each" if step.kind == "for_each" else step.kind
-            if not step.text[len(keyword) :].strip():
-                issues.append(
-                    ParserIssue(
-                        code="docstring.invalid-pseudocode",
-                        message="Pseudocode control line is missing its control predicate.",
-                        section=section,
-                        severity="warning",
-                    )
-                )
 
     if max_steps > 0 and len(steps) > max_steps:
         issues.append(
@@ -750,6 +800,21 @@ def _collect_forbidden_rationale_phrases(
     )
 
 
+def _collect_forbidden_intent_phrases(
+    intent_lines: list[str],
+    *,
+    forbidden_intent_phrases: tuple[str, ...],
+) -> tuple[ParserIssue, ...]:
+    """Collect warnings when intent contains prohibited placeholder phrases."""
+    return _collect_forbidden_phrases(
+        text=" ".join(line.strip() for line in intent_lines if line.strip()),
+        forbidden_phrases=forbidden_intent_phrases,
+        code="docstring.intent-forbidden",
+        section="Intent",
+        message_prefix="Intent",
+    )
+
+
 def _collect_forbidden_pseudocode_phrases(
     steps: list,
     *,
@@ -764,6 +829,218 @@ def _collect_forbidden_pseudocode_phrases(
         section="Pseudocode",
         message_prefix="Pseudocode",
     )
+
+
+def _collect_forbidden_dependency_why_phrases(
+    spec,
+    *,
+    dependency_rules,
+) -> tuple[ParserIssue, ...]:
+    """Collect placeholder dependency rationale text across graphable sections."""
+    forbidden = getattr(dependency_rules, "forbidden_why_phrases", ())
+    if not forbidden:
+        return ()
+
+    issues: list[ParserIssue] = []
+    entries: list[tuple[str, str, str]] = []
+    for dependency in getattr(spec, "module_calls", ()):
+        entries.append((dependency_rules.calls_section, dependency.name, dependency.why))
+    for dependency in getattr(spec, "module_instantiates", ()):
+        entries.append((dependency_rules.instantiates_section, dependency.name, dependency.why))
+    for dependency in getattr(spec, "dispatches", ()):
+        entries.append((dependency_rules.dispatches_section, dependency.id, dependency.why))
+    for dependency in getattr(spec, "resources", ()):
+        entries.append(("Resources", dependency.id, dependency.why))
+    for dependency in getattr(spec, "dataflows", ()):
+        entries.append(("Dataflow", f"{dependency.source}->{dependency.target}", dependency.why))
+
+    for section_name, dependency_id, why in entries:
+        for issue in _collect_forbidden_phrases(
+            text=why,
+            forbidden_phrases=forbidden,
+            code="docstring.dependency-why-forbidden",
+            section=section_name,
+            message_prefix=f"Dependency rationale for {dependency_id!r}",
+        ):
+            issues.append(issue)
+    return tuple(issues)
+
+
+def _iter_dependency_why_entries(spec, *, dependency_rules) -> tuple[tuple[str, str, object], ...]:
+    """Return parsed records that expose dependency rationale metadata."""
+    entries: list[tuple[str, str, object]] = []
+    for dependency in getattr(spec, "module_calls", ()):
+        entries.append((dependency_rules.calls_section, dependency.name, dependency))
+    for dependency in getattr(spec, "module_instantiates", ()):
+        entries.append((dependency_rules.instantiates_section, dependency.name, dependency))
+    for dependency in getattr(spec, "dispatches", ()):
+        entries.append((dependency_rules.dispatches_section, dependency.id, dependency))
+    for dependency in getattr(spec, "resources", ()):
+        entries.append(("Resources", dependency.id, dependency))
+    for dependency in getattr(spec, "dataflows", ()):
+        entries.append(("Dataflow", f"{dependency.source}->{dependency.target}", dependency))
+    return tuple(entries)
+
+
+def _collect_dependency_why_action_issues(spec, *, dependency_rules) -> tuple[ParserIssue, ...]:
+    """Collect dependency why action-key syntax diagnostics."""
+    config = dependency_rules.dependency_why
+    allowed = set(config.actions)
+    issues: list[ParserIssue] = []
+    for section_name, dependency_id, dependency in _iter_dependency_why_entries(
+        spec,
+        dependency_rules=dependency_rules,
+    ):
+        why = str(getattr(dependency, "why", "") or "").strip()
+        action = str(getattr(dependency, "why_action", "") or "").strip()
+        legacy = bool(getattr(dependency, "why_legacy_string", False))
+        action_count = int(getattr(dependency, "why_action_count", 0) or 0)
+        if legacy and not config.allow_legacy_string:
+            issues.append(
+                ParserIssue(
+                    code="docstring.dependency-why-action",
+                    message=(
+                        f"Dependency rationale for {dependency_id!r} is a legacy string. "
+                        "Use exactly one graphable action key, for example "
+                        "why: {validates: \"Checks that candidate evidence matches reviewed input.\"}. "
+                        f"Allowed keys: {', '.join(config.actions)}."
+                    ),
+                    section=section_name,
+                    severity="warning",
+                )
+            )
+            continue
+        if legacy:
+            continue
+        if action_count != 1 or not action:
+            issues.append(
+                ParserIssue(
+                    code="docstring.dependency-why-action",
+                    message=(
+                        f"Dependency rationale for {dependency_id!r} must use exactly one action key "
+                        "under why so graph edges have a typed label."
+                    ),
+                    section=section_name,
+                    severity="warning",
+                )
+            )
+            continue
+        if action not in allowed:
+            issues.append(
+                ParserIssue(
+                    code="docstring.dependency-why-action",
+                    message=(
+                        f"Dependency rationale for {dependency_id!r} uses unknown action {action!r}. "
+                        f"Allowed keys: {', '.join(config.actions)}."
+                    ),
+                    section=section_name,
+                    severity="warning",
+                )
+            )
+        if action == "misc" and len(why) < config.misc_min_chars:
+            issues.append(
+                ParserIssue(
+                    code="docstring.dependency-why-action",
+                    message=(
+                        f"Dependency rationale for {dependency_id!r} uses misc with {len(why)} chars. "
+                        f"Use a specific action key when possible, or provide at least {config.misc_min_chars} "
+                        "chars explaining the concrete data/control contribution."
+                    ),
+                    section=section_name,
+                    severity="warning",
+                )
+            )
+    return tuple(issues)
+
+
+def _collect_pseudocode_dataflow_issues(spec, *, dependency_rules) -> tuple[ParserIssue, ...]:
+    """Collect mechanical pseudocode dataflow quality issues."""
+    config = dependency_rules.pseudocode_quality
+    forbidden = {name.strip() for name in config.forbidden_variables if name.strip()}
+    if not forbidden and not config.require_assigned_dependency_output_use:
+        return ()
+
+    steps = tuple(getattr(spec, "pseudocode_steps", ()))
+    dependency_kinds = {"call", "dispatch", "instantiate"}
+    issues: list[ParserIssue] = []
+    for index, step in enumerate(steps):
+        if getattr(step, "kind", "") not in dependency_kinds:
+            continue
+        output = str(getattr(step, "output", "") or "").strip()
+        args = str(getattr(step, "args", "") or "")
+        arg_tokens = {
+            token
+            for token in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", args)
+            if token in forbidden
+        }
+        if output in forbidden:
+            issues.append(
+                ParserIssue(
+                    code="docstring.pseudocode-placeholder-variable",
+                    message=(
+                        f"Pseudocode assigns dependency output to placeholder variable {output!r}. "
+                        "Use a semantic output variable so the data edge is graphable."
+                    ),
+                    section="Pseudocode",
+                    severity="warning",
+                )
+            )
+        if arg_tokens:
+            issues.append(
+                ParserIssue(
+                    code="docstring.pseudocode-placeholder-argument",
+                    message=(
+                        "Pseudocode dependency call uses placeholder argument(s) "
+                        f"{', '.join(sorted(arg_tokens))}. Use concrete input names from the algorithm."
+                    ),
+                    section="Pseudocode",
+                    severity="warning",
+                )
+            )
+        if not config.require_assigned_dependency_output_use or not output or output in forbidden:
+            continue
+        later_text = " ".join(str(getattr(later, "text", "") or "") for later in steps[index + 1 :])
+        if not re.search(rf"\b{re.escape(output)}\b", later_text):
+            issues.append(
+                ParserIssue(
+                    code="docstring.pseudocode-output-unused",
+                    message=(
+                        f"Assigned dependency output {output!r} is never used later in pseudocode. "
+                        "Pass it, return it, raise it, write it, or use it in a condition so the data edge is graphable."
+                    ),
+                    section="Pseudocode",
+                    severity="warning",
+                )
+            )
+    return tuple(issues)
+
+
+def _collect_pseudocode_resource_issues(spec) -> tuple[ParserIssue, ...]:
+    """Collect unresolved read/write resource references from strict pseudocode."""
+    declared = {
+        str(getattr(resource, "id", "")).strip()
+        for resource in getattr(spec, "resources", ())
+        if str(getattr(resource, "id", "")).strip()
+    }
+    issues: list[ParserIssue] = []
+    for step in getattr(spec, "pseudocode_steps", ()):
+        if getattr(step, "kind", "") not in {"read", "write"}:
+            continue
+        resource_id = str(getattr(step, "resource_id", "")).strip()
+        if resource_id in declared:
+            continue
+        issues.append(
+            ParserIssue(
+                code="docstring.pseudocode-resource-unresolved",
+                message=(
+                    f"Pseudocode {step.kind} references undeclared resource "
+                    f"{resource_id!r}; declare it in Resources."
+                ),
+                section="Pseudocode",
+                severity="warning",
+            )
+        )
+    return tuple(issues)
 
 
 def _collect_text_length(
@@ -909,9 +1186,12 @@ def validate_pipeline_docstring(docstring: str) -> tuple[ParserIssue, ...]:
     return tuple(issues)
 
 
-def check_graph_docstring(docstring: str) -> tuple[ParserIssue, ...]:
+def check_graph_docstring(
+    docstring: str,
+    schema_rules: DocstringSchema | None = None,
+) -> tuple[ParserIssue, ...]:
     """Validate callable/class docstrings against callable-level format rules."""
-    schema_rules = load_docstring_schema()
+    schema_rules = schema_rules or load_docstring_schema()
     issues: list[ParserIssue] = []
 
     if not docstring or not docstring.strip():
@@ -961,6 +1241,12 @@ def check_graph_docstring(docstring: str) -> tuple[ParserIssue, ...]:
         )
     )
     issues.extend(
+        _collect_forbidden_intent_phrases(
+            spec.sections.get("Intent", []),
+            forbidden_intent_phrases=schema_rules.callable.forbidden_intent_phrases,
+        )
+    )
+    issues.extend(
         _collect_text_length(
             text=spec.rationale or "",
             code="docstring.rationale-length",
@@ -987,10 +1273,12 @@ def check_graph_docstring(docstring: str) -> tuple[ParserIssue, ...]:
     issues.extend(_collect_invalid_wraps(spec.sections.get("Wraps", [])))
     dependency_rules = schema_rules.module_dependencies
     issues.extend(
-        _collect_invalid_module_dependencies(
+_collect_invalid_module_dependencies(
             spec.sections.get(dependency_rules.calls_section, []),
             section=dependency_rules.calls_section,
             allow_implicit=dependency_rules.allow_implicit,
+            allow_legacy_flat=dependency_rules.allow_legacy_flat,
+            require_why=dependency_rules.require_why,
         )
     )
     issues.extend(
@@ -998,6 +1286,51 @@ def check_graph_docstring(docstring: str) -> tuple[ParserIssue, ...]:
             spec.sections.get(dependency_rules.instantiates_section, []),
             section=dependency_rules.instantiates_section,
             allow_implicit=dependency_rules.allow_implicit,
+            allow_legacy_flat=dependency_rules.allow_legacy_flat,
+            require_why=dependency_rules.require_why,
+        )
+    )
+    issues.extend(
+        _collect_invalid_dispatch_dependencies(
+            spec.sections.get(dependency_rules.dispatches_section, []),
+            section=dependency_rules.dispatches_section,
+            allow_legacy_flat=dependency_rules.allow_legacy_flat,
+            require_why=dependency_rules.require_why,
+        )
+    )
+    issues.extend(
+        _collect_invalid_resources(
+            spec.sections.get("Resources", []),
+            section="Resources",
+            require_why=dependency_rules.require_why,
+        )
+    )
+    issues.extend(
+        _collect_invalid_dataflows(
+            spec.sections.get("Dataflow", []),
+            section="Dataflow",
+            require_why=dependency_rules.require_why,
+        )
+    )
+    issues.extend(
+        _collect_dependency_path_issues(
+            (dependency.name for dependency in spec.module_calls),
+            section=dependency_rules.calls_section,
+            allowed_abs=dependency_rules.allowed_abs,
+        )
+    )
+    issues.extend(
+        _collect_dependency_path_issues(
+            (dependency.name for dependency in spec.module_instantiates),
+            section=dependency_rules.instantiates_section,
+            allowed_abs=dependency_rules.allowed_abs,
+        )
+    )
+    issues.extend(
+        _collect_dependency_path_issues(
+            (dependency.id for dependency in spec.dispatches),
+            section=dependency_rules.dispatches_section,
+            allowed_abs=dependency_rules.allowed_abs,
         )
     )
     ownership_rules = schema_rules.callable.ownership
@@ -1027,10 +1360,29 @@ def check_graph_docstring(docstring: str) -> tuple[ParserIssue, ...]:
             max_total_chars=schema_rules.callable.pseudocode.max_total_chars,
         )
     )
+    issues.extend(_collect_pseudocode_resource_issues(spec))
     issues.extend(
         _collect_forbidden_pseudocode_phrases(
             spec.pseudocode_steps,
             forbidden_pseudocode_phrases=schema_rules.callable.forbidden_pseudocode_phrases,
+        )
+    )
+    issues.extend(
+        _collect_forbidden_dependency_why_phrases(
+            spec,
+            dependency_rules=dependency_rules,
+        )
+    )
+    issues.extend(
+        _collect_dependency_why_action_issues(
+            spec,
+            dependency_rules=dependency_rules,
+        )
+    )
+    issues.extend(
+        _collect_pseudocode_dataflow_issues(
+            spec,
+            dependency_rules=dependency_rules,
         )
     )
     dependency_reference_sections = schema_rules.callable.dependency_reference_sections
@@ -1049,6 +1401,7 @@ def check_graph_docstring(docstring: str) -> tuple[ParserIssue, ...]:
                 allowed_scopes=(
                     dependency_rules.calls_section,
                     dependency_rules.instantiates_section,
+                    dependency_rules.dispatches_section,
                     "Wraps",
                     "NonInferableCalls",
                 ),
@@ -1062,6 +1415,7 @@ def check_graph_docstring(docstring: str) -> tuple[ParserIssue, ...]:
             declaration_sections=(
                 dependency_rules.calls_section,
                 dependency_rules.instantiates_section,
+                dependency_rules.dispatches_section,
                 "Wraps",
                 "NonInferableCalls",
             ),

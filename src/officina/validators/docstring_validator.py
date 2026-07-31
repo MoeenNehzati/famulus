@@ -6,8 +6,8 @@ from __future__ import annotations
 import ast
 import builtins
 import re
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, replace
+from pathlib import Path, PurePosixPath
 from typing import Iterable, Mapping
 
 from ..common.docstring.docstring_parser import (
@@ -46,7 +46,6 @@ _PSEUDOCODE_SKIP_TOKENS = {
     "and",
     "as",
     "else",
-    "elif",
     "for",
     "if",
     "in",
@@ -60,6 +59,17 @@ _PSEUDOCODE_SKIP_TOKENS = {
     "while",
     "with",
 }
+_DISPATCH_ID_RE = re.compile(
+    r"(?<![A-Za-z0-9_.:-])(?:skills\.)?[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.interface\.[A-Za-z0-9_-]+(?![A-Za-z0-9_.:-])"
+)
+
+
+def _relative_dependency_tail(name: str) -> str:
+    """Return the logical tail for a leading-dot relative dependency."""
+    raw = (name or "").strip()
+    if not raw.startswith("."):
+        return ""
+    return raw.lstrip(".")
 
 
 def _dependency_name_variants(
@@ -75,7 +85,11 @@ def _dependency_name_variants(
         return ()
 
     variants: set[str] = {stripped}
-    normalized = _normalize_dependency_name(stripped, import_aliases)
+    relative = _relative_dependency_tail(stripped)
+    if relative:
+        variants.add(relative)
+        variants.add(relative.rsplit(".", 1)[-1])
+    normalized = _normalize_dependency_name(relative or stripped, import_aliases)
     if normalized:
         variants.add(normalized)
         if "." in normalized:
@@ -109,6 +123,17 @@ def _dependency_is_resolved(
     stripped = name.strip()
     if not stripped:
         return False
+
+    relative = _relative_dependency_tail(stripped)
+    if relative:
+        relative_head = relative.split(".", 1)[0]
+        relative_tail = relative.rsplit(".", 1)[-1]
+        return (
+            relative in defined_symbols
+            or relative_head in defined_symbols
+            or relative_tail in defined_symbols
+            or relative_head in import_aliases
+        )
 
     if stripped in defined_symbols:
         return True
@@ -232,6 +257,44 @@ class DocstringValidationIssue:
 _FALLBACK_SYNTAX_CHECK_CODES: frozenset[str] = frozenset(
     {
         "docstring.formatting",
+        "docstring.empty",
+        "docstring.invalid-owns",
+        "docstring.owns-too-many",
+        "docstring.invalid-edge",
+        "docstring.invalid-section",
+        "docstring.invalid-section-header",
+        "docstring.duplicate-section",
+        "docstring.invalid-wraps",
+        "docstring.invalid-module-dependency",
+        "docstring.invalid-resource",
+        "docstring.invalid-dataflow",
+        "docstring.absolute-dependency-not-allowed",
+        "docstring.invalid-pseudocode",
+        "docstring.pseudocode-control-empty",
+        "docstring.pseudocode-else-unmatched",
+        "docstring.pseudocode-loop-control-outside-loop",
+        "docstring.pseudocode-ref-unresolved",
+        "docstring.pseudocode-ref-ambiguous",
+        "docstring.pseudocode-resource-unresolved",
+        "docstring.pseudocode-placeholder-variable",
+        "docstring.pseudocode-placeholder-argument",
+        "docstring.pseudocode-output-unused",
+        "docstring.pseudocode-step-min",
+        "docstring.pseudocode-step-length",
+        "docstring.pseudocode-step-cap",
+        "docstring.pseudocode-total-length",
+        "docstring.section-missing",
+        "docstring.summary-missing",
+        "docstring.summary-forbidden",
+        "docstring.summary-length",
+        "docstring.intent-forbidden",
+        "docstring.rationale-forbidden",
+        "docstring.rationale-length",
+        "docstring.pseudocode-forbidden",
+        "docstring.dependency-why-forbidden",
+        "docstring.dependency-why-action",
+        "docstring.repeated-template",
+        "docstring.missing-graphpipeline",
     }
 )
 
@@ -244,6 +307,10 @@ _FALLBACK_BEHAVIORAL_CHECK_CODES: frozenset[str] = frozenset(
         "docstring.module-dependency-not-observed",
         "docstring.module-dependency-undocumented",
         "docstring.module-dependency-unresolved",
+        "docstring.dispatch-not-observed",
+        "docstring.dispatch-undocumented",
+        "docstring.dispatch-unresolved",
+        "docstring.absolute-dependency-not-allowed",
         "docstring.wraps-incomplete",
         "docstring.wraps-unresolved-target",
         "docstring.pseudocode-dependency-missing",
@@ -440,6 +507,9 @@ def _normalize_dependency_name(
     import_aliases: Mapping[str, str],
 ) -> str:
     """Resolve a dotted dependency name through import alias mappings."""
+    relative = _relative_dependency_tail(name)
+    if relative:
+        name = relative
     parts = name.split(".")
     if not parts:
         return name
@@ -460,10 +530,9 @@ def _dependency_matches(
     """Return ``True`` when declared and observed identifiers refer to the same symbol."""
     if declared == observed:
         return True
-    return (
-        _normalize_dependency_name(declared, import_aliases) == observed
-        or _normalize_dependency_name(observed, import_aliases) == declared
-    )
+    declared_variants = set(_dependency_name_variants(declared, import_aliases))
+    observed_variants = set(_dependency_name_variants(observed, import_aliases))
+    return bool(declared_variants & observed_variants)
 
 
 def _looks_like_constructor(name: str) -> bool:
@@ -482,41 +551,107 @@ def _collect_dependency_targets(
     instantiations: set[str] = set()
     has_calls = bool(dependency_rules.calls_section)
     has_instantiations = bool(dependency_rules.instantiates_section)
+    walk_roots: Iterable[ast.AST]
+    if isinstance(node, ast.ClassDef):
+        walk_roots = tuple(
+            statement
+            for statement in node.body
+            if not isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        )
+    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        walk_roots = tuple(node.body)
+    else:
+        walk_roots = (node,)
 
+    for root in walk_roots:
+        for statement in ast.walk(root):
+            if not isinstance(statement, ast.Call):
+                continue
+
+            target_name = _flatten_attribute_name(statement.func)
+            if target_name is None:
+                continue
+
+            target_name = target_name.strip()
+            if not target_name:
+                continue
+
+            base = target_name.split(".", 1)[0]
+            is_local_defined = base in defined_symbols
+            if (
+                not base
+                or base in _IGNORED_CALL_BASES
+                or base in _BUILTIN_SYMBOLS
+            ):
+                continue
+
+            if dependency_rules.ignore_non_external and base not in import_aliases and not is_local_defined:
+                continue
+
+            normalized = _normalize_dependency_name(target_name, import_aliases)
+            if _looks_like_constructor(normalized):
+                if has_instantiations:
+                    instantiations.add(normalized)
+                elif has_calls:
+                    calls.add(normalized)
+            elif has_calls:
+                calls.add(normalized)
+
+    return calls, instantiations
+
+
+def _dispatch_id_variants(dispatch_id: str) -> set[str]:
+    """Return equivalent logical spellings for a dispatch interface id."""
+    raw = (dispatch_id or "").strip()
+    if not raw:
+        return set()
+    variants = {raw}
+    if raw.startswith("skills."):
+        variants.add(raw[len("skills.") :])
+    else:
+        variants.add(f"skills.{raw}")
+    return variants
+
+
+def _dispatch_ids_match(left: str, right: str) -> bool:
+    """Return true when two dispatch ids are equivalent logical spellings."""
+    return bool(_dispatch_id_variants(left) & _dispatch_id_variants(right))
+
+
+def _collect_known_dispatch_ids(repo_root: Path | None = None) -> set[str]:
+    """Collect public interface ids advertised by skill contracts."""
+    root = repo_root or Path.cwd()
+    skills_root = root / "skills"
+    known: set[str] = set()
+    if not skills_root.exists():
+        return known
+    for skill_doc in skills_root.glob("*/SKILL.md"):
+        try:
+            text = skill_doc.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for match in _DISPATCH_ID_RE.finditer(text):
+            known.update(_dispatch_id_variants(match.group(0)))
+    return known
+
+
+def _collect_observed_dispatch_ids(node: ast.AST) -> set[str]:
+    """Collect dispatcher interface ids from literal dispatcher call arguments."""
+    observed: set[str] = set()
     for statement in ast.walk(node):
         if not isinstance(statement, ast.Call):
             continue
-
-        target_name = _flatten_attribute_name(statement.func)
-        if target_name is None:
+        literals = [
+            child.value
+            for child in ast.walk(statement)
+            if isinstance(child, ast.Constant) and isinstance(child.value, str)
+        ]
+        if not any(value == "dispatcher" or value == "--caller-skill" for value in literals):
             continue
-
-        target_name = target_name.strip()
-        if not target_name:
-            continue
-
-        base = target_name.split(".", 1)[0]
-        if (
-            not base
-            or base in _IGNORED_CALL_BASES
-            or base in _BUILTIN_SYMBOLS
-            or base in defined_symbols
-        ):
-            continue
-
-        if dependency_rules.ignore_non_external and base not in import_aliases:
-            continue
-
-        normalized = _normalize_dependency_name(target_name, import_aliases)
-        if _looks_like_constructor(normalized):
-            if has_instantiations:
-                instantiations.add(normalized)
-            elif has_calls:
-                calls.add(normalized)
-        elif has_calls:
-            calls.add(normalized)
-
-    return calls, instantiations
+        for value in literals:
+            for match in _DISPATCH_ID_RE.finditer(value):
+                observed.add(match.group(0))
+    return observed
 
 
 def _emit_missing_dependency_issues(
@@ -561,6 +696,41 @@ def _emit_undocumented_dependency_issues(
     )
 
 
+def _dependency_path_is_allowed(name: str, allowed_abs: tuple[str, ...]) -> bool:
+    """Return True iff a dependency path is explicitly relative or allowed absolute."""
+    raw = (name or "").strip()
+    if not raw:
+        return False
+    if raw.startswith("."):
+        return True
+    return raw.split(".", 1)[0] in set(allowed_abs)
+
+
+def _emit_dependency_path_issue(
+    path: Path,
+    node_id: str,
+    line_no: int,
+    *,
+    declared: str,
+    section: str,
+    allowed_abs: tuple[str, ...],
+) -> Iterable[DocstringValidationIssue]:
+    """Emit portability warning for unrooted dependency logical paths."""
+    if _dependency_path_is_allowed(declared, allowed_abs):
+        return
+    yield DocstringValidationIssue(
+        path=path,
+        code="docstring.absolute-dependency-not-allowed",
+        message=(
+            f"Declared dependency '{declared}' in {section} must start with '.' "
+            "for a relative path or with an allowed absolute root: "
+            f"{', '.join(allowed_abs) or '<none>'}."
+        ),
+        line=line_no,
+        node_id=node_id,
+    )
+
+
 def _iter_module_dependency_issues(
     path: Path,
     node_id: str,
@@ -581,6 +751,7 @@ def _iter_module_dependency_issues(
 
     documented_calls = tuple(getattr(parsed, "module_calls", ()))
     documented_instantiations = tuple(getattr(parsed, "module_instantiates", ()))
+    documented_dispatches = tuple(getattr(parsed, "dispatches", ()))
 
     documented_call_names = {
         _normalize_dependency_name(dependency.name, import_aliases)
@@ -597,14 +768,27 @@ def _iter_module_dependency_issues(
     explicit_refs = _collect_explicit_dependency_refs(parsed)
     if explicit_refs:
         pseudocode_tokens = explicit_refs
+    validate_declared_targets_resolved = bool(
+        getattr(schema_rules, "validate_declared_targets_resolved", False)
+    ) or bool(getattr(schema_rules, "validate_dependency_targets_resolved", False))
+    observed_dispatches = _collect_observed_dispatch_ids(node)
+    known_dispatch_ids = _collect_known_dispatch_ids()
+    documented_dispatch_ids = {
+        getattr(dependency, "id", "").strip()
+        for dependency in documented_dispatches
+        if getattr(dependency, "id", "").strip()
+    }
 
     if schema_rules.validate_declared_calls:
-        validate_declared_targets_resolved = bool(
-            getattr(schema_rules, "validate_declared_targets_resolved", False)
-        ) or bool(getattr(schema_rules, "validate_dependency_targets_resolved", False))
         for dependency in documented_calls:
-            if dependency.implicit:
-                continue
+            yield from _emit_dependency_path_issue(
+                path=path,
+                node_id=node_id,
+                line_no=line_no,
+                declared=dependency.name,
+                section=schema_rules.calls_section,
+                allowed_abs=schema_rules.allowed_abs,
+            )
             if validate_declared_targets_resolved and not _dependency_is_resolved(
                 dependency.name,
                 import_aliases=import_aliases,
@@ -617,6 +801,8 @@ def _iter_module_dependency_issues(
                     line=line_no,
                     node_id=node_id,
                 )
+            if dependency.implicit:
+                continue
             yield from _emit_missing_dependency_issues(
                 path=path,
                 node_id=node_id,
@@ -629,7 +815,7 @@ def _iter_module_dependency_issues(
                 dependency.name,
                 pseudocode_tokens,
                 import_aliases,
-                scope="CallsFromModule",
+                scope=schema_rules.calls_section,
             ):
                 yield DocstringValidationIssue(
                     path=path,
@@ -644,8 +830,14 @@ def _iter_module_dependency_issues(
 
     if schema_rules.validate_declared_instantiations:
         for dependency in documented_instantiations:
-            if dependency.implicit:
-                continue
+            yield from _emit_dependency_path_issue(
+                path=path,
+                node_id=node_id,
+                line_no=line_no,
+                declared=dependency.name,
+                section=schema_rules.instantiates_section,
+                allowed_abs=schema_rules.allowed_abs,
+            )
             if validate_declared_targets_resolved and not _dependency_is_resolved(
                 dependency.name,
                 import_aliases=import_aliases,
@@ -658,6 +850,8 @@ def _iter_module_dependency_issues(
                     line=line_no,
                     node_id=node_id,
                 )
+            if dependency.implicit:
+                continue
             yield from _emit_missing_dependency_issues(
                 path=path,
                 node_id=node_id,
@@ -670,7 +864,7 @@ def _iter_module_dependency_issues(
                 dependency.name,
                 pseudocode_tokens,
                 import_aliases,
-                scope="InstantiationsFromModule",
+                scope=schema_rules.instantiates_section,
             ):
                 yield DocstringValidationIssue(
                     path=path,
@@ -701,7 +895,7 @@ def _iter_module_dependency_issues(
                 observed,
                 pseudocode_tokens,
                 import_aliases,
-                scope="CallsFromModule",
+                scope=schema_rules.calls_section,
             ):
                 yield DocstringValidationIssue(
                     path=path,
@@ -732,7 +926,7 @@ def _iter_module_dependency_issues(
                 observed,
                 pseudocode_tokens,
                 import_aliases,
-                scope="InstantiationsFromModule",
+                scope=schema_rules.instantiates_section,
             ):
                 yield DocstringValidationIssue(
                     path=path,
@@ -744,6 +938,68 @@ def _iter_module_dependency_issues(
                     line=line_no,
                     node_id=node_id,
                 )
+
+    if schema_rules.validate_declared_dispatches:
+        for dependency in documented_dispatches:
+            dispatch_id = getattr(dependency, "id", "")
+            yield from _emit_dependency_path_issue(
+                path=path,
+                node_id=node_id,
+                line_no=line_no,
+                declared=dispatch_id,
+                section=schema_rules.dispatches_section,
+                allowed_abs=schema_rules.allowed_abs,
+            )
+            if known_dispatch_ids and not any(
+                variant in known_dispatch_ids for variant in _dispatch_id_variants(dispatch_id)
+            ):
+                yield DocstringValidationIssue(
+                    path=path,
+                    code="docstring.dispatch-unresolved",
+                    message=f"Declared dispatch id '{dispatch_id}' does not match a known public interface id.",
+                    line=line_no,
+                    node_id=node_id,
+                )
+            if observed_dispatches and not any(
+                _dispatch_ids_match(dispatch_id, observed)
+                for observed in observed_dispatches
+            ):
+                yield DocstringValidationIssue(
+                    path=path,
+                    code="docstring.dispatch-not-observed",
+                    message=f"Declared dispatch id '{dispatch_id}' is not observed in dispatcher call literals.",
+                    line=line_no,
+                    node_id=node_id,
+                )
+            if schema_rules.enforce_declared_dependency_pseudocode_coverage and not _name_mentioned_in_pseudocode(
+                dispatch_id,
+                pseudocode_tokens,
+                import_aliases,
+                scope=schema_rules.dispatches_section,
+            ):
+                yield DocstringValidationIssue(
+                    path=path,
+                    code="docstring.pseudocode-dependency-missing",
+                    message=(
+                        f"Declared dispatch dependency '{dispatch_id}' is not "
+                        "mentioned in dependency references."
+                    ),
+                    line=line_no,
+                    node_id=node_id,
+                )
+        for observed_dispatch in observed_dispatches:
+            if any(
+                _dispatch_ids_match(observed_dispatch, documented_dispatch)
+                for documented_dispatch in documented_dispatch_ids
+            ):
+                continue
+            yield DocstringValidationIssue(
+                path=path,
+                code="docstring.dispatch-undocumented",
+                message=f"Observed dispatch id '{observed_dispatch}' is not listed in docstring.",
+                line=line_no,
+                node_id=node_id,
+            )
 
 
 def _iter_wrap_issues(
@@ -903,7 +1159,7 @@ def _iter_parser_issue_records(
         message = f"{issue.message} [{detail}]"
         yield DocstringValidationIssue(
             path=path,
-            code="docstring.formatting",
+            code=issue.code,
             message=message,
             line=line_hint,
             node_id=node_id,
@@ -1044,6 +1300,8 @@ def _validate_node_docstring(
 
     doc = ast.get_docstring(node)
     if doc is None:
+        if not schema_rules.callable.require_docstrings:
+            return tuple(issues)
         issues.append(
             DocstringValidationIssue(
                 path=path,
@@ -1059,7 +1317,7 @@ def _validate_node_docstring(
         _iter_parser_issue_records(
             path=path,
             node_id=node_id,
-            parser_issues=check_graph_docstring(doc),
+            parser_issues=check_graph_docstring(doc, schema_rules=schema_rules),
             line_hint=node.lineno,
         )
     )
@@ -1095,18 +1353,19 @@ def _validate_node_docstring(
             observed_instantiations=observed_instantiations,
         )
     )
-    issues.extend(
-        _iter_module_dependency_issues(
-            path=path,
-            node_id=node_id,
-            line_no=node.lineno,
-            node=node,
-            parsed=parsed,
-            schema_rules=schema_rules.module_dependencies,
-            import_aliases=import_aliases,
-            defined_symbols=defined_symbols,
+    if not isinstance(node, ast.ClassDef):
+        issues.extend(
+            _iter_module_dependency_issues(
+                path=path,
+                node_id=node_id,
+                line_no=node.lineno,
+                node=node,
+                parsed=parsed,
+                schema_rules=schema_rules.module_dependencies,
+                import_aliases=import_aliases,
+                defined_symbols=defined_symbols,
+            )
         )
-    )
 
     return tuple(issues)
 
@@ -1157,6 +1416,258 @@ def _module_docstring_issues_by_check(
     return tuple(issues)
 
 
+def _dedupe_docstring_issues(
+    issues: Iterable[DocstringValidationIssue],
+) -> tuple[DocstringValidationIssue, ...]:
+    """Return validation issues without duplicate records from overlapping groups."""
+    deduped: list[DocstringValidationIssue] = []
+    seen: set[tuple[Path, str, int | None, str | None, str, str]] = set()
+    for issue in issues:
+        key = (
+            issue.path,
+            issue.code,
+            issue.line,
+            issue.node_id,
+            issue.message,
+            issue.severity,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(issue)
+    return tuple(deduped)
+
+
+def _normalized_template_text(
+    text: str,
+    *,
+    names: Iterable[str],
+) -> str:
+    """Normalize one prose sentence for repeated-template detection."""
+    normalized = text.lower()
+    normalized = re.sub(r"`[^`]*`|'[^']*'|\"[^\"]*\"", " <literal> ", normalized)
+    for name in sorted({name for name in names if name}, key=len, reverse=True):
+        for token in re.split(r"[^A-Za-z0-9_]+", name):
+            if token:
+                normalized = re.sub(rf"\b{re.escape(token.lower())}\b", " <name> ", normalized)
+    normalized = re.sub(r"[^a-z0-9_<>\s]", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _iter_repeated_template_issues(
+    path: Path,
+    tree: ast.AST,
+    *,
+    include_nested: bool,
+    include_private: bool,
+    schema_rules: DocstringSchema,
+) -> Iterable[DocstringValidationIssue]:
+    """Detect repeated normalized docstring prose templates in one module."""
+    config = schema_rules.module_dependencies.repeated_template_detection
+    if not config.enabled:
+        return
+
+    records: list[tuple[str, int, str, str]] = []
+    for node, node_id, _node_type in _iter_defined_callables(
+        tree,
+        include_nested=include_nested,
+        include_private=include_private,
+    ):
+        doc = ast.get_docstring(node)
+        if not doc:
+            continue
+        parsed = parse_graph_block(doc)
+        names = {node_id, getattr(node, "name", "")}
+        names.update(getattr(dependency, "name", "") for dependency in getattr(parsed, "module_calls", ()))
+        names.update(getattr(dependency, "name", "") for dependency in getattr(parsed, "module_instantiates", ()))
+        names.update(getattr(dependency, "id", "") for dependency in getattr(parsed, "dispatches", ()))
+        candidates: list[tuple[str, str]] = []
+        if getattr(parsed, "summary", ""):
+            candidates.append(("summary", parsed.summary))
+        for section in ("Intent", "Rationale"):
+            for line in getattr(parsed, "sections", {}).get(section, ()):
+                text = str(line).strip()
+                if text:
+                    candidates.append((section, text))
+        for dependency in (
+            tuple(getattr(parsed, "module_calls", ()))
+            + tuple(getattr(parsed, "module_instantiates", ()))
+            + tuple(getattr(parsed, "dispatches", ()))
+        ):
+            why = str(getattr(dependency, "why", "") or "").strip()
+            if why:
+                candidates.append(("why", why))
+        for section, text in candidates:
+            normalized = _normalized_template_text(text, names=names)
+            if len(normalized) >= config.min_normalized_chars:
+                records.append((normalized, node.lineno, node_id, section))
+
+    grouped: dict[str, list[tuple[int, str, str]]] = {}
+    for normalized, line_no, node_id, section in records:
+        grouped.setdefault(normalized, []).append((line_no, node_id, section))
+
+    for normalized, occurrences in grouped.items():
+        if len(occurrences) < config.min_repetitions:
+            continue
+        line_no, node_id, section = occurrences[0]
+        yield DocstringValidationIssue(
+            path=path,
+            code="docstring.repeated-template",
+            message=(
+                f"Repeated docstring template appears {len(occurrences)} times after replacing "
+                "callable/dependency names. Rewrite each occurrence to describe the specific behavior "
+                "or edge contribution."
+            ),
+            line=line_no,
+            node_id=node_id,
+        )
+
+
+def _path_matches_profile_pattern(path: Path, pattern: str) -> bool:
+    """Return true when a config profile pattern applies to a module path."""
+    raw_pattern = (pattern or "").strip()
+    if not raw_pattern:
+        return False
+
+    candidates: set[str] = {path.as_posix().lstrip("/")}
+    try:
+        candidates.add(path.resolve().relative_to(Path.cwd().resolve()).as_posix())
+    except ValueError:
+        pass
+
+    parts = path.as_posix().strip("/").split("/")
+    for index in range(len(parts)):
+        candidates.add("/".join(parts[index:]))
+
+    return any(
+        candidate == raw_pattern or PurePosixPath(candidate).match(raw_pattern)
+        for candidate in candidates
+        if candidate
+    )
+
+
+def _apply_docstring_profiles(schema_rules: DocstringSchema, path: Path) -> DocstringSchema:
+    """Apply repo-configured path profiles to the effective validator policy."""
+    module_rules = schema_rules.module_dependencies
+    callable_rules = schema_rules.callable
+    for profile in getattr(schema_rules.config, "profiles", ()):
+        if not any(
+            _path_matches_profile_pattern(path, pattern)
+            for pattern in getattr(profile, "applies_to", ())
+        ):
+            continue
+
+        if getattr(profile, "callable_require_docstrings", None) is not None:
+            callable_rules = replace(
+                callable_rules,
+                require_docstrings=bool(profile.callable_require_docstrings),
+            )
+        if getattr(profile, "callable_required_sections", None) is not None:
+            callable_rules = replace(
+                callable_rules,
+                required_sections=tuple(profile.callable_required_sections or ()),
+            )
+        if getattr(profile, "callable_min_pseudocode_steps", None) is not None:
+            min_steps = int(profile.callable_min_pseudocode_steps or 0)
+            callable_rules = replace(
+                callable_rules,
+                min_pseudocode_steps=min_steps,
+                pseudocode=replace(
+                    callable_rules.pseudocode,
+                    min_steps=min_steps,
+                ),
+            )
+
+        checks = getattr(profile, "checks", {})
+        if "repeated_template_detection" in checks:
+            module_rules = replace(
+                module_rules,
+                repeated_template_detection=replace(
+                    module_rules.repeated_template_detection,
+                    enabled=bool(checks["repeated_template_detection"]),
+                ),
+            )
+        if "pseudocode_output_use" in checks or "pseudocode_dataflow" in checks:
+            enabled = bool(
+                checks.get(
+                    "pseudocode_output_use",
+                    checks.get("pseudocode_dataflow", False),
+                )
+            )
+            module_rules = replace(
+                module_rules,
+                pseudocode_quality=replace(
+                    module_rules.pseudocode_quality,
+                    require_assigned_dependency_output_use=enabled,
+                ),
+            )
+        if "dependency_why_action" in checks:
+            module_rules = replace(
+                module_rules,
+                dependency_why=replace(
+                    module_rules.dependency_why,
+                    allow_legacy_string=not bool(checks["dependency_why_action"]),
+                ),
+            )
+
+    if module_rules is schema_rules.module_dependencies and callable_rules is schema_rules.callable:
+        return schema_rules
+    return replace(
+        schema_rules,
+        callable=callable_rules,
+        module_dependencies=module_rules,
+    )
+
+
+def _iter_pseudocode_output_use_issues(
+    path: Path,
+    node_id: str,
+    line_no: int,
+    parsed: object,
+    schema_rules: ModuleDependencyConfig,
+) -> Iterable[DocstringValidationIssue]:
+    """Require assigned dependency outputs to feed later pseudocode steps."""
+    if not schema_rules.pseudocode_quality.require_assigned_dependency_output_use:
+        return
+
+    def _step_search_text(step: object) -> str:
+        fields = (
+            "text",
+            "raw",
+            "args",
+            "condition",
+            "loop_iterable",
+            "resource_id",
+            "expression",
+        )
+        return " ".join(
+            str(getattr(step, field, "") or "")
+            for field in fields
+        )
+
+    steps = tuple(getattr(parsed, "pseudocode_steps", ()))
+    dependency_kinds = {"call", "dispatch", "instantiate"}
+    for index, step in enumerate(steps):
+        output = str(getattr(step, "output", "") or "").strip()
+        if not output or getattr(step, "kind", "") not in dependency_kinds:
+            continue
+        later_text = "\n".join(_step_search_text(later_step) for later_step in steps[index + 1 :])
+        if re.search(rf"(?<![A-Za-z0-9_]){re.escape(output)}(?![A-Za-z0-9_])", later_text):
+            continue
+        yield DocstringValidationIssue(
+            path=path,
+            code="docstring.pseudocode-output-unused",
+            message=(
+                f"Pseudocode assigns dependency output '{output}' but no later step uses it. "
+                "Use the output in a following condition, call, construction, dispatch, or return, "
+                "or omit the assignment."
+            ),
+            line=line_no,
+            node_id=node_id,
+        )
+
+
 def validate_module_docstrings(
     module_path: str | Path,
     *,
@@ -1181,7 +1692,7 @@ def validate_module_docstrings(
     effective_check_group = (
         "syntax" if check_group == "all" and _is_repo_test_module(path) else check_group
     )
-    schema_rules = load_docstring_schema()
+    schema_rules = _apply_docstring_profiles(load_docstring_schema(), path)
     effective_allow_cross_file = (
         allow_cross_file_ownership and schema_rules.callable.ownership.cross_file_enabled
     )
@@ -1237,4 +1748,14 @@ def validate_module_docstrings(
                 )
             )
 
-    return tuple(issues)
+    issues.extend(
+        _iter_repeated_template_issues(
+            path,
+            tree,
+            include_nested=include_nested,
+            include_private=include_private,
+            schema_rules=schema_rules,
+        )
+    )
+
+    return _dedupe_docstring_issues(issues)

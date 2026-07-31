@@ -14,7 +14,7 @@
 #   `docstring_format_version` should be bumped whenever this policy shape
 #   changes in a way that can affect docstring quality checks.
 #   `name` is used as an identifier in diagnostics and docs.
-docstring_format_version: 24
+docstring_format_version: 27
 # Stable contract identifier used by tooling outputs and diagnostics.
 name: docstring_format
 # If true, required settings are enforced and surface as warnings.
@@ -44,16 +44,43 @@ callable:
     - "placeholder"
     - "implement me"
     - "to be implemented"
+    - "documents the certifier control point"
+    - "repo-visible dependencies"
+    - "performs or represents the certification operation described by its inputs and outputs"
+    - "operation described by its inputs and outputs"
+    - "data carried between certification stages"
+    - "handles certification data or control flow for this module"
+  forbidden_intent_phrases:
+    - "dependency declarations that the docstring graph can parse"
+    - "docstring graph can parse"
+    - "static dependency validation"
+    - "compact docstrings whose declared calls and constructors stay aligned"
+    - "operation described by its inputs and outputs"
+    - "data carried between certification stages"
+    - "boundary keeps its certification responsibility separate from adjacent repository steps"
   forbidden_rationale_phrases:
     - "this callable exists to implement the behavior described in its contract documentation"
     - "this callable exists to implement the behavior described in the contract documentation"
     - "implemented as described in the contract documentation"
     - "implemented as described in contract documentation"
     - "callable semantics explicit and auditable"
+    - "dependency declarations that the docstring graph can parse"
+    - "docstring graph can parse"
+    - "static dependency validation"
+    - "compact docstrings whose declared calls and constructors stay aligned"
+    - "operation described by its inputs and outputs"
+    - "combines repository evidence and helper results to produce or validate certification state"
+    - "keeps repository evidence checks separate from payload assembly and signing"
   forbidden_pseudocode_phrases:
     - "execute the implementation steps described in source code"
     - "implementation steps described in source code"
     - "same as source code"
+    - "return result"
+    - "immutable_record = constructor_fields"
+    - "value = @"
+    - "out = @"
+    - "(args)"
+    - "(state)"
 
   # Sections that must be present for every validated callable docstring.
   # `Intent` is the behavioral goal, and `Rationale` is the reason it does it
@@ -77,37 +104,82 @@ callable:
     - Raises
     - Attributes
     - Pseudocode
-    - CallsFromModule
-    - InstantiationsFromModule
+    - Resources
+    - Dataflow
+    - CallsFromRepo
+    - InstantiationsFromRepo
+    - Dispatches
 
   pseudocode:
     section: Pseudocode
     min_steps: 1
-    max_steps: 8
+    max_steps: 16
     max_step_chars: 140
     max_total_chars: 640
-  dependency_reference_sections:
-    - Pseudocode
-  # Dependency references in pseudocode are explicit markers.
-  # Supported forms:
-  #   - ``@name``
-  #   - ``@name(...)``
-  #   - ``@SectionName:name``
-  #   - ``@SectionName:name(...)``
+  # Strict Pseudocode is a compact execution sketch language, not prose.
+  # Use @ref(args) for CallsFromRepo, #ref(args) for Dispatches, and
+  # ConstructorName(args) in assignment/raise for InstantiationsFromRepo.
+  dependency_reference_sections: []
 
   # Separate sections for what this callable consumes from module scope.
   module_dependencies:
-    calls_section: CallsFromModule
-    instantiates_section: InstantiationsFromModule
+    calls_section: CallsFromRepo
+    instantiates_section: InstantiationsFromRepo
+    dispatches_section: Dispatches
     allow_implicit: true
+    allow_legacy_flat: false
+    require_why: true
+    dependency_why:
+      allow_legacy_string: false
+      misc_min_chars: 80
+      actions:
+      - reads
+      - writes
+      - transforms
+      - validates
+      - constructs
+      - dispatches
+      - serializes
+      - parses
+      - computes
+      - orchestrates
+      - raises
+      - misc
+    pseudocode_quality:
+      forbidden_variables:
+      - value
+      - out
+      - state
+      - args
+      - data
+      require_assigned_dependency_output_use: false
+    repeated_template_detection:
+      enabled: false
+      min_repetitions: 3
+      min_normalized_chars: 40
     validate_declared_calls: true
     validate_declared_instantiations: true
+    validate_declared_dispatches: true
     report_unlisted_calls: true
     report_unlisted_instantiations: true
     ignore_non_external: true
     validate_dependency_targets_resolved: true
     enforce_declared_dependency_pseudocode_coverage: false
     enforce_observed_dependency_pseudocode_coverage: false
+    forbidden_why_phrases:
+    - observed call dependency
+    - observed constructor dependency
+    - observed dependency
+    - docstring graph can parse
+    - repo-visible dependencies
+    - static dependency validation
+    - provides the named helper operation needed by function
+    - supplies the dependency result used by function
+    - to complete its certification step
+    - creates the value or error object required by function
+    - creates the value or error object required by method
+    - creates the typed object needed to carry this operation's structured result or failure
+    - checks the relevant certification invariant before the next phase proceeds
 
   # Wrapper-exposure policy for ``Wraps`` entries.
   # Accepted example:
@@ -172,7 +244,84 @@ module:
 # Checks are enforced by checker code; this catalog is for reviewer orientation.
 check_categories:
   formatting:
-    - docstring.formatting
+    - code: docstring.formatting
+      intent: Generic parser/syntax-level warning bucket.
+    - code: docstring.empty
+      intent: Docstring body is empty.
+    - code: docstring.invalid-owns
+      intent: Owns section is malformed.
+    - code: docstring.owns-too-many
+      intent: Too many ownership declarations were provided.
+    - code: docstring.invalid-edge
+      intent: Edge expression does not match expected syntax.
+    - code: docstring.invalid-section
+      intent: Docstring section header is malformed or unknown.
+    - code: docstring.invalid-section-header
+      intent: Known section was written as a YAML key instead of a docstring section header.
+    - code: docstring.duplicate-section
+      intent: Duplicate section declaration was found.
+    - code: docstring.invalid-wraps
+      intent: Wraps line could not be parsed.
+    - code: docstring.invalid-module-dependency
+      intent: Dependency declaration tree or legacy dependency reference cannot be parsed.
+    - code: docstring.invalid-resource
+      intent: Resources section declaration cannot be parsed or lacks required fields.
+    - code: docstring.invalid-dataflow
+      intent: Dataflow section declaration cannot be parsed or lacks required fields.
+    - code: docstring.absolute-dependency-not-allowed
+      intent: Dependency path/id is neither leading-dot relative nor rooted in config.allowed_abs.
+    - code: docstring.dependency-why-forbidden
+      intent: Dependency rationale uses placeholder wording instead of explaining semantic purpose.
+    - code: docstring.dependency-why-action
+      intent: Dependency rationale lacks exactly one graphable action key.
+    - code: docstring.repeated-template
+      intent: Repeated normalized prose template appears across callable docstrings.
+    - code: docstring.invalid-pseudocode
+      intent: Pseudocode line is not in a parser-recognized format.
+    - code: docstring.pseudocode-control-empty
+      intent: Pseudocode control line has no indented body.
+    - code: docstring.pseudocode-else-unmatched
+      intent: Pseudocode else block does not immediately follow a matching if block.
+    - code: docstring.pseudocode-loop-control-outside-loop
+      intent: Pseudocode break/continue appears outside a for/while block.
+    - code: docstring.pseudocode-ref-unresolved
+      intent: Typed pseudocode dependency ref matches no declared dependency.
+    - code: docstring.pseudocode-ref-ambiguous
+      intent: Typed pseudocode dependency ref matches multiple declared dependencies.
+    - code: docstring.pseudocode-resource-unresolved
+      intent: Pseudocode read/write references an undeclared resource.
+    - code: docstring.pseudocode-placeholder-variable
+      intent: Pseudocode dependency output uses a generic placeholder variable.
+    - code: docstring.pseudocode-placeholder-argument
+      intent: Pseudocode dependency call uses generic placeholder inputs.
+    - code: docstring.pseudocode-output-unused
+      intent: Pseudocode dependency output is not used by later pseudocode.
+    - code: docstring.pseudocode-step-min
+      intent: Pseudocode has too few steps.
+    - code: docstring.pseudocode-step-length
+      intent: Pseudocode step is too long.
+    - code: docstring.pseudocode-step-cap
+      intent: Too many pseudocode steps.
+    - code: docstring.pseudocode-total-length
+      intent: Total pseudocode block is too long.
+    - code: docstring.section-missing
+      intent: A required docstring section is missing.
+    - code: docstring.summary-missing
+      intent: Summary text is missing.
+    - code: docstring.summary-forbidden
+      intent: Summary contains placeholder or prohibited phrasing.
+    - code: docstring.intent-forbidden
+      intent: Intent contains placeholder, tooling-facing, or prohibited phrasing.
+    - code: docstring.summary-length
+      intent: Summary length is outside the configured bounds.
+    - code: docstring.rationale-forbidden
+      intent: Rationale contains placeholder or prohibited phrasing.
+    - code: docstring.rationale-length
+      intent: Rationale length is outside the configured bounds.
+    - code: docstring.pseudocode-forbidden
+      intent: Pseudocode uses placeholder or prohibited phrasing.
+    - code: docstring.missing-graphpipeline
+      intent: Pipeline docstring block is required but missing.
   behavioral:
     - code: docstring.invalid-wraps
       intent: Wraps line could not be parsed.
@@ -190,6 +339,20 @@ check_categories:
       intent: Observed dependency is not declared in docs.
     - code: docstring.module-dependency-unresolved
       intent: Declared dependency cannot be resolved to imports/local symbols.
+    - code: docstring.dependency-why-forbidden
+      intent: Dependency rationale uses placeholder wording instead of explaining semantic purpose.
+    - code: docstring.pseudocode-ref-unresolved
+      intent: Typed pseudocode dependency ref matches no declared dependency.
+    - code: docstring.pseudocode-ref-ambiguous
+      intent: Typed pseudocode dependency ref matches multiple declared dependencies.
+    - code: docstring.pseudocode-resource-unresolved
+      intent: Pseudocode read/write references an undeclared resource.
+    - code: docstring.dispatch-not-observed
+      intent: Declared dispatch id is not seen in dispatcher call literals.
+    - code: docstring.dispatch-undocumented
+      intent: Observed dispatcher call literal is not declared in Dispatches.
+    - code: docstring.dispatch-unresolved
+      intent: Declared dispatch id does not match a known public interface id.
     - code: docstring.wraps-incomplete
       intent: Wraps entry lacks required semantic details.
     - code: docstring.wraps-unresolved-target
