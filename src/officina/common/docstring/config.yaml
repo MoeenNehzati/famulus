@@ -27,6 +27,26 @@ dependency_why:
     - orchestrates
     - raises
     - misc
+  section_actions:
+    calls:
+      - reads
+      - writes
+      - validates
+      - parses
+      - computes
+      - orchestrates
+      - transforms
+      - dispatches
+      - serializes
+      - misc
+    instantiations:
+      - constructs
+      - raises
+      - transforms
+      - serializes
+      - misc
+    dispatches:
+      - dispatches
 
 pseudocode_quality:
   forbidden_variables:

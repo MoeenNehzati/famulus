@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Compatibility alias for the renamed docstring policy module."""
+"""Deprecated compatibility alias for ``docstring_policy``.
+
+New internal code should import policy dataclasses and loaders from
+``officina.common.docstring.docstring_policy``. This module remains only so
+older callers that import ``docstring_schema`` continue to receive the same
+objects.
+"""
 
 from __future__ import annotations
 

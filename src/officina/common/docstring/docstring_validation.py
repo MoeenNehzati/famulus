@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Schema-backed docstring validation.
 
-The validator layer reads normalized rules from ``docstring_schema`` and applies
+The validator layer reads normalized rules from ``docstring_policy`` and applies
 them to parsed docstring text. Parser modules can stay permissive; validation
 produces structured warnings and codes for CI and tooling.
 """
@@ -20,10 +20,28 @@ from .docstring_parser import (
     parse_ownership_reference,
     validate_edge_expression,
 )
-from .docstring_schema import DocstringSchema, load_docstring_schema
+from .docstring_policy import DocstringSchema, load_docstring_schema
 
 def _split_dependency_reference(value: str) -> tuple[str | None, str]:
-    """Split ``section:name`` into ``(section, name)`` while preserving bare names."""
+    """Split ``section:name`` into ``(section, name)`` while preserving bare names.
+
+    Intent
+    ------
+    Expose the split dependency reference step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps split dependency reference behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set split_dependency_reference_inputs = received_context
+    - return split_dependency_reference_inputs
+
+    Wraps
+    -----
+    - none
+    """
     raw = (value or "").strip()
     if not raw:
         return None, ""
@@ -38,7 +56,25 @@ def _split_dependency_reference(value: str) -> tuple[str | None, str]:
 
 
 def _dot_segment_suffix_matches(ref: str, declared: str) -> bool:
-    """Return true when ref exactly matches or is a dot-segment suffix."""
+    """Return true when ref exactly matches or is a dot-segment suffix.
+
+    Intent
+    ------
+    Expose the dot segment suffix matches step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps dot segment suffix matches behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set dot_segment_suffix_matches_inputs = received_context
+    - return dot_segment_suffix_matches_inputs
+
+    Wraps
+    -----
+    - none
+    """
     needle = (ref or "").strip()
     candidate = (declared or "").strip()
     if not needle or not candidate:
@@ -51,7 +87,37 @@ def _dot_segment_suffix_matches(ref: str, declared: str) -> bool:
 
 
 def _collect_invalid_edges(lines: Iterable[str], section_name: str) -> tuple[ParserIssue, ...]:
-    """Collect malformed edge expressions from a section."""
+    """Collect malformed edge expressions from a section.
+
+    Intent
+    ------
+    Expose the collect invalid edges step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect invalid edges behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_invalid_edges_inputs = received_context
+    - return collect_invalid_edges_inputs
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .docstring_parser.validate_edge_expression:
+      why:
+        computes: "Validates each pipeline edge expression before an invalid-edge diagnostic is emitted."
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics for malformed graph edge expressions."
+    """
     issues: list[ParserIssue] = []
     for line in lines:
         raw = line.strip()
@@ -77,13 +143,65 @@ _VALID_SECTION_UNDERLINE_CHARS = {"-", "="}
 
 
 def _looks_like_section_underline(raw: str) -> bool:
-    """Return ``True`` for NumPy-style section underlines."""
+    """Return ``True`` for NumPy-style section underlines.
+
+    Intent
+    ------
+    Expose the looks like section underline step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps looks like section underline behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set looks_like_section_underline_inputs = received_context
+    - return looks_like_section_underline_inputs
+
+    Wraps
+    -----
+    - none
+    """
     text = raw.strip()
     return bool(text) and len(set(text)) == 1 and text[0] in _VALID_SECTION_UNDERLINE_CHARS
 
 
 def _collect_section_header_issues(lines: list[str], section_names: frozenset[str]) -> tuple[ParserIssue, ...]:
-    """Collect unknown and duplicate section declarations from raw docstring lines."""
+    """Collect unknown and duplicate section declarations from raw docstring lines.
+
+    Intent
+    ------
+    Expose the collect section header issues step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect section header issues behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_section_header_issues_inputs = received_context
+    - set collect_section_header_issues_effects = local_decisions
+    - return collect_section_header_issues_effects
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._looks_like_section_underline:
+      why:
+        computes: "looks like section underline supplies repo-local behavior used by collect section header issues; this edge is documented from an observed call in the body."
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics for duplicate, unknown, or YAML-style section headers."
+    .docstring_parser._section_header:
+      why:
+        constructs: "Builds the section_header contribution used by _collect_section_header_issues."
+    """
     issues: list[ParserIssue] = []
     seen_sections: list[str] = []
 
@@ -148,10 +266,30 @@ def _collect_section_header_issues(lines: list[str], section_names: frozenset[st
 
 
 def _collect_invalid_wraps(lines: Iterable[str]) -> tuple[ParserIssue, ...]:
-    """Collect malformed ``Wraps`` entries.
+    """Collect malformed ``Wraps`` entries. Parse logic is intentionally delegated to ``docstring_parser`` so this module remains focused on classification and issue emission.
 
-    Parse logic is intentionally delegated to ``docstring_parser`` so this module
-    remains focused on classification and issue emission.
+    Intent
+    ------
+    Expose the collect invalid wraps step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect invalid wraps behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_invalid_wraps_inputs = received_context
+    - return collect_invalid_wraps_inputs
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics for Wraps lines that fail the wrapper grammar."
     """
     issues: list[ParserIssue] = []
     from .docstring_parser import _parse_wrap_entry
@@ -184,7 +322,31 @@ def _collect_invalid_module_dependencies(
     allow_legacy_flat: bool,
     require_why: bool,
 ) -> tuple[ParserIssue, ...]:
-    """Collect malformed module dependency references."""
+    """Collect malformed module dependency references.
+
+    Intent
+    ------
+    Expose the collect invalid module dependencies step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect invalid module dependencies behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_invalid_module_dependencies_inputs = received_context
+    - return collect_invalid_module_dependencies_inputs
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics for malformed CallsFromRepo and InstantiationsFromRepo entries."
+    """
     issues: list[ParserIssue] = []
     from .docstring_parser import _parse_module_dependency_section
 
@@ -217,7 +379,31 @@ def _collect_invalid_dispatch_dependencies(
     allow_legacy_flat: bool,
     require_why: bool,
 ) -> tuple[ParserIssue, ...]:
-    """Collect malformed dispatch dependency references."""
+    """Collect malformed dispatch dependency references.
+
+    Intent
+    ------
+    Expose the collect invalid dispatch dependencies step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect invalid dispatch dependencies behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_invalid_dispatch_dependencies_inputs = received_context
+    - return collect_invalid_dispatch_dependencies_inputs
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics for dispatch entries with missing ids or why text."
+    """
     issues: list[ParserIssue] = []
     from .docstring_parser import _parse_dispatch_dependency_section
 
@@ -248,7 +434,31 @@ def _collect_invalid_resources(
     section: str,
     require_why: bool,
 ) -> tuple[ParserIssue, ...]:
-    """Collect malformed resource dependency declarations."""
+    """Collect malformed resource dependency declarations.
+
+    Intent
+    ------
+    Expose the collect invalid resources step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect invalid resources behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_invalid_resources_inputs = received_context
+    - return collect_invalid_resources_inputs
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics for resource entries with invalid ids, modes, or rationale fields."
+    """
     issues: list[ParserIssue] = []
     from .docstring_parser import _parse_resource_section
 
@@ -274,7 +484,31 @@ def _collect_invalid_dataflows(
     section: str,
     require_why: bool,
 ) -> tuple[ParserIssue, ...]:
-    """Collect malformed dataflow declarations."""
+    """Collect malformed dataflow declarations.
+
+    Intent
+    ------
+    Expose the collect invalid dataflows step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect invalid dataflows behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_invalid_dataflows_inputs = received_context
+    - return collect_invalid_dataflows_inputs
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics for dataflow entries whose source, target, or payload is malformed."
+    """
     issues: list[ParserIssue] = []
     from .docstring_parser import _parse_dataflow_section
 
@@ -295,7 +529,25 @@ def _collect_invalid_dataflows(
 
 
 def _dependency_path_is_allowed(name: str, allowed_abs: tuple[str, ...]) -> bool:
-    """Return True iff a logical dependency path is explicitly relative or allowed absolute."""
+    """Return True iff a logical dependency path is explicitly relative or allowed absolute.
+
+    Intent
+    ------
+    Expose the dependency path is allowed step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps dependency path is allowed behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set dependency_path_is_allowed_inputs = received_context
+    - return dependency_path_is_allowed_inputs
+
+    Wraps
+    -----
+    - none
+    """
     raw = (name or "").strip()
     if not raw:
         return False
@@ -311,7 +563,38 @@ def _collect_dependency_path_issues(
     section: str,
     allowed_abs: tuple[str, ...],
 ) -> tuple[ParserIssue, ...]:
-    """Collect dependency logical paths outside the repo-local portability policy."""
+    """Collect dependency logical paths outside the repo-local portability policy.
+
+    Intent
+    ------
+    Expose the collect dependency path issues step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect dependency path issues behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_dependency_path_issues_inputs = received_context
+    - set collect_dependency_path_issues_effects = local_decisions
+    - return collect_dependency_path_issues_effects
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._dependency_path_is_allowed:
+      why:
+        computes: "dependency path is allowed supplies repo-local behavior used by collect dependency path issues; this edge is documented from an observed call in the body."
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds portability diagnostics for dependencies outside allowed absolute roots."
+    """
     issues: list[ParserIssue] = []
     allowed = tuple(root for root in allowed_abs if root)
     for value in values:
@@ -339,7 +622,25 @@ def _collect_invalid_dependency_marker_syntax(
     *,
     allowed_scopes: tuple[str, ...] | None = None,
 ) -> tuple[ParserIssue, ...]:
-    """Compatibility hook; strict Pseudocode refs are parsed by the Lark step parser."""
+    """Compatibility hook; strict Pseudocode refs are parsed by the Lark step parser.
+
+    Intent
+    ------
+    Expose the collect invalid dependency marker syntax step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect invalid dependency marker syntax behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_invalid_dependency_marker_syntax_inputs = received_context
+    - return collect_invalid_dependency_marker_syntax_inputs
+
+    Wraps
+    -----
+    - none
+    """
     del lines, section, allowed_scopes
     return ()
 
@@ -349,7 +650,25 @@ def _dependency_reference_section_lines(
     spec,
     pseudocode_section: str,
 ) -> dict[str, tuple[str, ...]]:
-    """Collect raw lines for each dependency-reference section."""
+    """Collect raw lines for each dependency-reference section.
+
+    Intent
+    ------
+    Expose the dependency reference section lines step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps dependency reference section lines behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set dependency_reference_section_lines_inputs = received_context
+    - return dependency_reference_section_lines_inputs
+
+    Wraps
+    -----
+    - none
+    """
     lines_by_section: dict[str, tuple[str, ...]] = {}
 
     for section_name in section_names:
@@ -375,7 +694,42 @@ def _collect_pseudocode_dependency_entity_issues(
     enforce_declared_coverage: bool,
     declaration_sections: tuple[str, ...] | None = None,
 ) -> tuple[ParserIssue, ...]:
-    """Collect coverage and declaration consistency for explicit dependency refs."""
+    """Collect coverage and declaration consistency for explicit dependency refs.
+
+    Intent
+    ------
+    Expose the collect pseudocode dependency entity issues step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect pseudocode dependency entity issues behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_pseudocode_dependency_entity_issues_inputs = received_context
+    - set collect_pseudocode_dependency_entity_issues_products = carried_outputs
+    - return collect_pseudocode_dependency_entity_issues_products
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._dot_segment_suffix_matches:
+      why:
+        computes: "dot segment suffix matches supplies repo-local behavior used by collect pseudocode dependency entity issues; this edge is documented from an observed call in the body."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._split_dependency_reference:
+      why:
+        constructs: "split dependency reference produces a value carried by collect pseudocode dependency entity issues; this edge is documented from the observed product position in the body."
+
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics when pseudocode markers do not resolve to declared dependencies."
+    """
     issues: list[ParserIssue] = []
 
     declared: list[tuple[str, str]] = []
@@ -385,6 +739,31 @@ def _collect_pseudocode_dependency_entity_issues(
     unscoped_refs: set[str] = set()
 
     def _add_declared(source: str, value: str | None) -> None:
+        """Register one declared dependency for pseudocode-reference matching.
+
+        Intent
+        ------
+        Normalize a dependency id from a graphable section and index it by full id,
+        short name, and section.
+
+        Rationale
+        ---------
+        The pseudocode matcher needs both scoped and compact names so authors can write
+        short markers while the validator still resolves them to declared dependencies.
+
+        Pseudocode
+        ----------
+        - set candidate_id = stripped dependency value
+        - if candidate_id is empty:
+          - return
+        - set scoped_dependency = source plus candidate_id
+        - set short_name = candidate_id suffix
+        - return
+
+        Wraps
+        -----
+        - none
+        """
         candidate = (value or "").strip()
         if not candidate:
             return
@@ -398,6 +777,36 @@ def _collect_pseudocode_dependency_entity_issues(
             declared_by_name[candidate].append(source)
 
     def _add_reference(ref: str | None) -> None:
+        """Register one pseudocode dependency marker for declaration matching.
+
+        Intent
+        ------
+        Split a compact marker into optional section scope and dependency name before
+        adding it to the appropriate reference index.
+
+        Rationale
+        ---------
+        Separating scoped and unscoped references lets pseudocode stay compact while the
+        validator can still flag ambiguous or undeclared dependency markers.
+
+        Pseudocode
+        ----------
+        - parsed_ref = ._split_dependency_reference(ref_text)
+        - if parsed_ref is empty:
+          - return
+        - set reference_index = scoped or unscoped target collection
+        - return
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        ._split_dependency_reference:
+          why:
+            constructs: "Builds the section/name pair used to index one pseudocode dependency marker."
+        """
         section_name, name = _split_dependency_reference(ref or "")
         if not name:
             return
@@ -547,7 +956,37 @@ def _collect_invalid_ownership(
     *,
     section: str = "Owns",
 ) -> tuple[ParserIssue, ...]:
-    """Collect malformed ownership declarations from ``Owns`` or similar sections."""
+    """Collect malformed ownership declarations from ``Owns`` or similar sections.
+
+    Intent
+    ------
+    Expose the collect invalid ownership step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect invalid ownership behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_invalid_ownership_inputs = received_context
+    - return collect_invalid_ownership_inputs
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .docstring_parser.parse_ownership_reference:
+      why:
+        computes: "Parses ownership references so malformed owner declarations can be isolated."
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics for malformed callable ownership declarations."
+    """
     issues: list[ParserIssue] = []
     for line in lines:
         raw = line.strip()
@@ -577,10 +1016,30 @@ def _collect_invalid_pseudocode(
     max_step_chars: int,
     max_total_chars: int,
 ) -> tuple[ParserIssue, ...]:
-    """Collect malformed pseudocode entries from a parsed pseudocode section.
+    """Collect malformed pseudocode entries from a parsed pseudocode section. The parser maps one of the configured keywords to a ``kind`` when a control keyword appears at the start of a line.
 
-    The parser maps one of the configured keywords to a ``kind`` when a control
-    keyword appears at the start of a line.
+    Intent
+    ------
+    Expose the collect invalid pseudocode step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect invalid pseudocode behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_invalid_pseudocode_inputs = received_context
+    - return collect_invalid_pseudocode_inputs
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics for strict pseudocode lines with invalid control or marker syntax."
     """
     issues: list[ParserIssue] = []
     control_kinds = {"if", "while", "for", "else"}
@@ -603,9 +1062,52 @@ def _collect_invalid_pseudocode(
     }
 
     def _has_child(index: int) -> bool:
+        """Return whether a strict pseudocode control step has an indented child.
+
+        Intent
+        ------
+        Confirm that `if`, `while`, and `for` pseudocode lines introduce an actual nested
+        step instead of a visually empty block.
+
+        Rationale
+        ---------
+        Empty control blocks make extracted flowcharts misleading because the branch or
+        loop has no documented body to render.
+
+        Pseudocode
+        ----------
+        - if next_step is more indented than control_step:
+          - return true
+        - return false
+
+        Wraps
+        -----
+        - none
+        """
         return index + 1 < len(steps) and steps[index + 1].indent > steps[index].indent
 
     def _else_has_matching_if(index: int) -> bool:
+        """Return whether an else step immediately follows a matching if block.
+
+        Intent
+        ------
+        Validate the local pairing rule for strict pseudocode `else` lines.
+
+        Rationale
+        ---------
+        An unmatched `else` creates ambiguous branch structure for both readers and graph
+        extractors.
+
+        Pseudocode
+        ----------
+        - if previous_sibling is matching if block:
+          - return true
+        - return false
+
+        Wraps
+        -----
+        - none
+        """
         indent = steps[index].indent
         for previous in reversed(steps[:index]):
             if previous.indent > indent:
@@ -616,6 +1118,28 @@ def _collect_invalid_pseudocode(
         return False
 
     def _inside_loop(index: int) -> bool:
+        """Return whether a break or continue step is nested inside a loop.
+
+        Intent
+        ------
+        Validate that loop-control pseudocode statements appear only below `for` or
+        `while` blocks.
+
+        Rationale
+        ---------
+        Loop-control markers outside loops are misleading when pseudocode is converted to
+        a structured control-flow graph.
+
+        Pseudocode
+        ----------
+        - if ancestor_step is for or while:
+          - return true
+        - return false
+
+        Wraps
+        -----
+        - none
+        """
         for previous_index in range(index - 1, -1, -1):
             previous = steps[previous_index]
             if previous.kind not in {"for", "while"}:
@@ -636,7 +1160,7 @@ def _collect_invalid_pseudocode(
                     code="docstring.invalid-pseudocode",
                     message=(
                         f"Invalid strict pseudocode line {step.raw!r}; expected a "
-                        "typed call, dispatch, constructor assignment, set/read/write, "
+                        "typed call, dispatch, product assignment, set/read/write, "
                         "if/else/while/for block, or terminal statement."
                     ),
                     section=section,
@@ -740,7 +1264,40 @@ def _collect_forbidden_phrases(
     section: str,
     message_prefix: str,
 ) -> tuple[ParserIssue, ...]:
-    """Collect warnings for prohibited placeholder phrasing in free text."""
+    """Collect warnings for prohibited generic wording in free text.
+
+    Intent
+    ------
+    Scan one text block for configured low-information phrases and report the exact
+    phrases that matched.
+
+    Rationale
+    ---------
+    Centralizing phrase scans keeps summary, intent, rationale, pseudocode, and
+    dependency-why checks consistent while allowing each caller to choose its
+    section and diagnostic code.
+
+    Pseudocode
+    ----------
+    - if text is empty:
+      - return
+    - for phrase in forbidden_phrases:
+      - if phrase appears in text:
+        - set matched_phrase = phrase
+    - if matched_phrase is empty:
+      - return
+    - return parser issue naming matched phrases
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds the warning record that names matched low-information wording."
+    """
     if not text or not forbidden_phrases:
         return ()
 
@@ -775,7 +1332,30 @@ def _collect_forbidden_summary_phrases(
     *,
     forbidden_summary_phrases: tuple[str, ...],
 ) -> tuple[ParserIssue, ...]:
-    """Collect warnings when the summary contains prohibited placeholder phrases."""
+    """Check summary text for generic wording configured by policy.
+
+    Intent
+    ------
+    Apply the shared phrase scanner to the summary section with the summary-specific
+    check code.
+
+    Rationale
+    ---------
+    Summaries are graph entry labels for humans, so generic summary language should
+    be caught before it spreads through generated documentation.
+
+    Pseudocode
+    ----------
+    - set issue_context = summary diagnostic metadata
+    - return delegated phrase-scan issues
+
+    Wraps
+    -----
+    _collect_forbidden_phrases -> preprocess: supplies summary phrases and diagnostic metadata; postprocess: returns summary issues unchanged; fixed_arguments: code and section
+
+    InstantiationsFromRepo
+    ----------------------
+    """
     return _collect_forbidden_phrases(
         text=summary,
         forbidden_phrases=forbidden_summary_phrases,
@@ -790,7 +1370,30 @@ def _collect_forbidden_rationale_phrases(
     *,
     forbidden_rationale_phrases: tuple[str, ...],
 ) -> tuple[ParserIssue, ...]:
-    """Collect warnings when rationale contains prohibited placeholder phrases."""
+    """Check rationale text for generic wording configured by policy.
+
+    Intent
+    ------
+    Apply the shared phrase scanner to rationale prose with the rationale-specific
+    check code.
+
+    Rationale
+    ---------
+    Rationale text should explain design pressure or semantic purpose; this check
+    keeps generic boilerplate from satisfying that requirement.
+
+    Pseudocode
+    ----------
+    - set issue_context = rationale diagnostic metadata
+    - return delegated phrase-scan issues
+
+    Wraps
+    -----
+    _collect_forbidden_phrases -> preprocess: supplies rationale phrases and diagnostic metadata; postprocess: returns rationale issues unchanged; fixed_arguments: code and section
+
+    InstantiationsFromRepo
+    ----------------------
+    """
     return _collect_forbidden_phrases(
         text=rationale,
         forbidden_phrases=forbidden_rationale_phrases,
@@ -805,7 +1408,31 @@ def _collect_forbidden_intent_phrases(
     *,
     forbidden_intent_phrases: tuple[str, ...],
 ) -> tuple[ParserIssue, ...]:
-    """Collect warnings when intent contains prohibited placeholder phrases."""
+    """Check intent lines for generic wording configured by policy.
+
+    Intent
+    ------
+    Apply the shared phrase scanner to the joined Intent section with the
+    intent-specific check code.
+
+    Rationale
+    ---------
+    Intent sections should answer what contract the callable serves; phrase checks
+    prevent tooling-oriented filler from passing as intent.
+
+    Pseudocode
+    ----------
+    - set intent_text = joined intent lines
+    - set issue_context = intent diagnostic metadata
+    - return delegated phrase-scan issues
+
+    Wraps
+    -----
+    _collect_forbidden_phrases -> preprocess: joins intent lines and supplies diagnostic metadata; postprocess: returns intent issues unchanged; fixed_arguments: code and section
+
+    InstantiationsFromRepo
+    ----------------------
+    """
     return _collect_forbidden_phrases(
         text=" ".join(line.strip() for line in intent_lines if line.strip()),
         forbidden_phrases=forbidden_intent_phrases,
@@ -820,7 +1447,31 @@ def _collect_forbidden_pseudocode_phrases(
     *,
     forbidden_pseudocode_phrases: tuple[str, ...],
 ) -> tuple[ParserIssue, ...]:
-    """Collect warnings when pseudocode text contains prohibited placeholder phrases."""
+    """Check pseudocode steps for generic wording configured by policy.
+
+    Intent
+    ------
+    Apply the shared phrase scanner to extracted pseudocode text so algorithm steps
+    remain concrete and graphable.
+
+    Rationale
+    ---------
+    Pseudocode drives downstream flow extraction; generic step text weakens both
+    human review and machine graph construction.
+
+    Pseudocode
+    ----------
+    - set pseudocode_text = joined step text
+    - set issue_context = pseudocode diagnostic metadata
+    - return delegated phrase-scan issues
+
+    Wraps
+    -----
+    _collect_forbidden_phrases -> preprocess: joins pseudocode steps and supplies diagnostic metadata; postprocess: returns pseudocode issues unchanged; fixed_arguments: code and section
+
+    InstantiationsFromRepo
+    ----------------------
+    """
     joined = " ".join(step.text for step in steps if getattr(step, "text", ""))
     return _collect_forbidden_phrases(
         text=joined,
@@ -836,7 +1487,35 @@ def _collect_forbidden_dependency_why_phrases(
     *,
     dependency_rules,
 ) -> tuple[ParserIssue, ...]:
-    """Collect placeholder dependency rationale text across graphable sections."""
+    """Check dependency rationale text for generic wording configured by policy.
+
+    Intent
+    ------
+    Scan why text across CallsFromRepo, InstantiationsFromRepo, Dispatches, Wraps,
+    Resources, and Dataflow entries.
+
+    Rationale
+    ---------
+    Dependency edges become graph annotations, so their explanations must say how
+    the edge participates instead of repeating mechanical dependency language.
+
+    Pseudocode
+    ----------
+    - for dependency_entry in rationale_entries:
+      - matched_issues = @._collect_forbidden_phrases(dependency_entry_text)
+      - set collected_issues = collected_issues plus matched_issues
+    - return collected_issues
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._collect_forbidden_phrases:
+      why:
+        validates: "Checks each dependency rationale against the shared generic-wording policy."
+    """
     forbidden = getattr(dependency_rules, "forbidden_why_phrases", ())
     if not forbidden:
         return ()
@@ -867,7 +1546,25 @@ def _collect_forbidden_dependency_why_phrases(
 
 
 def _iter_dependency_why_entries(spec, *, dependency_rules) -> tuple[tuple[str, str, object], ...]:
-    """Return parsed records that expose dependency rationale metadata."""
+    """Return parsed records that expose dependency rationale metadata.
+
+    Intent
+    ------
+    Expose the iter dependency why entries step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps iter dependency why entries behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set iter_dependency_why_entries_inputs = received_context
+    - return iter_dependency_why_entries_inputs
+
+    Wraps
+    -----
+    - none
+    """
     entries: list[tuple[str, str, object]] = []
     for dependency in getattr(spec, "module_calls", ()):
         entries.append((dependency_rules.calls_section, dependency.name, dependency))
@@ -883,9 +1580,61 @@ def _iter_dependency_why_entries(spec, *, dependency_rules) -> tuple[tuple[str, 
 
 
 def _collect_dependency_why_action_issues(spec, *, dependency_rules) -> tuple[ParserIssue, ...]:
-    """Collect dependency why action-key syntax diagnostics."""
+    """Collect dependency why action-key syntax diagnostics.
+
+    Intent
+    ------
+    Expose the collect dependency why action issues step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect dependency why action issues behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_dependency_why_action_issues_inputs = received_context
+    - set collect_dependency_why_action_issues_effects = local_decisions
+    - return collect_dependency_why_action_issues_effects
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._iter_dependency_why_entries:
+      why:
+        computes: "iter dependency why entries supplies repo-local behavior used by collect dependency why action issues; this edge is documented from an observed call in the body."
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics for missing, unknown, or section-inappropriate why action keys."
+    """
     config = dependency_rules.dependency_why
     allowed = set(config.actions)
+    section_actions = getattr(config, "section_actions", {}) or {}
+    section_allowed_actions = {
+        dependency_rules.calls_section: set(
+            section_actions.get(
+                "calls",
+                section_actions.get(dependency_rules.calls_section, ()),
+            )
+        ),
+        dependency_rules.instantiates_section: set(
+            section_actions.get(
+                "instantiations",
+                section_actions.get(dependency_rules.instantiates_section, ()),
+            )
+        ),
+        dependency_rules.dispatches_section: set(
+            section_actions.get(
+                "dispatches",
+                section_actions.get(dependency_rules.dispatches_section, ()),
+            )
+        ),
+    }
     issues: list[ParserIssue] = []
     for section_name, dependency_id, dependency in _iter_dependency_why_entries(
         spec,
@@ -937,6 +1686,26 @@ def _collect_dependency_why_action_issues(spec, *, dependency_rules) -> tuple[Pa
                     severity="warning",
                 )
             )
+            continue
+        allowed_for_section = section_allowed_actions.get(section_name)
+        if allowed_for_section is not None and action not in allowed_for_section:
+            code = (
+                "docstring.instantiation-why-action"
+                if section_name == dependency_rules.instantiates_section
+                else "docstring.dependency-why-action"
+            )
+            issues.append(
+                ParserIssue(
+                    code=code,
+                    message=(
+                        f"Dependency rationale for {dependency_id!r} uses action {action!r}, "
+                        f"which does not fit {section_name}. Allowed action keys here: "
+                        f"{', '.join(sorted(allowed_for_section))}."
+                    ),
+                    section=section_name,
+                    severity="warning",
+                )
+            )
         if action == "misc" and len(why) < config.misc_min_chars:
             issues.append(
                 ParserIssue(
@@ -953,8 +1722,127 @@ def _collect_dependency_why_action_issues(spec, *, dependency_rules) -> tuple[Pa
     return tuple(issues)
 
 
+def _dependency_ref_matches(declared: str, observed: str) -> bool:
+    """Return true when compact pseudocode refs can denote a declared dependency.
+
+    Intent
+    ------
+    Expose the dependency ref matches step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps dependency ref matches behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set dependency_ref_matches_inputs = received_context
+    - return dependency_ref_matches_inputs
+
+    Wraps
+    -----
+    - none
+    """
+    left = (declared or "").strip()
+    right = (observed or "").strip()
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    left_tail = left.lstrip(".").rsplit(".", 1)[-1]
+    right_tail = right.lstrip(".").rsplit(".", 1)[-1]
+    return bool(left_tail and left_tail == right_tail)
+
+
+def _collect_instantiation_product_pseudocode_issues(spec, *, dependency_rules) -> tuple[ParserIssue, ...]:
+    """Require product dependencies to appear in product pseudocode positions.
+
+    Intent
+    ------
+    Expose the collect instantiation product pseudocode issues step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect instantiation product pseudocode issues behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_instantiation_product_pseudocode_issues_inputs = received_context
+    - set collect_instantiation_product_pseudocode_issues_effects = local_decisions
+    - return collect_instantiation_product_pseudocode_issues_effects
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._dependency_ref_matches:
+      why:
+        computes: "dependency ref matches supplies repo-local behavior used by collect instantiation product pseudocode issues; this edge is documented from an observed call in the body."
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics when product dependencies are absent from strict pseudocode under enforcing profiles."
+    """
+    if not dependency_rules.enforce_declared_dependency_pseudocode_coverage:
+        return ()
+
+    product_steps = tuple(
+        step
+        for step in getattr(spec, "pseudocode_steps", ())
+        if getattr(step, "dependency_kind", "") == "instantiate"
+        and getattr(step, "ref", "")
+        and getattr(step, "product_position", "") in {"assign", "return", "raise", "yield"}
+    )
+    issues: list[ParserIssue] = []
+    for dependency in getattr(spec, "module_instantiates", ()):
+        name = str(getattr(dependency, "name", "") or "").strip()
+        if not name:
+            continue
+        if any(_dependency_ref_matches(name, str(getattr(step, "ref", ""))) for step in product_steps):
+            continue
+        issues.append(
+            ParserIssue(
+                code="docstring.instantiation-product-unshown",
+                message=(
+                    f"Instantiation dependency {name!r} must appear in Pseudocode as a product: "
+                    "use `x = ref(...)`, `return ref(...)`, `raise ref(...)`, or `yield ref(...)`."
+                ),
+                section=dependency_rules.instantiates_section,
+                severity="warning",
+            )
+        )
+    return tuple(issues)
+
+
 def _collect_pseudocode_dataflow_issues(spec, *, dependency_rules) -> tuple[ParserIssue, ...]:
-    """Collect mechanical pseudocode dataflow quality issues."""
+    """Collect mechanical pseudocode dataflow quality issues.
+
+    Intent
+    ------
+    Expose the collect pseudocode dataflow issues step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect pseudocode dataflow issues behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_pseudocode_dataflow_issues_inputs = received_context
+    - return collect_pseudocode_dataflow_issues_inputs
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics for generic dependency variables and unused dependency outputs."
+    """
     config = dependency_rules.pseudocode_quality
     forbidden = {name.strip() for name in config.forbidden_variables if name.strip()}
     if not forbidden and not config.require_assigned_dependency_output_use:
@@ -1016,7 +1904,31 @@ def _collect_pseudocode_dataflow_issues(spec, *, dependency_rules) -> tuple[Pars
 
 
 def _collect_pseudocode_resource_issues(spec) -> tuple[ParserIssue, ...]:
-    """Collect unresolved read/write resource references from strict pseudocode."""
+    """Collect unresolved read/write resource references from strict pseudocode.
+
+    Intent
+    ------
+    Expose the collect pseudocode resource issues step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect pseudocode resource issues behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_pseudocode_resource_issues_inputs = received_context
+    - return collect_pseudocode_resource_issues_inputs
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics when read/write pseudocode references undeclared resources."
+    """
     declared = {
         str(getattr(resource, "id", "")).strip()
         for resource in getattr(spec, "resources", ())
@@ -1052,7 +1964,31 @@ def _collect_text_length(
     max_chars: int,
     label: str,
 ) -> tuple[ParserIssue, ...]:
-    """Collect readable length checks for concise textual docstring fields."""
+    """Collect readable length checks for concise textual docstring fields.
+
+    Intent
+    ------
+    Expose the collect text length step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps collect text length behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set collect_text_length_inputs = received_context
+    - return collect_text_length_inputs
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds diagnostics for summary, rationale, step, or block text that exceeds policy limits."
+    """
     if not text:
         return ()
 
@@ -1091,10 +2027,38 @@ def _collect_text_length(
 
 
 def validate_pipeline_docstring(docstring: str) -> tuple[ParserIssue, ...]:
-    """Validate ``GraphPipeline`` syntax and required pipeline sections.
+    """Validate ``GraphPipeline`` syntax and required pipeline sections. This runs a light parser/lexer over the raw section text and collects structural issues (`PhaseEdges` / `NonInferableCalls`) as parse warnings.
 
-    This runs a light parser/lexer over the raw section text and collects
-    structural issues (`PhaseEdges` / `NonInferableCalls`) as parse warnings.
+    Intent
+    ------
+    Expose the validate pipeline docstring step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps validate pipeline docstring behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set validate_pipeline_docstring_inputs = received_context
+    - set validate_pipeline_docstring_products = carried_outputs
+    - return validate_pipeline_docstring_products
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._collect_invalid_edges:
+      why:
+        constructs: "collect invalid edges produces a value carried by validate pipeline docstring; this edge is documented from the observed product position in the body."
+
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds pipeline-level diagnostics returned to module ownership validation."
+    .docstring_policy.load_docstring_schema:
+      why:
+        constructs: "Builds default policy for pipeline checks when no caller-supplied policy is present."
     """
     schema_rules = load_docstring_schema()
     issues: list[ParserIssue] = []
@@ -1190,7 +2154,111 @@ def check_graph_docstring(
     docstring: str,
     schema_rules: DocstringSchema | None = None,
 ) -> tuple[ParserIssue, ...]:
-    """Validate callable/class docstrings against callable-level format rules."""
+    """Validate callable/class docstrings against callable-level format rules.
+
+    Intent
+    ------
+    Expose the check graph docstring step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps check graph docstring behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set check_graph_docstring_inputs = received_context
+    - set check_graph_docstring_products = carried_outputs
+    - return check_graph_docstring_products
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._collect_dependency_path_issues:
+      why:
+        constructs: "collect dependency path issues produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_dependency_why_action_issues:
+      why:
+        constructs: "collect dependency why action issues produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_forbidden_dependency_why_phrases:
+      why:
+        constructs: "collect forbidden dependency why phrases produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_forbidden_intent_phrases:
+      why:
+        constructs: "collect forbidden intent phrases produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_forbidden_pseudocode_phrases:
+      why:
+        constructs: "collect forbidden pseudocode phrases produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_forbidden_rationale_phrases:
+      why:
+        constructs: "collect forbidden rationale phrases produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_forbidden_summary_phrases:
+      why:
+        constructs: "collect forbidden summary phrases produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_instantiation_product_pseudocode_issues:
+      why:
+        constructs: "collect instantiation product pseudocode issues produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_invalid_dataflows:
+      why:
+        constructs: "collect invalid dataflows produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_invalid_dependency_marker_syntax:
+      why:
+        constructs: "collect invalid dependency marker syntax produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_invalid_dispatch_dependencies:
+      why:
+        constructs: "collect invalid dispatch dependencies produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_invalid_edges:
+      why:
+        constructs: "collect invalid edges produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_invalid_module_dependencies:
+      why:
+        constructs: "collect invalid module dependencies produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_invalid_ownership:
+      why:
+        constructs: "collect invalid ownership produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_invalid_pseudocode:
+      why:
+        constructs: "collect invalid pseudocode produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_invalid_resources:
+      why:
+        constructs: "collect invalid resources produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_invalid_wraps:
+      why:
+        constructs: "collect invalid wraps produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_pseudocode_dataflow_issues:
+      why:
+        constructs: "collect pseudocode dataflow issues produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_pseudocode_dependency_entity_issues:
+      why:
+        constructs: "collect pseudocode dependency entity issues produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_pseudocode_resource_issues:
+      why:
+        constructs: "collect pseudocode resource issues produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_section_header_issues:
+      why:
+        constructs: "collect section header issues produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._collect_text_length:
+      why:
+        constructs: "collect text length produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+    ._dependency_reference_section_lines:
+      why:
+        constructs: "dependency reference section lines produces a value carried by check graph docstring; this edge is documented from the observed product position in the body."
+
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds callable-graph diagnostics returned by the graph docstring checker."
+    .docstring_parser.parse_graph_block:
+      why:
+        constructs: "Builds the parsed callable graph block inspected by syntax validators."
+
+    CallsFromRepo
+    -------------
+    .docstring_policy.load_docstring_schema:
+      why:
+        computes: "Loads active policy when callers do not pass graph-docstring rules explicitly."
+    """
     schema_rules = schema_rules or load_docstring_schema()
     issues: list[ParserIssue] = []
 
@@ -1380,6 +2448,12 @@ _collect_invalid_module_dependencies(
         )
     )
     issues.extend(
+        _collect_instantiation_product_pseudocode_issues(
+            spec,
+            dependency_rules=dependency_rules,
+        )
+    )
+    issues.extend(
         _collect_pseudocode_dataflow_issues(
             spec,
             dependency_rules=dependency_rules,
@@ -1434,7 +2508,42 @@ _collect_invalid_module_dependencies(
 
 
 def check_pipeline_docstring(docstring: str) -> tuple[ParserIssue, ...]:
-    """Validate the module-level pipeline block and optional module contract."""
+    """Validate the module-level pipeline block and optional module contract.
+
+    Intent
+    ------
+    Expose the check pipeline docstring step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps check pipeline docstring behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set check_pipeline_docstring_inputs = received_context
+    - set check_pipeline_docstring_products = carried_outputs
+    - return check_pipeline_docstring_products
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .validate_pipeline_docstring:
+      why:
+        constructs: "validate pipeline docstring produces a value carried by check pipeline docstring; this edge is documented from the observed product position in the body."
+
+    .docstring_parser.ParserIssue:
+      why:
+        constructs: "Builds pipeline diagnostics after graph-block parsing and local checks."
+    .docstring_parser.parse_graph_block:
+      why:
+        constructs: "Builds the parsed pipeline graph block consumed by pipeline validators."
+    .docstring_policy.load_docstring_schema:
+      why:
+        constructs: "Builds default policy for pipeline checks when callers omit policy rules."
+    """
     schema_rules = load_docstring_schema()
     issues: list[ParserIssue] = []
 
@@ -1489,10 +2598,32 @@ def check_pipeline_docstring(docstring: str) -> tuple[ParserIssue, ...]:
 def check(docstring: str, kind: str = "callable") -> tuple[ParserIssue, ...]:
     """Generic validation entry point.
 
-    Parameters
+    Intent
+    ------
+    Expose the check step in docstring-local syntax and format validation so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps check behavior separate inside docstring-local syntax and format validation; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
     ----------
-    kind : {'callable', 'pipeline', 'function', 'method', 'class', 'module'}
-        Validation mode selector. Unknown values raise ``ValueError``.
+    - set check_inputs = received_context
+    - set check_products = carried_outputs
+    - return check_products
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .check_graph_docstring:
+      why:
+        constructs: "check graph docstring produces a value carried by check; this edge is documented from the observed product position in the body."
+    .check_pipeline_docstring:
+      why:
+        constructs: "check pipeline docstring produces a value carried by check; this edge is documented from the observed product position in the body."
     """
     normalized_kind = kind.lower().strip()
     if normalized_kind in {"callable", "function", "method", "class", "callables"}:

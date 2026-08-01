@@ -10,7 +10,7 @@ used by parser and validator code.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import yaml
 
@@ -22,6 +22,7 @@ DOCSTRING_CONFIG_FILE = "config.yaml"
 _ALLOWED_PROFILE_CHECKS: frozenset[str] = frozenset(
     {
         "dependency_why_action",
+        "instantiation_product_pseudocode",
         "pseudocode_dataflow",
         "pseudocode_output_use",
         "repeated_template_detection",
@@ -38,7 +39,27 @@ _ALLOWED_PROFILE_CALLABLE_KEYS: frozenset[str] = frozenset(
 
 @dataclass(frozen=True)
 class DependencySectionNames:
-    """Configurable names for dependency declaration sections."""
+    """Configured names for graphable dependency sections.
+
+    Intent
+    ------
+    Keep the repo's public dependency-section spelling in one typed configuration
+    record.
+
+    Rationale
+    ---------
+    Section names are naming policy, not parser code; storing them here lets config
+    rename dependency sections without changing validators.
+
+    Pseudocode
+    ----------
+    - set dependency_section_contract = calls instantiations and dispatches names
+    - return dependency_section_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     calls: str = "CallsFromRepo"
     instantiations: str = "InstantiationsFromRepo"
@@ -47,7 +68,27 @@ class DependencySectionNames:
 
 @dataclass(frozen=True)
 class DependencySyntaxConfig:
-    """Configurable dependency syntax switches."""
+    """Policy switches for dependency section syntax.
+
+    Intent
+    ------
+    Record whether dependency sections require structured why entries and whether
+    legacy flat syntax is still accepted.
+
+    Rationale
+    ---------
+    Syntax migration decisions belong in declarative policy so validators can enforce
+    the current standard without hard-coded repository choices.
+
+    Pseudocode
+    ----------
+    - set dependency_syntax_contract = legacy and rationale flags
+    - return dependency_syntax_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     allow_legacy_flat: bool = False
     require_why: bool = True
@@ -55,7 +96,27 @@ class DependencySyntaxConfig:
 
 @dataclass(frozen=True)
 class DependencyWhyConfig:
-    """Configurable dependency rationale action syntax."""
+    """Allowed action-key policy for dependency rationale text.
+
+    Intent
+    ------
+    Define the graphable verbs accepted under dependency `why` entries and the
+    minimum detail required for miscellaneous rationales.
+
+    Rationale
+    ---------
+    Typed action keys make edge labels extractable while still allowing a constrained
+    escape hatch for unusual dependencies.
+
+    Pseudocode
+    ----------
+    - set dependency_why_contract = actions legacy flag and misc length
+    - return dependency_why_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     actions: tuple[str, ...] = (
         "reads",
@@ -71,13 +132,57 @@ class DependencyWhyConfig:
         "raises",
         "misc",
     )
+    section_actions: dict[str, tuple[str, ...]] = field(
+        default_factory=lambda: {
+            "calls": (
+                "reads",
+                "writes",
+                "validates",
+                "parses",
+                "computes",
+                "orchestrates",
+                "transforms",
+                "dispatches",
+                "serializes",
+                "misc",
+            ),
+            "instantiations": (
+                "constructs",
+                "raises",
+                "transforms",
+                "serializes",
+                "misc",
+            ),
+            "dispatches": ("dispatches",),
+        }
+    )
     allow_legacy_string: bool = False
     misc_min_chars: int = 80
 
 
 @dataclass(frozen=True)
 class PseudocodeQualityConfig:
-    """Configurable pseudocode graphability checks."""
+    """Mechanical quality policy for strict pseudocode blocks.
+
+    Intent
+    ------
+    Store forbidden generic variable names and output-use requirements for dependency
+    markers in pseudocode.
+
+    Rationale
+    ---------
+    Pseudocode is intended to support flow extraction, so generic data names and dead
+    assigned outputs need configurable checks.
+
+    Pseudocode
+    ----------
+    - set pseudocode_quality_contract = forbidden names and output-use flag
+    - return pseudocode_quality_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     forbidden_variables: tuple[str, ...] = ("value", "out", "state", "args", "data")
     require_assigned_dependency_output_use: bool = False
@@ -85,7 +190,27 @@ class PseudocodeQualityConfig:
 
 @dataclass(frozen=True)
 class RepeatedTemplateConfig:
-    """Configurable repeated prose-template detection."""
+    """Policy for detecting repeated boilerplate docstring templates.
+
+    Intent
+    ------
+    Configure when normalized repeated prose should be reported as low-information
+    documentation.
+
+    Rationale
+    ---------
+    Generated docs can pass structural checks while still saying the same thing many
+    times; this policy lets production profiles reject that pattern.
+
+    Pseudocode
+    ----------
+    - set repeated_template_contract = enabled flag repetition count and text length
+    - return repeated_template_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     enabled: bool = False
     min_repetitions: int = 3
@@ -94,7 +219,26 @@ class RepeatedTemplateConfig:
 
 @dataclass(frozen=True)
 class DocstringProfileConfig:
-    """Path-scoped docstring quality switches loaded from repo config."""
+    """Path-scoped validation profile loaded from repo config.
+
+    Intent
+    ------
+    Bind path patterns to checker toggles and callable docstring requirements.
+
+    Rationale
+    ---------
+    Production code, tests, and generated artifacts need different strictness while
+    sharing the same parser and validator implementation.
+
+    Pseudocode
+    ----------
+    - set profile_contract = name path patterns checks and callable overrides
+    - return profile_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     name: str
     applies_to: tuple[str, ...] = ()
@@ -106,7 +250,27 @@ class DocstringProfileConfig:
 
 @dataclass(frozen=True)
 class DocstringRuntimeConfig:
-    """Repo-local docstring settings loaded from ``config.yaml``."""
+    """Repository-local docstring configuration after YAML parsing.
+
+    Intent
+    ------
+    Collect allowed absolute roots, dependency section names, syntax switches,
+    quality policy, ownership policy, and profiles.
+
+    Rationale
+    ---------
+    The runtime config is the repository-specific layer applied over the portable
+    standard before validators run.
+
+    Pseudocode
+    ----------
+    - set runtime_config_contract = repo overrides and profile declarations
+    - return runtime_config_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     allowed_abs: tuple[str, ...] = ("officina", "skills")
     names_for_dependency_sections: DependencySectionNames = field(
@@ -123,7 +287,27 @@ class DocstringRuntimeConfig:
 
 @dataclass(frozen=True)
 class OwnershipConfig:
-    """Rules for parsing and validating callable ``Owns`` metadata."""
+    """Callable ownership policy loaded from the standard or repo config.
+
+    Intent
+    ------
+    Describe which docstring section declares ownership and how ownership ids are
+    resolved for callable-level semantic responsibility checks.
+
+    Rationale
+    ---------
+    Ownership policy is separate from dependency policy because an owner records who
+    is responsible for behavior, not which repo symbol is called.
+
+    Pseudocode
+    ----------
+    - set ownership_contract = section resolution and multiplicity flags
+    - return ownership_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     section: str = "Owns"
     section_required: bool = False
@@ -136,7 +320,27 @@ class OwnershipConfig:
 
 @dataclass(frozen=True)
 class ModuleOwnershipConfig:
-    """Rules for module-level ``Ownable`` registry entries."""
+    """Module-level registry policy for declared ownable capabilities.
+
+    Intent
+    ------
+    Store the section name and multiplicity rule for module docstring ownership
+    registries.
+
+    Rationale
+    ---------
+    Callable ownership checks need a stable registry shape before they can validate
+    whether an `Owns` entry resolves.
+
+    Pseudocode
+    ----------
+    - set module_ownership_contract = registry section and multiplicity flag
+    - return module_ownership_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     section: str = "Ownable"
     allows_multiple: bool = True
@@ -144,7 +348,27 @@ class ModuleOwnershipConfig:
 
 @dataclass(frozen=True)
 class PseudocodeDocstringSchema:
-    """Rules for callable pseudocode sections."""
+    """Policy for the callable Pseudocode section.
+
+    Intent
+    ------
+    Define the Pseudocode section name, step limits, and strict structured-step
+    requirements used by parser checks.
+
+    Rationale
+    ---------
+    Pseudocode is the bridge from prose to flow extraction, so its policy must be
+    explicit about minimum structure and maximum verbosity.
+
+    Pseudocode
+    ----------
+    - set pseudocode_policy_contract = section name step limits and strict flag
+    - return pseudocode_policy_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     section: str = "Pseudocode"
     min_steps: int = 1
@@ -153,12 +377,52 @@ class PseudocodeDocstringSchema:
     max_total_chars: int = 640
 
     def section_names(self) -> tuple[str, ...]:
+        """Return section names required by pseudocode policy.
+
+        Intent
+        ------
+        Expose the configured Pseudocode section name as a tuple for generic section
+        validators.
+
+        Rationale
+        ---------
+        Validators consume every policy object through the same section_names interface,
+        so this method adapts a single section field to that common contract.
+
+        Pseudocode
+        ----------
+        - return pseudocode section name tuple
+
+        Wraps
+        -----
+        - none
+        """
         return (self.section,)
 
 
 @dataclass(frozen=True)
 class CallableDocstringSchema:
-    """Rules for callable/class docstring block validation."""
+    """Policy for function, method, and class docstrings.
+
+    Intent
+    ------
+    Define required narrative sections, summary/rationale length limits, ownership
+    rules, and graphable dependency syntax for callable docs.
+
+    Rationale
+    ---------
+    Callable docstrings are the main source for codebase graphs, so their policy
+    combines human explanation requirements with extractable dependency metadata.
+
+    Pseudocode
+    ----------
+    - set callable_policy_contract = narrative sections dependency policy and ownership policy
+    - return callable_policy_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     require_docstrings: bool = True
     required_summary: bool = True
@@ -199,7 +463,7 @@ class CallableDocstringSchema:
         "dependency declarations that the docstring graph can parse",
         "docstring graph can parse",
         "static dependency validation",
-        "compact docstrings whose declared calls and constructors stay aligned",
+        "compact docstrings whose declared calls and product dependencies stay aligned",
         "operation described by its inputs and outputs",
         "data carried between certification stages",
         "boundary keeps its certification responsibility separate from adjacent repository steps",
@@ -212,7 +476,7 @@ class CallableDocstringSchema:
         "dependency declarations that the docstring graph can parse",
         "docstring graph can parse",
         "static dependency validation",
-        "compact docstrings whose declared calls and constructors stay aligned",
+        "compact docstrings whose declared calls and product dependencies stay aligned",
         "operation described by its inputs and outputs",
         "combines repository evidence and helper results to produce or validate certification state",
         "keeps repository evidence checks separate from payload assembly and signing",
@@ -230,6 +494,27 @@ class CallableDocstringSchema:
     )
 
     def section_names(self) -> tuple[str, ...]:
+        """Return callable section names controlled by callable policy.
+
+        Intent
+        ------
+        Combine required, optional, pseudocode, and ownership sections into one tuple for
+        callable docstring parsing.
+
+        Rationale
+        ---------
+        The parser needs one ordered set of section headers even though the policy stores
+        those headers by responsibility.
+
+        Pseudocode
+        ----------
+        - set callable_sections = required optional pseudocode ownership and dependencies
+        - return callable_sections
+
+        Wraps
+        -----
+        - none
+        """
         sections: list[str] = []
         sections.extend(self.required_sections)
         sections.extend(self.optional_sections)
@@ -240,7 +525,27 @@ class CallableDocstringSchema:
 
 @dataclass(frozen=True)
 class ModuleDependencyConfig:
-    """Configuration for callable dependency declaration sections."""
+    """Policy for graphable repo dependency declarations.
+
+    Intent
+    ------
+    Configure call, product, dispatch, resource, wrapper, and dataflow sections plus
+    repo-local path and rationale requirements.
+
+    Rationale
+    ---------
+    Dependency sections drive graph edges, so their policy must distinguish operation
+    calls from carried products and non-Python dispatch interfaces.
+
+    Pseudocode
+    ----------
+    - set dependency_policy_contract = section names scope rules and quality checks
+    - return dependency_policy_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     calls_section: str = "CallsFromRepo"
     instantiates_section: str = "InstantiationsFromRepo"
@@ -254,7 +559,7 @@ class ModuleDependencyConfig:
     allowed_abs: tuple[str, ...] = ("officina", "skills")
     forbidden_why_phrases: tuple[str, ...] = (
         "observed call dependency",
-        "observed constructor dependency",
+        "observed product dependency",
         "observed dependency",
         "docstring graph can parse",
         "repo-visible dependencies",
@@ -279,6 +584,27 @@ class ModuleDependencyConfig:
     enforce_observed_dependency_pseudocode_coverage: bool = False
 
     def section_names(self) -> tuple[str, ...]:
+        """Return graphable dependency section names.
+
+        Intent
+        ------
+        Expose CallsFromRepo, InstantiationsFromRepo, Dispatches, Resources, and Dataflow
+        names through one policy method.
+
+        Rationale
+        ---------
+        Dependency validators and parsers need the configured section names without
+        knowing how the dependency policy object stores each category.
+
+        Pseudocode
+        ----------
+        - set dependency_sections = call product dispatch resource and dataflow names
+        - return dependency_sections
+
+        Wraps
+        -----
+        - none
+        """
         return (
             self.calls_section,
             self.instantiates_section,
@@ -288,19 +614,80 @@ class ModuleDependencyConfig:
 
 @dataclass(frozen=True)
 class PipelineDocstringSchema:
-    """Rules for module-level pipeline docstring block validation."""
+    """Policy for graph-pipeline docstrings.
+
+    Intent
+    ------
+    Define required pipeline narrative sections and optional ownership/resource/data
+    sections for graph specifications.
+
+    Rationale
+    ---------
+    Pipeline documentation has different structure from callable docs but still needs
+    the same extractable graph vocabulary.
+
+    Pseudocode
+    ----------
+    - set pipeline_policy_contract = pipeline sections resources and ownership
+    - return pipeline_policy_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     required: bool = False
     required_sections: tuple[str, ...] = ("Phases", "PhaseMembers")
     optional_sections: tuple[str, ...] = ("PhaseEdges", "NonInferableCalls", "Description")
 
     def section_names(self) -> tuple[str, ...]:
+        """Return section names accepted for pipeline docstrings.
+
+        Intent
+        ------
+        Merge required pipeline sections with optional ownership, resource, and dataflow
+        sections.
+
+        Rationale
+        ---------
+        Pipeline docstrings share graph concepts with callables but use a distinct set of
+        required narrative sections.
+
+        Pseudocode
+        ----------
+        - set pipeline_sections = required optional ownership resource and dataflow names
+        - return pipeline_sections
+
+        Wraps
+        -----
+        - none
+        """
         return self.required_sections + self.optional_sections
 
 
 @dataclass(frozen=True)
 class ModuleDocstringSchema:
-    """Rules for module-level metadata expectations."""
+    """Policy for module-level docstrings.
+
+    Intent
+    ------
+    Define module summary requirements, allowed module sections, and the ownable
+    registry section.
+
+    Rationale
+    ---------
+    Module docs establish the local vocabulary that callable ownership declarations
+    can reference.
+
+    Pseudocode
+    ----------
+    - set module_policy_contract = module sections and registry policy
+    - return module_policy_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     required: bool = False
     required_summary: bool = True
@@ -309,12 +696,53 @@ class ModuleDocstringSchema:
     ownership_registry: ModuleOwnershipConfig = field(default_factory=ModuleOwnershipConfig)
 
     def section_names(self) -> tuple[str, ...]:
+        """Return section names accepted for module docstrings.
+
+        Intent
+        ------
+        Expose module-level required, optional, and ownership-registry sections as one
+        header list.
+
+        Rationale
+        ---------
+        Module checks need a complete section list to distinguish supported headers from
+        unknown headings.
+
+        Pseudocode
+        ----------
+        - set module_sections = required optional and ownership-registry names
+        - return module_sections
+
+        Wraps
+        -----
+        - none
+        """
         return self.required_sections + self.optional_sections
 
 
 @dataclass(frozen=True)
 class DocstringSchema:
-    """Effective docstring policy consumed by parser and validators."""
+    """Complete docstring policy materialized from standard and config.
+
+    Intent
+    ------
+    Bundle callable, pipeline, module, dependency, and ownership policy into the
+    single object consumed by parsers and validators.
+
+    Rationale
+    ---------
+    One policy object keeps the parser, local syntax checker, behavioral checker, and
+    documentation examples tied to the same active standard.
+
+    Pseudocode
+    ----------
+    - set docstring_policy_contract = callable pipeline module and dependency policy
+    - return docstring_policy_contract
+
+    Wraps
+    -----
+    - none
+    """
 
     name: str = "docstring_policy"
     strict: bool = True
@@ -325,6 +753,27 @@ class DocstringSchema:
     module: ModuleDocstringSchema = field(default_factory=ModuleDocstringSchema)
 
     def section_names(self) -> tuple[str, ...]:
+        """Return every section name recognized by the active docstring policy.
+
+        Intent
+        ------
+        Combine callable, pipeline, module, dependency, ownership, resource, and dataflow
+        section names into one de-duplicated tuple.
+
+        Rationale
+        ---------
+        Top-level parsing and validation need the full header vocabulary independent of
+        which specific document profile is being checked.
+
+        Pseudocode
+        ----------
+        - set all_sections = union of child policy section names
+        - return all_sections
+
+        Wraps
+        -----
+        - none
+        """
         return (
             self.callable.section_names()
             + self.module_dependencies.section_names()
@@ -338,7 +787,25 @@ CallableDocstringPolicy = CallableDocstringSchema
 
 
 def _safe_bool(value: object, fallback: bool = False) -> bool:
-    """Coerce common YAML boolean spellings while preserving a fallback."""
+    """Coerce common YAML boolean spellings while preserving a fallback.
+
+    Intent
+    ------
+    Expose the safe bool step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps safe bool behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set safe_bool_inputs = received_context
+    - return safe_bool_inputs
+
+    Wraps
+    -----
+    - none
+    """
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -347,14 +814,50 @@ def _safe_bool(value: object, fallback: bool = False) -> bool:
 
 
 def _safe_str(value: object, fallback: str) -> str:
-    """Return a string config value, or the provided fallback."""
+    """Return a string config value, or the provided fallback.
+
+    Intent
+    ------
+    Expose the safe str step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps safe str behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set safe_str_inputs = received_context
+    - return safe_str_inputs
+
+    Wraps
+    -----
+    - none
+    """
     if isinstance(value, str):
         return value
     return fallback
 
 
 def _safe_str_tuple(values: object, fallback: tuple[str, ...] = ()) -> tuple[str, ...]:
-    """Coerce YAML string lists into a tuple while dropping non-string items."""
+    """Coerce YAML string lists into a tuple while dropping non-string items.
+
+    Intent
+    ------
+    Expose the safe str tuple step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps safe str tuple behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set safe_str_tuple_inputs = received_context
+    - return safe_str_tuple_inputs
+
+    Wraps
+    -----
+    - none
+    """
     if values is None:
         return fallback
     if isinstance(values, tuple):
@@ -365,7 +868,25 @@ def _safe_str_tuple(values: object, fallback: tuple[str, ...] = ()) -> tuple[str
 
 
 def _safe_int(value: object, fallback: int = 0) -> int:
-    """Coerce non-negative integer config values while rejecting booleans."""
+    """Coerce non-negative integer config values while rejecting booleans.
+
+    Intent
+    ------
+    Expose the safe int step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps safe int behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set safe_int_inputs = received_context
+    - return safe_int_inputs
+
+    Wraps
+    -----
+    - none
+    """
     if isinstance(value, bool):
         return fallback
     if isinstance(value, int):
@@ -376,7 +897,32 @@ def _safe_int(value: object, fallback: int = 0) -> int:
 
 
 def _safe_check_codes(values: object) -> tuple[str, ...]:
-    """Normalize check-category entries into unique issue-code strings."""
+    """Normalize check-category entries into unique issue-code strings.
+
+    Intent
+    ------
+    Expose the safe check codes step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps safe check codes behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set safe_check_codes_inputs = received_context
+    - set safe_check_codes_effects = local_decisions
+    - return safe_check_codes_effects
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._safe_str:
+      why:
+        computes: "safe str supplies repo-local behavior used by safe check codes; this edge is documented from an observed call in the body."
+    """
     if values is None:
         return ()
     if isinstance(values, tuple):
@@ -400,7 +946,32 @@ def _safe_check_codes(values: object) -> tuple[str, ...]:
 
 
 def _safe_bool_mapping(values: object) -> dict[str, bool]:
-    """Normalize a YAML mapping whose values are boolean-like toggles."""
+    """Normalize a YAML mapping whose values are boolean-like toggles.
+
+    Intent
+    ------
+    Expose the safe bool mapping step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps safe bool mapping behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set safe_bool_mapping_inputs = received_context
+    - set safe_bool_mapping_products = carried_outputs
+    - return safe_bool_mapping_products
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._safe_bool:
+      why:
+        constructs: "safe bool produces a value carried by safe bool mapping; this edge is documented from the observed product position in the body."
+    """
     if not isinstance(values, dict):
         return {}
     normalized: dict[str, bool] = {}
@@ -414,7 +985,59 @@ def _safe_bool_mapping(values: object) -> dict[str, bool]:
 
 
 def _parse_profile_configs(values: object) -> tuple[DocstringProfileConfig, ...]:
-    """Parse ordered path profiles and fail fast on unsupported keys."""
+    """Parse configured docstring profiles from YAML values.
+
+    Intent
+    ------
+    Convert path-profile declarations into typed profile records and reject unknown
+    profile check keys early.
+
+    Rationale
+    ---------
+    Profile parsing is the boundary where repository-specific strictness becomes a
+    validated policy object rather than ad hoc checker state.
+
+    Pseudocode
+    ----------
+    - if values is not a mapping:
+      - return
+    - for raw_name in profile_entries:
+      - path_patterns = ._safe_str_tuple(profile_paths)
+      - check_flags = ._safe_bool_mapping(profile_checks)
+      - min_steps = @._safe_int(profile_step_limit)
+      - required_docs = @._safe_bool(profile_docstring_flag)
+      - profile_config = DocstringProfileConfig(path_patterns, check_flags)
+    - set profile_config_inputs = min_steps plus required_docs plus profile_config
+    - return profile_config_inputs
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._safe_bool:
+      why:
+        computes: "Normalizes optional require-docstrings flags for profile overrides."
+    ._safe_int:
+      why:
+        computes: "Normalizes optional pseudocode-step limits for profile overrides."
+    ._safe_str_tuple:
+      why:
+        computes: "Normalizes YAML section lists that are read but not carried directly."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._safe_str_tuple:
+      why:
+        constructs: "Builds immutable path and section tuples stored on profile records."
+    ._safe_bool_mapping:
+      why:
+        constructs: "Builds normalized profile check flags from YAML mapping values."
+    .DocstringProfileConfig:
+      why:
+        constructs: "Builds typed profile records consumed by policy materialization."
+    """
     if not isinstance(values, dict):
         return ()
 
@@ -478,7 +1101,25 @@ def _parse_profile_configs(values: object) -> tuple[DocstringProfileConfig, ...]
 
 
 def _load_yaml(path: Path) -> object:
-    """Load a YAML document, returning ``None`` when the file is unreadable."""
+    """Load a YAML document, returning ``None`` when the file is unreadable.
+
+    Intent
+    ------
+    Expose the load yaml step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps load yaml behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set load_yaml_inputs = received_context
+    - return load_yaml_inputs
+
+    Wraps
+    -----
+    - none
+    """
     try:
         return yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError):
@@ -489,7 +1130,49 @@ def _parse_ownership_config(
     value: object,
     default: OwnershipConfig,
 ) -> OwnershipConfig:
-    """Parse callable ownership policy from YAML, preserving defaults."""
+    """Parse callable ownership configuration while preserving defaults.
+
+    Intent
+    ------
+    Read the ownership section from repository YAML and merge present values over the
+    standard defaults.
+
+    Rationale
+    ---------
+    Ownership settings affect semantic-responsibility checks, so malformed YAML must
+    fall back predictably instead of leaking partial configuration into validators.
+
+    Pseudocode
+    ----------
+    - if ownership_mapping is not a mapping:
+      - return default
+    - owner_section = ._safe_str(ownership_section_text)
+    - cross_file_enabled = ._safe_bool(cross_file_flag)
+    - ownership_config = OwnershipConfig(owner_section, cross_file_enabled)
+    - return ownership_config
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._safe_bool:
+      why:
+        computes: "Reads boolean ownership flags while preserving configured defaults."
+
+    InstantiationsFromRepo
+    ----------------------
+    ._safe_str:
+      why:
+        constructs: "Builds normalized ownership section names from YAML values."
+    ._safe_bool:
+      why:
+        constructs: "Builds boolean ownership flags stored on the resulting policy object."
+    .OwnershipConfig:
+      why:
+        constructs: "Builds the typed ownership policy embedded in the docstring policy."
+    """
     if not isinstance(value, dict):
         return default
 
@@ -523,7 +1206,38 @@ def _parse_module_ownership_config(
     value: object,
     default: ModuleOwnershipConfig,
 ) -> ModuleOwnershipConfig:
-    """Parse module-level ownership registry policy from YAML."""
+    """Parse module-level ownership registry policy from YAML.
+
+    Intent
+    ------
+    Expose the parse module ownership config step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps parse module ownership config behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set parse_module_ownership_config_inputs = received_context
+    - set parse_module_ownership_config_products = carried_outputs
+    - return parse_module_ownership_config_products
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .ModuleOwnershipConfig:
+      why:
+        constructs: "ModuleOwnershipConfig produces a value carried by parse module ownership config; this edge is documented from the observed product position in the body."
+    ._safe_bool:
+      why:
+        constructs: "safe bool produces a value carried by parse module ownership config; this edge is documented from the observed product position in the body."
+    ._safe_str:
+      why:
+        constructs: "safe str produces a value carried by parse module ownership config; this edge is documented from the observed product position in the body."
+    """
     if not isinstance(value, dict):
         return default
     return ModuleOwnershipConfig(
@@ -533,16 +1247,87 @@ def _parse_module_ownership_config(
 
 
 def _default_docstring_schema() -> DocstringSchema:
-    """Return the built-in policy after applying repo-local config."""
+    """Return the built-in policy after applying repo-local config.
+
+    Intent
+    ------
+    Expose the default docstring schema step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps default docstring schema behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set default_docstring_schema_inputs = received_context
+    - set default_docstring_schema_products = carried_outputs
+    - return default_docstring_schema_products
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .DocstringSchema:
+      why:
+        computes: "DocstringSchema supplies repo-local behavior used by default docstring schema; this edge is documented from an observed call in the body."
+    .load_docstring_config:
+      why:
+        reads: "load docstring config supplies repo-local behavior used by default docstring schema; this edge is documented from an observed call in the body."
+
+    InstantiationsFromRepo
+    ----------------------
+    .apply_config_to_policy:
+      why:
+        transforms: "apply config to policy produces a value carried by default docstring schema; this edge is documented from the observed product position in the body."
+    """
     return apply_config_to_policy(DocstringSchema(), load_docstring_config())
 
 
 def resolve_docstring_schema_path(path: str | Path | None = None) -> Path | None:
-    """Find the portable docstring standard file from an explicit or repo-relative path."""
+    """Find the portable docstring standard file from an explicit or repo-relative path.
+
+    Intent
+    ------
+    Expose the resolve docstring schema path step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps resolve docstring schema path behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set resolve_docstring_schema_path_inputs = received_context
+    - return resolve_docstring_schema_path_inputs
+
+    Wraps
+    -----
+    - none
+    """
     if path is not None:
         return Path(path)
 
     def _resolve_candidates(base: Path) -> list[Path]:
+        """_resolve_candidates supports portable standard loading and repo-profile policy materialization as a documented callable boundary.
+
+        Intent
+        ------
+        Expose the resolve candidates step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+        Rationale
+        ---------
+        This boundary keeps resolve candidates behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+        Pseudocode
+        ----------
+        - set resolve_candidates_inputs = received_context
+        - return resolve_candidates_inputs
+
+        Wraps
+        -----
+        - none
+        """
         return [
             base / DOCSTRING_STANDARD_FILE,
             base / DOCSTRING_STANDARD_CANDIDATE_FILE,
@@ -561,14 +1346,99 @@ def resolve_docstring_schema_path(path: str | Path | None = None) -> Path | None
 
 
 def resolve_docstring_config_path(path: str | Path | None = None) -> Path:
-    """Resolve the repo-local docstring config file path."""
+    """Resolve the repo-local docstring config file path.
+
+    Intent
+    ------
+    Expose the resolve docstring config path step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps resolve docstring config path behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set resolve_docstring_config_path_inputs = received_context
+    - return resolve_docstring_config_path_inputs
+
+    Wraps
+    -----
+    - none
+    """
     if path is not None:
         return Path(path)
     return Path(__file__).resolve().with_name(DOCSTRING_CONFIG_FILE)
 
 
 def load_docstring_config(path: str | Path | None = None) -> DocstringRuntimeConfig:
-    """Load repo-local docstring configuration from ``config.yaml``."""
+    """Load repository docstring configuration from config.yaml.
+
+    Intent
+    ------
+    Read the optional repo config file and convert it into a typed runtime config
+    used to customize the portable standard.
+
+    Rationale
+    ---------
+    Repository-specific roots, section names, rationale actions, quality checks, and
+    profiles should be editable in YAML rather than Python code.
+
+    Pseudocode
+    ----------
+    - config_path = .resolve_docstring_config_path(optional_config_path)
+    - if config_path is missing:
+      - return default runtime config
+    - config_values = ._load_yaml(config_path)
+    - runtime_config = DocstringRuntimeConfig(config_values)
+    - return runtime_config
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .resolve_docstring_config_path:
+      why:
+        constructs: "Builds the repository config path searched by the loader."
+    ._load_yaml:
+      why:
+        constructs: "Builds the raw YAML mapping used to configure docstring policy."
+    .DocstringRuntimeConfig:
+      why:
+        constructs: "Builds the typed runtime configuration returned to policy loading."
+
+    .DependencySectionNames:
+      why:
+        constructs: "Builds configured dependency-section names from names_for_dependency_sections."
+    .DependencySyntaxConfig:
+      why:
+        constructs: "Builds syntax toggles that decide whether tree syntax and why mappings are mandatory."
+    .DependencyWhyConfig:
+      why:
+        constructs: "Builds the allowed action-key vocabulary for dependency rationale blocks."
+    .PseudocodeQualityConfig:
+      why:
+        constructs: "Builds pseudocode dataflow checks such as forbidden generic variables."
+    .RepeatedTemplateConfig:
+      why:
+        constructs: "Builds boilerplate-detection thresholds for profile-driven quality checks."
+    ._parse_profile_configs:
+      why:
+        constructs: "Builds the parse_profile_configs contribution used by load_docstring_config."
+    ._safe_bool:
+      why:
+        constructs: "Builds the safe_bool contribution used by load_docstring_config."
+    ._safe_int:
+      why:
+        constructs: "Builds the safe_int contribution used by load_docstring_config."
+    ._safe_str:
+      why:
+        constructs: "Builds the safe_str contribution used by load_docstring_config."
+    ._safe_str_tuple:
+      why:
+        constructs: "Builds the safe_str_tuple contribution used by load_docstring_config."
+    """
     config_path = resolve_docstring_config_path(path)
     config_value = _load_yaml(config_path)
     default = DocstringRuntimeConfig()
@@ -588,6 +1458,17 @@ def load_docstring_config(path: str | Path | None = None) -> DocstringRuntimeCon
     why_defaults = default.dependency_why
     if not isinstance(why_values, dict):
         why_values = {}
+    section_action_values = why_values.get("section_actions", {})
+    section_actions = dict(why_defaults.section_actions)
+    if isinstance(section_action_values, dict):
+        for raw_key, raw_actions in section_action_values.items():
+            if not isinstance(raw_key, str) or not raw_key.strip():
+                continue
+            key = raw_key.strip()
+            section_actions[key] = _safe_str_tuple(
+                raw_actions,
+                section_actions.get(key, ()),
+            )
     pseudocode_values = config_value.get("pseudocode_quality", {})
     pseudocode_defaults = default.pseudocode_quality
     if not isinstance(pseudocode_values, dict):
@@ -622,6 +1503,7 @@ def load_docstring_config(path: str | Path | None = None) -> DocstringRuntimeCon
         ),
         dependency_why=DependencyWhyConfig(
             actions=_safe_str_tuple(why_values.get("actions"), why_defaults.actions),
+            section_actions=section_actions,
             allow_legacy_string=_safe_bool(
                 why_values.get("allow_legacy_string"),
                 why_defaults.allow_legacy_string,
@@ -663,7 +1545,25 @@ def apply_config_to_policy(
     base_policy: DocstringSchema,
     config: DocstringRuntimeConfig,
 ) -> DocstringSchema:
-    """Inject repo-local config into the portable docstring policy."""
+    """Inject repo-local config into the portable docstring policy.
+
+    Intent
+    ------
+    Expose the apply config to policy step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps apply config to policy behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set apply_config_to_policy_inputs = received_context
+    - return apply_config_to_policy_inputs
+
+    Wraps
+    -----
+    - none
+    """
     section_names = config.names_for_dependency_sections
     syntax = config.dependency_syntax
     module_dependencies = replace(
@@ -700,8 +1600,264 @@ def apply_config_to_policy(
     )
 
 
+def _path_matches_profile_pattern(path: Path, pattern: str) -> bool:
+    """Return true when a profile glob applies to a module path.
+
+    Intent
+    ------
+    Expose the path matches profile pattern step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps path matches profile pattern behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set path_matches_profile_pattern_inputs = received_context
+    - return path_matches_profile_pattern_inputs
+
+    Wraps
+    -----
+    - none
+    """
+    raw_pattern = (pattern or "").strip()
+    if not raw_pattern:
+        return False
+
+    candidates: set[str] = {path.as_posix().lstrip("/")}
+    try:
+        candidates.add(path.resolve().relative_to(Path.cwd().resolve()).as_posix())
+    except ValueError:
+        pass
+
+    parts = path.as_posix().strip("/").split("/")
+    for index in range(len(parts)):
+        candidates.add("/".join(parts[index:]))
+
+    if raw_pattern.endswith("/**/*.py"):
+        prefix = raw_pattern[: -len("/**/*.py")]
+        for candidate in candidates:
+            if candidate.startswith(f"{prefix}/") and candidate.endswith(".py"):
+                return True
+
+    return any(
+        candidate == raw_pattern or PurePosixPath(candidate).match(raw_pattern)
+        for candidate in candidates
+        if candidate
+    )
+
+
+def apply_docstring_profiles(schema_rules: DocstringSchema, path: Path) -> DocstringSchema:
+    """Apply ordered repo-configured path profiles to a loaded policy.
+
+    Intent
+    ------
+    Expose the apply docstring profiles step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps apply docstring profiles behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set apply_docstring_profiles_inputs = received_context
+    - set apply_docstring_profiles_effects = local_decisions
+    - return apply_docstring_profiles_effects
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._path_matches_profile_pattern:
+      why:
+        computes: "path matches profile pattern supplies repo-local behavior used by apply docstring profiles; this edge is documented from an observed call in the body."
+    """
+    module_rules = schema_rules.module_dependencies
+    callable_rules = schema_rules.callable
+    for profile in getattr(schema_rules.config, "profiles", ()):
+        if not any(
+            _path_matches_profile_pattern(path, pattern)
+            for pattern in getattr(profile, "applies_to", ())
+        ):
+            continue
+
+        if getattr(profile, "callable_require_docstrings", None) is not None:
+            callable_rules = replace(
+                callable_rules,
+                require_docstrings=bool(profile.callable_require_docstrings),
+            )
+        if getattr(profile, "callable_required_sections", None) is not None:
+            callable_rules = replace(
+                callable_rules,
+                required_sections=tuple(profile.callable_required_sections or ()),
+            )
+        if getattr(profile, "callable_min_pseudocode_steps", None) is not None:
+            min_steps = int(profile.callable_min_pseudocode_steps or 0)
+            callable_rules = replace(
+                callable_rules,
+                min_pseudocode_steps=min_steps,
+                pseudocode=replace(
+                    callable_rules.pseudocode,
+                    min_steps=min_steps,
+                ),
+            )
+
+        checks = getattr(profile, "checks", {})
+        if "repeated_template_detection" in checks:
+            module_rules = replace(
+                module_rules,
+                repeated_template_detection=replace(
+                    module_rules.repeated_template_detection,
+                    enabled=bool(checks["repeated_template_detection"]),
+                ),
+            )
+        if "pseudocode_output_use" in checks or "pseudocode_dataflow" in checks:
+            enabled = bool(
+                checks.get(
+                    "pseudocode_output_use",
+                    checks.get("pseudocode_dataflow", False),
+                )
+            )
+            module_rules = replace(
+                module_rules,
+                pseudocode_quality=replace(
+                    module_rules.pseudocode_quality,
+                    require_assigned_dependency_output_use=enabled,
+                ),
+            )
+        if "dependency_why_action" in checks:
+            module_rules = replace(
+                module_rules,
+                dependency_why=replace(
+                    module_rules.dependency_why,
+                    allow_legacy_string=not bool(checks["dependency_why_action"]),
+                ),
+            )
+        if "instantiation_product_pseudocode" in checks:
+            module_rules = replace(
+                module_rules,
+                enforce_declared_dependency_pseudocode_coverage=bool(
+                    checks["instantiation_product_pseudocode"]
+                ),
+            )
+
+    if module_rules is schema_rules.module_dependencies and callable_rules is schema_rules.callable:
+        return schema_rules
+    return replace(
+        schema_rules,
+        callable=callable_rules,
+        module_dependencies=module_rules,
+    )
+
+
 def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
-    """Load the effective docstring schema from standard YAML plus repo config."""
+    """Load the effective docstring policy from the standard and repo config.
+
+    Intent
+    ------
+    Materialize the policy object used by parser, local syntax checks, and AST-backed
+    behavioral validation.
+
+    Rationale
+    ---------
+    Centralizing policy loading keeps section names, dependency syntax, allowed
+    absolute roots, profile checks, and check catalogs synchronized across the
+    whole docstring infrastructure.
+
+    Pseudocode
+    ----------
+    - schema_path = .resolve_docstring_schema_path(optional_policy_path)
+    - config_rules = .load_docstring_config()
+    - if schema_path is missing:
+      - return ._default_docstring_schema()
+    - schema_values = ._load_yaml(schema_path)
+    - dependency_rules = ModuleDependencyConfig(schema_values)
+    - callable_rules = CallableDocstringSchema(schema_values)
+    - schema_rules = DocstringSchema(callable_rules, dependency_rules)
+    - effective_policy = .apply_config_to_policy(schema_rules, config_rules)
+    - return effective_policy
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .ModuleOwnershipConfig:
+      why:
+        computes: "Supplies nested module ownership defaults while building module policy."
+    .OwnershipConfig:
+      why:
+        computes: "Supplies nested callable ownership defaults while building callable policy."
+    .PseudocodeDocstringSchema:
+      why:
+        computes: "Supplies default pseudocode field values while merging YAML policy."
+
+    InstantiationsFromRepo
+    ----------------------
+    .resolve_docstring_schema_path:
+      why:
+        constructs: "Builds the standard policy path used for YAML loading."
+    .load_docstring_config:
+      why:
+        constructs: "Builds repository-local docstring overrides from config.yaml."
+    ._load_yaml:
+      why:
+        constructs: "Builds the raw standard-policy mapping consumed by schema constructors."
+    ._default_docstring_schema:
+      why:
+        constructs: "Builds fallback policy defaults when no readable standard file exists."
+    ._safe_str:
+      why:
+        constructs: "Builds string-valued policy fields from YAML scalars."
+    ._safe_bool:
+      why:
+        constructs: "Builds boolean policy fields from YAML scalars."
+    ._safe_int:
+      why:
+        constructs: "Builds integer policy limits from YAML scalars."
+    ._safe_str_tuple:
+      why:
+        constructs: "Builds immutable policy tuples from YAML lists."
+    ._parse_module_ownership_config:
+      why:
+        constructs: "Builds module ownership-registry policy from the loaded standard mapping."
+    ._parse_ownership_config:
+      why:
+        constructs: "Builds callable ownership policy from the loaded standard mapping."
+    .apply_config_to_policy:
+      why:
+        transforms: "Builds the effective policy by applying repository overrides to standard defaults."
+    .CallableDocstringSchema:
+      why:
+        constructs: "Builds callable-level summary, section, and pseudocode policy."
+    .DependencyWhyConfig:
+      why:
+        constructs: "Builds dependency rationale action-key policy."
+    .DocstringSchema:
+      why:
+        constructs: "Builds the complete policy object returned to callers."
+    .ModuleDependencyConfig:
+      why:
+        constructs: "Builds dependency declaration, scope, and rationale policy."
+    .ModuleDocstringSchema:
+      why:
+        constructs: "Builds module-level documentation policy."
+    .PipelineDocstringSchema:
+      why:
+        constructs: "Builds graph-pipeline documentation policy."
+    .PseudocodeDocstringSchema:
+      why:
+        constructs: "Builds pseudocode section policy from standard YAML values."
+    .PseudocodeQualityConfig:
+      why:
+        constructs: "Builds pseudocode dataflow-quality policy."
+    .RepeatedTemplateConfig:
+      why:
+        constructs: "Builds repeated-template detection policy."
+    """
     schema_path = resolve_docstring_schema_path(path)
     config = load_docstring_config()
     if schema_path is None or not schema_path.exists():
@@ -720,6 +1876,17 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
         dependency_why_values = module_dependency_values.get("dependency_why", {})
         if not isinstance(dependency_why_values, dict):
             dependency_why_values = {}
+        section_action_values = dependency_why_values.get("section_actions", {})
+        section_actions = dict(module_dependency_config.dependency_why.section_actions)
+        if isinstance(section_action_values, dict):
+            for raw_key, raw_actions in section_action_values.items():
+                if not isinstance(raw_key, str) or not raw_key.strip():
+                    continue
+                key = raw_key.strip()
+                section_actions[key] = _safe_str_tuple(
+                    raw_actions,
+                    section_actions.get(key, ()),
+                )
         pseudocode_quality_values = module_dependency_values.get("pseudocode_quality", {})
         if not isinstance(pseudocode_quality_values, dict):
             pseudocode_quality_values = {}
@@ -753,6 +1920,7 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
                     dependency_why_values.get("actions"),
                     module_dependency_config.dependency_why.actions,
                 ),
+                section_actions=section_actions,
                 allow_legacy_string=_safe_bool(
                     dependency_why_values.get("allow_legacy_string"),
                     module_dependency_config.dependency_why.allow_legacy_string,
@@ -982,7 +2150,38 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
 def load_docstring_check_categories(
     path: str | Path | None = None,
 ) -> dict[str, tuple[str, ...]]:
-    """Load named checker groups from the portable standard when present."""
+    """Load named checker groups from the portable standard when present.
+
+    Intent
+    ------
+    Expose the load docstring check categories step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
+
+    Rationale
+    ---------
+    This boundary keeps load docstring check categories behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
+
+    Pseudocode
+    ----------
+    - set load_docstring_check_categories_inputs = received_context
+    - set load_docstring_check_categories_products = carried_outputs
+    - return load_docstring_check_categories_products
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._load_yaml:
+      why:
+        constructs: "load yaml produces a value carried by load docstring check categories; this edge is documented from the observed product position in the body."
+    ._safe_check_codes:
+      why:
+        constructs: "safe check codes produces a value carried by load docstring check categories; this edge is documented from the observed product position in the body."
+    .resolve_docstring_schema_path:
+      why:
+        transforms: "resolve docstring schema path produces a value carried by load docstring check categories; this edge is documented from the observed product position in the body."
+    """
     schema_path = resolve_docstring_schema_path(path)
     if schema_path is None or not schema_path.exists():
         return {}
@@ -1028,4 +2227,5 @@ __all__ = [
     "load_docstring_schema",
     "load_docstring_check_categories",
     "apply_config_to_policy",
+    "apply_docstring_profiles",
 ]

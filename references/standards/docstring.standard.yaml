@@ -11,7 +11,7 @@
 #   `docstring_format_version` should be bumped whenever this policy shape
 #   changes in a way that can affect docstring quality checks.
 #   `name` is used as an identifier in diagnostics and docs.
-docstring_format_version: 27
+docstring_format_version: 30
 # Stable contract identifier used by tooling outputs and diagnostics.
 name: docstring_format
 # If true, required settings are enforced and surface as warnings.
@@ -51,7 +51,7 @@ callable:
     - "dependency declarations that the docstring graph can parse"
     - "docstring graph can parse"
     - "static dependency validation"
-    - "compact docstrings whose declared calls and constructors stay aligned"
+    - "compact docstrings whose declared calls and product dependencies stay aligned"
     - "operation described by its inputs and outputs"
     - "data carried between certification stages"
     - "boundary keeps its certification responsibility separate from adjacent repository steps"
@@ -64,7 +64,7 @@ callable:
     - "dependency declarations that the docstring graph can parse"
     - "docstring graph can parse"
     - "static dependency validation"
-    - "compact docstrings whose declared calls and constructors stay aligned"
+    - "compact docstrings whose declared calls and product dependencies stay aligned"
     - "operation described by its inputs and outputs"
     - "combines repository evidence and helper results to produce or validate certification state"
     - "keeps repository evidence checks separate from payload assembly and signing"
@@ -120,8 +120,8 @@ callable:
   # Supported operation forms:
   #   - ``name = @ref(args)`` or ``@ref(args)`` for CallsFromRepo
   #   - ``name = #ref(args)`` or ``#ref(args)`` for Dispatches
-  #   - ``name = ClassName(args)`` for InstantiationsFromRepo
-  #   - ``raise ErrorName(args)`` for InstantiationsFromRepo plus raise
+  #   - ``name = Ref(args)``, ``return Ref(args)``, ``raise Ref(args)``,
+  #     or ``yield Ref(args)`` for InstantiationsFromRepo product edges
   #   - ``set name = expression`` for local computation
   #   - ``read resource_id`` / ``write resource_id`` for Resources
   #   - ``if condition:``, ``while condition:``, ``for name in expression:``,
@@ -137,8 +137,19 @@ callable:
   # canonical defaults; config produces the effective runtime policy.
   #
   # Canonical dependency sections use YAML-like trees with `why:` leaves.
-  # Dependency paths/ids must either start with `.` for relative paths or start
-  # with an allowed absolute root from config.allowed_abs.
+  # CallsFromRepo and InstantiationsFromRepo are repo-only sections: stdlib and
+  # third-party helpers must be omitted rather than documented as repo
+  # dependencies. Dependency paths/ids must either start with `.` for relative
+  # repo paths or start with an allowed absolute root from config.allowed_abs.
+  #
+  # CallsFromRepo documents operational dependencies. InstantiationsFromRepo
+  # documents product dependencies: dependencies whose returned/raised value is
+  # carried forward as a semantic value, result, error, copy, serialization, or
+  # container. It is not limited to class constructors. Small-function profiles
+  # may enable `docstring.instantiation-product-unshown` to require every
+  # declared product edge to appear in constructor/product pseudocode form; large
+  # orchestration functions can remain compact by documenting the product edge
+  # in InstantiationsFromRepo without listing every product in Pseudocode.
   module_dependencies:
     calls_section: CallsFromRepo
     instantiates_section: InstantiationsFromRepo
@@ -162,6 +173,27 @@ callable:
         - orchestrates
         - raises
         - misc
+      # Logical section keys used after section-name config is applied.
+      section_actions:
+        calls:
+          - reads
+          - writes
+          - validates
+          - parses
+          - computes
+          - orchestrates
+          - transforms
+          - dispatches
+          - serializes
+          - misc
+        instantiations:
+          - constructs
+          - raises
+          - transforms
+          - serializes
+          - misc
+        dispatches:
+          - dispatches
     pseudocode_quality:
       forbidden_variables:
         - value
@@ -176,7 +208,7 @@ callable:
       min_normalized_chars: 40
     forbidden_why_phrases:
       - "observed call dependency"
-      - "observed constructor dependency"
+      - "observed product dependency"
       - "observed dependency"
       - "docstring graph can parse"
       - "repo-visible dependencies"
@@ -202,6 +234,9 @@ callable:
   # Accepted example:
   #   target -> preprocess: <text>; postprocess: <text>; fixed_arguments: <text>
   # Use ``none`` when a callable is not a wrapper.
+  # A callable that directly returns or forwards one repo call must declare that
+  # edge here; one-repo-call bodies that are not clear wrappers are reviewer
+  # warnings so authors explicitly decide whether a wrapper edge is missing.
   wraps:
 
   # Ownership policy for ``Owns`` entries.
@@ -289,6 +324,12 @@ check_categories:
       intent: Dependency path/id is neither leading-dot relative nor rooted in config.allowed_abs.
     - code: docstring.dependency-why-action
       intent: Dependency rationale lacks exactly one graphable action key.
+    - code: docstring.instantiation-why-action
+      intent: InstantiationsFromRepo rationale uses an operation action instead of a product action.
+    - code: docstring.instantiation-product-unshown
+      intent: InstantiationsFromRepo target is not shown in Pseudocode as an assigned/returned/raised/yielded product.
+    - code: docstring.dependency-section-overlap
+      intent: One dependency target appears in multiple priority-ranked dependency sections.
     - code: docstring.repeated-template
       intent: Repeated normalized prose template appears across callable docstrings.
     - code: docstring.invalid-pseudocode
@@ -364,6 +405,18 @@ check_categories:
       intent: Declared dispatch id does not match a known public interface id.
     - code: docstring.absolute-dependency-not-allowed
       intent: Dependency path/id is neither leading-dot relative nor rooted in config.allowed_abs.
+    - code: docstring.repo-dependency-not-repo
+      intent: CallsFromRepo or InstantiationsFromRepo names stdlib/third-party code instead of repo-local logical dependencies.
+    - code: docstring.wraps-missing-thin-wrapper
+      intent: Callable directly delegates to one repo call but declares no Wraps edge.
+    - code: docstring.single-repo-call-review
+      intent: Callable has exactly one repo call and should be reviewed for a possible missing Wraps edge or stronger local-work explanation.
+    - code: docstring.instantiation-why-action
+      intent: InstantiationsFromRepo rationale uses an operation action instead of a product action.
+    - code: docstring.instantiation-product-unshown
+      intent: InstantiationsFromRepo target is not shown in Pseudocode as an assigned/returned/raised/yielded product.
+    - code: docstring.dependency-section-overlap
+      intent: One dependency target appears in multiple priority-ranked dependency sections.
     - code: docstring.wraps-incomplete
       intent: Wraps entry lacks required semantic details.
     - code: docstring.wraps-unresolved-target

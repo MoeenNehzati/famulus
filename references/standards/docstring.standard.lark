@@ -2,10 +2,9 @@
 // dependency sections are YAML-like trees parsed by the Python policy layer.
 ?start: edge | wraps | module_dependency | pseudocode_bullet | pseudocode_ref_expr
 
-IDENT: /[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*/
+IDENT: /\.?[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*/
 PSEUDO_REF.2: /\.?[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_][A-Za-z0-9_-]*)*/
-PSEUDO_CLASS.2: /[A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)*/
-PSEUDO_VAR.2: /[A-Za-z_][A-Za-z0-9_]*/
+PSEUDO_VAR.3: /[A-Za-z_][A-Za-z0-9_]*/
 PSEUDO_INDENT: /(?:  )+/
 PSEUDO_EXPR.5: /[^\n]+/
 PSEUDO_ARGS: /\([^\n]*\)/
@@ -14,9 +13,9 @@ PSEUDO_IF_LINE.20: /if [^:\n]+:/
 PSEUDO_WHILE_LINE.20: /while [^:\n]+:/
 PSEUDO_FOR_LINE.20: /for [A-Za-z_][A-Za-z0-9_]* in [^:\n]+:/
 PSEUDO_ELSE_LINE.20: "else:"
-PSEUDO_RAISE_INSTANTIATE_LINE.20: /raise [A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)*\([^\n]*\)/
 PSEUDO_RETURN_LINE.20: /return(?: [^\n]+)?/
 PSEUDO_RAISE_LINE.10: /raise [^\n]+/
+YIELD.10: /yield(?![A-Za-z0-9_])/
 IF.10: /if(?![A-Za-z0-9_])/
 WHILE.10: /while(?![A-Za-z0-9_])/
 FOR.10: /for(?![A-Za-z0-9_])/
@@ -30,28 +29,29 @@ RAISE.10: /raise(?![A-Za-z0-9_])/
 CONTINUE.10: /continue(?![A-Za-z0-9_])/
 BREAK.10: /break(?![A-Za-z0-9_])/
 
-edge: name WS* "->" WS* name
-wraps: WRAP_NONE | name [WS* "->" WS* wrap_fields]
+edge: name WS* ARROW WS* name
+wraps: WRAP_NONE | name [WS* ARROW WS* wrap_fields]
 WRAP_NONE: /[Nn][oO][nN][eE]/
 wrap_fields: wrap_field (WS* ";" WS* wrap_field)*
-wrap_field: wrap_key WS* ":" WS* wrap_value
-wrap_key: /[A-Za-z_][A-Za-z0-9_ ]*/
-wrap_value: /[^;\n]+/
+wrap_field: WRAP_KEY WS* ":" WS* WRAP_VALUE
+WRAP_KEY.10: "preprocess" | "postprocess" | "fixed_arguments" | "fixed_argument" | "fixed_args" | "pre" | "post" | "fixed"
+WRAP_VALUE: /[^\s;\n][^;\n]*/
 module_dependency: name call_args? implicit_marker? dependency_why
 call_args: /\([^)]*\)/
 implicit_marker: "[implicit]"
 DEPS_RATIONALE: /[^-\n][^\n]*/
-dependency_why: "->" DEPS_RATIONALE
+dependency_why: ARROW DEPS_RATIONALE
 name: IDENT
+ARROW.10: "->"
 pseudocode_bullet: PSEUDO_INDENT? "- " pseudocode_line
-pseudocode_line: pseudocode_call | pseudocode_dispatch | pseudocode_instantiate | pseudocode_raise_instantiate | pseudocode_set | pseudocode_resource | pseudocode_control | pseudocode_terminal
-pseudocode_ref_expr: pseudocode_call_ref | pseudocode_dispatch_ref
+pseudocode_line: pseudocode_call | pseudocode_dispatch | pseudocode_instantiate | pseudocode_set | pseudocode_resource | pseudocode_control | pseudocode_terminal
+pseudocode_ref_expr: pseudocode_call_ref | pseudocode_dispatch_ref | pseudocode_product_ref
 pseudocode_call_ref: "@" PSEUDO_REF PSEUDO_ARGS
 pseudocode_dispatch_ref: "#" PSEUDO_REF PSEUDO_ARGS
+pseudocode_product_ref: PSEUDO_REF PSEUDO_ARGS
 pseudocode_call: [PSEUDO_VAR " = "] pseudocode_call_ref
 pseudocode_dispatch: [PSEUDO_VAR " = "] pseudocode_dispatch_ref
-pseudocode_instantiate: PSEUDO_VAR " = " PSEUDO_CLASS PSEUDO_ARGS
-pseudocode_raise_instantiate: PSEUDO_RAISE_INSTANTIATE_LINE
+pseudocode_instantiate: PSEUDO_VAR " = " pseudocode_product_ref | RETURN WS+ pseudocode_product_ref | RAISE WS+ pseudocode_product_ref | YIELD WS+ pseudocode_product_ref
 pseudocode_set: SET WS+ PSEUDO_VAR " = " PSEUDO_EXPR
 pseudocode_resource: (READ | WRITE) WS+ RESOURCE_ID
 pseudocode_control: PSEUDO_IF_LINE | PSEUDO_WHILE_LINE | PSEUDO_FOR_LINE | PSEUDO_ELSE_LINE

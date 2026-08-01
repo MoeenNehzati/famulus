@@ -1200,7 +1200,8 @@ def test_relative_repo_dependency_is_grounded_to_local_call(tmp_path: Path) -> N
         '''    Pseudocode\n    ----------\n    - value = @_helper()\n\n'''
         '''    Wraps\n    -----\n    - none\n\n'''
         '''    CallsFromRepo\n    --------------\n    ._helper:\n      why: "Uses the local helper."\n    """\n'''
-        '''    return _helper()\n''',
+        '''    _helper()\n'''
+        '''    return 1\n''',
         encoding="utf-8",
     )
     issues = validate_module_docstrings(
