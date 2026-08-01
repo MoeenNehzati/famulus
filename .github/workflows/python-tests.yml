@@ -2,7 +2,7 @@ name: Python Tests
 
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, worktree-osx-installer-runtime-v5]
   pull_request:
     branches: [master, main]
 
