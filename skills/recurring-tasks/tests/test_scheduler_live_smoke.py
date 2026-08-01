@@ -39,8 +39,9 @@ from _schedule_backend._osx_backend import (  # noqa: E402
 )
 from _schedule_backend._windows_backend import (  # noqa: E402
     cron_to_schtasks_args,
-    executor_command,
     task_name,
+    wrapper_content,
+    wrapper_name,
 )
 
 
@@ -471,7 +472,14 @@ def _windows_smoke() -> None:
             runtime_resolver=runtime_resolver,
         )
         name = task_name(job_name)
+        # /TR has a hard 261-character limit; these smoke-test paths are
+        # already fairly long (nested under a GitHub Actions temp dir), so
+        # -- mirroring WindowsScheduleBackend.sync() -- write the real
+        # command into a short wrapper .cmd file and point /TR at just that
+        # wrapper's own path instead of the full inline command.
+        wrapper_path = tmp_dir / wrapper_name(job_name)
         try:
+            wrapper_path.write_text(wrapper_content(job, context), encoding="utf-8")
             _run(
                 [
                     "schtasks",
@@ -479,7 +487,7 @@ def _windows_smoke() -> None:
                     "/TN",
                     name,
                     "/TR",
-                    executor_command(job, context),
+                    str(wrapper_path),
                     "/F",
                     *cron_to_schtasks_args(schedule),
                 ]
@@ -490,3 +498,4 @@ def _windows_smoke() -> None:
             _run(["schtasks", "/Delete", "/TN", name, "/F"], check=False)
             post = _run(["schtasks", "/Query", "/TN", name], check=False)
             assert post.returncode != 0
+            wrapper_path.unlink(missing_ok=True)

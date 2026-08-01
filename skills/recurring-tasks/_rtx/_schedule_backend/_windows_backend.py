@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 from ._base_backend import ScheduleContext, ScheduleJob
 
@@ -25,6 +26,37 @@ def _short_task_name(name: str) -> str:
     return name.rsplit("\\", 1)[-1]
 
 
+def default_unit_dir() -> Path:
+    """Default directory for generated Task Scheduler wrapper ``.cmd`` files.
+
+    Mirrors ``resolve_famulus_paths``'s Windows layout
+    (``%LOCALAPPDATA%\\Famulus\\state\\...``) but tolerates a missing
+    ``LOCALAPPDATA`` -- e.g. when this backend's ``sync()`` is unit-tested
+    on a non-Windows CI host -- by falling back to the conventional
+    ``%LOCALAPPDATA%`` default location instead of raising
+    ``FamulusLocalAppDataMissingError``.
+    """
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
+    return base / "Famulus" / "state" / "recurring-tasks" / "task-wrappers"
+
+
+def wrapper_name(job_name: str) -> str:
+    return f"{task_name(job_name)}.cmd"
+
+
+def _quote_cmd_arg(value: str) -> str:
+    """Double-quote one wrapper ``.cmd`` argument, doubling embedded quotes.
+
+    Always quotes -- not just when the value contains whitespace -- so a
+    wrapper generated today, when CI/dev paths happen not to contain
+    spaces, still safely handles real installs under paths like
+    ``C:\\Program Files\\...`` or a mixed-case, space-containing username
+    directory.
+    """
+    return '"' + value.replace('"', '""') + '"'
+
+
 def _resolve_python_interpreter() -> str:
     """Resolve a concrete, absolute path to a python interpreter on PATH.
 
@@ -41,40 +73,57 @@ def _resolve_python_interpreter() -> str:
     return resolved
 
 
-def executor_command(job: ScheduleJob, context: ScheduleContext) -> str:
-    """Build the schtasks ``/TR`` command line for one job.
+def _command_parts(job: ScheduleJob, context: ScheduleContext) -> list[str]:
+    """Build the argv for one job's real, full command line.
 
     Windows has no shebang-based exec: unlike the Unix backends (which can
     invoke ``context.runtime_resolver`` directly since it carries its own
     ``#!/usr/bin/env python3`` shebang), the resolver script must be handed
     to an explicit python interpreter -- the same convention the installer's
     generated Windows dispatcher launcher uses
-    (``python "{resolver}" -m officina.dispatcher.cli %*``).
-
-    Unlike that ``.cmd`` shim, though, this command line is registered via
-    ``schtasks /Create /TR "..."``: Task Scheduler validates/resolves ``/TR``
-    at CREATE time using its own logic, not ``cmd.exe``'s PATH search (which
-    is what makes a bare ``"python"`` work inside a ``.cmd`` shim invoked at
-    run time). A bare, unqualified ``"python"`` string in ``/TR`` fails
-    schtasks task creation outright (observed: exit 2147500037 /
-    0x80004005, E_FAIL). So the interpreter is resolved to a concrete,
-    absolute path via ``shutil.which`` at command-construction time instead
-    -- this still avoids hardcoding ``sys.executable`` (pinning the job to
-    whichever interpreter happened to run the sync/installer script), while
-    producing a path schtasks can actually validate.
+    (``python "{resolver}" -m officina.dispatcher.cli %*``). The interpreter
+    is resolved to a concrete, absolute path via ``shutil.which`` rather than
+    hardcoding ``sys.executable`` (which would pin the job to whichever
+    interpreter happened to run the sync/installer script).
     """
     executor = context.skill_dir / "_rtx" / "_job_executor.py"
-    return subprocess.list2cmdline(
-        [
-            _resolve_python_interpreter(),
-            str(context.runtime_resolver),
-            str(executor),
-            "--jobs-file",
-            str(context.jobs_file),
-            "--job",
-            job.name,
-        ]
-    )
+    return [
+        _resolve_python_interpreter(),
+        str(context.runtime_resolver),
+        str(executor),
+        "--jobs-file",
+        str(context.jobs_file),
+        "--job",
+        job.name,
+    ]
+
+
+def executor_command(job: ScheduleJob, context: ScheduleContext) -> str:
+    """Build the full, real command line for one job (interpreter + resolver
+    + executor + args), quoted as a single string via
+    ``subprocess.list2cmdline``.
+
+    This is NOT what gets passed to ``schtasks /Create /TR`` directly --
+    ``/TR`` has a hard, documented 261-character limit on its value
+    ("ERROR: Value for '/TR' option cannot be more than 261 character(s)"),
+    and this full command line (absolute python interpreter + resolver
+    script + job executor script + ``--jobs-file <path>`` + ``--job
+    <name>``) routinely exceeds that once assembled under a real install
+    path. Instead this string is written into a short wrapper ``.cmd`` file
+    (see ``wrapper_content``/``sync``), and ``/TR`` points at just that
+    wrapper file's own short path.
+    """
+    return subprocess.list2cmdline(_command_parts(job, context))
+
+
+def wrapper_content(job: ScheduleJob, context: ScheduleContext) -> str:
+    """Generate the wrapper ``.cmd`` file content ``schtasks``' ``/TR`` will
+    invoke, working around the 261-character ``/TR`` value limit (see
+    ``executor_command``'s docstring): the full command line lives here
+    instead, and ``/TR`` is pointed at just this file's own short path.
+    """
+    quoted = " ".join(_quote_cmd_arg(part) for part in _command_parts(job, context))
+    return "@echo off\r\nsetlocal\r\n" + quoted + "\r\n"
 
 
 def _cron_weekday(value: str) -> str | None:
@@ -138,6 +187,8 @@ class WindowsScheduleBackend:
     name = "windows-task-scheduler"
 
     def sync(self, jobs: list[ScheduleJob], context: ScheduleContext) -> None:
+        unit_dir = context.unit_dir or default_unit_dir()
+        unit_dir.mkdir(parents=True, exist_ok=True)
         enabled_names = {job.name for job in jobs if job.enabled}
         if context.live:
             for existing in self._existing_task_names():
@@ -147,23 +198,31 @@ class WindowsScheduleBackend:
                         ["schtasks", "/Delete", "/TN", existing, "/F"],
                         capture_output=True,
                     )
+                    (unit_dir / wrapper_name(short_name[len(TASK_PREFIX):])).unlink(missing_ok=True)
                     print(f"Removed disabled job: '{short_name[len(TASK_PREFIX):]}'")
 
         for job in jobs:
+            wrapper_path = unit_dir / wrapper_name(job.name)
             if not job.enabled:
                 if context.live:
                     subprocess.run(
                         ["schtasks", "/Delete", "/TN", task_name(job.name), "/F"],
                         capture_output=True,
                     )
+                wrapper_path.unlink(missing_ok=True)
                 continue
+            # schtasks /Create /TR has a hard 261-character limit on its
+            # value; the wrapper file (see wrapper_content) carries the
+            # real, full command line so /TR only needs the wrapper's own
+            # short path -- see executor_command's docstring for detail.
+            wrapper_path.write_text(wrapper_content(job, context), encoding="utf-8")
             args = [
                 "schtasks",
                 "/Create",
                 "/TN",
                 task_name(job.name),
                 "/TR",
-                executor_command(job, context),
+                str(wrapper_path),
                 "/F",
                 *cron_to_schtasks_args(job.schedule),
             ]

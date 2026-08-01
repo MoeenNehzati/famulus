@@ -35,7 +35,9 @@ from _schedule_backend._osx_backend import (  # noqa: E402
 from _schedule_backend._windows_backend import (  # noqa: E402
     WindowsScheduleBackend,
     cron_to_schtasks_args,
+    default_unit_dir,
     task_name,
+    wrapper_name,
 )
 
 
@@ -257,8 +259,8 @@ def test_windows_cron_conversion_stays_task_scheduler_compatible():
     assert cron_to_schtasks_args("0 9 * * 1") == ["/SC", "WEEKLY", "/D", "MON", "/ST", "09:00"]
 
 
-def test_windows_sync_creates_task_scheduler_entry():
-    context = _context()
+def test_windows_sync_creates_task_scheduler_entry(tmp_path):
+    context = _context(unit_dir=tmp_path)
     job = ScheduleJob(
         name="my-job",
         description="My Job",
@@ -274,11 +276,23 @@ def test_windows_sync_creates_task_scheduler_entry():
     calls = [call.args[0] for call in run.call_args_list]
     create = next(args for args in calls if args[:2] == ["schtasks", "/Create"])
     assert create[create.index("/TN") + 1] == task_name("my-job")
-    assert "_job_executor.py" in create[create.index("/TR") + 1]
+    tr_value = create[create.index("/TR") + 1]
+    # The /TR value must be just the short wrapper .cmd path, not the full
+    # inline command -- schtasks /Create /TR has a hard 261-character limit
+    # on this value ("ERROR: Value for '/TR' option cannot be more than 261
+    # character(s)"), and the full interpreter+resolver+executor+args
+    # command line routinely exceeds that under a real install path.
+    assert "_job_executor.py" not in tr_value
+    assert tr_value == str(tmp_path / wrapper_name("my-job"))
     assert create[-4:] == ["/SC", "DAILY", "/ST", "09:00"]
 
+    wrapper_text = (tmp_path / wrapper_name("my-job")).read_text(encoding="utf-8")
+    assert "_job_executor.py" in wrapper_text
+    assert "--jobs-file" in wrapper_text
+    assert "--job" in wrapper_text and '"my-job"' in wrapper_text
 
-def test_windows_sync_removes_stale_task_scheduler_entry():
+
+def test_windows_sync_removes_stale_task_scheduler_entry(tmp_path):
     job = ScheduleJob(
         name="new-job",
         description="New Job",
@@ -297,12 +311,113 @@ def test_windows_sync_removes_stale_task_scheduler_entry():
             )
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
+    stale_wrapper = tmp_path / wrapper_name("old-job")
+    stale_wrapper.write_text("stale", encoding="utf-8")
+
     with mock.patch("_schedule_backend._windows_backend.subprocess.run", side_effect=fake_run) as run:
-        WindowsScheduleBackend().sync([job], _context())
+        WindowsScheduleBackend().sync([job], _context(unit_dir=tmp_path))
 
     calls = [call.args[0] for call in run.call_args_list]
     assert ["schtasks", "/Delete", "/TN", r"\Famulus-AI-ai-old-job", "/F"] in calls
     assert any(args[:2] == ["schtasks", "/Create"] for args in calls)
+    assert not stale_wrapper.exists()
+
+
+def test_windows_default_unit_dir_uses_local_app_data(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    unit_dir = default_unit_dir()
+    assert unit_dir == tmp_path / "AppData" / "Local" / "Famulus" / "state" / "recurring-tasks" / "task-wrappers"
+
+
+def test_windows_default_unit_dir_falls_back_without_local_app_data(monkeypatch):
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    unit_dir = default_unit_dir()
+    assert unit_dir == Path.home() / "AppData" / "Local" / "Famulus" / "state" / "recurring-tasks" / "task-wrappers"
+
+
+def test_windows_wrapper_tr_value_stays_well_under_261_char_limit(tmp_path):
+    """Reproduce the real CI failure's measured overage: a realistic long
+    Windows temp-dir-based install path (interpreter + resolver + executor +
+    --jobs-file + --job all chained inline) pushed the OLD /TR command to
+    352 characters, well past schtasks' documented 261-character /TR limit
+    (observed as schtasks /Create exit 2147500037 / 0x80004005). The fix
+    writes that full command into a wrapper .cmd file under a short,
+    fixed wrapper directory instead -- independent of how deep the
+    runtime/resolver/jobs-file paths are -- and points /TR at just the
+    wrapper's own path. Assert that NEW /TR value stays well under the
+    limit, with safety margin for real usernames/paths longer than CI's
+    ``RUNNER~1`` short name. The wrapper directory itself
+    (``unit_dir``) is deliberately kept short here, mirroring
+    ``default_unit_dir()``'s fixed, LOCALAPPDATA-rooted location on a
+    real Windows host -- it does not need to nest under the (long) release
+    path the way the interpreter/resolver/executor/jobs-file paths do."""
+    unit_dir = tmp_path / "task-wrappers"
+
+    long_root = (
+        tmp_path
+        / "Users"
+        / "RUNNER~1"
+        / "AppData"
+        / "Local"
+        / "Temp"
+        / "recurring-tasks-smoke-abcdef01"
+        / "runtime"
+        / "releases"
+        / "test-release-2026-08-01T00-00-00Z"
+        / "venv"
+        / "Scripts"
+    )
+    context = ScheduleContext(
+        skill_dir=SKILL_DIR,
+        jobs_file=long_root / "config" / "recurring-tasks" / "jobs.yaml",
+        log_dir=long_root / "logs",
+        unit_dir=unit_dir,
+        live=False,
+        runtime_resolver=long_root / "bootstrap" / "resolvers" / "v1" / "launch.py",
+    )
+    job = ScheduleJob(
+        name="codex-ci-smoke-1234567890",
+        description="recurring-tasks live scheduler smoke",
+        command="/usr/bin/echo hello",
+        schedule="0 9 * * *",
+        enabled=True,
+    )
+
+    with mock.patch("_schedule_backend._windows_backend.shutil.which") as which:
+        which.side_effect = (
+            lambda name: str(long_root / "python.exe") if name == "python" else None
+        )
+        WindowsScheduleBackend().sync([job], context)
+
+    wrapper_path = unit_dir / wrapper_name(job.name)
+    tr_value = str(wrapper_path)
+    assert len(tr_value) < 200, f"/TR value too long ({len(tr_value)} chars): {tr_value!r}"
+
+    # The measured, previously-failing inline command for comparison: the
+    # same interpreter/resolver/executor/args chained on one /TR line.
+    old_style_tr_value = subprocess.list2cmdline(
+        [
+            str(long_root / "python.exe"),
+            str(context.runtime_resolver),
+            str(SKILL_DIR / "_rtx" / "_job_executor.py"),
+            "--jobs-file",
+            str(context.jobs_file),
+            "--job",
+            job.name,
+        ]
+    )
+    assert len(old_style_tr_value) > 261, (
+        "test setup should reproduce the real overage that motivated this fix "
+        f"(got {len(old_style_tr_value)} chars)"
+    )
+
+    wrapper_text = wrapper_path.read_text(encoding="utf-8")
+    assert str(long_root / "python.exe") in wrapper_text
+    assert str(context.runtime_resolver) in wrapper_text
+    assert "_job_executor.py" in wrapper_text
+    assert "--jobs-file" in wrapper_text
+    assert str(context.jobs_file) in wrapper_text
+    assert '"codex-ci-smoke-1234567890"' in wrapper_text
 
 
 def test_windows_test_runs_expected_task():
