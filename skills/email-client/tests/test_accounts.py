@@ -275,7 +275,16 @@ class FakeSecretBackend:
         return self.stored.pop((namespace, key), None) is not None
 
 
-CREDENTIAL_PLATFORM = "linux"
+
+# Must match the real runtime platform: the registry is written here via a
+# direct in-process call, but read back by `run()` below through a real
+# subprocess invocation of `_email_accounts.py`, whose `--home`-resolving
+# CLI defaults `platform` to `sys.platform` (the actual OS running the
+# test). A hardcoded "linux" here previously matched on Linux CI by
+# coincidence but silently wrote the fake registry to the wrong (Linux)
+# path layout on macOS/Windows CI, where the subprocess looks it up under
+# the platform-correct layout and finds nothing.
+CREDENTIAL_PLATFORM = sys.platform
 
 
 def _store_credential(home: Path, *, granted_gmail_scope: bool) -> str:
