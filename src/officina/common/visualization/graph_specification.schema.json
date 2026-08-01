@@ -46,9 +46,24 @@
     "ui": {
       "$ref": "#/definitions/uiConfig"
     },
+    "renderer_dependencies": {
+      "type": "array",
+      "description": "Ordered optional renderer capabilities resolved through the renderer-owned trusted dependency registry.",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/definitions/rendererDependency"
+      }
+    },
     "categories": {
       "type": "array",
       "description": "Optional machine-readable category catalog for legend/filtering.",
+      "items": {
+        "$ref": "#/definitions/category"
+      }
+    },
+    "edge_categories": {
+      "type": "array",
+      "description": "Optional machine-readable edge-category catalog for legend/filtering.",
       "items": {
         "$ref": "#/definitions/category"
       }
@@ -63,6 +78,47 @@
     }
   },
   "definitions": {
+    "rendererDependency": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/mathjaxDependency"
+        }
+      ]
+    },
+    "mathjaxDependency": {
+      "type": "object",
+      "required": ["id", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "const": "mathjax"
+        },
+        "version": {
+          "type": "string",
+          "enum": ["3"]
+        },
+        "configuration": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "type": "string",
+              "const": "tex"
+            },
+            "output": {
+              "type": "string",
+              "const": "svg"
+            },
+            "macros": {
+              "type": "object",
+              "additionalProperties": {
+                "type": ["string", "array"]
+              }
+            }
+          }
+        }
+      }
+    },
     "documentMeta": {
       "type": "object",
       "description": "Optional document-level context shown in viewer metadata.",
@@ -154,6 +210,21 @@
                 "type": "string",
                 "minLength": 1
               }
+            },
+            "hidden_edge_types": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "collapsed_containers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "Container ids initially shown without their descendants."
             },
             "pinned_nodes": {
               "type": "array",
@@ -267,6 +338,11 @@
           "type": "string",
           "minLength": 1
         },
+        "details": {
+          "type": "object",
+          "description": "Optional extractor-selected structured annotation rendered without domain inference.",
+          "additionalProperties": true
+        },
         "confidence": {
           "type": "string",
           "enum": ["High", "Medium", "Low", "Verified", "Likely", "Unknown"]
@@ -345,6 +421,11 @@
           "minLength": 1,
           "description": "Renderer category/type used for legend, style, and filtering."
         },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional open-ended semantic kind used for color assignment independently of node shape."
+        },
         "category": {
           "type": "string",
           "minLength": 1
@@ -396,6 +477,53 @@
           "type": "string",
           "minLength": 1
         },
+        "details": {
+          "type": "object",
+          "description": "Optional extractor-selected inspector content rendered without domain inference.",
+          "additionalProperties": false,
+          "properties": {
+            "summary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sections": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["title", "fields"],
+                "additionalProperties": false,
+                "properties": {
+                  "title": {"type": "string", "minLength": 1},
+                  "fields": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["label", "value", "format"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "label": {"type": "string", "minLength": 1},
+                        "value": {
+                          "oneOf": [
+                            {"type": "string"},
+                            {"type": "number"},
+                            {"type": "boolean"},
+                            {"type": "array", "items": {"type": ["string", "number", "boolean"]}}
+                          ]
+                        },
+                        "format": {
+                          "type": "string",
+                          "enum": ["text", "code", "path", "reference", "list", "reference-list"]
+                        },
+                        "target": {"type": "string", "minLength": 1},
+                        "copyable": {"type": "boolean"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "summary": {
           "type": "string",
           "minLength": 1
@@ -406,7 +534,67 @@
         },
         "container": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "Canonical id of this entity's single structural parent."
+        },
+        "decorations": {
+          "type": "array",
+          "description": "Optional domain-neutral visual annotations attached to the node rather than represented as graph edges.",
+          "items": {
+            "type": "object",
+            "required": ["type", "style", "label"],
+            "additionalProperties": true,
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Generic decoration family, such as outline or badge."
+              },
+              "style": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Generic rendering style within the decoration family."
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "references": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "Canonical ids whose relationship is summarized by the decoration."
+              },
+              "metadata": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "presentation": {
+          "type": "object",
+          "description": "Optional domain-neutral visual role used consistently by graph nodes and legend entries.",
+          "additionalProperties": true,
+          "properties": {
+            "form": {
+              "type": "string",
+              "enum": ["node", "container"],
+              "description": "Whether the entity is presented as an ordinary node or a framed containment region."
+            },
+            "tone": {
+              "type": "string",
+              "enum": ["subtle", "strong"],
+              "description": "Relative visual intensity without prescribing a domain-specific color."
+            }
+          }
         },
         "group": {
           "type": "string",
@@ -414,6 +602,8 @@
         },
         "children": {
           "type": "array",
+          "maxItems": 0,
+          "description": "Deprecated inverse containment field; use container on each child.",
           "items": {
             "type": "string",
             "minLength": 1

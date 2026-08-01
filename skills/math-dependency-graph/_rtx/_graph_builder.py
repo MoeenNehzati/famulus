@@ -105,12 +105,16 @@ def merge_mathjax_macros(doc: dict, macro_file: Path | None) -> int:
     if not isinstance(file_macros, dict):
         raise SystemExit(f"Macro file must contain a JSON object: {macro_file}")
 
-    document_meta = doc.setdefault("document", {})
-    json_macros = document_meta.get("mathjax_macros", {})
+    dependencies = doc.setdefault("renderer_dependencies", [])
+    mathjax = next((item for item in dependencies if item.get("id") == "mathjax"), None)
+    if mathjax is None:
+        mathjax = {"id": "mathjax", "version": "3", "configuration": {}}
+        dependencies.append(mathjax)
+    configuration = mathjax.setdefault("configuration", {})
+    json_macros = configuration.get("macros", {})
     if json_macros and not isinstance(json_macros, dict):
-        raise SystemExit("'document.mathjax_macros' must be an object when present.")
-
-    document_meta["mathjax_macros"] = {**file_macros, **json_macros}
+        raise SystemExit("MathJax renderer dependency macros must be an object.")
+    configuration.update({"input": "tex", "output": "svg", "macros": {**file_macros, **json_macros}})
     return len(file_macros)
 
 

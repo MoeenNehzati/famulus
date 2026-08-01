@@ -1,11 +1,21 @@
 {
   "document": {
     "title": "Macro Fixture",
-    "source_entrypoint": "main.tex",
-    "mathjax_macros": {
-      "ev": "\\operatorname{eval}"
-    }
+    "source_entrypoint": "main.tex"
   },
+  "renderer_dependencies": [
+    {
+      "id": "mathjax",
+      "version": "3",
+      "configuration": {
+        "input": "tex",
+        "output": "svg",
+        "macros": {
+          "ev": "\\operatorname{eval}"
+        }
+      }
+    }
+  ],
   "entities": [
     {
       "id": "root",
@@ -17,7 +27,7 @@
       "defined": "Fixture",
       "active_in": "Fixture",
       "source": "explicit",
-      "depends_on": [],
+      "connects_to": [],
       "position": 1
     }
   ]

@@ -8,6 +8,11 @@ from .elk_html_renderer import (
     build_html_with_elk,
 )
 from .graph import BaseGraph, Graph
+from .from_blueprint import (
+    BlueprintVisualizer,
+    build_blueprint_graph,
+    build_blueprint_payload,
+)
 from .server import GraphServer, start_graph_server
 from .base_extractor import BaseJsonExtractor
 from .base_visualizer import (
@@ -47,7 +52,10 @@ __all__ = [
     "BaseJsonExtractor",
     "BaseRenderer",
     "BaseGraph",
+    "BlueprintVisualizer",
     "Graph",
+    "build_blueprint_graph",
+    "build_blueprint_payload",
     "GraphBuildError",
     "GraphBuildResult",
     "GraphBuildValidationError",

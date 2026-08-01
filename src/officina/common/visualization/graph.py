@@ -31,11 +31,17 @@ class Graph:
         document_meta = graph_json.get("document", {})
         if document_meta and not isinstance(document_meta, dict):
             raise ValueError("'document' must be an object when present.")
-        mathjax_macros = document_meta.get("mathjax_macros", {})
-        if mathjax_macros and not isinstance(mathjax_macros, dict):
-            raise ValueError("'document.mathjax_macros' must be an object when present.")
+        if "mathjax_macros" in document_meta:
+            raise ValueError(
+                "'document.mathjax_macros' is obsolete; declare MathJax in "
+                "'renderer_dependencies' and place macros in its configuration."
+            )
+        renderer_dependencies = graph_json.get("renderer_dependencies", [])
+        if not isinstance(renderer_dependencies, list):
+            raise ValueError("'renderer_dependencies' must be a list when present.")
 
         seen_ids: set[str] = set()
+        containers: dict[str, str] = {}
         for idx, entity in enumerate(graph_json["entities"], start=1):
             if not isinstance(entity, dict):
                 raise ValueError(f"Entity {idx} must be an object.")
@@ -49,15 +55,39 @@ class Graph:
             connects_to = entity.get("connects_to", [])
             if not isinstance(connects_to, list):
                 raise ValueError(f"Entity '{entity_id}' has non-list 'connects_to'.")
-            for child in entity.get("children", []):
-                if not isinstance(child, str) or not child.strip():
-                    raise ValueError(f"Entity '{entity_id}' has invalid child in 'children'.")
+            if entity.get("children"):
+                raise ValueError(
+                    f"Entity '{entity_id}' uses noncanonical 'children'; "
+                    "declare containment with each child's canonical 'container' field."
+                )
+            container = entity.get("container")
+            if container is not None:
+                if not isinstance(container, str) or not container.strip():
+                    raise ValueError(f"Entity '{entity_id}' has invalid 'container'.")
+                containers[entity_id] = container.strip()
             if not isinstance(entity.get("type"), str) or not entity.get("type"):
                 raise ValueError(f"Entity '{entity_id}' has invalid 'type'.")
             if not isinstance(entity.get("position"), int):
                 raise ValueError(f"Entity '{entity_id}' has invalid 'position'.")
             if entity.get("ref") is not None and not isinstance(entity.get("ref"), str):
                 raise ValueError(f"Entity '{entity_id}' has invalid 'ref'.")
+
+        for entity_id, container_id in containers.items():
+            if container_id not in seen_ids:
+                raise ValueError(
+                    f"Entity '{entity_id}' references unknown container '{container_id}'."
+                )
+            if container_id == entity_id:
+                raise ValueError(f"Entity '{entity_id}' cannot contain itself.")
+
+        for entity_id in containers:
+            seen_chain: set[str] = set()
+            current = entity_id
+            while current in containers:
+                if current in seen_chain:
+                    raise ValueError(f"Entity '{entity_id}' participates in a containment cycle.")
+                seen_chain.add(current)
+                current = containers[current]
 
         for entity in graph_json["entities"]:
             source_id = str(entity["id"])

@@ -669,8 +669,9 @@ def _build_graph_payload(
     for class_id, children in class_children.items():
         if class_id not in entities_by_id:
             continue
-        if children:
-            entities_by_id[class_id]["children"] = sorted(set(children))
+        for child_id in sorted(set(children)):
+            if child_id in entities_by_id:
+                entities_by_id[child_id]["container"] = class_id
 
     for phase_name, members in getattr(pipeline, "phase_members", {}).items():
         for member in members:
