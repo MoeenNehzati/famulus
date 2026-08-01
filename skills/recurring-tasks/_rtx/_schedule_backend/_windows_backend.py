@@ -5,11 +5,16 @@ from __future__ import annotations
 import csv
 import os
 import re
+import shutil
 import subprocess
 
 from ._base_backend import ScheduleContext, ScheduleJob
 
 TASK_PREFIX = "Famulus-AI-ai-"
+
+
+class WindowsPythonNotFoundError(RuntimeError):
+    """Raised when no ``python``/``py`` interpreter can be resolved on PATH."""
 
 
 def task_name(job_name: str) -> str:
@@ -20,20 +25,48 @@ def _short_task_name(name: str) -> str:
     return name.rsplit("\\", 1)[-1]
 
 
+def _resolve_python_interpreter() -> str:
+    """Resolve a concrete, absolute path to a python interpreter on PATH.
+
+    Tries ``python`` then falls back to the ``py`` launcher, raising a clear
+    error if neither is found rather than silently falling back to a bare,
+    unqualified name schtasks can't validate.
+    """
+    resolved = shutil.which("python") or shutil.which("py")
+    if not resolved:
+        raise WindowsPythonNotFoundError(
+            "could not resolve a python interpreter on PATH (tried 'python' and 'py'); "
+            "schtasks /TR requires a concrete, validatable command"
+        )
+    return resolved
+
+
 def executor_command(job: ScheduleJob, context: ScheduleContext) -> str:
     """Build the schtasks ``/TR`` command line for one job.
 
     Windows has no shebang-based exec: unlike the Unix backends (which can
     invoke ``context.runtime_resolver`` directly since it carries its own
     ``#!/usr/bin/env python3`` shebang), the resolver script must be handed
-    to an explicit ``python`` interpreter -- the same convention the
-    installer's generated Windows dispatcher launcher uses
+    to an explicit python interpreter -- the same convention the installer's
+    generated Windows dispatcher launcher uses
     (``python "{resolver}" -m officina.dispatcher.cli %*``).
+
+    Unlike that ``.cmd`` shim, though, this command line is registered via
+    ``schtasks /Create /TR "..."``: Task Scheduler validates/resolves ``/TR``
+    at CREATE time using its own logic, not ``cmd.exe``'s PATH search (which
+    is what makes a bare ``"python"`` work inside a ``.cmd`` shim invoked at
+    run time). A bare, unqualified ``"python"`` string in ``/TR`` fails
+    schtasks task creation outright (observed: exit 2147500037 /
+    0x80004005, E_FAIL). So the interpreter is resolved to a concrete,
+    absolute path via ``shutil.which`` at command-construction time instead
+    -- this still avoids hardcoding ``sys.executable`` (pinning the job to
+    whichever interpreter happened to run the sync/installer script), while
+    producing a path schtasks can actually validate.
     """
     executor = context.skill_dir / "_rtx" / "_job_executor.py"
     return subprocess.list2cmdline(
         [
-            "python",
+            _resolve_python_interpreter(),
             str(context.runtime_resolver),
             str(executor),
             "--jobs-file",

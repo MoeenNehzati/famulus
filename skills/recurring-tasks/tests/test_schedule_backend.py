@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Tests for the recurring-tasks private scheduler backend package."""
 
+import json
+import os
 import sys
 import plistlib
 import subprocess
 from pathlib import Path
 from unittest import mock
+
+import pytest
 
 SKILL_DIR = Path(__file__).parent.parent
 REPO_SRC = SKILL_DIR.parents[1] / "src"
@@ -368,10 +372,116 @@ def test_windows_executor_command_uses_python_interpreter_with_stable_resolver(t
         schedule="0 9 * * *",
         enabled=True,
     )
-    command = executor_command(job, context)
-    assert command.split()[0] == "python"
+    with mock.patch("_schedule_backend._windows_backend.shutil.which") as which:
+        which.side_effect = lambda name: r"C:\Python312\python.exe" if name == "python" else None
+        command = executor_command(job, context)
+    assert command.split()[0] == r"C:\Python312\python.exe"
     assert str(context.runtime_resolver) in command
     assert sys.executable not in command
+    assert '"python"' not in command
+    assert command.split()[0] != "python"
+
+
+def test_windows_executor_command_falls_back_to_py_launcher(tmp_path):
+    """When ``python`` isn't on PATH but the ``py`` launcher is, that
+    resolved absolute path is used instead of the bare unqualified name."""
+    from _schedule_backend._windows_backend import executor_command
+
+    context = _context()
+    job = ScheduleJob(
+        name="my-job",
+        description="My Job",
+        command="/usr/bin/echo hello",
+        schedule="0 9 * * *",
+        enabled=True,
+    )
+    with mock.patch("_schedule_backend._windows_backend.shutil.which") as which:
+        which.side_effect = lambda name: r"C:\Windows\py.exe" if name == "py" else None
+        command = executor_command(job, context)
+    assert command.split()[0] == r"C:\Windows\py.exe"
+
+
+def test_windows_executor_command_raises_clear_error_when_no_interpreter_found(tmp_path):
+    """schtasks /TR rejects a bare, unqualified 'python' string at task-
+    creation time; if neither 'python' nor 'py' resolves on PATH, fail
+    loudly instead of silently constructing a broken command."""
+    from _schedule_backend._windows_backend import WindowsPythonNotFoundError, executor_command
+
+    context = _context()
+    job = ScheduleJob(
+        name="my-job",
+        description="My Job",
+        command="/usr/bin/echo hello",
+        schedule="0 9 * * *",
+        enabled=True,
+    )
+    with mock.patch("_schedule_backend._windows_backend.shutil.which", return_value=None):
+        with pytest.raises(WindowsPythonNotFoundError):
+            executor_command(job, context)
+
+
+def test_deploy_test_resolver_writes_real_executable_resolver_copy(tmp_path):
+    """The live-smoke tests' resolver-deployment helper must deploy a real,
+    executable copy of the actual resolver source (byte-for-byte) into the
+    test's own isolated tmp_dir, at the exact relative path the resolver's
+    own runtime_root derivation requires -- not the real, system-wide
+    ``_default_runtime_resolver()`` path. This is the one piece of Bug 1's
+    fix that IS verifiable on this Linux sandbox; the full launchd/schtasks
+    exec integration can only be proven by a real CI run."""
+    live_smoke = _import_live_smoke_module()
+
+    resolver_path = live_smoke._deploy_test_resolver(tmp_path)
+
+    assert resolver_path == tmp_path / "runtime" / "bootstrap" / "resolvers" / "v1" / "launch.py"
+    assert resolver_path.exists()
+    assert resolver_path.read_bytes() == live_smoke._RESOLVER_SOURCE.read_bytes()
+    assert os.access(resolver_path, os.X_OK)
+
+    # Never touches the real, system-wide default resolver location.
+    from _schedule_backend._base_backend import _default_runtime_resolver
+
+    assert resolver_path != _default_runtime_resolver()
+
+
+def test_deploy_test_resolver_produces_a_resolvable_current_json(tmp_path):
+    """The deployed fake current.json + trusted-roots.json must let the
+    real resolver's own containment check accept the fake python_bin -- if
+    this fails, the resolver would refuse to exec even once the file-not-
+    found problem (Bug 1) is fixed."""
+    live_smoke = _import_live_smoke_module()
+
+    resolver_path = live_smoke._deploy_test_resolver(tmp_path)
+    runtime_root = resolver_path.parents[3]
+
+    current = json.loads((runtime_root / "current.json").read_text())
+    assert current["schema_version"] == 1
+    python_bin = Path(current["python_bin"])
+    assert python_bin.is_symlink()
+    assert python_bin.resolve() == Path(sys.executable).resolve()
+
+    trusted_roots = json.loads((resolver_path.parent / "trusted-roots.json").read_text())
+    assert str(Path(sys.executable).resolve().parent) in trusted_roots
+
+    # Exercise the REAL resolver's own containment check against the fake
+    # current.json this helper wrote, proving the deployed data will
+    # actually let officina.install.resolvers.launch.main() resolve a
+    # python_bin instead of refusing it.
+    from officina.install.resolvers.launch import _load_current_pointer
+
+    resolved = _load_current_pointer(
+        runtime_root, trusted_roots=tuple(Path(entry) for entry in trusted_roots)
+    )
+    assert resolved == Path(sys.executable).resolve()
+
+
+def _import_live_smoke_module():
+    import importlib.util
+
+    module_path = Path(__file__).parent / "test_scheduler_live_smoke.py"
+    spec = importlib.util.spec_from_file_location("_test_scheduler_live_smoke", module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _context(unit_dir: Path | None = None) -> ScheduleContext:

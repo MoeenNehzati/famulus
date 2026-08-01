@@ -7,6 +7,7 @@ import json
 import os
 import platform
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -30,7 +31,6 @@ from _schedule_backend._linux_backend import (  # noqa: E402
     timer_content,
 )
 from _schedule_backend import ScheduleContext, ScheduleJob  # noqa: E402
-from _schedule_backend._base_backend import _default_runtime_resolver  # noqa: E402
 from _schedule_backend._osx_backend import (  # noqa: E402
     OSXScheduleBackend,
     launchd_label,
@@ -49,6 +49,81 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("FAMULUS_RUN_SCHEDULER_SMOKE") != "1",
     reason="live scheduler smoke is opt-in; set FAMULUS_RUN_SCHEDULER_SMOKE=1",
 )
+
+
+_RESOLVER_SOURCE = REPO_SRC / "officina" / "install" / "resolvers" / "launch.py"
+
+
+def _deploy_test_resolver(tmp_dir: Path) -> Path:
+    """Deploy a real, executable resolver copy -- plus a minimal fake
+    managed-runtime structure it needs to resolve into a real interpreter --
+    under this test's own isolated ``tmp_dir``.
+
+    These live-smoke tests exercise the scheduler sync/bootstrap/cleanup
+    mechanism standalone, without ever running the real installer. The
+    scheduler backends generate launch configs that reference
+    ``ScheduleContext.runtime_resolver`` -- normally the fixed, real,
+    system-wide path
+    ``officina.install.resolvers.launch`` is deployed to by
+    ``officina.install.managed_runtime._deploy_resolver()`` /
+    ``build_candidate_release`` during a real install. On a fresh CI runner
+    (or any host that hasn't run the installer) that path doesn't exist, so
+    launchd/schtasks/systemd would try to exec a nonexistent program and
+    silently do nothing. Mutating the real system-wide path as a side
+    effect of a standalone test would also just be bad test hygiene even
+    where it does exist. This helper instead mirrors ``_deploy_resolver``'s
+    ``shutil.copy2`` + ``chmod(0o755)`` deployment, but writes into
+    ``tmp_dir`` only.
+
+    ``officina.install.resolvers.launch.main`` derives its own
+    ``runtime_root`` from its OWN invocation path
+    (``Path(argv[0]).resolve().parents[3]``), so the deployed copy MUST live
+    at exactly ``<runtime_root>/bootstrap/resolvers/v1/launch.py`` (four
+    levels down from ``runtime_root``) for that derivation to land on the
+    directory this helper populates below -- an arbitrary tmp location
+    would not work.
+
+    The resolver then reads ``<runtime_root>/current.json`` and execs into
+    its ``python_bin``, refusing any ``python_bin`` that doesn't either live
+    fully under ``runtime_root`` or resolve (through a symlink) into an
+    allow-listed ``trusted-roots.json`` entry (see
+    ``officina.install.resolvers.launch._require_contained_or_trusted``).
+    Real installs satisfy this with a ``uv``-managed venv's ``bin/python``,
+    itself a symlink into uv's interpreter store, trusted via
+    ``trusted-roots.json``. This helper fakes the same shape: a symlink
+    under ``runtime_root`` pointing at the actual, currently-running
+    interpreter (``sys.executable``, fully resolved -- guaranteed to be a
+    real, working interpreter, since it is running this test right now),
+    with its resolved parent directory listed in ``trusted-roots.json``.
+    """
+    runtime_root = tmp_dir / "runtime"
+    resolver_dir = runtime_root / "bootstrap" / "resolvers" / "v1"
+    resolver_dir.mkdir(parents=True, exist_ok=True)
+    resolver_path = resolver_dir / "launch.py"
+    shutil.copy2(_RESOLVER_SOURCE, resolver_path)
+    resolver_path.chmod(0o755)
+
+    real_interpreter = Path(sys.executable).resolve()
+    release_dir = runtime_root / "releases" / "test-release"
+    venv_bin_dir = release_dir / "venv" / ("Scripts" if platform.system() == "Windows" else "bin")
+    venv_bin_dir.mkdir(parents=True, exist_ok=True)
+    python_bin = venv_bin_dir / real_interpreter.name
+    python_bin.symlink_to(real_interpreter)
+
+    (resolver_dir / "trusted-roots.json").write_text(
+        json.dumps([str(real_interpreter.parent)]), encoding="utf-8"
+    )
+    (runtime_root / "current.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "runtime_source": str(release_dir),
+                "python_bin": str(python_bin),
+            }
+        ),
+        encoding="utf-8",
+    )
+    return resolver_path
 
 
 def test_live_scheduler_fires_and_cleans_up():
@@ -173,6 +248,7 @@ def _linux_smoke() -> None:
         timer_path = unit_dir / timer_name
 
         try:
+            runtime_resolver = _deploy_test_resolver(tmp_dir)
             unit_dir.mkdir(parents=True, exist_ok=True)
             service_path.write_text(
                 service_content(
@@ -180,6 +256,7 @@ def _linux_smoke() -> None:
                     "recurring-tasks live scheduler smoke",
                     jobs_file,
                     RTX_DIR / "_job_executor.py",
+                    runtime_resolver,
                 ),
                 encoding="utf-8",
             )
@@ -225,6 +302,7 @@ def _macos_smoke() -> None:
         log_file = tmp_dir / "run.log"
 
         try:
+            runtime_resolver = _deploy_test_resolver(tmp_dir)
             plist_path.write_bytes(
                 plist_content(
                     job_name=job_name,
@@ -232,7 +310,7 @@ def _macos_smoke() -> None:
                     jobs_file=jobs_file,
                     log_file=log_file,
                     executor=RTX_DIR / "_job_executor.py",
-                    runtime_resolver=_default_runtime_resolver(),
+                    runtime_resolver=runtime_resolver,
                     schedule=schedule,
                 )
             )
@@ -268,7 +346,7 @@ def _macos_smoke_with_stale_prior_plist() -> None:
         job_name = f"codex-ci-smoke-stale-{int(time.time())}"
         label = launchd_label(job_name)
         service_target = f"{backend._target()}/{label}"
-        runtime_resolver = _default_runtime_resolver()
+        runtime_resolver = _deploy_test_resolver(tmp_dir)
 
         # Simulate a prior release's unit_dir, now stale/removed.
         old_dir = tmp_dir / "old_release_unit_dir"
@@ -377,6 +455,7 @@ def _windows_smoke() -> None:
         schedule = _next_minute_cron()
         command = _command_for_marker(_write_marker_script(tmp_dir), marker)
         jobs_file = _jobs_file(tmp_dir, job_name, command, schedule)
+        runtime_resolver = _deploy_test_resolver(tmp_dir)
 
         job = ScheduleJob(
             name=job_name,
@@ -385,7 +464,12 @@ def _windows_smoke() -> None:
             schedule=schedule,
             enabled=True,
         )
-        context = ScheduleContext(skill_dir=SKILL_DIR, jobs_file=jobs_file, log_dir=tmp_dir)
+        context = ScheduleContext(
+            skill_dir=SKILL_DIR,
+            jobs_file=jobs_file,
+            log_dir=tmp_dir,
+            runtime_resolver=runtime_resolver,
+        )
         name = task_name(job_name)
         try:
             _run(
