@@ -46,15 +46,27 @@ def wrapper_name(job_name: str) -> str:
 
 
 def _quote_cmd_arg(value: str) -> str:
-    """Double-quote one wrapper ``.cmd`` argument, doubling embedded quotes.
+    """Double-quote one wrapper ``.cmd`` argument, doubling embedded quotes
+    and ``%`` characters.
 
     Always quotes -- not just when the value contains whitespace -- so a
     wrapper generated today, when CI/dev paths happen not to contain
     spaces, still safely handles real installs under paths like
     ``C:\\Program Files\\...`` or a mixed-case, space-containing username
     directory.
+
+    ``%`` is doubled too: inside a batch (``.cmd``) file, ``%`` is cmd.exe's
+    environment-variable (``%VAR%``) and batch-positional-parameter
+    (``%1``, ``%*``) expansion marker, expanded in a separate parsing pass
+    that ordinary double-quoting does not suppress. Doubling (``%%``) is the
+    standard batch-file-internal escape for a literal ``%``. This matters
+    because job names are free text (``jobs.yaml`` enforces no character
+    restriction) and resolved paths can contain ``%`` (e.g. via an unusual
+    username or a ``%LOCALAPPDATA%`` value that itself contains ``%``), so
+    without this a literal ``%`` in an argument would be corrupted by
+    cmd.exe's expansion when the wrapper is invoked by Task Scheduler.
     """
-    return '"' + value.replace('"', '""') + '"'
+    return '"' + value.replace('"', '""').replace('%', '%%') + '"'
 
 
 def _resolve_python_interpreter() -> str:
@@ -215,7 +227,15 @@ class WindowsScheduleBackend:
             # value; the wrapper file (see wrapper_content) carries the
             # real, full command line so /TR only needs the wrapper's own
             # short path -- see executor_command's docstring for detail.
-            wrapper_path.write_text(wrapper_content(job, context), encoding="utf-8")
+            # wrapper_content() already builds its string with explicit
+            # \r\n line endings throughout. Path.write_text()'s default
+            # text-mode newline translation (newline=None) would rewrite
+            # every \n to os.linesep on write -- doubling each already-
+            # explicit \r\n into \r\r\n on a real Windows host (where
+            # os.linesep == "\r\n"). newline="" disables that translation
+            # entirely so the exact literal bytes intended for disk are
+            # written as-is.
+            wrapper_path.write_text(wrapper_content(job, context), encoding="utf-8", newline="")
             args = [
                 "schtasks",
                 "/Create",

@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import sys
 import plistlib
 import subprocess
@@ -34,9 +35,11 @@ from _schedule_backend._osx_backend import (  # noqa: E402
 )
 from _schedule_backend._windows_backend import (  # noqa: E402
     WindowsScheduleBackend,
+    _quote_cmd_arg,
     cron_to_schtasks_args,
     default_unit_dir,
     task_name,
+    wrapper_content,
     wrapper_name,
 )
 
@@ -290,6 +293,98 @@ def test_windows_sync_creates_task_scheduler_entry(tmp_path):
     assert "_job_executor.py" in wrapper_text
     assert "--jobs-file" in wrapper_text
     assert "--job" in wrapper_text and '"my-job"' in wrapper_text
+
+
+def test_windows_wrapper_content_uses_explicit_crlf_only(tmp_path):
+    """``wrapper_content`` must build its string with explicit ``\\r\\n``
+    line endings throughout -- never a bare ``\\n`` -- so the on-disk write
+    can safely disable newline translation entirely (see the write-time
+    test below) without leaving any line ending un-terminated."""
+    context = _context(unit_dir=tmp_path)
+    job = ScheduleJob(
+        name="my-job",
+        description="My Job",
+        command="/usr/bin/echo hello",
+        schedule="0 9 * * *",
+        enabled=True,
+    )
+
+    content = wrapper_content(job, context)
+
+    assert "\r\n" in content
+    # No bare '\n' that isn't immediately preceded by '\r'.
+    assert re.search(r"(?<!\r)\n", content) is None
+
+
+def test_windows_sync_writes_wrapper_without_newline_translation(tmp_path):
+    """``wrapper_content`` already bakes explicit ``\\r\\n`` line endings into
+    its returned string. ``Path.write_text(..., encoding="utf-8")`` with no
+    ``newline=""`` performs Python's default text-mode newline translation,
+    which rewrites every ``\\n`` in the string to ``os.linesep`` at write
+    time -- so on a real Windows host (``os.linesep == "\\r\\n"``) each
+    already-explicit ``\\r\\n`` becomes ``\\r\\r\\n`` on disk. This translation
+    is OS-dependent and can't be reproduced by inspecting bytes on a Linux
+    test host (``os.linesep`` is ``"\\n"`` here, so no doubling would occur
+    regardless of the fix) -- so assert the fix at the call-site level: the
+    wrapper file must be written with ``newline=""`` so Python performs no
+    newline translation at all, since the string already contains the exact
+    literal bytes intended for disk."""
+    context = _context(unit_dir=tmp_path)
+    job = ScheduleJob(
+        name="my-job",
+        description="My Job",
+        command="/usr/bin/echo hello",
+        schedule="0 9 * * *",
+        enabled=True,
+    )
+
+    with mock.patch("_schedule_backend._windows_backend.subprocess.run") as run, \
+            mock.patch.object(Path, "write_text", autospec=True) as write_text:
+        run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        WindowsScheduleBackend().sync([job], context)
+
+    calls_for_wrapper = [
+        call for call in write_text.call_args_list
+        if call.args[0] == (tmp_path / wrapper_name("my-job"))
+    ]
+    assert len(calls_for_wrapper) == 1
+    call = calls_for_wrapper[0]
+    assert call.kwargs.get("newline") == ""
+    assert call.kwargs.get("encoding") == "utf-8"
+
+
+def test_quote_cmd_arg_doubles_literal_percent():
+    """``%`` is cmd.exe's environment-variable/batch-parameter expansion
+    marker (``%VAR%``, ``%1``, ``%*``), expanded in a separate parsing pass
+    that ordinary double-quoting does not suppress. Inside a batch (.cmd)
+    file, the documented escape for a literal ``%`` is doubling: ``%%``.
+    Assert ``_quote_cmd_arg`` doubles embedded ``%`` characters, in addition
+    to its existing double-quote doubling."""
+    assert _quote_cmd_arg("100%") == '"100%%"'
+    assert _quote_cmd_arg("%LOCALAPPDATA%") == '"%%LOCALAPPDATA%%"'
+    assert _quote_cmd_arg('50%"quoted"') == '"50%%""quoted"""'
+
+
+def test_windows_wrapper_content_neutralizes_percent_in_job_name(tmp_path):
+    """A free-text job name containing ``%`` (nothing in jobs.yaml currently
+    restricts job-name characters) must appear in the generated wrapper
+    ``.cmd`` as a literal, batch-escaped ``%%`` -- not a bare ``%`` that
+    cmd.exe would attempt to expand as an environment variable or batch
+    parameter reference when the wrapper is invoked by Task Scheduler."""
+    context = _context(unit_dir=tmp_path)
+    job = ScheduleJob(
+        name="release-100%-done",
+        description="Release job",
+        command="/usr/bin/echo hello",
+        schedule="0 9 * * *",
+        enabled=True,
+    )
+
+    content = wrapper_content(job, context)
+
+    assert '"release-100%%-done"' in content
+    # No lone, un-doubled '%' anywhere in the job-name argument's rendering.
+    assert '"release-100%-done"' not in content
 
 
 def test_windows_sync_removes_stale_task_scheduler_entry(tmp_path):
